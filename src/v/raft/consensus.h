@@ -30,6 +30,7 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/recovery_coordinator.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
@@ -104,6 +105,7 @@ public:
       storage::api&,
       std::optional<std::reference_wrapper<coordinated_recovery_throttle>>,
       recovery_memory_quota&,
+      recovery_coordinator&,
       features::feature_table&,
       std::optional<voter_priority> = std::nullopt,
       keep_snapshotted_log = keep_snapshotted_log::no);
@@ -177,6 +179,8 @@ public:
      * followers, return nullopt
      */
     std::optional<uint8_t> get_under_replicated() const;
+
+    void set_vstate(vote_state);
 
     /**
      * Sends a round of heartbeats to followers, when majority of followers
@@ -464,6 +468,10 @@ public:
 
     void reset_last_sent_protocol_meta(const vnode&);
 
+    void update_election_timeout(timeout_jitter new_jit) {
+        _jit = std::move(new_jit);
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -699,6 +707,11 @@ private:
           features::feature::raft_append_entries_serde);
     }
 
+    void enter_follower_recovery(
+      model::offset current_offset,
+      model::offset hwm,
+      bool already_recovering = false);
+
     // args
     vnode _self;
     raft::group_id _group;
@@ -762,7 +775,8 @@ private:
     mutex _snapshot_lock;
     /// used for notifying when commits happened to log
     event_manager _event_manager;
-    std::unique_ptr<probe> _probe;
+    // std::unique_ptr<probe> _probe;
+    probe* _probe = nullptr;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
 
@@ -776,6 +790,7 @@ private:
     std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
       _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
+    recovery_coordinator& _recovery_coordinator;
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     uint64_t _snapshot_size{0};
@@ -805,6 +820,14 @@ private:
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
+
+    /**
+     * If a follower notices that it requires recovery, it starts tracking
+     * that via this object, which holds a place in the recovery_coordinator
+     * queue to regulate how many raft groups can go into recovery concurrently.
+     */
+    std::optional<follower_recovery_state> _follower_recovery_state;
+
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 

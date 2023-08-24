@@ -158,6 +158,13 @@ struct raft_node {
             }))
           .get();
 
+        recovery_coordinator
+          .start(
+            config::mock_binding<size_t>(128),
+            config::mock_binding<std::chrono::milliseconds>(10ms),
+            config::mock_binding<std::chrono::milliseconds>(100ms))
+          .get();
+
         // setup consensus
         auto self_id = this->broker.id();
         consensus = ss::make_lw_shared<raft::consensus>(
@@ -175,6 +182,7 @@ struct raft_node {
           storage.local(),
           recovery_throttle.local(),
           recovery_mem_quota,
+          recovery_coordinator.local(),
           feature_table.local(),
           std::nullopt);
     }
@@ -272,8 +280,18 @@ struct raft_node {
                 "consensus destroyed at node {} {}",
                 broker.id(),
                 consensus.use_count());
+
+              // Forbid anyone keeping a consensus object alive after
+              // node shutdown: it may hold references to storage
+              // layer we are about to destroy.
+              assert(consensus.owned());
               consensus = nullptr;
               return ss::now();
+          })
+          .then([this] {
+              tstlog.info(
+                "Stopping recovery_coordinator at node {}", broker.id());
+              return recovery_coordinator.stop();
           })
           .then([this] {
               tstlog.info("Stopping cache at node {}", broker.id());
@@ -345,6 +363,7 @@ struct raft_node {
     model::broker broker;
     ss::sharded<storage::api> storage;
     ss::sharded<raft::coordinated_recovery_throttle> recovery_throttle;
+    ss::sharded<raft::recovery_coordinator> recovery_coordinator;
     ss::shared_ptr<storage::log> log;
     ss::sharded<ss::abort_source> as_service;
     ss::sharded<rpc::connection_cache> cache;
@@ -911,6 +930,9 @@ struct raft_test_fixture {
             config::shard_local_cfg()
               .get("raft_heartbeat_disconnect_failures")
               .set_value((size_t)0);
+            config::shard_local_cfg()
+              .get("raft_recovery_grace_ms")
+              .set_value(200ms);
         }).get();
     }
 

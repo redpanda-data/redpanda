@@ -53,6 +53,20 @@
 #include <iterator>
 #include <system_error>
 
+raft::probe& get_global_probe() {
+    static thread_local raft::probe probe;
+    return probe;
+}
+
+void init_global_probe() {
+    static thread_local bool initialized = false;
+
+    if (!initialized) {
+        get_global_probe().setup_global_metrics();
+        initialized = true;
+    }
+}
+
 template<>
 struct fmt::formatter<raft::consensus::vote_state> final
   : fmt::formatter<std::string_view> {
@@ -100,6 +114,7 @@ consensus::consensus(
   std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
     recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
+  recovery_coordinator& recovery_coordinator,
   features::feature_table& ft,
   std::optional<voter_priority> voter_priority_override,
   keep_snapshotted_log should_keep_snapshotted_log)
@@ -122,7 +137,8 @@ consensus::consensus(
         .raft_max_concurrent_append_requests_per_follower())
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
-  , _probe(std::make_unique<probe>())
+  // , _probe(std::make_unique<probe>())
+  , _probe(&get_global_probe())
   , _ctxlog(group, _log->config().ntp())
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
@@ -133,6 +149,7 @@ consensus::consensus(
   , _storage(storage)
   , _recovery_throttle(recovery_throttle)
   , _recovery_mem_quota(recovery_mem_quota)
+  , _recovery_coordinator(recovery_coordinator)
   , _features(ft)
   , _snapshot_mgr(
       std::filesystem::path(_log->config().work_directory()),
@@ -157,6 +174,9 @@ void consensus::setup_metrics() {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
+
+    init_global_probe();
+    return;
 
     _probe->setup_metrics(_log->config().ntp());
     auto labels = probe::create_metric_labels(_log->config().ntp());
@@ -202,9 +222,12 @@ void consensus::do_step_down(std::string_view ctx) {
           ctx,
           _term,
           _log->offsets().dirty_offset);
+        if (ctx != "leadership_transfer") {
+            _probe->step_down();
+        }
     }
     _fstats.reset();
-    _vstate = vote_state::follower;
+    set_vstate(vote_state::follower);
 }
 
 void consensus::maybe_step_down() {
@@ -456,12 +479,29 @@ consensus::success_reply consensus::update_follower_index(
     }
 
     if (needs_recovery(idx, dirty_offset)) {
-        vlog(
-          _ctxlog.trace,
-          "Starting recovery process for {} - current reply: {}",
-          idx.node_id,
-          reply);
-        dispatch_recovery(idx);
+        if (reply.may_recover || ntp() == model::controller_ntp) {
+            vlog(
+              _ctxlog.trace,
+              "Starting recovery process for {} - current reply: {}",
+              idx.node_id,
+              reply);
+            dispatch_recovery(idx);
+        } else {
+            // FIXME: in this state, we should not start recovery but
+            // we also should not have replicate_entries_stm trying
+            // to send append entries messages to the node.
+            // Need to either instantiate recovery_stm and not kick it off,
+            // or set some other flag to prevent replicate stm from
+            // considering the node.
+            // ...maybe hack last_sent_offset back to the recovery start
+            // point to trick replicate_entries_stm::should_skip_follower?
+            vlog(
+              _ctxlog.trace,
+              "Recovery required but not yet permitted by remote node {} - "
+              "current reply: {}",
+              idx.node_id,
+              reply);
+        }
         return success_reply::no;
     }
     return success_reply::no;
@@ -568,6 +608,14 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
         idx.last_sent_offset = model::offset{};
     }
     idx.is_recovering = true;
+
+    vlog(
+      _ctxlog.debug,
+      "Dispatching recovery_stm to node {}, gap {}-{}",
+      idx.node_id,
+      idx.last_dirty_log_index,
+      log_max_offset);
+
     // background
     ssx::background
       = ssx::spawn_with_gate_then(_bg, [this, node_id = idx.node_id] {
@@ -1802,7 +1850,20 @@ consensus::do_append_entries(append_entries_request&& r) {
     }
     // no need to trigger timeout
     vlog(
-      _ctxlog.trace, "Received append entries request: {}", request_metadata);
+      _ctxlog.trace,
+      "Append entries request from {}: {} is_recovery={}",
+      r.source_node(),
+      r.metadata(),
+      r.is_recovery());
+
+    if (_follower_recovery_state && _follower_recovery_state->recovering) {
+        // We have previously recognized we need recovery, and
+        // recovery_coordinator has set the flag to say that recovery
+        // may proceed: pass that on to the leader in our reply.
+        reply.may_recover = true;
+    } else {
+        reply.may_recover = false;
+    }
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (request_metadata.term < _term) {
@@ -1830,7 +1891,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // raft.pdf:If AppendEntries RPC received from new leader: convert to
     // follower (§5.2)
-    _vstate = vote_state::follower;
+    set_vstate(vote_state::follower);
     if (unlikely(_leader_id != r.source_node())) {
         _leader_id = r.source_node();
         _follower_reply.broadcast();
@@ -1852,6 +1913,21 @@ consensus::do_append_entries(append_entries_request&& r) {
               "offset: {} request previous log offset: {}",
               last_log_offset,
               request_metadata.prev_log_index);
+        }
+        if (!_follower_recovery_state) {
+            vlog(
+              _ctxlog.debug,
+              "Entering follower recovery state (my {} behind leader node {}'s "
+              "offset {})",
+              last_log_offset,
+              r.source_node(),
+              r.metadata().prev_log_index);
+            enter_follower_recovery(
+              last_log_offset, r.metadata().prev_log_index);
+
+            // recovery_coordinator may have taken fast path and immediately
+            // permitted recovery to proceed, so read flag from state.
+            reply.may_recover = _follower_recovery_state->recovering;
         }
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -1879,6 +1955,19 @@ consensus::do_append_entries(append_entries_request&& r) {
           last_log_term,
           request_metadata.prev_log_term);
         reply.result = reply_result::failure;
+        if (!_follower_recovery_state) {
+            enter_follower_recovery(
+              last_log_offset, r.metadata().prev_log_index);
+
+            // recovery_coordinator may have taken fast path and immediately
+            // permitted recovery to proceed, so read flag from state.
+            reply.may_recover = _follower_recovery_state->recovering;
+        } else {
+            vlog(
+              _ctxlog.debug,
+              "Already in recovery state, may_recover={}",
+              _follower_recovery_state->recovering);
+        }
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -1889,6 +1978,12 @@ consensus::do_append_entries(append_entries_request&& r) {
         if (request_metadata.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
             reply.result = reply_result::failure;
+
+            vlog(
+              _ctxlog.debug,
+              "Rejecting append entries (heartbeat), {} < {}",
+              r.metadata().prev_log_index,
+              last_log_offset);
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
@@ -1902,6 +1997,22 @@ consensus::do_append_entries(append_entries_request&& r) {
         maybe_update_last_visible_index(last_visible);
         _last_leader_visible_offset = std::max(
           request_metadata.last_visible_index, _last_leader_visible_offset);
+
+        if (_follower_recovery_state && !r.is_recovery()) {
+            // Leader doesn't send heartbeats when it's sending recovery
+            // messages: if we were in a state of needing recovery, then
+            // we no longer are.
+            // FIXME: heartbeats aren't strictly ordered wrt other messages
+            // though.  This may cause us to flap out of recovery mode, then
+            // a moment later we'll see an is_recovery=true appendentries
+            vlog(
+              _ctxlog.debug,
+              "Exiting follower recovery state on heartbeat {} (I'm at {})",
+              r.metadata().prev_log_index,
+              last_log_offset);
+            _follower_recovery_state.reset();
+        }
+
         return f.then([this, reply, request_metadata] {
             return maybe_update_follower_commit_idx(
                      model::offset(request_metadata.commit_index))
@@ -1983,6 +2094,36 @@ consensus::do_append_entries(append_entries_request&& r) {
               reply.result = reply_result::failure;
               return ss::make_ready_future<append_entries_reply>(reply);
           });
+    }
+
+    if (_follower_recovery_state && !r.is_recovery()) {
+        // Successful non-recovery write means if we were in recovery, then we
+        // no longer are.
+        vlog(_ctxlog.debug, "Recovery complete at {}", last_log_offset);
+        _follower_recovery_state.reset();
+    } else if (_follower_recovery_state) {
+        // Update recovery progress
+        vlog(
+          _ctxlog.debug,
+          "Recovery progressed to {}",
+          r.metadata().prev_log_index);
+        _follower_recovery_state->update(r.metadata().prev_log_index);
+    } else if (r.is_recovery() && !_follower_recovery_state) {
+        // We did not initiate recovery, but the leader is doing it anyway.
+        // Situation is one of:
+        //  - We restarted after previously asking for recovery
+        //  - Leader is old version and didn't wait for our permission
+        //  - Recovery initiated during leadership transfer.
+        vlog(
+          _ctxlog.debug, "Forcing into recovery because leader sent recovery");
+
+        enter_follower_recovery(
+          last_log_offset,
+          // FIXME: we do not know the true hwm of the log we're recovering
+          // from, so we're going to effectively report zero offsets remaining
+          // while this recovery runs.
+          last_log_offset + model::offset{1},
+          true);
     }
 
     // success. copy entries for each subsystem
@@ -3630,4 +3771,43 @@ void consensus::reset_last_sent_protocol_meta(const vnode& node) {
         it->second.last_sent_protocol_meta.reset();
     }
 }
+
+void consensus::set_vstate(vote_state vs) {
+    _vstate = vs;
+    if (_vstate == vote_state::leader) {
+        // Drop follower-specific state
+        _follower_recovery_state.reset();
+    }
+}
+
+/**
+ * Call this when an append_entries request from the leader indicates
+ * that we require recovery, and we do not currently have a
+ * _follower_recovery_state
+ *
+ * @param current_offset our latest offset
+ * @param hwm the latest offset the leader has mentioned to us
+ */
+void consensus::enter_follower_recovery(
+  model::offset current_offset, model::offset hwm, bool already_recovering) {
+    vassert(
+      _follower_recovery_state == std::nullopt,
+      "Only to be called when not already in follower recovery mode");
+
+    if (current_offset < model::offset{-1}) {
+        current_offset = model::offset{-1};
+    }
+    if (hwm <= current_offset) {
+        hwm = current_offset + model::offset{1};
+    }
+
+    vlog(_ctxlog.debug, "Entering recovery state");
+    _follower_recovery_state.emplace(
+      &_recovery_coordinator,
+      _log->config().ntp(),
+      current_offset,
+      hwm,
+      already_recovering);
+}
+
 } // namespace raft

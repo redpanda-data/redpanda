@@ -35,6 +35,8 @@ partition_probe::partition_probe(const model::ntp& ntp) {
                               ? std::vector<sm::label>{partition_label}
                               : std::vector<sm::label>{};
 
+    return;
+
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage:partition"),
       {

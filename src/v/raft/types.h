@@ -156,7 +156,7 @@ struct follower_index_metadata {
     // sequence number of last received successfull append entries request
     follower_req_seq last_successful_received_seq{0};
     bool is_learner = true;
-    bool is_recovering = false;
+    bool is_recovering{false};
 
     /*
      * When is_recovering is true a fiber may wait for recovery to be signaled
@@ -204,7 +204,7 @@ using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 struct append_entries_request
   : serde::envelope<
       append_entries_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -225,11 +225,13 @@ struct append_entries_request
       vnode target,
       protocol_metadata m,
       model::record_batch_reader r,
-      flush_after_append f = flush_after_append::yes) noexcept
+      flush_after_append f = flush_after_append::yes,
+      bool recovery = false) noexcept
       : _source_node(src)
       , _target_node_id(target)
       , _meta(m)
       , _flush(f)
+      , _is_recovery(recovery)
       , _batches(std::move(r)) {}
 
     ~append_entries_request() noexcept = default;
@@ -246,6 +248,7 @@ struct append_entries_request
 
     const protocol_metadata& metadata() const { return _meta; }
     flush_after_append is_flush_required() const { return _flush; }
+    bool is_recovery() const { return _is_recovery; }
 
     model::record_batch_reader release_batches() && {
         return std::move(_batches);
@@ -268,6 +271,9 @@ private:
     vnode _target_node_id;
     protocol_metadata _meta;
     flush_after_append _flush;
+    // Hint to follower that this message was generated in the recovery
+    // code path, i.e. it does not represent the tip of the log
+    bool _is_recovery{false};
     model::record_batch_reader _batches;
 };
 
@@ -307,7 +313,7 @@ enum class reply_result : uint8_t {
 struct append_entries_reply
   : serde::envelope<
       append_entries_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -329,12 +335,21 @@ struct append_entries_reply
     /// \brief did the rpc succeed or not
     reply_result result = reply_result::failure;
 
+    // Hint from follower to leader, indicating they are ready for
+    // recovery traffic (false if they may not have enough resources to
+    // handle recovery).
+    // This is true by default to reflect the legacy case, where
+    // older nodes are always ready for recovery.
+    bool may_recover{true};
+
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
 
     friend bool
     operator==(const append_entries_reply&, const append_entries_reply&)
       = default;
+
+    void serde_read(iobuf_parser& src, const serde::header& hdr);
 
     auto serde_fields() {
         return std::tie(
@@ -345,7 +360,8 @@ struct append_entries_reply
           last_flushed_log_index,
           last_dirty_log_index,
           last_term_base_offset,
-          result);
+          result,
+          may_recover);
     }
 };
 
@@ -353,6 +369,7 @@ struct heartbeat_metadata {
     protocol_metadata meta;
     vnode node_id;
     vnode target_node_id;
+    bool may_recover{true};
 
     friend bool operator==(const heartbeat_metadata&, const heartbeat_metadata&)
       = default;
@@ -386,7 +403,7 @@ struct heartbeat_request
 
 struct heartbeat_reply
   : serde::
-      envelope<heartbeat_reply, serde::version<0>, serde::compat_version<0>> {
+      envelope<heartbeat_reply, serde::version<1>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     std::vector<append_entries_reply> meta;
 

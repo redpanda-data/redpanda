@@ -85,6 +85,8 @@ struct configuration final : public config_store {
     bounded_property<std::optional<size_t>> raft_max_recovery_memory;
     bounded_property<size_t> raft_recovery_default_read_size;
     property<bool> raft_enable_lw_heartbeat;
+    bounded_property<size_t> raft_recovery_concurrent_per_shard;
+    bounded_property<std::chrono::milliseconds> raft_recovery_grace_ms;
     // Kafka
     property<bool> enable_usage;
     bounded_property<size_t> usage_num_windows;

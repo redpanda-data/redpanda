@@ -14,6 +14,7 @@
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/recovery_coordinator.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
@@ -43,6 +44,7 @@ public:
         config::binding<std::chrono::milliseconds> heartbeat_timeout;
         config::binding<std::chrono::milliseconds> raft_io_timeout_ms;
         config::binding<bool> enable_lw_heartbeat;
+        config::binding<std::chrono::milliseconds> election_timeout_ms;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 
@@ -85,9 +87,14 @@ public:
         _notifications.unregister_cb(id);
     }
 
+    const recovery_status& get_recovery_status() {
+        return _recovery_coordinator.get_status();
+    }
+
 private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
+    ss::future<> do_update_election_timeout(std::chrono::milliseconds);
 
     raft::group_configuration create_initial_configuration(
       std::vector<model::broker>, model::revision_id) const;
@@ -106,6 +113,7 @@ private:
     storage::api& _storage;
     coordinated_recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
+    recovery_coordinator _recovery_coordinator;
     features::feature_table& _feature_table;
     bool _is_ready;
 };

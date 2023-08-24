@@ -101,7 +101,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
           }
           // 5.2.1 mark node as candidate, and update leader id
-          _ptr->_vstate = consensus::vote_state::candidate;
+          _ptr->set_vstate(consensus::vote_state::candidate);
           //  only trigger notification when we had a leader previously
           if (_ptr->_leader_id) {
               _ptr->_leader_id = std::nullopt;
@@ -212,7 +212,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
                   _ctxlog.info, "Vote failed - received larger term: {}", term);
                 _ptr->_term = term;
                 _ptr->_voted_for = {};
-                _ptr->_vstate = consensus::vote_state::follower;
+                _ptr->set_vstate(consensus::vote_state::follower);
                 co_return;
             }
         }
@@ -232,7 +232,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
 
     if (!_success) {
         vlog(_ctxlog.info, "Vote failed");
-        _ptr->_vstate = consensus::vote_state::follower;
+        _ptr->set_vstate(consensus::vote_state::follower);
         co_return;
     }
     const auto only_voter = _config->unique_voter_count() == 1
@@ -242,7 +242,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
           _ctxlog.debug,
           "Ignoring successful vote. Node priority too low: {}",
           _ptr->_node_priority_override.value());
-        _ptr->_vstate = consensus::vote_state::follower;
+        _ptr->set_vstate(consensus::vote_state::follower);
         co_return;
     }
 
@@ -255,7 +255,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
 
     vlog(_ctxlog.trace, "vote acks in term {} from: {}", term, acks);
     // section vote:5.2.2
-    _ptr->_vstate = consensus::vote_state::leader;
+    _ptr->set_vstate(consensus::vote_state::leader);
     _ptr->_leader_id = _ptr->self();
     // reset target priority
     _ptr->_target_priority = voter_priority::max();
