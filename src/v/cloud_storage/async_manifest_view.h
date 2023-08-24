@@ -12,7 +12,8 @@
 
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/materialized_manifest_cache.h"
-#include "cloud_storage/probe.h"
+#include "cloud_storage/read_path_probes.h"
+#include "cloud_storage/remote_probe.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
 #include "model/metadata.h"

@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_storage/probe.h"
+#include "cloud_storage/remote_probe.h"
 
 #include "cloud_storage/materialized_resources.h"
 #include "prometheus/prometheus_sanitize.h"

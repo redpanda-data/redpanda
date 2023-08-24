@@ -11,7 +11,7 @@
 #pragma once
 
 #include "cloud_storage/materialized_manifest_cache.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/segment_state.h"
 #include "config/property.h"

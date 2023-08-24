@@ -14,7 +14,7 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/segment_state.h"
