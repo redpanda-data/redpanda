@@ -235,6 +235,28 @@ get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
     co_return rp;
 }
 
+ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto id = parse::request_param<schema_id>(*rq.req, "id");
+    auto incl_del{
+      parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
+        .value_or(include_deleted::no)};
+    rq.req.reset();
+
+    // List-type request: must ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+
+    // Force early 40403 if the schema id isn't found
+    co_await rq.service().schema_store().get_schema_definition(id);
+
+    auto subjects = co_await rq.service().schema_store().get_schema_subjects(
+      id, incl_del);
+    auto json_rslt{json::rjson_serialize(subjects)};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
 ss::future<server::reply_t>
 get_subjects(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
