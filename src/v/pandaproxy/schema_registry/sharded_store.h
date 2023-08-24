@@ -67,6 +67,10 @@ public:
     ss::future<std::vector<subject_version>>
     get_schema_subject_versions(schema_id id);
 
+    ///\brief Return a list of subjects for the schema id.
+    ss::future<std::vector<subject>>
+    get_schema_subjects(schema_id id, include_deleted inc_del);
+
     ///\brief Return a schema by subject and version (or latest).
     ss::future<subject_schema> get_subject_schema(
       subject sub,
