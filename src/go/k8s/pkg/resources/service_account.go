@@ -85,5 +85,8 @@ func (s *ServiceAccountResource) obj() (k8sclient.Object, error) {
 // Key returns namespace/name object that is used to identify object.
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (s *ServiceAccountResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: s.pandaCluster.Name, Namespace: s.pandaCluster.Namespace}
+	if s.pandaCluster.Spec.ServiceAccount == nil || *s.pandaCluster.Spec.ServiceAccount == "" {
+		return types.NamespacedName{Name: s.pandaCluster.Name, Namespace: s.pandaCluster.Namespace}
+	}
+	return types.NamespacedName{Name: *s.pandaCluster.Spec.ServiceAccount, Namespace: s.pandaCluster.Namespace}
 }
