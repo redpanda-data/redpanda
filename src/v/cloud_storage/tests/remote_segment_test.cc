@@ -9,26 +9,18 @@
  */
 
 #include "bytes/iobuf.h"
-#include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
-#include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
+#include "cloud_storage/segment_chunk_data_source.h"
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "seastarx.h"
-#include "storage/log.h"
-#include "storage/log_manager.h"
-#include "storage/segment.h"
-#include "storage/segment_appender_utils.h"
-#include "storage/tests/utils/disk_log_builder.h"
 #include "storage/types.h"
-#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "utils/retry_chain_node.h"
 
@@ -43,6 +35,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/tmp_file.hh>
 
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -1106,4 +1100,308 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
         BOOST_REQUIRE(prefetched_chunk.current_state == chunk_state::hydrated);
         BOOST_REQUIRE(prefetched_chunk.handle.has_value());
     }
+}
+
+namespace cloud_storage {
+
+class segment_chunk_data_source_test_helper {
+public:
+    explicit segment_chunk_data_source_test_helper(chunk_data_source_impl& i)
+      : _i{i} {}
+
+    bool is_downloading() const { return _i._download_task.has_value(); }
+
+    bool disk_based_stream() const {
+        return _i._current_stream_t
+               == chunk_data_source_impl::stream_type::disk;
+    }
+
+    bool transient() const {
+        return _i._current_stream_t
+               == chunk_data_source_impl::stream_type::download;
+    }
+
+private:
+    chunk_data_source_impl& _i;
+};
+
+} // namespace cloud_storage
+
+FIXTURE_TEST(test_remote_segment_streaming_read, cloud_storage_fixture) {
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    const auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    const iobuf segment_bytes = generate_segment(model::offset(1), 300);
+    const auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    const auto meta = *m.get(key);
+    partition_probe probe(manifest_ntp);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib,
+      probe);
+
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    ss::file_input_stream_options options{};
+    options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
+    options.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count();
+    options.io_priority_class = ss::default_priority_class();
+
+    auto ds = chunk_data_source_impl{
+      chunk_api,
+      segment,
+      kafka::offset{0},
+      kafka::offset::max(),
+      0,
+      std::move(options)};
+
+    auto shutdown = ss::defer([&segment] { segment.stop().get(); });
+
+    segment_chunk_data_source_test_helper h{ds};
+    // The download does not start until the first read is issued
+    BOOST_REQUIRE(!h.is_downloading());
+
+    auto buf = ds.get().get();
+    auto bytes_read = buf.size();
+
+    // GET from the data source starts the download in the background
+    BOOST_REQUIRE(h.is_downloading());
+
+    while (!buf.empty()) {
+        buf = ds.get().get();
+        bytes_read += buf.size();
+    }
+
+    ds.close().get();
+
+    // Closing the data source ensures that the download is finished
+    BOOST_REQUIRE(!h.is_downloading());
+    BOOST_REQUIRE_EQUAL(bytes_read, segment_bytes.size_bytes());
+
+    using dit = std::filesystem::recursive_directory_iterator;
+    // All chunk files should have been downloaded to disk
+    for (auto it = dit{tmp_directory.get_path()}; it != dit{}; ++it) {
+        const auto path = it->path().native();
+        if (
+          path.find("_chunks/") != std::string::npos && it->is_regular_file()) {
+            std::vector<ss::sstring> items;
+            boost::algorithm::split(items, path, boost::is_any_of("/"));
+            const auto offset = items.back();
+            BOOST_REQUIRE(
+              chunk_api.get(std::stoll(offset)).current_state
+              == chunk_state::hydrated);
+        }
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_segment_streaming_failed_download, cloud_storage_fixture) {
+    const auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    const iobuf segment_bytes = generate_segment(model::offset(1), 300);
+    const auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    const auto meta = *m.get(key);
+    partition_probe probe(manifest_ntp);
+
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib,
+      probe);
+
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    ss::file_input_stream_options options{};
+    options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
+    options.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count();
+    options.io_priority_class = ss::default_priority_class();
+
+    auto ds = chunk_data_source_impl{
+      chunk_api,
+      segment,
+      kafka::offset{0},
+      kafka::offset::max(),
+      0,
+      std::move(options),
+      std::nullopt,
+      std::nullopt,
+      5s};
+
+    auto shutdown = ss::defer([&ds, &segment] {
+        ds.close().get();
+        segment.stop().get();
+    });
+    api.local()
+      .delete_object(
+        bucket,
+        cloud_storage_clients::object_key{m.generate_segment_path(meta)},
+        fib)
+      .get();
+
+    BOOST_REQUIRE_THROW(ds.get().get(), download_exception);
+}
+
+FIXTURE_TEST(
+  test_remote_segment_streaming_timeout_fallback, cloud_storage_fixture) {
+    const auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    const iobuf segment_bytes = generate_segment(model::offset(1), 300);
+    const auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    const auto meta = *m.get(key);
+    partition_probe probe(manifest_ntp);
+
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib,
+      probe);
+
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    ss::file_input_stream_options options{};
+    options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
+    options.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count();
+    options.io_priority_class = ss::default_priority_class();
+
+    auto ds = chunk_data_source_impl{
+      chunk_api,
+      segment,
+      kafka::offset{0},
+      kafka::offset::max(),
+      0,
+      std::move(options),
+      std::nullopt,
+      std::nullopt,
+      // 0s timeout to make sure that the transient stream load fails
+      0s};
+
+    auto shutdown = ss::defer([&ds, &segment] {
+        ds.close().get();
+        segment.stop().get();
+    });
+
+    segment_chunk_data_source_test_helper h{ds};
+
+    // The get call should result in fallback to disk based stream
+    auto buffer = ds.get().get();
+    auto size = buffer.size();
+
+    // The get() call finishes only once the chunk is downloaded.
+    BOOST_REQUIRE(h.disk_based_stream());
+    BOOST_REQUIRE(!h.is_downloading());
+
+    while (!buffer.empty()) {
+        buffer = ds.get().get();
+        size += buffer.size();
+    }
+    BOOST_REQUIRE_EQUAL(size, segment_bytes.size_bytes());
+}
+
+FIXTURE_TEST(
+  test_remote_segment_streaming_multiple_consumers, cloud_storage_fixture) {
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    const auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    const iobuf segment_bytes = generate_segment(model::offset(1), 10);
+    const auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    const auto meta = *m.get(key);
+    partition_probe probe(manifest_ntp);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib,
+      probe);
+
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    ss::file_input_stream_options options{};
+    options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
+    options.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count();
+    options.io_priority_class = ss::default_priority_class();
+
+    auto ds = chunk_data_source_impl{
+      chunk_api,
+      segment,
+      kafka::offset{0},
+      kafka::offset::max(),
+      0,
+      std::move(options)};
+
+    auto ds2 = chunk_data_source_impl{
+      chunk_api,
+      segment,
+      kafka::offset{0},
+      kafka::offset::max(),
+      0,
+      std::move(options)};
+
+    auto ds3 = chunk_data_source_impl{
+      chunk_api,
+      segment,
+      kafka::offset{0},
+      kafka::offset::max(),
+      0,
+      std::move(options)};
+
+    auto& chunk = chunk_api.get(0);
+
+    auto shutdown = ss::defer([&segment] { segment.stop().get(); });
+
+    segment_chunk_data_source_test_helper h{ds};
+    BOOST_REQUIRE(!h.is_downloading());
+
+    auto buf = ds.get().get();
+    BOOST_REQUIRE(chunk.waiters.empty());
+    BOOST_REQUIRE(h.is_downloading());
+
+    // The two data sources will be added to wait queue
+    auto f = ss::when_all_succeed(ds2.get(), ds3.get());
+    BOOST_REQUIRE_EQUAL(chunk.waiters.size(), 2);
+
+    // Close the original data source without reading. This should wait for the
+    // download to finish
+    ds.close().get();
+    BOOST_REQUIRE(!h.is_downloading());
+
+    auto [r1, r2] = f.get();
+    auto size_read = r1.size() + r2.size();
+    while (size_read < segment_bytes.size_bytes() * 2) {
+        size_read += ds2.get().get().size() + ds3.get().get().size();
+    }
+
+    ss::when_all_succeed(ds2.close(), ds3.close()).get();
+    BOOST_REQUIRE_EQUAL(size_read, segment_bytes.size_bytes() * 2);
 }

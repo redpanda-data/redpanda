@@ -39,6 +39,53 @@ ss::future<cloud_storage::segment_chunk::handle_t> add_waiter_to_chunk(
 
 namespace cloud_storage {
 
+std::ostream&
+operator<<(std::ostream& os, eager_chunk_stream::stream_state state) {
+    switch (state) {
+    case eager_chunk_stream::stream_state::in_wait_queue:
+        fmt::print(os, "in_wait_queue");
+        return os;
+    case eager_chunk_stream::stream_state::awaiting_hydration:
+        fmt::print(os, "awaiting_hydration");
+        return os;
+    case eager_chunk_stream::stream_state::chunk_in_cache:
+        fmt::print(os, "chunk_in_cache");
+        return os;
+    case eager_chunk_stream::stream_state::download_cancelled_timeout:
+        fmt::print(os, "download_cancelled_timeout");
+        return os;
+    case eager_chunk_stream::stream_state::ready:
+        fmt::print(os, "ready");
+        return os;
+    }
+}
+
+ss::future<>
+eager_chunk_stream::wait_for_stream(ss::lowres_clock::duration timeout) {
+    // If the chunk load operation was put in wait queue, wait for the download
+    // to finish. The eager stream cannot be loaded.
+    if (state == stream_state::in_wait_queue) {
+        return ss::now();
+    }
+
+    return stream_available.wait(timeout, [this] {
+        // Wait for either the stream to be initialized, or if the chunk is
+        // already in cache, the eager stream cannot be loaded.
+        return stream.has_value() || state == stream_state::chunk_in_cache;
+    });
+}
+
+void eager_chunk_stream::set_stream_and_signal(
+  ss::input_stream<char> s,
+  chunk_start_offset_t start,
+  chunk_start_offset_t end) {
+    stream = std::move(s);
+    stream_available.signal();
+    first_offset = start;
+    last_offset = end;
+    state = stream_state::ready;
+}
+
 void expiry_handler_impl(ss::promise<segment_chunk::handle_t>& pr) {
     pr.set_exception(ss::timed_out_error());
 }
@@ -111,7 +158,9 @@ bool segment_chunks::downloads_in_progress() const {
 }
 
 ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
-  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
+  chunk_start_offset_t chunk_start,
+  std::optional<uint16_t> prefetch_override,
+  eager_stream_ptr eager_stream) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -124,12 +173,14 @@ ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
     const auto prefetch = prefetch_override.value_or(
       config::shard_local_cfg().cloud_storage_chunk_prefetch);
     co_await _segment.hydrate_chunk(
-      segment_chunk_range{_chunks, prefetch, chunk_start});
+      segment_chunk_range{_chunks, prefetch, chunk_start}, eager_stream);
     co_return co_await _segment.materialize_chunk(chunk_start);
 }
 
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
-  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
+  chunk_start_offset_t chunk_start,
+  std::optional<uint16_t> prefetch_override,
+  eager_stream_ptr eager_stream) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -160,9 +211,23 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
 
         // Keep retrying if materialization fails.
         bool done = false;
+
+        // If we got this far, we are the first request to download this chunk.
+        // Mark the eager stream as usable (once the hydration finishes). The
+        // path that ends up here has no other points where we yield, so the
+        // caller can now wait on the eager stream safely.
+        if (eager_stream) {
+            vlog(
+              _ctxlog.trace,
+              "marking eager stream download start for {}",
+              chunk_start);
+            eager_stream->state
+              = eager_chunk_stream::stream_state::awaiting_hydration;
+        }
+
         while (!done) {
             auto handle = co_await do_hydrate_and_materialize(
-              chunk_start, prefetch_override);
+              chunk_start, prefetch_override, eager_stream);
             if (handle) {
                 done = true;
                 chunk.handle = ss::make_lw_shared(std::move(handle));
@@ -484,6 +549,15 @@ segment_chunk_range::map_t::iterator segment_chunk_range::begin() {
 
 segment_chunk_range::map_t::iterator segment_chunk_range::end() {
     return _chunks.end();
+}
+
+std::ostream& operator<<(std::ostream& os, const segment_chunk_range& range) {
+    fmt::print(
+      os,
+      "segment_chunk_range{{first: {}, last: {}}}",
+      range.first_offset(),
+      range.last_offset());
+    return os;
 }
 
 } // namespace cloud_storage
