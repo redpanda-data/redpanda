@@ -19,7 +19,9 @@
 #include "utils/fragmented_vector.h"
 #include "vassert.h"
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 #include <cmath>
 #include <cstddef>
@@ -95,7 +97,7 @@ private:
         raft::group_id group_id;
         model::broker_shard broker_shard;
     };
-    absl::flat_hash_map<raft::group_id, model::broker_shard> _current_leaders;
+    absl::node_hash_map<raft::group_id, model::broker_shard> _current_leaders;
 
     using replicas_t = fragmented_vector<replica>;
     replicas_t _replicas;
