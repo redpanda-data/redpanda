@@ -991,30 +991,6 @@ struct abort_group_tx_reply
     auto serde_fields() { return std::tie(ec); }
 };
 
-struct find_coordinator_request
-  : serde::envelope<
-      find_coordinator_request,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
-    kafka::transactional_id tid;
-
-    find_coordinator_request() noexcept = default;
-
-    find_coordinator_request(kafka::transactional_id tid)
-      : tid(std::move(tid)) {}
-
-    friend bool
-    operator==(const find_coordinator_request&, const find_coordinator_request&)
-      = default;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const find_coordinator_request& r);
-
-    auto serde_fields() { return std::tie(tid); }
-};
-
 struct find_coordinator_reply
   : serde::envelope<
       find_coordinator_reply,
@@ -1024,9 +1000,27 @@ struct find_coordinator_reply
 
     std::optional<model::node_id> coordinator{std::nullopt};
     std::optional<model::ntp> ntp{std::nullopt};
-    errc ec{errc::generic_tx_error};
+    errc ec{errc::generic_tx_error}; // this should have been tx_errc
 
     find_coordinator_reply() noexcept = default;
+
+    // this is a hack to blend find_coordinator_reply into do_route_locally
+    find_coordinator_reply(tx_errc tx_ec)
+      : coordinator(std::nullopt)
+      , ntp(std::nullopt) {
+        if (tx_ec == tx_errc::none) {
+            ec = errc::success;
+        } else if (tx_ec == tx_errc::shard_not_found) {
+            ec = errc::not_leader;
+        } else {
+            ec = errc::generic_tx_error;
+        }
+    }
+
+    find_coordinator_reply(errc ec)
+      : coordinator(std::nullopt)
+      , ntp(std::nullopt)
+      , ec(ec) {}
 
     find_coordinator_reply(
       std::optional<model::node_id> coordinator,
@@ -1044,6 +1038,32 @@ struct find_coordinator_reply
     operator<<(std::ostream& o, const find_coordinator_reply& r);
 
     auto serde_fields() { return std::tie(coordinator, ntp, ec); }
+};
+
+struct find_coordinator_request
+  : serde::envelope<
+      find_coordinator_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    using reply = find_coordinator_reply;
+    static constexpr const std::string_view name = "find_coordinator";
+
+    kafka::transactional_id tid;
+
+    find_coordinator_request() noexcept = default;
+
+    find_coordinator_request(kafka::transactional_id tid)
+      : tid(std::move(tid)) {}
+
+    friend bool
+    operator==(const find_coordinator_request&, const find_coordinator_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const find_coordinator_request& r);
+
+    auto serde_fields() { return std::tie(tid); }
 };
 
 struct join_node_request
