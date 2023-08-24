@@ -735,10 +735,6 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         co_return;
     }
 
-    // Block manifest serialization during mutation of the
-    // manifest since it's asynchronous.
-    auto units = co_await _manifest_lock.get_units();
-
     b.for_each_record([this, base_offset = b.base_offset()](model::record&& r) {
         auto key = serde::from_iobuf<cmd_key>(r.release_key());
 

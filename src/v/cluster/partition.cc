@@ -12,7 +12,7 @@
 #include "archival/ntp_archiver_service.h"
 #include "archival/upload_housekeeping_service.h"
 #include "cloud_storage/async_manifest_view.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
 #include "cluster/tm_stm_cache_manager.h"
@@ -158,8 +158,7 @@ partition::partition(
                     _cloud_storage_api,
                     cloud_storage_cache,
                     _archival_meta_stm->manifest(),
-                    cloud_storage_clients::bucket_name{*bucket},
-                    *_cloud_storage_probe);
+                    cloud_storage_clients::bucket_name{*bucket});
 
                 _cloud_storage_partition
                   = ss::make_shared<cloud_storage::remote_partition>(
@@ -1018,8 +1017,6 @@ ss::future<> partition::serialize_json_manifest_to_output_stream(
         throw std::runtime_error(fmt::format(
           "{} not configured for cloud storage", _topic_cfg->tp_ns));
     }
-
-    auto lock = co_await _archival_meta_stm->acquire_manifest_lock();
 
     // The timeout here is meant to place an upper bound on the amount
     // of time the manifest lock is held for.

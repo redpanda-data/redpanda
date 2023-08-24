@@ -84,6 +84,10 @@ materialized_resources::materialized_resources()
     });
 }
 
+ts_read_path_probe& materialized_resources::get_read_path_probe() {
+    return _read_path_probe;
+}
+
 ss::future<> materialized_resources::stop() {
     cst_log.debug("Stopping materialized_segments...");
 

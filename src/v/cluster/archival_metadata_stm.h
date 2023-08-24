@@ -210,9 +210,6 @@ public:
     command_batch_builder
     batch_start(ss::lowres_clock::time_point deadline, ss::abort_source&);
 
-    /// Acquire the lock that prevents modification of the manifest.
-    auto acquire_manifest_lock() { return _manifest_lock.get_units(); }
-
     enum class state_dirty : uint8_t { dirty, clean };
 
     // If state_dirty::dirty is returned the manifest should be uploaded
@@ -287,7 +284,6 @@ private:
     prefix_logger _logger;
 
     mutex _lock;
-    mutex _manifest_lock;
 
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 

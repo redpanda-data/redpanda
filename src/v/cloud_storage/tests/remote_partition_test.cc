@@ -143,7 +143,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto manifest = hydrate_manifest(fixture.api.local(), bucket);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      fixture.api, fixture.cache, manifest, bucket, probe);
+      fixture.api, fixture.cache, manifest, bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, fixture.api.local(), fixture.cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -208,7 +208,7 @@ FIXTURE_TEST(
     auto manifest = hydrate_manifest(api.local(), bucket);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket, probe);
+      api, cache, manifest, bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -263,7 +263,7 @@ test_remote_partition_cache_size_estimate_materialized_segments_args(
     auto manifest = hydrate_manifest(api.local(), bucket);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket, probe);
+      api, cache, manifest, bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -1009,7 +1009,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     {
         partition_probe probe(manifest.get_ntp());
         auto manifest_view = ss::make_shared<async_manifest_view>(
-          api, cache, manifest, bucket, probe);
+          api, cache, manifest, bucket);
         auto partition = ss::make_shared<remote_partition>(
           manifest_view, api.local(), cache.local(), bucket, probe);
         auto partition_stop = ss::defer(
@@ -1033,7 +1033,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     {
         partition_probe probe(manifest.get_ntp());
         auto manifest_view = ss::make_shared<async_manifest_view>(
-          api, cache, manifest, bucket, probe);
+          api, cache, manifest, bucket);
         auto partition = ss::make_shared<remote_partition>(
           manifest_view, api.local(), cache.local(), bucket, probe);
         auto partition_stop = ss::defer(
@@ -1103,7 +1103,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket, probe);
+      api, cache, manifest, bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -1207,7 +1207,7 @@ FIXTURE_TEST(
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket, probe);
+      api, cache, manifest, bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -1295,7 +1295,7 @@ FIXTURE_TEST(
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket, probe);
+      api, cache, manifest, bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });

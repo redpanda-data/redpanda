@@ -13,7 +13,7 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/segment_chunk_api.h"
@@ -80,7 +80,8 @@ public:
       const model::ntp& ntp,
       const segment_meta& meta,
       retry_chain_node& parent,
-      partition_probe& probe);
+      partition_probe& probe,
+      ts_read_path_probe& ts_probe);
 
     remote_segment(const remote_segment&) = delete;
     remote_segment(remote_segment&&) = delete;
@@ -293,6 +294,7 @@ private:
     bool _hydration_loop_running{false};
 
     segment_name_format _sname_format;
+    uint64_t _metadata_size_hint{0};
 
     using fallback_mode = ss::bool_class<struct fallback_mode_tag>;
     fallback_mode _fallback_mode{fallback_mode::no};
@@ -304,6 +306,7 @@ private:
     std::optional<segment_chunks> _chunks_api;
     std::optional<offset_index::coarse_index_t> _coarse_index;
     partition_probe& _probe;
+    ts_read_path_probe& _ts_probe;
 
     friend class split_segment_into_chunk_range_consumer;
 };
@@ -335,6 +338,7 @@ public:
       ss::lw_shared_ptr<remote_segment>,
       const storage::log_reader_config& config,
       partition_probe& probe,
+      ts_read_path_probe& ts_probe,
       ssx::semaphore_units) noexcept;
 
     // The following lines of code have different formatting on newer versions
@@ -399,6 +403,7 @@ private:
     ss::lw_shared_ptr<remote_segment> _seg;
     storage::log_reader_config _config;
     partition_probe& _probe;
+    ts_read_path_probe& _ts_probe;
     ss::circular_buffer<model::record_batch> _ringbuf;
     std::optional<std::reference_wrapper<storage::offset_translator_state>>
       _cur_ot_state;

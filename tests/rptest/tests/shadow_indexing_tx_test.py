@@ -102,3 +102,53 @@ class ShadowIndexingTxTest(RedpandaTest):
         assert status.validator.valid_reads == committed_messages
         assert status.validator.invalid_reads == 0
         assert status.validator.out_of_scope_invalid_reads == 0
+
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @skip_debug_mode
+    def test_txless_segments(self, cloud_storage_type):
+        """
+        Check that for segments _without_ aborted transactions, we don't
+        waste resources issuing object storage GETs or writing empty
+        manifests to the cache.
+        """
+
+        local_retention = 3 * self.segment_size
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.alter_topic_config(
+            self.topic,
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
+        )
+
+        KgoVerifierProducer.oneshot(self.test_context,
+                                    self.redpanda,
+                                    self.topic,
+                                    msg_size=16384,
+                                    msg_count=((10 * self.segment_size) //
+                                               16384))
+
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
+
+        KgoVerifierSeqConsumer.oneshot(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       16384,
+                                       loop=False)
+
+        # There should have been no failures to download
+        # vectorized_cloud_storage_failed_manifest_downloads
+        metric = self.redpanda.metrics_sample(
+            "vectorized_cloud_storage_failed_manifest_downloads")
+        assert len(metric.samples)
+        for sample in metric.samples:
+            assert sample.value == 0, f"Saw >0 failed manifest downloads {sample}"
+
+        # There should be zero .tx files in the cache
+        for node in self.redpanda.nodes:
+            cached_tx_manifests = int(
+                node.account.ssh_output(
+                    f"find \"{self.redpanda.cache_dir}\" -type f -name \"*.tx\" | wc -l",
+                    combine_stderr=False).strip())
+            assert cached_tx_manifests == 0, f"Found {cached_tx_manifests} cached manifests on {node.name}"
