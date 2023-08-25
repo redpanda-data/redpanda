@@ -87,7 +87,7 @@ public:
 
     /// Find index entry which is strictly lower than the timestamp
     ///
-    /// The returned value has kaf_offset less than upper_bound.
+    /// The returned value has timestamp less than upper_bound.
     /// If all elements are larger than 'upper_bound' nullopt is returned.
     /// If all elements are smaller than 'upper_bound' the last value is
     /// returned.

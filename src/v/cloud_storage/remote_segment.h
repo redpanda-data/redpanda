@@ -192,6 +192,11 @@ private:
     std::optional<offset_index::find_result>
     maybe_get_offsets(kafka::offset kafka_offset);
 
+    /// get a file offset for the corresponding to the timestamp
+    /// if the index is available
+    std::optional<offset_index::find_result>
+      maybe_get_offsets(model::timestamp);
+
     /// Sets the results of the waiters of this segment as the given error.
     void set_waiter_errors(const std::exception_ptr& err);
 
