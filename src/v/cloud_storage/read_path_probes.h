@@ -67,6 +67,8 @@ public:
         return _spillover_mat_latency.auto_measure();
     }
 
+    void on_chunks_hydration(size_t num) { _chunks_hydrated += num; }
+
     auto chunk_hydration_latency() {
         return _chunk_hydration_latency.auto_measure();
     }
@@ -84,6 +86,7 @@ private:
     /// Spillover manifest materialization latency
     hist_t _spillover_mat_latency;
 
+    size_t _chunks_hydrated = 0;
     hist_t _chunk_hydration_latency;
 
     ssx::metrics::metric_groups _metrics
