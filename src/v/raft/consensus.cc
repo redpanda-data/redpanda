@@ -3552,7 +3552,8 @@ reply_result consensus::lightweight_heartbeat(
     /**
      * If leader has changed force full heartbeat
      */
-    if (unlikely(_leader_id.has_value() && (_leader_id->id() != source_node))) {
+    if (unlikely(
+          !_leader_id.has_value() || (_leader_id->id() != source_node))) {
         vlog(
           _ctxlog.trace,
           "requesting full heartbeat from {}, leadership changed",
