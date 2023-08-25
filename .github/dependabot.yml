@@ -1,0 +1,13 @@
+---
+version: 2
+updates:
+  - package-ecosystem: go
+    directory: /src/go/k8s
+    schedule:
+      interval: daily
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+        exclude-patterns:
+          - "k8s.io/utils"
