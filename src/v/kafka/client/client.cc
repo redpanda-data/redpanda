@@ -306,6 +306,10 @@ client::create_topic(kafka::creatable_topic req) {
                   return ss::make_exception_future<create_topics_response>(
                     topic_error(
                       model::topic_view{res.data.topics[0].name}, ec));
+              case error_code::topic_authorization_failed:
+                  return ss::make_exception_future<create_topics_response>(
+                    topic_error(
+                      model::topic_view{res.data.topics[0].name}, ec));
               default:
                   return ss::make_ready_future<create_topics_response>(
                     std::move(res));
