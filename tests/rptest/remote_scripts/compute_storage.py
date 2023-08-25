@@ -7,7 +7,6 @@ Useful in tests if you want to know what files exist on a node or if they are a 
 from pathlib import Path
 import sys
 import json
-from collections.abc import Iterable
 
 
 def safe_isdir(p: Path) -> bool:
@@ -22,14 +21,14 @@ def safe_isdir(p: Path) -> bool:
         return False
 
 
-def safe_listdir(p: Path) -> Iterable[Path]:
+def safe_listdir(p: Path) -> list[Path]:
     """
     It's valid for directories to be deleted at any time, 
     in that case that the directory is missing, just return
     that there are no files.
     """
     try:
-        return p.iterdir()
+        return [f for f in p.iterdir()]
     except FileNotFoundError:
         return []
 
