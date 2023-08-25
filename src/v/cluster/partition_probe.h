@@ -29,6 +29,7 @@ public:
         virtual void add_bytes_produced(uint64_t) = 0;
         virtual void add_bytes_fetched(uint64_t) = 0;
         virtual void setup_metrics(const model::ntp&) = 0;
+        virtual void clear_metrics() = 0;
         virtual ~impl() noexcept = default;
     };
 
@@ -54,6 +55,8 @@ public:
         return _impl->add_bytes_fetched(bytes);
     }
 
+    void clear_metrics() { _impl->clear_metrics(); }
+
 private:
     std::unique_ptr<impl> _impl;
 };
@@ -67,6 +70,8 @@ public:
     void add_records_produced(uint64_t cnt) final { _records_produced += cnt; }
     void add_bytes_fetched(uint64_t cnt) final { _bytes_fetched += cnt; }
     void add_bytes_produced(uint64_t cnt) final { _bytes_produced += cnt; }
+
+    void clear_metrics() final;
 
 private:
     void setup_public_metrics(const model::ntp&);

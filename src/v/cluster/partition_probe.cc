@@ -24,6 +24,11 @@ replicated_partition_probe::replicated_partition_probe(
   : _partition(p)
   , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
+void replicated_partition_probe::clear_metrics() {
+    _metrics.clear();
+    _public_metrics.clear();
+}
+
 void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
     setup_internal_metrics(ntp);
     setup_public_metrics(ntp);
@@ -230,6 +235,7 @@ partition_probe make_materialized_partition_probe() {
         void add_records_produced(uint64_t) final {}
         void add_bytes_fetched(uint64_t) final {}
         void add_bytes_produced(uint64_t) final {}
+        void clear_metrics() final {}
     };
     return partition_probe(std::make_unique<impl>());
 }
