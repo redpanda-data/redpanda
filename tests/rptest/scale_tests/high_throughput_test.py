@@ -470,12 +470,9 @@ class HighThroughputTest(PreallocNodesTest):
         Make segments replicate to the cloud, then disrupt S3 connectivity
         and restore it
         """
-        self.setup_cluster(
-            # Segments should go into the cloud at a reasonable rate,
-            # that's why it is smaller than it should be
-            segment_bytes=int(self.config.segment_size_scaled / 2),
-            retention_local_bytes=2 * self.config.segment_size_scaled,
-        )
+        segment_size = int(self.config.segment_size_scaled / 8)
+        self.setup_cluster(segment_bytes=segment_size,
+                           retention_local_bytes=2 * segment_size)
 
         try:
             producer = KgoVerifierProducer(
