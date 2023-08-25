@@ -3,23 +3,23 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E env
   ${GO_PROGRAM} env GOROOT
   OUTPUT_VARIABLE GOROOT 
   OUTPUT_STRIP_TRAILING_WHITESPACE)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 function(add_wasm_transform NAME)
   find_program(TINYGO_BIN "tinygo")
-  set(WASM_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.wasm")
-  add_custom_command(OUTPUT ${WASM_OUTPUT}
-                     COMMAND env GOPATH="${GOPATH}" GOROOT="${GOROOT}" 
-                     ${TINYGO_BIN} build -o ${WASM_OUTPUT} -target wasi
-                     "${NAME}/transform.go"
+  set(wasm_output "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.wasm")
+  set(tinygo_cmd ${TINYGO_BIN} build -o ${wasm_output} -target wasi "${NAME}/transform.go")
+  add_custom_command(OUTPUT ${wasm_output}
+                     COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/retry.py
+                     ARGS -- ${CMAKE_COMMAND} -E env GOPATH="${GOPATH}" GOROOT="${GOROOT}" ${tinygo_cmd}
                      WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
 		     DEPENDS 
                     "${CMAKE_CURRENT_LIST_DIR}/${NAME}/transform.go"
                     # If we update any libraries then we need to rebuild transforms
                     "${CMAKE_CURRENT_LIST_DIR}/go.sum"
-                    "${CMAKE_CURRENT_LIST_DIR}/go.mod"
-                     )
+                    "${CMAKE_CURRENT_LIST_DIR}/go.mod")
   string(REPLACE "-" "_" target_name ${NAME})
-  add_custom_target(wasm_testdata_${target_name} DEPENDS "${WASM_OUTPUT}")
+  add_custom_target(wasm_testdata_${target_name} DEPENDS "${wasm_output}")
 endfunction(add_wasm_transform)
 
 add_wasm_transform(identity) 
