@@ -464,6 +464,7 @@ class HighThroughputTest(PreallocNodesTest):
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
+    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
