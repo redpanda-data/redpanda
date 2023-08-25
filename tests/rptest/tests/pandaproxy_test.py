@@ -1686,10 +1686,14 @@ class PandaProxyAutoAuthTest(PandaProxyTestMethods):
                                                      security=security)
 
     @cluster(num_nodes=3)
-    def test_restarts(self):
+    @parametrize(move_controller_leader=False)
+    @parametrize(move_controller_leader=True)
+    def test_restarts(self, move_controller_leader: bool):
         nodes = self.redpanda.nodes
         node_count = len(nodes)
         restart_node_idx = 0
+
+        admin = Admin(self.redpanda)
 
         def check_connection(hostname: str):
             result_raw = self._get_topics(hostname=hostname)
@@ -1700,6 +1704,11 @@ class PandaProxyAutoAuthTest(PandaProxyTestMethods):
 
         def restart_node():
             victim = nodes[restart_node_idx]
+
+            if move_controller_leader:
+                admin.partition_transfer_leadership(namespace="redpanda",
+                                                    topic="controller",
+                                                    partition=0)
             self.logger.info(f"Restarting node: {restart_node_idx}")
             self.redpanda.restart_nodes(victim)
 
