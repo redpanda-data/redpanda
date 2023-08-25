@@ -1,6 +1,9 @@
 area/k8s:
 - src/go/k8s/**/*
 
+k8s/tests:
+- src/go/k8s/**/*
+
 area/build:
 - cmake/**/*
 - .github/**/*
