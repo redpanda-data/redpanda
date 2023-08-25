@@ -277,6 +277,11 @@ ss::future<> consensus::stop() {
         co_await _snapshot_writer->close();
         _snapshot_writer.reset();
     }
+    /**
+     * Clear metrics after consensus instance is stopped.
+     */
+    _metrics.clear();
+    _probe->clear();
 }
 
 consensus::success_reply consensus::update_follower_index(
