@@ -184,6 +184,58 @@ offset_index::find_kaf_offset(kafka::offset upper_bound) {
     return res;
 }
 
+std::optional<offset_index::find_result>
+offset_index::find_timestamp(model::timestamp upper_bound) {
+    if (_initial_time == model::timestamp::missing()) {
+        // Bail out early if this is a version 1 index
+        // that does not index timestamps.
+        return std::nullopt;
+    }
+
+    size_t ix = 0;
+
+    auto search_result = maybe_find_offset(
+      upper_bound.value(), _time_index, _time_offsets);
+
+    if (std::holds_alternative<std::monostate>(search_result)) {
+        return std::nullopt;
+    } else if (std::holds_alternative<find_result>(search_result)) {
+        return std::get<find_result>(search_result);
+    }
+    auto maybe_ix = std::get<index_value>(search_result);
+
+    // Invariant: maybe_ix here can't be nullopt
+    ix = maybe_ix.ix;
+
+    // Decode all offset indices to build up the result.
+    decoder_t rp_dec(
+      _rp_index.get_initial_value(),
+      _rp_index.get_row_count(),
+      _rp_index.copy());
+    auto rp_offset = _fetch_ix(std::move(rp_dec), ix);
+    vassert(rp_offset.has_value(), "Inconsistent index state");
+
+    decoder_t kaf_dec(
+      _kaf_index.get_initial_value(),
+      _kaf_index.get_row_count(),
+      _kaf_index.copy());
+    auto kaf_offset = _fetch_ix(std::move(kaf_dec), ix);
+    vassert(kaf_offset.has_value(), "Inconsistent index state");
+
+    foffset_decoder_t file_dec(
+      _file_index.get_initial_value(),
+      _file_index.get_row_count(),
+      _file_index.copy(),
+      delta_delta_t(_min_file_pos_step));
+    auto file_pos = _fetch_ix(std::move(file_dec), ix);
+    vassert(file_pos.has_value(), "Inconsistent index state");
+
+    return offset_index::find_result{
+      .rp_offset = model::offset(*rp_offset),
+      .kaf_offset = kafka::offset(*kaf_offset),
+      .file_pos = *file_pos};
+}
+
 offset_index::coarse_index_t offset_index::build_coarse_index(
   uint64_t step_size, std::string_view index_path) const {
     vlog(
