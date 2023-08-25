@@ -184,7 +184,5 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
         self.logger.info("stopping producer")
         producer.stop()
-        self.logger.info("waiting for producer")
-        producer.wait()
         self.logger.info("waiting for consumer")
         consumer.wait()
