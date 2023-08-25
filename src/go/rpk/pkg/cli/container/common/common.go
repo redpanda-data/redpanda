@@ -31,7 +31,7 @@ import (
 
 var (
 	tag               = "latest"
-	redpandaImageBase = "vectorized/redpanda:" + tag
+	redpandaImageBase = "redpandadata/redpanda:" + tag
 )
 
 const (
