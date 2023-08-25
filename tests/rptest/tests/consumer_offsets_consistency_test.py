@@ -47,7 +47,8 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
         gd = self.rpk.group_describe(group_name)
 
         for p in gd.partitions:
-            offsets[f"{p.topic}/{p.partition}"] = p.current_offset
+            if p.current_offset is not None:
+                offsets[f"{p.topic}/{p.partition}"] = p.current_offset
         return offsets
 
     def get_group(self):
