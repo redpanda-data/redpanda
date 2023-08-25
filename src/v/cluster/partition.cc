@@ -593,6 +593,7 @@ ss::future<> partition::stop() {
           clusterlog.debug, "Stopping tm_stm on partition: {}", partition_ntp);
         co_await _tm_stm->stop();
     }
+    _probe.clear_metrics();
     vlog(clusterlog.debug, "Stopped partition {}", partition_ntp);
 }
 
