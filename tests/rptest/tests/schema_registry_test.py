@@ -1383,7 +1383,9 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.debug("Client completed")
 
     @cluster(num_nodes=3)
-    def test_restarts(self):
+    @parametrize(move_controller_leader=False)
+    @parametrize(move_controller_leader=True)
+    def test_restarts(self, move_controller_leader: bool):
         admin = Admin(self.redpanda)
 
         def check_connection(hostname: str):
@@ -1397,6 +1399,11 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             leader = admin.get_partition_leader(namespace="kafka",
                                                 topic="_schemas",
                                                 partition=0)
+
+            if move_controller_leader:
+                admin.partition_transfer_leadership(namespace="redpanda",
+                                                    topic="controller",
+                                                    partition=0)
             self.logger.info(f"Restarting node: {leader}")
             self.redpanda.restart_nodes(self.redpanda.get_node(leader))
             admin.await_stable_leader(topic="_schemas",
