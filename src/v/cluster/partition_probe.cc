@@ -29,9 +29,13 @@ replicated_partition_probe::replicated_partition_probe(
 }
 
 void replicated_partition_probe::reconfigure_metrics() {
+    clear_metrics();
+    setup_metrics(_partition.ntp());
+}
+
+void replicated_partition_probe::clear_metrics() {
     _metrics.clear();
     _public_metrics.clear();
-    setup_metrics(_partition.ntp());
 }
 
 void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
