@@ -10,6 +10,7 @@
 package container
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -345,7 +346,39 @@ func restartCluster(
 	}
 	err = waitForCluster(check(nodes), retries)
 	if err != nil {
-		return nil, err
+		// Attempt to fetch the latest stderr output from the first
+		// Redpanda node. It may reveal reasons for failing to start.
+		ctx, _ := common.DefaultCtx()
+		state := states[0]
+
+		json, errInspect := c.ContainerInspect(ctx, state.ContainerID)
+		if errInspect != nil {
+			return nil, fmt.Errorf("%v\n%v", err, errInspect)
+		}
+
+		reader, errLogs := c.ContainerLogs(
+			ctx,
+			state.ContainerID,
+			types.ContainerLogsOptions{
+				ShowStdout: false,
+				ShowStderr: true,
+				Since:      json.State.StartedAt,
+			},
+		)
+		if errLogs != nil {
+			return nil, fmt.Errorf("%v\nCould not get container logs: %v", err, errLogs)
+		}
+
+		scanner := bufio.NewScanner(reader)
+		errStr := ""
+		for scanner.Scan() {
+			errStr += scanner.Text() + "\n"
+		}
+		return nil, fmt.Errorf(
+			"%v\nErrors reported from the Docker container:\n%v",
+			err,
+			errors.New(errStr),
+		)
 	}
 	return nodes, nil
 }
