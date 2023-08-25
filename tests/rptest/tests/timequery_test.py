@@ -14,6 +14,7 @@ import threading
 from logging import Logger
 from typing import Callable
 
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RedpandaService, SISettings, make_redpanda_service
@@ -127,6 +128,14 @@ class BaseTimeQuery:
         leader_node = cluster.get_node(
             next(rpk.describe_topic(topic.name)).leader)
 
+        # For when using cloud storage, we expect offsets ahead
+        # of this to still hit raft for their timequeries.
+        is_redpanda = isinstance(cluster, RedpandaService)
+        if is_redpanda:
+            admin = Admin(self.redpanda)
+            status = admin.get_partition_cloud_storage_status(topic.name, 0)
+            local_start_offset = status["local_log_start_offset"]
+
         # Class defining expectations of timequery results to be checked
         class ex:
             def __init__(self, offset, ts=None, expect_read=True):
@@ -136,23 +145,20 @@ class BaseTimeQuery:
                 self.offset = offset
                 self.expect_read = expect_read
 
-        # Selection of interesting cases
-        expectations = [
-            ex(0),  # First message
-            ex(msg_count // 4),  # 25%th message
-            ex(msg_count // 2),  # 50%th message
-            ex(msg_count - 1),  # last message
+        # We will do approx. 10 timequeries within each segment.
+        step = msg_count // total_segments // 10
+
+        expectations = []
+        for o in range(0, msg_count, step):
+            expect_read = o < msg_count
+            expectations.append(ex(o, timestamps[o], expect_read))
+
+        # Add edge cases
+        expectations += [
             ex(0, timestamps[0] - 1000),  # Before the start of the log
             ex(-1, timestamps[msg_count - 1] + 1000,
                False)  # After last message
         ]
-
-        # For when using cloud storage, we expectr offsets ahead
-        # of this to still hit raft for their timequeries.  This is approximate,
-        # but fine as long as the test cases don't tread too near the gap.
-        local_start_offset = msg_count - ((local_retention) / record_size)
-
-        is_redpanda = isinstance(cluster, RedpandaService)
 
         # Remember which offsets we already hit, so that we can
         # make a good guess at whether subsequent hits on the same
@@ -164,7 +170,17 @@ class BaseTimeQuery:
         local_metrics = None
 
         def diff_bytes(old, new):
-            return new > old and new - old < self.log_segment_size
+            # Each timequery will download a maximum of two chunks, but
+            # we make the check extra generous to account for the index
+            # download.
+            return new - old <= self.chunk_size * 5
+
+        def diff_chunks(old, new):
+            # The sampling step for a segment's remote index is 64 KiB and the chunk
+            # size in this the is 128 KiB. Therefore, a timequery should never require
+            # more than two chunks. If the samples were perfectly aligned with the chunks,
+            # we'd only need one chunk, but that's not always the case.
+            return new - old <= 2
 
         for e in expectations:
             ts = e.ts
@@ -201,6 +217,10 @@ class BaseTimeQuery:
                     ("vectorized_cloud_storage_bytes_received_total",
                      diff_bytes)
                 ])
+
+                cloud_metrics.expect([(
+                    "vectorized_cloud_storage_read_path_chunks_hydrated_total",
+                    diff_chunks)])
 
             if is_redpanda and not cloud_storage and not batch_cache and e.expect_read:
                 # Expect to read at most one segment from disk: this validates that
@@ -266,6 +286,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
     # lookup of the proper segment for a time index, as well
     # as the lookup of the offset within that segment.
     log_segment_size = 1024 * 1024
+    chunk_size = 1024 * 128
 
     def setUp(self):
         # Don't start up redpanda yet, because we will need the
@@ -287,7 +308,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             'log_segment_size_min':
             32 * 1024,
             'cloud_storage_cache_chunk_size':
-            1024 * 128
+            self.chunk_size
         })
 
         if cloud_storage:
