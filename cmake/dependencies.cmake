@@ -34,7 +34,7 @@ set(Seastar_TESTING ON CACHE BOOL "" FORCE)
 set(Seastar_API_LEVEL 6 CACHE STRING "" FORCE)
 fetch_dep(seastar
   REPO https://github.com/redpanda-data/seastar.git
-  TAG e5207c456aa181595d6ae68421c36ee318c24fb6
+  TAG v23.3.x
   PATCH_COMMAND sed -i "s/add_subdirectory (tests/# add_subdirectory (tests/g" CMakeLists.txt)
 
 fetch_dep(avro
@@ -68,7 +68,7 @@ fetch_dep(roaring
 
 fetch_dep(GTest
   REPO https://github.com/google/googletest
-  TAG f8d7d77c06936315286eb55f8de22cd23c188571)
+  TAG v1.14.0)
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   set(TINYGO_TARBALL "tinygo-linux-amd64.tar.gz")
