@@ -181,6 +181,7 @@ public:
 
     std::optional<chunk_start_offset_t> last_offset() const;
     chunk_start_offset_t first_offset() const;
+    size_t chunk_count() const;
 
     map_t::iterator begin();
     map_t::iterator end();

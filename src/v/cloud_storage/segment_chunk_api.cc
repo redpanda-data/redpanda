@@ -478,6 +478,8 @@ chunk_start_offset_t segment_chunk_range::first_offset() const {
     return _chunks.begin()->first;
 }
 
+size_t segment_chunk_range::chunk_count() const { return _chunks.size(); }
+
 segment_chunk_range::map_t::iterator segment_chunk_range::begin() {
     return _chunks.begin();
 }

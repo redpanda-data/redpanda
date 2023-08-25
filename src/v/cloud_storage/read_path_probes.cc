@@ -125,6 +125,13 @@ ts_read_path_probe::ts_read_path_probe() {
             "Spillover manifest materialization latency histogram"))
           .aggregate(aggregate_labels),
 
+        sm::make_counter(
+          "chunks_hydrated",
+          [this] { return _chunks_hydrated; },
+          sm::description("Total number of hydrated chunks (some may have been "
+                          "evicted from the cache)"))
+          .aggregate(aggregate_labels),
+
         sm::make_histogram(
           "chunk_hydration_latency",
           [this] {
