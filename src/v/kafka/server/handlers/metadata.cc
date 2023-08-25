@@ -272,10 +272,12 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
                   security::acl_operation::describe,
                   tp_ns.tp,
                   authz_quiet{true})) {
-                continue;
+                res.push_back(make_error_topic_response(
+                  tp_ns.tp, error_code::topic_authorization_failed));
+            } else {
+                res.push_back(make_topic_response(
+                  ctx, request, md.metadata, is_node_isolated));
             }
-            res.push_back(
-              make_topic_response(ctx, request, md.metadata, is_node_isolated));
         }
 
         return ss::make_ready_future<std::vector<metadata_response::topic>>(

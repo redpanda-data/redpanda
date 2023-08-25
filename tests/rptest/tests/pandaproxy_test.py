@@ -287,9 +287,10 @@ class PandaProxyEndpoints(RedpandaTest):
     def _produce_topic(self,
                        topic,
                        data,
+                       hostname=None,
                        headers=HTTP_PRODUCE_BINARY_V2_TOPIC_HEADERS,
                        **kwargs):
-        return requests.post(f"{self._base_uri()}/topics/{topic}",
+        return requests.post(f"{self._base_uri(hostname)}/topics/{topic}",
                              data,
                              headers=headers,
                              **kwargs)
@@ -300,10 +301,11 @@ class PandaProxyEndpoints(RedpandaTest):
                      offset=0,
                      max_bytes=1024,
                      timeout_ms=1000,
+                     hostname=None,
                      headers=HTTP_FETCH_TOPIC_HEADERS,
                      **kwargs):
         return requests.get(
-            f"{self._base_uri()}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}",
+            f"{self._base_uri(hostname)}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}",
             headers=headers,
             **kwargs)
 
@@ -1711,6 +1713,9 @@ class PandaProxyAutoAuthTest(PandaProxyTestMethods):
                                                     partition=0)
             self.logger.info(f"Restarting node: {restart_node_idx}")
             self.redpanda.restart_nodes(victim)
+            admin.await_stable_leader(topic="controller",
+                                      partition=0,
+                                      namespace="redpanda")
 
         for _ in range(5):
             for n in self.redpanda.nodes:

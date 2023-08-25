@@ -13,6 +13,7 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/client/partitioners.h"
 #include "kafka/protocol/metadata.h"
+#include "model/fundamental.h"
 #include "random/generators.h"
 
 #include <seastar/core/future.hh>
@@ -24,6 +25,11 @@ topic_cache::apply(std::vector<metadata_response::topic>&& topics) {
     topics_t cache;
     cache.reserve(topics.size());
     for (const auto& t : topics) {
+        if (t.error_code == kafka::error_code::topic_authorization_failed) {
+            return ss::make_exception_future<>(
+              topic_error(model::topic_view{t.name}, t.error_code));
+        }
+
         const auto initial_partition_id = model::partition_id{
           random_generators::get_int<model::partition_id::type>(
             t.partitions.size())};
