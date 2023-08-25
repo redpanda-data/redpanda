@@ -16,6 +16,7 @@
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
@@ -740,24 +741,24 @@ FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
 
-    bool success = replicate_random_batches(gr, 5).get0();
+    bool success = replicate_random_batches(
+                     gr, 500, raft::consistency_level::leader_ack, 10s)
+                     .get0();
     BOOST_REQUIRE(success);
-
-    leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
-    auto r = leader_raft->linearizable_barrier().get();
+    result<model::offset> r(raft::errc::timeout);
+    retry_with_leader(gr, 5, 30s, [&r](raft_node& leader_node) {
+        return leader_node.consensus->linearizable_barrier().then(
+          [&r](result<model::offset> l_offset) {
+              r = l_offset;
+              return l_offset.has_value();
+          });
+    }).get();
 
-    std::vector<size_t> sizes;
-    if (r) {
-        auto logs = gr.read_all_logs();
-        for (auto& l : logs) {
-            sizes.push_back(l.second.size());
-        }
-        std::sort(sizes.begin(), sizes.end());
-        // at least 2 out of 3 nodes MUST have all entries replicated
-        BOOST_REQUIRE_GT(sizes[2], 1);
-        BOOST_REQUIRE_EQUAL(sizes[2], sizes[1]);
-    }
+    // linerizable barrier must succeed with stable leader
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r.value(), leader_raft->committed_offset());
+    BOOST_REQUIRE_EQUAL(r.value(), leader_raft->dirty_offset());
 };
 
 FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
