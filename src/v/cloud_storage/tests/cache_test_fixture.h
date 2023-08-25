@@ -107,10 +107,16 @@ public:
         return sharded_cache.local().clean_up_at_start();
     }
 
-    void trim_cache() {
+    void trim_cache(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt) {
         sharded_cache
           .invoke_on(
-            ss::shard_id{0}, [](cloud_storage::cache& c) { return c.trim(); })
+            ss::shard_id{0},
+            [&size_limit_override,
+             &object_limit_override](cloud_storage::cache& c) {
+                return c.trim(size_limit_override, object_limit_override);
+            })
           .get();
     }
 };
