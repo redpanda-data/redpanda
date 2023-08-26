@@ -43,5 +43,8 @@ class GCPClient:
         """
         # TODO: Implement zones list
         # Hardcoded to us-west2
-        z = {"us-west2": ['us-west2-a', 'us-west2-b', 'us-west2-c']}
+        z = {
+            "us-west2": ['us-west2-a', 'us-west2-b', 'us-west2-c'],
+            "us-west1": ['us-west1-a', 'us-west1-b', 'us-west1-c']
+        }
         return z[region][:1]
