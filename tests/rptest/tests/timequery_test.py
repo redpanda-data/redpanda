@@ -26,6 +26,7 @@ from rptest.util import (wait_until, segments_count,
                          wait_for_local_storage_truncate)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.utils.si_utils import BucketView
 
 from ducktape.mark import parametrize
 
@@ -272,7 +273,8 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         # test parameter to set cluster configs before starting.
         pass
 
-    def set_up_cluster(self, cloud_storage: bool, batch_cache: bool):
+    def set_up_cluster(self, cloud_storage: bool, batch_cache: bool,
+                       spillover: bool):
         self.redpanda.set_extra_rp_conf({
             # Testing with batch cache disabled is important, because otherwise
             # we won't touch the path in skipping_consumer that applies
@@ -301,6 +303,11 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                 cloud_storage_enable_remote_read=True,
                 cloud_storage_enable_remote_write=True,
             )
+            if spillover:
+                # Enable spillover with a low limit so that we can test
+                # timequery fetching from spillover manifest.
+                si_settings.cloud_storage_spillover_manifest_max_segments = 2
+                si_settings.cloud_storage_housekeeping_interval_ms = 1000
             self.redpanda.set_si_settings(si_settings)
         else:
             self.redpanda.add_extra_rp_conf(
@@ -308,22 +315,35 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
 
         self.redpanda.start()
 
-    def _do_test_timequery(self, cloud_storage: bool, batch_cache: bool):
-        self.set_up_cluster(cloud_storage, batch_cache)
+    def _do_test_timequery(self, cloud_storage: bool, batch_cache: bool,
+                           spillover: bool):
+        self.set_up_cluster(cloud_storage, batch_cache, spillover)
         self._test_timequery(cluster=self.redpanda,
                              cloud_storage=cloud_storage,
                              batch_cache=batch_cache)
+        if spillover:
+            # Check that we are actually using the spillover manifest
+            bucket = BucketView(self.redpanda)
+            manifest = bucket.manifest_for_ntp("tqtopic", 0)
+            assert manifest["archive_start_offset"] == 0
+            assert manifest["start_offset"] > 0
 
     @cluster(num_nodes=4)
-    @parametrize(cloud_storage=True, batch_cache=False)
-    @parametrize(cloud_storage=False, batch_cache=True)
-    @parametrize(cloud_storage=False, batch_cache=False)
-    def test_timequery(self, cloud_storage: bool, batch_cache: bool):
-        self._do_test_timequery(cloud_storage, batch_cache)
+    @parametrize(cloud_storage=True, batch_cache=False, spillover=False)
+    @parametrize(cloud_storage=True, batch_cache=False, spillover=True)
+    @parametrize(cloud_storage=False, batch_cache=True, spillover=False)
+    @parametrize(cloud_storage=False, batch_cache=False, spillover=False)
+    def test_timequery(self, cloud_storage: bool, batch_cache: bool,
+                       spillover: bool):
+        self._do_test_timequery(cloud_storage, batch_cache, spillover)
 
     @cluster(num_nodes=4)
-    def test_timequery_below_start_offset(self):
-        self.set_up_cluster(cloud_storage=False, batch_cache=False)
+    @parametrize(spillover=False)
+    @parametrize(spillover=True)
+    def test_timequery_below_start_offset(self, spillover: bool):
+        self.set_up_cluster(cloud_storage=False,
+                            batch_cache=False,
+                            spillover=spillover)
         self._test_timequery_below_start_offset(cluster=self.redpanda)
 
     @cluster(num_nodes=4)
@@ -332,7 +352,9 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         # likely to race timequeries with GC.
         self.log_segment_size = int(self.log_segment_size / 32)
         total_segments = 32 * 12
-        self.set_up_cluster(cloud_storage=True, batch_cache=False)
+        self.set_up_cluster(cloud_storage=True,
+                            batch_cache=False,
+                            spillover=False)
         local_retention = self.log_segment_size * 4
         record_size = 1024
         base_ts = 1664453149000
