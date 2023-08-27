@@ -141,7 +141,8 @@ enum class tx_errc {
     tx_not_found,
     tx_id_not_found,
     tx_hash_range_not_hosted,
-    tx_hash_range_not_inited
+    tx_hash_range_not_inited,
+    not_draining
 };
 
 std::ostream& operator<<(std::ostream&, const tx_errc&);
@@ -1130,6 +1131,68 @@ struct set_draining_transactions_request
     operator<<(std::ostream& o, const set_draining_transactions_request& r);
 
     auto serde_fields() { return std::tie(tm_ntp, draining, timeout); }
+};
+
+struct get_draining_transactions_reply
+  : serde::envelope<
+      get_draining_transactions_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    std::optional<draining_txs> operation;
+    tx_errc ec{};
+
+    get_draining_transactions_reply() noexcept = default;
+
+    get_draining_transactions_reply(tx_errc ec)
+      : ec(ec) {}
+
+    get_draining_transactions_reply(
+      std::optional<draining_txs> operation, tx_errc ec)
+      : operation(std::move(operation))
+      , ec(ec) {}
+
+    friend bool operator==(
+      const get_draining_transactions_reply&,
+      const get_draining_transactions_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_draining_transactions_reply& r);
+
+    auto serde_fields() { return std::tie(operation, ec); }
+};
+
+struct get_draining_transactions_request
+  : serde::envelope<
+      get_draining_transactions_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    using reply = get_draining_transactions_reply;
+    static constexpr const std::string_view name = "get_draining_transactions";
+
+    model::ntp tm_ntp;
+    model::timeout_clock::duration timeout;
+
+    get_draining_transactions_request() noexcept = default;
+
+    get_draining_transactions_request(
+      model::ntp tm_ntp, model::timeout_clock::duration timeout)
+      : tm_ntp(tm_ntp)
+      , timeout(timeout) {}
+
+    friend bool operator==(
+      const get_draining_transactions_request&,
+      const get_draining_transactions_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_draining_transactions_request& r);
+
+    auto serde_fields() { return std::tie(tm_ntp, timeout); }
 };
 
 struct describe_tx_registry_reply {

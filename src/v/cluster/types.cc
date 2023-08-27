@@ -111,6 +111,9 @@ std::ostream& operator<<(std::ostream& o, const tx_errc& err) {
     case tx_errc::tx_hash_range_not_inited:
         o << "tx_errc::tx_hash_range_not_inited";
         break;
+    case tx_errc::not_draining:
+        o << "tx_errc::not_draining";
+        break;
     }
     return o;
 }
@@ -1013,6 +1016,22 @@ operator<<(std::ostream& o, const set_draining_transactions_request& r) {
 std::ostream&
 operator<<(std::ostream& o, const set_draining_transactions_reply& r) {
     fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const get_draining_transactions_request& r) {
+    fmt::print(o, "{{ntp: {}}}", r.tm_ntp);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const get_draining_transactions_reply& r) {
+    if (r.operation) {
+        fmt::print(o, "{{ repartitioning_id {} ec {}}}", r.operation->id, r.ec);
+    } else {
+        fmt::print(o, "{{ ec {}}}", r.ec);
+    }
     return o;
 }
 
