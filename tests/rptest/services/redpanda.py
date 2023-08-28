@@ -1025,7 +1025,8 @@ class RedpandaServiceBase(Service):
                               start_timeout=None,
                               stop_timeout=None,
                               use_maintenance_mode=True,
-                              omit_seeds_on_idx_one=True):
+                              omit_seeds_on_idx_one=True,
+                              auto_assign_node_id=False):
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         restarter = RollingRestarter(self)
         restarter.restart_nodes(nodes,
@@ -1033,7 +1034,8 @@ class RedpandaServiceBase(Service):
                                 start_timeout=start_timeout,
                                 stop_timeout=stop_timeout,
                                 use_maintenance_mode=use_maintenance_mode,
-                                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
+                                omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+                                auto_assign_node_id=auto_assign_node_id)
 
     def set_cluster_config(self,
                            values: dict,
