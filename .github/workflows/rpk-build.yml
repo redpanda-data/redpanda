@@ -55,7 +55,7 @@ jobs:
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          curl -sSfL https://raw.githubusercontent.com/anchore/quill/main/install.sh | sh -s -- -b "$HOME/.local/bin" v0.2.0
+          curl -sSfL https://raw.githubusercontent.com/anchore/quill/main/install.sh | sh -s -- -b "$HOME/.local/bin" v0.4.1
 
       - name: Set up Go
         uses: actions/setup-go@v3
