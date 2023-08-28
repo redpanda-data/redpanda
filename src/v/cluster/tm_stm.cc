@@ -97,7 +97,8 @@ model::record_batch tm_stm::serialize_tx(tm_transaction tx) {
     return do_serialize_tx(old_tx);
 }
 
-model::record_batch tm_stm::serialize_hosted_transactions(hosted_txs hr) {
+model::record_batch
+tm_stm::serialize_hosted_transactions(locally_hosted_txs hr) {
     storage::record_batch_builder b(
       model::record_batch_type::tx_tm_hosted_trasactions, model::offset(0));
     b.add_raw_kv(
@@ -140,7 +141,7 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
     model::partition_id partition = get_partition();
     auto initial_hash_range = default_hash_range(
       partition, tx_coordinator_partition_amount);
-    hosted_txs initial_hosted_transactions{};
+    locally_hosted_txs initial_hosted_transactions{};
     auto res = hosted_transactions::add_range(
       initial_hosted_transactions, initial_hash_range);
     if (res == tx_hash_ranges_errc::success) {
@@ -351,13 +352,13 @@ tm_stm::do_sync(model::timeout_clock::duration timeout) {
 }
 
 ss::future<tm_stm::op_status>
-tm_stm::update_hosted_transactions(model::term_id term, hosted_txs hr) {
+tm_stm::update_hosted_transactions(model::term_id term, locally_hosted_txs hr) {
     auto gh = _gate.hold();
     co_return co_await do_update_hosted_transactions(term, std::move(hr));
 }
 
-ss::future<tm_stm::op_status>
-tm_stm::do_update_hosted_transactions(model::term_id term, hosted_txs hr) {
+ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
+  model::term_id term, locally_hosted_txs hr) {
     auto batch = serialize_hosted_transactions(std::move(hr));
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
@@ -1019,7 +1020,8 @@ ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
       "{}",
       model::record_batch_type::tx_tm_hosted_trasactions,
       key);
-    auto hash_ranges = serde::from_iobuf<hosted_txs>(rec.release_value());
+    auto hash_ranges = serde::from_iobuf<locally_hosted_txs>(
+      rec.release_value());
     _hosted_txes = hash_ranges;
     return ss::now();
 }

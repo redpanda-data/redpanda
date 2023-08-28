@@ -150,18 +150,24 @@ public:
         auto serde_fields() { return std::tie(id, ranges, transactions); }
     };
 
-    struct hosted_txs
-      : serde::
-          envelope<hosted_txs, serde::version<0>, serde::compat_version<0>> {
+    // this struct is basicly the same as other hosted_txs but we can't
+    // unify them in minor release because locally_hosted_txs already is
+    // being persisted to disk and `inited` doesn't make sense in other
+    // contexts (tx_registry & rpc types)
+    struct locally_hosted_txs
+      : serde::envelope<
+          locally_hosted_txs,
+          serde::version<0>,
+          serde::compat_version<0>> {
         bool inited{false};
         tx_hash_ranges_set hash_ranges{};
         absl::btree_set<kafka::transactional_id> excluded_transactions{};
         absl::btree_set<kafka::transactional_id> included_transactions{};
         draining_txs draining{};
 
-        hosted_txs() = default;
+        locally_hosted_txs() = default;
 
-        hosted_txs(
+        locally_hosted_txs(
           bool inited,
           tx_hash_ranges_set hr,
           absl::btree_set<kafka::transactional_id> et,
@@ -173,7 +179,9 @@ public:
           , included_transactions(std::move(it))
           , draining(std::move(dr)) {}
 
-        friend bool operator==(const hosted_txs&, const hosted_txs&) = default;
+        friend bool
+        operator==(const locally_hosted_txs&, const locally_hosted_txs&)
+          = default;
 
         auto serde_fields() {
             return std::tie(
@@ -197,7 +205,7 @@ public:
 
         model::offset offset;
         fragmented_vector<tm_transaction> transactions;
-        hosted_txs hash_ranges;
+        locally_hosted_txs hash_ranges;
     };
 
     explicit tm_stm(
@@ -348,7 +356,7 @@ private:
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
-    hosted_txs _hosted_txes;
+    locally_hosted_txs _hosted_txes;
     mutex _tx_thrashing_lock;
 
     ss::future<> apply(const model::record_batch& b) final;
@@ -362,9 +370,9 @@ private:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       do_update_tx(tm_transaction, model::term_id);
     ss::future<tm_stm::op_status>
-      update_hosted_transactions(model::term_id, hosted_txs);
+      update_hosted_transactions(model::term_id, locally_hosted_txs);
     ss::future<tm_stm::op_status>
-      do_update_hosted_transactions(model::term_id, hosted_txs);
+      do_update_hosted_transactions(model::term_id, locally_hosted_txs);
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
       kafka::transactional_id,
@@ -393,7 +401,7 @@ private:
     }
 
     model::record_batch serialize_tx(tm_transaction tx);
-    model::record_batch serialize_hosted_transactions(hosted_txs hr);
+    model::record_batch serialize_hosted_transactions(locally_hosted_txs hr);
 };
 
 inline txlock_unit::~txlock_unit() noexcept {
@@ -423,8 +431,8 @@ struct adl<cluster::tm_stm::draining_txs> {
 };
 
 template<>
-struct adl<cluster::tm_stm::hosted_txs> {
-    void to(iobuf& out, cluster::tm_stm::hosted_txs&& hr) {
+struct adl<cluster::tm_stm::locally_hosted_txs> {
+    void to(iobuf& out, cluster::tm_stm::locally_hosted_txs&& hr) {
         reflection::serialize(
           out,
           hr.inited,
@@ -433,7 +441,7 @@ struct adl<cluster::tm_stm::hosted_txs> {
           hr.included_transactions,
           hr.draining);
     }
-    cluster::tm_stm::hosted_txs from(iobuf_parser& in) {
+    cluster::tm_stm::locally_hosted_txs from(iobuf_parser& in) {
         auto inited = reflection::adl<bool>{}.from(in);
 
         auto hash_ranges_set
