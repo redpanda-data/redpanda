@@ -59,6 +59,11 @@ public:
     void full_heartbeat() { ++_full_heartbeat_requests; }
     void lw_heartbeat() { ++_lw_heartbeat_requests; }
 
+    void clear() {
+        _metrics.clear();
+        _public_metrics.clear();
+    }
+
 private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;

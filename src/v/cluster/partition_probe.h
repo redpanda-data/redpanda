@@ -31,6 +31,7 @@ public:
         virtual void add_bytes_fetched(uint64_t) = 0;
         virtual void add_schema_id_validation_failed() = 0;
         virtual void setup_metrics(const model::ntp&) = 0;
+        virtual void clear_metrics() = 0;
         virtual ~impl() noexcept = default;
     };
 
@@ -60,6 +61,8 @@ public:
         _impl->add_schema_id_validation_failed();
     }
 
+    void clear_metrics() { _impl->clear_metrics(); }
+
 private:
     std::unique_ptr<impl> _impl;
 };
@@ -76,6 +79,8 @@ public:
     void add_schema_id_validation_failed() final {
         ++_schema_id_validation_records_failed;
     };
+
+    void clear_metrics() final;
 
 private:
     void reconfigure_metrics();
