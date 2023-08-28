@@ -101,7 +101,7 @@ server::server(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
   std::optional<qdc_monitor::config> qdc_config,
-  ssx::thread_worker& tw,
+  ssx::singleton_thread_worker& tw,
   const std::unique_ptr<pandaproxy::schema_registry::api>& sr) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)

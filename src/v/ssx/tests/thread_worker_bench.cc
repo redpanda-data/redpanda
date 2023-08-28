@@ -13,8 +13,8 @@
 #include <seastar/testing/perf_tests.hh>
 
 ss::future<> run_test(size_t data_size) {
-    auto w = ssx::thread_worker{};
-    co_await w.start();
+    auto w = ssx::singleton_thread_worker{};
+    co_await w.start({});
 
     std::vector<ss::future<size_t>> vec;
     vec.reserve(data_size);

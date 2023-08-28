@@ -143,7 +143,7 @@ public:
 
     std::unique_ptr<cluster::controller> controller;
 
-    std::unique_ptr<ssx::thread_worker> thread_worker;
+    std::unique_ptr<ssx::singleton_thread_worker> thread_worker;
 
     ss::sharded<kafka::server> _kafka_server;
 

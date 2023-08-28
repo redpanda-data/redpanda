@@ -34,8 +34,8 @@ template<size_t tries, size_t stop_at>
 auto thread_worker_test() {
     BOOST_REQUIRE_GT(ss::smp::count, 1);
 
-    auto w = ssx::thread_worker{};
-    w.start().get();
+    auto w = ssx::singleton_thread_worker{};
+    w.start({}).get();
 
     std::vector<std::vector<ss::future<move_only>>> all_results(ss::smp::count);
 
@@ -71,6 +71,13 @@ auto thread_worker_test() {
     if (stop_at >= tries) {
         w.stop().get();
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(thread_worker_can_be_stopped_before_its_started) {
+    // During application startup, we register a defer for stopping before the
+    // worker is started.
+    auto w = ssx::singleton_thread_worker{};
+    w.stop().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(thread_worker_single_cancel_after) {

@@ -21,7 +21,7 @@ public:
     static constexpr const char* name = "GSSAPI";
 
     gssapi_authenticator(
-      ssx::thread_worker& thread_worker,
+      ssx::singleton_thread_worker& thread_worker,
       std::vector<gssapi_rule> rules,
       ss::sstring principal,
       ss::sstring keytab);
@@ -40,7 +40,7 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, gssapi_authenticator::state const s);
 
-    ssx::thread_worker& _worker;
+    ssx::singleton_thread_worker& _worker;
     security::acl_principal _principal;
     state _state{state::init};
     class impl;

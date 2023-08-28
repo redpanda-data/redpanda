@@ -65,7 +65,7 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cluster::tx_registry_frontend>&,
       std::optional<qdc_monitor::config>,
-      ssx::thread_worker&,
+      ssx::singleton_thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
 
     ~server() noexcept override = default;
@@ -161,7 +161,7 @@ public:
 
     latency_probe& latency_probe() { return *_probe; }
 
-    ssx::thread_worker& thread_worker() { return _thread_worker; }
+    ssx::singleton_thread_worker& thread_worker() { return _thread_worker; }
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;
@@ -222,7 +222,7 @@ private:
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
     std::unique_ptr<class latency_probe> _probe;
-    ssx::thread_worker& _thread_worker;
+    ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
 };
