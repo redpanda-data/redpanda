@@ -8,12 +8,13 @@
 
 [<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://redpanda.com/redpanda)
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
+<img src="https://www.google-analytics.com/collect?v=2&tid=G-G8V239NH6H&cid=555&t=event&en=page_view&dp=redpanda-data%2Fredpanda&dt=Redpanda%20GitHub" />
 
 Redpanda is a streaming data platform for developers. Kafka® API-compatible. ZooKeeper® free. JVM free. We built it from the ground up to eliminate complexity common to Apache Kafka, improve performance by up to 10x, and make the storage architecture safer, more resilient. The simpler devex lets you can focus on your code (instead of fighting Kafka) and develop new use cases that were never before possible. The business benefits from a significantly lower total cost and faster time to market. A new platform that scales with you from the smallest projects to petabytes of data distributed across the globe!
 
 # Community
 
-[Slack](https://redpanda.com/slack) is the main way the community interacts with one another in real time :) 
+[Slack](https://redpanda.com/slack) is the main way the community interacts with one another in real time :)
 
 [Github Discussion](https://github.com/redpanda-data/redpanda/discussions) is preferred for longer, async, thoughtful discussions
 
@@ -21,13 +22,13 @@ Redpanda is a streaming data platform for developers. Kafka® API-compatible. Zo
 
 [Code of conduct](./CODE_OF_CONDUCT.md) code of conduct for the community
 
-[Contributing docs](./CONTRIBUTING.md)  
+[Contributing docs](./CONTRIBUTING.md)
 
 # Getting Started
 
 ## Prebuilt Packages
 
-We recommend using our free & prebuilt stable releases below.  
+We recommend using our free & prebuilt stable releases below.
 
 ### On MacOS
 
@@ -43,7 +44,7 @@ brew install redpanda-data/tap/redpanda && rpk container start
 curl -1sLf \
   'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' \
   | sudo -E bash
-  
+
 sudo apt-get install redpanda
 ```
 
@@ -53,7 +54,7 @@ sudo apt-get install redpanda
 curl -1sLf \
   'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
   | sudo -E bash
-  
+
 sudo yum install redpanda
 ```
 
@@ -87,7 +88,7 @@ Replace `22.3.3` with the appropriate version you are trying to download.
         version: "latest"
 ```
 
-Now you should be able to connect to `redpanda` (kafka-api) running at `localhost:9092` 
+Now you should be able to connect to `redpanda` (kafka-api) running at `localhost:9092`
 
 
 ## Build Manually
@@ -109,7 +110,7 @@ For quicker dev setup, we provide a [docker image](tools/docker/README.md) with 
 
 # Release candidate builds
 
-We create a release candidate (RC) build when we get close to a new release and publish these to make new features available for testing. 
+We create a release candidate (RC) build when we get close to a new release and publish these to make new features available for testing.
 RC builds are not recommended for production use.
 
 ## RC releases on Debian/Ubuntu
