@@ -72,7 +72,7 @@ struct tx_hash_range
     }
 
     friend std::ostream&
-    operator<<(std::ostream& o, const tm_hash_range& range) {
+    operator<<(std::ostream& o, const tx_hash_range& range) {
         fmt::print(o, "[{}, {}]", range.first, range.last);
         return o;
     }
@@ -157,7 +157,7 @@ struct tx_hash_ranges_set
     }
 
     friend std::ostream&
-    operator<<(std::ostream& o, const tm_hash_ranges_set& ranges) {
+    operator<<(std::ostream& o, const tx_hash_ranges_set& ranges) {
         fmt::print(o, "{{ {} }}", ranges.ranges);
         return o;
     }
