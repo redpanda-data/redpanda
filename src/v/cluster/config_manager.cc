@@ -78,6 +78,14 @@ config_manager::config_manager(
         _raw_values = preload.raw_values;
         my_latest_status.invalid = preload.invalid;
         my_latest_status.unknown = preload.unknown;
+        /**
+         * Register notification immediately not to lose status updates.
+         */
+        _member_removed_notification
+          = _members.local().register_members_updated_notification(
+            [this](model::node_id id, model::membership_state new_state) {
+                handle_cluster_members_update(id, new_state);
+            });
     }
 }
 
@@ -209,12 +217,6 @@ ss::future<> config_manager::start() {
                       }).handle_exception([](std::exception_ptr const& e) {
         vlog(clusterlog.warn, "Exception from reconcile_status: {}", e);
     });
-
-    _member_removed_notification
-      = _members.local().register_members_updated_notification(
-        [this](model::node_id id, model::membership_state new_state) {
-            handle_cluster_members_update(id, new_state);
-        });
 
     _raft0_leader_changed_notification
       = _leaders.local().register_leadership_change_notification(
