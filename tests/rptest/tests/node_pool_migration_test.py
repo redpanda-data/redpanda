@@ -250,8 +250,9 @@ class NodePoolMigrationTest(PreallocNodesTest):
         self.start_producer()
         self.start_consumer()
         # add new nodes to the cluster
-        self.redpanda.for_nodes(new_pool,
-                                lambda n: self.redpanda.start_node(n))
+        self.redpanda.for_nodes(
+            new_pool,
+            lambda n: self.redpanda.start_node(n, auto_assign_node_id=True))
 
         def all_nodes_present():
             for n in self.redpanda.nodes:
