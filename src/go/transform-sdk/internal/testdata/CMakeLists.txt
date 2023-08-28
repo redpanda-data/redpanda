@@ -11,7 +11,7 @@ function(add_wasm_transform NAME)
   set(gopath ${CMAKE_CURRENT_BINARY_DIR}/${NAME})
   add_custom_command(OUTPUT ${wasm_output}
                      COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/retry.py
-                     ARGS -- ${CMAKE_COMMAND} -E env PATH="${GOROOT}/bin:$ENV{PATH}" GOPATH="${gopath}" GOROOT="${GOROOT}" ${tinygo_cmd}
+                     ARGS -- ${CMAKE_COMMAND} -E env PATH="${GOROOT}/bin:$ENV{PATH}" GOPATH="${gopath}" GOFLAGS="-modcacherw" GOROOT="${GOROOT}" ${tinygo_cmd}
                      WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
 		     DEPENDS 
                     "${CMAKE_CURRENT_LIST_DIR}/${NAME}/transform.go"
