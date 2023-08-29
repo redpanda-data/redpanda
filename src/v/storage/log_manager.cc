@@ -761,13 +761,17 @@ ss::future<usage_report> log_manager::disk_usage() {
         logs.push_back(it.second->handle);
     }
 
+    ss::semaphore limit(20);
+
     co_return co_await ss::map_reduce(
       logs.begin(),
       logs.end(),
-      [this, collection_threshold](log l) {
-          auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
-          return log->disk_usage(
-            gc_config(collection_threshold, _config.retention_bytes()));
+      [this, &limit, collection_threshold](log l) {
+          return ss::with_semaphore(limit, 1, [this, collection_threshold, l] {
+              auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
+              return log->disk_usage(
+                gc_config(collection_threshold, _config.retention_bytes()));
+          });
       },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });
