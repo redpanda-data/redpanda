@@ -8,9 +8,14 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "test_utils/async.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/sleep.hh>
+
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 /**
  * If you're looking for Google Test general documentation,
@@ -35,6 +40,14 @@ TEST(SeastarTest, Sleep) {
 TEST_CORO(SeastarTest, SleepCoro) {
     co_await seastar::sleep(std::chrono::milliseconds(100));
     ASSERT_EQ_CORO(100, 100);
+}
+
+TEST(SeastarTest, assert_eventually) {
+    boost_require_eventually(100ms, [] { return true; });
+}
+
+TEST_CORO(SeastarTest, assert_eventually_coro) {
+    boost_await_eventually(100ms, [] { return true; });
 }
 
 /*

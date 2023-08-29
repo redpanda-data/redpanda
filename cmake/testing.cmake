@@ -85,6 +85,9 @@ function (rp_test)
   foreach(i ${RP_TEST_DEFINITIONS})
     target_compile_definitions(${RP_TEST_BINARY_NAME} PRIVATE "${i}")
   endforeach()
+  if (RP_TEST_GTEST)
+    target_compile_definitions(${RP_TEST_BINARY_NAME} PRIVATE "IS_GTEST")
+  endif()
 
   install(TARGETS ${RP_TEST_BINARY_NAME} DESTINATION bin)
 
