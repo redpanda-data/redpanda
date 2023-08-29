@@ -139,6 +139,7 @@ log_manager::log_manager(
   , _resources(resources)
   , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
+  , _trigger_gc_jitter(0s, 5s)
   , _batch_cache(config.reclaim_opts) {
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
@@ -788,8 +789,14 @@ void log_manager::handle_disk_notification(storage::disk_space_alert alert) {
 }
 
 void log_manager::trigger_gc() {
-    _gc_triggered = true;
-    _housekeeping_sem.signal();
+    ssx::spawn_with_gate(_open_gate, [this] {
+        return ss::sleep_abortable(
+                 _trigger_gc_jitter.next_duration(), _abort_source)
+          .then([this] {
+              _gc_triggered = true;
+              _housekeeping_sem.signal();
+          });
+    });
 }
 
 gc_config log_manager::default_gc_config() const {
