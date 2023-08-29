@@ -48,6 +48,10 @@ class AdjacentSegmentMergingTest(RedpandaTest):
             cloud_storage_idle_timeout_ms=200,
             cloud_storage_segment_size_target=1024 * 1024 * 10,
             cloud_storage_segment_size_min=1024 * 1024 * 8,
+            # Disable compacted segment reupload to allow adjacent
+            # merger to do it's job. Otherwise the reupload may
+            # merge and reupload the whole range.
+            cloud_storage_enable_compacted_topic_reupload=False,
         )
 
         self.bucket_name = si_settings.cloud_storage_bucket
@@ -68,8 +72,11 @@ class AdjacentSegmentMergingTest(RedpandaTest):
         super().tearDown()
 
     @cluster(num_nodes=3)
-    @matrix(acks=[-1, 1], cloud_storage_type=get_cloud_storage_type())
-    def test_reupload_of_local_segments(self, acks, cloud_storage_type):
+    @matrix(acks=[-1, 1],
+            cloud_storage_type=get_cloud_storage_type(),
+            compaction=[True])
+    def test_reupload_of_local_segments(self, acks, cloud_storage_type,
+                                        compaction):
         """Test adjacent segment merging using using local data.
         The test starts by uploading large number of very small segments.
         The total amount of data produced is smaller than the target segment
@@ -78,12 +85,27 @@ class AdjacentSegmentMergingTest(RedpandaTest):
         The retention is not enable so the reupload process can use data 
         available locally.
         """
+
+        if compaction:
+            # Enable compaction for the topic
+            self.rpk.alter_topic_config(self.topic, "cleanup.policy",
+                                        "compact")
+            cfgs = self.rpk.describe_topic_configs(self.topic)
+            self.logger.debug(f"Topic {self.topic} configuration: {cfgs}")
+            # Make sure that the compaction is not working while we're producing the
+            # data.
+            self.rpk.cluster_config_set("log_compaction_interval_ms", "100000")
+
         for _ in range(10):
             # Every 'produce' call should create at least one segment
             # in the cloud which is 1MiB
             self.kafka_tools.produce(self.topic, 1024, 1024, acks)
             time.sleep(1)
         time.sleep(5)
+
+        if compaction:
+            self.logger.info(f"setting log_compaction_interval_ms to 1s")
+            self.rpk.cluster_config_set("log_compaction_interval_ms", "1000")
 
         def manifest_has_one_segment():
             try:
@@ -107,4 +129,4 @@ class AdjacentSegmentMergingTest(RedpandaTest):
                                                err.__traceback__)))
                 return False
 
-        wait_until(manifest_has_one_segment, 60)
+        wait_until(manifest_has_one_segment, 120)
