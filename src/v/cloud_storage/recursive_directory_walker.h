@@ -32,7 +32,7 @@ struct walk_result {
     uint64_t cache_size{0};
     size_t filtered_out_files{0};
     fragmented_vector<file_list_item> regular_files;
-    std::vector<ss::sstring> empty_dirs;
+    fragmented_vector<ss::sstring> empty_dirs;
 };
 
 class recursive_directory_walker {
