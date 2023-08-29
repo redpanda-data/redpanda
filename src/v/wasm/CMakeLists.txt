@@ -13,9 +13,11 @@ v_cc_library(
     transform_module.cc
     wasi.cc
     wasmedge.cc
+    wasmtime.cc
     work_queue.cc
   DEPS
     wasmedge
+    wasmtime
     v::storage
     v::model
     v::pandaproxy_schema_registry
