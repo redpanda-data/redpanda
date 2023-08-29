@@ -39,6 +39,7 @@ public:
     std::unique_ptr<hist_t::measurement> latency_measurement() {
         return _transform_latency.auto_measure();
     }
+    void record_latency(uint64_t v) { _transform_latency.record(v); }
     void transform_error() { ++_transform_errors; }
 
     void setup_metrics(ss::sstring transform_name);
