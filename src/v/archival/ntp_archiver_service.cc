@@ -129,15 +129,13 @@ maybe_make_adjacent_segment_merger(
   const storage::ntp_config& cfg,
   bool am_leader) {
     std::unique_ptr<adjacent_segment_merger> result = nullptr;
-    if (
-      cfg.is_archival_enabled() && !cfg.is_compacted()
-      && !cfg.is_read_replica_mode_enabled()) {
+    if (cfg.is_archival_enabled() && !cfg.is_read_replica_mode_enabled()) {
         result = std::make_unique<adjacent_segment_merger>(
           self,
           log,
           true,
-          config::shard_local_cfg()
-            .cloud_storage_enable_segment_merging.bind());
+          config::shard_local_cfg().cloud_storage_enable_segment_merging.bind(),
+          cfg.is_compacted());
         result->set_enabled(am_leader);
     }
     return result;

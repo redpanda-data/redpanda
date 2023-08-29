@@ -176,8 +176,10 @@ static constexpr int max_reuploads_per_run = 4;
 /// merged and reuploaded. The object produces metadata
 /// for the reuploaded segment.
 struct adjacent_segment_run {
-    explicit adjacent_segment_run(model::ntp ntp)
-      : ntp(std::move(ntp)) {}
+    explicit adjacent_segment_run(model::ntp ntp, bool compacted = false)
+      : ntp(std::move(ntp)) {
+        meta.is_compacted = compacted;
+    }
 
     model::ntp ntp;
     cloud_storage::segment_meta meta{};

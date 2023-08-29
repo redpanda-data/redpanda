@@ -143,7 +143,9 @@ bool adjacent_segment_run::maybe_add_segment(
                 ntp, s));
         }
     } else {
-        if (meta.size_bytes + s.size_bytes <= max_size) {
+        if (
+          meta.size_bytes + s.size_bytes <= max_size
+          && s.is_compacted == meta.is_compacted) {
             if (model::next_offset(meta.committed_offset) != s.base_offset) {
                 // In case if we're dealing with one of the old manifests with
                 // inconsistencies (overlapping offsets, etc).

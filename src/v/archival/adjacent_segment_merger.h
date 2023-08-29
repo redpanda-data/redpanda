@@ -28,7 +28,8 @@ public:
       ntp_archiver& parent,
       retry_chain_logger& ctxlog,
       bool,
-      config::binding<bool>);
+      config::binding<bool>,
+      bool is_compacted);
 
     ss::future<run_result>
     run(retry_chain_node& rtc, run_quota_t quota) override;
@@ -71,6 +72,8 @@ private:
     ss::abort_source _as;
     ss::gate _gate;
     ss::gate::holder _holder;
+    // Set to true if the topic is compacted
+    const bool _is_compacted{false};
 };
 
 } // namespace archival
