@@ -1,5 +1,6 @@
 import requests
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 
 def _rget(uri, headers=None):
@@ -52,7 +53,8 @@ def query_instance_meta(baseurl, headers=None):
     # Some real python right here
     _uris = list(map(str.__add__, [baseurl] * len(_path_list), _path_list))
     # Use threading pool to get all the values
-    for r in pool.map(_rget, _uris):
+    _kw = {"headers": headers}
+    for r in pool.map(partial(_rget, **_kw), _uris):
         # create keyname
         _u = r.url.replace(baseurl, "")
         _p = "-".join(_u.split('/'))
