@@ -259,10 +259,13 @@ class CloudCluster():
                                                  self.provider_secret)
         self._ducktape_meta = self.get_ducktape_meta()
         if self.config.provider == PROVIDER_AWS:
-            self.current.peer_vpc_id = self._ducktape_meta['vpc-id']
-            self.current.peer_owner_id = self._ducktape_meta['owner-id']
+            # We should have only 1 interface on ducktape client
+            self.current.peer_vpc_id = self._ducktape_meta[
+                'network-interfaces-macs-0-vpc-id']
+            self.current.peer_owner_id = self._ducktape_meta[
+                'network-interfaces-macs-0-owner-id']
         elif self.config.provider == PROVIDER_GCP:
-            # In case of GCP, we should have full URL not partial
+            # In case of GCP, we should have full URL not just id
             _net = self.provider_cli.get_vpc_by_network_id(
                 self._ducktape_meta['network-interfaces-0-network'].split(
                     '/')[-1],
@@ -335,6 +338,8 @@ class CloudCluster():
     def get_ducktape_meta(self):
         """
         Returns instance metadata based on current provider
+        This is placed in separate function to be able 
+        to add data processing if needed
         """
         return self.provider_cli.get_instance_meta()
 
@@ -823,7 +828,7 @@ class CloudCluster():
         for _rtb_id in _rtbs:
             self.provider_cli.create_route(
                 _rtb_id,
-                self.current.vpc_peering['AccepterVpcInfo']['CidrBlock'],
+                self.current.aws_vpc_peering['AccepterVpcInfo']['CidrBlock'],
                 self.current.vpc_peering_id)
 
         return
@@ -836,7 +841,7 @@ class CloudCluster():
         for _rtb_id in _rtbs:
             self.provider_cli.create_route(
                 _rtb_id,
-                self.current.vpc_peering['RequesterVpcInfo']['CidrBlock'],
+                self.current.aws_vpc_peering['RequesterVpcInfo']['CidrBlock'],
                 self.current.vpc_peering_id)
 
         return

@@ -1,7 +1,7 @@
-import requests
-from concurrent.futures import ThreadPoolExecutor
 from google.oauth2.service_account import Credentials
 from google.cloud import compute_v1
+
+from rptest.services.provider_clients.client_utils import query_instance_meta
 
 headers = {"Metadata-Flavor": "Google"}
 
@@ -171,10 +171,27 @@ class GCPClient:
         supports_pzs: false
         }      
         """
-        # TODO: Implement zones list
-        # Hardcoded to us-west2
-        z = {
-            "us-west2": ['us-west2-a', 'us-west2-b', 'us-west2-c'],
-            "us-west1": ['us-west1-a', 'us-west1-b', 'us-west1-c']
-        }
-        return z[region][:1]
+        # Prepare filter for region
+        # ref: https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.types.ListZonesRequest
+        _req = compute_v1.ListZonesRequest(project=self.project_id,
+                                           filter=f'region eq ".*{region}"')
+        # Get the list
+        _r = self.zones_cli.list(request=_req)
+        # _r contains iterator to zone items among other fields
+        # Object returned is ListPager: https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.services.zones.pagers.ListPager
+        _available = [i.name for i in _r]
+        # Return single zone
+        return _available[:1]
+
+    def get_instance_meta(self, target='localhost'):
+        """
+        Query meta from local node.
+        Source: https://cloud.google.com/compute/docs/metadata/querying-metadata
+        """
+        # prepare request data
+        _prefix = "http://"
+        _suffix = "/computeMetadata/v1/instance/"
+        _target = "169.254.169.254" if target == 'localhost' else target
+        uri = f"{_prefix}{_target}{_suffix}"
+
+        return query_instance_meta(uri, headers=headers)
