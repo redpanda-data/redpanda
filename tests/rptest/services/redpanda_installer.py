@@ -648,7 +648,7 @@ class RedpandaInstaller:
 
     def _async_download_on_node_unlocked(self, node, version):
         """
-        Asynchonously downloads Redpanda of the given version on the given
+        Asynchronously downloads Redpanda of the given version on the given
         node. Returns an iterator to the results.
 
         Expects the install lock to have been taken before calling.
