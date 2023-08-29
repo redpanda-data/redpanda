@@ -18,6 +18,7 @@
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/util/defer.hh>
 
 namespace cluster {
 
@@ -63,6 +64,8 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
 
     bool previous_iter_truncated_everything = true;
     while (!_as.abort_requested() && !_gate.is_closed()) {
+        auto d = ss::defer(
+          [this] { _last_event_processed_at = ss::lowres_clock::now(); });
         /// This background fiber can be woken-up via apply() when special
         /// batches are processed or by the storage layer when local
         /// eviction is triggered.

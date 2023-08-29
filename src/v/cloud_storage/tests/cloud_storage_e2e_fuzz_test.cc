@@ -17,8 +17,10 @@
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/lowres_clock.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -352,11 +354,20 @@ cloud_storage_e2e_fuzz_test::local_gc(int node_idx, int num_segments) {
         }
         total_size += size;
     }
+    auto start_time = ss::lowres_clock::now();
     size_t size_to_retain = total_size - size_to_remove;
     storage::gc_config cfg(model::timestamp::min(), size_to_retain);
     co_await log->gc(cfg);
-    // XXX: a later commit will replace this with a wait on the eviction_stm.
-    co_await ss::sleep(1s);
+    try {
+        // Ignore timeouts here: it's possible that running GC didn't actually
+        // schedule anything to be deleted.
+        co_await tests::cooperative_spin_wait_with_timeout(
+          10s, [prt, start_time] {
+              return prt->log_eviction_stm()->last_event_processed_at()
+                     > start_time;
+          });
+    } catch (...) {
+    }
 }
 
 ss::future<> cloud_storage_e2e_fuzz_test::local_compact(int node_idx) {
