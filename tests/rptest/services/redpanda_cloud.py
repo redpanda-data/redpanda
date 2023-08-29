@@ -521,14 +521,15 @@ class CloudCluster():
         self.config.id, self.current.network_id = \
             self._get_cluster_id_and_network_id()
 
+        if not self.isPublicNetwork:
+            self.create_vpc_peering()
+
         if superuser is not None:
             self._logger.debug(f'super username: {superuser.username}, '
                                f'algorithm: {superuser.algorithm}')
             self._create_user(superuser)
             self._create_acls(superuser.username)
 
-        if not self.isPublicNetwork:
-            self.create_vpc_peering()
         self.current.isAlive = True
         return self.config.id
 
@@ -783,8 +784,24 @@ class CloudCluster():
             # Create peering
             resp = self.cloudv2._http_post(
                 endpoint=self.current.network_endpoint, json=_body)
-            self._logger.debug(f"Created VPC peering: '{resp}'")
-            self.vpc_peering = resp
+            if resp is None:
+                # Check if such peering exists
+                self._logger.warning(self.cloudv2.lasterror)
+                if "network peering already exists" in self.cloudv2.lasterror:
+                    self.vpc_peering = self.cloudv2._http_get(
+                        endpoint=self.current.network_endpoint)[0]
+                    self.current.vpc_peering_id = self.vpc_peering
+                    # State should be ready at this point
+                    self._logger.warning(
+                        "Found VPC peering connection "
+                        f"'{self.vpc_peering['displayName']}', "
+                        f"state '{self.vpc_peering['state']}'")
+                    return
+                else:
+                    raise RuntimeError(self.cloudv2.lasterror)
+            else:
+                self._logger.debug(f"Created VPC peering: '{resp}'")
+                self.vpc_peering = resp
 
             # 3.
             # Wait for "pending acceptance"
