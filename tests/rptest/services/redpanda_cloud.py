@@ -121,7 +121,7 @@ class CloudClusterConfig:
     teleport_bot_token: str = ""
     id: str = ""  # empty string makes it easier to pass thru default value from duck.py
     delete_cluster: bool = True
-
+    gcp_keyfile: str = ""
     region: str = "us-west-2"
     provider: str = "AWS"
     type: str = "FMC"
