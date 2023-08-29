@@ -756,10 +756,15 @@ ss::future<usage_report> log_manager::disk_usage() {
         logs.push_back(it.second->handle);
     }
 
+    ss::semaphore limit(20);
+
     co_return co_await ss::map_reduce(
       logs.begin(),
       logs.end(),
-      [cfg](ss::shared_ptr<log> log) { return log->disk_usage(cfg); },
+      [&limit, cfg](ss::shared_ptr<log> log) {
+          return ss::with_semaphore(
+            limit, 1, [cfg, log] { return log->disk_usage(cfg); });
+      },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });
 }
