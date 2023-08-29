@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/cache_service.h"
+#include "cloud_storage/download_exception.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_segment_index.h"
@@ -117,37 +118,6 @@ generate_index_path(const cloud_storage::remote_segment_path& p) {
 using namespace std::chrono_literals;
 
 static constexpr size_t max_consume_size = 128_KiB;
-
-// These timeout/backoff settings are for S3 requests
-static ss::lowres_clock::duration cache_hydration_timeout = 60s;
-static ss::lowres_clock::duration cache_hydration_backoff = 250ms;
-
-// This backoff is for failure of the local cache to retain recently
-// promoted data (i.e. highly stressed cache)
-static ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
-
-download_exception::download_exception(
-  download_result r, std::filesystem::path p)
-  : result(r)
-  , path(std::move(p)) {
-    vassert(
-      r != download_result::success,
-      "Exception created with successful error code");
-}
-
-const char* download_exception::what() const noexcept {
-    switch (result) {
-    case download_result::failed:
-        return "Failed";
-    case download_result::notfound:
-        return "NotFound";
-    case download_result::timedout:
-        return "TimedOut";
-    case download_result::success:
-        vassert(false, "Successful result can't be used as an error");
-    }
-    __builtin_unreachable();
-}
 
 inline void expiry_handler_impl(ss::promise<ss::file>& pr) {
     pr.set_exception(ss::timed_out_error());
