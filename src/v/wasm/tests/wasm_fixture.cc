@@ -113,6 +113,7 @@ void WasmTestFixture::SetUp() {
     auto sr = std::make_unique<fake_schema_registry>();
     _sr = sr.get();
     _runtime = wasm::wasmedge::create_runtime(std::move(sr));
+    _runtime->start().get();
     _meta = {
       .name = model::transform_name(ss::sstring("test_wasm_transform")),
       .input_topic = model::random_topic_namespace(),
@@ -126,6 +127,7 @@ void WasmTestFixture::TearDown() {
         _engine->stop().get();
     }
     _factory = nullptr;
+    _runtime->stop().get();
     _runtime = nullptr;
     _probe = nullptr;
 }
