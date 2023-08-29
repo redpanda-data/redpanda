@@ -1904,6 +1904,9 @@ class RedpandaService(RedpandaServiceBase):
             self.write_tls_certs()
             self.write_bootstrap_cluster_config()
 
+        if start_si and self._si_settings is not None:
+            self.start_si()
+
         def start_one(node):
             node_overrides = node_config_overrides[
                 node] if node in node_config_overrides else {}
@@ -1967,9 +1970,6 @@ class RedpandaService(RedpandaServiceBase):
                                          sasl_plain_password=password,
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
-
-        if start_si and self._si_settings is not None:
-            self.start_si()
 
     def write_tls_certs(self):
         if not self._security.tls_provider:
