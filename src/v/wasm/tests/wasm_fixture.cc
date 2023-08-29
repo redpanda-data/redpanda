@@ -23,7 +23,7 @@
 #include "storage/record_batch_builder.h"
 #include "wasm/api.h"
 #include "wasm/probe.h"
-#include "wasm/wasmedge.h"
+#include "wasm/wasmtime.h"
 
 #include <seastar/util/file.hh>
 
@@ -112,7 +112,7 @@ void WasmTestFixture::SetUp() {
     _probe = std::make_unique<wasm::transform_probe>();
     auto sr = std::make_unique<fake_schema_registry>();
     _sr = sr.get();
-    _runtime = wasm::wasmedge::create_runtime(std::move(sr));
+    _runtime = wasm::wasmtime::create_runtime(std::move(sr));
     _runtime->start().get();
     _meta = {
       .name = model::transform_name(ss::sstring("test_wasm_transform")),
