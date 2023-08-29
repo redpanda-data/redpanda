@@ -24,7 +24,6 @@
 #include <seastar/core/future.hh>
 
 #include <absl/algorithm/container.h>
-#include <absl/container/flat_hash_map.h>
 #include <boost/range/irange.hpp>
 
 #include <algorithm>
@@ -37,8 +36,12 @@ compaction_key_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
     const model::offset o = e.offset + model::offset(e.delta);
 
-    auto it = _indices.find(e.key);
-    if (it != _indices.end()) {
+    auto [begin, end] = _indices.equal_range(_hasher(e.key));
+    auto it = std::find_if(begin, end, [&e](const auto& entry) {
+        return entry.second.key == e.key;
+    });
+
+    if (it != end) {
         if (o > it->second.offset) {
             // cannot be std::max() because _natural_index must be preserved
             it->second.offset = o;
@@ -59,15 +62,17 @@ compaction_key_reducer::operator()(compacted_index::entry&& e) {
              * pseudo random elemnent
              */
             auto mit = _indices.begin();
-            _keys_mem_usage -= mit->first.size();
+            _keys_mem_usage -= mit->second.key.size();
 
             // write the entry again - we ran out of scratch space
             _inverted.add(mit->second.natural_index);
             _indices.erase(mit);
         }
+        // TODO: account for short string optimisation here
         _keys_mem_usage += e.key.size();
         // 2. do the insertion
-        _indices.emplace(std::move(e.key), value_type(o, _natural_index));
+        _indices.emplace(
+          _hasher(e.key), value_type(std::move(e.key), o, _natural_index));
     }
 
     ++_natural_index; // MOST important
