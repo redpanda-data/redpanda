@@ -98,7 +98,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
     // Object to accumulate data as we walk directories
     walk_accumulator state(start_dir, tracker, std::move(collect_filter));
 
-    std::vector<ss::sstring> empty_dirs;
+    fragmented_vector<ss::sstring> empty_dirs;
 
     while (!state.empty()) {
         auto target = state.pop();
