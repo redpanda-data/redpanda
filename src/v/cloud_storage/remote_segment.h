@@ -54,16 +54,6 @@ generate_index_path(const cloud_storage::remote_segment_path& p);
 
 static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
 
-class download_exception : public std::exception {
-public:
-    explicit download_exception(download_result r, std::filesystem::path p);
-
-    const char* what() const noexcept override;
-
-    const download_result result;
-    std::filesystem::path path;
-};
-
 class remote_segment_exception : public std::runtime_error {
 public:
     explicit remote_segment_exception(const std::string& m)
