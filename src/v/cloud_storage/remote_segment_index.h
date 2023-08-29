@@ -85,6 +85,14 @@ public:
     /// returned.
     std::optional<find_result> find_kaf_offset(kafka::offset upper_bound);
 
+    /// Find index entry which is strictly lower than the timestamp
+    ///
+    /// The returned value has timestamp less than upper_bound.
+    /// If all elements are larger than 'upper_bound' nullopt is returned.
+    /// If all elements are smaller than 'upper_bound' the last value is
+    /// returned.
+    std::optional<find_result> find_timestamp(model::timestamp upper_bound);
+
     /// Builds a coarse index mapping kafka offsets to file positions. The step
     /// size is the resolution of the index. So given a step size of 16MiB, the
     /// result contains mappings of kafka offset to file position from the index
