@@ -58,9 +58,9 @@ public:
 
     ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
     roaring::Roaring end_of_stream();
+    size_t idx_mem_usage() { return _memory_tracker->consumption(); }
 
 private:
-    size_t idx_mem_usage() { return _memory_tracker->consumption(); }
     size_t _keys_mem_usage{0};
     size_t _max_mem{0};
     uint32_t _natural_index{0};
