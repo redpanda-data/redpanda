@@ -79,6 +79,9 @@ type ConsoleSpec struct {
 
 	// SecretStore contains the configuration for the cloud provider secret manager
 	SecretStore *SecretStore `json:"secretStore,omitempty"`
+
+	// The name of the ServiceAccount to be used by the Redpanda pods
+	ServiceAccount *string `json:"serviceAccount,omitempty"`
 }
 
 // Server is the Console app HTTP server config
