@@ -27,9 +27,8 @@
 
 using namespace std::chrono_literals;
 
-// XXX: a later commit will rename these
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define boost_await_eventually(...)                                            \
+#define RPTEST_REQUIRE_EVENTUALLY_CORO(...)                                    \
     do {                                                                       \
         try {                                                                  \
             co_await tests::cooperative_spin_wait_with_timeout(__VA_ARGS__);   \
@@ -40,7 +39,7 @@ using namespace std::chrono_literals;
     } while (0);
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define boost_require_eventually(...)                                          \
+#define RPTEST_REQUIRE_EVENTUALLY(...)                                         \
     do {                                                                       \
         try {                                                                  \
             tests::cooperative_spin_wait_with_timeout(__VA_ARGS__).get();      \

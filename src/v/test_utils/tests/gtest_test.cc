@@ -43,11 +43,11 @@ TEST_CORO(SeastarTest, SleepCoro) {
 }
 
 TEST(SeastarTest, assert_eventually) {
-    boost_require_eventually(100ms, [] { return true; });
+    RPTEST_REQUIRE_EVENTUALLY(100ms, [] { return true; });
 }
 
 TEST_CORO(SeastarTest, assert_eventually_coro) {
-    boost_await_eventually(100ms, [] { return true; });
+    RPTEST_REQUIRE_EVENTUALLY_CORO(100ms, [] { return true; });
 }
 
 /*
