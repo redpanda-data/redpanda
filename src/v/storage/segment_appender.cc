@@ -26,6 +26,7 @@
 
 #include <fmt/format.h>
 
+#include <optional>
 #include <ostream>
 
 namespace storage {
@@ -75,12 +76,7 @@ segment_appender::~segment_appender() noexcept {
       _bytes_flush_pending == 0 && _closed,
       "Must flush & close before deleting {}",
       *this);
-    if (_prev_head_write) {
-        vassert(
-          _prev_head_write->available_units() == 1,
-          "Unexpected pending head write {}",
-          *this);
-    }
+    check_no_dispatched_writes();
     vassert(
       _flush_ops.empty(),
       "Active flush operations on appender destroy {}",
@@ -104,6 +100,9 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _flushed_offset(o._flushed_offset)
   , _stable_offset(o._stable_offset)
   , _inflight(std::move(o._inflight))
+  , _inflight_dispatched(std::exchange(o._inflight_dispatched, 0))
+  , _dispatched_writes(std::exchange(o._dispatched_writes, 0))
+  , _merged_writes(std::exchange(o._merged_writes, 0))
   , _callbacks(std::exchange(o._callbacks, nullptr))
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(o._chunk_size) {
@@ -194,6 +193,11 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
                 return do_append(next_buf, next_sz);
             });
       });
+}
+
+void segment_appender::check_no_dispatched_writes() {
+    vassert(
+      _inflight_dispatched == 0, "Unexpected pending head write {}", *this);
 }
 
 void segment_appender::handle_inactive_timer() {
@@ -338,10 +342,7 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
              _concurrent_flushes,
              ss::semaphore::max_counter(),
              [this, step]() mutable {
-                 vassert(
-                   _prev_head_write->available_units() == 1,
-                   "Unexpected pending head write {}",
-                   *this);
+                 check_no_dispatched_writes();
                  // step - compute step rounded to alignment(4096); this is
                  // needed because during a truncation the follow up fallocation
                  // might not be page aligned
@@ -373,39 +374,50 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
 
 ss::future<> segment_appender::maybe_advance_stable_offset(
   const ss::lw_shared_ptr<inflight_write>& write) {
-    /*
-     * ack the largest committed offset such that all smaller
-     * offsets have been written to disk.
-     */
     vassert(!_inflight.empty(), "expected non-empty inflight set");
-    if (_inflight.front() == write) {
-        auto committed = _inflight.front()->offset;
+
+    vassert(
+      write->state == write_state::DISPATCHED,
+      "write not in dispatched state: {}",
+      write);
+
+    write->set_state(write_state::DONE);
+
+    std::optional<size_t> committed;
+
+    /*
+     * Pop off the largest possible contiguous set of DONE writes
+     * (which may be zero or more as writes can finish out of order)
+     * and then ack the largest committed (i.e., last) offset, and
+     * process any pending flush operations.
+     */
+    while (!_inflight.empty()
+           && _inflight.front()->state == write_state::DONE) {
+        auto next_co = _inflight.front()->committed_offset;
+
+        // check that in-flight writes have increasing offsets
+        vassert(
+          !committed || committed < next_co,
+          "invalid committed offset {} >= {}",
+          committed,
+          next_co);
+
+        committed = next_co;
         _inflight.pop_front();
+    }
 
-        while (!_inflight.empty()) {
-            auto next = _inflight.front();
-            if (next->done) {
-                _inflight.pop_front();
-                vassert(
-                  committed < next->offset,
-                  "invalid committed offset {} >= {}",
-                  committed,
-                  next->offset);
-                committed = next->offset;
-                continue;
-            }
-            break;
-        }
-
-        if (_callbacks) {
-            _callbacks->committed_physical_offset(committed);
-        }
-        _stable_offset = committed;
-        return process_flush_ops(committed);
-    } else {
-        write->done = true;
+    if (!committed) {
+        --_inflight_dispatched;
         return ss::now();
     }
+
+    // if we advanced the committed offset, do the callbacks and
+    // trigger any flush operations
+    if (_callbacks) {
+        _callbacks->committed_physical_offset(*committed);
+    }
+    _stable_offset = *committed;
+    return process_flush_ops(*committed);
 }
 
 ss::future<> segment_appender::process_flush_ops(size_t committed) {
@@ -415,6 +427,7 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
       });
 
     if (flushable == _flush_ops.end()) {
+        --_inflight_dispatched;
         return ss::now();
     }
 
@@ -425,6 +438,25 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
     _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
 
     return _out.flush().then([this, committed, ops = std::move(ops)]() mutable {
+        // Inflight_dispatched is incremented right before a write is dispatched
+        // and then must be decremented when the write is "finished", where we
+        // don't consider the write finished until any associated flush
+        // operations that were triggered as part of write completion (i.e.,
+        // stuff in this method) are complete.
+        //
+        // We also don't want to decrement this too late, i.e., in a
+        // continuation attached the write completion path (which would be
+        // easier), because then it might be non-zero unexpectedly as observed
+        // by a client do does an append + flush and waits for the futures to
+        // resolve: the flush future resolves immediately below in the set_value
+        // loop, but the future returned by *this* method may resolve later,
+        // after the client observes a non-zero value. So we decrement the
+        // counter here, *after* the flush has completed but before we set the
+        // futures which have been returned to the callers.
+        //
+        // Unfortunately this means we need to decrement this counter in
+        // multiple places.
+        --_inflight_dispatched;
         _flushed_offset = committed;
         /*
          * TODO: as an optimization, add a little house keeping to determine if
@@ -445,66 +477,112 @@ void segment_appender::dispatch_background_head_write() {
 
     const size_t start_offset = ss::align_down<size_t>(
       _committed_offset, _head->alignment());
-    const size_t expected = _head->dma_size();
-    const char* src = _head->dma_ptr();
-    vassert(
-      expected <= _chunk_size,
-      "Writes can be at most a full segment. Expected {}, attempted write: {}",
-      _chunk_size,
-      expected);
+
     // accounting synchronously
+    const auto prior_co = _committed_offset;
     _committed_offset += _head->bytes_pending();
     _bytes_flush_pending -= _head->bytes_pending();
+
+    inflight_write entry{
+      .full = _head->is_full(),
+      .chunk = _head,
+      .chunk_begin = _head->pending_aligned_begin(),
+      .chunk_end = _head->pending_aligned_end(),
+      .file_start_offset = start_offset,
+      .committed_offset = _committed_offset};
+
     // background write
     _head->flush();
+
+    auto head_sem = _prev_head_write;
+
+    if (entry.full) {
+        /*
+         * If _head is full then this is the last write to this chunk, so we
+         * clear out the head pointer synchronously here, then release it
+         * back into the chunk cache after the write completes. Otherwise,
+         * leave it in place so that new appends may accumulate. this
+         * optimization is meant to avoid redhydrating the chunk on append
+         * following a flush when the head has pending bytes and a write is
+         * dispatched.
+         */
+        _head = nullptr;
+        /*
+         * When the head becomes full it still needs to be properly
+         * sequenced with earlier writes to the same head, but no future
+         * writes to same head head are possible so the dependency chain is
+         * reset for the next head.
+         */
+        _prev_head_write = ss::make_lw_shared<ssx::semaphore>(1, head_sem_name);
+    }
+
+    if (!_inflight.empty() && _inflight.back()->try_merge(entry, prior_co)) {
+        // Yay! The latest in-flight write is still queued (i.e., has not
+        // been dispatched to the disk) so we just append this write
+        // to that entry.
+        ++_merged_writes;
+        return;
+    }
+
     _inflight.emplace_back(
-      ss::make_lw_shared<inflight_write>(_committed_offset));
+      ss::make_lw_shared<inflight_write>(std::move(entry)));
+
     auto w = _inflight.back();
 
     /*
-     * if _head is full then take control of it for this final write and then
-     * release it back into the chunk cache. otherwise, leave it in place so
-     * that new appends may accumulate. this optimization is meant to avoid
-     * redhydrating the chunk on append following a flush when the head has
-     * pending bytes and a write is dispatched.
+     * make sure that when the write is dispatched that is sequenced
+     * in-order on the correct semaphore by grabbing the units
+     * synchronously.
      */
-    const auto full = _head->is_full();
-    auto h = full ? std::exchange(_head, nullptr) : _head;
-
-    /*
-     * make sure that when the write is dispatched that is sequenced in-order on
-     * the correct semaphore by grabbing the units synchronously.
-     */
-    auto prev = _prev_head_write;
-    auto units = ss::get_units(*prev, 1);
+    auto units = ss::get_units(*head_sem, 1);
 
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
-      [h,
-       w,
-       this,
-       start_offset,
-       expected,
-       src,
-       prev,
-       units = std::move(units),
-       full]() mutable {
+      [w, this, head_sem, units = std::move(units)]() mutable {
           return units
-            .then([this, h, w, start_offset, expected, src, full](
-                    ssx::semaphore_units u) mutable {
+            .then([this, w](ssx::semaphore_units u) mutable {
+                const auto dma_size = w->chunk_end - w->chunk_begin;
+
+                vassert(
+                  dma_size <= _chunk_size && w->chunk_end > w->chunk_begin
+                    && w->chunk_end <= _chunk_size,
+                  "Bad write bounds _chunk_size: {}, chunk_begin: {}, "
+                  "chunk_end: {}",
+                  _chunk_size,
+                  w->chunk_begin,
+                  w->chunk_end);
+
+                // prevent any more writes from merging into this entry
+                // as it is about to be dma_write'd.
+                w->set_state(write_state::DISPATCHED);
+                ++_inflight_dispatched;
+                ++_dispatched_writes;
+
                 return _out
-                  .dma_write(start_offset, src, expected, _opts.priority)
-                  .then([this, h, w, expected, full](size_t got) {
+                  .dma_write(
+                    w->file_start_offset,
+                    w->chunk->data() + w->chunk_begin,
+                    dma_size,
+                    _opts.priority)
+                  .then([this, w](size_t got) {
                       /*
-                       * the continuation that captured full=true is the end of
-                       * the dependency chain for this chunk. it can be returned
-                       * to cache.
+                       * the continuation that captured full=true is the end
+                       * of the dependency chain for this chunk. it can be
+                       * returned to cache.
                        */
-                      if (full) {
-                          h->reset();
-                          internal::chunks().add(h);
+                      if (w->full) {
+                          w->chunk->reset();
+                          internal::chunks().add(w->chunk);
                       }
+
+                      // release our reference to the chunk since this
+                      // structure might hang around for a while in the
+                      // _inflight list but we can free this chunk to re-use
+                      // now as we won't use it again
+                      w->chunk = nullptr;
+
+                      const auto expected = w->chunk_end - w->chunk_begin;
                       if (unlikely(expected != got)) {
                           return size_missmatch_error(
                             "chunk::write", expected, got);
@@ -513,20 +591,11 @@ void segment_appender::dispatch_background_head_write() {
                   })
                   .finally([u = std::move(u)] {});
             })
-            .finally([prev] {});
+            .finally([head_sem] {});
       })
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not dma_write: {} - {}", e, *this);
       });
-
-    /*
-     * when the head becomes full it still needs to be properly sequenced (see
-     * above), but no future writes to same head head are possible so the
-     * dependency chain is reset for the next head.
-     */
-    if (full) {
-        _prev_head_write = ss::make_lw_shared<ssx::semaphore>(1, head_sem_name);
-    }
 }
 
 ss::future<> segment_appender::flush() {
@@ -573,10 +642,7 @@ ss::future<> segment_appender::hard_flush() {
              _concurrent_flushes,
              ss::semaphore::max_counter(),
              [this]() mutable {
-                 vassert(
-                   _prev_head_write->available_units() == 1,
-                   "Unexpected pending head write {}",
-                   *this);
+                 check_no_dispatched_writes();
                  vassert(
                    _flush_ops.empty(),
                    "Pending flushes after hard flush {}",
@@ -588,13 +654,62 @@ ss::future<> segment_appender::hard_flush() {
       });
 }
 
+bool segment_appender::inflight_write::try_merge(
+  const inflight_write& other, size_t pco) {
+    if (state == QUEUED && chunk == other.chunk) {
+        // this next check is an assert rather than a check since we always
+        // expect the writes to match up (i.e., right bound of prior write
+        // matches the left bound of the current one), since the in-flight
+        // writes should form a contiguous series of writes and we only check
+        // the last write for merging.
+        vassert(
+          committed_offset == pco, "in try_merge writes didn't touch: {} {}");
+
+        // the lhs write cannot be full since then how could the next write
+        // share its chunk: it must use a new chunk
+        vassert(!full, "the lhs write cannot be full");
+
+        // lhs chunk cannot start or end after rhs
+        vassert(
+          chunk_begin <= other.chunk_begin && chunk_end <= other.chunk_end,
+          "lhs {}-{}, rhs: {}-{}",
+          chunk_begin,
+          chunk_end,
+          other.chunk_begin,
+          other.chunk_end);
+
+        // we merge this write in by updating everything associated with the
+        // right boundary
+        committed_offset = other.committed_offset;
+        chunk_end = other.chunk_end;
+
+        // the only possible change here is false -> true, which occurs
+        // when the rhs completes the chunk
+        full = other.full;
+
+        return true;
+    }
+    return false;
+}
+
 std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
-    // NOTE: intrusivelist.size() == O(N) but often N is very small, ~8
     return o << "{no_of_chunks:" << a._opts.number_of_chunks
              << ", closed:" << a._closed
              << ", fallocation_offset:" << a._fallocation_offset
              << ", committed_offset:" << a._committed_offset
+             << ", inflight_writes:" << a._inflight.size()
+             << ", dispatched_writes:" << a._inflight_dispatched
              << ", bytes_flush_pending:" << a._bytes_flush_pending << "}";
+}
+
+std::ostream&
+operator<<(std::ostream& s, const segment_appender::inflight_write& op) {
+    fmt::print(
+      s,
+      "{{state: {}, committed_offest: {}}}",
+      (int)op.state,
+      op.committed_offset);
+    return s;
 }
 
 } // namespace storage
