@@ -21,7 +21,6 @@
 #include "kafka/protocol/list_offsets.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
-#include "model/timeout_clock.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/auth_utils.h"
 #include "pandaproxy/config_utils.h"
@@ -33,7 +32,6 @@
 #include "pandaproxy/util.h"
 #include "security/acl.h"
 #include "security/ephemeral_credential_store.h"
-#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
 
@@ -50,7 +48,6 @@ namespace pandaproxy::schema_registry {
 using server = ctx_server<service>;
 const security::acl_principal principal{
   security::principal_type::ephemeral_user, "__schema_registry"};
-static constexpr auto initial_create_acls_backoff = 10ms;
 
 class wrap {
 public:
@@ -200,12 +197,7 @@ ss::future<> service::do_start() {
     });
 }
 
-ss::future<>
-create_acls(cluster::security_frontend& security_fe, ss::abort_source& as) {
-    // Initialize with any non-success errc
-    std::vector<cluster::errc> err_vec{cluster::errc::timeout};
-
-    auto create_acls_backoff = initial_create_acls_backoff;
+ss::future<> create_acls(cluster::security_frontend& security_fe) {
     std::vector<security::acl_binding> princpal_acl_binding{
       security::acl_binding{
         security::resource_pattern{
@@ -218,25 +210,21 @@ create_acls(cluster::security_frontend& security_fe, ss::abort_source& as) {
           security::acl_operation::all,
           security::acl_permission::allow}}};
 
-    while (err_vec[0] != cluster::errc::success && !as.abort_requested()) {
-        err_vec = co_await security_fe.create_acls(princpal_acl_binding, 1s);
+    auto err_vec = co_await security_fe.create_acls(princpal_acl_binding, 5s);
+    auto it = std::find_if(err_vec.begin(), err_vec.end(), [](const auto& err) {
+        return err != cluster::errc::success;
+    });
 
-        if (err_vec[0] != cluster::errc::success) {
-            vlog(
-              plog.warn,
-              "Failed to create ACLs for {}, err {} - {}",
-              principal,
-              err_vec[0],
-              cluster::make_error_code(err_vec[0]).message());
-
-            co_await ss::sleep_abortable(create_acls_backoff, as);
-            create_acls_backoff = create_acls_backoff < 1s
-                                    ? create_acls_backoff * 2
-                                    : 1s;
-        }
+    if (it != err_vec.end()) {
+        vlog(
+          plog.warn,
+          "Failed to create ACLs for {}, err {} - {}",
+          principal,
+          *it,
+          cluster::make_error_code(*it).message());
+    } else {
+        vlog(plog.debug, "Successfully created ACLs for {}", principal);
     }
-
-    vlog(plog.debug, "Successfully created ACLs for {}", principal);
 }
 
 ss::future<> service::configure() {
@@ -253,10 +241,6 @@ ss::future<> service::configure() {
       _ctx.smp_sg, [has_ephemeral_credentials](service& s) {
           s._has_ephemeral_credentials = has_ephemeral_credentials;
       });
-
-    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-        return create_acls(_controller->get_security_frontend().local(), _as);
-    });
 }
 
 ss::future<> service::mitigate_error(std::exception_ptr eptr) {
@@ -265,17 +249,29 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
         return ss::now();
     }
     vlog(plog.warn, "mitigate_error: {}", eptr);
-    return ss::make_exception_future<>(eptr).handle_exception_type(
-      [this, eptr](kafka::client::broker_error const& ex) {
+    return ss::make_exception_future<>(eptr)
+      .handle_exception_type(
+        [this, eptr](kafka::client::broker_error const& ex) {
+            if (
+              ex.error == kafka::error_code::sasl_authentication_failed
+              && _has_ephemeral_credentials) {
+                return inform(ex.node_id).then([this]() {
+                    // This fully mitigates, don't rethrow.
+                    return _client.local().connect();
+                });
+            }
+
+            // Rethrow unhandled exceptions
+            return ss::make_exception_future<>(eptr);
+        })
+      .handle_exception_type([this,
+                              eptr](kafka::client::topic_error const& ex) {
           if (
-            ex.error == kafka::error_code::sasl_authentication_failed
+            ex.error == kafka::error_code::topic_authorization_failed
             && _has_ephemeral_credentials) {
-              return inform(ex.node_id).then([this]() {
-                  // This fully mitigates, don't rethrow.
-                  return _client.local().connect();
-              });
+              return create_acls(_controller->get_security_frontend().local());
           }
-          // Rethrow unhandled exceptions
+
           return ss::make_exception_future<>(eptr);
       });
 }
@@ -416,7 +412,6 @@ ss::future<> service::start() {
 }
 
 ss::future<> service::stop() {
-    _as.request_abort();
     co_await _gate.close();
     co_await _server.stop();
 }
