@@ -81,6 +81,8 @@ std::string_view to_string_view(feature f) {
         return "cloud_storage_scrubbing";
     case feature::enhanced_force_reconfiguration:
         return "enhanced_force_reconfiguration";
+    case feature::broker_time_based_retention:
+        return "broker_time_based_retention";
 
     /*
      * testing features
