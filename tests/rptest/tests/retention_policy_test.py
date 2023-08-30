@@ -599,14 +599,21 @@ class BogusTimestampTest(RedpandaTest):
                          **kwargs)
 
     @cluster(num_nodes=2)
-    @parametrize(mixed_timestamps=False)
-    @parametrize(mixed_timestamps=True)
-    def test_bogus_timestamps(self, mixed_timestamps):
+    @matrix(mixed_timestamps=[True, False],
+            use_broker_timestamps=[True, False])
+    def test_bogus_timestamps(self, mixed_timestamps: bool,
+                              use_broker_timestamps: bool):
         """
         :param mixed_timestamps: if true, test with a mixture of valid and invalid
         timestamps in the same segment (i.e. timestamp adjustment should use the
         valid timestamps rather than falling back to mtime)
         """
+
+        # broker_time_based_retention fixes this test case for new segments. (disable it to simulate a legacy condition)
+        self.redpanda.set_feature_active('broker_time_based_retention',
+                                         use_broker_timestamps,
+                                         timeout_sec=10)
+
         self.client().alter_topic_config(self.topic, 'segment.bytes',
                                          str(self.segment_size))
 
@@ -656,48 +663,52 @@ class BogusTimestampTest(RedpandaTest):
             producer.start()
             producer.wait()
 
-        # We should have written the expected number of segments, and nothing can
-        # have been gc'd yet because all the segments have max timestmap in the future
-        segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
-            "kafka", self.topic, 0)
-        self.logger.debug(f"Segments after write: {segs}")
-        assert len(segs) >= segments_count
+        if not use_broker_timestamps:
+            # We should have written the expected number of segments, and nothing can
+            # have been gc'd yet because all the segments have max timestmap in the future
+            segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+                "kafka", self.topic, 0)
+            self.logger.debug(f"Segments after write: {segs}")
+            assert len(segs) >= segments_count
 
-        # Give retention code some time to kick in: we are expecting that it does not
-        # remove anything because the timestamps are too far in the future.
-        with self.redpanda.monitor_log(self.redpanda.nodes[0]) as mon:
-            # Time period much larger than what we set log_compaction_interval_ms to
-            sleep(10)
+            # Give retention code some time to kick in: we are expecting that it does not
+            # remove anything because the timestamps are too far in the future.
+            with self.redpanda.monitor_log(self.redpanda.nodes[0]) as mon:
+                # Time period much larger than what we set log_compaction_interval_ms to
+                sleep(10)
 
-            # Even without setting the storage_ignore_timestamps_in_future_sec parameter,
-            # we should get warnings about the timestamps.
-            mon.wait_until("found segment with bogus retention timestamp",
-                           timeout_sec=30,
-                           backoff_sec=1)
-
-        # The GC should not have deleted anything
-        segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
-            "kafka", self.topic, 0)
-        self.logger.debug(f"Segments after first GC: {segs}")
-        assert len(segs) >= segments_count
-
-        # Enable the escape hatch to tell Redpanda to correct timestamps that are
-        # too far in the future
-        with self.redpanda.monitor_log(self.redpanda.nodes[0]) as mon:
-            self.redpanda.set_cluster_config({
-                'storage_ignore_timestamps_in_future_sec':
-                60,
-            })
-
-            if mixed_timestamps:
-                mon.wait_until(
-                    "Adjusting retention timestamp.*to max valid record",
-                    timeout_sec=30,
-                    backoff_sec=1)
-            else:
-                mon.wait_until("Adjusting retention timestamp.*to file mtime",
+                # Even without setting the storage_ignore_timestamps_in_future_sec parameter,
+                # we should get warnings about the timestamps.
+                mon.wait_until("found segment with bogus retention timestamp",
                                timeout_sec=30,
                                backoff_sec=1)
+
+            # The GC should not have deleted anything
+            segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+                "kafka", self.topic, 0)
+            self.logger.debug(f"Segments after first GC: {segs}")
+            assert len(segs) >= segments_count
+
+            # Enable the escape hatch to tell Redpanda to correct timestamps that are
+            # too far in the future
+            with self.redpanda.monitor_log(self.redpanda.nodes[0]) as mon:
+                self.redpanda.set_cluster_config({
+                    'storage_ignore_timestamps_in_future_sec':
+                    60,
+                })
+
+                if mixed_timestamps:
+                    mon.wait_until(
+                        "Adjusting retention timestamp.*to max valid record",
+                        timeout_sec=30,
+                        backoff_sec=1)
+                else:
+                    mon.wait_until(
+                        "Adjusting retention timestamp.*to file mtime",
+                        timeout_sec=30,
+                        backoff_sec=1)
+
+        # either with broker_time_based_retention active or storage_ignore_timestamps_in_future_sec enable, we are now able to apply retention
 
         def prefix_truncated():
             segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
