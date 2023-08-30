@@ -75,7 +75,6 @@ struct protocol_metadata
 
 // The sequence used to track the order of follower append entries request
 using follower_req_seq = named_type<uint64_t, struct follower_req_seq_tag>;
-using heartbeats_suppressed = ss::bool_class<struct enable_suppression_tag>;
 struct follower_index_metadata {
     explicit follower_index_metadata(vnode node)
       : node_id(node) {}
@@ -86,6 +85,10 @@ struct follower_index_metadata {
     follower_index_metadata& operator=(follower_index_metadata&&) = delete;
     // resets the follower state i.e. all indicies and sequence numbers
     void reset();
+
+    bool are_heartbeats_suppressed() const {
+        return suppress_heartbeats_count > 0;
+    }
 
     vnode node_id;
     // index of last known log for this follower
@@ -171,18 +174,19 @@ struct follower_index_metadata {
      * checking if recovery may be finished
      */
     ss::condition_variable follower_state_change;
+
     /**
-     * We prevent race conditions accessing suppress_heartbeats with MVCC based
-     * on last_suppress_heartbeats_seq field.
+     * We prevent race conditions by counting the number of suppressing requests
+     * in flight.
      */
-    heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
-    follower_req_seq last_suppress_heartbeats_seq{0};
+    size_t suppress_heartbeats_count = 0;
 
     std::optional<protocol_metadata> last_sent_protocol_meta;
 
     friend std::ostream&
     operator<<(std::ostream& o, const follower_index_metadata& i);
 };
+
 /**
  * class containing follower statistics, this may be helpful for debugging,
  * metrics and querying for follower status

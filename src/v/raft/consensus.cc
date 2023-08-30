@@ -3350,27 +3350,41 @@ void consensus::maybe_update_majority_replicated_index() {
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
-heartbeats_suppressed consensus::are_heartbeats_suppressed(vnode id) const {
-    if (!_fstats.contains(id)) {
-        return heartbeats_suppressed::yes;
+consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
+  consensus& parent, vnode target) noexcept
+  : _parent(&parent)
+  , _target(target) {
+    auto it = _parent->_fstats.find(_target);
+    if (it == _parent->_fstats.end()) {
+        // make unsuppress() a noop
+        _parent = nullptr;
+        return;
     }
-
-    return _fstats.get(id).suppress_heartbeats;
+    ++it->second.suppress_heartbeats_count;
 }
 
-void consensus::update_suppress_heartbeats(
-  vnode id, follower_req_seq last_seq, heartbeats_suppressed suppressed) {
-    if (auto it = _fstats.find(id); it != _fstats.end()) {
-        /**
-         * Since there may be concurrent sources causing heartbeats suppression
-         * we use last_suppress_heartbeats_seq to control concurrency of
-         * heartbeats state update
-         */
-        if (last_seq >= it->second.last_suppress_heartbeats_seq) {
-            it->second.last_suppress_heartbeats_seq = last_seq;
-            it->second.suppress_heartbeats = suppressed;
-        }
+void consensus::suppress_heartbeats_guard::unsuppress() {
+    if (!_parent) {
+        return;
     }
+
+    auto it = _parent->_fstats.find(_target);
+    if (it == _parent->_fstats.end()) {
+        // the follower could be removed while the guard is alive
+        _parent = nullptr;
+        return;
+    }
+
+    vassert(
+      it->second.suppress_heartbeats_count > 0,
+      "ntp {}: suppress/unsuppress_heartbeats mismatch",
+      _parent->ntp());
+    --it->second.suppress_heartbeats_count;
+    _parent = nullptr;
+}
+
+consensus::suppress_heartbeats_guard consensus::suppress_heartbeats(vnode id) {
+    return suppress_heartbeats_guard{*this, id};
 }
 
 void consensus::update_heartbeat_status(vnode id, bool success) {

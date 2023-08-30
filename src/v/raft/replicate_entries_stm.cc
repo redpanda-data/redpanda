@@ -141,10 +141,7 @@ replicate_entries_stm::send_append_entries_request(
           return result<append_entries_reply>(
             errc::append_entries_dispatch_error);
       })
-      .finally([this, n] {
-          _ptr->update_suppress_heartbeats(
-            n, _followers_seq[n], heartbeats_suppressed::no);
-      });
+      .finally([this, n] { _hb_guards[n].unsuppress(); });
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
@@ -268,8 +265,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
     cfg.for_each_broker_id([this](const vnode& rni) {
         // suppress follower heartbeat, before appending to self log
         if (rni != _ptr->_self) {
-            _ptr->update_suppress_heartbeats(
-              rni, _followers_seq[rni], heartbeats_suppressed::yes);
+            _hb_guards.emplace(rni, _ptr->suppress_heartbeats(rni));
         }
     });
     _units = ss::make_lw_shared<units_t>(std::move(u));
@@ -286,8 +282,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
         // We are not dispatching request to followers that are
         // recovering
         if (should_skip_follower_request(rni)) {
-            _ptr->update_suppress_heartbeats(
-              rni, _followers_seq[rni], heartbeats_suppressed::no);
+            _hb_guards[rni].unsuppress();
             return;
         }
         if (rni != _ptr->self()) {

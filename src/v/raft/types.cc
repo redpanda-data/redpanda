@@ -145,8 +145,6 @@ void follower_index_metadata::reset() {
     last_sent_seq = follower_req_seq{0};
     last_received_seq = follower_req_seq{0};
     last_successful_received_seq = follower_req_seq{0};
-    last_suppress_heartbeats_seq = follower_req_seq{0};
-    suppress_heartbeats = heartbeats_suppressed::no;
     last_sent_protocol_meta.reset();
 }
 
