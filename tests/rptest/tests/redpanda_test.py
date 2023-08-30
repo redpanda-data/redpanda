@@ -153,6 +153,7 @@ class RedpandaTest(Test):
         self,
         versions_in: list[RedpandaVersion],
         already_running: bool = False,
+        auto_assign_node_id: bool = False,
         mid_upgrade_check: Callable[[dict[Any, RedpandaVersion]],
                                     None] = lambda x: None):
         """
@@ -258,7 +259,8 @@ class RedpandaTest(Test):
                 canary_nodes,
                 start_timeout=90,
                 stop_timeout=90,
-                use_maintenance_mode=use_maintenance_mode)
+                use_maintenance_mode=use_maintenance_mode,
+                auto_assign_node_id=auto_assign_node_id)
             mid_upgrade_check({n: current_version
                                for n in canary_nodes}
                               | {n: old_version
@@ -267,7 +269,8 @@ class RedpandaTest(Test):
                 rest_nodes,
                 start_timeout=90,
                 stop_timeout=90,
-                use_maintenance_mode=use_maintenance_mode)
+                use_maintenance_mode=use_maintenance_mode,
+                auto_assign_node_id=auto_assign_node_id)
 
             if current_version[0:2] == (22, 1):
                 # Special case: the version in which we adopted the __consumer_offsets topic

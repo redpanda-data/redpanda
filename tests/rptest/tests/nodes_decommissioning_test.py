@@ -16,6 +16,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from time import sleep
 from rptest.clients.default import DefaultClient
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 from rptest.utils.mode_checks import skip_debug_mode
@@ -165,6 +166,9 @@ class NodesDecommissioningTest(PreallocNodesTest):
                 brokers = self.admin.get_brokers(n)
                 config_ids = [s['node_id'] for s in cfg_status]
                 brokers_ids = [b['node_id'] for b in brokers]
+                self.logger.info(
+                    f"broker_ids: {brokers_ids}, ids from configuration status: {config_ids}"
+                )
                 if sorted(brokers_ids) != sorted(config_ids):
                     return False
                 if decommissioned_id in brokers_ids:
@@ -172,7 +176,13 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
             return True
 
-        wait_until(_state_consistent, 10, 1)
+        wait_until(
+            _state_consistent,
+            10,
+            1,
+            err_msg=
+            "Timeout waiting for nodes reported from configuration and cluster state to be consistent"
+        )
 
     def _wait_for_node_removed(self, decommissioned_id):
 
@@ -827,6 +837,48 @@ class NodesDecommissioningTest(PreallocNodesTest):
                                  auto_assign_node_id=new_bootstrap)
 
         assert len(self.admin.get_brokers(node=self.redpanda.nodes[0])) == 5
+
+    @cluster(
+        num_nodes=6,
+        # A decom can look like a restart in terms of logs from peers dropping
+        # connections with it
+        log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_decommissioning_and_upgrade(self):
+        self.installer = self.redpanda._installer
+        # upgrade from previous to current version
+        versions = [
+            self.installer.highest_from_prior_feature_version(
+                RedpandaInstaller.HEAD), RedpandaInstaller.HEAD
+        ]
+        to_decommission = None
+        to_decommission_id = None
+        for v in self.upgrade_through_versions(versions_in=versions,
+                                               auto_assign_node_id=True):
+            if v == versions[0]:
+                self._create_topics()
+
+                self.start_producer()
+                self.start_consumer()
+                # decommission node
+                to_decommission = self.redpanda.nodes[-1]
+                to_decommission_id = self.redpanda.node_id(to_decommission)
+                self.logger.info(f"decommissioning node: {to_decommission_id}")
+                self._decommission(to_decommission_id)
+
+                self._wait_for_node_removed(to_decommission_id)
+                self.redpanda.stop_node(to_decommission)
+                self.redpanda.clean_node(to_decommission,
+                                         preserve_logs=True,
+                                         preserve_current_install=True)
+                self.redpanda.start_node(to_decommission,
+                                         auto_assign_node_id=True)
+                # refresh node ids for rolling restarter
+                self.redpanda.node_id(to_decommission, force_refresh=True)
+
+            # check that the nodes reported from configuration status and
+            # brokers endpoint is consistent
+
+            self._check_state_consistent(to_decommission_id)
 
 
 class NodeDecommissionFailureReportingTest(RedpandaTest):
