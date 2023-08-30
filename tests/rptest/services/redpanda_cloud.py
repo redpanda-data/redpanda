@@ -222,7 +222,12 @@ class CloudClusterConfig:
     provider: str = "AWS"
     type: str = "FMC"
     network: str = "public"
+    config_profile_name: str = "default"
+
     install_pack_ver: str = "latest"
+    install_pack_url_template: str = ""
+    install_pack_auth_type: str = ""
+    install_pack_auth: str = ""
 
 
 @dataclass
@@ -322,29 +327,31 @@ class CloudCluster():
                                                  self.config.region,
                                                  self.provider_key,
                                                  self.provider_secret)
-        self._ducktape_meta = self.get_ducktape_meta()
-        if self.config.provider == PROVIDER_AWS:
-            # We should have only 1 interface on ducktape client
-            self.current.peer_vpc_id = self._ducktape_meta[
-                'network-interfaces-macs-0-vpc-id']
-            self.current.peer_owner_id = self._ducktape_meta[
-                'network-interfaces-macs-0-owner-id']
-        elif self.config.provider == PROVIDER_GCP:
-            # In case of GCP, we should have full URL not just id
-            _net = self.provider_cli.get_vpc_by_network_id(
-                self._ducktape_meta['network-interfaces-0-network'].split(
-                    '/')[-1],
-                prefix="")
-            self.current.peer_vpc_id = _net[self.provider_cli.VPC_ID_LABEL]
-            self.current.peer_owner_id = self.provider_cli.project_id
+        if self.config.network != 'public':
+            self._ducktape_meta = self.get_ducktape_meta()
+            if self.config.provider == PROVIDER_AWS:
+                # We should have only 1 interface on ducktape client
+                self.current.peer_vpc_id = self._ducktape_meta[
+                    'network-interfaces-macs-0-vpc-id']
+                self.current.peer_owner_id = self._ducktape_meta[
+                    'network-interfaces-macs-0-owner-id']
+            elif self.config.provider == PROVIDER_GCP:
+                # In case of GCP, we should have full URL not just id
+                _net = self.provider_cli.get_vpc_by_network_id(
+                    self._ducktape_meta['network-interfaces-0-network'].split(
+                        '/')[-1],
+                    prefix="")
+                self.current.peer_vpc_id = _net[self.provider_cli.VPC_ID_LABEL]
+                self.current.peer_owner_id = self.provider_cli.project_id
 
-        # Currently we need provider client only for VCP in private networking
-        # Raise exception is client in not implemented yet
-        if self.provider_cli is None and self.config.network != 'public':
-            self._logger.error(
-                f"Current provider is not yet supports private networking ")
-            raise RuntimeError("Private networking is not implemented "
-                               f"for '{self.config.provider}'")
+            # Currently we need provider client only for VCP in private networking
+            # Raise exception is client in not implemented yet
+            if self.provider_cli is None and self.config.network != 'public':
+                self._logger.error(
+                    f"Current provider is not yet supports private networking "
+                )
+                raise RuntimeError("Private networking is not implemented "
+                                   f"for '{self.config.provider}'")
 
     @property
     def cluster_id(self):
@@ -600,9 +607,7 @@ class CloudCluster():
 
         return
 
-    def create(self,
-               config_profile_name: str = 'default',
-               superuser: Optional[SaslCredentials] = None) -> str:
+    def create(self, superuser: Optional[SaslCredentials] = None) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
         :param config_profile_name: config profile name, default 'tier-1-aws'
@@ -612,8 +617,9 @@ class CloudCluster():
         if not self.isPublicNetwork:
             self.current.connection_type = 'private'
         # Handle default values
-        if config_profile_name == 'default':
-            config_profile_name = TIER_DEFAULTS[self.config.provider]
+        if self.config.config_profile_name == 'default':
+            self.config.config_profile_name = TIER_DEFAULTS[
+                self.config.provider]
 
         if self.config.id != '':
             # Cluster already exist
@@ -623,7 +629,8 @@ class CloudCluster():
             # Populate self.current from cluster info
             self._update_live_cluster_info()
             # Fill in additional info based on collected from cluster
-            self.current.product_id = self._get_product_id(config_profile_name)
+            self.current.product_id = self._get_product_id(
+                self.config.config_profile_name)
         else:
             # In order not to have long list of arguments in each internal
             # functions, use self.current as a data store
@@ -643,7 +650,8 @@ class CloudCluster():
             self.current.zones = self.provider_cli.get_single_zone(
                 self.current.region)
             # Call CloudV2 API to determine Product ID
-            self.current.product_id = self._get_product_id(config_profile_name)
+            self.current.product_id = self._get_product_id(
+                self.config.config_profile_name)
             if self.current.product_id is None:
                 raise RuntimeError("ProductID failed to be determined for "
                                    f"'{self.config.provider}', "
