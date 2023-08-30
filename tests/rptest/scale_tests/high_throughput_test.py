@@ -26,6 +26,7 @@ from rptest.services.metrics_check import MetricCheck
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
+from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST,
                                       AdvertisedTierConfig, CloudTierName,
                                       MetricsEndpoint, SISettings)
@@ -187,6 +188,8 @@ class HighThroughputTest2(PreallocNodesTest):
             self.tier_config = self.redpanda.advertised_tier_config
         test_ctx.logger.info(f"Cloud tier {cloud_tier}: {self.tier_config}")
 
+        self.rpk = RpkTool(self.redpanda)
+
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_throughput_simple(self):
 
@@ -221,6 +224,113 @@ class HighThroughputTest2(PreallocNodesTest):
         rate0 = msg_count * msg_size / time0
         self.logger.info(f"Producer: {time0} s, {rate0} B/s")
         assert rate0 / ingress_rate > 0.5, f"Producer rate is too low. measured: {rate0} B/s, expected: {ingress_rate} B/s"
+
+    def _stage_setup_cluster(self, name, partitions):
+        topic_config = {
+            # Use a tiny segment size so we can generate many cloud segments
+            # very quickly.
+            'segment.bytes': 256 * MiB,
+
+            # Use infinite retention so there aren't sudden, drastic,
+            # unrealistic GCing of logs.
+            'retention.bytes': -1,
+
+            # Keep the local retention low for now so we don't get bogged down
+            # with an inordinate number of local segments.
+            'retention.local.target.bytes': 2 * 256 * MiB,
+            'cleanup.policy': 'delete',
+        }
+        self.rpk.create_topic(name,
+                              partitions=partitions,
+                              replicas=3,
+                              config=topic_config)
+
+    @cluster(num_nodes=6)
+    def test_max_connections(self):
+        # Consts
+        TOPIC_NAME = "maxconnections-check"
+        PRODUCER_TIMEOUT_MS = 5000
+
+        tier_config = self.redpanda.advertised_tier_config
+        _partition_count = tier_config.num_brokers * tier_config.partitions_min
+
+        # Create topics
+        #self.rpk.delete_topic(TOPIC_NAME)
+        self._stage_setup_cluster(TOPIC_NAME, _partition_count)
+
+        # setup ProducerSwarm parameters
+        producer_kwargs = {}
+        producer_kwargs['min_record_size'] = 4096
+        producer_kwargs['max_record_size'] = 8192
+
+        effective_msg_size = producer_kwargs['min_record_size'] + (
+            producer_kwargs['max_record_size'] -
+            producer_kwargs['min_record_size']) // 2
+
+        # connections per node at max (tier-5) is ~3700
+        _conn_per_node = tier_config.connections_limit // tier_config.num_brokers
+        # calculate message rate based on 50 MB/s per node
+        msg_rate = (50 * MiB) // effective_msg_size
+        # 50 MiB = 17 messages per producer per sec
+        messages_per_sec_per_producer = msg_rate // _conn_per_node
+        producer_kwargs[
+            'messages_per_second_per_producer'] = messages_per_sec_per_producer
+        # single producer runtime
+        target_runtime_s = 180
+        # for 50 MiB total message count is 3060
+        records_per_producer = messages_per_sec_per_producer * target_runtime_s
+
+        swarm = []
+        swarm_node = ProducerSwarm(self._ctx,
+                                   self.redpanda,
+                                   TOPIC_NAME,
+                                   _conn_per_node,
+                                   records_per_producer,
+                                   timeout_ms=PRODUCER_TIMEOUT_MS,
+                                   **producer_kwargs)
+
+        # Distribute swarm clients
+
+        # Start producing
+        self.logger.warn(
+            f"Starting swarm ({_conn_per_node} connections / {records_per_producer} msg each)"
+        )
+        swarm_node.start()
+
+        # check connection count periodically on each swarm node
+        _total = 0
+        _start = time.time()
+        _now = time.time()
+        while (_now - _start) < (target_runtime_s - 20):
+            _now = time.time()
+            _current = int(swarm_node.nodes[0].account.ssh_output(
+                "sudo netstat -plan | grep ':9092' | wc -l").decode(
+                    "utf-8").strip())
+            self.logger.warn(f"{_current} connections at {_now - _start:.3f}s")
+            time.sleep(20)
+
+        # wait for the end
+        self.logger.warn("Waiting for swarm to finish")
+        swarm_node.wait()
+        _now = time.time()
+        self.logger.warn(f"Done swarming after {_now - _start}s")
+
+        # Check message count
+        _hwm = 0
+        expected_msg_count = records_per_producer * _conn_per_node
+        for partition in self.rpk.describe_topic(TOPIC_NAME):
+            # Add currect high watermark for topic
+            _hwm += partition.high_watermark
+
+        # Check that all messages make it through
+        self.logger.warn(
+            f"Expected messages {expected_msg_count}, actual {_hwm}")
+        assert _hwm >= expected_msg_count
+
+        # stage delete
+        self.logger.warn("Deleting topic")
+        self.rpk.delete_topic(TOPIC_NAME)
+        return
 
 
 class HighThroughputTest(PreallocNodesTest):
