@@ -27,4 +27,5 @@ add_wasm_transform(transform-error)
 add_wasm_transform(transform-panic) 
 add_wasm_transform(setup-panic) 
 add_wasm_transform(wasi) 
+add_wasm_transform(schema-registry) 
 
