@@ -1531,7 +1531,11 @@ void application::wire_up_redpanda_services(
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
       std::ref(feature_table),
-      std::ref(tm_stm_cache_manager))
+      std::ref(tm_stm_cache_manager),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .max_transactions_per_coordinator.bind();
+      }))
       .get();
     _kafka_conn_quotas
       .start([]() {

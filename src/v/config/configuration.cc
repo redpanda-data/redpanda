@@ -590,8 +590,21 @@ configuration::configuration()
   , max_concurrent_producer_ids(
       *this,
       "max_concurrent_producer_ids",
-      "Max cache size for pids which rm_stm stores inside internal state. In "
-      "overflow rm_stm will delete old pids and clear their status",
+      "Max number of the active sessions (producers). When the threshold "
+      "is passed Redpanda terminates old sessions. When an idle producer "
+      "corresponding to the terminated session wakes up and produces - it "
+      "leads to its batches being rejected with out of order sequence error.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::numeric_limits<uint64_t>::max(),
+      {.min = 1})
+  , max_transactions_per_coordinator(
+      *this,
+      "max_transactions_per_coordinator",
+      "Max number of the active txn sessions (producers). When the threshold "
+      "is passed Redpanda terminates old sessions. When an idle producer "
+      "corresponding to the terminated session wakes up and produces - it "
+      "leads to its batches being rejected with invalid producer epoch or "
+      "invalid_producer_id_mapping (it depends on the txn execution phase).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::numeric_limits<uint64_t>::max(),
       {.min = 1})
