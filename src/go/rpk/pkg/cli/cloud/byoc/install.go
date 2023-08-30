@@ -79,7 +79,7 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 		}
 	}
 
-	byoc, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("byoc")
+	byoc, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("byoc")
 
 	// If the plugin exists, and we don't want a version check we want to exit
 	// early and avoid calling the Cloud API.
