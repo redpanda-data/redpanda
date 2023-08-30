@@ -23,6 +23,10 @@ NON_EXISTENT_TID_LOG_ALLOW_LIST = [
         r".*Unexpected tx_error error: {tx_errc::unknown_server_error}.*")
 ]
 
+TIMEOUT_ALLOW_LIST = [
+    re.compile(r".*Unexpected tx_error error: {tx_errc::timeout}.*")
+]
+
 
 class TxAdminTest(RedpandaTest):
     topics = (TopicSpec(partition_count=3, replication_factor=3),
@@ -87,7 +91,8 @@ class TxAdminTest(RedpandaTest):
                     assert (tx['status'] == 'ongoing')
                     assert (tx['timeout_ms'] == 60000)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=DEFAULT_LOG_ALLOW_LIST + TIMEOUT_ALLOW_LIST)
     def test_mark_transaction_expired(self):
         producer1 = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
