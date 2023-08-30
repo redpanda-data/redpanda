@@ -134,7 +134,7 @@ class LiveClusterParams:
     Active Cluster params.
     Should not be used outside of the redpanda_cloud module
     """
-    isAlive: bool = False
+    _isAlive: bool = False
     connection_type: str = 'public'
     namespace_uuid: str = None
     name: str = None
@@ -230,6 +230,13 @@ class CloudCluster():
         """
 
         return self._cluster_id
+
+    @property
+    def isAlive(self):
+        _c = self._get_cluster(self.config.id)
+        self.current._isAlive = True if _c['status'][
+            'health'] == 'healthy' else False
+        return self.current._isAlive
 
     def _create_namespace(self):
         # format namespace name as 'rp-ducktape-ns-3b36f516
@@ -389,7 +396,7 @@ class CloudCluster():
         # get cluster data
         _c = self._get_cluster(self.config.id)
         # Fill in immediate configuration
-        self.current.isAlive = True if _c['status'][
+        self.current._isAlive = True if _c['status'][
             'health'] == 'healthy' else False
         self.current.name = _c['name']
         self.current.namespace_uuid = _c['namespaceUuid']
@@ -495,7 +502,7 @@ class CloudCluster():
 
         if not self.isPublicNetwork:
             self.create_vpc_peering()
-        self.current.isAlive = True
+        self.current._isAlive = True
         return self.config.id
 
     def delete(self):

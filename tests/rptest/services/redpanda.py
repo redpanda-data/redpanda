@@ -1320,6 +1320,21 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     def node_id(self, node, force_refresh=False, syu=30):
         pass
 
+    def brokers(self, limit=None, listener: str = "dnslistener") -> str:
+        return self._cloud_cluster.get_broker_address()
+
+    def get_version(self, node):
+        return self._cloud_cluster.get_install_pack_version()
+
+    def set_cluster_config(self, values: dict, timeout: int = 300):
+        pass
+
+    def sockets_clear(self, node):
+        True
+
+    def all_up(self):
+        return self._cloud_cluster.isAlive
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
