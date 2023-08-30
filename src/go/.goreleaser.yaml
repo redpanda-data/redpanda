@@ -103,7 +103,7 @@ brews:
   - name: redpanda
     homepage: "https://redpanda.com"
     description: "Redpanda CLI & toolbox"
-    tap:
+    repository:
       owner: redpanda-data
       name: homebrew-tap
     folder: Formula
