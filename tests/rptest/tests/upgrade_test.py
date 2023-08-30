@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 from packaging.version import Version
 
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, matrix
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
@@ -28,9 +28,8 @@ from rptest.util import (
     wait_until_segments,
 )
 from rptest.utils.si_utils import BucketView
-from rptest.utils.mode_checks import skip_azure_blob_storage
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
@@ -380,8 +379,9 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         super().setUp()
 
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @skip_azure_blob_storage
-    def test_rolling_upgrade(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_rolling_upgrade(self, cloud_storage_type):
         """
         Verify that when tiered storage writes happen during a rolling upgrade,
         we continue to write remote content that old versions can read, until

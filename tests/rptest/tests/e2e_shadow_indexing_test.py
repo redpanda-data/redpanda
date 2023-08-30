@@ -85,10 +85,6 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         for topic in self.topics:
             self.kafka_tools.create_topic(topic)
 
-    def tearDown(self):
-        assert self.redpanda and self.redpanda.cloud_storage_client
-        self.redpanda.cloud_storage_client.empty_bucket(self.s3_bucket_name)
-
 
 def num_manifests_uploaded(test_self):
     s = test_self.redpanda.metric_sum(

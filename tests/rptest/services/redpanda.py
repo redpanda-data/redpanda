@@ -155,7 +155,9 @@ PREV_VERSION_LOG_ALLOW_LIST = [
     # e.g.  raft - [group_id:3, {kafka/topic/2}] consensus.cc:2317 - unable to replicate updated configuration: raft::errc::replicated_entry_truncated
     "raft - .*unable to replicate updated configuration: .*",
     # e.g. recovery_stm.cc:432 - recovery append entries error: rpc::errc::client_request_timeout"
-    "raft - .*recovery append entries error.*client_request_timeout"
+    "raft - .*recovery append entries error.*client_request_timeout",
+    # Pre v23.2 Redpanda's don't know how to interact with HNS Storage Accounts correctly
+    "abs - .*FeatureNotYetSupportedForHierarchicalNamespaceAccounts"
 ]
 
 # Path to the LSAN suppressions file
