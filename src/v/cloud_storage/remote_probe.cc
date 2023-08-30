@@ -129,6 +129,20 @@ remote_probe::remote_probe(
               "spillover_manifest_downloads",
               [this] { return get_spillover_manifest_downloads(); },
               sm::description("Number of spillover manifest downloads")),
+            sm::make_counter(
+              "controller_snapshot_successful_uploads",
+              [this] { return get_controller_snapshot_successful_uploads(); },
+              sm::description(
+                "Number of completed controller snapshot uploads")),
+            sm::make_counter(
+              "controller_snapshot_failed_uploads",
+              [this] { return get_controller_snapshot_failed_uploads(); },
+              sm::description("Number of failed controller snapshot uploads")),
+            sm::make_counter(
+              "controller_snapshot_upload_backoff",
+              [this] { return get_controller_snapshot_upload_backoffs(); },
+              sm::description("Number of times backoff was applied during "
+                              "controller snapshot uploads")),
             sm::make_histogram(
               "client_acquisition_latency",
               [this] {

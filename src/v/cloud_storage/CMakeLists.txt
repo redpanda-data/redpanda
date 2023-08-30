@@ -16,10 +16,12 @@ v_cc_library(
     cache_service.cc
     access_time_tracker.cc
     cache_probe.cc
+    download_exception.cc
     topic_manifest.cc
     partition_manifest.cc
     recursive_directory_walker.cc
     remote.cc
+    remote_file.cc
     offset_translation_layer.cc
     remote_probe.cc
     read_path_probes.cc

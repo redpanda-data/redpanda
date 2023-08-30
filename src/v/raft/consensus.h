@@ -217,6 +217,7 @@ public:
 
     // Open the current snapshot for reading (if present)
     ss::future<std::optional<opened_snapshot>> open_snapshot();
+    ss::future<std::optional<ss::file>> open_snapshot_file() const;
 
     std::filesystem::path get_snapshot_path() const {
         return _snapshot_mgr.snapshot_path();

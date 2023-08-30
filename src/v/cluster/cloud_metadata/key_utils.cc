@@ -9,6 +9,7 @@
  */
 #include "cluster/cloud_metadata/key_utils.h"
 
+#include "cloud_storage/remote_segment.h"
 #include "cluster/cloud_metadata/types.h"
 #include "model/fundamental.h"
 #include "utils/uuid.h"
@@ -31,6 +32,14 @@ cloud_storage::remote_manifest_path cluster_manifest_key(
       "{}/{}/cluster_manifest.json",
       cluster_manifests_prefix(cluster_uuid),
       meta_id()));
+}
+
+cloud_storage::remote_segment_path controller_snapshot_key(
+  const model::cluster_uuid& cluster_uuid, const model::offset& offset) {
+    return cloud_storage::remote_segment_path(fmt::format(
+      "{}/{}/controller.snapshot",
+      cluster_uuid_prefix(cluster_uuid),
+      offset()));
 }
 
 ss::sstring cluster_metadata_prefix(

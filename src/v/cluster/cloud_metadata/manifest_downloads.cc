@@ -113,4 +113,36 @@ ss::future<cluster_manifest_result> download_highest_manifest_for_cluster(
     co_return manifest;
 }
 
+ss::future<std::list<ss::sstring>> list_orphaned_by_manifest(
+  cloud_storage::remote& remote,
+  const model::cluster_uuid& cluster_uuid,
+  const cloud_storage_clients::bucket_name& bucket,
+  const cluster_metadata_manifest& manifest,
+  retry_chain_node& retry_node) {
+    auto uuid_prefix = cluster_uuid_prefix(cluster_uuid) + "/";
+    vlog(clusterlog.trace, "Listing objects with prefix {}", uuid_prefix);
+    auto list_res = co_await remote.list_objects(
+      bucket, retry_node, cloud_storage_clients::object_key(uuid_prefix));
+    if (list_res.has_error()) {
+        vlog(
+          clusterlog.debug,
+          "Error listing under {}: {}",
+          uuid_prefix,
+          list_res.error());
+        co_return std::list<ss::sstring>{};
+    }
+    std::list<ss::sstring> ret;
+    for (auto& item : list_res.value().contents) {
+        if (
+          item.key == ss::sstring{manifest.get_manifest_path()()}
+          || item.key == manifest.controller_snapshot_path) {
+            vlog(clusterlog.trace, "Ignoring expected object: {}", item.key);
+            continue;
+        }
+        vlog(clusterlog.trace, "Found orphaned object: {}", item.key);
+        ret.emplace_back(std::move(item.key));
+    }
+    co_return ret;
+}
+
 } // namespace cluster::cloud_metadata

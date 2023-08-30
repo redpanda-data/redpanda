@@ -217,6 +217,25 @@ public:
 
     auto segment_download() { return _segment_download_latency.auto_measure(); }
 
+    void controller_snapshot_successful_upload() {
+        _cnt_controller_snapshot_successful_uploads++;
+    }
+    void controller_snapshot_failed_upload() {
+        _cnt_controller_snapshot_failed_uploads++;
+    }
+    void controller_snapshot_upload_backoff() {
+        _cnt_controller_snapshot_upload_backoffs++;
+    }
+    uint64_t get_controller_snapshot_successful_uploads() const {
+        return _cnt_controller_snapshot_successful_uploads;
+    }
+    uint64_t get_controller_snapshot_failed_uploads() const {
+        return _cnt_controller_snapshot_failed_uploads;
+    }
+    uint64_t get_controller_snapshot_upload_backoffs() const {
+        return _cnt_controller_snapshot_upload_backoffs;
+    }
+
 private:
     /// Number of topic manifest uploads
     uint64_t _cnt_topic_manifest_uploads{0};
@@ -250,6 +269,12 @@ private:
     uint64_t _cnt_upload_backoff{0};
     /// Number of times backoff  was applied during log-segment downloads
     uint64_t _cnt_download_backoff{0};
+    /// Number of completed controller snapshot uploads.
+    uint64_t _cnt_controller_snapshot_successful_uploads;
+    /// Number of failed controller snapshot uploads.
+    uint64_t _cnt_controller_snapshot_failed_uploads;
+    /// Number of times backoff was applied during controller snapshot uploads.
+    uint64_t _cnt_controller_snapshot_upload_backoffs;
     /// Number of bytes being successfully sent to S3
     uint64_t _cnt_bytes_sent{0};
     /// Number of bytes being successfully received from S3

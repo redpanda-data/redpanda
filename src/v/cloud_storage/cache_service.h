@@ -34,6 +34,15 @@ namespace cloud_storage {
 static constexpr size_t default_write_buffer_size = 128_KiB;
 static constexpr unsigned default_writebehind = 10;
 
+// These timeout/backoff settings are for S3 requests
+using namespace std::chrono_literals;
+static const ss::lowres_clock::duration cache_hydration_timeout = 60s;
+static const ss::lowres_clock::duration cache_hydration_backoff = 250ms;
+
+// This backoff is for failure of the local cache to retain recently
+// promoted data (i.e. highly stressed cache)
+static const ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
+
 class cache_test_fixture;
 
 struct [[nodiscard]] cache_item {
@@ -174,6 +183,11 @@ public:
     ss::future<> trim_manually(
       std::optional<uint64_t> size_limit_override,
       std::optional<size_t> object_limit_override);
+
+    std::filesystem::path
+    get_local_path(const std::filesystem::path& key) const {
+        return _cache_dir / key;
+    }
 
 private:
     /// Load access time tracker from file

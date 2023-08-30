@@ -21,6 +21,7 @@
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
+#include "storage/snapshot.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
@@ -92,7 +93,26 @@ ss::future<error_outcome> uploader::upload_next_metadata(
     } else {
         manifest.metadata_id = cluster_metadata_id(manifest.metadata_id() + 1);
     }
-    // TODO: upload cluster metadata.
+    // Set up an abort source for if there is a leadership change while
+    // we're uploading.
+    auto lazy_as = cloud_storage::lazy_abort_source{
+      [&, synced_term]() -> std::optional<ss::sstring> {
+          if (synced_term == _raft0->term()) {
+              return std::nullopt;
+          }
+          return std::make_optional(fmt::format(
+            "lost leadership or term changed: synced term {} vs "
+            "current term {}",
+            synced_term,
+            _raft0->term()));
+      },
+    };
+
+    auto upload_controller_errc = co_await maybe_upload_controller_snapshot(
+      manifest, lazy_as, retry_node);
+    if (upload_controller_errc != error_outcome::success) {
+        co_return upload_controller_errc;
+    }
 
     if (co_await term_has_changed(synced_term)) {
         co_return error_outcome::term_has_changed;
@@ -108,6 +128,114 @@ ss::future<error_outcome> uploader::upload_next_metadata(
           "Failed to upload cluster metadata manifest in term {}: {}",
           synced_term,
           upload_result);
+        co_return error_outcome::upload_failed;
+    }
+    if (co_await term_has_changed(synced_term)) {
+        co_return error_outcome::term_has_changed;
+    }
+    // Take a snapshot of the metadata for this cluster and then assert
+    // that we are still leader in this term. This ensures that even if
+    // another replica were to become leader during the deletes, the new
+    // leader's view of the world will be unaffected by them.
+    auto orphaned_by_manifest = co_await list_orphaned_by_manifest(
+      _remote, _cluster_uuid, _bucket, manifest, retry_node);
+    if (co_await term_has_changed(synced_term)) {
+        co_return error_outcome::term_has_changed;
+    }
+    for (const auto& s : orphaned_by_manifest) {
+        auto path = std::filesystem::path{s};
+        auto key = cloud_storage_clients::object_key{path};
+        auto res = co_await _remote.delete_object(_bucket, key, retry_node);
+        if (res != cloud_storage::upload_result::success) {
+            vlog(clusterlog.warn, "Failed to delete orphaned metadata: {}", s);
+        }
+    }
+    co_return error_outcome::success;
+}
+
+ss::future<error_outcome> uploader::maybe_upload_controller_snapshot(
+  cluster_metadata_manifest& manifest,
+  cloud_storage::lazy_abort_source& lazy_as,
+  retry_chain_node& retry_node) {
+    auto controller_snap_file = co_await _raft0->open_snapshot_file();
+    if (!controller_snap_file.has_value()) {
+        // Nothing to upload; continue.
+        co_return error_outcome::success;
+    }
+    vlog(
+      clusterlog.trace,
+      "Local controller snapshot found at {}",
+      _raft0->get_snapshot_path());
+    auto reader = storage::snapshot_reader(
+      controller_snap_file.value(),
+      ss::make_file_input_stream(
+        *controller_snap_file, 0, co_await controller_snap_file->size()),
+      _raft0->get_snapshot_path());
+    model::offset local_last_included_offset;
+    std::exception_ptr err;
+    try {
+        auto snap_metadata_buf = co_await reader.read_metadata();
+        auto snap_parser = iobuf_parser(std::move(snap_metadata_buf));
+        auto snap_metadata = reflection::adl<raft::snapshot_metadata>{}.from(
+          snap_parser);
+        local_last_included_offset = snap_metadata.last_included_index;
+        vassert(
+          snap_metadata.last_included_index != model::offset{},
+          "Invalid offset for snapshot {}",
+          _raft0->get_snapshot_path());
+        vlog(
+          clusterlog.debug,
+          "Local controller snapshot at {} has last offset {}, current "
+          "snapshot offset in manifest {}",
+          _raft0->get_snapshot_path(),
+          local_last_included_offset,
+          manifest.controller_snapshot_offset);
+
+        if (
+          manifest.controller_snapshot_offset != model::offset{}
+          && local_last_included_offset
+               <= manifest.controller_snapshot_offset) {
+            // The cluster metadata manifest already contains a higher snapshot
+            // than what's local (e.g. uploaded by another controller replica).
+            // No need to do anything.
+            co_await reader.close();
+            co_return error_outcome::success;
+        }
+
+        // If we haven't uploaded a snapshot or the local snapshot is
+        // new, upload it.
+        cloud_storage::remote_segment_path remote_controller_snapshot_path{
+          controller_snapshot_key(_cluster_uuid, local_last_included_offset)};
+        auto upl_res = co_await _remote.upload_controller_snapshot(
+          _bucket,
+          remote_controller_snapshot_path,
+          controller_snap_file.value(),
+          retry_node,
+          lazy_as);
+        if (upl_res != cloud_storage::upload_result::success) {
+            vlog(
+              clusterlog.warn,
+              "Upload of controller snapshot failed: {}",
+              upl_res);
+            co_await reader.close();
+            co_return error_outcome::upload_failed;
+        }
+        manifest.controller_snapshot_path
+          = remote_controller_snapshot_path().string();
+        manifest.controller_snapshot_offset = local_last_included_offset;
+    } catch (...) {
+        err = std::current_exception();
+    }
+    co_await reader.close();
+    if (err) {
+        try {
+            std::rethrow_exception(err);
+        } catch (const std::exception& e) {
+            vlog(
+              clusterlog.warn,
+              "Upload of controller snapshot failed with exception: {}",
+              e.what());
+        }
         co_return error_outcome::upload_failed;
     }
     co_return error_outcome::success;

@@ -122,6 +122,12 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
         case cloud_storage::api_activity_notification::segment_download:
             weight = 1;
             break;
+        // Controller snapshot IO is independent of housekeeping.
+        case cloud_storage::api_activity_notification::
+          controller_snapshot_download:
+        case cloud_storage::api_activity_notification::
+          controller_snapshot_upload:
+            break;
         };
 
         _api_utilization->update(weight, ss::lowres_clock::now());

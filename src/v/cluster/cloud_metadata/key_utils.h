@@ -24,9 +24,15 @@ ss::sstring cluster_uuid_prefix(const model::cluster_uuid&);
 // E.g. /cluster_metadata/<cluster_uuid>/manifests
 ss::sstring cluster_manifests_prefix(const model::cluster_uuid&);
 
+// E.g. /cluster_metadata/<cluster_uuid>/manifests/cluster_manifest.json
 cloud_storage::remote_manifest_path
 cluster_manifest_key(const model::cluster_uuid&, const cluster_metadata_id&);
 
+// E.g. /cluster_metadata/<cluster_uuid>/<offset>/controller.snapshot
+cloud_storage::remote_segment_path
+controller_snapshot_key(const model::cluster_uuid&, const model::offset&);
+
+// E.g. /cluster_metadata/<cluster_uuid>/<meta_id>
 ss::sstring
 cluster_metadata_prefix(const model::cluster_uuid&, const cluster_metadata_id&);
 

@@ -28,25 +28,29 @@
 
 namespace storage {
 
+ss::future<std::optional<ss::file>>
+snapshot_manager::open_snapshot_file(const ss::sstring& filename) const {
+    auto path = snapshot_path(filename);
+    auto exists = co_await ss::file_exists(path.string());
+    if (!exists) {
+        co_return std::nullopt;
+    }
+    co_return co_await ss::open_file_dma(path.string(), ss::open_flags::ro);
+}
+
 ss::future<std::optional<snapshot_reader>>
 snapshot_manager::open_snapshot(ss::sstring filename) {
     auto path = snapshot_path(filename);
-    return ss::file_exists(path.string()).then([this, path](bool exists) {
-        if (!exists) {
-            return ss::make_ready_future<std::optional<snapshot_reader>>(
-              std::nullopt);
-        }
-        return ss::open_file_dma(path.string(), ss::open_flags::ro)
-          .then([this, path](const ss::file& file) {
-              // ss::file::~file will automatically close the file. so no
-              // worries about leaking an fd if something goes wrong here.
-              ss::file_input_stream_options options;
-              options.io_priority_class = _io_prio;
-              auto input = ss::make_file_input_stream(file, options);
-              return ss::make_ready_future<std::optional<snapshot_reader>>(
-                snapshot_reader(file, std::move(input), path));
-          });
-    });
+    auto maybe_file = co_await open_snapshot_file(filename);
+    if (!maybe_file.has_value()) {
+        co_return std::nullopt;
+    }
+    // ss::file::~file will automatically close the file. so no
+    // worries about leaking an fd if something goes wrong here.
+    ss::file_input_stream_options options;
+    options.io_priority_class = _io_prio;
+    auto input = ss::make_file_input_stream(maybe_file.value(), options);
+    co_return snapshot_reader(maybe_file.value(), std::move(input), path);
 }
 
 ss::future<uint64_t> snapshot_manager::get_snapshot_size(ss::sstring filename) {

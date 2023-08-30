@@ -120,6 +120,7 @@ public:
     ss::sharded<members_backend>& get_members_backend() {
         return _members_backend;
     }
+    ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
 
     bool is_raft0_leader() const {
         vassert(
