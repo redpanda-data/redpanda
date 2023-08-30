@@ -1748,6 +1748,24 @@ configuration::configuration()
       25.0,
       {.min = 0.0, .max = 100.0},
       legacy_default<double>(0.0, legacy_version{9}))
+  , space_management_max_log_concurrency(
+      *this,
+      "space_management_max_log_concurrency",
+      "Maximum parallel logs inspected during space management process.",
+      {.needs_restart = needs_restart::no,
+       .example = "20",
+       .visibility = visibility::tunable},
+      20,
+      {.min = 1})
+  , space_management_max_segment_concurrency(
+      *this,
+      "space_management_max_segment_concurrency",
+      "Maximum parallel segments inspected during space management process.",
+      {.needs_restart = needs_restart::no,
+       .example = "10",
+       .visibility = visibility::tunable},
+      10,
+      {.min = 1})
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",

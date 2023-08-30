@@ -2079,7 +2079,8 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
         }
     }
 
-    ss::semaphore limit(10);
+    ss::semaphore limit(std::max<size_t>(
+      1, config::shard_local_cfg().space_management_max_segment_concurrency()));
 
     auto [retention, available, remaining, lcl] = co_await ss::when_all_succeed(
       // reduce segment subject to retention policy
@@ -2307,7 +2308,8 @@ disk_log_impl::disk_usage_target_time_retention(gc_config cfg) {
         co_return std::nullopt;
     }
 
-    ss::semaphore limit(10);
+    ss::semaphore limit(std::max<size_t>(
+      1, config::shard_local_cfg().space_management_max_segment_concurrency()));
 
     // roll up the amount of disk space taken by these segments
     auto usage = co_await ss::map_reduce(

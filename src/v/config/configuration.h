@@ -337,6 +337,8 @@ struct configuration final : public config_store {
     property<double> retention_local_trim_overage_coeff;
     property<bool> space_management_enable;
     bounded_property<double, numeric_bounds> disk_reservation_percent;
+    bounded_property<uint16_t> space_management_max_log_concurrency;
+    bounded_property<uint16_t> space_management_max_segment_concurrency;
 
     // Archival cache
     property<uint64_t> cloud_storage_cache_size;
