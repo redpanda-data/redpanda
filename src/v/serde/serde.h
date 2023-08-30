@@ -96,15 +96,13 @@ concept has_serde_async_write = requires(T t, iobuf& out) {
 };
 
 template<typename T>
-concept has_serde_direct_read = requires(
-  iobuf_parser& in, size_t bytes_left_limit) {
-    { T::serde_direct_read(in, bytes_left_limit) };
+concept has_serde_direct_read = requires(iobuf_parser& in, const header& h) {
+    { T::serde_direct_read(in, h) };
 };
 
 template<typename T>
-concept has_serde_async_direct_read = requires(
-  iobuf_parser& in, size_t bytes_left_limit) {
-    { T::serde_async_direct_read(in, bytes_left_limit) } -> seastar::Future;
+concept has_serde_async_direct_read = requires(iobuf_parser& in, header h) {
+    { T::serde_async_direct_read(in, h) } -> seastar::Future;
 };
 
 template<typename T>
@@ -916,7 +914,7 @@ read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
       std::is_default_constructible_v<T> || has_serde_direct_read<T>);
     if constexpr (has_serde_direct_read<T>) {
         auto const h = read_header<Type>(in, bytes_left_limit);
-        return Type::serde_direct_read(in, h._bytes_left_limit);
+        return Type::serde_direct_read(in, h);
     } else {
         auto t = Type();
         read_nested(in, t, bytes_left_limit);
@@ -978,9 +976,8 @@ read_async_nested(iobuf_parser& in, size_t const bytes_left_limit) {
         }
 
         if constexpr (has_serde_async_direct_read<Type>) {
-            return f.then([&in, h] {
-                return Type::serde_async_direct_read(in, h._bytes_left_limit);
-            });
+            return f.then(
+              [&in, h] { return Type::serde_async_direct_read(in, h); });
         } else if constexpr (has_serde_async_read<Type>) {
             return f.then([&in, h] {
                 return ss::do_with(Type{}, [&in, h](Type& t) {
