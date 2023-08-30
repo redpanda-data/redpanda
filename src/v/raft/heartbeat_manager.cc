@@ -18,6 +18,7 @@
 #include "raft/group_configuration.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
+#include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 #include "vlog.h"
@@ -290,8 +291,17 @@ void heartbeat_manager::process_reply(
                 continue;
             }
             auto consensus = *it;
-
-            consensus->update_heartbeat_status(req_meta.follower_vnode, false);
+            /**
+             * We want to reset connection only the connection is not responsive
+             * it is indicated by the timeout errors, otherwise we do not want
+             * to terminate the connection as it may interrupt other raft groups
+             */
+            if (
+              r.error() == rpc::errc::client_request_timeout
+              || r.error() == errc::timeout) {
+                consensus->update_heartbeat_status(
+                  req_meta.follower_vnode, false);
+            }
 
             // propagate error
             consensus->process_append_entries_reply(
