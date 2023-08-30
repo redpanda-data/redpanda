@@ -115,7 +115,10 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ", base_timestamp:" << s.base_timestamp
              << ", max_timestamp:" << s.max_timestamp
              << ", batch_timestamps_are_monotonic:"
-             << s.batch_timestamps_are_monotonic << ", index("
+             << s.batch_timestamps_are_monotonic
+             << ", with_offset:" << s.with_offset
+             << ", non_data_timestamps:" << s.non_data_timestamps
+             << ", broker_timestamp:" << s.broker_timestamp << ", index("
              << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
              << ")}";
@@ -136,6 +139,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, batch_timestamps_are_monotonic);
     write(tmp, with_offset);
     write(tmp, non_data_timestamps);
+    write(tmp, broker_timestamp);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -209,12 +213,23 @@ void read_nested(
     read_nested(p, st.relative_time_index, 0U);
     read_nested(p, st.position_index, 0U);
 
-    if (compat_version < index_state::monotonic_timestamps_version) {
+    if (hdr._version < index_state::monotonic_timestamps_version) {
         st.batch_timestamps_are_monotonic = false;
-    } else {
+        return;
+    }
+
+    if (hdr._version >= index_state::monotonic_timestamps_version) {
         read_nested(p, st.batch_timestamps_are_monotonic, 0U);
         read_nested(p, st.with_offset, 0U);
+        // if we are deserializing we are likely dealing with a closed segment,
+        // this means that the value of this flag is unused in this object,
+        // since no new data will be appended. but it's still necessary to read
+        // it.
         read_nested(p, st.non_data_timestamps, 0U);
+    }
+
+    if (hdr._version >= index_state::broker_timestamp_version) {
+        read_nested(p, st.broker_timestamp, 0U);
     }
 }
 

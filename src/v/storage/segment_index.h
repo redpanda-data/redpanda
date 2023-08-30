@@ -29,6 +29,71 @@
 
 namespace storage {
 
+// clang-format off
+// this truth table shows which timestamps gets used as retention_timestamp
+//
+// use_broker_ts  has_broker_ts  ignore_future_ts  has_alternative_to_future_ts  retention_ts
+//                               (likely false)
+// TRUE           TRUE           TRUE              TRUE                          broker_timestamp
+// TRUE           TRUE           TRUE              FALSE                         broker_timestamp
+// TRUE           TRUE           FALSE             TRUE                          broker_timestamp
+// TRUE           TRUE           FALSE             FALSE                         broker_timestamp             // new segment, new cluster
+// TRUE           FALSE          TRUE              TRUE                          segment_index::_retention_ms // buggy old segment, new cluster
+// TRUE           FALSE          TRUE              FALSE                         max_timestamp
+// TRUE           FALSE          FALSE             TRUE                          max_timestamp
+// TRUE           FALSE          FALSE             FALSE                         max_timestamp                // old segment, new cluster
+// FALSE          TRUE           TRUE              TRUE                          segment_index::_retention_ms
+// FALSE          TRUE           TRUE              FALSE                         max_timestamp
+// FALSE          TRUE           FALSE             TRUE                          max_timestamp
+// FALSE          TRUE           FALSE             FALSE                         max_timestamp                // new segment, upgraded cluster
+// FALSE          FALSE          TRUE              TRUE                          segment_index::_retention_ms // buggy old segments
+// FALSE          FALSE          TRUE              FALSE                         max_timestamp
+// FALSE          FALSE          FALSE             TRUE                          max_timestamp
+// FALSE          FALSE          FALSE             FALSE                         max_timestamp                // old segment, upgraded cluster
+// clang-format on
+
+// this struct is meant to be a local copy of the feature
+// broker_time_based_retention and configuration property
+// storage_ignore_timestamps_in_future_secs
+struct time_based_retention_cfg {
+    bool use_broker_time;
+    bool use_escape_hatch_for_timestamps_in_the_future;
+
+    static auto make(features::feature_table const& ft)
+      -> time_based_retention_cfg {
+        return {
+          .use_broker_time = ft.is_active(
+            features::feature::broker_time_based_retention),
+          .use_escape_hatch_for_timestamps_in_the_future
+          = config::shard_local_cfg()
+              .storage_ignore_timestamps_in_future_sec()
+              .has_value(),
+        };
+    }
+
+    /// this function is the codification of the table above
+    constexpr auto compute_retention_ms(
+      std::optional<model::timestamp> broker_ts,
+      model::timestamp max_ts,
+      std::optional<model::timestamp> alternative_retention_ts) const noexcept {
+        // new clusters and new segments should hit this branch
+        if (likely(use_broker_time && broker_ts.has_value())) {
+            return *broker_ts;
+        }
+        // don't use broker time or no broker time available. fallback
+        if (unlikely(
+              use_escape_hatch_for_timestamps_in_the_future
+              && alternative_retention_ts.has_value())) {
+            return *alternative_retention_ts;
+        }
+        // If storage_ignore_timestamps_in_future_sec is disabled, then
+        // we should not respect _retention_timestamp even if it has
+        // been set (this corresponds to the property being toggled on
+        // then off again at runtime).
+        return max_ts;
+    }
+};
+
 /**
  * file file format is: [ header ] [ payload ]
  * header  == segment_index::header
@@ -89,11 +154,21 @@ public:
     model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
     model::timestamp base_timestamp() const { return _state.base_timestamp; }
+    // this is the broker timestamp of the last record in the index, used by
+    // time-based retention. introduced in v23.3, indices created before this
+    // version do not have it and will rely on max_timestamp
+    std::optional<model::timestamp> broker_timestamp() const {
+        return _state.broker_timestamp;
+    }
+
     bool batch_timestamps_are_monotonic() const {
         return _state.batch_timestamps_are_monotonic;
     }
     bool non_data_timestamps() const { return _state.non_data_timestamps; }
 
+    /// this method is used in conjuction with
+    /// storage_ignore_future_timestamps_secs. For new indices, where
+    /// broker_timestamps is set, this value is not used
     void set_retention_timestamp(model::timestamp t) {
         _retention_timestamp = t;
     }
@@ -182,3 +257,17 @@ std::ostream&
 operator<<(std::ostream&, const std::optional<segment_index::entry>&);
 
 } // namespace storage
+
+template<>
+struct fmt::formatter<storage::time_based_retention_cfg>
+  : public fmt::formatter<std::string_view> {
+    auto format(storage::time_based_retention_cfg const& cfg, auto& ctx) const {
+        auto str = ssx::sformat(
+          "[.use_broker_time={}, "
+          ".use_escape_hatch_for_timestamps_in_the_future={}]",
+          cfg.use_broker_time,
+          cfg.use_escape_hatch_for_timestamps_in_the_future);
+        return formatter<std::string_view>::format(
+          {str.data(), str.size()}, ctx);
+    }
+};

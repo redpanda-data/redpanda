@@ -91,8 +91,9 @@ private:
    1 byte  - non_data_timestamps
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<5>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<6>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
+    static constexpr auto broker_timestamp_version = 6;
 
     static index_state make_empty_index(offset_delta_time with_offset);
 
@@ -129,7 +130,13 @@ struct index_state
     offset_delta_time with_offset{false};
 
     // flag indicating whether this segment contains non user-data timestamps
+    // this flag is meaningfull only in an open segment, during append op.
     bool non_data_timestamps{false};
+
+    // a place to register the broker timestamp of the last modification.
+    // used for retention. std::optional to allow upgrading without rewriting
+    // the index.
+    std::optional<model::timestamp> broker_timestamp{std::nullopt};
 
     size_t size() const { return relative_offset_index.size(); }
 
@@ -221,7 +228,9 @@ private:
       , relative_time_index(o.relative_time_index.copy())
       , position_index(o.position_index.copy())
       , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic)
-      , with_offset(o.with_offset) {}
+      , with_offset(o.with_offset)
+      , non_data_timestamps(o.non_data_timestamps)
+      , broker_timestamp(o.broker_timestamp) {}
 };
 
 } // namespace storage
