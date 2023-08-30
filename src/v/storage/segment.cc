@@ -533,7 +533,8 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
           // inflight index. trimmed on every dma_write in appender
           _inflight.emplace(end_physical_offset, b.last_offset());
           // index the write
-          _idx.maybe_track(b.header(), start_physical_offset);
+          _idx.maybe_track(
+            b.header(), model::timestamp::now(), start_physical_offset);
           auto ret = append_result{
             .base_offset = b.base_offset(),
             .last_offset = b.last_offset(),

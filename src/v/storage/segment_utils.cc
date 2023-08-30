@@ -508,6 +508,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
         throw segment_closed_exception();
     }
 
+    // broker_timestamp is used for retention.ms, but it's only in the index,
+    // not it in the segment itself. save it to restore it later
     co_await do_compact_segment_index(s, cfg, resources);
     // copy the bytes after segment is good - note that we
     // need to do it with the READ-lock, not the write lock

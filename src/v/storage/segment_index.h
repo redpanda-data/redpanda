@@ -141,7 +141,10 @@ public:
         return 1 + 16 * log_size / default_data_buffer_step;
     }
 
-    void maybe_track(const model::record_batch_header&, size_t filepos);
+    void maybe_track(
+      const model::record_batch_header&,
+      std::optional<model::timestamp> new_broker_ts,
+      size_t filepos);
     std::optional<entry> find_nearest(model::offset);
     std::optional<entry> find_nearest(model::timestamp);
 
@@ -172,17 +175,10 @@ public:
     void set_retention_timestamp(model::timestamp t) {
         _retention_timestamp = t;
     }
-    model::timestamp retention_timestamp() const {
-        if (unlikely(config::shard_local_cfg()
-                       .storage_ignore_timestamps_in_future_sec())) {
-            return _retention_timestamp.value_or(_state.max_timestamp);
-        } else {
-            // If storage_ignore_timestamps_in_future_sec is disabled, then
-            // we should not respect _retention_timestamp even if it has
-            // been set (this corresponds to the property being toggled on
-            // then off again at runtime).
-            return _state.max_timestamp;
-        }
+
+    model::timestamp retention_timestamp(time_based_retention_cfg cfg) const {
+        return cfg.compute_retention_ms(
+          _state.broker_timestamp, _state.max_timestamp, _retention_timestamp);
     }
 
     ss::future<bool> materialize_index();

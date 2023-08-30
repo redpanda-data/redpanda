@@ -255,17 +255,27 @@ disk_log_impl::time_based_gc_max_offset(gc_config cfg) {
     // files so that size-based retention eventually evicts the problematic
     // segment, preventing a crash.
     //
+    // with Redpanda v23.3, segment_index tracks broker_timestamps, and it's the
+    // value returned by segment_index::retention_timestamp() for **new**
+    // segments. for older segments, the issue still remains and
+    // storage_ignore_timestamps_in_future_secs is another way to deal with it
+
+    // this will retrive cluster configs, to reused them during the scan since
+    // there are no scheduling points
+
+    auto retention_cfg = time_based_retention_cfg::make(_feature_table.local());
 
     // if the segment max timestamp is bigger than now plus threshold we
     // will report the segment max timestamp as bogus timestamp
     vlog(
       gclog.debug,
       "[{}] time retention timestamp: {}, first segment retention timestamp: "
-      "{}",
+      "{}, retention_cfg: {}",
       config().ntp(),
       cfg.eviction_time,
       _segs.empty() ? model::timestamp::min()
-                    : _segs.front()->index().retention_timestamp());
+                    : _segs.front()->index().retention_timestamp(retention_cfg),
+      retention_cfg);
 
     static constexpr auto const_threshold = 1min;
     auto bogus_threshold = model::timestamp(
@@ -274,12 +284,13 @@ disk_log_impl::time_based_gc_max_offset(gc_config cfg) {
     auto it = std::find_if(
       std::cbegin(_segs),
       std::cend(_segs),
-      [this, time = cfg.eviction_time, bogus_threshold](
+      [this, time = cfg.eviction_time, bogus_threshold, retention_cfg](
         const ss::lw_shared_ptr<segment>& s) {
-          auto retention_ts = s->index().retention_timestamp();
+          auto retention_ts = s->index().retention_timestamp(retention_cfg);
 
           if (retention_ts > bogus_threshold) {
               // Warn on timestamps more than the "bogus" threshold in future
+              // this should not fire for segments created after v23.3
               vlog(
                 gclog.warn,
                 "[{}] found segment with bogus retention timestamp: {} (base "
@@ -288,6 +299,7 @@ disk_log_impl::time_based_gc_max_offset(gc_config cfg) {
                 retention_ts,
                 s->index().base_timestamp(),
                 s->index().max_timestamp(),
+                s->index().broker_timestamp(),
                 s);
           }
 
@@ -726,9 +738,7 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
           config::shard_local_cfg().retention_local_target_bytes_default()};
     }
 
-    if (
-      !local_retention_ms.is_disabled()
-      && !local_retention_ms.has_optional_value()) {
+    if (!local_retention_ms.is_engaged()) {
         local_retention_ms = tristate<std::chrono::milliseconds>{
           config::shard_local_cfg().retention_local_target_ms_default()};
     }
@@ -882,9 +892,12 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
     auto ignore_threshold = model::timestamp(
       model::timestamp::now().value() + ignore_in_future / 1ms);
 
+    auto retention_cfg = time_based_retention_cfg::make(
+      _feature_table.local()); // this will retrieve cluster cfgs
+
     fragmented_vector<segment_set::type> segs_all_bogus;
     for (const auto& s : _segs) {
-        auto max_ts = s->index().retention_timestamp();
+        auto max_ts = s->index().retention_timestamp(retention_cfg);
 
         // If the actual max timestamp from user records is out of bounds, clamp
         // it to something more plausible, either from other batches or from
@@ -927,7 +940,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
         // back to using the mtime of the file.  This is not accurate
         // at all (the file might have been created long
         // after the data was written) but is better than nothing.
-        auto max_ts = s->index().retention_timestamp();
+        auto max_ts = s->index().retention_timestamp(retention_cfg);
         auto file_timestamp = co_await s->get_file_timestamp();
         vlog(
           gclog.warn,
@@ -949,6 +962,8 @@ disk_log_impl::maybe_adjusted_retention_offset(gc_config cfg) {
     if (ignore_timestamps_in_future.has_value()) {
         // Correct any timestamps too far in future, before calculating the
         // retention offset.
+        // It's expected that this will be used only for segments pre v23.3,
+        // without a proper broker_timestamps
         co_await retention_adjust_timestamps(
           ignore_timestamps_in_future.value());
     }

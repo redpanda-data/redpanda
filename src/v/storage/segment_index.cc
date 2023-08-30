@@ -99,7 +99,9 @@ void segment_index::swap_index_state(index_state&& o) {
 }
 
 void segment_index::maybe_track(
-  const model::record_batch_header& hdr, size_t filepos) {
+  const model::record_batch_header& hdr,
+  std::optional<model::timestamp> new_broker_ts,
+  size_t filepos) {
     _acc += hdr.size_bytes;
 
     _state.update_batch_timestamps_are_monotonic(
@@ -115,6 +117,7 @@ void segment_index::maybe_track(
           hdr.last_offset(),
           hdr.first_timestamp,
           hdr.max_timestamp,
+          new_broker_ts,
           path().is_internal_topic()
             || hdr.type == model::record_batch_type::raft_data)) {
         _acc = 0;

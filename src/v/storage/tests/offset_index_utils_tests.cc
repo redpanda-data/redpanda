@@ -74,7 +74,9 @@ FIXTURE_TEST(index_round_trip, offset_index_utils_fixture) {
     for (uint32_t i = 0; i < 1024; ++i) {
         model::offset o = _base_offset + model::offset(i);
         _idx->maybe_track(
-          modify_get(o, storage::segment_index::default_data_buffer_step), i);
+          modify_get(o, storage::segment_index::default_data_buffer_step),
+          std::nullopt,
+          i);
     }
     info("About to flush index");
     _idx->flush().get0();
@@ -92,17 +94,20 @@ FIXTURE_TEST(bucket_bug1, offset_index_utils_fixture) {
 
     info("index: {}", _idx);
     info("Testing bucket find");
-    _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{849}, 168865), 155103); // indexed
+      modify_get(model::offset{824}, 155103), std::nullopt, 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{879}, 134080), 323968); // indexed
+      modify_get(model::offset{849}, 168865), std::nullopt, 155103); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{901}, 142073), 458048); // indexed
+      modify_get(model::offset{879}, 134080), std::nullopt, 323968); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{926}, 126886), 600121); // indexed
+      modify_get(model::offset{901}, 142073), std::nullopt, 458048); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{948}, 1667), 727007); // not indexed
+      modify_get(model::offset{926}, 126886), std::nullopt, 600121); // indexed
+    _idx->maybe_track(
+      modify_get(model::offset{948}, 1667),
+      std::nullopt,
+      727007); // not indexed
 
     index_entry_expect(824, 0);
     index_entry_expect(849, 155103);
@@ -121,17 +126,20 @@ FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
 
     info("index: {}", _idx);
     info("Testing bucket truncate");
-    _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{849}, 168865), 155103); // indexed
+      modify_get(model::offset{824}, 155103), std::nullopt, 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{879}, 134080), 323968); // indexed
+      modify_get(model::offset{849}, 168865), std::nullopt, 155103); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{901}, 142073), 458048); // indexed
+      modify_get(model::offset{879}, 134080), std::nullopt, 323968); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{926}, 126886), 600121); // indexed
+      modify_get(model::offset{901}, 142073), std::nullopt, 458048); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{948}, 1667), 727007); // not indexed
+      modify_get(model::offset{926}, 126886), std::nullopt, 600121); // indexed
+    _idx->maybe_track(
+      modify_get(model::offset{948}, 1667),
+      std::nullopt,
+      727007); // not indexed
     // test range truncation next
     _idx->truncate(model::offset(926), model::timestamp{100}).get();
     index_entry_expect(879, 323968);

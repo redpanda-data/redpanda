@@ -277,6 +277,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
     auto const start_offset = _appender->file_byte_offset();
     auto const header_size = batch.header().size_bytes;
     _acc += header_size;
+    // do not set broker_timestamp in this index, leave the operation to the
+    // caller who has more context
     if (_idx.maybe_index(
           _acc,
           32_KiB,
@@ -285,6 +287,7 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
           batch.last_offset(),
           batch.header().first_timestamp,
           batch.header().max_timestamp,
+          std::nullopt,
           _internal_topic
             || batch.header().type == model::record_batch_type::raft_data)) {
         _acc = 0;

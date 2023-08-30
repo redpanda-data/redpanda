@@ -43,6 +43,7 @@ bool index_state::maybe_index(
   model::offset batch_max_offset,
   model::timestamp first_timestamp,
   model::timestamp last_timestamp,
+  std::optional<model::timestamp> new_broker_timestamp,
   bool user_data) {
     vassert(
       batch_base_offset >= base_offset,
@@ -94,6 +95,9 @@ bool index_state::maybe_index(
         // last one
         last_timestamp = std::max(first_timestamp, last_timestamp);
         max_timestamp = std::max(max_timestamp, last_timestamp);
+        if (new_broker_timestamp.has_value()) {
+            broker_timestamp = *new_broker_timestamp;
+        }
     }
     // always saving the first batch simplifies a lot of book keeping
     if ((accumulator >= step && user_data) || retval) {

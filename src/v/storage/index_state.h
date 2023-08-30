@@ -204,6 +204,7 @@ struct index_state
       model::offset batch_max_offset,
       model::timestamp first_timestamp,
       model::timestamp last_timestamp,
+      std::optional<model::timestamp> new_broker_timestamp,
       bool user_data);
 
     void update_batch_timestamps_are_monotonic(bool pred) {
