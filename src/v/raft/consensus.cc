@@ -708,7 +708,9 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     } catch (const ss::broken_condition_variable& e) {
         co_return ret_t(make_error_code(errc::shutting_down));
     }
-
+    // grab an oplock to serialize state updates i.e. wait for all updates in
+    // the state that were caused by follower replies
+    auto units = co_await _op_lock.get_units();
     // term have changed, not longer a leader
     if (term != _term) {
         co_return ret_t(make_error_code(errc::not_leader));
