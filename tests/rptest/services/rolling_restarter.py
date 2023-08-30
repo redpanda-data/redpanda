@@ -25,7 +25,8 @@ class RollingRestarter:
                       start_timeout=None,
                       stop_timeout=None,
                       use_maintenance_mode=True,
-                      omit_seeds_on_idx_one=True):
+                      omit_seeds_on_idx_one=True,
+                      auto_assign_node_id=True):
         """
         Performs a rolling restart on the given nodes, optionally overriding
         the given configs.
@@ -38,7 +39,7 @@ class RollingRestarter:
 
         def has_drained_leaders(node):
             try:
-                node_id = self.redpanda.idx(node)
+                node_id = self.redpanda.node_id(node)
                 broker_resp = admin.get_broker(node_id, node=node)
                 maintenance_status = broker_resp["maintenance_status"]
                 return maintenance_status["draining"] and maintenance_status[
@@ -51,7 +52,7 @@ class RollingRestarter:
                        timeout_sec=stop_timeout,
                        backoff_sec=1)
             # Wait for the cluster to agree on a controller leader.
-            return self.redpanda.get_node(
+            return self.redpanda.get_node_by_id(
                 admin.await_stable_leader(
                     topic="controller",
                     partition=0,
@@ -100,7 +101,8 @@ class RollingRestarter:
                 node,
                 override_cfg_params,
                 timeout=start_timeout,
-                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
+                omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+                auto_assign_node_id=auto_assign_node_id)
 
             controller_leader = wait_until_cluster_healthy(start_timeout)
 
