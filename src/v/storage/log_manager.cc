@@ -757,7 +757,8 @@ ss::future<usage_report> log_manager::disk_usage() {
         logs.push_back(it.second->handle);
     }
 
-    ss::semaphore limit(20);
+    ss::semaphore limit(std::max<size_t>(
+      1, config::shard_local_cfg().space_management_max_log_concurrency()));
 
     co_return co_await ss::map_reduce(
       logs.begin(),
