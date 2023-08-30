@@ -26,7 +26,7 @@ from rptest.util import (wait_until, segments_count,
                          wait_for_local_storage_truncate)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.utils.si_utils import BucketView
+from rptest.utils.si_utils import BucketView, NTP
 
 from ducktape.mark import parametrize
 
@@ -323,10 +323,19 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                              batch_cache=batch_cache)
         if spillover:
             # Check that we are actually using the spillover manifest
-            bucket = BucketView(self.redpanda)
-            manifest = bucket.manifest_for_ntp("tqtopic", 0)
-            assert manifest["archive_start_offset"] == 0
-            assert manifest["start_offset"] > 0
+            def check():
+                try:
+                    bucket = BucketView(self.redpanda)
+                    res = bucket.get_spillover_metadata(
+                        ntp=NTP(ns="kafka", topic="tqtopic", partition=0))
+                    return res is not None and len(res) > 0
+                except:
+                    return False
+
+            wait_until(check,
+                       timeout_sec=120,
+                       backoff_sec=5,
+                       err_msg="Spillover use is not detected")
 
     @cluster(num_nodes=4)
     @parametrize(cloud_storage=True, batch_cache=False, spillover=False)
