@@ -351,7 +351,8 @@ ss::future<> cache::trim(
     vlog(
       cst_log.debug,
       "trim: set target_size {}/{}, size {}/{}, walked size {} (max {}/{}), "
-      " reserved {}/{}, pending {}/{})",
+      " reserved {}/{}, pending {}/{}), candidates for deletion: {}, filtered "
+      "out: {}",
       target_size,
       target_objects,
       _current_cache_size,
@@ -362,7 +363,9 @@ ss::future<> cache::trim(
       _reserved_cache_size,
       _reserved_cache_objects,
       _reservations_pending,
-      _reservations_pending_objects);
+      _reservations_pending_objects,
+      candidates_for_deletion.size(),
+      filtered_out_files);
 
     if (
       _current_cache_size + _reserved_cache_size < target_size
@@ -453,9 +456,24 @@ ss::future<> cache::trim(
     // cache.
     size_to_delete = std::min(
       walked_cache_size - fast_result.deleted_size, size_to_delete);
-    objects_to_delete = std::min(
-      candidates_for_deletion.size() - fast_result.deleted_count,
-      objects_to_delete);
+
+    // If we were not able to delete enough files and there are some filtered
+    // out files, force an exhaustive trim. This ensures that if the cache is
+    // dominated by filtered out files, we do not skip trimming them by reducing
+    // the objects_to_delete counter next.
+    bool force_exhaustive_trim = fast_result.deleted_count < objects_to_delete
+                                 && filtered_out_files > 0;
+
+    // In the situation where all files in cache are filtered out,
+    // candidates_for_deletion equals 1 (due to the accesstime tracker file) and
+    // the following reduction to objects_to_delete ends up setting
+    // this counter to 1, causing the exhaustive trim to be skipped. The check
+    // force_exhaustive_trim avoids this.
+    if (!force_exhaustive_trim) {
+        objects_to_delete = std::min(
+          candidates_for_deletion.size() - fast_result.deleted_count,
+          objects_to_delete);
+    }
 
     if (
       size_to_delete > undeletable_bytes

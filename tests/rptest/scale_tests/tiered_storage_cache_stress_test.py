@@ -359,18 +359,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
                                         cache_size,
                                         max_objects=None)
 
-    @cluster(num_nodes=4)
-    def garbage_objects_test(self):
-        """
-        Verify that if there are a large number of small files which do not pair
-        with data chunks, we still trim them when cache space is low.
-
-        This test is a reproducer for issues where the cache needs trimming but there
-        are not data objects present to cue the fast trim process to delete indices etc,
-        and we must fall back to exhaustive trim, such as:
-        https://github.com/redpanda-data/redpanda/issues/11835
-        """
-
+    def run_test_with_cache_prefilled(self, cache_prefill_command: str):
         segment_size = 128 * 1024 * 1024
         msg_size = 16384
         data_size = segment_size * 10
@@ -382,15 +371,12 @@ class TieredStorageCacheStressTest(RedpandaTest):
         for n in self.redpanda.nodes:
             self.redpanda.clean_node(n)
 
-        # Pre-populate caches with garbage files.
-        garbage_count = 100
+        # Pre-populate caches with files.
+        prefill_count = 100
         for node in self.redpanda.nodes:
-            node.account.ssh_output(
-                f"mkdir -p {self.redpanda.cache_dir} ; for n in `seq 1 {garbage_count}`; do "
-                f"dd if=/dev/urandom bs=1k count=4 of={self.redpanda.cache_dir}/garbage_$n.bin ; done",
-                combine_stderr=False)
+            node.account.ssh(cache_prefill_command.format(prefill_count))
 
-        cache_object_limit = garbage_count // 2
+        cache_object_limit = prefill_count // 2
 
         # Set cache size to 50 objects
         si_settings = SISettings(
@@ -410,7 +396,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
         for node in self.redpanda.nodes:
             usage = admin.get_local_storage_usage(node)
             assert usage[
-                'cloud_storage_cache_objects'] >= garbage_count, f"Node {node.name} has unexpectedly few objects {usage['cloud_storage_cache_objects']} < {garbage_count}"
+                'cloud_storage_cache_objects'] >= prefill_count, f"Node {node.name} has unexpectedly few objects {usage['cloud_storage_cache_objects']} < {prefill_count}"
 
         # Inject data
         self._create_topic(topic_name, 1, segment_size)
@@ -437,3 +423,34 @@ class TieredStorageCacheStressTest(RedpandaTest):
         usage = admin.get_local_storage_usage(leader_node)
         assert usage[
             'cloud_storage_cache_objects'] <= cache_object_limit, f"Node {leader_node.name} has unexpectedly many objects {usage['cloud_storage_cache_objects']} > {cache_object_limit}"
+
+    @cluster(num_nodes=4)
+    def garbage_objects_test(self):
+        """
+        Verify that if there are a large number of small files which do not pair
+        with data chunks, we still trim them when cache space is low.
+
+        This test is a reproducer for issues where the cache needs trimming but there
+        are no data objects present to cue the fast trim process to delete indices etc,
+        and we must fall back to exhaustive trim, such as:
+        https://github.com/redpanda-data/redpanda/issues/11835
+        """
+
+        self.run_test_with_cache_prefilled(
+            f"mkdir -p {self.redpanda.cache_dir} ; "
+            "for n in `seq 1 {}`; do "
+            f"dd if=/dev/urandom bs=1k count=4 of={self.redpanda.cache_dir}/garbage_$n.bin ; done"
+        )
+
+    @cluster(num_nodes=4)
+    def test_indices_dominate_cache(self):
+        """
+        Ensures that if the cache is filled with index and tx objects alone,
+        trimming still works.
+        """
+        self.run_test_with_cache_prefilled(
+            f"mkdir -pv {self.redpanda.cache_dir}; "
+            "for n in `seq 1 {}`; do "
+            f"touch {self.redpanda.cache_dir}/garbage_$n.index && "
+            f"touch {self.redpanda.cache_dir}/garbage_$n.tx; "
+            "done")
