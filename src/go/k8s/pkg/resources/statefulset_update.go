@@ -386,20 +386,29 @@ func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPo
 		ignoreExistingVolumes(newVolumes),
 	}
 
+	managedDecommission, err := r.IsManagedDecommission()
+	if err != nil {
+		log.Error(err, "not performing a managed decommission")
+	}
+
 	patchResult, err := patch.NewPatchMaker(patch.NewAnnotator(redpandaAnnotatorKey), &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(pod, artificialPod, opts...)
 	if err != nil {
 		return err
+	}
+
+	if !managedDecommission && patchResult.IsEmpty() {
+		podPatch := k8sclient.MergeFrom(pod.DeepCopy())
+		utils.RemoveStatusPodCondition(&pod.Status.Conditions, ClusterUpdatePodCondition)
+		if err = r.Client.Status().Patch(ctx, pod, podPatch); err != nil {
+			return fmt.Errorf("error removing pod update condition: %w", err)
+		}
+		return nil
 	}
 
 	var ordinal int32
 	ordinal, err = utils.GetPodOrdinal(pod.Name, r.pandaCluster.Name)
 	if err != nil {
 		return fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", r.pandaCluster.Name, pod.Name, err)
-	}
-
-	managedDecommission, err := r.IsManagedDecommission()
-	if err != nil {
-		log.Error(err, "not performing a managed decommission")
 	}
 
 	if *r.pandaCluster.Spec.Replicas == 1 {
