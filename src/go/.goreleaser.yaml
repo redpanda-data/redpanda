@@ -1,6 +1,7 @@
 project_name: rpk
 builds:
-  - id: windows-and-linux
+  - id: rpk-windows-and-linux
+    dir: ./rpk/
     main: ./cmd/rpk
     binary: rpk
     ldflags:
@@ -16,7 +17,8 @@ builds:
       - amd64
       - arm64
   # we need separate build for darwin to sign/notarize using quill
-  - id: darwin
+  - id: rpk-darwin
+    dir: ./rpk/
     main: ./cmd/rpk
     binary: rpk
     ldflags:
@@ -43,8 +45,8 @@ builds:
 archives:
   - id: rpk
     builds:
-      - windows-and-linux
-      - darwin
+      - rpk-windows-and-linux
+      - rpk-darwin
     format: zip
     name_template: "rpk-{{ .Os }}-{{ .Arch }}"
 release:
@@ -53,3 +55,5 @@ release:
     name: redpanda
   draft: true
   discussion_category_name: Releases
+announce:
+  skip: "true"
