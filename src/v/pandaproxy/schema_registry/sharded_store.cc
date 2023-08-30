@@ -34,6 +34,7 @@
 #include <fmt/core.h>
 
 #include <functional>
+#include <iterator>
 
 namespace pandaproxy::schema_registry {
 
@@ -299,6 +300,24 @@ sharded_store::get_schema_subject_versions(schema_id id) {
       };
     co_return co_await _store.map_reduce0(
       map, std::vector<subject_version>{}, reduce);
+}
+
+ss::future<std::vector<subject>>
+sharded_store::get_schema_subjects(schema_id id, include_deleted inc_del) {
+    auto map = [id, inc_del](store& s) {
+        return s.get_schema_subjects(id, inc_del);
+    };
+    auto reduce = [](std::vector<subject> acc, std::vector<subject> subs) {
+        acc.insert(
+          acc.end(),
+          std::make_move_iterator(subs.begin()),
+          std::make_move_iterator(subs.end()));
+        return acc;
+    };
+    auto subs = co_await _store.map_reduce0(
+      map, std::vector<subject>{}, reduce);
+    absl::c_sort(subs);
+    co_return subs;
 }
 
 ss::future<subject_schema> sharded_store::get_subject_schema(
