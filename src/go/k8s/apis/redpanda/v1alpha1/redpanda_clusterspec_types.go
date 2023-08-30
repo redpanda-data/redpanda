@@ -67,9 +67,10 @@ type RedpandaClusterSpec struct {
 }
 
 type ConfigWatcher struct {
-	Enabled         *bool                        `json:"enabled,omitempty"`
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
-	SecurityContext *corev1.SecurityContext      `json:"SecurityContext,omitempty"`
+	Enabled           *bool                        `json:"enabled,omitempty"`
+	ExtraVolumeMounts string                       `json:"extraVolumeMounts,omitempty"`
+	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
+	SecurityContext   *corev1.SecurityContext      `json:"SecurityContext,omitempty"`
 }
 
 // RedpandaImage is a top level field of the values file
@@ -271,6 +272,8 @@ type Statefulset struct {
 	AdditionalRedpandaCmdFlags    []string                   `json:"additionalRedpandaCmdFlags,omitempty"`
 	Annotations                   map[string]string          `json:"annotations,omitempty"`
 	Budget                        *Budget                    `json:"budget,omitempty"`
+	ExtraVolumeMounts             string                     `json:"extraVolumeMounts,omitempty"`
+	ExtraVolumes                  string                     `json:"extraVolumes,omitempty"`
 	InitContainerImage            *InitContainerImage        `json:"initContainerImage,omitempty"`
 	InitContainers                *InitContainers            `json:"initContainers,omitempty"`
 	LivenessProbe                 *LivenessProbe             `json:"livenessProbe,omitempty"`
@@ -339,13 +342,14 @@ type UpdateStrategy struct {
 
 // Tuning is a top level field of the values file
 type Tuning struct {
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
-	BallastFilePath *string                      `json:"ballast_file_path,omitempty"`
-	BallastFileSize *string                      `json:"ballast_file_size,omitempty"`
-	TuneAioEvents   *bool                        `json:"tune_aio_events,omitempty"`
-	TuneBallastFile *bool                        `json:"tune_ballast_file,omitempty"`
-	TuneClockSource *bool                        `json:"tune_clocksource,omitempty"`
-	WellKnownIo     *string                      `json:"well_known_io,omitempty"`
+	ExtraVolumeMounts string                       `json:"extraVolumeMounts,omitempty"`
+	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
+	BallastFilePath   *string                      `json:"ballast_file_path,omitempty"`
+	BallastFileSize   *string                      `json:"ballast_file_size,omitempty"`
+	TuneAioEvents     *bool                        `json:"tune_aio_events,omitempty"`
+	TuneBallastFile   *bool                        `json:"tune_ballast_file,omitempty"`
+	TuneClockSource   *bool                        `json:"tune_clocksource,omitempty"`
+	WellKnownIo       *string                      `json:"well_known_io,omitempty"`
 }
 
 // Listeners is a top level field of the values file
@@ -459,8 +463,9 @@ type ServiceAccount struct {
 }
 
 type SetDataDirOwnership struct {
-	Enabled   *bool                        `json:"enabled,omitempty"`
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Enabled           *bool                        `json:"enabled,omitempty"`
+	ExtraVolumeMounts string                       `json:"extraVolumeMounts,omitempty"`
+	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type InitContainerImage struct {
@@ -470,17 +475,20 @@ type InitContainerImage struct {
 
 type InitContainers struct {
 	Configurator                      *Configurator                      `json:"configurator,omitempty"`
+	ExtraInitContainers               string                             `json:"extraInitContainers,omitempty"`
 	SetDataDirOwnership               *SetDataDirOwnership               `json:"setDataDirOwnership,omitempty"`
 	SetTieredStorageCacheDirOwnership *SetTieredStorageCacheDirOwnership `json:"setTieredStorageCacheDirOwnership,omitempty"`
 	Tuning                            *Tuning                            `json:"tuning,omitempty"`
 }
 
 type Configurator struct {
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	ExtraVolumeMounts string                       `json:"extraVolumeMounts,omitempty"`
+	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type SetTieredStorageCacheDirOwnership struct {
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	ExtraVolumeMounts string                       `json:"extraVolumeMounts,omitempty"`
+	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type Monitoring struct {
