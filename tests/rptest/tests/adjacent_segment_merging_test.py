@@ -63,10 +63,6 @@ class AdjacentSegmentMergingTest(RedpandaTest):
     def setUp(self):
         super().setUp()  # topic is created here
 
-    def tearDown(self):
-        self.cloud_storage_client.empty_bucket(self.bucket_name)
-        super().tearDown()
-
     @cluster(num_nodes=3)
     @matrix(acks=[-1, 1], cloud_storage_type=get_cloud_storage_type())
     def test_reupload_of_local_segments(self, acks, cloud_storage_type):

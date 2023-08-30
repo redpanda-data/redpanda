@@ -197,4 +197,25 @@ void log_buffer_with_rate_limiting(
     vlog(log_with_rate_limit, "{}: {}", msg, sview);
 }
 
+std::vector<object_key> all_paths_to_file(const object_key& path) {
+    if (!path().has_filename()) {
+        return {};
+    }
+
+    std::vector<object_key> paths;
+    std::filesystem::path current_path;
+    for (auto path_iter = path().begin(); path_iter != path().end();
+         ++path_iter) {
+        if (current_path == "") {
+            current_path += *path_iter;
+        } else {
+            current_path /= *path_iter;
+        }
+
+        paths.emplace_back(current_path);
+    }
+
+    return paths;
+}
+
 } // namespace cloud_storage_clients::util

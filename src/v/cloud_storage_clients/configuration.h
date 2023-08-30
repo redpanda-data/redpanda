@@ -38,6 +38,8 @@ struct common_configuration : net::base_transport::configuration {
     ss::lowres_clock::duration max_idle_time;
     /// Metrics probe (should be created for every aws account on every shard)
     ss::shared_ptr<client_probe> _probe;
+
+    bool requires_self_configuration{false};
 };
 
 struct s3_configuration : common_configuration {
@@ -74,6 +76,9 @@ struct s3_configuration : common_configuration {
 struct abs_configuration : common_configuration {
     cloud_roles::storage_account storage_account_name;
     std::optional<cloud_roles::private_key_str> shared_key;
+    bool is_hns_enabled{false};
+
+    abs_configuration make_adls_configuration() const;
 
     static ss::future<abs_configuration> make_configuration(
       const std::optional<cloud_roles::private_key_str>& shared_key,
@@ -96,6 +101,25 @@ using client_configuration_variant = std::variant<Ts...>;
 
 using client_configuration
   = client_configuration_variant<abs_configuration, s3_configuration>;
+
+std::ostream& operator<<(std::ostream&, const client_configuration&);
+
+struct abs_self_configuration_result {
+    bool is_hns_enabled;
+};
+
+struct s3_self_configuration_result {};
+
+using client_self_configuration_output
+  = std::variant<abs_self_configuration_result, s3_self_configuration_result>;
+
+void apply_self_configuration_result(
+  client_configuration&, const client_self_configuration_output&);
+
+std::ostream& operator<<(std::ostream&, const abs_self_configuration_result&);
+std::ostream& operator<<(std::ostream&, const s3_self_configuration_result&);
+std::ostream&
+operator<<(std::ostream&, const client_self_configuration_output&);
 
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,

@@ -1022,8 +1022,9 @@ make_upload_controller_config(ss::scheduling_group sg) {
 }
 
 // add additional services in here
-void application::wire_up_runtime_services(model::node_id node_id) {
-    wire_up_redpanda_services(node_id);
+void application::wire_up_runtime_services(
+  model::node_id node_id, ::stop_signal& app_signal) {
+    wire_up_redpanda_services(node_id, app_signal);
     if (_proxy_config) {
         construct_single_service(
           _proxy,
@@ -1052,7 +1053,8 @@ void application::wire_up_runtime_services(model::node_id node_id) {
     configure_admin_server();
 }
 
-void application::wire_up_redpanda_services(model::node_id node_id) {
+void application::wire_up_redpanda_services(
+  model::node_id node_id, ::stop_signal& app_signal) {
     ss::smp::invoke_on_all([] {
         resources::available_memory::local().register_metrics();
     }).get();
@@ -1138,7 +1140,18 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           cloud_configs.local().connection_limit,
           ss::sharded_parameter(
             [&cloud_configs] { return cloud_configs.local().client_config; }),
-          cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
+          cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty,
+          ss::sharded_parameter(
+            [&app_signal]()
+              -> std::optional<std::reference_wrapper<::stop_signal>> {
+                if (
+                  ss::this_shard_id()
+                  == cloud_storage_clients::self_config_shard) {
+                    return std::ref(app_signal);
+                }
+
+                return std::nullopt;
+            }))
           .get();
         construct_service(
           cloud_storage_api,
@@ -2046,7 +2059,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
       node_id,
       storage.local().get_cluster_uuid());
 
-    wire_up_runtime_services(node_id);
+    wire_up_runtime_services(node_id, app_signal);
 
     if (test_mode) {
         // When running inside a unit test fixture, we may fast-forward

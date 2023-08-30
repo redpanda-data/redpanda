@@ -50,10 +50,6 @@ class FollowerFetchingTest(PreallocNodesTest):
             },
             si_settings=si_settings)
 
-    def tearDown(self):
-        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
-        super().tearDown()
-
     def setUp(self):
         # Delay startup, so that the test case can configure redpanda
         # based on test parameters before starting it.

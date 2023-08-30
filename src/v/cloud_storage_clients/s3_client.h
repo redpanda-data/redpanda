@@ -50,8 +50,7 @@ public:
     result<http::client::request_header> make_unsigned_put_object_request(
       bucket_name const& name,
       object_key const& key,
-      size_t payload_size_bytes,
-      const object_tag_formatter& tags);
+      size_t payload_size_bytes);
 
     /// \brief Create a 'GetObject' request header
     ///
@@ -127,6 +126,9 @@ public:
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
         apply_credentials);
 
+    ss::future<result<client_self_configuration_output, error_outcome>>
+    self_configure() override;
+
     /// Stop the client
     ss::future<> stop() override;
     /// Shutdown the underlying connection
@@ -167,7 +169,6 @@ public:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      const object_tag_formatter& tags,
       ss::lowres_clock::duration timeout) override;
 
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
@@ -208,7 +209,6 @@ private:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      const object_tag_formatter& tags,
       ss::lowres_clock::duration timeout);
 
     ss::future<list_bucket_result> do_list_objects_v2(

@@ -49,6 +49,8 @@ public:
           = net::public_metrics_disabled::no;
         /// Optional server name indication (SNI) for TLS connection
         std::optional<ss::sstring> tls_sni_hostname;
+        /// Potentially skip wait for EOF after BYE message on TLS session end
+        bool wait_for_tls_server_eof = true;
     };
 
     explicit base_transport(configuration c);
@@ -93,6 +95,7 @@ private:
     unresolved_address _server_addr;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
     std::optional<ss::sstring> _tls_sni_hostname;
+    bool _wait_for_tls_server_eof;
 
     // Track if shutdown was called on the current `_fd`
     bool _shutdown{false};

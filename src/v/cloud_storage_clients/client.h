@@ -23,41 +23,6 @@
 
 namespace cloud_storage_clients {
 
-/// Object tag formatter that can be used
-/// to format tags for x_amz_tagging or x-ms-tag fields
-/// The value is supposed to be cached and
-/// not re-created on every request.
-class object_tag_formatter {
-public:
-    object_tag_formatter() = default;
-
-    object_tag_formatter(
-      std::initializer_list<std::pair<std::string_view, std::string_view>>&&
-        il) {
-        for (auto [key, value] : il) {
-            add(key, value);
-        }
-    }
-
-    template<class ValueT>
-    void add(std::string_view tag, const ValueT& value) {
-        if (empty()) {
-            _tags += ssx::sformat("{}={}", tag, value);
-        } else {
-            _tags += ssx::sformat("&{}={}", tag, value);
-        }
-    }
-
-    bool empty() const { return _tags.empty(); }
-
-    boost::beast::string_view str() const {
-        return {_tags.data(), _tags.size()};
-    }
-
-private:
-    ss::sstring _tags;
-};
-
 using http_byte_range = std::pair<uint64_t, uint64_t>;
 
 class client {
@@ -65,6 +30,9 @@ public:
     struct no_response {};
 
     virtual ~client() = default;
+
+    virtual ss::future<result<client_self_configuration_output, error_outcome>>
+    self_configure() = 0;
 
     /// Stop the client
     virtual ss::future<> stop() = 0;
@@ -111,7 +79,6 @@ public:
     /// \param key is an id of the object
     /// \param payload_size is a size of the object in bytes
     /// \param body is an input_stream that can be used to read body
-    /// \param tags is a a tag formatter using query string format
     /// \param timeout is a timeout of the operation
     /// \return future that becomes ready when the upload is completed
     virtual ss::future<result<no_response, error_outcome>> put_object(
@@ -119,7 +86,6 @@ public:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      const object_tag_formatter& tags,
       ss::lowres_clock::duration timeout)
       = 0;
 

@@ -229,10 +229,6 @@ class ArchivalTest(RedpandaTest):
             self.rpk.alter_topic_config(topic.name, 'redpanda.remote.write',
                                         'true')
 
-    def tearDown(self):
-        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
-        super().tearDown()
-
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_write(self, cloud_storage_type):

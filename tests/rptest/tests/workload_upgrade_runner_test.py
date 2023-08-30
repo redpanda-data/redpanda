@@ -13,7 +13,7 @@ from typing import Any, Optional
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
 from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionTriple
 from rptest.services.workload_protocol import PWorkload
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -22,6 +22,7 @@ from rptest.tests.workload_dummy import DummyWorkload, MinimalWorkload
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.workload_license import LicenseWorkload
 from rptest.utils.mode_checks import skip_debug_mode
+from ducktape.mark import matrix
 
 
 def expand_version(
@@ -248,7 +249,11 @@ class RedpandaUpgradeTest(PreallocNodesTest):
 
     @skip_debug_mode
     @cluster(num_nodes=4)
-    def test_workloads_through_releases(self):
+    # TODO(vlad): Allow this test on ABS once we have at least two versions
+    # of Redpanda that support Azure Hierarchical Namespaces.
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_workloads_through_releases(self, cloud_storage_type):
         # this callback will be called between each upgrade, in a mixed version state
         def mid_upgrade_check(raw_versions: dict[Any, RedpandaVersion]):
             rp_versions = {

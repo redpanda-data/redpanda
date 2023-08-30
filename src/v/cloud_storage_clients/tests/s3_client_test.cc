@@ -19,6 +19,7 @@
 #include "net/types.h"
 #include "net/unresolved_address.h"
 #include "seastarx.h"
+#include "test_utils/fixture.h"
 #include "utils/base64.h"
 
 #include <seastar/core/future.hh>
@@ -354,7 +355,6 @@ SEASTAR_TEST_CASE(test_put_object_success) {
             cloud_storage_clients::object_key("test"),
             expected_payload_size,
             std::move(payload_stream),
-            {},
             100ms)
           .get();
         // shouldn't throw
@@ -378,7 +378,6 @@ SEASTAR_TEST_CASE(test_put_object_failure) {
                                 cloud_storage_clients::object_key("test-error"),
                                 expected_payload_size,
                                 std::move(payload_stream),
-                                {},
                                 100ms)
                               .get();
         BOOST_REQUIRE(!result);
@@ -716,35 +715,42 @@ SEASTAR_TEST_CASE(test_delete_object_retry) {
         server->stop().get();
     });
 }
-/// Http server and client
-struct configured_server_and_client_pool {
+
+class client_pool_fixture {
+public:
+    client_pool_fixture()
+      : s3_conf(transport_configuration())
+      , server(ss::make_shared<ss::httpd::http_server_control>()) {
+        pool
+          .start(
+            2,
+            ss::sharded_parameter([] { return transport_configuration(); }),
+            cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty)
+          .get();
+
+        auto credentials = cloud_roles::aws_credentials{
+          s3_conf.access_key.value(),
+          s3_conf.secret_key.value(),
+          std::nullopt,
+          s3_conf.region};
+
+        pool.local().load_credentials(std::move(credentials));
+
+        server->start().get();
+        server->set_routes(set_routes).get();
+        auto resolved = net::resolve_dns(s3_conf.server_addr).get0();
+        server->listen(resolved).get();
+    }
+
+    ~client_pool_fixture() {
+        pool.stop().get();
+        server->stop().get();
+    }
+
+    cloud_storage_clients::s3_configuration s3_conf;
     ss::shared_ptr<ss::httpd::http_server_control> server;
-    ss::shared_ptr<cloud_storage_clients::client_pool> pool;
+    ss::sharded<cloud_storage_clients::client_pool> pool;
 };
-/// Create server and client connection pool, server is initialized with default
-/// testing paths and listening.
-configured_server_and_client_pool started_pool_and_server(
-  size_t size,
-  cloud_storage_clients::client_pool_overdraft_policy policy,
-  const cloud_storage_clients::s3_configuration& conf) {
-    auto credentials = cloud_roles::aws_credentials{
-      conf.access_key.value(),
-      conf.secret_key.value(),
-      std::nullopt,
-      conf.region};
-    auto client = ss::make_shared<cloud_storage_clients::client_pool>(
-      size, conf, policy);
-    client->load_credentials(std::move(credentials));
-    auto server = ss::make_shared<ss::httpd::http_server_control>();
-    server->start().get();
-    server->set_routes(set_routes).get();
-    auto resolved = net::resolve_dns(conf.server_addr).get0();
-    server->listen(resolved).get();
-    return {
-      .server = server,
-      .pool = client,
-    };
-}
 
 static ss::future<> test_client_pool_payload(
   ss::shared_ptr<ss::httpd::http_server_control> server,
@@ -765,16 +771,13 @@ static ss::future<> test_client_pool_payload(
     BOOST_REQUIRE_EQUAL(actual_payload, expected_payload);
 }
 
-void test_client_pool(
-  cloud_storage_clients::client_pool_overdraft_policy policy) {
-    auto conf = transport_configuration();
-    auto [server, pool] = started_pool_and_server(2, policy, conf);
-
+FIXTURE_TEST(test_client_pool_wait_strategy, client_pool_fixture) {
     ss::abort_source never_abort;
     std::vector<ss::future<>> fut;
     for (size_t i = 0; i < 20; i++) {
         auto f
-          = pool->acquire(never_abort)
+          = pool.local()
+              .acquire(never_abort)
               .then([server = server](
                       cloud_storage_clients::client_pool::client_lease lease) {
                   return test_client_pool_payload(server, std::move(lease));
@@ -782,15 +785,7 @@ void test_client_pool(
         fut.emplace_back(std::move(f));
     }
     ss::when_all_succeed(fut.begin(), fut.end()).get0();
-    BOOST_REQUIRE(pool->size() == 2);
-    server->stop().get();
-}
-
-SEASTAR_TEST_CASE(test_client_pool_wait_strategy) {
-    return ss::async([] {
-        test_client_pool(
-          cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty);
-    });
+    BOOST_REQUIRE(pool.local().size() == 2);
 }
 
 static ss::future<bool> test_client_pool_reconnect_helper(
@@ -819,31 +814,22 @@ static ss::future<bool> test_client_pool_reconnect_helper(
     co_return true;
 }
 
-SEASTAR_TEST_CASE(test_client_pool_reconnect) {
-    return ss::async([] {
-        using namespace std::chrono_literals;
-        auto conf = transport_configuration();
-        auto [server, pool] = started_pool_and_server(
-          2,
-          cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty,
-          conf);
-
-        ss::abort_source never_abort;
-        std::vector<ss::future<bool>> fut;
-        for (size_t i = 0; i < 20; i++) {
-            auto f
-              = pool->acquire(never_abort)
-                  .then(
-                    [server = server](
-                      cloud_storage_clients::client_pool::client_lease lease) {
-                        return test_client_pool_reconnect_helper(
-                          server, std::move(lease));
-                    });
-            fut.emplace_back(std::move(f));
-        }
-        auto result = ss::when_all_succeed(fut.begin(), fut.end()).get0();
-        auto count = std::count(result.begin(), result.end(), true);
-        BOOST_REQUIRE(count == 20);
-        server->stop().get();
-    });
+FIXTURE_TEST(test_client_pool_reconnect, client_pool_fixture) {
+    using namespace std::chrono_literals;
+    ss::abort_source never_abort;
+    std::vector<ss::future<bool>> fut;
+    for (size_t i = 0; i < 20; i++) {
+        auto f = pool.local()
+                   .acquire(never_abort)
+                   .then(
+                     [server = server](
+                       cloud_storage_clients::client_pool::client_lease lease) {
+                         return test_client_pool_reconnect_helper(
+                           server, std::move(lease));
+                     });
+        fut.emplace_back(std::move(f));
+    }
+    auto result = ss::when_all_succeed(fut.begin(), fut.end()).get0();
+    auto count = std::count(result.begin(), result.end(), true);
+    BOOST_REQUIRE(count == 20);
 }

@@ -72,10 +72,6 @@ class SIAdminApiTest(RedpandaTest):
         # feature on after start.
         self.redpanda.set_cluster_config({'admin_api_require_auth': True})
 
-    def tearDown(self):
-        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
-        super().tearDown()
-
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_bucket_validation(self, cloud_storage_type):

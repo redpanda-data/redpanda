@@ -428,7 +428,7 @@ static constexpr auto required_headers = {
   "If-Modified-Since",
   "If-Match",
   "If-None-Match",
-  "If-UnmodifiedSince",
+  "If-Unmodified-Since",
   "Range"};
 
 result<ss::sstring> signature_abs::get_canonicalized_resource(

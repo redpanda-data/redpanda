@@ -40,7 +40,6 @@ public:
 
     ss::abort_source& abort_source() { return _as; };
 
-private:
     void signaled() {
         if (!_as.abort_requested()) {
             _as.request_abort();
@@ -48,6 +47,7 @@ private:
         _cond.broadcast();
     }
 
+private:
     ss::condition_variable _cond;
     ss::abort_source _as;
 };
