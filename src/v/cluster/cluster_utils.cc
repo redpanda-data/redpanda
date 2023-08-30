@@ -396,11 +396,11 @@ std::optional<ss::sstring> check_result_configuration(
   const members_table::cache_t& current_brokers,
   const model::broker& new_configuration) {
     auto it = current_brokers.find(new_configuration.id());
-    vassert(
-      it != current_brokers.end(),
-      "When broker configuration is being updated the broker must exists. "
-      "Updating broker {} configuration.",
-      new_configuration);
+    if (it == current_brokers.end()) {
+        return fmt::format(
+          "broker {} does not exists in list of cluster members",
+          new_configuration.id());
+    }
     auto& current_configuration = it->second.broker;
     /**
      * do no allow to decrease node core count
