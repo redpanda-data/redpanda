@@ -11,6 +11,7 @@ import itertools
 import math
 import re
 import time
+import json
 from typing import Optional
 
 from ducktape.mark import ignore, ok_to_fail
@@ -19,9 +20,11 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from contextlib import contextmanager
 from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.kgo_verifier_services import (KgoVerifierProducer,
-                                                   KgoVerifierRandomConsumer)
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
+    KgoVerifierRandomConsumer)
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
@@ -41,6 +44,123 @@ MiB = KiB * KiB
 GiB = KiB * MiB
 minutes = 60
 hours = 60 * minutes
+
+
+class HighThroughputTestTrafficGenerator:
+    """
+    Generic traffic generator that skews the consumer load to be a multiple
+    of the produce load. This is because the predefined cloud v2 tiers have
+    higher egress maximum allowed load then ingress, by a factor of at most
+    3x in some tiers.
+    """
+    def __init__(self, context, redpanda, topic, msg_size, asymetry=3):
+        t = time.time()
+        self._logger = redpanda.logger
+        self._producer_start_time = t
+        self._producer_end_time = t
+        self._consumer_start_time = t
+        self._consumer_end_time = t
+        self._msg_size = msg_size
+        self._msg_count = 5_000_000_000_000
+        self._producer = KgoVerifierProducer(context,
+                                             redpanda,
+                                             topic,
+                                             msg_size=self._msg_size,
+                                             msg_count=self._msg_count)
+
+        # Level of asymetry is equal to the number of parallel consumers
+        self._consumer = KgoVerifierConsumerGroupConsumer(
+            context,
+            redpanda,
+            topic,
+            self._msg_size,
+            asymetry,
+            loop=True,
+            max_msgs=self._msg_count,
+            debug_logs=True,
+            trace_logs=True)
+
+    def wait_for_traffic(self, acked=1, timeout_sec=30):
+        wait_until(lambda: self._producer.produce_status.acked >= acked,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=1.0)
+
+    def start(self):
+        self._logger.info("Starting producer")
+        self._producer.start()
+        self._producer_start_time = time.time()
+        self.wait_for_traffic(acked=1, timeout_sec=10)
+        # Give the producer a head start
+        time.sleep(3)  # TODO: Edit maybe make this configurable?
+        self._logger.info("Starting consumer")
+        self._consumer.start()
+        self._consumer_start_time = time.time()
+        wait_until(
+            lambda: self._consumer.consumer_status.validator.total_reads >= 1,
+            timeout_sec=30)
+
+    def stop(self):
+        self._logger.info("Stopping all traffic generation")
+        self._producer.stop()
+        self._consumer.stop()
+        self._producer.wait()
+        self._logger.info("Producer stopped")
+        self._producer_stop_time = time.time()
+        self._consumer.wait()
+        self._logger.info("Consumer stopped")
+        self._consumer_stop_time = time.time()
+
+    def throughput(self):
+        producer_total_time = self._producer_stop_time - self._producer_start_time
+        consumer_total_time = self._consumer_stop_time - self._consumer_start_time
+        if producer_total_time == 0 or consumer_total_time == 0:
+            return {}
+        producer_status = self._producer.produce_status
+        consumer_status = self._consumer.consumer_status
+        producer_bytes_written = self._msg_size * producer_status.acked
+        consumer_bytes_read = self._msg_size * consumer_status.validator.total_reads
+        return {
+            'producer': {
+                'errors': producer_status.bad_offsets,
+                'total_successful_requests': producer_status.acked,
+                'bytes_written': producer_bytes_written,
+                'ingress_throughput':
+                producer_bytes_written / producer_total_time
+            },
+            'consumer': {
+                'errors': consumer_status.errors,
+                'total_successful_requests':
+                consumer_status.validator.total_reads,
+                'bytes_read': consumer_bytes_read,
+                'egress_throughput': consumer_bytes_read / consumer_total_time
+            }
+        }
+
+
+@contextmanager
+def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
+    tgen = HighThroughputTestTrafficGenerator(context, redpanda, *args,
+                                              **kwargs)
+    tgen.start()
+    try:
+        yield tgen
+    except:
+        redpanda.logger.exception("Exception within traffic_generator method")
+        raise
+    finally:
+        tgen.stop()
+        throughput = tgen.throughput()
+        redpanda.logger.info(
+            f'HighThroughputTrafficGenerator reported throughput: {json.dumps(throughput, sort_keys=True, indent=4)}'
+        )
+        producer_throughput = throughput['producer']['ingress_throughput']
+        consumer_throughput = throughput['consumer']['egress_throughput']
+        assert (
+            producer_throughput / 0.1
+        ) >= tier_cfg.ingress_rate_scaled, f"Observed producer throughput {producer_throughput} too low, expected: {tier_cfg.ingress_rate_scaled}"
+        assert (
+            consumer_throughput / 0.1
+        ) >= tier_cfg.egress_rate_scaled, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate_scaled}"
 
 
 class CloudTierConfig:
