@@ -87,6 +87,8 @@ std::string_view to_string_view(feature f) {
         return "wasm_transforms";
     case feature::raft_config_serde:
         return "raft_config_serde";
+    case feature::idempotency_v2:
+        return "idempotency_v2";
 
     /*
      * testing features
