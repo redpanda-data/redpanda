@@ -47,6 +47,21 @@ rp_test(
   ARGS "-- -c 8"
 )
 
+set(gsrcs
+    raft_fixture.cc
+    basic_raft_fixture_test.cc
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_raft
+  SOURCES ${gsrcs}
+  LIBRARIES  v::raft v::storage_test_utils v::model_test_utils v::features v::gtest_main
+  LABELS raft
+  ARGS "-- -c 8"
+)
+
 rp_test(
   UNIT_TEST
   BINARY_NAME test_offset_translator
