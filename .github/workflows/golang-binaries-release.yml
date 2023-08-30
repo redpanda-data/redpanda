@@ -1,0 +1,77 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: release-go-binaries
+on:
+  push:
+    tags:
+    - 'v2**'
+
+jobs:
+  release:
+    name: Release using goreleaser
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install quill
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          curl -sSfL https://raw.githubusercontent.com/anchore/quill/main/install.sh | sh -s -- -b "$HOME/.local/bin" v0.4.1
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+
+      - name: Create empty release notes
+        run: |
+         echo "" > /tmp/empty_notes
+
+      - name: Invoke goreleaser
+        uses: goreleaser/goreleaser-action@v4
+        env:
+          QUILL_SIGN_P12: ${{ secrets.QUILL_SIGN_P12_BASE64 }}
+          QUILL_SIGN_PASSWORD: ${{ secrets.QUILL_SIGN_PASSWORD }}
+          QUILL_NOTARY_KEY_ID: ${{ secrets.QUILL_NOTARY_KEY_ID }}
+          QUILL_NOTARY_KEY: ${{ secrets.QUILL_NOTARY_KEY_BASE64 }}
+          QUILL_NOTARY_ISSUER: ${{ secrets.QUILL_NOTARY_ISSUER }}
+          GITHUB_TOKEN: ${{ secrets.VBOT_GITHUB_API_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+        with:
+          distribution: goreleaser
+          version: ${{ env.GITHUB_REF_NAME }}
+          workdir: src/go/
+          args: release --clean --release-notes /tmp/empty_notes
+
+      - name: Archive quill output
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: quill-logs
+          path: src/go/dist/quill-*.log
+
+  notify-release-failure:
+    name: Notify of release failures
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: [release]
+    steps:
+      - name: Notify release failure
+        uses: slackapi/slack-github-action@v1.21.0
+        with:
+          channel-id: ${{ secrets.INTERNAL_RELEASES_SLACK_CHANNEL }}
+          slack-message: "ERROR: release of `rpk` binaries for `${{ github.ref_name }}` failed in ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.VBOTBUILDOVICH_SLACK_BOT_TOKEN }}
