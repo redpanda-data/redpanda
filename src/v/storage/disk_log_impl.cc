@@ -2079,32 +2079,46 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
         }
     }
 
+    ss::semaphore limit(10);
+
     auto [retention, available, remaining, lcl] = co_await ss::when_all_succeed(
       // reduce segment subject to retention policy
       ss::map_reduce(
         retention_segments,
-        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        [&limit](const segment_set::type& seg) {
+            return ss::with_semaphore(
+              limit, 1, [&seg] { return seg->persistent_size(); });
+        },
         usage{},
         [](usage acc, usage u) { return acc + u; }),
 
       // reduce segments available for reclaim
       ss::map_reduce(
         available_segments,
-        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        [&limit](const segment_set::type& seg) {
+            return ss::with_semaphore(
+              limit, 1, [&seg] { return seg->persistent_size(); });
+        },
         usage{},
         [](usage acc, usage u) { return acc + u; }),
 
       // reduce segments not available for reclaim
       ss::map_reduce(
         remaining_segments,
-        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        [&limit](const segment_set::type& seg) {
+            return ss::with_semaphore(
+              limit, 1, [&seg] { return seg->persistent_size(); });
+        },
         usage{},
         [](usage acc, usage u) { return acc + u; }),
 
       // reduce segments not available for reclaim
       ss::map_reduce(
         local_retention_segments,
-        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        [&limit](const segment_set::type& seg) {
+            return ss::with_semaphore(
+              limit, 1, [&seg] { return seg->persistent_size(); });
+        },
         usage{},
         [](usage acc, usage u) { return acc + u; }));
 
@@ -2293,10 +2307,15 @@ disk_log_impl::disk_usage_target_time_retention(gc_config cfg) {
         co_return std::nullopt;
     }
 
+    ss::semaphore limit(10);
+
     // roll up the amount of disk space taken by these segments
     auto usage = co_await ss::map_reduce(
       segments,
-      [](const segment_set::type& seg) { return seg->persistent_size(); },
+      [&limit](const segment_set::type& seg) {
+          return ss::with_semaphore(
+            limit, 1, [&seg] { return seg->persistent_size(); });
+      },
       storage::usage{},
       [](storage::usage acc, storage::usage u) { return acc + u; });
 
