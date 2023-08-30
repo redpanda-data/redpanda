@@ -880,6 +880,10 @@ spec:
                         required:
                         - maxUnavailable
                         type: object
+                      extraVolumeMounts:
+                        type: string
+                      extraVolumes:
+                        type: string
                       initContainerImage:
                         properties:
                           repository:
@@ -891,6 +895,8 @@ spec:
                         properties:
                           configurator:
                             properties:
+                              extraVolumeMounts:
+                                type: string
                               resources:
                                 description: ResourceRequirements describes the compute
                                   resource requirements.
@@ -944,10 +950,14 @@ spec:
                                     type: object
                                 type: object
                             type: object
+                          extraInitContainers:
+                            type: string
                           setDataDirOwnership:
                             properties:
                               enabled:
                                 type: boolean
+                              extraVolumeMounts:
+                                type: string
                               resources:
                                 description: ResourceRequirements describes the compute
                                   resource requirements.
@@ -1003,6 +1013,8 @@ spec:
                             type: object
                           setTieredStorageCacheDirOwnership:
                             properties:
+                              extraVolumeMounts:
+                                type: string
                               resources:
                                 description: ResourceRequirements describes the compute
                                   resource requirements.
@@ -1063,6 +1075,8 @@ spec:
                               ballast_file_path:
                                 type: string
                               ballast_file_size:
+                                type: string
+                              extraVolumeMounts:
                                 type: string
                               resources:
                                 description: ResourceRequirements describes the compute
@@ -2184,6 +2198,8 @@ spec:
                                 type: object
                               enabled:
                                 type: boolean
+                              extraVolumeMounts:
+                                type: string
                               resources:
                                 description: ResourceRequirements describes the compute
                                   resource requirements.
@@ -2774,6 +2790,8 @@ spec:
                       ballast_file_path:
                         type: string
                       ballast_file_size:
+                        type: string
+                      extraVolumeMounts:
                         type: string
                       resources:
                         description: ResourceRequirements describes the compute resource
