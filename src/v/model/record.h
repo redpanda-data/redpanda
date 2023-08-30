@@ -787,19 +787,20 @@ public:
     auto serde_fields() { return std::tie(_header, _records); }
 
     static model::record_batch
-    serde_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
+    serde_direct_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         auto header = read_nested<model::record_batch_header>(
-          in, bytes_left_limit);
-        auto data = read_nested<iobuf>(in, bytes_left_limit);
+          in, h._bytes_left_limit);
+        auto data = read_nested<iobuf>(in, h._bytes_left_limit);
 
         return {header, std::move(data), tag_ctor_ng()};
     }
 
     static ss::future<model::record_batch>
-    serde_async_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
+    serde_async_direct_read(iobuf_parser& in, serde::header h) {
         using serde::read_async_nested;
         // TODO: change to coroutine after we upgrade to clang-16
+        auto bytes_left_limit = h._bytes_left_limit;
         return read_async_nested<model::record_batch_header>(
                  in, bytes_left_limit)
           .then([&in, bytes_left_limit](model::record_batch_header header) {

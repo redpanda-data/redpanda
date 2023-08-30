@@ -261,7 +261,7 @@ struct append_entries_request
     ss::future<> serde_async_write(iobuf& out);
 
     static ss::future<append_entries_request>
-    serde_async_direct_read(iobuf_parser&, size_t bytes_left_limit);
+    serde_async_direct_read(iobuf_parser&, serde::header);
 
 private:
     vnode _source_node;
@@ -286,7 +286,7 @@ public:
     ss::future<> serde_async_write(iobuf& out);
 
     static ss::future<append_entries_request_serde_wrapper>
-    serde_async_direct_read(iobuf_parser&, size_t bytes_left_limit);
+    serde_async_direct_read(iobuf_parser&, serde::header);
 
 private:
     append_entries_request _request;

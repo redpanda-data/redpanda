@@ -966,10 +966,10 @@ struct no_default_ctor
     bool operator==(const no_default_ctor&) const = default;
 
     static no_default_ctor
-    serde_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
+    serde_direct_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         int x;
-        read_nested(in, x, bytes_left_limit);
+        read_nested(in, x, h._bytes_left_limit);
         return no_default_ctor(x);
     }
 
