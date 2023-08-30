@@ -47,7 +47,8 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
         gd = self.rpk.group_describe(group_name)
 
         for p in gd.partitions:
-            offsets[f"{p.topic}/{p.partition}"] = p.current_offset
+            if p.current_offset is not None:
+                offsets[f"{p.topic}/{p.partition}"] = p.current_offset
         return offsets
 
     def get_group(self):
@@ -70,7 +71,8 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
             do_list_groups,
             timeout_sec=30,
             backoff_sec=0.5,
-            err_msg="RPK failed to list consumer groups")
+            err_msg="RPK failed to list consumer groups",
+            retry_on_exc=True)
 
         return group_list_res[0]
 
@@ -182,7 +184,5 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
         self.logger.info("stopping producer")
         producer.stop()
-        self.logger.info("waiting for producer")
-        producer.wait()
         self.logger.info("waiting for consumer")
         consumer.wait()
