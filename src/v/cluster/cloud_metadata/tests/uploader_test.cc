@@ -116,7 +116,7 @@ protected:
 FIXTURE_TEST(
   test_download_highest_manifest, cluster_metadata_uploader_fixture) {
     cluster::cloud_metadata::uploader uploader(
-      cluster_uuid, bucket, remote, raft0);
+      app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     retry_chain_node retry_node(
       never_abort, ss::lowres_clock::time_point::max(), 10ms);
 
@@ -156,7 +156,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_download_highest_manifest_errors, cluster_metadata_uploader_fixture) {
     cluster::cloud_metadata::uploader uploader(
-      cluster_uuid, bucket, remote, raft0);
+      app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     retry_chain_node retry_node(
       never_abort, ss::lowres_clock::time_point::min(), 10ms);
     auto down_res
@@ -167,7 +167,7 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_upload_next_metadata, cluster_metadata_uploader_fixture) {
     cluster::cloud_metadata::uploader uploader(
-      cluster_uuid, bucket, remote, raft0);
+      app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     retry_chain_node retry_node(
       never_abort, ss::lowres_clock::time_point::max(), 10ms);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] { return raft0->is_leader(); });
@@ -267,7 +267,7 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
     config::shard_local_cfg()
       .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
     cluster::cloud_metadata::uploader uploader(
-      cluster_uuid, bucket, remote, raft0);
+      app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     cluster::cloud_metadata::cluster_metadata_id highest_meta_id{0};
 
     // Checks that metadata is uploaded a new term, stepping down in between
@@ -336,7 +336,7 @@ FIXTURE_TEST(
     config::shard_local_cfg()
       .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
     cluster::cloud_metadata::uploader uploader(
-      cluster_uuid, bucket, remote, raft0);
+      app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] { return raft0->is_leader(); });
 
     auto upload_in_term = uploader.upload_until_term_change();
@@ -379,4 +379,33 @@ FIXTURE_TEST(
         }
         return num_deletes >= 2;
     });
+}
+
+FIXTURE_TEST(test_run_loop, cluster_metadata_uploader_fixture) {
+    config::shard_local_cfg()
+      .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
+    cluster::cloud_metadata::uploader uploader(
+      app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
+    retry_chain_node retry_node(
+      never_abort, ss::lowres_clock::time_point::max(), 10ms);
+    // Run the upload loop and make sure that new leaders continue to upload.
+    uploader.start();
+    auto stop = ss::defer([&] { uploader.stop_and_wait().get(); });
+    cluster::cloud_metadata::cluster_metadata_id highest_meta_id{-1};
+    for (int i = 0; i < 3; i++) {
+        auto initial_meta_id = highest_meta_id;
+        cluster::cloud_metadata::cluster_metadata_manifest manifest;
+        tests::cooperative_spin_wait_with_timeout(
+          10s,
+          [&]() -> ss::future<bool> {
+              return downloaded_manifest_has_higher_id(
+                initial_meta_id, &manifest);
+          })
+          .get();
+        BOOST_REQUIRE_GT(manifest.metadata_id, highest_meta_id);
+        highest_meta_id = manifest.metadata_id;
+
+        // Stop the upload loop and continue in a new term.
+        raft0->step_down("forced stepdown").get();
+    }
 }
