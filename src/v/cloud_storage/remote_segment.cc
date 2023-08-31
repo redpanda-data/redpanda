@@ -312,28 +312,32 @@ remote_segment::offset_data_stream(
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
     co_await hydrate();
-    offset_index::find_result pos;
+
+    std::optional<offset_index::find_result> indexed_pos;
     std::optional<uint16_t> prefetch_override = std::nullopt;
+
+    // Perform index lookup by timestamp or offset. This reduces the number
+    // of hydrated chunks required to serve the request.
     if (first_timestamp) {
-        // Time queries are linear search from front of the segment.  The
-        // dominant cost of a time query on a remote partition is promoting
-        // the segment into our local cache: once it's here, the cost of
-        // a scan is comparatively small.  For workloads that do many time
-        // queries in close proximity on the same partition, an additional
-        // index could be added here, for hydrated segments.
-        pos = {
-          .rp_offset = _base_rp_offset,
-          .kaf_offset = _base_rp_offset - _base_offset_delta,
-          .file_pos = 0,
-        };
+        // The dominant cost of a time query on a remote partition is promoting
+        // the chunks into our local cache: once they're here, the cost of a
+        // scan is comparatively small.
+
         prefetch_override = 0;
+        indexed_pos = maybe_get_offsets(*first_timestamp);
     } else {
-        pos = maybe_get_offsets(start).value_or(offset_index::find_result{
-          .rp_offset = _base_rp_offset,
-          .kaf_offset = _base_rp_offset - _base_offset_delta,
-          .file_pos = 0,
-        });
+        indexed_pos = maybe_get_offsets(start);
     }
+
+    // If the index lookup failed, scan the entire segement starting from the
+    // first chunk.
+    offset_index::find_result pos = indexed_pos.value_or(
+      offset_index::find_result{
+        .rp_offset = _base_rp_offset,
+        .kaf_offset = _base_rp_offset - _base_offset_delta,
+        .file_pos = 0,
+      });
+
     vlog(
       _ctxlog.debug,
       "Offset data stream start reading at {}, log offset {}, delta {}",
@@ -381,9 +385,31 @@ remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
     }
     vlog(
       _ctxlog.debug,
-      "Using index to locate {}, the result is rp-offset: {}, kafka-offset: "
+      "Using index to locate Kafka offset {}, the result is rp-offset: {}, "
+      "kafka-offset: "
       "{}, file-pos: {}",
       kafka_offset,
+      pos->rp_offset,
+      pos->kaf_offset,
+      pos->file_pos);
+    return pos;
+}
+
+std::optional<offset_index::find_result>
+remote_segment::maybe_get_offsets(model::timestamp ts) {
+    if (!_index) {
+        return {};
+    }
+    auto pos = _index->find_timestamp(ts);
+    if (!pos) {
+        return {};
+    }
+    vlog(
+      _ctxlog.debug,
+      "Using index to locate timestamp {}, the result is rp-offset: {}, "
+      "kafka-offset: "
+      "{}, file-pos: {}",
+      ts,
       pos->rp_offset,
       pos->kaf_offset,
       pos->file_pos);
@@ -944,6 +970,8 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
     retry_chain_node rtc{
       cache_hydration_timeout, cache_hydration_backoff, &_rtc};
 
+    const auto chunk_count = range.chunk_count();
+
     const auto end = range.last_offset().value_or(_size - 1);
     auto consumer = split_segment_into_chunk_range_consumer{
       *this, std::move(range)};
@@ -955,6 +983,8 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
         measurement->set_trace(false);
         throw download_exception{res, _path};
     }
+
+    _ts_probe.on_chunks_hydration(chunk_count);
 }
 
 ss::future<ss::file>
