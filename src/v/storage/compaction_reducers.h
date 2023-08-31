@@ -22,9 +22,9 @@
 #include "storage/logger.h"
 #include "units.h"
 #include "utils/fragmented_vector.h"
+#include "utils/tracking_allocator.h"
 
 #include <absl/container/btree_map.h>
-#include <absl/container/node_hash_map.h>
 #include <fmt/core.h>
 #include <roaring/roaring.hh>
 
@@ -36,35 +36,40 @@ class compaction_key_reducer : public compaction_reducer {
 public:
     static constexpr const size_t default_max_memory_usage = 5_MiB;
     struct value_type {
-        value_type(model::offset o, uint32_t i)
-          : offset(o)
+        value_type(bytes k, model::offset o, uint32_t i)
+          : key(std::move(k))
+          , offset(o)
           , natural_index(i) {}
+        bytes key;
         model::offset offset;
         uint32_t natural_index;
     };
-    using underlying_t = absl::node_hash_map<
-      bytes,
+    using underlying_t = absl::btree_multimap<
+      uint64_t,
       value_type,
-      bytes_hasher<uint64_t, xxhash_64>,
-      bytes_type_eq>;
+      std::less<>,
+      util::tracking_allocator<value_type>>;
 
     explicit compaction_key_reducer(size_t max_mem = default_max_memory_usage)
-      : _max_mem(max_mem) {}
+      : _max_mem(max_mem)
+      , _memory_tracker(
+          ss::make_shared<util::mem_tracker>("compaction_key_reducer_index"))
+      , _indices{util::tracking_allocator<value_type>{_memory_tracker}} {}
 
     ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
     roaring::Roaring end_of_stream();
+    size_t idx_mem_usage() { return _memory_tracker->consumption(); }
 
 private:
-    size_t idx_mem_usage() {
-        using debug = absl::container_internal::hashtable_debug_internal::
-          HashtableDebugAccess<underlying_t>;
-        return debug::AllocatedByteSize(_indices);
-    }
-    roaring::Roaring _inverted;
-    underlying_t _indices;
     size_t _keys_mem_usage{0};
     size_t _max_mem{0};
     uint32_t _natural_index{0};
+
+    roaring::Roaring _inverted;
+
+    ss::shared_ptr<util::mem_tracker> _memory_tracker;
+    underlying_t _indices;
+    bytes_hasher<uint64_t, xxhash_64> _hasher;
 };
 
 /// This class copies the input reader into the writer consulting the bitmap of
