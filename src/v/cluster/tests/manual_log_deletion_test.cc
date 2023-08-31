@@ -53,6 +53,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
                 gr.disable_node(id);
             }
         }
+        config::shard_local_cfg().log_segment_size_min.reset();
     }
 
     void maybe_init_eviction_stm(model::node_id id) {
