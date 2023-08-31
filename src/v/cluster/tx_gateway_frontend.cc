@@ -50,16 +50,11 @@ static auto with(
   kafka::transactional_id tx_id,
   const std::string_view name,
   Func&& func) noexcept {
-    return stm->get_tx_lock(tx_id)
-      ->with([name, tx_id, func = std::forward<Func>(func)]() mutable {
-          vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
+    return stm->lock_tx(tx_id, name)
+      .then([stm, tx_id, func = std::forward<Func>(func)](auto units) mutable {
           return ss::futurize_invoke(std::forward<Func>(func))
-            .finally([name, tx_id]() {
-                vlog(
-                  txlog.trace, "released_lock name:{}, tx_id:{}", name, tx_id);
-            });
-      })
-      .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
+            .finally([units = std::move(units)] {});
+      });
 }
 
 template<typename Func>
@@ -68,26 +63,17 @@ static auto with_free(
   kafka::transactional_id tx_id,
   const std::string_view name,
   Func&& func) noexcept {
+    auto units = stm->try_lock_tx(tx_id, name);
     auto f = ss::now();
-    auto lock = stm->get_tx_lock(tx_id);
-    if (!lock->ready()) {
+
+    if (!units) {
         f = ss::make_exception_future(ss::semaphore_timed_out());
     }
+
     return f.then(
-      [lock, stm, name, tx_id, func = std::forward<Func>(func)]() mutable {
-          return lock
-            ->with([name, tx_id, func = std::forward<Func>(func)]() mutable {
-                vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
-                return ss::futurize_invoke(std::forward<Func>(func))
-                  .finally([name, tx_id]() {
-                      vlog(
-                        txlog.trace,
-                        "released_lock name:{}, tx_id:{}",
-                        name,
-                        tx_id);
-                  });
-            })
-            .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
+      [units = std::move(units), func = std::forward<Func>(func)]() mutable {
+          return ss::futurize_invoke(std::forward<Func>(func))
+            .finally([units = std::move(units)] {});
       });
 }
 
@@ -197,7 +183,8 @@ tx_gateway_frontend::tx_gateway_frontend(
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager)
+  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
+  config::binding<uint64_t> max_transactions_per_coordinator)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -216,8 +203,8 @@ tx_gateway_frontend::tx_gateway_frontend(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
-  , _transactions_enabled(
-      config::shard_local_cfg().enable_transactions.value()) {
+  , _transactions_enabled(config::shard_local_cfg().enable_transactions.value())
+  , _max_transactions_per_coordinator(max_transactions_per_coordinator) {
     /**
      * do not start expriry timer when transactions are disabled
      */
@@ -1094,23 +1081,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
                          transaction_timeout_ms,
                          expected_pid,
                          timeout](ss::basic_rwlock<>::holder unit) {
-                            return with(
-                                     stm,
-                                     tx_id,
-                                     "init_tm_tx",
-                                     [&self,
-                                      stm,
-                                      tx_id,
-                                      transaction_timeout_ms,
-                                      expected_pid,
-                                      timeout]() {
-                                         return self.do_init_tm_tx(
-                                           stm,
-                                           tx_id,
-                                           transaction_timeout_ms,
-                                           timeout,
-                                           expected_pid);
-                                     })
+                            return self
+                              .limit_init_tm_tx(
+                                stm,
+                                tx_id,
+                                transaction_timeout_ms,
+                                timeout,
+                                expected_pid)
                               .finally([u = std::move(unit)] {});
                         });
                   });
@@ -1214,7 +1191,7 @@ bool is_valid_producer(
 
 } // namespace
 
-ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
+ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
@@ -1231,13 +1208,74 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         }
         vlog(
           txlog.warn,
-          "got error {} on loading tx.id={}",
+          "got error {} on syncing (initializing tx.id={})",
           term_opt.error(),
           tx_id);
         co_return init_tm_tx_reply{tx_errc::not_coordinator};
     }
     auto term = term_opt.value();
 
+    if (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
+        // lock is sloppy and doesn't guarantee that tx_cache_size
+        // never exceeds _max_transactions_per_coordinator. init_tm_tx
+        // request may pass limit_init_tm_tx but not yet increase
+        // tx_cache_size so there is a small window of time when the
+        // next init tx request may pass too even if the first request
+        // eventually tip tx cache over max transactions per coordinator.
+        // it isn't the problem, the next request will correct it
+        auto init_units = co_await stm->get_tx_thrashing_lock().get_units();
+
+        // similar to double-checked locking pattern
+        // it protects concurrent access to oldest_tx
+        if (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
+            auto tx_opt = stm->oldest_tx();
+            if (!tx_opt) {
+                vlog(
+                  txlog.warn,
+                  "oldest_tx shouldn't return empty when tx cache is at "
+                  "capacity");
+                co_return init_tm_tx_reply{tx_errc::not_coordinator};
+            }
+
+            auto tx = tx_opt.value();
+            vlog(
+              txlog.info,
+              "tx cache is at capacity; expiring oldest tx with id:{}",
+              tx.id);
+            auto tx_units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+            auto ec = co_await do_expire_old_tx(
+              stm,
+              term,
+              tx.id,
+              config::shard_local_cfg().create_topic_timeout_ms(),
+              true);
+            if (ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "do_expire_old_tx with tx_id={} returned ec={}",
+                  tx.id,
+                  ec);
+                co_return init_tm_tx_reply{tx_errc::not_coordinator};
+            }
+            tx_units.return_all();
+        }
+
+        init_units.return_all();
+    }
+
+    auto units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+
+    co_return co_await do_init_tm_tx(
+      stm, term, tx_id, transaction_timeout_ms, timeout, expected_pid);
+}
+
+ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
+  ss::shared_ptr<tm_stm> stm,
+  model::term_id term,
+  kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::timeout_clock::duration timeout,
+  model::producer_identity expected_pid) {
     if (!stm->hosts(tx_id)) {
         co_return tx_errc::not_coordinator;
     }
@@ -3109,29 +3147,48 @@ ss::future<> tx_gateway_frontend::expire_old_txs(ss::shared_ptr<tm_stm> stm) {
 
 ss::future<> tx_gateway_frontend::expire_old_tx(
   ss::shared_ptr<tm_stm> stm, kafka::transactional_id tx_id) {
-    return with(stm, tx_id, "expire_old_tx", [this, stm, tx_id]() {
-        return do_expire_old_tx(
-          stm, tx_id, config::shard_local_cfg().create_topic_timeout_ms());
-    });
-}
+    auto units = co_await stm->lock_tx(tx_id, "expire_old_tx");
 
-ss::future<> tx_gateway_frontend::do_expire_old_tx(
-  ss::shared_ptr<tm_stm> stm,
-  kafka::transactional_id tx_id,
-  model::timeout_clock::duration timeout) {
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            vlog(
+              txlog.trace,
+              "this node isn't a leader for tx.id={} coordinator",
+              tx_id);
+        }
+        vlog(
+          txlog.warn,
+          "got error {} on syncing state machine (loading tx.id={})",
+          term_opt.error(),
+          tx_id);
         co_return;
     }
+
     auto term = term_opt.value();
+
+    co_await do_expire_old_tx(
+      stm,
+      term,
+      tx_id,
+      config::shard_local_cfg().create_topic_timeout_ms(),
+      false);
+}
+
+ss::future<tx_errc> tx_gateway_frontend::do_expire_old_tx(
+  ss::shared_ptr<tm_stm> stm,
+  model::term_id term,
+  kafka::transactional_id tx_id,
+  model::timeout_clock::duration timeout,
+  bool ignore_update_ts) {
     auto r0 = co_await get_tx(term, stm, tx_id, timeout);
     if (!r0.has_value()) {
         // either timeout or already expired
-        co_return;
+        co_return tx_errc::tx_not_found;
     }
     auto tx = r0.value();
-    if (!stm->is_expired(tx)) {
-        co_return;
+    if (!ignore_update_ts && !stm->is_expired(tx)) {
+        co_return tx_errc::none;
     }
 
     checked<tm_transaction, tx_errc> r(tx);
@@ -3150,12 +3207,20 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     }
     if (!r.has_value()) {
-        co_return;
+        vlog(txlog.warn, "got error {} on aborting tx.id={}", r.error(), tx_id);
+
+        co_return r.error();
     }
 
     // it's ok not to check ec because if the expiration isn't passed
     // it will be retried and it's an idempotent operation
-    co_await stm->expire_tx(term, tx_id).discard_result();
+    auto ec = co_await stm->expire_tx(term, tx_id);
+    if (ec != tm_stm::op_status::success) {
+        vlog(txlog.warn, "got error {} on expiring tx.id={}", ec, tx.id);
+        co_return tx_errc::not_coordinator;
+    }
+
+    co_return tx_errc::none;
 }
 
 ss::future<tx_gateway_frontend::return_all_txs_res>

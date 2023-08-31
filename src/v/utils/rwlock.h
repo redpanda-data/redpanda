@@ -23,10 +23,13 @@ class rwlock_unit {
     rwlock* _lock;
     bool _is_write_lock{false};
 
-public:
     rwlock_unit(rwlock* lock, bool is_write_lock) noexcept
       : _lock(lock)
       , _is_write_lock(is_write_lock) {}
+
+    friend class rwlock;
+
+public:
     rwlock_unit(rwlock_unit&& token) noexcept
       : _lock(token._lock)
       , _is_write_lock(token._is_write_lock) {
@@ -36,8 +39,11 @@ public:
     rwlock_unit(const rwlock_unit&&) = delete;
     rwlock_unit() = delete;
 
+    explicit operator bool() const noexcept { return _lock != nullptr; }
+
     rwlock_unit& operator=(rwlock_unit&& other) noexcept {
         if (this != &other) {
+            this->_lock = other._lock;
             other._lock = nullptr;
         }
         return *this;
