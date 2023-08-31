@@ -26,96 +26,96 @@ fi
 
 deb_deps=(
   cargo
-  cmake
-  ninja-build
   clang
-  lld
+  cmake
   git
+  gnutls-dev
+  golang
+  libabsl-dev
   libboost-all-dev
   libc-ares-dev
   libcrypto++-dev
+  libgssapi-krb5-2
+  libkrb5-dev
   liblz4-dev
-  gnutls-dev
-  libsctp-dev
-  libyaml-cpp-dev
-  ragel
-  valgrind
-  libsnappy-dev
-  libabsl-dev
-  libxxhash-dev
-  libzstd-dev
   libprotobuf-dev
   libprotoc-dev
-  protobuf-compiler
-  python3-jsonschema
-  python3-jinja2
-  xfslibs-dev
   libre2-dev
-  systemtap-sdt-dev
-  libkrb5-dev
-  libgssapi-krb5-2
-  golang
+  libsctp-dev
+  libsnappy-dev
+  libxxhash-dev
+  libyaml-cpp-dev
+  libzstd-dev
+  lld
+  ninja-build
+  protobuf-compiler
   python3
+  python3-jinja2
+  python3-jsonschema
+  ragel
+  systemtap-sdt-dev
+  valgrind
+  xfslibs-dev
 )
 fedora_deps=(
-  cargo
-  rust
-  cmake
-  ninja-build
-  clang
-  compiler-rt
-  llvm
-  lld
-  git
+  abseil-cpp-devel
   boost-devel
   c-ares-devel
+  cargo
+  clang
+  cmake
+  compiler-rt
   cryptopp-devel
-  lz4-devel
+  git
   gnutls-devel
+  golang
   hwloc-devel
+  krb5-devel
+  libxml2-devel
+  libzstd-devel
   lksctp-tools-devel
+  lld
+  llvm
+  lz4-devel
+  ninja-build
   numactl-devel
-  yaml-cpp-devel
+  procps
+  protobuf-devel
+  python3
+  python3-jinja2
+  python3-jsonschema
   ragel-devel
+  re2-devel
+  rust
+  snappy-devel
+  systemtap-sdt-devel
   valgrind-devel
   xfsprogs-devel
-  systemtap-sdt-devel
-  snappy-devel
-  abseil-cpp-devel
-  zlib-devel
   xxhash-devel
-  libzstd-devel
-  protobuf-devel
-  libxml2-devel
-  re2-devel
-  krb5-devel
-  python3-jsonschema
-  python3-jinja2
-  golang
-  python3
-  procps
+  yaml-cpp-devel
+  zlib-devel
 )
 arch_deps=(
-  rust
   ccache
   clang
   curl
   git
   go
-  zstd
-  llvm
   lld
+  llvm
   pkg-config
   procps
   python-jinja
   python-virtualenv
   rapidjson
+  rust
   snappy
+  unzip
   which
   xxhash
   xz
   zip
-  unzip
+  zstd
 )
 
 case "$ID" in
