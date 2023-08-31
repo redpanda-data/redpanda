@@ -44,7 +44,17 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
     def get_offsets(self, group_name):
         offsets = {}
-        gd = self.rpk.group_describe(group_name)
+
+        def do_describe():
+            gd = self.rpk.group_describe(group_name)
+            return (True, gd)
+
+        gd = wait_until_result(
+            do_describe,
+            timeout_sec=30,
+            backoff_sec=0.5,
+            err_msg="RPK failed to get consumer group offsets",
+            retry_on_exc=True)
 
         for p in gd.partitions:
             if p.current_offset is not None:
