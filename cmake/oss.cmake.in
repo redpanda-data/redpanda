@@ -179,7 +179,7 @@ ExternalProject_Add(fmt
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/redpanda-data/seastar.git
-  GIT_TAG 2b3c2992ca2c913c26e8a52f00f0eb8adf4c896f
+  GIT_TAG 1e2ad26ac57c1130190f3f41237af0907aab17d8
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   LIST_SEPARATOR |
