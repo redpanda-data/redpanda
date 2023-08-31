@@ -627,6 +627,41 @@ private:
             auto maybe_manifest = _view_cursor->manifest();
             if (
               maybe_manifest.has_value()
+              && _next_segment_base_offset == model::offset{}
+              && _view_cursor->get_status()
+                   == async_manifest_view_cursor_status::
+                     materialized_spillover) {
+                // End of the manifest is reached, but the cursor is pointing at
+                // the spillover manifest. We need to reset the cursor to the
+                // next manifest and try to find the next segment there.
+                vlog(
+                  _ctxlog.debug,
+                  "maybe_reset_reader, end of the manifest is reached, "
+                  "resetting cursor to the next manifest");
+                auto stop = co_await _view_cursor->next_iter();
+                if (stop == ss::stop_iteration::yes) {
+                    vlog(_ctxlog.debug, "maybe_reset_reader, last manifest");
+                    co_return false;
+                }
+                try {
+                    _next_segment_base_offset
+                      = co_await _view_cursor->with_manifest(
+                        [&](const partition_manifest& m) {
+                            return m.get_start_offset().value_or(
+                              model::offset{});
+                        });
+                } catch (...) {
+                    vlog(
+                      _ctxlog.debug,
+                      "maybe_reset_reader, failed to get next manifest: {}",
+                      std::current_exception());
+                    co_return false;
+                }
+                // NOTE: maybe_manifest is invalidated at this point
+                maybe_manifest = _view_cursor->manifest();
+            }
+            if (
+              maybe_manifest.has_value()
               && _next_segment_base_offset != model::offset{}) {
                 // Our segment lookup may return incorrect results if the
                 // offset we're looking for has been moved out of this manifest
