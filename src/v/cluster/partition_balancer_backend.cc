@@ -23,6 +23,7 @@
 #include "config/property.h"
 #include "random/generators.h"
 #include "utils/gate_guard.h"
+#include "utils/stable_iterator_adaptor.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -255,6 +256,13 @@ void partition_balancer_backend::tick() {
                   e.what());
                 maybe_rearm_timer(true);
             })
+          .handle_exception_type([this](iterator_stability_violation& e) {
+              vlog(
+                clusterlog.debug,
+                "iterator_stability_violation: {}, rescheduling tick",
+                e.what());
+              maybe_rearm_timer(true);
+          })
           .handle_exception([](const std::exception_ptr& e) {
               vlog(clusterlog.warn, "tick error: {}", e);
           });
