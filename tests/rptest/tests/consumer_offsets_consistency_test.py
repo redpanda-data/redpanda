@@ -86,6 +86,18 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
         return group_list_res[0]
 
+    @property
+    def msg_size(self):
+        return 16
+
+    @property
+    def msg_count(self):
+        return int(20 * self.producer_throughput / self.msg_size)
+
+    @property
+    def producer_throughput(self):
+        return 1024 if self.debug_mode else 1024 * 1024
+
     @cluster(num_nodes=4)
     def test_flipping_leadership(self):
         topic = TopicSpec(partition_count=64, replication_factor=3)
@@ -93,15 +105,14 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
         # set new members join timeout to 5 seconds to make the test execution faster
         self.redpanda.set_cluster_config(
             {"group_new_member_join_timeout": 5000})
-        msg_size = 16
-        msg_cnt = 5000000
 
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        topic.name,
-                                       msg_size,
-                                       msg_cnt,
-                                       custom_node=self.preallocated_nodes)
+                                       self.msg_size,
+                                       self.msg_count,
+                                       custom_node=self.preallocated_nodes,
+                                       rate_limit_bps=self.producer_throughput)
 
         producer.start(clean=False)
 
@@ -113,7 +124,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
             self.test_context,
             self.redpanda,
             topic.name,
-            msg_size,
+            self.msg_size,
             readers=3,
             nodes=self.preallocated_nodes,
             loop=True)
