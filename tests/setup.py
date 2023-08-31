@@ -19,7 +19,7 @@ setup(
         'xxhash==2.0.2', 'protobuf==4.21.8', 'fastavro==1.4.9',
         'psutil==5.9.0', 'numpy==1.22.3', 'pygal==3.0', 'pytest==7.1.2',
         'jump-consistent-hash==3.2.0', 'azure-storage-blob==12.14.1',
-        'kafkatest@git+https://github.com/apache/kafka.git@058589b03db686803b33052d574ce887fb5cfbd1#egg=kafkatest&subdirectory=tests',
+        'kafkatest@git+https://github.com/apache/kafka.git@3.2.0#egg=kafkatest&subdirectory=tests',
         'grpcio==1.57.0', 'grpcio-tools==1.57', 'grpcio-status==1.57.0',
         'cachetools==5.3.1', 'google-api-core==2.11.1', 'google-auth==2.22.0',
         'googleapis-common-protos==1.60.0', 'google.cloud.compute==1.14.0',
