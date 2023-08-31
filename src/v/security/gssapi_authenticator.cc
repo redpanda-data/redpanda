@@ -169,7 +169,7 @@ private:
 };
 
 gssapi_authenticator::gssapi_authenticator(
-  ssx::thread_worker& thread_worker,
+  ssx::singleton_thread_worker& thread_worker,
   std::vector<gssapi_rule> rules,
   ss::sstring principal,
   ss::sstring keytab)

@@ -2136,7 +2136,7 @@ void application::start_runtime_services(
             });
       });
 
-    thread_worker->start().get();
+    thread_worker->start({.name = "worker"}).get();
 
     // single instance
     node_status_backend.invoke_on_all(&cluster::node_status_backend::start)

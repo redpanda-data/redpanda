@@ -13,6 +13,6 @@
 
 namespace ssx {
 
-class thread_worker;
+class singleton_thread_worker;
 
 } // namespace ssx
