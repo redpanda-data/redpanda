@@ -8,6 +8,7 @@ v_cc_library(
     work_queue.cc
   DEPS
     Seastar::seastar
+    absl::flat_hash_map
   )
 
 add_subdirectory(tests)
