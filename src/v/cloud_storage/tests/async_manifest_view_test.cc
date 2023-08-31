@@ -53,6 +53,11 @@ public:
         config::shard_local_cfg().cloud_storage_manifest_cache_ttl_ms.set_value(
           cache_ttl);
     }
+
+    ~set_config_mixin() {
+        config::shard_local_cfg().cloud_storage_manifest_cache_size.reset();
+        config::shard_local_cfg().cloud_storage_manifest_cache_ttl_ms.reset();
+    }
 };
 
 class async_manifest_view_fixture
@@ -168,8 +173,8 @@ public:
           _expectations.back().url);
     }
 
-    // The current content of the manifest will be spilled over to the archive
-    // and new elements will be generated.
+    // The current content of the manifest will be spilled over to the
+    // archive and new elements will be generated.
     void generate_manifest_section(int num_segments, bool hydrate = true) {
         if (stm_manifest.empty()) {
             add_random_segments(stm_manifest, num_segments);
@@ -488,7 +493,8 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
           ->with_manifest([&](const partition_manifest& m) {
               vlog(
                 test_log.info,
-                "Looking at the backlog manifest [{}/{}], archive start: {}",
+                "Looking at the backlog manifest [{}/{}], archive start: "
+                "{}",
                 m.get_start_offset(),
                 m.get_last_offset(),
                 stm_manifest.get_archive_start_offset());
@@ -517,7 +523,8 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
           ->with_manifest([&](const partition_manifest& m) {
               vlog(
                 test_log.info,
-                "Looking at the backlog manifest [{}/{}], archive start: {}",
+                "Looking at the backlog manifest [{}/{}], archive start: "
+                "{}",
                 m.get_start_offset(),
                 m.get_last_offset(),
                 stm_manifest.get_archive_start_offset());
@@ -590,10 +597,10 @@ FIXTURE_TEST(
                     meta.base_offset
                     < stm_manifest.get_archive_start_offset()) {
                       // The cursor only returns full manifests. If the new
-                      // archive start offset is in the middle of the manifest
-                      // it will return the whole manifest and the user has
-                      // to skip all segments below the archive start offset
-                      // manually.
+                      // archive start offset is in the middle of the
+                      // manifest it will return the whole manifest and the
+                      // user has to skip all segments below the archive
+                      // start offset manually.
                       continue;
                   }
                   actual.push_back(meta);
@@ -624,9 +631,10 @@ FIXTURE_TEST(
                     meta.base_offset
                     >= stm_manifest.get_archive_start_offset()) {
                       // The cursor only returns full manifests. If the new
-                      // archive start offset is in the middle of the manifest
-                      // the backlog will contain full manifest and the user has
-                      // to read up until the start offset of the manifest.
+                      // archive start offset is in the middle of the
+                      // manifest the backlog will contain full manifest and
+                      // the user has to read up until the start offset of
+                      // the manifest.
                       break;
                   }
                   actual.push_back(meta);
@@ -696,8 +704,8 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     }
 
     // Check the case when retention overshoots
-    // auto rr1 = view.compute_retention(total_size * 2, std::nullopt).get();
-    // BOOST_REQUIRE(rr1.has_value());
+    // auto rr1 = view.compute_retention(total_size * 2,
+    // std::nullopt).get(); BOOST_REQUIRE(rr1.has_value());
     // BOOST_REQUIRE_EQUAL(rr1.value().offset, model::offset{});
     // BOOST_REQUIRE_EQUAL(rr1.value().delta, model::offset_delta{});
 
@@ -734,7 +742,8 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
 
     vlog(
       test_log.info,
-      "Triggering size-based retention, {} bytes will be evicted, total size "
+      "Triggering size-based retention, {} bytes will be evicted, total "
+      "size "
       "is {} bytes, expected new start offset: {}",
       prefix_size,
       total_size,
@@ -777,7 +786,8 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     stm_manifest.advance_start_kafka_offset(prefix_base_offset - prefix_delta);
     vlog(
       test_log.info,
-      "Triggering offset-based retention, current start kafka offset override: "
+      "Triggering offset-based retention, current start kafka offset "
+      "override: "
       "{}, expected offset: {}, expected delta: {}",
       stm_manifest.get_start_kafka_offset_override(),
       prefix_base_offset,
@@ -826,8 +836,8 @@ FIXTURE_TEST(test_async_manifest_view_after_gc, async_manifest_view_fixture) {
       second_seg_second_spill.delta_offset);
 
     // Advance the clean archive offset through each possible position given
-    // the current start offset and verify that the truncation point is correct
-    // (it should be the same every time).
+    // the current start offset and verify that the truncation point is
+    // correct (it should be the same every time).
     size_t prev_segment_size = 0;
     for (const auto& pre_start_seg : expected) {
         if (
@@ -1129,10 +1139,10 @@ FIXTURE_TEST(
     generate_random_segments(stm_manifest, 10);
     listen();
 
-    // Our generate_manifest_section() function generates segments with gaps in
-    // timestamps. Both base_timestamp and max_timestamp are generated randomly
-    // but they're always equal for the same segment. This means that there is a
-    // gap between any two segments.
+    // Our generate_manifest_section() function generates segments with gaps
+    // in timestamps. Both base_timestamp and max_timestamp are generated
+    // randomly but they're always equal for the same segment. This means
+    // that there is a gap between any two segments.
 
     for (const auto& meta : expected) {
         auto target = model::timestamp(meta.base_timestamp.value() - 1);
