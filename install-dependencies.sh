@@ -25,6 +25,7 @@ else
 fi
 
 deb_deps=(
+  cargo
   cmake
   ninja-build
   clang
@@ -57,6 +58,8 @@ deb_deps=(
   python3
 )
 fedora_deps=(
+  cargo
+  rust
   cmake
   ninja-build
   clang
@@ -93,6 +96,7 @@ fedora_deps=(
   procps
 )
 arch_deps=(
+  rust
   ccache
   clang
   curl
