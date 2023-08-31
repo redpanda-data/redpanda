@@ -623,6 +623,8 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
 
     config::shard_local_cfg().delete_retention_ms.set_value(
       std::chrono::milliseconds{5min});
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().delete_retention_ms.reset(); });
 
     // Apply retention within the archive.
     archiver.apply_archive_retention().get();
@@ -742,6 +744,9 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
     listen();
     config::shard_local_cfg().delete_retention_ms.set_value(
       std::chrono::milliseconds{1min});
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().delete_retention_ms.reset(); });
+
     config::shard_local_cfg()
       .cloud_storage_max_segments_pending_deletion_per_partition(2);
 
@@ -1720,6 +1725,10 @@ static void test_manifest_spillover_impl(
       spillover_manifest_size);
     config::shard_local_cfg().cloud_storage_spillover_manifest_size.set_value(
       std::make_optional(static_cast<size_t>(spillover_manifest_size)));
+    auto reset_cfg = ss::defer([] {
+        config::shard_local_cfg().cloud_storage_spillover_manifest_size.reset();
+    });
+
     archiver.apply_spillover().get();
 
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
