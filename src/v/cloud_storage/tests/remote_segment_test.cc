@@ -558,6 +558,8 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
     // read
     config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
       static_cast<uint64_t>(128_KiB));
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().cloud_storage_cache_chunk_size.reset(); });
 
     auto key = model::offset(1);
     retry_chain_node fib(never_abort, 300s, 200ms);
@@ -704,6 +706,8 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
 FIXTURE_TEST(test_chunks_initialization, cloud_storage_fixture) {
     config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
       static_cast<uint64_t>(128_KiB));
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().cloud_storage_cache_chunk_size.reset(); });
 
     auto key = model::offset(1);
     retry_chain_node fib(never_abort, 300s, 200ms);
@@ -766,6 +770,8 @@ FIXTURE_TEST(test_chunks_initialization, cloud_storage_fixture) {
 FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
     config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
       static_cast<uint64_t>(128_KiB));
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().cloud_storage_cache_chunk_size.reset(); });
 
     auto key = model::offset(1);
     retry_chain_node fib(never_abort, 300s, 200ms);
@@ -850,6 +856,8 @@ FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
 FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
     config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
       static_cast<uint64_t>(128_KiB));
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().cloud_storage_cache_chunk_size.reset(); });
 
     auto key = model::offset(1);
     retry_chain_node fib(never_abort, 10s, 200ms);
@@ -903,6 +911,8 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
      */
     config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
       static_cast<uint64_t>(128_KiB));
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().cloud_storage_cache_chunk_size.reset(); });
 
     auto key = model::offset(1);
     retry_chain_node fib(never_abort, 300s, 200ms);
@@ -981,6 +991,11 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
     const uint16_t prefetch = 1;
     config::shard_local_cfg().cloud_storage_chunk_prefetch.set_value(
       static_cast<uint16_t>(prefetch));
+
+    auto reset_cfg = ss::defer([] {
+        config::shard_local_cfg().cloud_storage_cache_chunk_size.reset();
+        config::shard_local_cfg().cloud_storage_chunk_prefetch.reset();
+    });
 
     const auto key = model::offset(1);
     retry_chain_node fib(never_abort, 300s, 200ms);
