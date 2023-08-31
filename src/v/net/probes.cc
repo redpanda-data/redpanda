@@ -11,13 +11,30 @@
 #include "metrics/metrics.h"
 #include "net/client_probe.h"
 #include "net/server_probe.h"
+#include "net/tls_certificate_probe.h"
+#include "net/types.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/sformat.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>
+#include <seastar/net/tls.hh>
+#include <seastar/util/defer.hh>
 
+#include <boost/lexical_cast.hpp>
+#include <fmt/chrono.h>
+#include <fmt/ranges.h>
+#include <gnutls/gnutls.h>
+#include <gnutls/gnutlsxx.h>
+#include <gnutls/x509-ext.h>
+#include <gnutls/x509.h>
+
+#include <chrono>
 #include <ostream>
+#include <span>
+#include <string>
 
 namespace net {
 void server_probe::setup_metrics(
@@ -282,4 +299,190 @@ std::ostream& operator<<(std::ostream& o, const client_probe& p) {
       << ", requests_blocked_memory: " << p._requests_blocked_memory << " }";
     return o;
 }
+
+ss::future<ss::shared_ptr<ss::tls::server_credentials>>
+build_reloadable_server_credentials_with_probe(
+  config::tls_config config,
+  ss::sstring service,
+  ss::sstring listener_name,
+  ss::tls::reload_callback cb) {
+    auto builder = co_await config.get_credentials_builder();
+    if (!builder) {
+        co_return nullptr;
+    }
+    co_return co_await build_reloadable_credentials_with_probe<
+      ss::tls::server_credentials>(
+      std::move(*builder),
+      std::move(service),
+      std::move(listener_name),
+      std::move(cb));
+}
+
+template<TLSCreds T>
+ss::future<ss::shared_ptr<T>> build_reloadable_credentials_with_probe(
+  ss::tls::credentials_builder builder,
+  ss::sstring area,
+  ss::sstring detail,
+  ss::tls::reload_callback cb) {
+    auto probe = ss::make_lw_shared<net::tls_certificate_probe>();
+    auto wrap_cb = [probe, cb = std::move(cb)](
+                     const std::unordered_set<ss::sstring>& updated,
+                     const ss::tls::certificate_credentials& creds,
+                     const std::exception_ptr& eptr) {
+        if (cb) {
+            cb(updated, eptr);
+        }
+        probe->loaded(creds, eptr);
+    };
+
+    ss::shared_ptr<T> cred;
+    if constexpr (std::is_same<T, ss::tls::server_credentials>::value) {
+        cred = co_await builder.build_reloadable_server_credentials(wrap_cb);
+    } else {
+        cred = co_await builder.build_reloadable_certificate_credentials(
+          wrap_cb);
+    }
+
+    probe->setup_metrics(std::move(area), std::move(detail));
+    probe->loaded(*cred, nullptr);
+    co_return cred;
+}
+
+template ss::future<ss::shared_ptr<ss::tls::server_credentials>>
+build_reloadable_credentials_with_probe(
+  ss::tls::credentials_builder builder,
+  ss::sstring area,
+  ss::sstring detail,
+  ss::tls::reload_callback cb);
+
+template ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
+build_reloadable_credentials_with_probe(
+  ss::tls::credentials_builder builder,
+  ss::sstring area,
+  ss::sstring detail,
+  ss::tls::reload_callback cb);
+
+void tls_certificate_probe::loaded(
+  const ss::tls::certificate_credentials& creds, std::exception_ptr ex) {
+    _load_time = clock_type::now();
+
+    if (ex) {
+        reset();
+        return;
+    }
+
+    auto to_tls_serial = [](bytes_view b) {
+        using T = tls_serial_number::type;
+        T result = 0;
+        const auto end = std::min(b.size(), sizeof(T));
+        std::memcpy(&result, b.data(), end);
+        return tls_serial_number{result};
+    };
+
+    _cert_loaded = true;
+
+    auto certs_info = creds.get_cert_info();
+    auto ts_info = creds.get_trust_list_info();
+
+    if (!certs_info.has_value() || !ts_info.has_value()) {
+        reset();
+        return;
+    }
+
+    for (auto& info : certs_info.value()) {
+        auto exp = clock_type::from_time_t(info.expiry);
+        auto srl = to_tls_serial(info.serial);
+        if (exp < _cert_expiry_time) {
+            _cert_expiry_time = exp;
+            _cert_serial = srl;
+        }
+    }
+
+    for (auto& info : ts_info.value()) {
+        auto exp = clock_type::from_time_t(info.expiry);
+        auto srl = to_tls_serial(info.serial);
+        if (exp < _ca_expiry_time) {
+            _ca_expiry_time = exp;
+            _ca_serial = srl;
+        }
+    }
+}
+
+void tls_certificate_probe::setup_metrics(
+  std::string_view area, std::string_view detail) {
+    if (ss::this_shard_id() != 0) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+    const auto area_label = sm::label("area");
+    const auto detail_label = sm::label("detail");
+
+    const std::vector<sm::label_instance> labels = {
+      area_label(area), detail_label(detail)};
+
+    auto setup = [this,
+                  &labels](const std::vector<sm::label>& aggregate_labels) {
+        using namespace std::literals::chrono_literals;
+        std::vector<sm::metric_definition> defs;
+        defs.emplace_back(
+          sm::make_gauge(
+            "truststore_expires_at_timestamp_seconds",
+            [this] { return _ca_expiry_time.time_since_epoch() / 1s; },
+            sm::description(
+              "Expiry time of the shortest-lived CA in the truststore"
+              "(seconds since epoch)"),
+            labels)
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_gauge(
+            "certificate_expires_at_timestamp_seconds",
+            [this] { return _cert_expiry_time.time_since_epoch() / 1s; },
+            sm::description(
+              "Expiry time of the server certificate (seconds since epoch)"),
+            labels)
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_gauge(
+            "certificate_serial",
+            [this] { return _cert_serial; },
+            sm::description("Least significant four bytes of the server "
+                            "certificate serial number"),
+            labels)
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_gauge(
+            "loaded_at_timestamp_seconds",
+            [this] { return _load_time.time_since_epoch() / 1s; },
+            sm::description(
+              "Load time of the server certificate (seconds since epoch)."),
+            labels)
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_gauge(
+            "certificate_valid",
+            [this] { return cert_valid() ? 1 : 0; },
+            sm::description("The value is one if the certificate is valid with "
+                            "the given truststore, otherwise zero."),
+            labels)
+            .aggregate(aggregate_labels));
+        return defs;
+    };
+
+    if (!config::shard_local_cfg().disable_metrics()) {
+        const auto aggregate_labels
+          = config::shard_local_cfg().aggregate_metrics()
+              ? std::vector<sm::label>{sm::shard_label}
+              : std::vector<sm::label>{};
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("tls"), setup(aggregate_labels));
+    }
+
+    if (!config::shard_local_cfg().disable_public_metrics()) {
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("tls"),
+          setup(std::vector<sm::label>{sm::shard_label}));
+    }
+}
+
 } // namespace net
