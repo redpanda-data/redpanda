@@ -16,6 +16,9 @@ on:
     branches:
       - main
       - dev
+    paths:
+      - .github/workflows/rpk-build.yml
+      - src/go/rpk
 
 jobs:
   test:

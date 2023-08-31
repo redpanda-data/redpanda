@@ -16,6 +16,9 @@ on:
     branches:
       - main
       - dev
+    paths:
+      - .github/workflows/redpanda-migration-build.yml
+      - src/go/cluster-to-redpanda-migration
 
 jobs:
   test:
