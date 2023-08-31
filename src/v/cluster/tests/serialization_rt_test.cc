@@ -2057,6 +2057,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .last_dirty_log_index = tests::random_named_int<model::offset>(),
           .last_term_base_offset = tests::random_named_int<model::offset>(),
           .result = raft::reply_result::group_unavailable,
+          .may_recover = tests::random_bool(),
         };
         roundtrip_test(data);
     }

@@ -237,6 +237,8 @@ struct heartbeat_reply_data
     model::offset last_dirty_log_index;
     model::offset last_term_base_offset;
 
+    bool may_recover = false;
+
     auto serde_fields() {
         return std::tie(
           source_revision,
@@ -244,7 +246,8 @@ struct heartbeat_reply_data
           term,
           last_flushed_log_index,
           last_dirty_log_index,
-          last_term_base_offset);
+          last_term_base_offset,
+          may_recover);
     }
 
     friend bool

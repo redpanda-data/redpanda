@@ -571,6 +571,7 @@ void heartbeat_manager::process_reply(
             .last_dirty_log_index = m.data.last_dirty_log_index,
             .last_term_base_offset = m.data.last_term_base_offset,
             .result = m.result,
+            .may_recover = m.data.may_recover,
           }),
           meta_it->second.seq,
           meta_it->second.dirty_offset);

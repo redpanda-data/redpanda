@@ -247,6 +247,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
           expected[gr].last_dirty_log_index,
           result.meta[i].last_dirty_log_index);
         BOOST_REQUIRE_EQUAL(expected[gr].result, result.meta[i].result);
+        // v1 heartbeats always have default may_recover
+        BOOST_REQUIRE_EQUAL(result.meta[i].may_recover, true);
     }
 }
 

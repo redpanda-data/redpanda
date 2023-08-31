@@ -159,7 +159,8 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
              << ", last_dirty_log_index:" << r.last_dirty_log_index
              << ", last_flushed_log_index:" << r.last_flushed_log_index
              << ", last_term_base_offset:" << r.last_term_base_offset
-             << ", result: " << r.result << "}";
+             << ", result: " << r.result << ", may_recover:" << r.may_recover
+             << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const vote_request& r) {
@@ -505,6 +506,8 @@ void heartbeat_reply::serde_write(iobuf& dst) {
     for (auto& m : reply.meta) {
         write(out, m.result);
     }
+    // Don't bother serializing m.may_recover because nodes that will have
+    // meaningful may_recover are expected to use lightweight heartbeats anyway.
 
     write(dst, std::move(out));
 }

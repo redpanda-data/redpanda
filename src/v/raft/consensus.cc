@@ -3646,6 +3646,7 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
       .last_flushed_log_index = r.last_flushed_log_index,
       .last_dirty_log_index = r.last_dirty_log_index,
       .last_term_base_offset = r.last_term_base_offset,
+      .may_recover = r.may_recover,
     };
     co_return reply;
 }

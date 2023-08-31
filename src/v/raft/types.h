@@ -311,7 +311,7 @@ enum class reply_result : uint8_t {
 struct append_entries_reply
   : serde::envelope<
       append_entries_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -333,6 +333,13 @@ struct append_entries_reply
     /// \brief did the rpc succeed or not
     reply_result result = reply_result::failure;
 
+    // Hint from follower to leader, indicating they are ready for
+    // recovery traffic (false if they may not have enough resources to
+    // handle recovery).
+    // This is true by default to reflect the legacy case, where
+    // older nodes are always ready for recovery.
+    bool may_recover = true;
+
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
 
@@ -349,7 +356,8 @@ struct append_entries_reply
           last_flushed_log_index,
           last_dirty_log_index,
           last_term_base_offset,
-          result);
+          result,
+          may_recover);
     }
 };
 

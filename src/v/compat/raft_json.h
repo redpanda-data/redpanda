@@ -108,6 +108,7 @@ inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
     default:
         vassert(false, "invalid result {}", result);
     }
+    json_read(may_recover);
     out = obj;
 }
 
@@ -130,6 +131,7 @@ inline void rjson_serialize(
     json_write(last_dirty_log_index);
     json_write(last_term_base_offset);
     json_write(result);
+    json_write(may_recover);
 }
 
 inline void rjson_serialize(

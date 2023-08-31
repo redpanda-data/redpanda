@@ -340,6 +340,7 @@ struct instance_generator<raft::append_entries_reply> {
              raft::reply_result::failure,
              raft::reply_result::group_unavailable,
              raft::reply_result::timeout}),
+          .may_recover = tests::random_bool(),
         };
     }
 
@@ -384,6 +385,12 @@ struct instance_generator<raft::heartbeat_reply> {
         };
 
         std::sort(ret.meta.begin(), ret.meta.end(), sorter_fn{});
+
+        // For old-style heartbeats may_recover is not serialized and defaults
+        // to true.
+        for (auto& r : ret.meta) {
+            r.may_recover = true;
+        }
 
         return ret;
     }
