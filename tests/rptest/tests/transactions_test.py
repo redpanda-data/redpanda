@@ -924,6 +924,13 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         self.do_upgrade_with_tx(get_topic_leader)
 
 
+def remote_path_exists(node, path):
+    wait_until(lambda: node.account.exists(path),
+               timeout_sec=20,
+               backoff_sec=2,
+               err_msg=f"Can't find \"{path}\" on {node.account.hostname}")
+
+
 class StaticPartitioning_MixedVersionsTest(RedpandaTest, TransactionsMixin):
     def __init__(self, test_context):
         extra_rp_conf = {
@@ -968,7 +975,7 @@ class StaticPartitioning_MixedVersionsTest(RedpandaTest, TransactionsMixin):
                         "tx_registry")
             assert not node.account.exists(path)
             path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
-            assert node.account.exists(path)
+            remote_path_exists(node, path)
             assert node.account.isdir(path)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -993,7 +1000,7 @@ class StaticPartitioning_MixedVersionsTest(RedpandaTest, TransactionsMixin):
                         "tx_registry")
             assert not node.account.exists(path)
             path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
-            assert node.account.exists(path)
+            remote_path_exists(node, path)
             assert node.account.isdir(path)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -1019,7 +1026,7 @@ class StaticPartitioning_MixedVersionsTest(RedpandaTest, TransactionsMixin):
             for tx_topic in ["tx", "tx_registry"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
-                assert node.account.exists(path)
+                remote_path_exists(node, path)
                 assert node.account.isdir(path)
 
 
