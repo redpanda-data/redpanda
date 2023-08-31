@@ -139,6 +139,7 @@ log_manager::log_manager(
   , _resources(resources)
   , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
+  , _trigger_gc_jitter(0s, 5s)
   , _batch_cache(config.reclaim_opts) {
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
@@ -761,13 +762,18 @@ ss::future<usage_report> log_manager::disk_usage() {
         logs.push_back(it.second->handle);
     }
 
+    ss::semaphore limit(std::max<size_t>(
+      1, config::shard_local_cfg().space_management_max_log_concurrency()));
+
     co_return co_await ss::map_reduce(
       logs.begin(),
       logs.end(),
-      [this, collection_threshold](log l) {
-          auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
-          return log->disk_usage(
-            gc_config(collection_threshold, _config.retention_bytes()));
+      [this, &limit, collection_threshold](log l) {
+          return ss::with_semaphore(limit, 1, [this, collection_threshold, l] {
+              auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
+              return log->disk_usage(
+                gc_config(collection_threshold, _config.retention_bytes()));
+          });
       },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });
@@ -792,8 +798,14 @@ void log_manager::handle_disk_notification(storage::disk_space_alert alert) {
 }
 
 void log_manager::trigger_gc() {
-    _gc_triggered = true;
-    _housekeeping_sem.signal();
+    ssx::spawn_with_gate(_open_gate, [this] {
+        return ss::sleep_abortable(
+                 _trigger_gc_jitter.next_duration(), _abort_source)
+          .then([this] {
+              _gc_triggered = true;
+              _housekeeping_sem.signal();
+          });
+    });
 }
 
 } // namespace storage

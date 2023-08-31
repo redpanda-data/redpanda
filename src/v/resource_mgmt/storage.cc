@@ -110,7 +110,14 @@ ss::future<> disk_space_manager::run_loop() {
             continue;
         }
 
-        co_await manage_data_disk(_target_size);
+        try {
+            co_await manage_data_disk(_target_size);
+        } catch (...) {
+            vlog(
+              stlog.info,
+              "Recoverable error running space management loop: {}",
+              std::current_exception());
+        }
     }
 }
 
