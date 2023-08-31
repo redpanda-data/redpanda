@@ -12,6 +12,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/tests/randoms.h"
+#include "cluster/tests/topic_properties_generator.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "compat/check.h"
@@ -498,59 +499,6 @@ cluster::property_update<T> random_property_update(T value) {
           cluster::incremental_update_operation::set,
           cluster::incremental_update_operation::remove}),
     };
-}
-
-cluster::remote_topic_properties random_remote_topic_properties() {
-    cluster::remote_topic_properties remote_tp;
-    remote_tp.remote_revision
-      = tests::random_named_int<model::initial_revision_id>();
-    remote_tp.remote_partition_count = random_generators::get_int(0, 1000);
-    return remote_tp;
-}
-
-cluster::topic_properties old_random_topic_properties() {
-    cluster::topic_properties properties;
-    properties.cleanup_policy_bitflags = tests::random_optional(
-      [] { return model::random_cleanup_policy(); });
-    properties.compaction_strategy = tests::random_optional(
-      [] { return model::random_compaction_strategy(); });
-    properties.compression = tests::random_optional(
-      [] { return model::random_compression(); });
-    properties.timestamp_type = tests::random_optional(
-      [] { return model::random_timestamp_type(); });
-    properties.segment_size = tests::random_optional(
-      [] { return random_generators::get_int(100_MiB, 1_GiB); });
-    properties.retention_bytes = tests::random_tristate(
-      [] { return random_generators::get_int(100_MiB, 1_GiB); });
-    properties.retention_duration = tests::random_tristate(
-      [] { return tests::random_duration_ms(); });
-    properties.recovery = tests::random_optional(
-      [] { return tests::random_bool(); });
-    properties.shadow_indexing = tests::random_optional(
-      [] { return model::random_shadow_indexing_mode(); });
-
-    // Always test with remote_delete=false so that we survive
-    // an ADL roundtrip
-    properties.remote_delete = false;
-    return properties;
-}
-
-cluster::topic_properties random_topic_properties() {
-    cluster::topic_properties properties = old_random_topic_properties();
-
-    properties.read_replica = tests::random_optional(
-      [] { return tests::random_bool(); });
-    properties.read_replica_bucket = tests::random_optional([] {
-        return random_generators::gen_alphanum_string(
-          random_generators::get_int(1, 64));
-    });
-    properties.remote_topic_properties = tests::random_optional(
-      [] { return random_remote_topic_properties(); });
-
-    // Always set remote_delete=false to survive an ADL roundtrip
-    properties.remote_delete = false;
-
-    return properties;
 }
 
 ss::chunked_fifo<cluster::partition_assignment> random_partition_assignments() {
