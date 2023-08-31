@@ -12,6 +12,8 @@
 #pragma once
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
+#include "test_utils/test_macros.h"
 #include "vassert.h"
 
 #include <seastar/core/future-util.hh>
@@ -26,23 +28,23 @@
 using namespace std::chrono_literals;
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define boost_await_eventually(...)                                            \
+#define RPTEST_REQUIRE_EVENTUALLY_CORO(...)                                    \
     do {                                                                       \
         try {                                                                  \
             co_await tests::cooperative_spin_wait_with_timeout(__VA_ARGS__);   \
         } catch (ss::timed_out_error&) {                                       \
-            BOOST_FAIL(                                                        \
+            RPTEST_FAIL_CORO(                                                  \
               ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \
         }                                                                      \
     } while (0);
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define boost_require_eventually(...)                                          \
+#define RPTEST_REQUIRE_EVENTUALLY(...)                                         \
     do {                                                                       \
         try {                                                                  \
             tests::cooperative_spin_wait_with_timeout(__VA_ARGS__).get();      \
         } catch (ss::timed_out_error&) {                                       \
-            BOOST_FAIL(                                                        \
+            RPTEST_FAIL(                                                       \
               ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \
         }                                                                      \
     } while (0);

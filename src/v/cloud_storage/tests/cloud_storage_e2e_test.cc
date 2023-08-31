@@ -493,7 +493,7 @@ FIXTURE_TEST(
     // figuring out the leader is useful for constructing the producer. the
     // follower is just the "other" node.
     redpanda_thread_fixture* fx_l = nullptr;
-    boost_require_eventually(10s, [&] {
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
         cluster::partition* prt_a
           = app.partition_manager.local().get(ntp).get();
         cluster::partition* prt_b

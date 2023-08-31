@@ -415,7 +415,7 @@ public:
                     .local()
                     .wait_for_leader(model::controller_ntp, tout, {});
 
-        boost_await_eventually(10s, [this, id] {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this, id] {
             auto& members = app.controller->get_members_table();
             return members.local().contains(id);
         });
@@ -424,7 +424,7 @@ public:
         // the raft0 log on first startup, so must be complete before
         // tests start (tests use raft0 offsets to guess at the revision
         // ids of partitions they create)
-        boost_await_eventually(10s, [this]() -> bool {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this]() -> bool {
             // Await feature manager bootstrap
             auto& feature_table = app.controller->get_feature_table().local();
             if (
@@ -447,7 +447,7 @@ public:
     // Wait for the Raft leader of the given partition to become leader.
     ss::future<> wait_for_leader(
       model::ntp ntp, model::timeout_clock::duration timeout = 3s) {
-        boost_await_eventually(timeout, [this, ntp = std::move(ntp)]() {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(timeout, [this, ntp = std::move(ntp)]() {
             auto shard = app.shard_table.local().shard_for(ntp);
             if (!shard) {
                 return ss::make_ready_future<bool>(false);
@@ -485,23 +485,25 @@ public:
     }
 
     ss::future<> wait_for_topics(std::vector<cluster::topic_result> results) {
-        boost_await_eventually(10s, [this, results = std::move(results)] {
-            return std::all_of(
-              results.begin(),
-              results.end(),
-              [this](const cluster::topic_result& r) {
-                  auto md = app.metadata_cache.local().get_topic_metadata(
-                    r.tp_ns);
-                  return md
-                         && std::all_of(
-                           md->get_assignments().begin(),
-                           md->get_assignments().end(),
-                           [this, &r](const cluster::partition_assignment& p) {
-                               return app.shard_table.local().shard_for(
-                                 model::ntp(r.tp_ns.ns, r.tp_ns.tp, p.id));
-                           });
-              });
-        });
+        RPTEST_REQUIRE_EVENTUALLY_CORO(
+          10s, [this, results = std::move(results)] {
+              return std::all_of(
+                results.begin(),
+                results.end(),
+                [this](const cluster::topic_result& r) {
+                    auto md = app.metadata_cache.local().get_topic_metadata(
+                      r.tp_ns);
+                    return md
+                           && std::all_of(
+                             md->get_assignments().begin(),
+                             md->get_assignments().end(),
+                             [this,
+                              &r](const cluster::partition_assignment& p) {
+                                 return app.shard_table.local().shard_for(
+                                   model::ntp(r.tp_ns.ns, r.tp_ns.tp, p.id));
+                             });
+                });
+          });
     }
 
     ss::future<> add_topic(
@@ -559,17 +561,18 @@ public:
       model::ntp ntp,
       model::offset o,
       model::timeout_clock::duration tout = 3s) {
-        boost_await_eventually(tout, [this, ntp = std::move(ntp), o]() mutable {
-            auto shard = app.shard_table.local().shard_for(ntp);
-            if (!shard) {
-                return ss::make_ready_future<bool>(false);
-            }
-            return app.partition_manager.invoke_on(
-              *shard, [ntp, o](cluster::partition_manager& mgr) {
-                  auto partition = mgr.get(ntp);
-                  return partition && partition->committed_offset() >= o;
-              });
-        });
+        RPTEST_REQUIRE_EVENTUALLY_CORO(
+          tout, [this, ntp = std::move(ntp), o]() mutable {
+              auto shard = app.shard_table.local().shard_for(ntp);
+              if (!shard) {
+                  return ss::make_ready_future<bool>(false);
+              }
+              return app.partition_manager.invoke_on(
+                *shard, [ntp, o](cluster::partition_manager& mgr) {
+                    auto partition = mgr.get(ntp);
+                    return partition && partition->committed_offset() >= o;
+                });
+          });
     }
 
     /**
