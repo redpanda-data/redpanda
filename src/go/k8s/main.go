@@ -109,6 +109,7 @@ func main() {
 		// storage driver.
 		allowPVCDeletion bool
 		debug            bool
+		ghostbuster      bool
 	)
 
 	flag.StringVar(&eventsAddr, "events-addr", "", "The address of the events receiver.")
@@ -132,6 +133,8 @@ func main() {
 	flag.StringVar(&vectorizedv1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
 	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
 	flag.StringVar(&namespace, "namespace", "", "If namespace is set to not empty value, it changes scope of Redpanda operator to work in single namespace")
+	flag.BoolVar(&ghostbuster, "unsafe-decommission-failed-brokers", false, "Set to enable decommissioning a failed broker that is configured but does not exist in the StatefulSet (ghost broker). This may result in invalidating valid data")
+	_ = flag.CommandLine.MarkHidden("unsafe-decommission-failed-brokers")
 
 	logOptions.BindFlags(flag.CommandLine)
 	clientOptions.BindFlags(flag.CommandLine)
@@ -290,6 +293,7 @@ func main() {
 			DecommissionWaitInterval:  decommissionWaitInterval,
 			MetricsTimeout:            metricsTimeout,
 			RestrictToRedpandaVersion: restrictToRedpandaVersion,
+			GhostDecommissioning:      ghostbuster,
 		}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 			os.Exit(1)
