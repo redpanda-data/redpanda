@@ -1523,6 +1523,12 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     def get_version(self, node):
         return self._cloud_cluster.get_install_pack_version()
 
+    def set_cluster_config(self, values: dict, timeout: int = 300):
+        pass
+
+    def sockets_clear(self, node):
+        True
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
