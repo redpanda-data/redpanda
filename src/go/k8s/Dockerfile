@@ -1,6 +1,7 @@
 FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.20.4 as builder
 
 ARG TARGETARCH
+ARG TARGETOS
 
 # Copy the rpk as a close depedency
 WORKDIR /workspace
@@ -19,8 +20,8 @@ RUN go mod download
 COPY k8s/ .
 
 # build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o manager main.go && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o configurator cmd/configurator/main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o manager main.go && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o configurator cmd/configurator/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details

@@ -1,4 +1,3 @@
-
 # Image URL to use all building/pushing image targets
 OPERATOR_IMG_LATEST ?= "localhost/redpanda-operator:dev"
 CONFIGURATOR_IMG_LATEST ?= "localhost/configurator:dev"
@@ -11,23 +10,25 @@ REDPANDA_IMG ?= "localhost/redpanda:dev"
 # default redpanda namespace
 NAMESPACE ?= "redpanda"
 
-ifeq (aarch64,$(uname -m))
-TARGETARCH = arm64
+ifeq (aarch64,$(shell uname -m))
+	TARGETARCH = arm64
 else
-TARGETARCH = amd64
+	TARGETARCH ?= $(shell uname -m)
 endif
+
+TARGETOS ?= linux
 
 SHELL := /bin/bash
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
+	GOBIN=$(shell go env GOPATH)/bin
 else
-GOBIN=$(shell go env GOBIN)
+	GOBIN=$(shell go env GOBIN)
 endif
 
 ifneq ($(TEST_NAME), )
-TEST_ONLY_FLAG = --test $(TEST_NAME)
+	TEST_ONLY_FLAG = --test $(TEST_NAME)
 endif
 
 all: manager
@@ -96,12 +97,13 @@ prepare-dockerfile:
 # Build the docker image
 docker-build: prepare-dockerfile
 	echo "~~~ Building operator image :docker:"
-	docker buildx build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager --load -f Dockerfile.out -t ${OPERATOR_IMG_LATEST} ../
+	echo  building '${TARGETOS}/${TARGETARCH}'
+	docker buildx build --build-arg BUILDPLATFORM='${TARGETOS}/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --build-arg TARGETOS=${TARGETOS} --target=manager --load -f Dockerfile.out -t ${OPERATOR_IMG_LATEST} ../
 
 # Build the docker image
 docker-build-configurator: prepare-dockerfile
 	echo "~~~ Building configurator image :docker:"
-	docker buildx build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator --load -f Dockerfile.out -t ${CONFIGURATOR_IMG_LATEST} ../
+	docker buildx build --build-arg BUILDPLATFORM='${TARGETOS}/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --build-arg TARGETOS=${TARGETOS} --target=configurator --load -f Dockerfile.out -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
 push-to-kind: kind-create certmanager-install
