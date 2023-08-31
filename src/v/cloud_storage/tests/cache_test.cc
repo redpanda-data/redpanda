@@ -500,3 +500,41 @@ FIXTURE_TEST(test_exhaustive_trim_runs_after_fast_trim, cache_test_fixture) {
           return !std::filesystem::exists(path);
       }));
 }
+
+FIXTURE_TEST(test_log_segment_cleanup, cache_test_fixture) {
+    std::vector<std::filesystem::path> objects{
+      CACHE_DIR / "test.log.1",
+      CACHE_DIR / "test.log.1.index",
+      CACHE_DIR / "test.log.1.tx",
+      CACHE_DIR / "test.log",
+      CACHE_DIR / "test.log.index",
+      CACHE_DIR / "test.log.tx"};
+    for (const auto& obj : objects) {
+        std::ofstream f{obj};
+        f.flush();
+    }
+
+    // An un-removable file makes sure the fast trim will have to remove the two
+    // segment files.
+    {
+        std::ofstream f{CACHE_DIR / "accesstime"};
+        f.flush();
+    }
+
+    BOOST_REQUIRE(
+      std::all_of(objects.cbegin(), objects.cend(), [](const auto& path) {
+          return std::filesystem::exists(path);
+      }));
+
+    clean_up_at_start().get();
+
+    // With this limit all of the index+tx files should not have to be removed,
+    // but fast trim will remove all of these files after removing the two
+    // segments.
+    trim_cache(std::nullopt, 4);
+
+    BOOST_REQUIRE(
+      std::all_of(objects.cbegin(), objects.cend(), [](const auto& path) {
+          return !std::filesystem::exists(path);
+      }));
+}
