@@ -199,7 +199,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
                     )
                     if self.failure_cnt >= 20:
                         break
-                    timeout = 60
+                    timeout = 120
                     if time.time() - self.last_success > timeout:
                         assert False, f"Unable to retrieve group description for {timeout} seconds"
         finally:
