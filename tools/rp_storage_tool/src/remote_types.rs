@@ -14,6 +14,17 @@ use std::marker::PhantomData;
 use xxhash_rust::xxh32::xxh32;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ClusterMetadataManifest {
+    pub version: u32,
+    pub compat_version: u32,
+    pub upload_time_since_epoch: i64,
+    pub cluster_uuid: String,
+    pub metadata_id: i64,
+    pub controller_snapshot_offset: i64,
+    pub controller_snapshot_path: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PartitionManifestSegment {
     // Mandatory fields: always set, since v22.1.x
     pub base_offset: RawOffset,
@@ -977,6 +988,10 @@ mod tests {
         read_json(path).await
     }
 
+    async fn read_cluster_manifest(path: &str) -> ClusterMetadataManifest {
+        read_json(path).await
+    }
+
     #[test_log::test(tokio::test)]
     async fn test_manifest_decode() {
         let manifest = read_manifest("/resources/test/manifest.json").await;
@@ -1142,6 +1157,24 @@ mod tests {
 
         let json_manifest = serde_json::to_string(&manifest).unwrap();
         assert_eq!(json_manifest.find("last_uploaded_compacted_offset"), None);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_cluster_manifest_decode() {
+        let manifest = read_cluster_manifest("/resources/test/cluster_manifest.json").await;
+        assert_eq!(manifest.version, 1);
+        assert_eq!(manifest.compat_version, 1);
+        assert_eq!(manifest.upload_time_since_epoch, 1668768681875);
+        assert_eq!(
+            manifest.cluster_uuid,
+            "19fd9bd7-29e9-4da4-85cf-7199b2997ad3"
+        );
+        assert_eq!(manifest.metadata_id, 3);
+        assert_eq!(manifest.controller_snapshot_offset, 380);
+        assert_eq!(
+            manifest.controller_snapshot_path,
+            "cluster_metadata/19fd9bd7-29e9-4da4-85cf-7199b2997ad3/380/controller.snapshot"
+        );
     }
 
     #[test_log::test(tokio::test)]
