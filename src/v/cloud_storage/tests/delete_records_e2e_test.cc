@@ -22,6 +22,7 @@
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
 #include "test_utils/async.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/io_priority_class.hh>
 
@@ -84,23 +85,21 @@ public:
         wait_for_controller_leadership().get();
 
         // Apply local retention frequently.
-        config::shard_local_cfg().log_compaction_interval_ms.set_value(
-          std::chrono::duration_cast<std::chrono::milliseconds>(1s));
+        test_local_cfg.get("log_compaction_interval_ms")
+          .set_value(std::chrono::duration_cast<std::chrono::milliseconds>(1s));
         // We'll control uploads ourselves.
-        config::shard_local_cfg()
-          .cloud_storage_enable_segment_merging.set_value(false);
-        config::shard_local_cfg()
-          .cloud_storage_disable_upload_loop_for_tests.set_value(true);
+        test_local_cfg.get("cloud_storage_enable_segment_merging")
+          .set_value(false);
+        test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+          .set_value(true);
         // Disable metrics to speed things up.
-        config::shard_local_cfg().enable_metrics_reporter.set_value(false);
+        test_local_cfg.get("enable_metrics_reporter").set_value(false);
         // Encourage spilling over.
-        config::shard_local_cfg()
-          .cloud_storage_spillover_manifest_max_segments.set_value(
-            std::make_optional<size_t>(segs_per_spill));
-        config::shard_local_cfg()
-          .cloud_storage_spillover_manifest_size.set_value(
-            std::optional<size_t>{});
-        config::shard_local_cfg().retention_local_strict.set_value(true);
+        test_local_cfg.get("cloud_storage_spillover_manifest_max_segments")
+          .set_value(std::make_optional<size_t>(segs_per_spill));
+        test_local_cfg.get("cloud_storage_spillover_manifest_size")
+          .set_value(std::optional<size_t>{});
+        test_local_cfg.get("retention_local_strict").set_value(true);
 
         topic_name = model::topic("tapioca");
         ntp = model::ntp(model::kafka_namespace, topic_name, 0);
@@ -131,6 +130,7 @@ public:
           new_archiver.manifest().get_start_kafka_offset_override(),
           model::offset{});
     }
+    scoped_config test_local_cfg;
 
     model::topic topic_name;
     model::ntp ntp;

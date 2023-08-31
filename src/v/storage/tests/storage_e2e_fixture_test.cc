@@ -10,6 +10,7 @@
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/lowres_clock.hh>
 
@@ -20,7 +21,9 @@
 using namespace std::chrono_literals;
 using std::vector;
 
-struct storage_e2e_fixture : public redpanda_thread_fixture {};
+struct storage_e2e_fixture : public redpanda_thread_fixture {
+    scoped_config test_local_cfg;
+};
 
 namespace {
 
@@ -42,8 +45,8 @@ ss::future<> produce_to_fixture(
 } // namespace
 
 FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
-    config::shard_local_cfg().log_segment_ms_min.set_value(
-      std::chrono::duration_cast<std::chrono::milliseconds>(1ms));
+    test_local_cfg.get("log_segment_ms_min")
+      .set_value(std::chrono::duration_cast<std::chrono::milliseconds>(1ms));
     const auto topic_name = model::topic("tapioca");
     const auto ntp = model::ntp(model::kafka_namespace, topic_name, 0);
 
