@@ -27,6 +27,7 @@
 #include <seastar/util/defer.hh>
 
 #include <cloud_storage/cache_service.h>
+#include <re2/re2.h>
 
 #include <algorithm>
 #include <exception>
@@ -35,6 +36,11 @@
 #include <string_view>
 
 using namespace std::chrono_literals;
+
+namespace {
+// Matches log segments optionally containing a numeric term suffix
+const re2::RE2 segment_expr{R"#(.*\.log(\.\d+)?)#"};
+} // namespace
 
 namespace cloud_storage {
 
@@ -568,7 +574,7 @@ ss::future<cache::trim_result> cache::trim_fast(
             std::optional<std::string> tx_file;
             std::optional<std::string> index_file;
 
-            if (std::string_view(file_stat.path).ends_with(".log")) {
+            if (RE2::FullMatch(file_stat.path.data(), segment_expr)) {
                 // If this was a legacy whole-segment item, delete the index
                 // and tx file along with the segment
                 tx_file = fmt::format("{}.tx", file_stat.path);
