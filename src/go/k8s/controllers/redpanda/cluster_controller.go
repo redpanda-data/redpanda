@@ -75,6 +75,7 @@ type ClusterReconciler struct {
 	MetricsTimeout            time.Duration
 	RestrictToRedpandaVersion string
 	allowPVCDeletion          bool
+	GhostDecommissioning      bool
 }
 
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
@@ -268,6 +269,9 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	if err := r.setPodNodeIDLabel(ctx, &vectorizedCluster, log, ar); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id label: %w", err)
+	}
+	if err := r.decommissionGhostBrokers(ctx, &vectorizedCluster, log, ar); err != nil {
+		return ctrl.Result{}, fmt.Errorf("deleting ghost brokers: %w", err)
 	}
 
 	// want: refactor above to resources (i.e. setInitialSuperUserPassword, reconcileConfiguration)
@@ -959,6 +963,79 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+// decommissionGhostBrokers decommissions brokers that redpanda thinks exists, but aren't assigned to any pods
+// This is not a reversible process. If creating a new broker due to an empty disk was a mistake, the data
+// that was on that disk will be unusable.
+func (r *ClusterReconciler) decommissionGhostBrokers(c context.Context, vCluster *vectorizedv1alpha1.Cluster, l logr.Logger, ar *attachedResources) error {
+	if r.GhostDecommissioning {
+		return r.doDecommissionGhostBrokers(c, vCluster, l, ar)
+	}
+	return nil
+}
+
+// custom error to satisfy err113
+type missingBrokerIDError struct{}
+
+func (m *missingBrokerIDError) Error() string {
+	return "a pod is temporarily missing the broker-id annotation"
+}
+
+func (r *ClusterReconciler) doDecommissionGhostBrokers(c context.Context, vCluster *vectorizedv1alpha1.Cluster, l logr.Logger, ar *attachedResources) error {
+	ctx, done := context.WithCancel(c)
+	defer done()
+	log := l.WithName("deleteGhostBrokers")
+	log.V(logger.DebugLevel).Info("deleting ghost brokers")
+
+	pods, err := r.podList(ctx, vCluster)
+	if err != nil {
+		return fmt.Errorf("unable to fetch PodList: %w", err)
+	}
+
+	pki, err := ar.getPKI()
+	if err != nil {
+		return fmt.Errorf("getting pki: %w", err)
+	}
+
+	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, vCluster, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider())
+	if err != nil {
+		return fmt.Errorf("unable to create admin client: %w", err)
+	}
+	adminBrokers, err := adminClient.Brokers(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to fetch brokers: %w", err)
+	}
+
+	actualBrokerIDs := make(map[int]any, len(pods.Items))
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Annotations == nil {
+			return fmt.Errorf("requeuing: %w", &missingBrokerIDError{})
+		}
+		nodeIDStrAnnotation, annotationExist := pod.Annotations[resources.PodAnnotationNodeIDKey]
+		if !annotationExist {
+			return fmt.Errorf("requeuing: %w", &missingBrokerIDError{})
+		}
+		id, err := strconv.Atoi(nodeIDStrAnnotation)
+		if err != nil {
+			return fmt.Errorf("pod %s has an invalid broker-id annotation: %q: %w", pod.Name, nodeIDStrAnnotation, err)
+		}
+		actualBrokerIDs[id] = nil
+	}
+
+	// if the admin API shows brokers that are not assigned to existing pods, decommission them
+	for i := range adminBrokers {
+		broker := adminBrokers[i]
+		if _, ok := actualBrokerIDs[broker.NodeID]; ok {
+			continue
+		}
+		if err := adminClient.DecommissionBroker(ctx, broker.NodeID); err != nil {
+			return fmt.Errorf("failed to decommission ghost broker: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // createUserOnAdminAPI will return to requeue only when api error occurred
