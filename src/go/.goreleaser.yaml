@@ -1,6 +1,7 @@
 project_name: rpk
 builds:
-  - id: windows-and-linux
+  - id: rpk-windows-and-linux
+    dir: ./rpk/
     main: ./cmd/rpk
     binary: rpk
     ldflags:
@@ -19,7 +20,8 @@ builds:
       - amd64
       - arm64
   # we need separate build for darwin to sign/notarize using quill
-  - id: darwin
+  - id: rpk-darwin
+    dir: ./rpk/
     main: ./cmd/rpk
     binary: rpk
     ldflags:
@@ -46,13 +48,51 @@ builds:
         - cmd: quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
           env:
             - QUILL_LOG_FILE=dist/quill-{{ .Target }}.log
+  - id: migration-tool-windows-and-linux
+    dir: ./cluster-to-redpanda-migration/
+    main: ./main.go
+    binary: cluster-to-redpanda-migration
+    ldflags:
+      - -X github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/cmd/version.version={{.Tag}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+      - linux
+    goarch:
+      - amd64
+      - arm64
+  - id: migration-tool-darwin
+    dir: ./cluster-to-redpanda-migration/
+    main: ./main.go
+    binary: cluster-to-redpanda-migration
+    ldflags:
+      - -X github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/cmd/version.version={{.Tag}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    hooks:
+      post:
+        - cmd: quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
+          env:
+            - QUILL_LOG_FILE=dist/quill-{{ .Target }}.log
 archives:
   - id: rpk
     builds:
-      - windows-and-linux
-      - darwin
+      - rpk-windows-and-linux
+      - rpk-darwin
     format: zip
     name_template: "rpk-{{ .Os }}-{{ .Arch }}"
+  - id: migration-tool
+    builds:
+      - migration-tool-windows-and-linux
+      - migration-tool-darwin
+    format: zip
+    name_template: "cluster-to-redpanda-migration-{{ .Os }}-{{ .Arch }}"
 release:
   github:
     owner: redpanda-data
@@ -63,11 +103,13 @@ brews:
   - name: redpanda
     homepage: "https://redpanda.com"
     description: "Redpanda CLI & toolbox"
-    tap:
+    repository:
       owner: redpanda-data
       name: homebrew-tap
     folder: Formula
     skip_upload: auto
+    ids:
+      - rpk
     caveats: |
         Redpanda Keeper (rpk) is Redpanda's command line interface (CLI)
         utility. The rpk commands let you configure, manage, and tune
