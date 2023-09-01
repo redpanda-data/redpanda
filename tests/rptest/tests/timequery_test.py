@@ -287,6 +287,9 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                 cloud_storage_enable_remote_write=True,
             )
             self.redpanda.set_si_settings(si_settings)
+        else:
+            self.redpanda.add_extra_rp_conf(
+                {'log_segment_size': self.log_segment_size})
 
         self.redpanda.start()
 
