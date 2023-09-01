@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
+#include "test_utils/scoped_config.h"
 
 class cloud_storage_manual_multinode_test_base
   : public s3_imposter_fixture
@@ -29,10 +30,10 @@ public:
         // No expectations: tests will PUT and GET organically.
         set_expectations_and_listen({});
 
-        config::shard_local_cfg()
-          .cloud_storage_enable_segment_merging.set_value(false);
-        config::shard_local_cfg()
-          .cloud_storage_disable_upload_loop_for_tests.set_value(true);
+        test_local_cfg.get("cloud_storage_enable_segment_merging")
+          .set_value(false);
+        test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+          .set_value(true);
 
         wait_for_controller_leadership().get();
     }
@@ -53,4 +54,5 @@ public:
           get_archival_config(),
           get_cloud_config(httpd_port_number()));
     }
+    scoped_config test_local_cfg;
 };
