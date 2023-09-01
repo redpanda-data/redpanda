@@ -9,6 +9,7 @@
 from re import T
 from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
+from ducktape.mark import ok_to_fail
 
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import SISettings
@@ -463,6 +464,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             cloud_storage_housekeeping_interval_ms=1)
         self.second_cluster = None
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/13182
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
