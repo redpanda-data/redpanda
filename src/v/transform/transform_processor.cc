@@ -121,4 +121,6 @@ ss::future<> processor::do_run_transform_loop() {
 
 model::transform_id processor::id() const { return _id; }
 const model::ntp& processor::ntp() const { return _ntp; }
+const model::transform_metadata& processor::meta() const { return _meta; }
+bool processor::is_running() const { return !_task.available(); }
 } // namespace transform
