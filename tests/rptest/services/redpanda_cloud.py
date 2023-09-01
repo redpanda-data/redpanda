@@ -73,9 +73,7 @@ class RpCloudApiClient(object):
             'Accept': 'application/json'
         }
         _base = base_url if base_url else self._config.api_url
-        resp = requests.get(f'{_base}{endpoint}',
-                            headers=headers,
-                            **kwargs)
+        resp = requests.get(f'{_base}{endpoint}', headers=headers, **kwargs)
         _r = self._handle_error(resp)
         return _r if _r is None else _r.json()
 
@@ -256,8 +254,10 @@ class CloudCluster():
         return _users
 
     def _get_cluster_users(self):
-        _r = self.cloudv2._http_get(base_url=self.current.consoleUrl,
-                                    endpoint="/api/users",)
+        _r = self.cloudv2._http_get(
+            base_url=self.current.consoleUrl,
+            endpoint="/api/users",
+        )
         if _r is None:
             return []
         else:
@@ -307,8 +307,8 @@ class CloudCluster():
     def _get_cluster_console_url(self):
         cluster = self.cloudv2._http_get(
             endpoint=f'/api/v1/clusters/{self.config.id}')
-        return cluster['status']['listeners']['redpandaConsole'][
-            'default']['urls'][0]
+        return cluster['status']['listeners']['redpandaConsole']['default'][
+            'urls'][0]
 
     def _get_cluster_id_and_network_id(self):
         """
@@ -460,7 +460,8 @@ class CloudCluster():
         return
 
     def update_cluster_acls(self, superuser):
-        if superuser is not None and not self.clusterUserExists(superuser.username):
+        if superuser is not None and not self.clusterUserExists(
+                superuser.username):
             self._logger.debug(f'super username: {superuser.username}, '
                                f'algorithm: {superuser.algorithm}')
             self._create_user(superuser)
@@ -502,7 +503,8 @@ class CloudCluster():
             self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
             # Install pack handling
             if self.config.install_pack_ver == 'latest':
-                self.config.install_pack_ver = self._get_latest_install_pack_ver()
+                self.config.install_pack_ver = \
+                    self._get_latest_install_pack_ver()
             self.current.install_pack_ver = self.config.install_pack_ver
             # Multi-zone not supported, so get a single one from the list
             self.current.region = self.config.region
@@ -513,10 +515,10 @@ class CloudCluster():
             self.current.product_id = self._get_product_id(config_profile_name)
             if self.current.product_id is None:
                 raise RuntimeError("ProductID failed to be determined for "
-                                f"'{self.config.provider}', "
-                                f"'{self.config.type}', "
-                                f"'{self.config.install_pack_ver}', "
-                                f"'{self.config.region}'")
+                                   f"'{self.config.provider}', "
+                                   f"'{self.config.type}', "
+                                   f"'{self.config.install_pack_ver}', "
+                                   f"'{self.config.region}'")
 
             # Call Api to create cluster
             self._logger.info(f'creating cluster name {self.current.name}')
@@ -537,10 +539,10 @@ class CloudCluster():
                 f'{self.CHECK_BACKOFF_SEC} seconds')
             # Poll API and wait for the cluster creation
             wait_until(lambda: self._cluster_ready(),
-                    timeout_sec=self.CHECK_TIMEOUT_SEC,
-                    backoff_sec=self.CHECK_BACKOFF_SEC,
-                    err_msg='Unable to deterimine readiness '
-                    f'of cloud cluster {self.current.name}')
+                       timeout_sec=self.CHECK_TIMEOUT_SEC,
+                       backoff_sec=self.CHECK_BACKOFF_SEC,
+                       err_msg='Unable to deterimine readiness '
+                       f'of cloud cluster {self.current.name}')
             self.config.id, self.current.network_id = \
                 self._get_cluster_id_and_network_id()
 
