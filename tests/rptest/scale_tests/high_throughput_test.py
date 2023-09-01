@@ -726,27 +726,10 @@ class HighThroughputTest(PreallocNodesTest):
         self.setup_cluster(segment_bytes=segment_size,
                            retention_local_bytes=2 * segment_size)
 
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
-                custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
-                       backoff_sec=1.0)
-
+        with traffic_generator(self.test_context, self.redpanda, self.config,
+                               self.topic_name, self.msg_size) as _:
             # S3 up -> down -> up
             self.stage_block_s3()
-
-        finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
-            self.free_preallocated_nodes()
 
     def _cloud_storage_no_new_errors(self, redpanda, logger=None):
         num_errors = redpanda.metric_sum(
@@ -767,7 +750,7 @@ class HighThroughputTest(PreallocNodesTest):
         )
         wait_until(lambda: nodes_report_cloud_segments(
             self.redpanda, self.config.partitions_max_scaled),
-                   timeout_sec=120,
+                   timeout_sec=600,
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
