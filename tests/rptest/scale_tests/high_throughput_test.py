@@ -503,12 +503,8 @@ class HighThroughputTest(PreallocNodesTest):
     # STORAGE_TARGET_REPLAY_BYTES.  The resulting walltime for startup
     # depends on the speed of the disk.  60 seconds is long enough
     # for an i3en.xlarge (and more than enough for faster instance types)
-    EXPECT_START_TIME = 60
-
-    LEADER_BALANCER_PERIOD_MS = 30000
     topic_name = "tiered_storage_topic"
     small_segment_size = 4 * KiB
-    num_segments_per_partition = 1000
     unavailable_timeout = 60
     msg_size = 128 * KiB
 
@@ -590,7 +586,8 @@ class HighThroughputTest(PreallocNodesTest):
                               config=topic_config)
 
     def load_many_segments(self):
-        target_cloud_segments = self.num_segments_per_partition * self.config.partitions_max_scaled
+        num_segments_per_partition = 1000
+        target_cloud_segments = num_segments_per_partition * self.config.partitions_max_scaled
         try:
             producer = KgoVerifierProducer(
                 self.test_context,
