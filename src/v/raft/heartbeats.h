@@ -32,7 +32,7 @@ private:
     using field_t = FieldT;
     using encoder_t = deltafor_encoder<field_t, DeltaT, true>;
     using decoder_t = deltafor_decoder<field_t, DeltaT>;
-    using row_t = encoder_t::row_t;
+    using row_t = typename encoder_t::row_t;
 
     static constexpr auto value_sz = sizeof(ValueT);
     static constexpr auto value_bits = sizeof(ValueT) * 8;
@@ -104,7 +104,7 @@ public:
     private:
         const deltafor_column<ValueT, DeltaT, FieldT>& _column;
         decoder_t _decoder;
-        decoder_t::row_t _buffer{};
+        typename decoder_t::row_t _buffer{};
 
         size_t _current{0};
         bool _in_reminder{false};
