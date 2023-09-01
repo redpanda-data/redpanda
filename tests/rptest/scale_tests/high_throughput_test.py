@@ -862,7 +862,7 @@ class HighThroughputTest(PreallocNodesTest):
         )
         self.logger.info(f"{topic_partitions_on_node()} partitions moved")
 
-    @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
+    @cluster(num_nodes=6, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_cloud_cache_thrash(self):
         """
         Try to exhaust cloud cache by reading at random offsets with many
@@ -875,53 +875,32 @@ class HighThroughputTest(PreallocNodesTest):
                                'cloud_storage_max_readers_per_shard': 256,
                            })
 
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
-                custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
-                       backoff_sec=1.0)
+        with traffic_generator(self.test_context, self.redpanda, self.config,
+                               self.topic_name, self.msg_size) as tgen:
+            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
             wait_until(lambda: nodes_report_cloud_segments(
                 self.redpanda, self.config.partitions_max_scaled),
                        timeout_sec=600,
                        backoff_sec=5)
-            producer.wait_for_offset_map()
+            tgen._producer.wait_for_offset_map()
 
             # Exhaust cloud cache with multiple consumers
             # reading at random offsets
-            self.stage_cloud_cache_thrash()
-
-        finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
-            self.free_preallocated_nodes()
-
-    def stage_cloud_cache_thrash(self):
-        self.logger.info(f"Starting consumers")
-        consumer = KgoVerifierRandomConsumer(
-            self.test_context,
-            self.redpanda,
-            self.topic_name,
-            msg_size=self.msg_size,
-            rand_read_msgs=1,
-            parallel=4,
-            nodes=[self.preallocated_nodes[0]],
-            debug_logs=True,
-        )
-        try:
-            consumer.start(clean=False)
-            time.sleep(240)
-        finally:
-            self.logger.info(f"Stopping consumers")
-            consumer.stop()
-            consumer.wait(timeout_sec=600)
+            self.logger.info(f"Starting thrashing consumers")
+            consumer = KgoVerifierRandomConsumer(self.test_context,
+                                                 self.redpanda,
+                                                 self.topic_name,
+                                                 msg_size=self.msg_size,
+                                                 rand_read_msgs=1,
+                                                 parallel=4,
+                                                 debug_logs=True)
+            try:
+                consumer.start(clean=False)
+                time.sleep(240)
+            finally:
+                self.logger.info(f"Stopping thrashing consumers")
+                consumer.stop()
+                consumer.wait(timeout_sec=600)
 
     @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
