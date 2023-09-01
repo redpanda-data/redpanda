@@ -1238,6 +1238,9 @@ struct join_node_reply
         // Rejected because a node is trying to claim the same node_id with
         // the same UUID as a node previously removed
         bad_rejoin = 7,
+        // Rejected because a node is trying to use already registered node_id
+        // but use different UUID
+        uuid_changed = 8
     };
 
     bool success{false};
@@ -1276,6 +1279,9 @@ struct join_node_reply
         case status_code::bad_rejoin:
             return "bad_rejoin: trying to rejoin with same ID and UUID as a "
                    "decommissioned node";
+        case status_code::uuid_changed:
+            return "uuid_changed: trying to rejoin with same ID but different "
+                   "UUID";
         default:
             // Status codes are sent over the wire, so accomodate the
             // possibility that we were sent a status code from a newer version

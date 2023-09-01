@@ -46,6 +46,7 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <chrono>
 #include <system_error>
 namespace cluster {
@@ -1035,8 +1036,24 @@ bool members_manager::try_register_node_id(
             // The cluster was likely just upgraded from a version that didn't
             // have node UUIDs. If the node ID is already a part of the
             // member's table, accept the requested UUID.
-            clusterlog.info(
-              "registering node ID that is already a member of the cluster");
+            auto current_uuid_it = std::find_if(
+              _id_by_uuid.begin(),
+              _id_by_uuid.end(),
+              [requested_node_id](const auto& uuid_id_pair) {
+                  return uuid_id_pair.second == requested_node_id;
+              });
+            vassert(
+              current_uuid_it != _id_by_uuid.end(),
+              "Cluster membership inconsistency. If node with id {} exists in "
+              "members table it must have node UUID assigned",
+              requested_node_id);
+            clusterlog.warn(
+              "preventing registering node with UUID {} as node with ID: {}. "
+              "Node has different UUID assigned: {}",
+              requested_node_uuid,
+              requested_node_id,
+              current_uuid_it->second);
+            return false;
         }
         // This is a brand new node with node ID assignment support that's
         // requesting the given node ID.
@@ -1329,6 +1346,25 @@ members_manager::handle_join_request(join_node_request const req) {
         if (it == _id_by_uuid.end()) {
             // The node ID was manually provided and this is a new attempt to
             // register the UUID.
+            auto node_metadata = _members_table.local().get_node_metadata_ref(
+              req_node_id.value());
+            if (node_metadata) {
+                auto current_uuid_it = std::find_if(
+                  _id_by_uuid.begin(),
+                  _id_by_uuid.end(),
+                  [id = *req_node_id](const auto& uuid_id_pair) {
+                      return uuid_id_pair.second == id;
+                  });
+                vlog(
+                  clusterlog.warn,
+                  "Preventing overriding UUID of a node {} with {}, current "
+                  "UUID of the node: {}",
+                  req_node_id,
+                  node_uuid,
+                  current_uuid_it->first);
+                co_return ret_t(join_node_reply{
+                  status_t::uuid_changed, model::unassigned_node_id});
+            }
             auto r = co_await replicate_new_node_uuid(node_uuid, req_node_id);
             if (r.has_error() || !r.value().success) {
                 co_return r;
