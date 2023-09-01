@@ -642,44 +642,29 @@ class HighThroughputTest(PreallocNodesTest):
                            retention_local_bytes=2 * self.small_segment_size)
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
-                custom_node=[self.preallocated_nodes[0]])
-            try:
-                producer.start()
-                wait_until(lambda: producer.produce_status.acked > 10000,
-                           timeout_sec=60,
-                           backoff_sec=1.0)
+        with traffic_generator(self.test_context, self.redpanda, self.config,
+                               self.topic_name, self.msg_size) as tgen:
+            # Wait until theres some traffic
+            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
 
-                # Run a rolling restart.
-                self.stage_rolling_restart()
+            # Run a rolling restart.
+            self.stage_rolling_restart()
 
-                # Hard stop, then restart.
-                self.stage_stop_wait_start(forced_stop=True, downtime=0)
+            # Hard stop, then restart.
+            self.stage_stop_wait_start(forced_stop=True, downtime=0)
 
-                # Stop a node, wait for enough time for movement to occur, then
-                # restart.
-                self.stage_stop_wait_start(forced_stop=False,
-                                           downtime=self.unavailable_timeout)
+            # Stop a node, wait for enough time for movement to occur, then
+            # restart.
+            self.stage_stop_wait_start(forced_stop=False,
+                                       downtime=self.unavailable_timeout)
 
-                # Stop a node and wait for really long time to collect a lot
-                # of under-replicated msgs, then restart.
-                # This is not to be run nightly so disabled for now
-                #self.stage_stop_wait_start(forced_stop=False, downtime=60*30)
+            # Stop a node and wait for really long time to collect a lot
+            # of under-replicated msgs, then restart.
+            # This is not to be run nightly so disabled for now
+            # self.stage_stop_wait_start(forced_stop=False, downtime=60*30)
 
-                # Block traffic to/from one node.
-                self.stage_block_node_traffic()
-            finally:
-                producer.stop()
-                producer.wait(timeout_sec=600)
-        finally:
-            self.free_preallocated_nodes()
+            # Block traffic to/from one node.
+            self.stage_block_node_traffic()
 
     NOS3_LOG_ALLOW_LIST = [
         re.compile("s3 - .* - Accessing .*, unexpected REST API error "
