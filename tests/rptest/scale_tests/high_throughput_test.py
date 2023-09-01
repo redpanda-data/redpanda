@@ -312,47 +312,15 @@ class HighThroughputTest2(PreallocNodesTest):
 
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_throughput_simple(self):
-
-        ingress_rate = self.tier_config.ingress_rate
         self.topics = [
             TopicSpec(partition_count=self.tier_config.partitions_min)
         ]
         super(HighThroughputTest2, self).setUp()
 
-        target_run_time = 15
-        target_data_size = target_run_time * ingress_rate
-        msg_count = int(math.sqrt(target_data_size) / 2)
-        msg_size = target_data_size // msg_count
-        self.logger.info(
-            f"Producing {msg_count} messages of {msg_size} B, "
-            f"{msg_count*msg_size} B total, target rate {ingress_rate} B/s")
-
-        # if this is a redpanda cloud cluster,
-        # use the default test superuser user/pass
-        security_config = self.redpanda.security_config()
-        username = security_config.get('sasl_plain_username', None)
-        password = security_config.get('sasl_plain_password', None)
-        enable_tls = security_config.get('enable_tls', False)
-        producer0 = KgoVerifierProducer(self.test_context,
-                                        self.redpanda,
-                                        self.topic,
-                                        msg_size=msg_size,
-                                        msg_count=msg_count,
-                                        username=username,
-                                        password=password,
-                                        enable_tls=enable_tls)
-        producer0.start()
-        start = time.time()
-
-        producer0.wait()
-        time0 = time.time() - start
-
-        producer0.stop()
-        producer0.free()
-
-        rate0 = msg_count * msg_size / time0
-        self.logger.info(f"Producer: {time0} s, {rate0} B/s")
-        assert rate0 / ingress_rate > 0.5, f"Producer rate is too low. measured: {rate0} B/s, expected: {ingress_rate} B/s"
+        with traffic_generator(self.test_context, self.redpanda, self.config,
+                               self.topic, (16 * KiB)) as _:
+            # Test will assert if advertised throughput isn't met
+            time.sleep(15)
 
     def _stage_setup_cluster(self, name, partitions):
         """
