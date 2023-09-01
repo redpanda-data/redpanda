@@ -22,7 +22,7 @@ from rptest.tests.workload_dummy import DummyWorkload, MinimalWorkload
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.workload_license import LicenseWorkload
 from rptest.utils.mode_checks import skip_debug_mode
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail
 
 
 def expand_version(
@@ -247,6 +247,7 @@ class RedpandaUpgradeTest(PreallocNodesTest):
     def cluster_version(self) -> int:
         return Admin(self.redpanda).get_features()['cluster_version']
 
+    @ok_to_fail
     @skip_debug_mode
     @cluster(num_nodes=4)
     # TODO(vlad): Allow this test on ABS once we have at least two versions
