@@ -47,8 +47,9 @@ public:
       std::vector<std::unique_ptr<sink>>,
       probe*);
 
-    ss::future<> start();
-    ss::future<> stop();
+    virtual ~processor() = default;
+    virtual ss::future<> start();
+    virtual ss::future<> stop();
 
     bool is_running() const;
     model::transform_id id() const;
