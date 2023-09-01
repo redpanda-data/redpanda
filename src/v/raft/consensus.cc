@@ -467,12 +467,24 @@ consensus::success_reply consensus::update_follower_index(
     }
 
     if (needs_recovery(idx, dirty_offset)) {
-        vlog(
-          _ctxlog.trace,
-          "Starting recovery process for {} - current reply: {}",
-          idx.node_id,
-          reply);
-        dispatch_recovery(idx);
+        if (
+          reply.may_recover || ntp() == model::controller_ntp
+          || !_features.is_active(
+            features::feature::raft_coordinated_recovery)) {
+            vlog(
+              _ctxlog.trace,
+              "Starting recovery process for {} - current reply: {}",
+              idx.node_id,
+              reply);
+            dispatch_recovery(idx);
+        } else {
+            vlog(
+              _ctxlog.trace,
+              "Recovery required but not yet permitted by follower {} - "
+              "current reply: {}",
+              idx.node_id,
+              reply);
+        }
         return success_reply::no;
     }
     return success_reply::no;
@@ -1827,14 +1839,16 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_flushed_log_index = _flushed_offset;
     reply.result = reply_result::failure;
+    reply.may_recover = _follower_recovery_state
+                        && _follower_recovery_state->is_active();
+
     _probe->append_request();
 
     if (unlikely(is_request_target_node_invalid("append_entries", r))) {
         return ss::make_ready_future<append_entries_reply>(reply);
     }
     // no need to trigger timeout
-    vlog(
-      _ctxlog.trace, "Received append entries request: {}", request_metadata);
+    vlog(_ctxlog.trace, "Received append entries request: {}", r);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (request_metadata.term < _term) {
@@ -1885,6 +1899,13 @@ consensus::do_append_entries(append_entries_request&& r) {
               last_log_offset,
               request_metadata.prev_log_index);
         }
+
+        upsert_recovery_state(
+          last_log_offset,
+          request_metadata.dirty_offset,
+          request_metadata.dirty_offset > request_metadata.prev_log_index);
+        reply.may_recover = _follower_recovery_state->is_active();
+
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -1911,6 +1932,13 @@ consensus::do_append_entries(append_entries_request&& r) {
           last_log_term,
           request_metadata.prev_log_term);
         reply.result = reply_result::failure;
+
+        upsert_recovery_state(
+          last_log_offset,
+          request_metadata.dirty_offset,
+          request_metadata.dirty_offset > request_metadata.prev_log_index);
+        reply.may_recover = _follower_recovery_state->is_active();
+
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -1934,6 +1962,17 @@ consensus::do_append_entries(append_entries_request&& r) {
         maybe_update_last_visible_index(last_visible);
         _last_leader_visible_offset = std::max(
           request_metadata.last_visible_index, _last_leader_visible_offset);
+
+        if (_follower_recovery_state) {
+            vlog(
+              _ctxlog.debug,
+              "exiting follower_recovery_state (heartbeat), "
+              "leader meta: {} (our offset: {})",
+              request_metadata,
+              last_log_offset);
+            _follower_recovery_state.reset();
+        }
+
         return f.then([this, reply, request_metadata] {
             return maybe_update_follower_commit_idx(
                      model::offset(request_metadata.commit_index))
@@ -1943,6 +1982,14 @@ consensus::do_append_entries(append_entries_request&& r) {
                   return reply;
               });
         });
+    }
+
+    if (request_metadata.prev_log_index < request_metadata.dirty_offset) {
+        // This is a valid recovery request. In case we haven't allowed it,
+        // defer to the leader and force-enter the recovery state.
+        upsert_recovery_state(
+          last_log_offset, request_metadata.dirty_offset, true);
+        reply.may_recover = _follower_recovery_state->is_active();
     }
 
     // section 3
@@ -2029,7 +2076,31 @@ consensus::do_append_entries(append_entries_request&& r) {
           _last_leader_visible_offset = std::max(
             m.last_visible_index, _last_leader_visible_offset);
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
-            .then([this, ofs, target] {
+            .then([this, m, ofs, target] {
+                if (_follower_recovery_state) {
+                    _follower_recovery_state->update_progress(
+                      ofs.last_offset,
+                      std::max(m.dirty_offset, ofs.last_offset));
+
+                    if (m.dirty_offset == m.prev_log_index) {
+                        // Normal (non-recovery, non-heartbeat) append_entries
+                        // request means that recovery is over.
+                        vlog(
+                          _ctxlog.debug,
+                          "exiting follower_recovery_state, leader meta: {} "
+                          "(our offset: {})",
+                          m,
+                          ofs.last_offset);
+                        _follower_recovery_state.reset();
+                    }
+                    // m.dirty_offset can be bogus here if we are talking to
+                    // a pre-23.3 redpanda. In this case we can't reliably
+                    // distinguish between recovery and normal append_entries
+                    // and will exit recovery only via heartbeats (which is okay
+                    // but can inflate the number of recovering partitions
+                    // statistic a bit).
+                }
+
                 return make_append_entries_reply(target, ofs);
             });
       })
@@ -2218,6 +2289,8 @@ consensus::do_install_snapshot(install_snapshot_request r) {
         // Out of order request? Ignore and answer with success=false.
         co_return reply;
     }
+
+    upsert_recovery_state(r.last_included_index, r.dirty_offset, true);
 
     // Write data into snapshot file at given offset (§7.3)
     size_t chunk_size = r.chunk.size_bytes();
@@ -2509,6 +2582,8 @@ append_entries_reply consensus::make_append_entries_reply(
     reply.last_dirty_log_index = disk_results.last_offset;
     reply.last_flushed_log_index = _flushed_offset;
     reply.result = reply_result::success;
+    reply.may_recover = _follower_recovery_state
+                        && _follower_recovery_state->is_active();
     return reply;
 }
 
@@ -2893,6 +2968,13 @@ void consensus::trigger_leadership_notification() {
       _leader_id);
     _leader_notification(leadership_status{
       .term = _term, .group = _group, .current_leader = _leader_id});
+
+    if (_follower_recovery_state && !_leader_id) {
+        // If we are recovering and the group has lost leadership, it is unclear
+        // when it will regain it. Yield the recovery slot so that other groups
+        // can make progress.
+        _follower_recovery_state->yield();
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const consensus& c) {
@@ -3625,6 +3707,13 @@ reply_result consensus::lightweight_heartbeat(
         return reply_result::failure;
     }
 
+    if (unlikely(
+          _follower_recovery_state && _follower_recovery_state->is_active())) {
+        // If for some reason the leader is sending us lightweight heartbeats
+        // after we allowed recovery, notify it by forcing a full heartbeat.
+        return reply_result::failure;
+    }
+
     _hbeat = clock_type::now();
     return reply_result::success;
 }
@@ -3684,4 +3773,38 @@ void consensus::reset_last_sent_protocol_meta(const vnode& node) {
         it->second.last_sent_protocol_meta.reset();
     }
 }
+
+void consensus::upsert_recovery_state(
+  model::offset our_last_offset,
+  model::offset leader_last_offset,
+  bool already_recovering) {
+    bool force_active = already_recovering
+                        || !_features.is_active(
+                          features::feature::raft_coordinated_recovery);
+
+    if (!_follower_recovery_state) {
+        _follower_recovery_state.emplace(
+          _recovery_scheduler,
+          *this,
+          our_last_offset,
+          leader_last_offset,
+          force_active);
+        vlog(
+          _ctxlog.debug,
+          "entering follower_recovery_state, leader last offset: {} (already "
+          "recovering: {}), our last offset: {}, may_recover: {}",
+          leader_last_offset,
+          already_recovering,
+          our_last_offset,
+          _follower_recovery_state->is_active());
+    } else {
+        if (force_active && !_follower_recovery_state->is_active()) {
+            _follower_recovery_state->force_active();
+        }
+
+        _follower_recovery_state->update_progress(
+          our_last_offset, leader_last_offset);
+    }
+}
+
 } // namespace raft

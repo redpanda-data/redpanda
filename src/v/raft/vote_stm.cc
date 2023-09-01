@@ -256,6 +256,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
     vlog(_ctxlog.trace, "vote acks in term {} from: {}", term, acks);
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
+    _ptr->_follower_recovery_state.reset();
     _ptr->_leader_id = _ptr->self();
     // reset target priority
     _ptr->_target_priority = voter_priority::max();

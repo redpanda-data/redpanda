@@ -731,6 +731,14 @@ private:
           features::feature::raft_append_entries_serde);
     }
 
+    // Called when during processing of an append_entries request we realize
+    // that we need recovery or that the leader is already recovering us.
+    // Will initialize or update _follower_recovery_state.
+    void upsert_recovery_state(
+      model::offset our_last_offset,
+      model::offset leader_last_offset,
+      bool already_recovering);
+
     // args
     vnode _self;
     raft::group_id _group;
@@ -839,6 +847,13 @@ private:
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
     std::optional<state_machine_manager> _stm_manager;
+    /**
+     * If a follower notices that it requires recovery, it starts tracking
+     * that via this object, which holds a place in the recovery_scheduler
+     * queue to regulate how many raft groups can go into recovery concurrently.
+     */
+    std::optional<follower_recovery_state> _follower_recovery_state;
+
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 
