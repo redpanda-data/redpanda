@@ -753,35 +753,6 @@ std::ostream& operator<<(std::ostream& o, const append_entries_request& r) {
 
 namespace reflection {
 
-void adl<raft::protocol_metadata>::to(
-  iobuf& out, raft::protocol_metadata request) {
-    std::array<bytes::value_type, 6 * vint::max_length> staging{};
-    auto idx = vint::serialize(request.group(), staging.data());
-    idx += vint::serialize(request.commit_index(), staging.data() + idx);
-    idx += vint::serialize(request.term(), staging.data() + idx);
-
-    // varint the delta-encoded value
-    idx += vint::serialize(request.prev_log_index(), staging.data() + idx);
-    idx += vint::serialize(request.prev_log_term(), staging.data() + idx);
-    idx += vint::serialize(request.last_visible_index(), staging.data() + idx);
-
-    out.append(
-      // NOLINTNEXTLINE
-      reinterpret_cast<const char*>(staging.data()),
-      idx);
-}
-
-raft::protocol_metadata adl<raft::protocol_metadata>::from(iobuf_parser& in) {
-    raft::protocol_metadata ret;
-    ret.group = varlong_reader<raft::group_id>(in);
-    ret.commit_index = varlong_reader<model::offset>(in);
-    ret.term = varlong_reader<model::term_id>(in);
-    ret.prev_log_index = varlong_reader<model::offset>(in);
-    ret.prev_log_term = varlong_reader<model::term_id>(in);
-    ret.last_visible_index = varlong_reader<model::offset>(in);
-    return ret;
-}
-
 raft::snapshot_metadata adl<raft::snapshot_metadata>::from(iobuf_parser& in) {
     auto last_included_index = adl<model::offset>{}.from(in);
     auto last_included_term = adl<model::term_id>{}.from(in);

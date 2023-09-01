@@ -845,12 +845,6 @@ using keep_snapshotted_log = ss::bool_class<struct keep_snapshotted_log_tag>;
 namespace reflection {
 
 template<>
-struct adl<raft::protocol_metadata> {
-    void to(iobuf& out, raft::protocol_metadata request);
-    raft::protocol_metadata from(iobuf_parser& in);
-};
-
-template<>
 struct adl<raft::snapshot_metadata> {
     void to(iobuf& out, raft::snapshot_metadata&& request);
     raft::snapshot_metadata from(iobuf_parser& in);
