@@ -540,6 +540,47 @@ class FeaturesUpgradeAssertionTest(FeaturesTestBase):
             upgrade_node,
             override_cfg_params={'upgrade_override_checks': True})
 
+    @cluster(num_nodes=3,
+             log_allow_list="Attempted to upgrade from incompatible version")
+    def test_data_dir_unmodified(self):
+        upgrade_node = self.redpanda.nodes[-1]
+        self.redpanda.restart_nodes([upgrade_node])
+        self.redpanda.stop_node(upgrade_node)
+
+        data_checksum_pre = self.redpanda.data_checksum(upgrade_node)
+        du_pre = self.redpanda.data_dir_usage('', node=upgrade_node)
+
+        self.redpanda.set_environment({
+            "__REDPANDA_LATEST_LOGICAL_VERSION":
+            self.head_latest_logical_version + 2,
+            "__REDPANDA_EARLIEST_LOGICAL_VERSION":
+            self.head_latest_logical_version + 1,
+        })
+
+        # Startup should fail with an incompatible version
+        with expect_exception(DucktapeTimeoutError, lambda _: True):
+            self.redpanda.start_node(upgrade_node)
+
+        # Don't assume that the asserted node will have exited promptly: explicitly kill it.
+        self.redpanda.stop_node(upgrade_node, forced=True)
+
+        data_checksum_post = self.redpanda.data_checksum(upgrade_node)
+        du_post = self.redpanda.data_dir_usage('', upgrade_node)
+
+        self.logger.debug(f"pre: {json.dumps(data_checksum_pre, indent=2)}")
+        self.logger.debug(f"post: {json.dumps(data_checksum_post, indent=2)}")
+        self.logger.debug(f"disk usage: pre({du_pre}) ; post({du_post}))")
+
+        errors = []
+        for k in data_checksum_post.keys():
+            if any([k.find(f) >= 0 for f in ['kvstore', 'controller']
+                    ]) and k.find('base_index') == -1:
+                if k not in data_checksum_pre.keys():
+                    errors.append(f"Extra file: {k}")
+                elif data_checksum_post[k] != data_checksum_pre[k]:
+                    errors.append(f"Checksum error: {k}")
+        assert len(errors) == 0, f"errors: {errors}"
+
 
 class FeaturesUpgradeActivationTest(FeaturesTestBase):
     def setUp(self):

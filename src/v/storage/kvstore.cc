@@ -575,6 +575,15 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
         co_await (*it)->close();
     }
 
+    _segs_to_remove.reserve(std::distance(match, segs.end()));
+
+    for (auto it = match; it != segs.end(); it++) {
+        auto seg = *it;
+        _segs_to_remove.emplace_back(
+          seg->reader().path().string(), seg->index().path().string());
+    }
+}
+ss::future<> kvstore::cleanup_start() {
     // saving a snapshot right after recovery during start-up prevents an
     // accumulation of segments in cases where the system restarts many
     // times without ever filling up a segment and snapshotting when
@@ -582,11 +591,12 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
     co_await save_snapshot();
 
     // gc the replayed segments now that the snapshot has been taken.
-    for (auto it = match; it != segs.end(); it++) {
-        auto seg = *it;
-        co_await ss::remove_file(seg->reader().path().string());
-        co_await ss::remove_file(seg->index().path().string());
+    for (const auto& [rdr, idx] : _segs_to_remove) {
+        co_await ss::remove_file(rdr);
+        co_await ss::remove_file(idx);
     }
+
+    _segs_to_remove.clear();
 }
 
 batch_consumer::consume_result kvstore::replay_consumer::accept_batch_start(

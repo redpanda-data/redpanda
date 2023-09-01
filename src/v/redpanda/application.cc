@@ -1839,6 +1839,12 @@ void application::start_bootstrap_services() {
     // as they start.
     load_feature_table_snapshot();
 
+    // save snapshot and finally GC segments
+    storage
+      .invoke_on_all(
+        [](storage::api& s) mutable { return s.kvs().cleanup_start(); })
+      .get();
+
     // Before we start up our bootstrapping RPC service, load any relevant
     // on-disk state we may need: existing cluster UUID, node ID, etc.
     if (std::optional<iobuf> cluster_uuid_buf = storage.local().kvs().get(

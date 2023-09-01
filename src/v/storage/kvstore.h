@@ -109,6 +109,7 @@ public:
     ~kvstore() noexcept;
 
     ss::future<> start();
+    ss::future<> cleanup_start();
     ss::future<> stop();
 
     std::optional<iobuf> get(key_space ks, bytes_view key);
@@ -137,6 +138,7 @@ private:
     ss::abort_source _as;
     simple_snapshot_manager _snap;
     bool _started{false};
+    std::vector<std::pair<ss::sstring, ss::sstring>> _segs_to_remove;
 
     /**
      * Database operation. A std::nullopt value is a deletion.
