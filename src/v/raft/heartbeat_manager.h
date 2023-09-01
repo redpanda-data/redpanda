@@ -92,18 +92,18 @@ public:
     struct follower_request_meta {
         follower_request_meta(
           consensus_ptr, follower_req_seq, model::offset, vnode);
-        ~follower_request_meta() noexcept;
 
         follower_request_meta(const follower_request_meta&) = delete;
         follower_request_meta(follower_request_meta&&) noexcept = default;
         follower_request_meta& operator=(const follower_request_meta&) = delete;
         follower_request_meta& operator=(follower_request_meta&&) noexcept
-          = default;
+          = delete;
 
         consensus_ptr c;
         follower_req_seq seq;
         model::offset dirty_offset;
         vnode follower_vnode;
+        consensus::suppress_heartbeats_guard hb_guard;
     };
     // Heartbeats from all groups for single node
     struct node_heartbeat {

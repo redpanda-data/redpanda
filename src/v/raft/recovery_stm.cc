@@ -319,9 +319,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
           _sent_snapshot_bytes += chunk_size;
 
           vlog(_ctxlog.trace, "sending install_snapshot request: {}", req);
-          auto seq = _ptr->next_follower_sequence(_node_id);
-          _ptr->update_suppress_heartbeats(
-            _node_id, seq, heartbeats_suppressed::yes);
+          auto hb_guard = _ptr->suppress_heartbeats(_node_id);
           return _ptr->_client_protocol
             .install_snapshot(
               _node_id.id(),
@@ -332,10 +330,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
                   _ptr->validate_reply_target_node(
                     "install_snapshot", reply, _node_id.id()));
             })
-            .finally([this, seq] {
-                _ptr->update_suppress_heartbeats(
-                  _node_id, seq, heartbeats_suppressed::no);
-            });
+            .finally([hb_guard = std::move(hb_guard)] {});
       });
 }
 
@@ -448,15 +443,13 @@ ss::future<> recovery_stm::replicate(
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
-    _ptr->update_suppress_heartbeats(_node_id, seq, heartbeats_suppressed::yes);
+    auto hb_guard = _ptr->suppress_heartbeats(_node_id);
+
     auto lstats = _ptr->_log->offsets();
     std::vector<ssx::semaphore_units> units;
     units.push_back(std::move(mem_units));
     return dispatch_append_entries(std::move(r), std::move(units))
-      .finally([this, seq] {
-          _ptr->update_suppress_heartbeats(
-            _node_id, seq, heartbeats_suppressed::no);
-      })
+      .finally([hb_guard = std::move(hb_guard)] {})
       .then([this, seq, dirty_offset = lstats.dirty_offset](auto r) {
           if (!r) {
               vlog(

@@ -16,6 +16,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "outcome.h"
+#include "raft/consensus.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
@@ -134,6 +135,7 @@ private:
     flush_after_append _is_flush_required;
     std::optional<model::record_batch_reader> _batches;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
+    absl::flat_hash_map<vnode, consensus::suppress_heartbeats_guard> _hb_guards;
     mutex _share_mutex;
     ssx::semaphore _dispatch_sem{0, "raft/repl-dispatch"};
     ss::gate _req_bg;

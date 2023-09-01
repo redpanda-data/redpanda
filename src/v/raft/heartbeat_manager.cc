@@ -49,17 +49,8 @@ heartbeat_manager::follower_request_meta::follower_request_meta(
   : c(std::move(ptr))
   , seq(seq)
   , dirty_offset(dirty_offset)
-  , follower_vnode(target) {
-    c->update_suppress_heartbeats(
-      follower_vnode, seq, heartbeats_suppressed::yes);
-}
-
-heartbeat_manager::follower_request_meta::~follower_request_meta() noexcept {
-    if (c) {
-        c->update_suppress_heartbeats(
-          follower_vnode, seq, heartbeats_suppressed::no);
-    }
-}
+  , follower_vnode(target)
+  , hb_guard(c->suppress_heartbeats(follower_vnode)) {}
 
 heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
     absl::node_hash_map<
@@ -84,7 +75,7 @@ heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
         }
 
         for (auto& [id, follower_metadata] : r->_fstats) {
-            if (follower_metadata.suppress_heartbeats) {
+            if (follower_metadata.are_heartbeats_suppressed()) {
                 vlog(r->_ctxlog.trace, "[{}] heartbeat suppressed", id);
                 continue;
             }
@@ -150,7 +141,7 @@ heartbeat_manager::requests_for_range_v2() {
         }
 
         for (auto& [id, follower_metadata] : r->_fstats) {
-            if (follower_metadata.suppress_heartbeats) {
+            if (follower_metadata.are_heartbeats_suppressed()) {
                 vlog(r->_ctxlog.trace, "[{}] heartbeat suppressed", id);
                 continue;
             }

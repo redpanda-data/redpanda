@@ -405,10 +405,35 @@ public:
      * heartbeats when other append entries request or heartbeat request is in
      * flight.
      */
-    heartbeats_suppressed are_heartbeats_suppressed(vnode) const;
 
-    void update_suppress_heartbeats(
-      vnode, follower_req_seq, heartbeats_suppressed);
+    class suppress_heartbeats_guard {
+    public:
+        suppress_heartbeats_guard() noexcept = default;
+        explicit suppress_heartbeats_guard(
+          consensus& parent, vnode target) noexcept;
+
+        void unsuppress();
+
+        suppress_heartbeats_guard(suppress_heartbeats_guard&& other) noexcept
+          : _parent(other._parent)
+          , _target(other._target) {
+            other._parent = nullptr;
+        }
+        suppress_heartbeats_guard(const suppress_heartbeats_guard& other)
+          = delete;
+        suppress_heartbeats_guard& operator=(suppress_heartbeats_guard&& other)
+          = delete;
+        suppress_heartbeats_guard&
+        operator=(const suppress_heartbeats_guard& other)
+          = delete;
+        ~suppress_heartbeats_guard() noexcept { unsuppress(); }
+
+    private:
+        consensus* _parent = nullptr;
+        vnode _target;
+    };
+
+    suppress_heartbeats_guard suppress_heartbeats(vnode);
 
     void update_heartbeat_status(vnode, bool);
 
