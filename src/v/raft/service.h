@@ -386,6 +386,9 @@ private:
             .prev_log_index = hb.data->prev_log_index,
             .prev_log_term = hb.data->prev_log_term,
             .last_visible_index = hb.data->last_visible_index,
+            // for heartbeats dirty_offset and prev_log_index are always the
+            // same
+            .dirty_offset = hb.data->prev_log_index,
           },
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),

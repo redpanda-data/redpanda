@@ -48,13 +48,14 @@ using group_id = named_type<int64_t, struct raft_group_id_type>;
 
 struct protocol_metadata
   : serde::
-      envelope<protocol_metadata, serde::version<0>, serde::compat_version<0>> {
+      envelope<protocol_metadata, serde::version<1>, serde::compat_version<0>> {
     group_id group;
     model::offset commit_index;
     model::term_id term;
     model::offset prev_log_index;
     model::term_id prev_log_term;
     model::offset last_visible_index;
+    model::offset dirty_offset;
 
     friend std::ostream&
     operator<<(std::ostream& o, const protocol_metadata& m);
@@ -69,7 +70,8 @@ struct protocol_metadata
           term,
           prev_log_index,
           prev_log_term,
-          last_visible_index);
+          last_visible_index,
+          dirty_offset);
     }
 };
 

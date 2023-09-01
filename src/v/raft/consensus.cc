@@ -2633,7 +2633,8 @@ protocol_metadata consensus::meta() const {
       .term = _term,
       .prev_log_index = lstats.dirty_offset,
       .prev_log_term = prev_log_term,
-      .last_visible_index = last_visible_index()};
+      .last_visible_index = last_visible_index(),
+      .dirty_offset = lstats.dirty_offset};
 }
 
 void consensus::update_node_append_timestamp(vnode id) {
@@ -3633,6 +3634,7 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
         .prev_log_index = hb_data.prev_log_index,
         .prev_log_term = hb_data.prev_log_term,
         .last_visible_index = hb_data.last_visible_index,
+        .dirty_offset = hb_data.prev_log_index,
       },
       model::make_memory_record_batch_reader(
         ss::circular_buffer<model::record_batch>{}),

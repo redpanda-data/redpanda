@@ -48,6 +48,8 @@ inline void rjson_serialize(
     rjson_serialize(w, v.prev_log_term);
     w.Key("last_visible_index");
     rjson_serialize(w, v.last_visible_index);
+    w.Key("dirty_offset");
+    rjson_serialize(w, v.dirty_offset);
     w.EndObject();
 }
 
@@ -59,6 +61,7 @@ inline void read_value(json::Value const& rd, raft::protocol_metadata& obj) {
     read_member(rd, "prev_log_index", tmp.prev_log_index);
     read_member(rd, "prev_log_term", tmp.prev_log_term);
     read_member(rd, "last_visible_index", tmp.last_visible_index);
+    read_member(rd, "dirty_offset", tmp.dirty_offset);
     obj = tmp;
 }
 

@@ -79,6 +79,7 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     }
 
     auto lstats = _ptr->_log->offsets();
+
     // follower last index was already evicted at the leader, use snapshot
     if (meta.value()->next_index <= _ptr->_last_snapshot_index) {
         co_return co_await install_snapshot();
@@ -419,6 +420,9 @@ ss::future<> recovery_stm::replicate(
     auto commit_idx = std::min(_last_batch_offset, _committed_offset);
     auto last_visible_idx = std::min(
       _last_batch_offset, _ptr->last_visible_index());
+
+    auto lstats = _ptr->_log->offsets();
+
     // build request
     append_entries_request r(
       _ptr->self(),
@@ -429,7 +433,8 @@ ss::future<> recovery_stm::replicate(
         .term = _term,
         .prev_log_index = prev_log_idx,
         .prev_log_term = prev_log_term,
-        .last_visible_index = last_visible_idx},
+        .last_visible_index = last_visible_idx,
+        .dirty_offset = lstats.dirty_offset},
       std::move(reader),
       flush);
     auto meta = get_follower_meta();
@@ -445,7 +450,6 @@ ss::future<> recovery_stm::replicate(
     auto seq = _ptr->next_follower_sequence(_node_id);
     auto hb_guard = _ptr->suppress_heartbeats(_node_id);
 
-    auto lstats = _ptr->_log->offsets();
     std::vector<ssx::semaphore_units> units;
     units.push_back(std::move(mem_units));
     return dispatch_append_entries(std::move(r), std::move(units))

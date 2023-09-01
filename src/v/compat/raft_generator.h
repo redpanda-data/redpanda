@@ -251,6 +251,7 @@ struct instance_generator<raft::protocol_metadata> {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
     }
 
@@ -285,6 +286,12 @@ struct instance_generator<raft::heartbeat_request> {
               vnode{target_node_id, tests::random_named_int<model::revision_id>()},
           },
         }};
+
+        for (auto& hb : ret.heartbeats) {
+            // for heartbeats dirty_offset and prev_log_index are always the
+            // same.
+            hb.meta.dirty_offset = hb.meta.prev_log_index;
+        }
 
         /*
          * the serialization step for heartbeat_request will automatically sort

@@ -1902,6 +1902,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .prev_log_term = tests::random_named_int<model::term_id>(),
               .last_visible_index = tests::random_named_int<model::offset>(),
             };
+            meta.dirty_offset
+              = meta.prev_log_index; // always true for heartbeats
             raft::heartbeat_metadata hm{
               .meta = meta,
               .node_id = raft::
@@ -1982,6 +1984,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
         roundtrip_test(data);
     }
@@ -2003,6 +2006,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
 
         raft::append_entries_request data{

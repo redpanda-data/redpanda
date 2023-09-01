@@ -17,6 +17,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
+#include "raft/logger.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
 #include "serde/serde.h"
@@ -217,7 +218,8 @@ std::ostream& operator<<(std::ostream& o, const protocol_metadata& m) {
     return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
              << ", term:" << m.term << ", prev_log_index:" << m.prev_log_index
              << ", prev_log_term:" << m.prev_log_term
-             << ", last_visible_index:" << m.last_visible_index << "}";
+             << ", last_visible_index:" << m.last_visible_index
+             << ", dirty_offset:" << m.dirty_offset << "}";
 }
 std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
     return o << "{term:" << r.term << ", target_node_id" << r.target_node_id
@@ -419,6 +421,8 @@ void heartbeat_request::serde_read(
         hb.meta.commit_index = decode_signed(hb.meta.commit_index);
         hb.meta.prev_log_term = decode_signed(hb.meta.prev_log_term);
         hb.meta.last_visible_index = decode_signed(hb.meta.last_visible_index);
+        // for heartbeats dirty_offset and prev_log_index are always the same.
+        hb.meta.dirty_offset = hb.meta.prev_log_index;
         hb.node_id = raft::vnode(
           hb.node_id.id(), decode_signed(hb.node_id.revision()));
         hb.target_node_id = raft::vnode(
