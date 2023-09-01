@@ -117,9 +117,19 @@ FetchContent_MakeAvailable(
     wasmedge
     hdrhistogram)
 
+# for pkg_check_modules
+find_package(PkgConfig REQUIRED)
+
+# this creates the target PkgConfig::RE2, it can be aliased to another name
+pkg_check_modules(RE2 REQUIRED IMPORTED_TARGET re2)
+# this is for PkgConfig::KRB5 that links to libkrb5-dev
+pkg_check_modules(KRB5 REQUIRED IMPORTED_TARGET krb5)
+
 add_library(Crc32c::crc32c ALIAS crc32c)
 add_library(aklomp::base64 ALIAS base64)
 add_library(Hdrhistogram::hdr_histogram ALIAS hdr_histogram)
+add_library(re2 ALIAS PkgConfig::RE2)
+add_library(krb5 ALIAS PkgConfig::KRB5)
 
 list(APPEND CMAKE_PROGRAM_PATH ${tinygo_SOURCE_DIR}/bin)
 
