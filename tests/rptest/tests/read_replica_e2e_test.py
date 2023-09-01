@@ -448,7 +448,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
                 log_segment_size=self.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
                 cloud_storage_segment_max_upload_interval_sec=3,
-                fast_uploads=False))
+                fast_uploads=True))
 
         # Read replica shouldn't have it's own bucket.
         # We're adding 'none' as a bucket name without creating
