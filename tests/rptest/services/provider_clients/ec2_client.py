@@ -1,6 +1,8 @@
 import boto3
 from botocore.config import Config
 
+from rptest.services.provider_clients.client_utils import query_instance_meta
+
 RESPONCE_META_LABEL = "ResponseMetadata"
 VPC_PEERING_LABEL = "VpcPeeringConnection"
 VPC_PEERING_ID_LABEL = "VpcPeeringConnectionId"
@@ -16,6 +18,11 @@ class EC2Client:
     """
     This almost mimics S3Client from archival.
     """
+
+    VPC_ID_LABEL = "VpcId"
+    OWNER_ID_LABEL = "OwnerId"
+    CIDR_LABEL = "CidrBlock"
+
     def __init__(self,
                  region,
                  key,
@@ -63,12 +70,16 @@ class EC2Client:
         # Return
         return _r[VPC_PEERING_LABEL][VPC_PEERING_ID_LABEL]
 
-    def get_vpc_by_network_id(self, network_id):
+    def get_vpc_by_network_id(self, network_id, prefix=None):
         """
         Get VPC from AWS using network id from CloudV2
         """
         # Create a filter to search for the vpc
-        _filters = [{"Name": "tag:Name", "Values": [f"network-{network_id}"]}]
+        if prefix is None:
+            _name = f"network-{network_id}"
+        else:
+            _name = f"{prefix}{network_id}"
+        _filters = [{"Name": "tag:Name", "Values": [_name]}]
         # Get all available peering connections
         _resp = self._cli.describe_vpcs(Filters=_filters)
         _vpcs = _resp[VPCS_LABEL]
@@ -205,3 +216,34 @@ class EC2Client:
         # Call EC2 to get the list
         _r = self._cli.describe_availability_zones(Filters=_filters)
         return _r[AZS_LABEL][0][AZ_ID_LABEL]
+
+    def get_instance_meta(self, target='localhost'):
+        """
+        Query meta from local node.
+        Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+        """
+        _prefix = "http://"
+        _suffix = "/latest/meta-data/"
+        _target = "169.254.169.254" if target == 'localhost' else target
+        uri = f"{_prefix}{_target}{_suffix}"
+        # Get meta
+        _meta = query_instance_meta(uri, headers=None)
+        # swith macs for device ids
+        # filter out keys for network interfaces
+        # _old_keys = filter(lambda x: x.startswith('interfaces-macs'), _meta)
+        # iterate keys and build new dict
+        _new_meta = {}
+        _head = "network-interfaces-macs-"
+        for k, v in _meta.items():
+            if not k.startswith(_head):
+                _new_meta[k] = v
+            else:
+                # current mac
+                _tail = k.replace(_head, "")
+                _mac = _tail[:_tail.index('-')] if '-' in _tail else ""
+                _tail = _tail[_tail.index('-'):] if '-' in _tail else _tail
+                # if this is not interface key just copy
+                # get id and create new key
+                _id = _meta[_head + _mac + "-device-number"]
+                _new_meta[_head + _id + _tail] = v
+        return _new_meta
