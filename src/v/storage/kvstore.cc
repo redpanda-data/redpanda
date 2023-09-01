@@ -575,6 +575,16 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
         co_await (*it)->close();
     }
 
+    // we want to defer local storage effects until we've confirmed that
+    // the logical version is compatible with the rest of the cluster
+    _startup_garbage.reserve(std::distance(match, segs.end()) * 2);
+    for (auto it = match; it != segs.end(); it++) {
+        auto seg = *it;
+        _startup_garbage.emplace_back(seg->reader().path().string());
+        _startup_garbage.emplace_back(seg->index().path().string());
+    }
+}
+ss::future<> kvstore::do_startup_compaction() {
     // saving a snapshot right after recovery during start-up prevents an
     // accumulation of segments in cases where the system restarts many
     // times without ever filling up a segment and snapshotting when
@@ -582,11 +592,11 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
     co_await save_snapshot();
 
     // gc the replayed segments now that the snapshot has been taken.
-    for (auto it = match; it != segs.end(); it++) {
-        auto seg = *it;
-        co_await ss::remove_file(seg->reader().path().string());
-        co_await ss::remove_file(seg->index().path().string());
+    for (const auto& fname : _startup_garbage) {
+        co_await ss::remove_file(fname);
     }
+
+    _startup_garbage.clear();
 }
 
 batch_consumer::consume_result kvstore::replay_consumer::accept_batch_start(

@@ -111,6 +111,17 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    /*
+     * Perform deferred GC operations, saving a kvstore snapshot and removing
+     * replayed segments, which are no longer needed.
+     *
+     * This is deferred from replay_segments (called on startup) to avoid
+     * modifying local data until after we've checked logical version
+     * compatibility.
+     *
+     */
+    ss::future<> do_startup_compaction();
+
     std::optional<iobuf> get(key_space ks, bytes_view key);
     ss::future<> put(key_space ks, bytes key, iobuf value);
     ss::future<> remove(key_space ks, bytes key);
@@ -137,6 +148,7 @@ private:
     ss::abort_source _as;
     simple_snapshot_manager _snap;
     bool _started{false};
+    ss::chunked_fifo<ss::sstring> _startup_garbage;
 
     /**
      * Database operation. A std::nullopt value is a deletion.
