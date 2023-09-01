@@ -14,15 +14,15 @@ on:
       - '*'
   pull_request:
     branches:
-      - main
       - dev
+      - 'v*'
     paths:
       - .github/workflows/rpk-build.yml
       - src/go/rpk
 
 jobs:
   test:
-    name: Run tests
+    name: Test rpk
     strategy:
       matrix:
         os: [linux, darwin, windows]
