@@ -266,6 +266,10 @@ public:
         return _id_allocator_stm;
     }
 
+    ss::shared_ptr<cluster::log_eviction_stm> log_eviction_stm() {
+        return _log_eviction_stm;
+    }
+
     ss::lw_shared_ptr<const storage::offset_translator_state>
     get_offset_translator_state() const {
         return _raft->get_offset_translator_state();

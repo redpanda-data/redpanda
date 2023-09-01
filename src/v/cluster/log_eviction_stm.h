@@ -21,6 +21,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/util/log.hh>
 
@@ -103,6 +104,10 @@ public:
         return model::next_offset(_delete_records_eviction_offset);
     }
 
+    ss::lowres_clock::time_point last_event_processed_at() const {
+        return _last_event_processed_at;
+    }
+
 protected:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
 
@@ -127,6 +132,8 @@ private:
 
 private:
     ss::abort_source& _as;
+
+    ss::lowres_clock::time_point _last_event_processed_at;
 
     // Offset we are able to truncate based on local retention policy, as
     // signaled by the storage layer. This value is not maintained via the
