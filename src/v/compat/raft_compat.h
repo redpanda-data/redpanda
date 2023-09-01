@@ -270,6 +270,7 @@ struct compat_check<raft::install_snapshot_request> {
         json_write(file_offset);
         json_write(chunk);
         json_write(done);
+        json_write(dirty_offset);
     }
 
     static raft::install_snapshot_request from_json(json::Value& rd) {
@@ -282,6 +283,7 @@ struct compat_check<raft::install_snapshot_request> {
         json_read(file_offset);
         json_read(chunk);
         json_read(done);
+        json_read(dirty_offset);
         return obj;
     }
 
@@ -308,6 +310,7 @@ compat_copy(raft::install_snapshot_request obj) {
           .file_offset = obj.file_offset,
           .chunk = obj.chunk.copy(),
           .done = obj.done,
+          .dirty_offset = obj.dirty_offset,
         };
     };
     return std::make_pair(f(), f());

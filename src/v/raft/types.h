@@ -553,7 +553,7 @@ struct snapshot_metadata {
 struct install_snapshot_request
   : serde::envelope<
       install_snapshot_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
@@ -572,6 +572,8 @@ struct install_snapshot_request
     iobuf chunk;
     // true if this is the last chunk
     bool done;
+    // leader dirty offset
+    model::offset dirty_offset;
 
     raft::group_id target_group() const { return group; }
     vnode source_node() const { return node_id; }
@@ -592,7 +594,8 @@ struct install_snapshot_request
           last_included_index,
           file_offset,
           chunk,
-          done);
+          done,
+          dirty_offset);
     }
 };
 
@@ -615,7 +618,8 @@ public:
           .last_included_index = _ptr->last_included_index,
           .file_offset = _ptr->file_offset,
           .chunk = _ptr->chunk.copy(),
-          .done = _ptr->done};
+          .done = _ptr->done,
+          .dirty_offset = _ptr->dirty_offset};
     }
     raft::group_id target_group() const { return _ptr->target_group(); }
     vnode target_node() const { return _ptr->target_node_id; }

@@ -315,7 +315,8 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
             .last_included_index = _ptr->_last_snapshot_index,
             .file_offset = _sent_snapshot_bytes,
             .chunk = std::move(chunk),
-            .done = (_sent_snapshot_bytes + chunk_size) == _snapshot_size};
+            .done = (_sent_snapshot_bytes + chunk_size) == _snapshot_size,
+            .dirty_offset = _ptr->dirty_offset()};
 
           _sent_snapshot_bytes += chunk_size;
 

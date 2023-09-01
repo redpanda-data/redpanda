@@ -190,7 +190,7 @@ struct instance_generator<raft::install_snapshot_request> {
           .chunk = bytes_to_iobuf(
             random_generators::get_bytes(random_generators::get_int(1, 512))),
           .done = tests::random_bool(),
-        };
+          .dirty_offset = tests::random_named_int<model::offset>()};
     }
 
     static std::vector<raft::install_snapshot_request> limits() { return {}; }

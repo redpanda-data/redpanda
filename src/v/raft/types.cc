@@ -249,7 +249,7 @@ std::ostream& operator<<(std::ostream& o, const install_snapshot_request& r) {
       o,
       "{{term: {}, group: {}, target_node_id: {}, node_id: {}, "
       "last_included_index: {}, "
-      "file_offset: {}, chunk_size: {}, done: {}}}",
+      "file_offset: {}, chunk_size: {}, done: {}, dirty_offset: {}}}",
       r.term,
       r.group,
       r.target_node_id,
@@ -257,7 +257,8 @@ std::ostream& operator<<(std::ostream& o, const install_snapshot_request& r) {
       r.last_included_index,
       r.file_offset,
       r.chunk.size_bytes(),
-      r.done);
+      r.done,
+      r.dirty_offset);
     return o;
 }
 

@@ -1828,6 +1828,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .chunk = bytes_to_iobuf(
             random_generators::get_bytes(random_generators::get_int(1024))),
           .done = tests::random_bool(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
         /*
          * manual adl/serde test to workaround iobuf being move-only
@@ -1842,6 +1843,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .file_offset = orig.file_offset,
               .chunk = orig.chunk.copy(),
               .done = orig.done,
+              .dirty_offset = orig.dirty_offset,
             };
             auto serde_out = serde::to_iobuf(std::move(serde_in));
             auto from_serde = serde::from_iobuf<raft::install_snapshot_request>(
