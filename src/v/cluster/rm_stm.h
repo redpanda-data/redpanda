@@ -153,40 +153,6 @@ public:
         }
     };
 
-    // note: support for tx_snapshot::version[0-2] was dropped
-    // in v23.3.x
-    struct tx_snapshot {
-        static constexpr uint8_t version = 4;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<tx_range> ongoing;
-        fragmented_vector<prepare_marker> prepared;
-        fragmented_vector<tx_range> aborted;
-        fragmented_vector<abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<seq_entry> seqs;
-
-        struct tx_data_snapshot {
-            model::producer_identity pid;
-            model::tx_seq tx_seq;
-            model::partition_id tm;
-
-            bool operator==(const tx_data_snapshot&) const = default;
-        };
-
-        struct expiration_snapshot {
-            model::producer_identity pid;
-            duration_type timeout;
-
-            bool operator==(const expiration_snapshot&) const = default;
-        };
-
-        fragmented_vector<tx_data_snapshot> tx_data;
-        fragmented_vector<expiration_snapshot> expiration;
-
-        bool operator==(const tx_snapshot&) const = default;
-    };
-
     struct abort_snapshot {
         model::offset first;
         model::offset last;
@@ -332,29 +298,6 @@ public:
 
             return info->timeout;
         }
-    };
-
-    struct tx_snapshot_v3 {
-        static constexpr uint8_t version = 3;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<rm_stm::seq_entry> seqs;
-
-        struct tx_seqs_snapshot {
-            model::producer_identity pid;
-            model::tx_seq tx_seq;
-            bool operator==(const tx_seqs_snapshot&) const = default;
-        };
-
-        fragmented_vector<tx_seqs_snapshot> tx_seqs;
-        fragmented_vector<rm_stm::tx_snapshot::expiration_snapshot> expiration;
-
-        bool operator==(const tx_snapshot_v3&) const = default;
     };
 
     using transaction_set

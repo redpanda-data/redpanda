@@ -1933,7 +1933,7 @@ model::offset rm_stm::to_log_offset(kafka::offset k_offset) const {
     return model::offset(k_offset);
 }
 template<class T>
-static void move_snapshot_wo_seqs(rm_stm::tx_snapshot& target, T& source) {
+static void move_snapshot_wo_seqs(tx_snapshot_v4& target, T& source) {
     target.fenced = std::move(source.fenced);
     target.ongoing = std::move(source.ongoing);
     target.prepared = std::move(source.prepared);
@@ -1948,17 +1948,18 @@ rm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       _ctx_log.trace,
       "applying snapshot with last included offset: {}",
       hdr.offset);
-    tx_snapshot data;
+    tx_snapshot_v4 data;
     iobuf_parser data_parser(std::move(tx_ss_buf));
-    if (hdr.version == tx_snapshot::version) {
-        data = co_await reflection::async_adl<tx_snapshot>{}.from(data_parser);
+    if (hdr.version == tx_snapshot_v4::version) {
+        data = co_await reflection::async_adl<tx_snapshot_v4>{}.from(
+          data_parser);
     } else if (hdr.version == tx_snapshot_v3::version) {
         auto data_v3 = reflection::adl<tx_snapshot_v3>{}.from(data_parser);
         move_snapshot_wo_seqs(data, data_v3);
         data.seqs = std::move(data_v3.seqs);
         data.expiration = std::move(data_v3.expiration);
         for (auto& entry : data_v3.tx_seqs) {
-            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
+            data.tx_data.push_back(tx_snapshot_v4::tx_data_snapshot{
               .pid = entry.pid,
               .tx_seq = entry.tx_seq,
               .tm = model::legacy_tm_ntp.tp.partition});
@@ -2056,12 +2057,7 @@ rm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     });
 }
 
-uint8_t rm_stm::active_snapshot_version() {
-    if (is_transaction_partitioning()) {
-        return tx_snapshot::version;
-    }
-    return tx_snapshot_v3::version;
-}
+uint8_t rm_stm::active_snapshot_version() { return tx_snapshot_v4::version; }
 
 template<class T>
 void rm_stm::fill_snapshot_wo_seqs(T& snapshot) {
@@ -2190,8 +2186,8 @@ ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
           iobuf{}, [this, start_kafka_offset](iobuf& tx_ss_buf) mutable {
               auto version = active_snapshot_version();
               auto fut_serialize = ss::now();
-              if (version == tx_snapshot::version) {
-                  tx_snapshot tx_ss;
+              if (version == tx_snapshot_v4::version) {
+                  tx_snapshot_v4 tx_ss;
                   fill_snapshot_wo_seqs(tx_ss);
                   for (const auto& entry : _log_state.seq_table) {
                       /**
@@ -2213,40 +2209,18 @@ ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
                   tx_ss.offset = last_applied_offset();
 
                   for (const auto& entry : _log_state.current_txes) {
-                      tx_ss.tx_data.push_back(tx_snapshot::tx_data_snapshot{
+                      tx_ss.tx_data.push_back(tx_snapshot_v4::tx_data_snapshot{
                         .pid = entry.first,
                         .tx_seq = entry.second.tx_seq,
                         .tm = entry.second.tm_partition});
                   }
 
                   for (const auto& entry : _log_state.expiration) {
-                      tx_ss.expiration.push_back(
-                        tx_snapshot::expiration_snapshot{
-                          .pid = entry.first, .timeout = entry.second.timeout});
+                      tx_ss.expiration.push_back(expiration_snapshot{
+                        .pid = entry.first, .timeout = entry.second.timeout});
                   }
 
-                  fut_serialize = reflection::async_adl<tx_snapshot>{}.to(
-                    tx_ss_buf, std::move(tx_ss));
-              } else if (version == tx_snapshot_v3::version) {
-                  tx_snapshot_v3 tx_ss;
-                  fill_snapshot_wo_seqs(tx_ss);
-                  for (const auto& entry : _log_state.seq_table) {
-                      tx_ss.seqs.push_back(entry.second.entry.copy());
-                  }
-                  tx_ss.offset = last_applied_offset();
-
-                  for (const auto& entry : _log_state.current_txes) {
-                      tx_ss.tx_seqs.push_back(tx_snapshot_v3::tx_seqs_snapshot{
-                        .pid = entry.first, .tx_seq = entry.second.tx_seq});
-                  }
-
-                  for (const auto& entry : _log_state.expiration) {
-                      tx_ss.expiration.push_back(
-                        tx_snapshot::expiration_snapshot{
-                          .pid = entry.first, .timeout = entry.second.timeout});
-                  }
-
-                  fut_serialize = reflection::async_adl<tx_snapshot_v3>{}.to(
+                  fut_serialize = reflection::async_adl<tx_snapshot_v4>{}.to(
                     tx_ss_buf, std::move(tx_ss));
               } else {
                   vassert(false, "unsupported tx_snapshot version {}", version);

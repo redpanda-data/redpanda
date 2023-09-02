@@ -8,7 +8,6 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/errc.h"
-#include "cluster/rm_stm.h"
 #include "cluster/tests/randoms.h"
 #include "cluster/tests/rm_stm_test_fixture.h"
 #include "cluster/tx_snapshot_utils.h"
@@ -739,7 +738,7 @@ SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
     // makes sure the snapshots are compatible pre/post upgrade.
 
     auto make_tx_snapshot = []() {
-        return reflection::tx_snapshot{
+        return reflection::tx_snapshot_v4{
           .fenced = tests::random_frag_vector(model::random_producer_identity),
           .ongoing = tests::random_frag_vector(model::random_tx_range),
           .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
@@ -753,9 +752,6 @@ SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
           .expiration = tests::random_frag_vector(
             cluster::random_expiration_snapshot)};
     };
-
-    sync_ser_verify(make_tx_snapshot());
-    async_ser_verify(make_tx_snapshot());
 
     auto make_tx_snapshot_v3 = []() {
         return reflection::tx_snapshot_v3{
@@ -773,6 +769,9 @@ SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
             cluster::random_expiration_snapshot)};
     };
 
+    sync_ser_verify(make_tx_snapshot());
+    async_ser_verify(make_tx_snapshot());
+
     sync_ser_verify(make_tx_snapshot_v3());
-    async_ser_verify(make_tx_snapshot_v3());
+    sync_ser_verify(make_tx_snapshot_v3());
 }

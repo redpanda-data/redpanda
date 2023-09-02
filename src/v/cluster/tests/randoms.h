@@ -12,7 +12,7 @@
 #pragma once
 
 #include "cluster/health_monitor_types.h"
-#include "cluster/rm_stm.h"
+#include "cluster/tx_snapshot_utils.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "storage/tests/randoms.h"
@@ -142,15 +142,15 @@ inline cluster_report_filter random_cluster_report_filter() {
       })};
 }
 
-inline rm_stm::tx_snapshot::tx_data_snapshot random_tx_data_snapshot() {
-    return rm_stm::tx_snapshot::tx_data_snapshot{
+inline tx_snapshot_v4::tx_data_snapshot random_tx_data_snapshot() {
+    return tx_snapshot_v4::tx_data_snapshot{
       model::random_producer_identity(),
       tests::random_named_int<model::tx_seq>(),
       tests::random_named_int<model::partition_id>()};
 }
 
-inline rm_stm::tx_snapshot::expiration_snapshot random_expiration_snapshot() {
-    return rm_stm::tx_snapshot::expiration_snapshot{
+inline expiration_snapshot random_expiration_snapshot() {
+    return expiration_snapshot{
       model::random_producer_identity(),
       tests::random_duration<rm_stm::duration_type>()};
 }
@@ -181,7 +181,7 @@ inline rm_stm::seq_entry random_seq_entry() {
       random_generators::get_int<int64_t>()};
 }
 
-inline rm_stm::tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {
+inline tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {
     return {
       model::random_producer_identity(),
       tests::random_named_int<model::tx_seq>()};
