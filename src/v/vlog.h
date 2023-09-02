@@ -25,3 +25,23 @@
 // NOLINTNEXTLINE
 #define vlogl(logger, level, fmt, args...)                                     \
     fmt_with_ctx_level(logger, level, fmt, ##args)
+
+#define vlog_error(logger, fmt, args...)                                       \
+    check_level_then_log(logger, seastar::log_level::error, fmt, ##args)
+
+#define vlog_warn(logger, fmt, args...)                                        \
+    check_level_then_log(logger, seastar::log_level::warn, fmt, ##args)
+
+#define vlog_info(logger, fmt, args...)                                        \
+    check_level_then_log(logger, seastar::log_level::info, fmt, ##args)
+
+#define vlog_debug(logger, fmt, args...)                                       \
+    check_level_then_log(logger, seastar::log_level::debug, fmt, ##args)
+
+#define vlog_trace(logger, fmt, args...)                                       \
+    check_level_then_log(logger, seastar::log_level::trace, fmt, ##args)
+
+#define check_level_then_log(logger, level, fmt, args...)                      \
+    if (logger.is_enabled(level)) {                                            \
+        fmt_with_ctx_level(logger, level, fmt, ##args);                        \
+    }
