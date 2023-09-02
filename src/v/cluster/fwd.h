@@ -61,6 +61,7 @@ class feature_manager;
 class drain_manager;
 class partition_balancer_backend;
 class partition_balancer_state;
+class producer_state_manager;
 class node_status_backend;
 class node_status_table;
 class ephemeral_credential_frontend;

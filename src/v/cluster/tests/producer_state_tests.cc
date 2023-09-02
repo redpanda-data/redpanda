@@ -43,12 +43,21 @@ struct test_fixture {
             config::shard_local_cfg().disable_metrics.set_value(true);
         }).get();
         config::shard_local_cfg().disable_metrics.set_value(true);
-        _psm.start(max_producers.bind(), default_producer_expiration).get();
+        _max_producers.start(default_max_producers).get();
+        _psm
+          .start(
+            ss::sharded_parameter(
+              [this] { return _max_producers.local().bind(); }),
+            default_producer_expiration)
+          .get();
         _psm.invoke_on_all(&cluster::producer_state_manager::start).get();
         check_producers(0);
     }
 
-    ~test_fixture() { _psm.stop().get(); }
+    ~test_fixture() {
+        _max_producers.stop().get();
+        _psm.stop().get();
+    }
 
     cluster::producer_ptr
     new_producer(ss::noncopyable_function<void()> f = {}) {
@@ -74,7 +83,7 @@ struct test_fixture {
     }
 
     long _counter = 0;
-    config::mock_property<uint64_t> max_producers{default_max_producers};
+    ss::sharded<config::mock_property<uint64_t>> _max_producers;
     ss::sharded<cluster::producer_state_manager> _psm;
 };
 
@@ -162,7 +171,11 @@ FIXTURE_TEST(test_eviction_max_pids, test_fixture) {
 
 FIXTURE_TEST(test_eviction_expired_pids, test_fixture) {
     ss::sharded<cluster::producer_state_manager> psm;
-    psm.start(max_producers.bind(), 100ms).get();
+    psm
+      .start(
+        ss::sharded_parameter([this] { return _max_producers.local().bind(); }),
+        100ms)
+      .get();
     psm.invoke_on_all(&cluster::producer_state_manager::start).get();
     auto deferred = ss::defer([&] { psm.stop().get(); });
 

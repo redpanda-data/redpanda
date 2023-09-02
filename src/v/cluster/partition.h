@@ -60,6 +60,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
       ss::sharded<archival::upload_housekeeping_service>&,
+      ss::sharded<producer_state_manager>&,
       storage::kvstore&,
       config::binding<uint64_t>,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
@@ -498,6 +499,7 @@ private:
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
 
     storage::kvstore& _kvstore;
+    ss::sharded<cluster::producer_state_manager>& _producer_state_manager;
     config::binding<uint64_t> _max_concurrent_producer_ids;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);

@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/producer_state_manager.h"
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -66,6 +67,15 @@ struct simple_raft_fixture {
         _feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+        _producer_state_manager
+          .start(
+            config::mock_binding(std::numeric_limits<uint64_t>::max()),
+            std::chrono::milliseconds::max())
+          .get();
+        _producer_state_manager
+          .invoke_on_all(
+            [](cluster::producer_state_manager& mgr) { return mgr.start(); })
           .get();
 
         _group_mgr
@@ -142,6 +152,7 @@ struct simple_raft_fixture {
             if (_raft) {
                 _raft.release();
             }
+            _producer_state_manager.stop().get();
             _connections.stop().get();
             _storage.stop().get();
             _feature_table.stop().get();
@@ -201,5 +212,6 @@ struct simple_raft_fixture {
     ss::sharded<features::feature_table> _feature_table;
     ss::sharded<raft::group_manager> _group_mgr;
     ss::sharded<raft::coordinated_recovery_throttle> _recovery_throttle;
+    ss::sharded<cluster::producer_state_manager> _producer_state_manager;
     bool _started = false;
 };

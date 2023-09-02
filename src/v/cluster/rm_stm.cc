@@ -35,6 +35,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <utility>
 
 namespace cluster {
 using namespace std::chrono_literals;
@@ -255,6 +256,7 @@ rm_stm::rm_stm(
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<producer_state_manager>& producer_state_manager,
   config::binding<uint64_t> max_concurrent_producer_ids)
   : persisted_stm<>(rm_stm_snapshot, logger, c)
   , _tx_locks(
@@ -292,7 +294,8 @@ rm_stm::rm_stm(
   , _log_stats_interval_s(
       config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
-  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
+  , _producer_state_manager(producer_state_manager)
+  , _max_concurrent_producer_ids(std::move(max_concurrent_producer_ids)) {
     vassert(
       _feature_table.local().is_active(features::feature::transaction_ga),
       "unexpected state for transactions support. skipped a few "

@@ -25,6 +25,7 @@ struct rm_stm_test_fixture : simple_raft_fixture {
           _raft.get(),
           tx_gateway_frontend,
           _feature_table,
+          _producer_state_manager,
           config::mock_binding(std::numeric_limits<uint64_t>::max()));
 
         _raft->start(std::move(stm_m_builder)).get();

@@ -209,6 +209,7 @@ public:
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<features::feature_table>&,
+      ss::sharded<producer_state_manager>&,
       config::binding<uint64_t> max_concurrent_producer_ids);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
@@ -889,6 +890,7 @@ private:
     config::binding<std::chrono::seconds> _log_stats_interval_s;
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
+    ss::sharded<producer_state_manager>& _producer_state_manager;
     config::binding<uint64_t> _max_concurrent_producer_ids;
     mutex _clean_old_pids_mtx;
     ssx::metrics::metric_groups _metrics
