@@ -11,3 +11,6 @@
 cloud:
   included:
     - tests/services_self_test.py::SimpleSelfTest
+    - tests/services_self_test.py::OpenBenchmarkSelfTest
+    - scale_tests/high_throughput_test.py::HighThroughputTest2.test_throughput_simple
+    - scale_tests/high_throughput_test.py::HighThroughputTest2.test_max_connections
