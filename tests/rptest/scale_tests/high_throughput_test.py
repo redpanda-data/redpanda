@@ -488,8 +488,12 @@ class HighThroughputTest(PreallocNodesTest):
 
         return
 
+    COMBO_PRELOADED_LOG_ALLOW_LIST = [
+        re.compile('storage - .* - Stopping parser, short read. .*')
+    ] + RESTART_LOG_ALLOW_LIST
+
     @ok_to_fail
-    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=5, log_allow_list=COMBO_PRELOADED_LOG_ALLOW_LIST)
     def test_combo_preloaded(self):
         """
         Preloads cluster with large number of messages/segments that are also
