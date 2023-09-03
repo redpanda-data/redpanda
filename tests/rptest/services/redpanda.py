@@ -1529,6 +1529,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     def sockets_clear(self, node):
         True
 
+    def all_up(self):
+        return self._cloud_cluster.isAlive
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
