@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/persisted_stm.h"
+#include "cluster/producer_state.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -377,6 +378,10 @@ private:
     ss::future<> do_remove_persistent_state();
     ss::future<fragmented_vector<rm_stm::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
+    producer_ptr maybe_create_producer(model::producer_identity);
+    ss::future<> evict_producer(model::producer_identity);
+    void cleanup_producer_state(model::producer_identity);
+    ss::future<> reset_producers();
     model::record_batch make_fence_batch(
       model::producer_identity,
       model::tx_seq,
@@ -818,6 +823,8 @@ private:
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
     ss::sharded<producer_state_manager>& _producer_state_manager;
+    mt::map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>
+      _producers;
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
     ss::abort_source _as;

@@ -285,7 +285,10 @@ rm_stm::rm_stm(
   , _log_stats_interval_s(
       config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
-  , _producer_state_manager(producer_state_manager) {
+  , _producer_state_manager(producer_state_manager)
+  , _producers(
+      mt::map<absl::btree_map, model::producer_identity, cluster::producer_ptr>(
+        _tx_root_tracker.create_child("producers"))) {
     vassert(
       _feature_table.local().is_active(features::feature::transaction_ga),
       "unexpected state for transactions support. skipped a few "
@@ -327,6 +330,46 @@ ss::future<model::offset> rm_stm::bootstrap_committed_offset() {
     return _raft->events()
       .wait(model::offset(0), model::no_timeout, _as)
       .then([this] { return _raft->committed_offset(); });
+}
+
+producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
+    // Double lookup because of two reasons
+    // 1. we are forced to use a ptr as map value_type because producer_state is
+    // not movable
+    // 2. btree_map does not support lazy_emplace and we are stuck to btree_map
+    // as it is memory friendly.
+    auto it = _producers.find(pid);
+    if (it != _producers.end()) {
+        return it->second;
+    }
+    auto result = _producers.emplace(
+      pid,
+      ss::make_lw_shared<producer_state>(
+        _producer_state_manager.local(), pid, _raft->group(), [pid, this] {
+            cleanup_producer_state(pid);
+        }));
+    ;
+    return result.first->second;
+}
+
+void rm_stm::cleanup_producer_state(model::producer_identity pid) {
+    if (!_log_state.current_txes.contains(pid)) {
+        // No active transactions for this producer.`
+        // note: this branch can be removed once we port tx state
+        // into producer_state.
+        _mem_state.forget(pid);
+        _log_state.forget(pid);
+    }
+    _producers.erase(pid);
+};
+
+ss::future<> rm_stm::reset_producers() {
+    co_await ss::max_concurrent_for_each(
+      _producers.begin(), _producers.end(), 32, [](auto& it) {
+          auto& producer = it.second;
+          return producer->shutdown_input().discard_result();
+      });
+    _producers.clear();
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -962,7 +1005,8 @@ ss::future<> rm_stm::stop() {
     _as.request_abort();
     auto_abort_timer.cancel();
     _log_stats_timer.cancel();
-    return persisted_stm<>::stop();
+    co_await reset_producers();
+    co_await persisted_stm<>::stop();
 }
 
 ss::future<> rm_stm::start() { return persisted_stm::start(); }
