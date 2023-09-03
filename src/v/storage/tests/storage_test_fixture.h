@@ -221,6 +221,10 @@ public:
     ~storage_test_fixture() {
         kvstore.stop().get();
         feature_table.stop().get();
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg().get("disable_metrics").reset();
+            config::shard_local_cfg().get("log_segment_size_min").reset();
+        }).get();
     }
 
     /**
