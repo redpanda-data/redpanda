@@ -209,8 +209,7 @@ public:
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<producer_state_manager>&,
-      config::binding<uint64_t> max_concurrent_producer_ids);
+      ss::sharded<producer_state_manager>&);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
       model::producer_identity,
@@ -425,8 +424,6 @@ private:
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
-    void compact_snapshot();
-
     ss::future<bool> sync(model::timeout_clock::duration);
     constexpr bool check_tx_permitted() { return true; }
 
@@ -479,7 +476,6 @@ private:
     struct seq_entry_wrapper {
         seq_entry entry;
         model::term_id term;
-        safe_intrusive_list_hook _hook;
     };
 
     util::mem_tracker _tx_root_tracker{"tx-mem-root"};
@@ -568,12 +564,7 @@ private:
           absl::node_hash_map,
           model::producer_identity,
           seq_entry_wrapper>;
-        // Note: When erasing entries from this map, use the the helper
-        // 'erase_pid_from_seq_table' that also unlinks the entry from the
-        // intrusive list that tracks the LRU order. Not doing so can cause
-        // crashes.
-        // TODO: Enforce this constraint by hiding seq_table as a private
-        // member.
+
         seq_map seq_table;
         mt::unordered_map_t<
           absl::flat_hash_map,
@@ -586,23 +577,6 @@ private:
           expiration_info>
           expiration;
 
-        // Tracks the LRU order of the pids with idempotent/non-transactional
-        // requests. When the count exceeds _max_concurrent_producer_ids, we
-        // schedule a cleanup fiber that removes pids in the LRU order.
-        using idempotent_pids_replicate_order = counted_intrusive_list<
-          seq_entry_wrapper,
-          &seq_entry_wrapper::_hook>;
-        idempotent_pids_replicate_order lru_idempotent_pids;
-
-        void unlink_lru_pid(const seq_entry_wrapper& entry) {
-            if (entry._hook.is_linked()) {
-                lru_idempotent_pids.erase(
-                  lru_idempotent_pids.iterator_to(entry));
-            }
-        }
-
-        // Additionally unlinks from the LRU list before erasing from
-        // the map.
         void erase_pid_from_seq_table(const model::producer_identity& pid) {
             auto it = seq_table.find(pid);
             if (it == seq_table.end()) {
@@ -611,27 +585,9 @@ private:
             erase_seq(it);
         }
 
-        void erase_seq(seq_map::const_iterator it) {
-            unlink_lru_pid(it->second);
-            seq_table.erase(it);
-        }
+        void erase_seq(seq_map::const_iterator it) { seq_table.erase(it); }
 
-        /// It is important that we unlink entries from seq_table before
-        /// destroying the entries themselves so that the safe link does not
-        /// assert.
-        void clear_seq_table() {
-            for (const auto& entry : seq_table) {
-                unlink_lru_pid(entry.second);
-            }
-            seq_table.clear();
-            // Checks the 1:1 invariant between seq_table entries and
-            // lru_idempotent_pids If every element from seq_table is unlinked,
-            // the resulting intrusive list should be empty.
-            vassert(
-              lru_idempotent_pids.size() == 0,
-              "Unexpected entries in the lru pid list {}",
-              lru_idempotent_pids.size());
-        }
+        void clear_seq_table() { seq_table.clear(); }
 
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
@@ -736,17 +692,6 @@ private:
         }
     };
 
-    enum class clear_type : int8_t {
-        tx_pids,
-        idempotent_pids,
-    };
-
-    void spawn_background_clean_for_pids(clear_type type);
-
-    ss::future<> clear_old_pids(clear_type type);
-    ss::future<> clear_old_tx_pids();
-    ss::future<> clear_old_idempotent_pids();
-
     // When a request is retried while the first appempt is still
     // being replicated the retried request is parked until the
     // original request is replicated.
@@ -815,14 +760,6 @@ private:
         return lock_it->second;
     }
 
-    ss::lw_shared_ptr<ss::basic_rwlock<>>
-    get_idempotent_producer_lock(model::producer_identity pid) {
-        auto [it, _] = _idempotent_producer_locks.try_emplace(
-          pid, ss::make_lw_shared<ss::basic_rwlock<>>());
-
-        return it->second;
-    }
-
     kafka::offset from_log_offset(model::offset old_offset) const;
     model::offset to_log_offset(kafka::offset new_offset) const;
 
@@ -846,9 +783,6 @@ private:
     ss::future<> maybe_log_tx_stats();
     void log_tx_stats();
 
-    bool
-    is_producer_expired(model::timestamp now, const seq_entry& entry) const;
-
     // Defines the commit offset range for the stm bootstrap.
     // Set on first apply upcall and used to identify if the
     // stm is still replaying the log.
@@ -865,20 +799,13 @@ private:
       model::producer_identity,
       ss::lw_shared_ptr<inflight_requests>>
       _inflight_requests;
-    mt::map_t<
-      absl::btree_map,
-      model::producer_identity,
-      ss::lw_shared_ptr<ss::basic_rwlock<>>>
-      _idempotent_producer_locks;
     log_state _log_state;
     mem_state _mem_state;
     ss::timer<clock_type> auto_abort_timer;
-    model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
     std::chrono::milliseconds _abort_interval_ms;
     uint32_t _abort_index_segment_size;
-    std::chrono::milliseconds _transactional_id_expiration;
     bool _is_autoabort_enabled{true};
     bool _is_autoabort_active{false};
     bool _is_tx_enabled{false};
@@ -891,8 +818,6 @@ private:
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
     ss::sharded<producer_state_manager>& _producer_state_manager;
-    config::binding<uint64_t> _max_concurrent_producer_ids;
-    mutex _clean_old_pids_mtx;
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
     ss::abort_source _as;

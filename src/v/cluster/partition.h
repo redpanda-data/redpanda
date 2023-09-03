@@ -62,7 +62,6 @@ public:
       ss::sharded<archival::upload_housekeeping_service>&,
       ss::sharded<producer_state_manager>&,
       storage::kvstore&,
-      config::binding<uint64_t>,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
 
@@ -500,7 +499,6 @@ private:
 
     storage::kvstore& _kvstore;
     ss::sharded<cluster::producer_state_manager>& _producer_state_manager;
-    config::binding<uint64_t> _max_concurrent_producer_ids;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

@@ -64,7 +64,6 @@ partition::partition(
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
   ss::sharded<producer_state_manager>& producer_state_manager,
   storage::kvstore& kvstore,
-  config::binding<uint64_t> max_concurrent_producer_ids,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(std::move(r))
   , _partition_mem_tracker(
@@ -83,8 +82,7 @@ partition::partition(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
   , _upload_housekeeping(upload_hks)
   , _kvstore(kvstore)
-  , _producer_state_manager(producer_state_manager)
-  , _max_concurrent_producer_ids(std::move(max_concurrent_producer_ids)) {
+  , _producer_state_manager(producer_state_manager) {
     // Construct cloud_storage read path (remote_partition)
     if (
       config::shard_local_cfg().cloud_storage_enabled()
@@ -488,8 +486,7 @@ ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
           _raft.get(),
           _tx_gateway_frontend,
           _feature_table,
-          _producer_state_manager,
-          _max_concurrent_producer_ids);
+          _producer_state_manager);
         _raft->log()->stm_manager()->add_stm(_rm_stm);
     }
 

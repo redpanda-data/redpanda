@@ -256,8 +256,7 @@ rm_stm::rm_stm(
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<producer_state_manager>& producer_state_manager,
-  config::binding<uint64_t> max_concurrent_producer_ids)
+  ss::sharded<producer_state_manager>& producer_state_manager)
   : persisted_stm<>(rm_stm_snapshot, logger, c)
   , _tx_locks(
       mt::
@@ -268,22 +267,14 @@ rm_stm::rm_stm(
                        model::producer_identity,
                        ss::lw_shared_ptr<inflight_requests>>(
       _tx_root_tracker.create_child("in-flight")))
-  , _idempotent_producer_locks(mt::map<
-                               absl::btree_map,
-                               model::producer_identity,
-                               ss::lw_shared_ptr<ss::basic_rwlock<>>>(
-      _tx_root_tracker.create_child("idempotent-producer-locks")))
   , _log_state(_tx_root_tracker)
   , _mem_state(_tx_root_tracker)
-  , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
   , _abort_interval_ms(config::shard_local_cfg()
                          .abort_timed_out_transactions_interval_ms.value())
   , _abort_index_segment_size(
       config::shard_local_cfg().abort_index_segment_size.value())
-  , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _abort_snapshot_mgr(
@@ -294,8 +285,7 @@ rm_stm::rm_stm(
   , _log_stats_interval_s(
       config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
-  , _producer_state_manager(producer_state_manager)
-  , _max_concurrent_producer_ids(std::move(max_concurrent_producer_ids)) {
+  , _producer_state_manager(producer_state_manager) {
     vassert(
       _feature_table.local().is_active(features::feature::transaction_ga),
       "unexpected state for transactions support. skipped a few "
@@ -1074,9 +1064,6 @@ bool rm_stm::check_seq(model::batch_identity bid, model::term_id term) {
     seq_it.entry.pid = bid.pid;
     seq_it.entry.last_write_timestamp = last_write_timestamp;
     seq_it.term = term;
-    _oldest_session = std::min(
-      _oldest_session, model::timestamp(seq_it.entry.last_write_timestamp));
-
     return true;
 }
 
@@ -1122,8 +1109,6 @@ void rm_stm::reset_seq(model::batch_identity bid, model::term_id term) {
     seq_it.entry.last_offset = kafka::offset{-1};
     seq_it.entry.pid = bid.pid;
     seq_it.entry.last_write_timestamp = model::timestamp::now().value();
-    _oldest_session = std::min(
-      _oldest_session, model::timestamp(seq_it.entry.last_write_timestamp));
 }
 
 ss::future<result<kafka_result>>
@@ -1329,21 +1314,6 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
       bid.first_seq,
       bid.last_seq,
       bid.record_count);
-
-    auto idempotent_lock = get_idempotent_producer_lock(bid.pid);
-    auto units = co_await idempotent_lock->hold_read_lock();
-
-    // Double check that after hold read lock rw_lock still exists in rw map.
-    // Becasue we can not continue replicate_seq if pid was deleted from state
-    // after we lock mutex
-    if (!_idempotent_producer_locks.contains(bid.pid)) {
-        vlog(
-          _ctx_log.error,
-          "[pid: {}] Lock for pid was deleted from map after we hold it. "
-          "Cleaning process was during replicate_seq",
-          bid.pid);
-        co_return errc::invalid_request;
-    }
 
     // getting session by client's pid
     auto session = _inflight_requests
@@ -1604,18 +1574,8 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
               front->last_seq, front->r.value().last_offset);
         }
 
-        if (!bid.is_transactional) {
-            _log_state.unlink_lru_pid(seq_it->second);
-            _log_state.lru_idempotent_pids.push_back(seq_it->second);
-        }
-
         session->cache.pop_front();
     }
-
-    // We can not do any async work after replication is finished and we marked
-    // request as finished. Becasue it can do reordering for requests. So we
-    // need to spawn background cleaning thread
-    spawn_background_clean_for_pids(rm_stm::clear_type::idempotent_pids);
 
     if (session->cache.empty() && session->lock.ready()) {
         _inflight_requests.erase(bid.pid);
@@ -1769,61 +1729,6 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
       to,
       result.size());
     co_return result;
-}
-
-bool rm_stm::is_producer_expired(
-  model::timestamp now, const seq_entry& entry) const {
-    /**
-     * Producer is expired if it has no ongoing transactions and its last write
-     * timestamp is older than requested producer id
-     */
-    auto lock_it = _tx_locks.find(entry.pid.get_id());
-    /**
-     * If there are ongoing transactions we must keep the producer state alive
-     */
-    if (lock_it != _tx_locks.end() && !lock_it->second->ready()) {
-        return false;
-    }
-
-    if (_log_state.current_txes.contains(entry.pid)) {
-        return false;
-    }
-
-    return now.value() - entry.last_write_timestamp
-           > _transactional_id_expiration.count();
-}
-
-void rm_stm::compact_snapshot() {
-    if (_log_state.seq_table.empty()) {
-        return;
-    }
-    const auto now = model::timestamp::now();
-    const auto expiration_ms_count = _transactional_id_expiration.count();
-    if ((now - _oldest_session).value() < expiration_ms_count) {
-        return;
-    }
-
-    model::timestamp::type oldest_preserved_session = now.value();
-
-    for (auto it = _log_state.seq_table.cbegin();
-         it != _log_state.seq_table.cend();
-         it++) {
-        if (is_producer_expired(now, it->second.entry)) {
-            vlog(
-              _ctx_log.debug,
-              "Clearing pid: {}, last_write_timestamp: {}, now: {}, reason: "
-              "expired",
-              it->first,
-              it->second.entry.last_write_timestamp,
-              now.value());
-            auto it_copy = it;
-            _log_state.erase_seq(it_copy);
-        } else {
-            oldest_preserved_session = std::min(
-              it->second.entry.last_write_timestamp, oldest_preserved_session);
-        }
-    }
-    _oldest_session = model::timestamp(oldest_preserved_session);
 }
 
 ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
@@ -2155,7 +2060,6 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
         }
     }
 
-    compact_snapshot();
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
     }
@@ -2253,16 +2157,8 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
             seq_it->second.entry.update(bid.last_seq, translated);
         }
 
-        if (!bid.is_transactional) {
-            _log_state.unlink_lru_pid(seq_it->second);
-            _log_state.lru_idempotent_pids.push_back(seq_it->second);
-            spawn_background_clean_for_pids(
-              rm_stm::clear_type::idempotent_pids);
-        }
-
         auto now = model::timestamp::now();
         seq_it->second.entry.last_write_timestamp = now.value();
-        _oldest_session = std::min(_oldest_session, now);
     }
 
     if (bid.is_transactional) {
@@ -2291,7 +2187,6 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
             _log_state.ongoing_set.insert(base_offset);
             _mem_state.estimated.erase(bid.pid);
         }
-        spawn_background_clean_for_pids(rm_stm::clear_type::tx_pids);
     }
 }
 
@@ -2433,10 +2328,6 @@ rm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         return lhs->second.entry.last_write_timestamp
                < rhs->second.entry.last_write_timestamp;
     });
-
-    for (auto it : sorted_pids) {
-        _log_state.lru_idempotent_pids.push_back(it->second);
-    }
 }
 
 uint8_t rm_stm::active_snapshot_version() {
@@ -2753,112 +2644,6 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
       as.last,
       as.aborted.size());
     return o;
-}
-
-void rm_stm::spawn_background_clean_for_pids(rm_stm::clear_type type) {
-    switch (type) {
-    case rm_stm::clear_type::tx_pids: {
-        if (
-          _log_state.fence_pid_epoch.size() <= _max_concurrent_producer_ids()) {
-            return;
-        }
-        break;
-    }
-    case rm_stm::clear_type::idempotent_pids: {
-        if (
-          _log_state.lru_idempotent_pids.size()
-          <= _max_concurrent_producer_ids()) {
-            return;
-        }
-        break;
-    }
-    }
-
-    ssx::spawn_with_gate(_gate, [this, type] { return clear_old_pids(type); });
-}
-
-ss::future<> rm_stm::clear_old_pids(clear_type type) {
-    auto try_lock = _clean_old_pids_mtx.try_get_units();
-    if (!try_lock) {
-        co_return;
-    }
-
-    auto read_lock = co_await _state_lock.hold_read_lock();
-
-    switch (type) {
-    case rm_stm::clear_type::tx_pids: {
-        co_return co_await clear_old_tx_pids();
-    }
-    case rm_stm::clear_type::idempotent_pids: {
-        co_return co_await clear_old_idempotent_pids();
-    }
-    }
-}
-
-ss::future<> rm_stm::clear_old_tx_pids() {
-    if (_log_state.fence_pid_epoch.size() < _max_concurrent_producer_ids()) {
-        co_return;
-    }
-
-    fragmented_vector<model::producer_identity> pids_for_delete;
-    for (auto [id, epoch] : _log_state.fence_pid_epoch) {
-        auto pid = model::producer_identity(id, epoch);
-        // If pid is not inside tx_seqs it means we do not have transaction for
-        // it right now
-        if (!_log_state.current_txes.contains(pid)) {
-            pids_for_delete.push_back(pid);
-        }
-    }
-
-    vlog(
-      _ctx_log.debug,
-      "Found {} old transaction pids for delete",
-      pids_for_delete.size());
-
-    co_await ss::max_concurrent_for_each(
-      pids_for_delete, 32, [this](auto pid) -> ss::future<> {
-          // We have transaction for this pid
-          if (_log_state.current_txes.contains(pid)) {
-              return ss::now();
-          }
-          _mem_state.forget(pid);
-          _log_state.forget(pid);
-          return ss::now();
-      });
-}
-
-ss::future<> rm_stm::clear_old_idempotent_pids() {
-    if (
-      _log_state.lru_idempotent_pids.size() < _max_concurrent_producer_ids()) {
-        co_return;
-    }
-
-    vlog(
-      _ctx_log.debug,
-      "Found {} old idempotent pids for delete",
-      _log_state.lru_idempotent_pids.size() - _max_concurrent_producer_ids());
-
-    while (_log_state.lru_idempotent_pids.size()
-           > _max_concurrent_producer_ids()) {
-        auto pid_for_delete = _log_state.lru_idempotent_pids.front().entry.pid;
-        auto rw_lock = get_idempotent_producer_lock(pid_for_delete);
-        auto lock = rw_lock->try_write_lock();
-        if (lock) {
-            vlog(
-              _ctx_log.trace,
-              "Clearing pid: {}, reason: exceeded max concurrent pids: "
-              "{}",
-              pid_for_delete,
-              _max_concurrent_producer_ids());
-            _log_state.lru_idempotent_pids.pop_front();
-            _log_state.seq_table.erase(pid_for_delete);
-            _inflight_requests.erase(pid_for_delete);
-            _idempotent_producer_locks.erase(pid_for_delete);
-            rw_lock->write_unlock();
-        }
-
-        co_await ss::maybe_yield();
-    }
 }
 
 std::ostream&
