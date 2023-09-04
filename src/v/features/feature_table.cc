@@ -75,6 +75,8 @@ std::string_view to_string_view(feature f) {
         return "delete_records";
     case feature::lightweight_heartbeats:
         return "lightweight_heartbeats";
+    case feature::raft_coordinated_recovery:
+        return "raft_coordinated_recovery";
 
     /*
      * testing features

@@ -62,6 +62,7 @@ enum class feature : std::uint64_t {
     raft_append_entries_serde = 1ULL << 28U,
     delete_records = 1ULL << 29U,
     lightweight_heartbeats = 1ULL << 30U,
+    raft_coordinated_recovery = 1ULL << 31U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -284,6 +285,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{11},
     "lightweight_heartbeats",
     feature::lightweight_heartbeats,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{11},
+    "raft_coordinated_recovery",
+    feature::raft_coordinated_recovery,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
