@@ -2366,7 +2366,21 @@ void application::load_feature_table_snapshot() {
       features::feature_table_snapshot::kvstore_key());
 
     if (!val_bytes_opt) {
-        // No snapshot?  Probably we are yet to join cluster.
+        // No snapshot?  Probably we are yet to join cluster or we're upgrading
+        // from an older version of redpanda.
+        auto controller_log_exists = storage.local()
+                                       .kvs()
+                                       .get(
+                                         storage::kvstore::key_space::consensus,
+                                         raft::details::serialize_group_key(
+                                           raft::group_id{0},
+                                           raft::metadata_key::config_map))
+                                       .has_value();
+
+        vassert(
+          !controller_log_exists || config::node().upgrade_override_checks,
+          "Incompatible upgrade detected");
+
         return;
     }
 

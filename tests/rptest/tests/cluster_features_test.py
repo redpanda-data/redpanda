@@ -52,8 +52,8 @@ class FeaturesTestBase(RedpandaTest):
         assert (features['node_latest_version'] ==
                 features['original_cluster_version'])
         assert (features['node_latest_version'] == features['cluster_version'])
-        assert (features['node_earliest_version'] <=
-                features['node_latest_version'])
+        assert (features['node_earliest_version']
+                <= features['node_latest_version'])
 
         self.previous_version = self.installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
@@ -423,6 +423,8 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
 
         # Restart it with a sufficiently recent version and join should succeed
         self.installer.install([old_node], RedpandaInstaller.HEAD)
+        self.redpanda.stop_node(old_node)
+        self.redpanda.clean_node(old_node, preserve_current_install=True)
         self.redpanda.restart_nodes([old_node])
 
         # Timeout long enough for join retries & health monitor tick (registered
@@ -527,6 +529,40 @@ class FeaturesUpgradeAssertionTest(FeaturesTestBase):
             "__REDPANDA_EARLIEST_LOGICAL_VERSION":
             self.head_latest_logical_version + 1
         })
+
+        # Startup should fail with an incompatible version
+        with expect_exception(DucktapeTimeoutError, lambda _: True):
+            self.redpanda.start_node(upgrade_node)
+
+        # Don't assume that the asserted node will have exited promptly: explicitly kill it.
+        self.redpanda.stop_node(upgrade_node, forced=True)
+
+        # With the config set to override checks, start should succeed
+        self.redpanda.start_node(
+            upgrade_node,
+            override_cfg_params={'upgrade_override_checks': True})
+
+
+class FeaturesMissingSnapshotUpgradeAssertionTest(FeaturesTestBase):
+    def setUp(self):
+        pass
+
+    @cluster(num_nodes=3, log_allow_list="Incompatible upgrade detected")
+    def test_upgrade_assertion_no_ft_snap(self):
+        """
+        That if we try to upgrade from a version that predates local feature table
+        snapshots, Redpanda resuses to start. Simulate this situation by disabling
+        local feature table snapshots before setting up the cluster for the first time.
+        :return:
+        """
+
+        old_version = (22, 2)
+        self.installer.install(self.redpanda.nodes, old_version)
+        self.redpanda.start()
+
+        upgrade_node = self.redpanda.nodes[-1]
+        self.redpanda.stop_node(upgrade_node)
+        self.installer.install(self.redpanda.nodes, "head")
 
         # Startup should fail with an incompatible version
         with expect_exception(DucktapeTimeoutError, lambda _: True):
