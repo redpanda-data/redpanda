@@ -108,7 +108,7 @@ class MaintenanceTest(RedpandaTest):
                           "{node.name}: {admin_status}")
 
         # ensure that both agree on expected outcome
-        return admin_status["draining"] == rpk_status.draining == draining
+        return admin_status["draining"] == rpk_status.enabled == draining
 
     def _enable_maintenance(self, node):
         """
