@@ -483,6 +483,28 @@ private:
         // Find manifest that contains requested offset or timestamp
         auto cur = co_await _partition->_manifest_view->get_cursor(query);
         if (cur.has_failure()) {
+            if (
+              cur.error() == error_outcome::out_of_range
+              && std::holds_alternative<kafka::offset>(query)) {
+                // Special case queries below the start offset of the log.
+                // The start offset may have advanced while the request was
+                // in progress. This is expected, so log at debug level.
+                const auto log_start_offset = _partition->_manifest_view
+                                                ->stm_manifest()
+                                                .full_log_start_kafka_offset();
+
+                const auto query_offset = std::get<kafka::offset>(query);
+                if (log_start_offset && query_offset < *log_start_offset) {
+                    vlog(
+                      _ctxlog.debug,
+                      "Manifest query below the log's start Kafka offset: {} < "
+                      "{}",
+                      query_offset(),
+                      log_start_offset.value()());
+                    co_return;
+                }
+            }
+
             vlog(
               _ctxlog.error,
               "Failed to query spillover manifests: {}, query: {}",
