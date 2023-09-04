@@ -209,3 +209,6 @@ class SIAdminApiTest(RedpandaTest):
         with expect_http_error(400):
             not_enabled_response = self.admin.get_partition_manifest(
                 "test-topic", 0)
+
+        self.redpanda.si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest"})
