@@ -268,7 +268,7 @@ private:
     ss::sharded<archival::upload_housekeeping_service>
       _archival_upload_housekeeping;
     std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
-    ss::sharded<archival::scrubber> _archival_scrubber;
+    ss::sharded<archival::purger> _archival_purger;
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();

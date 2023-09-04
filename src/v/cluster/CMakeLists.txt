@@ -175,7 +175,7 @@ v_cc_library(
     ../archival/retention_calculator.cc
     ../archival/upload_housekeeping_service.cc
     ../archival/adjacent_segment_merger.cc
-    ../archival/scrubber.cc
+    ../archival/purger.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/key_utils.cc
     cloud_metadata/manifest_downloads.cc

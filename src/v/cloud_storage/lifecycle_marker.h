@@ -34,7 +34,7 @@ namespace cloud_storage {
 // └────┬─────┘
 //      │
 //      │
-//      │ Topic purge complete (by scrubber)
+//      │ Topic purge complete (by purger)
 //      ▼
 // ┌──────────┐
 // │  Purged  │
@@ -64,7 +64,7 @@ enum class lifecycle_status : uint8_t {
  * as a tombstone that enables
  *  - readers to unambiguously understand that the
  *    topic is deleted and not just missing
- *  - scrubbers to know that it is safe to erase stray objects within the
+ *  - purgers to know that it is safe to erase stray objects within the
  *    NT that the lifecycle describes.
  *
  * For normal not-deleted topics, this marker doesn't tell you anything more

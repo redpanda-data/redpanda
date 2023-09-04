@@ -381,7 +381,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                 # segments are deleted in the background by adjacent segment
                 # merging
                 'cloud_storage_enable_segment_merging': False,
-                # We rely on the scrubber to delete topic manifests, and to eventually
+                # We rely on the purger to delete topic manifests, and to eventually
                 # delete data if cloud storage was unavailable during initial delete.  To
                 # control test runtimes, set a short interval.
                 'cloud_storage_idle_timeout_ms': 3000,
@@ -578,7 +578,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # At this point, although we have deleted the controller
             # lifecycle marker, it is possible that Redpanda is still
             # in the middle of trying to delete the topic because it is
-            # inside a scrubber run.
+            # inside a purger run.
             #
             # To avoid leaving storage in a non-deterministic state,
             # restart redpanda before unblocking the firewall, so that we
@@ -650,7 +650,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         self._validate_topic_deletion(next_topic, cloud_storage_type)
 
         # Eventually, the original topic should be deleted: this is the tiered
-        # storage scrubber doing its thing.
+        # storage purger doing its thing.
         self._validate_topic_deletion(self.topic, cloud_storage_type)
 
     def _validate_topic_deletion(self, topic_name: str,
@@ -727,7 +727,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         if status == LifecycleMarkerStatus.PURGED:
             # Shortly after the remote status goes to PURGED, we should see the local
-            # topic table status update (when the scrubber RPCs to the controller to
+            # topic table status update (when the purger RPCs to the controller to
             # ask it to drop the life cycle marker.
             def get_topics_with_markers():
                 admin = Admin(self.redpanda)

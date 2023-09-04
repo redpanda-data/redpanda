@@ -20,13 +20,16 @@
 namespace archival {
 
 /**
- * The scrubber is a global sharded service: it runs on all shards, and
- * decides internally which shard will scrub which ranges of objects
+ * The purger is a global sharded service: it runs on all shards, and
+ * decides internally which shard will purge which ranges of objects
  * in object storage.
+ *
+ * The purger's only goal is to remove the uploade objects belonging to deleted
+ * topics.
  */
-class scrubber : public housekeeping_job {
+class purger : public housekeeping_job {
 public:
-    explicit scrubber(
+    explicit purger(
       cloud_storage::remote&,
       cluster::topic_table&,
       ss::sharded<cluster::topics_frontend>&,

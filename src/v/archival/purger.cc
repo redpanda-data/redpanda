@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "archival/scrubber.h"
+#include "archival/purger.h"
 
 #include "archival/logger.h"
 #include "cloud_storage/lifecycle_marker.h"
@@ -37,7 +37,7 @@ namespace archival {
 using cloud_storage::download_result;
 using cloud_storage::upload_result;
 
-scrubber::scrubber(
+purger::purger(
   cloud_storage::remote& r,
   cluster::topic_table& tt,
   ss::sharded<cluster::topics_frontend>& tf,
@@ -47,7 +47,7 @@ scrubber::scrubber(
   , _topics_frontend(tf)
   , _members_table(mt) {}
 
-ss::future<scrubber::purge_result> scrubber::purge_partition(
+ss::future<purger::purge_result> purger::purge_partition(
   const cluster::nt_lifecycle_marker& lifecycle_marker,
   const cloud_storage_clients::bucket_name& bucket,
   model::ntp ntp,
@@ -180,8 +180,8 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
     }
 }
 
-ss::future<std::optional<scrubber::collected_manifests>>
-scrubber::collect_manifest_paths(
+ss::future<std::optional<purger::collected_manifests>>
+purger::collect_manifest_paths(
   const cloud_storage_clients::bucket_name& bucket,
   model::ntp ntp,
   model::initial_revision_id remote_revision,
@@ -235,7 +235,7 @@ scrubber::collect_manifest_paths(
     co_return collected;
 }
 
-ss::future<scrubber::purge_result> scrubber::purge_manifest(
+ss::future<purger::purge_result> purger::purge_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   model::ntp ntp,
   model::initial_revision_id remote_revision,
@@ -297,7 +297,7 @@ ss::future<scrubber::purge_result> scrubber::purge_manifest(
     co_return result;
 }
 
-scrubber::global_position scrubber::get_global_position() {
+purger::global_position purger::get_global_position() {
     const auto& nodes = _members_table.local().nodes();
     auto self = config::node().node_id();
 
@@ -324,7 +324,7 @@ scrubber::global_position scrubber::get_global_position() {
 }
 
 ss::future<housekeeping_job::run_result>
-scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
+purger::run(retry_chain_node& parent_rtc, run_quota_t quota) {
     auto gate_holder = _gate.hold();
 
     run_result result{
@@ -529,8 +529,7 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
     co_return result;
 }
 
-ss::future<cloud_storage::upload_result>
-scrubber::write_remote_lifecycle_marker(
+ss::future<cloud_storage::upload_result> purger::write_remote_lifecycle_marker(
   const cluster::nt_revision& nt_revision,
   cloud_storage_clients::bucket_name& bucket,
   cloud_storage::lifecycle_status status,
@@ -551,32 +550,32 @@ scrubber::write_remote_lifecycle_marker(
       "remote_lifecycle_marker");
 }
 
-ss::future<> scrubber::stop() {
-    vlog(archival_log.info, "Stopping ({})...", _gate.get_count());
+ss::future<> purger::stop() {
+    vlog(archival_log.info, "Stopping purger ({})...", _gate.get_count());
     if (!_as.abort_requested()) {
         _as.request_abort();
     }
     return _gate.close();
 }
 
-void scrubber::interrupt() { _as.request_abort(); }
+void purger::interrupt() { _as.request_abort(); }
 
-bool scrubber::interrupted() const { return _as.abort_requested(); }
+bool purger::interrupted() const { return _as.abort_requested(); }
 
-void scrubber::set_enabled(bool e) { _enabled = e; }
+void purger::set_enabled(bool e) { _enabled = e; }
 
-void scrubber::acquire() { _holder = ss::gate::holder(_gate); }
+void purger::acquire() { _holder = ss::gate::holder(_gate); }
 
-void scrubber::release() { _holder.release(); }
+void purger::release() { _holder.release(); }
 
-ss::sstring scrubber::name() const { return "scrubber"; }
+ss::sstring purger::name() const { return "purger"; }
 
-bool scrubber::collected_manifests::empty() const {
+bool purger::collected_manifests::empty() const {
     return !current_serde.has_value() && !current_json.has_value()
            && spillover.empty();
 }
 
-scrubber::collected_manifests::flat_t scrubber::collected_manifests::flatten() {
+purger::collected_manifests::flat_t purger::collected_manifests::flatten() {
     std::optional<ss::sstring> legacy_manifest_path;
     auto manifests_to_purge = std::move(spillover);
 
