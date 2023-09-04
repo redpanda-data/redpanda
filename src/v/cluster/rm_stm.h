@@ -423,6 +423,23 @@ private:
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
+    ss::future<result<kafka_result>> do_idempotent_replicate(
+      model::term_id,
+      producer_ptr,
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>,
+      ssx::semaphore_units&);
+
+    ss::future<result<kafka_result>> do_sync_and_idempotent_replicate(
+      producer_ptr,
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>,
+      ssx::semaphore_units);
+
     ss::future<result<kafka_result>> replicate_msg(
       model::record_batch_reader,
       raft::replicate_options,

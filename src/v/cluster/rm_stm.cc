@@ -32,6 +32,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <filesystem>
 #include <optional>
@@ -1327,306 +1328,127 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
     co_return kafka_result{.last_offset = new_offset};
 }
 
-ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
+ss::future<result<kafka_result>> rm_stm::do_sync_and_idempotent_replicate(
+  producer_ptr producer,
   model::batch_identity bid,
   model::record_batch_reader br,
   raft::replicate_options opts,
-  ss::lw_shared_ptr<available_promise<>> enqueued) {
-    using ret_t = result<kafka_result>;
-
+  ss::lw_shared_ptr<available_promise<>> enqueued,
+  ssx::semaphore_units units) {
     if (!co_await sync(_sync_timeout)) {
         // it's ok not to set enqueued on early return because
         // the safety check in replicate_in_stages sets it automatically
         co_return errc::not_leader;
     }
     auto synced_term = _insync_term;
+    auto result = co_await do_idempotent_replicate(
+      synced_term,
+      producer,
+      bid,
+      std::move(br),
+      opts,
+      std::move(enqueued),
+      units);
 
-    if (bid.first_seq > bid.last_seq) {
+    if (!result) {
         vlog(
-          _ctx_log.warn,
-          "[pid: {}] first_seq: {} of the batch should be less or equal to "
-          "last_seq: {}",
+          _ctx_log.trace,
+          "error from do_idempotent_replicate: {}, pid: {}, range: [{}, {}]",
+          result.error(),
           bid.pid,
           bid.first_seq,
           bid.last_seq);
-        co_return errc::invalid_request;
-    }
-    vlog(
-      _ctx_log.trace,
-      "[pid: {}] processing idempotent request [first_seq: {}, last_seq: {}, "
-      "cnt: {}]",
-      bid.pid,
-      bid.first_seq,
-      bid.last_seq,
-      bid.record_count);
-
-    // getting session by client's pid
-    auto session = _inflight_requests
-                     .lazy_emplace(
-                       bid.pid,
-                       [&](const auto& ctor) {
-                           ctor(
-                             bid.pid, ss::make_lw_shared<inflight_requests>());
-                       })
-                     ->second;
-
-    // critical section, rm_stm evaluates the request its order and
-    // whether or not it's duplicated
-    // ASSUMING THAT ALL INFLIGHT REPLICATION REQUESTS WILL SUCCEED
-    // if any of the request fail we expect that the leader step down
-    auto u = co_await session->lock.get_units();
-
-    if (!_raft->is_leader() || _raft->term() != synced_term) {
-        vlog(
-          _ctx_log.debug,
-          "[pid: {}] resource manager sync failed, not leader",
-          bid.pid);
-        co_return errc::not_leader;
-    }
-
-    if (session->term < synced_term) {
-        // we don't care about old inflight requests because the sync
-        // guarantee (all replicated records of the last term are
-        // applied) makes sure that the passed inflight records got
-        // into _log_state->seq_table
-        session->forget();
-        session->term = synced_term;
-    }
-
-    if (session->term > synced_term) {
-        vlog(
-          _ctx_log.debug,
-          "[pid: {}] session term {} is greater than synced term {}",
-          bid.pid,
-          session->term,
-          synced_term);
-        co_return errc::not_leader;
-    }
-
-    // checking if the request (identified by seq) is already resolved
-    // checking among the pending requests
-    auto cached_r = session->known_seq(bid.last_seq);
-    if (cached_r) {
-        vlog(
-          _ctx_log.trace,
-          "[pid: {}] request with last sequence: {}, already resolved",
-          bid.pid,
-          bid.last_seq);
-        co_return cached_r.value();
-    }
-    // checking among the responded requests
-    auto cached_offset = known_seq(bid);
-    if (cached_offset) {
-        vlog(
-          _ctx_log.trace,
-          "[pid: {}] request with last sequence: {}, already resolved in "
-          "log_state",
-          bid.pid,
-          bid.last_seq);
-        co_return kafka_result{.last_offset = cached_offset.value()};
-    }
-
-    // checking if the request is already being processed
-    for (auto& inflight : session->cache) {
-        if (inflight->last_seq == bid.last_seq && inflight->is_processing) {
-            vlog(
-              _ctx_log.trace,
-              "[pid: {}] request with last sequence: {}, already resolved "
-              "being processed",
-              bid.pid,
-              bid.last_seq);
-            // found an inflight request, parking the current request
-            // until the former is resolved
-            auto promise
-              = ss::make_lw_shared<available_promise<result<kafka_result>>>();
-            inflight->parked.push_back(promise);
-            u.return_all();
-            co_return co_await promise->get_future();
-        }
-    }
-
-    // apparantly we process an unseen request
-    // checking if it isn't out of order with the already procceses
-    // or inflight requests
-    if (session->cache.size() == 0) {
-        // no inflight requests > checking processed
-        auto tail = tail_seq(bid.pid);
-        if (tail) {
-            if (!is_sequence(tail.value(), bid.first_seq)) {
-                auto barrier = co_await _raft->linearizable_barrier();
-                if (barrier) {
-                    // there is a gap between the request'ss seq number
-                    // and the seq number of the latest processed request
-                    vlog(
-                      _ctx_log.warn,
-                      "[pid: {}] sequence number gap detected. batch first "
-                      "sequence: {}, last stored sequence: {}",
-                      bid.pid,
-                      bid.first_seq,
-                      tail.value());
-                    co_return errc::sequence_out_of_order;
-                }
-                co_return errc::not_leader;
-            }
-        } else {
-            if (bid.first_seq != 0) {
-                auto barrier = co_await _raft->linearizable_barrier();
-                if (barrier) {
-                    vlog(
-                      _ctx_log.warn,
-                      "[pid: {}] first sequence number in session must be "
-                      "zero, "
-                      "current seq: {}",
-                      bid.pid,
-                      bid.first_seq);
-                    // first request in a session should have seq=0, client is
-                    // misbehaving
-                    co_return errc::sequence_out_of_order;
-                }
-                co_return errc::not_leader;
-            }
-        }
-    } else {
-        if (!is_sequence(session->tail_seq, bid.first_seq)) {
+        if (result.error() == errc::sequence_out_of_order) {
+            // Ensure we are actually the leader and request didn't
+            // ooosn on a stale state. If we are not the leader return
+            // a retryable error code to the client.
             auto barrier = co_await _raft->linearizable_barrier();
-            if (barrier) {
-                // there is a gap between the request's seq number
-                // and the seq number of the latest inflight request
-                // may happen when:
-                //   - batches were reordered on the wire
-                //   - client is misbehaving
-                vlog(
-                  _ctx_log.warn,
-                  "[pid: {}] sequence number gap detected. batch first "
-                  "sequence: "
-                  "{}, last inflight sequence: {}",
-                  bid.pid,
-                  bid.first_seq,
-                  session->tail_seq);
-                co_return errc::sequence_out_of_order;
+            if (!barrier) {
+                co_return errc::not_leader;
             }
-            co_return errc::not_leader;
-        }
-    }
-
-    // updating last observed seq, since we hold the mutex
-    // it's guranteed to be latest
-    session->tail_seq = bid.last_seq;
-
-    auto request = ss::make_lw_shared<inflight_request>();
-    request->last_seq = bid.last_seq;
-    request->is_processing = true;
-    session->cache.push_back(request);
-
-    // request comes in the right order, it's ok to replicate
-    std::optional<raft::replicate_stages> ss;
-    try {
-        ss = _raft->replicate_in_stages(synced_term, std::move(br), opts);
-        co_await std::move(ss->request_enqueued);
-    } catch (...) {
-        vlog(
-          _ctx_log.warn,
-          "[pid: {}] replication failed with {}",
-          bid.pid,
-          std::current_exception());
-    }
-
-    result<raft::replicate_result> r = errc::success;
-
-    if (!ss.has_value()) {
-        if (_raft->is_leader() && _raft->term() == synced_term) {
-            // we may not care about the requests waiting on the lock
-            // as soon as we release the lock the leader or term will
-            // be changed so the pending fibers won't pass the initial
-            // checks and be rejected with not_leader
-            co_await _raft->step_down("replicate_seq replication error");
-        }
-        u.return_all();
-        r = errc::replication_error;
-    } else {
-        try {
-            u.return_all();
-            enqueued->set_value();
-            r = co_await std::move(ss->replicate_finished);
-        } catch (...) {
-            vlog(
-              _ctx_log.warn,
-              "[pid: {}] replication failed with {}",
-              bid.pid,
-              std::current_exception());
-            r = errc::replication_error;
-        }
-    }
-
-    // we don't need session->lock because we never interleave
-    // access to is_processing and offset with sync point (await)
-    request->is_processing = false;
-    if (r) {
-        auto old_offset = r.value().last_offset;
-        auto new_offset = from_log_offset(old_offset);
-        request->r = ret_t(kafka_result{new_offset});
-    } else {
-        request->r = ret_t(r.error());
-    }
-    for (auto& pending : request->parked) {
-        pending->set_value(request->r);
-    }
-    request->parked.clear();
-
-    if (!request->r) {
-        vlog(
-          _ctx_log.warn,
-          "[pid: {}] replication of batch with first seq: {} failed at "
-          "consensus level - error: {}",
-          bid.pid,
-          bid.first_seq,
-          request->r.error().message());
-        // if r was failed at the consensus level (not because has_failed)
-        // it should guarantee that all follow up replication requests fail
-        // too but just in case stepping down to minimize the risk
-        if (_raft->is_leader() && _raft->term() == synced_term) {
-            co_await _raft->step_down(
-              "replicate_seq replication finished error");
-        }
-        co_return request->r;
-    }
-
-    // requests get into session->cache in seq order so when we iterate
-    // starting from the beginning and until we meet the first still
-    // in flight request we may be sure that we update seq_table in
-    // order to preserve monotonicity and the lack of gaps
-    while (!session->cache.empty() && !session->cache.front()->is_processing) {
-        auto front = session->cache.front();
-        if (!front->r) {
-            vlog(
-              _ctx_log.debug,
-              "[pid: {}] session cache front failed - error: {}",
-              bid.pid,
-              front->r.error().message());
-            // just encountered a failed request it but when a request
-            // fails it causes a step down so we may not care about
-            // updating seq_table and stop doing it; the next leader's
-            // apply will do it for us
-            break;
-        }
-        auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
-        if (inserted) {
-            seq_it->second.entry.pid = bid.pid;
-            seq_it->second.entry.seq = front->last_seq;
-            seq_it->second.entry.last_offset = front->r.value().last_offset;
         } else {
-            seq_it->second.entry.update(
-              front->last_seq, front->r.value().last_offset);
+            // if the request enqueue failed, its important to step down
+            // under units scope so that the next request in the pipeline
+            // fails on sync.
+            if (_raft->is_leader() && _raft->term() == synced_term) {
+                co_await _raft->step_down(
+                  "Failed replication during idempotent replicate.");
+            }
         }
+        co_return result.error();
+    }
+    co_return result.value();
+}
 
-        session->cache.pop_front();
+ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
+  model::term_id synced_term,
+  producer_ptr producer,
+  model::batch_identity bid,
+  model::record_batch_reader br,
+  raft::replicate_options opts,
+  ss::lw_shared_ptr<available_promise<>> enqueued,
+  ssx::semaphore_units& units) {
+    using ret_t = result<kafka_result>;
+    auto request = producer->try_emplace_request(bid, synced_term);
+    if (!request) {
+        co_return request.error();
+    }
+    auto req_ptr = request.value();
+    if (req_ptr->state() != request_state::initialized) {
+        // request already in progress/ completed.
+        co_return co_await req_ptr->result();
     }
 
-    if (session->cache.empty() && session->lock.ready()) {
-        _inflight_requests.erase(bid.pid);
+    req_ptr->mark_request_in_progress();
+    auto stages = _raft->replicate_in_stages(synced_term, std::move(br), opts);
+    auto req_enqueued = co_await ss::coroutine::as_future(
+      std::move(stages.request_enqueued));
+    if (req_enqueued.failed()) {
+        vlog(
+          _ctx_log.warn,
+          "replication failed, request enqueue returned error: {}",
+          req_enqueued.get_exception());
+        req_ptr->set_value<ret_t>(errc::replication_error);
+        co_return errc::replication_error;
     }
+    units.return_all();
+    enqueued->set_value();
+    auto replicated = co_await ss::coroutine::as_future(
+      std::move(stages.replicate_finished));
+    if (replicated.failed()) {
+        vlog(
+          _ctx_log.warn, "replication failed: {}", replicated.get_exception());
+        req_ptr->set_value<ret_t>(errc::replication_error);
+        co_return errc::replication_error;
+    }
+    auto result = replicated.get0();
+    if (result.has_error()) {
+        vlog(_ctx_log.warn, "replication failed: {}", result.error());
+        req_ptr->set_value<ret_t>(result.error());
+        co_return result.error();
+    }
+    // translate to kafka offset.
+    auto kafka_offset = from_log_offset(result.value().last_offset);
+    auto final_result = kafka_result{.last_offset = kafka_offset};
+    req_ptr->set_value(final_result);
+    co_return final_result;
+}
 
-    co_return request->r;
+ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
+  model::batch_identity bid,
+  model::record_batch_reader br,
+  raft::replicate_options opts,
+  ss::lw_shared_ptr<available_promise<>> enqueued) {
+    auto producer = maybe_create_producer(bid.pid);
+    co_return co_await producer->run_with_lock([&](ssx::semaphore_units units) {
+        return do_sync_and_idempotent_replicate(
+          producer,
+          bid,
+          std::move(br),
+          opts,
+          std::move(enqueued),
+          std::move(units));
+    });
 }
 
 ss::future<result<kafka_result>> rm_stm::replicate_msg(
@@ -2173,37 +1995,9 @@ ss::future<> rm_stm::reduce_aborted_list() {
 
 void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     if (bid.has_idempotent()) {
-        auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
-        auto translated = from_log_offset(last_offset);
-
-        if (inserted) {
-            vlog(
-              _ctx_log.trace,
-              "Inserted [pid: {}, fs: {}, ls:{}] offset: {}, with "
-              "kafka_offset: {}",
-              bid.pid,
-              bid.first_seq,
-              bid.last_seq,
-              last_offset,
-              translated);
-            seq_it->second.entry.pid = bid.pid;
-            seq_it->second.entry.seq = bid.last_seq;
-            seq_it->second.entry.last_offset = translated;
-        } else {
-            vlog(
-              _ctx_log.trace,
-              "Updated [pid: {}, fs: {}, ls:{}] offset: {}, with kafka_offset: "
-              "{}",
-              bid.pid,
-              bid.first_seq,
-              bid.last_seq,
-              last_offset,
-              translated);
-            seq_it->second.entry.update(bid.last_seq, translated);
-        }
-
-        auto now = model::timestamp::now();
-        seq_it->second.entry.last_write_timestamp = now.value();
+        auto kafka_offset = from_log_offset(last_offset);
+        auto producer = maybe_create_producer(bid.pid);
+        producer->update(bid, kafka_offset);
     }
 
     if (bid.is_transactional) {
