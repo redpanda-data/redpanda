@@ -19,7 +19,7 @@ import (
 
 func newMaintenanceReportTable() *out.TabWriter {
 	headers := []string{
-		"Node-ID", "Draining", "Finished", "Errors",
+		"Node-ID", "Enabled", "Finished", "Errors",
 		"Partitions", "Eligible", "Transferring", "Failed",
 	}
 	return out.NewTable(headers...)
@@ -47,13 +47,13 @@ This command reports maintenance status for each node in the cluster. The output
 is presented as a table with each row representing a node in the cluster.  The
 output can be used to monitor the progress of node draining.
 
-   NODE-ID  DRAINING  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED
+   NODE-ID  ENABLED  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED
    1        false     false     false   0           0         0             0
 
 Field descriptions:
 
         NODE-ID: the node ID
-       DRAINING: true if the node is actively draining leadership
+        ENABLED: true if the node is currently in maintenance mode
        FINISHED: leadership draining has completed
          ERRORS: errors have been encountered while draining
      PARTITIONS: number of partitions whose leadership has moved
