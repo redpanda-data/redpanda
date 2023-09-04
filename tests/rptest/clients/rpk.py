@@ -118,7 +118,7 @@ class RpkClusterInfoNode:
 
 class RpkMaintenanceStatus(typing.NamedTuple):
     node_id: int
-    draining: bool
+    enabled: bool
     finished: bool
     errors: bool
     partitions: int
@@ -980,7 +980,7 @@ class RpkTool:
                 return None
 
             # jerry@garcia:~/src/redpanda$ rpk cluster maintenance status
-            # NODE-ID  DRAINING  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED
+            # NODE-ID  ENABLED  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED
             # 1        false     false     false   0           0         0             0
             line = line.split()
 
@@ -991,7 +991,7 @@ class RpkTool:
             if line[0] == "NODE-ID":
                 return None
             return RpkMaintenanceStatus(node_id=int(line[0]),
-                                        draining=line[1] == "true",
+                                        enabled=line[1] == "true",
                                         finished=line[2] == "true",
                                         errors=line[3] == "true",
                                         partitions=int(line[4]),
