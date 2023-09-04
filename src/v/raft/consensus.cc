@@ -620,9 +620,19 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     if (_vstate != vote_state::leader) {
         co_return result<model::offset>(make_error_code(errc::not_leader));
     }
-    // store current commit index
-    auto cfg = config();
-    auto dirty_offset = _log->offsets().dirty_offset;
+    /**
+     * Flush log on leader, to make sure the _commited_index will be updated
+     */
+    co_await flush_log();
+    const auto cfg = config();
+    const auto offsets = _log->offsets();
+
+    vlog(
+      _ctxlog.trace,
+      "Linearizable barrier requested. Log state: {}, flushed offset: {}",
+      offsets,
+      _flushed_offset);
+
     /**
      * Dispatch round of heartbeats
      */
@@ -630,8 +640,10 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     absl::flat_hash_map<vnode, follower_req_seq> sequences;
     std::vector<ss::future<>> send_futures;
     send_futures.reserve(cfg.unique_voter_count());
-    cfg.for_each_voter([this, dirty_offset, &sequences, &send_futures](
-                         vnode target) {
+    cfg.for_each_voter([this,
+                        dirty_offset = offsets.dirty_offset,
+                        &sequences,
+                        &send_futures](vnode target) {
         // do not send request to self
         if (target == _self) {
             return;
@@ -696,7 +708,9 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     } catch (const ss::broken_condition_variable& e) {
         co_return ret_t(make_error_code(errc::shutting_down));
     }
-
+    // grab an oplock to serialize state updates i.e. wait for all updates in
+    // the state that were caused by follower replies
+    auto units = co_await _op_lock.get_units();
     // term have changed, not longer a leader
     if (term != _term) {
         co_return ret_t(make_error_code(errc::not_leader));
