@@ -1152,12 +1152,11 @@ void rm_stm::reset_seq(model::batch_identity bid, model::term_id term) {
     seq_it.entry.last_write_timestamp = model::timestamp::now().value();
 }
 
-ss::future<result<kafka_result>> rm_stm::transactional_replicate(
-  model::batch_identity bid, model::record_batch_reader br) {
-    if (!check_tx_permitted()) {
-        co_return errc::generic_tx_error;
-    }
-
+ss::future<result<kafka_result>> rm_stm::do_sync_and_transactional_replicate(
+  producer_ptr producer,
+  model::batch_identity bid,
+  model::record_batch_reader rdr,
+  ssx::semaphore_units units) {
     if (!co_await sync(_sync_timeout)) {
         vlog(
           _ctx_log.trace,
@@ -1166,12 +1165,35 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
         co_return errc::not_leader;
     }
     auto synced_term = _insync_term;
-    vlog(
-      _ctx_log.trace,
-      "processing name:replicate_tx pid:{} in term:{}",
-      bid.pid,
-      synced_term);
+    auto result = co_await do_transactional_replicate(
+      synced_term, producer, bid, std::move(rdr));
+    if (!result) {
+        vlog(
+          _ctx_log.trace,
+          "error from do_transactional_replicate: {}, pid: {}, range: [{}, {}]",
+          result.error(),
+          bid.pid,
+          bid.first_seq,
+          bid.last_seq);
+        if (result.error() == errc::sequence_out_of_order) {
+            auto barrier = co_await _raft->linearizable_barrier();
+            if (!barrier) {
+                co_return errc::not_leader;
+            }
+        } else if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down(
+              "Failed replication during transactional replicate.");
+        }
+        co_return result.error();
+    }
+    co_return result;
+}
 
+ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
+  model::term_id synced_term,
+  producer_ptr producer,
+  model::batch_identity bid,
+  model::record_batch_reader rdr) {
     // fencing
     auto fence_it = _log_state.fence_pid_epoch.find(bid.pid.get_id());
     if (fence_it == _log_state.fence_pid_epoch.end()) {
@@ -1199,83 +1221,28 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
         co_return errc::generic_tx_error;
     }
 
-    if (_log_state.ongoing_map.contains(bid.pid)) {
-        // this isn't the first attempt in the tx we should try dedupe
-        auto pid_seq = _log_state.seq_table.find(bid.pid);
-        if (pid_seq == _log_state.seq_table.end()) {
-            if (!check_seq(bid, synced_term)) {
-                auto barrier = co_await _raft->linearizable_barrier();
-                if (barrier) {
-                    co_return errc::sequence_out_of_order;
-                }
-                co_return errc::not_leader;
-            }
-        } else if (pid_seq->second.entry.seq == bid.last_seq) {
-            if (pid_seq->second.entry.last_offset() == -1) {
-                if (pid_seq->second.term == synced_term) {
-                    vlog(
-                      _ctx_log.debug,
-                      "Status of the original attempt pid:{} seq:{} is "
-                      "unknown. Returning not_leader_for_partition to trigger "
-                      "retry.",
-                      bid.pid,
-                      bid.last_seq);
-                    co_return errc::not_leader;
-                } else {
-                    // when the term a tx originated on doesn't match the
-                    // current term it means that the re-election happens; upon
-                    // re-election we sync and it catches up with all records
-                    // replicated in previous term. since the cached offset for
-                    // a given seq is still -1 it means that the replication
-                    // hasn't passed so we updating the term to pretent that the
-                    // retry (seqs match) put it there
-                    pid_seq->second.term = synced_term;
-                }
-            } else {
-                vlog(
-                  _ctx_log.trace,
-                  "cache hit for pid:{} seq:{}",
-                  bid.pid,
-                  bid.last_seq);
-                co_return kafka_result{
-                  .last_offset = pid_seq->second.entry.last_offset};
-            }
-        } else {
-            for (auto& entry : pid_seq->second.entry.seq_cache) {
-                if (entry.seq == bid.last_seq) {
-                    if (entry.offset() == -1) {
-                        vlog(
-                          _ctx_log.error,
-                          "cache hit for pid:{} seq:{} resolves to -1 offset",
-                          bid.pid,
-                          entry.seq);
-                    }
-                    vlog(
-                      _ctx_log.trace,
-                      "cache hit for pid:{} seq:{}",
-                      bid.pid,
-                      entry.seq);
-                    co_return kafka_result{.last_offset = entry.offset};
-                }
-            }
-            if (!check_seq(bid, synced_term)) {
-                auto barrier = co_await _raft->linearizable_barrier();
-                if (barrier) {
-                    co_return errc::sequence_out_of_order;
-                }
-                co_return errc::not_leader;
-            }
-        }
-    } else {
-        // this is the first attempt in the tx, reset dedupe cache
-        reset_seq(bid, synced_term);
+    // For the first batch of a transaction, reset sequence tracking to handle
+    // an edge case where client reuses sequence number after an aborted
+    // transaction see https://github.com/redpanda-data/redpanda/pull/5026
+    // for details
+    bool reset_sequence_tracking = !_log_state.ongoing_map.contains(bid.pid);
+    auto request = producer->try_emplace_request(
+      bid, synced_term, reset_sequence_tracking);
 
-        _mem_state.estimated[bid.pid] = last_applied_offset();
+    if (!request) {
+        co_return request.error();
     }
+    auto req_ptr = request.value();
+    if (req_ptr->state() != request_state::initialized) {
+        co_return co_await req_ptr->result();
+    }
+    req_ptr->mark_request_in_progress();
+    _mem_state.estimated[bid.pid] = last_applied_offset();
 
     auto expiration_it = _log_state.expiration.find(bid.pid);
     if (expiration_it == _log_state.expiration.end()) {
         vlog(_ctx_log.warn, "Can not find expiration info for pid:{}", bid.pid);
+        req_ptr->set_value(errc::generic_tx_error);
         co_return errc::generic_tx_error;
     }
     expiration_it->second.last_update = clock_type::now();
@@ -1283,7 +1250,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
 
     auto r = co_await _raft->replicate(
       synced_term,
-      std::move(br),
+      std::move(rdr),
       raft::replicate_options(raft::consistency_level::quorum_ack));
     if (!r) {
         vlog(
@@ -1295,9 +1262,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
         }
-        if (_raft->is_leader() && _raft->term() == synced_term) {
-            co_await _raft->step_down("replicate_tx replication error");
-        }
+        req_ptr->set_value(r.error());
         co_return r.error();
     }
     if (!co_await wait_no_throw(
@@ -1307,20 +1272,26 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
           _ctx_log.warn,
           "application of the replicated tx batch has timed out pid:{}",
           bid.pid);
-        if (_raft->is_leader() && _raft->term() == synced_term) {
-            co_await _raft->step_down("replicate_tx wait error");
-        }
+        req_ptr->set_value(errc::timeout);
         co_return tx_errc::timeout;
     }
-
-    auto old_offset = r.value().last_offset;
-    auto new_offset = from_log_offset(old_offset);
-
-    set_seq(bid, new_offset);
-
     _mem_state.estimated.erase(bid.pid);
+    auto result = kafka_result{
+      .last_offset = from_log_offset(r.value().last_offset)};
+    req_ptr->set_value(result);
+    co_return result;
+}
 
-    co_return kafka_result{.last_offset = new_offset};
+ss::future<result<kafka_result>> rm_stm::transactional_replicate(
+  model::batch_identity bid, model::record_batch_reader rdr) {
+    if (!check_tx_permitted()) {
+        co_return errc::generic_tx_error;
+    }
+    auto producer = maybe_create_producer(bid.pid);
+    co_return co_await producer->run_with_lock([&](ssx::semaphore_units units) {
+        return do_sync_and_transactional_replicate(
+          producer, bid, std::move(rdr), std::move(units));
+    });
 }
 
 ss::future<result<kafka_result>> rm_stm::do_sync_and_idempotent_replicate(
