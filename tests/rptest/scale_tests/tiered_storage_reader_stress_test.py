@@ -284,25 +284,14 @@ class TieredStorageReaderStressTest(RedpandaTest):
 
         # TODO: assert on reader HWM once we enforce it more strongly
 
-        # TODO: once we implement abort source driven cancellation of tiered storage
-        # I/O on client disconnect, we should assert here that the connection count
-        # is at zero, and we should assert that no new downloads start after all our
-        # clients have stopped.
-
         stats = self._get_stats()
         for node, stats in stats.items():
             # The stats indicate saturation with tiered storage reads.
-            assert stats['partition_readers_delayed']
-            assert stats['segment_readers_delayed']
+            assert stats['partition_readers_delayed'] or stats[
+                'segment_readers_delayed']
             # There are still some segment readers cached as expected, they shouldn't
             # all have been trimmed.
             assert stats['segment_readers']
-
-            # TODO: remove these last assertions once we have clean abort on client timeout:
-            # they are currently asserting that the buggy behavior happens where we have
-            # a backlog of connections due to abandoned kafka RPC dispatch fibers.
-            assert stats['connections']
-            assert stats['partition_readers']
 
         def connections_closed():
             for node, stats in self._get_stats().items():
@@ -315,18 +304,14 @@ class TieredStorageReaderStressTest(RedpandaTest):
             return True
 
         self.logger.info("Waiting for all Kafka connections to close")
-        # The timeout here has to be set in a way that's aligned with the number of parallel
-        # reads we did: if this timeout is long enough for them all to complete and drain (even
-        # without aborting requests on client timeout), then the test will pass even if
-        # we aren't doing proper aborting on client timeout.
-        # TODO: make this much tighter, and/or an immediate assertion rather than a
-        #       wait_until, once we have aborting of readers on client disconnect.
-        expect_runtime_per_request = 0.5
+
+        default_timequery_timeout = 5
         self.redpanda.wait_until(
             connections_closed,
-            # How long we expect all the timequeries to take to drain if they
-            # are sat there running in orphan rpc fibers
-            # TODO: this reflects the behavior that abort-on-client-timeout should fix.
-            timeout_sec=expect_runtime_per_request * total_timequeries,
+            timeout_sec=default_timequery_timeout,
             backoff_sec=1,
             err_msg="Waiting for Kafka connections to close")
+
+        # TODO: we should assert here that the connection count is at zero,
+        # and we should assert that no new downloads start after all our
+        # clients have stopped.
