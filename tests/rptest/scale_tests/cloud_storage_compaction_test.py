@@ -184,22 +184,22 @@ class CloudStorageCompactionTest(EndToEndTest):
 
         upload_sucess = sum([
             sample.value for sample in self.redpanda.metrics_sample(
-                "successful_uploads",
+                "cloud_storage_successful_uploads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
         upload_fails = sum([
             sample.value for sample in self.redpanda.metrics_sample(
-                "failed_uploads",
+                "cloud_storage_failed_uploads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
         download_sucess = sum([
             sample.value for sample in self.rr_cluster.metrics_sample(
-                "successful_downloads",
+                "cloud_storage_successful_downloads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
         download_fails = sum([
             sample.value for sample in self.rr_cluster.metrics_sample(
-                "failed_downloads",
+                "cloud_storage_failed_downloads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
 
