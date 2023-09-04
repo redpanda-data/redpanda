@@ -410,10 +410,10 @@ private:
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
-    ss::future<result<kafka_result>>
-      replicate_tx(model::batch_identity, model::record_batch_reader);
+    ss::future<result<kafka_result>> transactional_replicate(
+      model::batch_identity, model::record_batch_reader);
 
-    ss::future<result<kafka_result>> replicate_seq(
+    ss::future<result<kafka_result>> idempotent_replicate(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,

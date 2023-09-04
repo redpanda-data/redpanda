@@ -949,9 +949,10 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
     if (bid.is_transactional) {
         auto pid = bid.pid.get_id();
         auto tx_units = co_await get_tx_lock(pid)->get_units();
-        co_return co_await replicate_tx(bid, std::move(b));
+        co_return co_await transactional_replicate(bid, std::move(b));
     } else if (bid.has_idempotent()) {
-        co_return co_await replicate_seq(bid, std::move(b), opts, enqueued);
+        co_return co_await idempotent_replicate(
+          bid, std::move(b), opts, enqueued);
     }
 
     co_return co_await replicate_msg(std::move(b), opts, enqueued);
@@ -1111,8 +1112,8 @@ void rm_stm::reset_seq(model::batch_identity bid, model::term_id term) {
     seq_it.entry.last_write_timestamp = model::timestamp::now().value();
 }
 
-ss::future<result<kafka_result>>
-rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
+ss::future<result<kafka_result>> rm_stm::transactional_replicate(
+  model::batch_identity bid, model::record_batch_reader br) {
     if (!check_tx_permitted()) {
         co_return errc::generic_tx_error;
     }
@@ -1282,7 +1283,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     co_return kafka_result{.last_offset = new_offset};
 }
 
-ss::future<result<kafka_result>> rm_stm::replicate_seq(
+ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   model::batch_identity bid,
   model::record_batch_reader br,
   raft::replicate_options opts,
