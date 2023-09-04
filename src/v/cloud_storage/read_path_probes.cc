@@ -31,7 +31,10 @@ partition_probe::partition_probe(const model::ntp& ntp) {
       partition_label(ntp.tp.partition()),
     };
 
-    auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>(
+                                {sm::shard_label, partition_label})
+                              : std::vector<sm::label>{sm::shard_label};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage:partition"),
