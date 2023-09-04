@@ -2570,8 +2570,7 @@ class RedpandaService(RedpandaServiceBase):
                 if ".bin" in m:
                     try:
                         decoded = RpStorageTool(
-                            self.logger).decode_partition_manifest(
-                                body, self.logger)
+                            self.logger).decode_partition_manifest(body)
                     except Exception as e:
                         self.logger.warn(f"Failed to decode {m}: {e}")
                     else:
