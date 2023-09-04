@@ -46,6 +46,7 @@ FIXTURE_TEST(
       .allow_compression = true,
       .count = count,
       .producer_id = -1,
+      .producer_epoch = 0,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{-1, 0},
@@ -63,7 +64,9 @@ FIXTURE_TEST(
       .offset = model::offset(count),
       .allow_compression = true,
       .count = count,
+      .enable_idempotence = true,
       .producer_id = -1,
+      .producer_epoch = 0,
       .base_sequence = 0});
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{-1, 0},
@@ -94,7 +97,9 @@ FIXTURE_TEST(
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
+      .enable_idempotence = true,
       .producer_id = 1,
+      .producer_epoch = 0,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
@@ -112,7 +117,9 @@ FIXTURE_TEST(
       .offset = model::offset(count),
       .allow_compression = true,
       .count = count,
+      .enable_idempotence = true,
       .producer_id = 1,
+      .producer_epoch = 0,
       .base_sequence = count});
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
@@ -148,7 +155,9 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
           .offset = model::offset(i * count),
           .allow_compression = true,
           .count = count,
+          .enable_idempotence = true,
           .producer_id = 1,
+          .producer_epoch = 0,
           .base_sequence = i * count});
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
@@ -173,7 +182,9 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
           .offset = model::offset(i * count),
           .allow_compression = true,
           .count = count,
+          .enable_idempotence = true,
           .producer_id = 1,
+          .producer_epoch = 0,
           .base_sequence = i * count});
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
@@ -208,7 +219,9 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
           .offset = model::offset(i * count),
           .allow_compression = true,
           .count = count,
+          .enable_idempotence = true,
           .producer_id = 1,
+          .producer_epoch = 0,
           .base_sequence = i * count});
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
@@ -229,7 +242,9 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
           .offset = model::offset(0),
           .allow_compression = true,
           .count = count,
+          .enable_idempotence = true,
           .producer_id = 1,
+          .producer_epoch = 0,
           .base_sequence = 0});
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
@@ -263,7 +278,9 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
+      .enable_idempotence = true,
       .producer_id = 1,
+      .producer_epoch = 0,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
@@ -281,7 +298,9 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
       .offset = model::offset(count),
       .allow_compression = true,
       .count = count,
+      .enable_idempotence = true,
       .producer_id = 1,
+      .producer_epoch = 0,
       .base_sequence = count + 1});
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
@@ -313,6 +332,8 @@ FIXTURE_TEST(test_rm_stm_prevents_odd_session_start_off, rm_stm_test_fixture) {
       .allow_compression = true,
       .count = count,
       .enable_idempotence = true,
+      .producer_id = 0,
+      .producer_epoch = 0,
       .base_sequence = 1});
 
     auto bid = model::batch_identity{
@@ -345,7 +366,9 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
+      .enable_idempotence = true,
       .producer_id = 1,
+      .producer_epoch = 0,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
@@ -359,7 +382,9 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
+      .enable_idempotence = true,
       .producer_id = 1,
+      .producer_epoch = 0,
       .base_sequence = 0});
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
@@ -379,5 +404,5 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
 
     BOOST_REQUIRE((bool)r1);
     BOOST_REQUIRE((bool)r2);
-    BOOST_REQUIRE(r1.value().last_offset == r2.value().last_offset);
+    BOOST_REQUIRE_EQUAL(r1.value().last_offset, r2.value().last_offset);
 }
