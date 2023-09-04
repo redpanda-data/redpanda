@@ -631,11 +631,11 @@ ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
 
 ss::future<append_entries_request>
 append_entries_request::serde_async_direct_read(
-  iobuf_parser& src, size_t bytes_left_limit) {
+  iobuf_parser& src, serde::header h) {
     using serde::read_async_nested;
     using serde::read_nested;
 
-    auto tmp = co_await read_async_nested<iobuf>(src, bytes_left_limit);
+    auto tmp = co_await read_async_nested<iobuf>(src, h._bytes_left_limit);
     iobuf_parser in(std::move(tmp));
 
     auto batch_count = read_nested<uint32_t>(in, 0U);
@@ -710,7 +710,7 @@ append_entries_request_serde_wrapper::serde_async_write(iobuf& dst) {
 
 ss::future<append_entries_request_serde_wrapper>
 append_entries_request_serde_wrapper::serde_async_direct_read(
-  iobuf_parser& src, size_t bytes_left_limit) {
+  iobuf_parser& src, serde::header h) {
     using serde::read_async_nested;
     using serde::read_nested;
 
@@ -724,7 +724,7 @@ append_entries_request_serde_wrapper::serde_async_direct_read(
 
     for (uint32_t i = 0; i < batch_count; ++i) {
         auto b = co_await serde::read_async_nested<model::record_batch>(
-          src, bytes_left_limit);
+          src, h._bytes_left_limit);
         batches.push_back(std::move(b));
         co_await ss::coroutine::maybe_yield();
     }
