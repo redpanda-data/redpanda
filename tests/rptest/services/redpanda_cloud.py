@@ -335,10 +335,11 @@ class CloudCluster():
             return False
         else:
             return False if username not in _users else True
+
     def get_ducktape_meta(self):
         """
         Returns instance metadata based on current provider
-        This is placed in separate function to be able 
+        This is placed in separate function to be able
         to add data processing if needed
         """
         return self.provider_cli.get_instance_meta()
