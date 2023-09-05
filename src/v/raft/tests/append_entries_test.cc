@@ -24,6 +24,7 @@
 #include "storage/kvstore.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/types.h"
 #include "test_utils/async.h"
 
 #include <system_error>
@@ -747,18 +748,26 @@ FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
     BOOST_REQUIRE(success);
     leader_raft = gr.get_member(leader_id).consensus;
     result<model::offset> r(raft::errc::timeout);
-    retry_with_leader(gr, 5, 30s, [&r](raft_node& leader_node) {
-        return leader_node.consensus->linearizable_barrier().then(
-          [&r](result<model::offset> l_offset) {
-              r = l_offset;
-              return l_offset.has_value();
-          });
-    }).get();
+    auto leader_offsets = leader_raft->log()->offsets();
+    retry_with_leader(
+      gr,
+      5,
+      30s,
+      [&r, &leader_offsets](raft_node& leader_node) {
+          return leader_node.consensus->linearizable_barrier().then(
+            [&r, &leader_offsets, &leader_node](
+              result<model::offset> l_offset) {
+                r = l_offset;
+                leader_offsets = leader_node.log->offsets();
+                return l_offset.has_value();
+            });
+      })
+      .get();
 
     // linerizable barrier must succeed with stable leader
     BOOST_REQUIRE(r.has_value());
-    BOOST_REQUIRE_EQUAL(r.value(), leader_raft->committed_offset());
-    BOOST_REQUIRE_EQUAL(r.value(), leader_raft->dirty_offset());
+    BOOST_REQUIRE_EQUAL(r.value(), leader_offsets.committed_offset);
+    BOOST_REQUIRE_EQUAL(r.value(), leader_offsets.dirty_offset);
 };
 
 FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
