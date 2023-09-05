@@ -52,6 +52,7 @@ namespace transform {
 using namespace std::chrono_literals;
 
 namespace {
+template<typename ClockType>
 class processor_backoff {
 public:
     static constexpr std::chrono::seconds base_duration = 1s;
@@ -62,26 +63,25 @@ public:
     // Mark that we attempted to start a processor, this is used to ensure that
     // we properly reset backoff if the processor has been running for long
     // enough.
-    void mark_start_attempt() { _start_time = ss::lowres_clock::now(); }
+    void mark_start_attempt() { _start_time = ClockType::now(); }
 
-    ss::lowres_clock::duration next_backoff_duration() {
-        auto now = ss::lowres_clock::now();
+    ClockType::duration next_backoff_duration() {
+        auto now = ClockType::now();
         if (now > (_start_time + reset_duration)) {
             _backoff.reset();
-        } else {
-            _backoff.next_backoff();
         }
+        _backoff.next_backoff();
         return _backoff.current_backoff_duration();
     }
 
 private:
     // the last time we started this processor
-    ss::lowres_clock::time_point _start_time = ss::lowres_clock::now();
+    ClockType::time_point _start_time = ClockType::now();
     // the backoff policy for this processor for when we attempt to restart
     // the processor. If it's been enough time since our last restart of the
     // processor we will reset this.
     rpc::backoff_policy _backoff
-      = rpc::make_exponential_backoff_policy<ss::lowres_clock>(
+      = rpc::make_exponential_backoff_policy<ClockType>(
         base_duration, max_duration);
 };
 
@@ -93,6 +93,7 @@ private:
 // also possible for a transform to be attached to multiple ntps, so the true
 // "key" for a processor is the tuple of (id, ntp), hence the need for the
 // complicated table of indexes.
+template<typename ClockType>
 class processor_table {
     struct key_index_t {};
     struct ntp_index_t {};
@@ -105,11 +106,11 @@ class processor_table {
           ss::lw_shared_ptr<transform::probe> probe)
           : _processor(std::move(processor))
           , _probe(std::move(probe))
-          , _backoff(std::make_unique<processor_backoff>()) {}
+          , _backoff(std::make_unique<processor_backoff<ClockType>>()) {}
 
         processor* processor() const { return _processor.get(); }
         ss::lw_shared_ptr<probe> probe() const { return _probe; }
-        processor_backoff* backoff() const { return _backoff.get(); }
+        processor_backoff<ClockType>* backoff() const { return _backoff.get(); }
 
         const model::ntp& ntp() const { return _processor->ntp(); }
         model::transform_id id() const { return _processor->id(); }
@@ -117,7 +118,7 @@ class processor_table {
     private:
         std::unique_ptr<transform::processor> _processor;
         ss::lw_shared_ptr<transform::probe> _probe;
-        std::unique_ptr<processor_backoff> _backoff;
+        std::unique_ptr<processor_backoff<ClockType>> _backoff;
     };
 
     using underlying_t = boost::multi_index::multi_index_container<
@@ -162,23 +163,23 @@ public:
 
     ss::lw_shared_ptr<probe> get_or_create_probe(
       model::transform_id id, const model::transform_metadata& meta) {
-        auto& id_index = _underlying.get<id_index_t>();
-        auto id_it = id_index.find(id);
-        if (id_it == id_index.end()) {
+        auto& id_index = _underlying.template get<id_index_t>();
+        auto it = id_index.find(id);
+        if (it == id_index.end()) {
             auto probe = ss::make_lw_shared<transform::probe>();
             probe->setup_metrics(meta.name);
             return probe;
         }
-        return id_it->probe();
+        return it->probe();
     }
 
     bool contains(model::transform_id id, const model::ntp& ntp) {
-        auto& by_key = _underlying.get<key_index_t>();
+        auto& by_key = _underlying.template get<key_index_t>();
         return by_key.contains(std::make_tuple(id, ntp));
     }
 
     const entry_t* get_or_null(model::transform_id id, const model::ntp& ntp) {
-        auto& by_key = _underlying.get<key_index_t>();
+        auto& by_key = _underlying.template get<key_index_t>();
         auto it = by_key.find(std::make_tuple(id, ntp));
         if (it == by_key.end()) {
             return nullptr;
@@ -196,7 +197,7 @@ public:
     }
 
     ss::future<> erase_by_id(model::transform_id id) {
-        auto& by_id = _underlying.get<id_index_t>();
+        auto& by_id = _underlying.template get<id_index_t>();
         auto range = by_id.equal_range(id);
         co_await ss::parallel_for_each(
           range.first,
@@ -209,7 +210,7 @@ public:
     // Clear our all the transforms with a given ntp and return all the IDs that
     // no longer exist.
     ss::future<> erase_by_ntp(model::ntp ntp) {
-        auto& by_ntp = _underlying.get<ntp_index_t>();
+        auto& by_ntp = _underlying.template get<ntp_index_t>();
         auto range = by_ntp.equal_range(ntp);
         co_await ss::parallel_for_each(
           range.first,
@@ -223,34 +224,47 @@ private:
     underlying_t _underlying;
 };
 
-manager::manager(
+template<typename ClockType>
+manager<ClockType>::manager(
   std::unique_ptr<registry> r, std::unique_ptr<processor_factory> f)
   : _queue([](const std::exception_ptr& ex) {
       vlog(tlog.error, "unexpected transform manager error: {}", ex);
   })
   , _registry(std::move(r))
-  , _processors(std::make_unique<processor_table>())
+  , _processors(std::make_unique<processor_table<ClockType>>())
   , _processor_factory(std::move(f)) {}
 
-manager::~manager() = default;
+template<typename ClockType>
+manager<ClockType>::~manager() = default;
 
-ss::future<> manager::start() { return ss::now(); }
-ss::future<> manager::stop() {
+template<typename ClockType>
+ss::future<> manager<ClockType>::start() {
+    return ss::now();
+}
+
+template<typename ClockType>
+ss::future<> manager<ClockType>::stop() {
     vlog(tlog.info, "Stopping transform manager...");
     co_await _queue.shutdown();
     co_await _processors->clear();
     vlog(tlog.info, "Stopped transform manager.");
 }
 
-void manager::on_leadership_change(model::ntp ntp, ntp_leader leader_status) {
+template<typename ClockType>
+void manager<ClockType>::on_leadership_change(
+  model::ntp ntp, ntp_leader leader_status) {
     _queue.submit([this, ntp = std::move(ntp), leader_status]() mutable {
         return handle_leadership_change(std::move(ntp), leader_status);
     });
 }
-void manager::on_plugin_change(model::transform_id id) {
+
+template<typename ClockType>
+void manager<ClockType>::on_plugin_change(model::transform_id id) {
     _queue.submit([this, id] { return handle_plugin_change(id); });
 }
-void manager::on_transform_error(
+
+template<typename ClockType>
+void manager<ClockType>::on_transform_error(
   model::transform_id id, model::ntp ntp, model::transform_metadata meta) {
     _queue.submit(
       [this, id, ntp = std::move(ntp), meta = std::move(meta)]() mutable {
@@ -258,8 +272,9 @@ void manager::on_transform_error(
       });
 }
 
-ss::future<>
-manager::handle_leadership_change(model::ntp ntp, ntp_leader leader_status) {
+template<typename ClockType>
+ss::future<> manager<ClockType>::handle_leadership_change(
+  model::ntp ntp, ntp_leader leader_status) {
     vlog(
       tlog.debug,
       "handling leadership status change to leader={} for: {}",
@@ -275,11 +290,13 @@ manager::handle_leadership_change(model::ntp ntp, ntp_leader leader_status) {
     auto transforms = _registry->lookup_by_input_topic(
       model::topic_namespace_view(ntp));
     co_await ss::parallel_for_each(
-      std::move(transforms),
-      [this, &ntp](auto entry) { return start_processor(ntp, entry.first); });
+      transforms, [this, ntp = std::move(ntp)](const auto& entry) {
+          return start_processor(ntp, entry.first);
+      });
 }
 
-ss::future<> manager::handle_plugin_change(model::transform_id id) {
+template<typename ClockType>
+ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     vlog(tlog.debug, "handling update to plugin: {}", id);
     // If we have an existing processor we need to restart it with the updates
     // applied.
@@ -306,7 +323,8 @@ ss::future<> manager::handle_plugin_change(model::transform_id id) {
       });
 }
 
-ss::future<> manager::handle_transform_error(
+template<typename ClockType>
+ss::future<> manager<ClockType>::handle_transform_error(
   model::transform_id id, model::ntp ntp, model::transform_metadata meta) {
     auto* entry = _processors->get_or_null(id, ntp);
     if (!entry) {
@@ -320,12 +338,14 @@ ss::future<> manager::handle_transform_error(
       meta.name,
       ntp.tp.partition,
       human::latency(delay));
-    _queue.submit_delayed(delay, [this, id, ntp]() mutable {
+    _queue.submit_delayed<ClockType>(delay, [this, id, ntp]() mutable {
         return start_processor(std::move(ntp), id);
     });
 }
 
-ss::future<> manager::start_processor(model::ntp ntp, model::transform_id id) {
+template<typename ClockType>
+ss::future<>
+manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
     auto* entry = _processors->get_or_null(id, ntp);
     // It's possible something else came along and kicked this processor and
     // that worked.
@@ -354,7 +374,8 @@ ss::future<> manager::start_processor(model::ntp ntp, model::transform_id id) {
     }
 }
 
-ss::future<> manager::create_processor(
+template<typename ClockType>
+ss::future<> manager<ClockType>::create_processor(
   model::ntp ntp, model::transform_id id, model::transform_metadata meta) {
     ss::lw_shared_ptr<transform::probe> probe
       = _processors->get_or_create_probe(id, meta);
@@ -369,13 +390,14 @@ ss::future<> manager::create_processor(
         // Delay some time before attempting to recreate a processor
         // TODO: Should we have more sophisticated backoff mechanisms?
         constexpr auto recreate_attempt_delay = 10s;
-        _queue.submit_delayed(
+        _queue.submit_delayed<ClockType>(
           recreate_attempt_delay, [this, ntp = std::move(ntp), id]() mutable {
               return start_processor(std::move(ntp), id);
           });
     } else {
         // Ensure that we insert this transform into our mapping before we
-        // start it.
+        // start it, so that if start fails and calls the error callback
+        // we properly know that it's in flight.
         auto& entry = _processors->insert(
           std::move(fut).get(), std::move(probe));
         vlog(tlog.info, "starting transform {} on {}", meta.name, ntp);
@@ -384,7 +406,8 @@ ss::future<> manager::create_processor(
     }
 }
 
-ss::future<> manager::drain_queue_for_test() {
+template<typename ClockType>
+ss::future<> manager<ClockType>::drain_queue_for_test() {
     ss::promise<> p;
     auto f = p.get_future();
     // Move the promise into the queue so we get
@@ -395,4 +418,8 @@ ss::future<> manager::drain_queue_for_test() {
     });
     co_await std::move(f);
 }
+
+template class manager<ss::lowres_clock>;
+template class manager<ss::manual_clock>;
+
 } // namespace transform

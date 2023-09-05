@@ -20,6 +20,8 @@
 #include "transform/io.h"
 #include "wasm/fwd.h"
 
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -72,6 +74,7 @@ public:
       = 0;
 };
 
+template<typename ClockType>
 class processor_table;
 
 // transform manager is responsible for managing the lifetime of a processor and
@@ -88,7 +91,13 @@ class processor_table;
 // manager. Note that it maybe possible to allow for **each** processor to have
 // it's own queue in the manager, but until it's proven to be required, a per
 // shard queue is used.
+template<typename ClockType = ss::lowres_clock>
 class manager {
+    static_assert(
+      std::is_same_v<ClockType, ss::lowres_clock>
+        || std::is_same_v<ClockType, ss::manual_clock>,
+      "Only lowres or manual clocks are supported");
+
 public:
     manager(std::unique_ptr<registry>, std::unique_ptr<processor_factory>);
     manager(const manager&) = delete;
@@ -133,7 +142,7 @@ private:
 
     ssx::work_queue _queue;
     std::unique_ptr<registry> _registry;
-    std::unique_ptr<processor_table> _processors;
+    std::unique_ptr<processor_table<ClockType>> _processors;
     std::unique_ptr<processor_factory> _processor_factory;
 };
 } // namespace transform

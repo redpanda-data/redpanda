@@ -288,7 +288,8 @@ public:
         _registry = r.get();
         auto t = std::make_unique<processor_tracker>();
         _tracker = t.get();
-        _manager = std::make_unique<manager>(std::move(r), std::move(t));
+        _manager = std::make_unique<manager<ss::manual_clock>>(
+          std::move(r), std::move(t));
     }
     void TearDown() override {
         _registry = nullptr;
@@ -352,6 +353,7 @@ private:
           model::topic(parts[0]),
           model::partition_id(partition_id)};
     }
+
     /**
      * Parse a transform from a given string.
      *
@@ -391,7 +393,7 @@ private:
 
     fake_registry* _registry;
     processor_tracker* _tracker;
-    std::unique_ptr<manager> _manager;
+    std::unique_ptr<manager<ss::manual_clock>> _manager;
 };
 
 TEST_F(TransformManagerTest, FullLifecycle) {
