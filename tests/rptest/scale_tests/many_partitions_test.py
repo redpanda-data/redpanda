@@ -1026,6 +1026,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Main test phase: with continuous background traffic, exercise restarts and
         # any other cluster changes that might trip up at scale.
         repeater_msg_size = 16384
+        rate_limit_bps = int(scale.expect_bandwidth)
         max_buffered_records = 64
         if scale.tiered_storage_enabled:
             max_buffered_records = 1
@@ -1034,6 +1035,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                               nodes=self.preallocated_nodes,
                               topic=topic_names[0],
                               msg_size=repeater_msg_size,
+                              rate_limit_bps=rate_limit_bps,
                               workers=self._repeater_worker_count(scale),
                               max_buffered_records=max_buffered_records,
                               cleanup=lambda: self.free_preallocated_nodes(),
@@ -1083,17 +1085,16 @@ class ManyPartitionsTest(PreallocNodesTest):
             # Done with restarts, now do a longer traffic soak
             self.logger.info(f"Entering traffic soak phase")
 
-            # Normalize by the max_buffered_records.
-            soak_await_bytes = int(100E9 / 64 * max_buffered_records)
-            if not self.redpanda.dedicated_nodes:
-                soak_await_bytes = 10E9
-
+            # soak for two minutes
+            soak_time_seconds = 120
+            soak_await_bytes = soak_time_seconds * scale.expect_bandwidth
             soak_await_msgs = soak_await_bytes / repeater_msg_size
+            # Add some leeway to avoid flakiness
+            soak_timeout = soak_time_seconds * 1.25
             t1 = time.time()
             initial_p, _ = repeater.total_messages()
             try:
-                repeater.await_progress(
-                    soak_await_msgs, soak_await_bytes / scale.expect_bandwidth)
+                repeater.await_progress(soak_await_msgs, soak_timeout)
             except TimeoutError:
                 t2 = time.time()
                 final_p, _ = repeater.total_messages()
