@@ -66,15 +66,14 @@ class RpCloudApiClient(object):
             self._token = j['access_token']
         return self._token
 
-    def _http_get(self, endpoint='', **kwargs):
+    def _http_get(self, endpoint='', base_url=None, **kwargs):
         token = self._get_token()
         headers = {
             'Authorization': f'Bearer {token}',
             'Accept': 'application/json'
         }
-        resp = requests.get(f'{self._config.api_url}{endpoint}',
-                            headers=headers,
-                            **kwargs)
+        _base = base_url if base_url else self._config.api_url
+        resp = requests.get(f'{_base}{endpoint}', headers=headers, **kwargs)
         _r = self._handle_error(resp)
         return _r if _r is None else _r.json()
 
@@ -134,10 +133,11 @@ class LiveClusterParams:
     Active Cluster params.
     Should not be used outside of the redpanda_cloud module
     """
-    isAlive: bool = False
+    _isAlive: bool = False
     connection_type: str = 'public'
     namespace_uuid: str = None
     name: str = None
+    consoleUrl: str = ""
     network_id: str = None
     network_cidr: str = None
     install_pack_ver: str = None
@@ -231,6 +231,53 @@ class CloudCluster():
 
         return self._cluster_id
 
+    @property
+    def isAlive(self):
+        _c = self._get_cluster(self.config.id)
+        self.current._isAlive = True if _c['status'][
+            'health'] == 'healthy' else False
+        return self.current._isAlive
+
+    def _get_cloud_users(self):
+        _users = []
+        _offset = 0
+        _total = 1
+        while _offset < _total:
+            _params = {'offset': _offset}
+            _r = self.cloudv2._http_get(endpoint="/api/v1/users",
+                                        params=_params)
+            if _r is None:
+                return {}
+            _users += _r['users']['results']
+            _offset += len(_r['users']['results'])
+            _total = _r['users']['total']
+        return _users
+
+    def _get_cluster_users(self):
+        _r = self.cloudv2._http_get(
+            base_url=self.current.consoleUrl,
+            endpoint="/api/users",
+        )
+        if _r is None:
+            return []
+        else:
+            return _r['users']
+
+    def cloudUserExists(self, username):
+        _users = self._get_cloud_users()
+        if not _users:
+            return False
+        else:
+            _usernames = [u['name'] for u in _users]
+            return False if username not in _usernames else True
+
+    def clusterUserExists(self, username):
+        _users = self._get_cluster_users()
+        if not _users:
+            return False
+        else:
+            return False if username not in _users else True
+
     def _create_namespace(self):
         # format namespace name as 'rp-ducktape-ns-3b36f516
         name = f'rp-ducktape-ns-{self._unique_id}'
@@ -256,6 +303,12 @@ class CloudCluster():
                     raise RuntimeError("Creation failed (state 'unknown') "
                                        f"for '{self.config.provider}'")
         return False
+
+    def _get_cluster_console_url(self):
+        cluster = self.cloudv2._http_get(
+            endpoint=f'/api/v1/clusters/{self.config.id}')
+        return cluster['status']['listeners']['redpandaConsole']['default'][
+            'urls'][0]
 
     def _get_cluster_id_and_network_id(self):
         """
@@ -389,7 +442,7 @@ class CloudCluster():
         # get cluster data
         _c = self._get_cluster(self.config.id)
         # Fill in immediate configuration
-        self.current.isAlive = True if _c['status'][
+        self.current._isAlive = True if _c['status'][
             'health'] == 'healthy' else False
         self.current.name = _c['name']
         self.current.namespace_uuid = _c['namespaceUuid']
@@ -403,6 +456,16 @@ class CloudCluster():
             raise RuntimeError("BYOC Cluster is in different region: "
                                f"'{self.current.region}'. Multi-region "
                                "testing is not supported at this time.")
+
+        return
+
+    def update_cluster_acls(self, superuser):
+        if superuser is not None and not self.clusterUserExists(
+                superuser.username):
+            self._logger.debug(f'super username: {superuser.username}, '
+                               f'algorithm: {superuser.algorithm}')
+            self._create_user(superuser)
+            self._create_acls(superuser.username)
 
         return
 
@@ -430,72 +493,68 @@ class CloudCluster():
             self._update_live_cluster_info()
             # Fill in additional info based on collected from cluster
             self.current.product_id = self._get_product_id(config_profile_name)
-            # If network type is private, trigget VPC Peering
-            if not self.isPublicNetwork:
-                # Create VPC peering
-                self.create_vpc_peering()
-            return self.config.id
+        else:
+            # In order not to have long list of arguments in each internal
+            # functions, use self.current as a data store
+            # Each of the _*_payload functions and _get_* will use it as a source
+            # of data to create proper body for REST request
+            self.current.namespace_uuid = self._create_namespace()
+            # name rp-ducktape-cluster-3b36f516
+            self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
+            # Install pack handling
+            if self.config.install_pack_ver == 'latest':
+                self.config.install_pack_ver = \
+                    self._get_latest_install_pack_ver()
+            self.current.install_pack_ver = self.config.install_pack_ver
+            # Multi-zone not supported, so get a single one from the list
+            self.current.region = self.config.region
+            self.current.region_id = self._get_region_id()
+            self.current.zones = self.provider_cli.get_single_zone(
+                self.current.region)
+            # Call CloudV2 API to determine Product ID
+            self.current.product_id = self._get_product_id(config_profile_name)
+            if self.current.product_id is None:
+                raise RuntimeError("ProductID failed to be determined for "
+                                   f"'{self.config.provider}', "
+                                   f"'{self.config.type}', "
+                                   f"'{self.config.install_pack_ver}', "
+                                   f"'{self.config.region}'")
 
-        # In order not to have long list of arguments in each internal
-        # functions, use self.current as a data store
-        # Each of the _*_payload functions and _get_* will use it as a source
-        # of data to create proper body for REST request
-        self.current.namespace_uuid = self._create_namespace()
-        # name rp-ducktape-cluster-3b36f516
-        self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
-        # Install pack handling
-        if self.config.install_pack_ver == 'latest':
-            self.config.install_pack_ver = self._get_latest_install_pack_ver()
-        self.current.install_pack_ver = self.config.install_pack_ver
-        # Multi-zone not supported, so get a single one from the list
-        self.current.region = self.config.region
-        self.current.region_id = self._get_region_id()
-        self.current.zones = self.provider_cli.get_single_zone(
-            self.current.region)
-        # Call CloudV2 API to determine Product ID
-        self.current.product_id = self._get_product_id(config_profile_name)
-        if self.current.product_id is None:
-            raise RuntimeError("ProductID failed to be determined for "
-                               f"'{self.config.provider}', "
-                               f"'{self.config.type}', "
-                               f"'{self.config.install_pack_ver}', "
-                               f"'{self.config.region}'")
+            # Call Api to create cluster
+            self._logger.info(f'creating cluster name {self.current.name}')
+            # Prepare cluster payload block
+            _body = self._create_cluster_payload()
+            self._logger.debug(f'body: {json.dumps(_body)}')
+            # Send API request
+            r = self.cloudv2._http_post(
+                endpoint='/api/v1/workflows/network-cluster', json=_body)
 
-        # Call Api to create cluster
-        self._logger.info(f'creating cluster name {self.current.name}')
-        # Prepare cluster payload block
-        _body = self._create_cluster_payload()
-        self._logger.debug(f'body: {json.dumps(_body)}')
-        # Send API request
-        r = self.cloudv2._http_post(
-            endpoint='/api/v1/workflows/network-cluster', json=_body)
+            # handle error on CloudV2 side
+            if r is None:
+                raise RuntimeError(self.cloudv2.lasterror)
 
-        # handle error on CloudV2 side
-        if r is None:
-            raise RuntimeError(self.cloudv2.lasterror)
+            self._logger.info(
+                f'waiting for creation of cluster {self.current.name} '
+                f'namespaceUuid {r["namespaceUuid"]}, checking every '
+                f'{self.CHECK_BACKOFF_SEC} seconds')
+            # Poll API and wait for the cluster creation
+            wait_until(lambda: self._cluster_ready(),
+                       timeout_sec=self.CHECK_TIMEOUT_SEC,
+                       backoff_sec=self.CHECK_BACKOFF_SEC,
+                       err_msg='Unable to deterimine readiness '
+                       f'of cloud cluster {self.current.name}')
+            self.config.id, self.current.network_id = \
+                self._get_cluster_id_and_network_id()
 
-        self._logger.info(
-            f'waiting for creation of cluster {self.current.name} '
-            f'namespaceUuid {r["namespaceUuid"]}, checking every '
-            f'{self.CHECK_BACKOFF_SEC} seconds')
-        # Poll API and wait for the cluster creation
-        wait_until(lambda: self._cluster_ready(),
-                   timeout_sec=self.CHECK_TIMEOUT_SEC,
-                   backoff_sec=self.CHECK_BACKOFF_SEC,
-                   err_msg='Unable to deterimine readiness '
-                   f'of cloud cluster {self.current.name}')
-        self.config.id, self.current.network_id = \
-            self._get_cluster_id_and_network_id()
+        # Update Cluster console Url
+        self.current.consoleUrl = self._get_cluster_console_url()
+        # update cluster ACLs
+        self.update_cluster_acls(superuser)
 
-        if superuser is not None:
-            self._logger.debug(f'super username: {superuser.username}, '
-                               f'algorithm: {superuser.algorithm}')
-            self._create_user(superuser)
-            self._create_acls(superuser.username)
-
+        # If network type is private, trigget VPC Peering
         if not self.isPublicNetwork:
             self.create_vpc_peering()
-        self.current.isAlive = True
+        self.current._isAlive = True
         return self.config.id
 
     def delete(self):
@@ -528,18 +587,13 @@ class CloudCluster():
     def _create_user(self, user: SaslCredentials):
         """Create SASL user
         """
-
-        cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
-        base_url = cluster['status']['listeners']['redpandaConsole'][
-            'default']['urls'][0]
         payload = {
             'mechanism': user.algorithm,
             'password': user.password,
             'username': user.username,
         }
         # use the console api url to create sasl users; uses the same auth token
-        return self.cloudv2._http_post(base_url=base_url,
+        return self.cloudv2._http_post(base_url=self.current.consoleUrl,
                                        endpoint='/api/users',
                                        json=payload)
 
