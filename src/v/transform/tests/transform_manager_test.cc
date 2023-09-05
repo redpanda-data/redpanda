@@ -289,8 +289,30 @@ public:
         _tracker = t.get();
         _manager = std::make_unique<manager<ss::manual_clock>>(
           std::move(r), std::move(t));
+        _manager->start().get();
+        // This allows us to wait for the seastar queue to be drained.
+        //
+        // This is used because we need to know when manual_clock tasks are
+        // enqueued to ensure that task execution is deterministic. Because in
+        // debug mode seastar randomizes task order, so there is no way to wait
+        // for those tasks to be executed outside of draining the seastar queue.
+        ss::set_idle_cpu_handler([this](ss::work_waiting_on_reactor) {
+            if (_idle_waiter_task) {
+                _idle_waiter_task->set_value();
+                // this tells the reactor loop to go back and check
+                // for more work, which we should have just enqueued because of
+                // completing the promise above.
+                return ss::idle_cpu_handler_result::
+                  interrupted_by_higher_priority_task;
+            }
+            return ss::idle_cpu_handler_result::no_more_work;
+        });
     }
     void TearDown() override {
+        ss::set_idle_cpu_handler([](ss::work_waiting_on_reactor) {
+            return ss::idle_cpu_handler_result::no_more_work;
+        });
+        _manager->stop().get();
         _registry = nullptr;
         _tracker = nullptr;
         _manager.reset();
@@ -315,7 +337,22 @@ public:
         auto id = _registry->delete_transform(meta.name);
         _manager->on_plugin_change(id);
     }
-    void drain_queue() { _manager->drain_queue_for_test().get(); }
+    void report_error(std::string_view str) {
+        auto [ntp, meta] = transform_and_partition(str);
+        auto entry = _registry->lookup_by_name(meta.name);
+        if (!entry) {
+            throw std::runtime_error(ss::format(
+              "unknown transform to report an error for: {}", meta.name()));
+        }
+        _manager->on_transform_error(entry->first, ntp, meta);
+    }
+    void drain_queue() {
+        // Wait for the reactor to tell us that the queue has been drained.
+        _idle_waiter_task.emplace();
+        _idle_waiter_task->get_future().get();
+        _idle_waiter_task.reset();
+        _manager->drain_queue_for_test().get();
+    }
     status_map status() {
         status_map result;
         auto statuses = _tracker->statuses();
@@ -390,6 +427,7 @@ private:
         };
     }
 
+    std::optional<ss::promise<>> _idle_waiter_task;
     fake_registry* _registry;
     processor_tracker* _tracker;
     std::unique_ptr<manager<ss::manual_clock>> _manager;
