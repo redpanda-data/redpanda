@@ -199,6 +199,8 @@ public:
       bool reset_sequences = false);
     void update(const model::batch_identity&, kafka::offset);
 
+    std::optional<seq_t> last_sequence_number() const;
+
 private:
     // Register/deregister with manager.
     void register_self();

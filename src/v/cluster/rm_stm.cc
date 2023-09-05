@@ -1019,12 +1019,11 @@ rm_stm::get_expiration_info(model::producer_identity pid) const {
 
 std::optional<int32_t>
 rm_stm::get_seq_number(model::producer_identity pid) const {
-    auto it = _log_state.seq_table.find(pid);
-    if (it == _log_state.seq_table.end()) {
+    auto it = _producers.find(pid);
+    if (it == _producers.end()) {
         return std::nullopt;
     }
-
-    return it->second.entry.seq;
+    return it->second->last_sequence_number();
 }
 
 ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {

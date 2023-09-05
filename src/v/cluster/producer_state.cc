@@ -261,4 +261,12 @@ void producer_state::update(
     }
 }
 
+std::optional<seq_t> producer_state::last_sequence_number() const {
+    auto maybe_ptr = _requests.last_request();
+    if (!maybe_ptr) {
+        return std::nullopt;
+    }
+    return maybe_ptr.value()->_last_sequence;
+}
+
 } // namespace cluster
