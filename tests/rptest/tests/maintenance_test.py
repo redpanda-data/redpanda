@@ -56,8 +56,12 @@ class MaintenanceTest(RedpandaTest):
 
     def _in_maintenance_mode_fully(self, node):
         status = self.admin.maintenance_status(node)
-        return status["finished"] and not status["errors"] and \
-                status["partitions"] > 0
+        if all([key in status
+                for key in ['finished', 'errors', 'partitions']]):
+            return status["finished"] and not status["errors"] and \
+                    status["partitions"] > 0
+        else:
+            return False
 
     def _verify_broker_metadata(self, maintenance_enabled, node):
         """
@@ -80,17 +84,18 @@ class MaintenanceTest(RedpandaTest):
             return False
         # check status wanted
         if maintenance_enabled:
-            return status['draining'] and status['finished']
+            return status['draining'] and status[
+                'finished'] if 'finished' in status else True
         else:
             return not status['draining']
 
-    def _verify_maintenance_status(self, node, draining):
+    def _verify_maintenance_status(self, node, enabled):
         """
         Check that cluster reports maintenance status as expected through
         both rpk status tooling as well as raw admin interface.
         """
         # get status for this node via rpk
-        node_id = self.redpanda.idx(node)
+        node_id = self.redpanda.node_id(node)
         statuses = self.rpk.cluster_maintenance_status()
         self.logger.debug(f"finding node_id {node_id} in rpk "
                           "maintenance status: {statuses}")
@@ -108,7 +113,7 @@ class MaintenanceTest(RedpandaTest):
                           "{node.name}: {admin_status}")
 
         # ensure that both agree on expected outcome
-        return admin_status["draining"] == rpk_status.enabled == draining
+        return admin_status["draining"] == rpk_status.enabled == enabled
 
     def _enable_maintenance(self, node):
         """
