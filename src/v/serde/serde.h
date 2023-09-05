@@ -50,15 +50,6 @@
 
 namespace serde {
 
-template<typename To, typename From>
-To bit_cast(From const& f) {
-    static_assert(sizeof(From) == sizeof(To));
-    static_assert(std::is_trivially_copyable_v<To>);
-    To to;
-    std::memcpy(&to, &f, sizeof(To));
-    return to;
-}
-
 template<typename T>
 concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {
     t.serde_read(in, h);
@@ -228,10 +219,6 @@ int64_t checked_duration_cast_to_nanoseconds(
 inline void write(iobuf& out, uuid_t t);
 
 template<typename T>
-requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
-void write(iobuf& out, T t);
-
-template<typename T>
 requires(serde_is_enum_v<std::decay_t<T>>)
 void write(iobuf& out, T t);
 
@@ -239,8 +226,6 @@ template<typename Rep, typename Period>
 void write(iobuf& out, std::chrono::duration<Rep, Period> t);
 
 inline void write(iobuf& out, ss::sstring t);
-
-inline void write(iobuf& out, bool t);
 
 inline void write(iobuf& out, ss::net::inet_address t);
 
@@ -291,27 +276,6 @@ inline void write(iobuf& out, uuid_t t) {
 }
 
 template<typename T>
-requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
-void write(iobuf& out, T t) {
-    using Type = std::decay_t<T>;
-    if constexpr (sizeof(Type) == 1) {
-        out.append(reinterpret_cast<char const*>(&t), sizeof(t));
-    } else if constexpr (std::is_same_v<float, Type>) {
-        auto const le_t = htole32(bit_cast<uint32_t>(t));
-        static_assert(sizeof(le_t) == sizeof(Type));
-        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-    } else if constexpr (std::is_same_v<double, Type>) {
-        auto const le_t = htole64(bit_cast<uint64_t>(t));
-        static_assert(sizeof(le_t) == sizeof(Type));
-        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-    } else {
-        auto const le_t = ss::cpu_to_le(t);
-        static_assert(sizeof(le_t) == sizeof(Type));
-        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-    }
-}
-
-template<typename T>
 requires(serde_is_enum_v<std::decay_t<T>>)
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
@@ -358,8 +322,6 @@ inline void write(iobuf& out, ss::sstring t) {
     write<serde_size_t>(out, t.size());
     out.append(t.data(), t.size());
 }
-
-inline void write(iobuf& out, bool t) { write(out, static_cast<int8_t>(t)); }
 
 inline void write(iobuf& out, ss::net::inet_address t) {
     iobuf address_bytes;
@@ -637,8 +599,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         if (in.bytes_left() > h._bytes_left_limit) {
             in.skip(in.bytes_left() - h._bytes_left_limit);
         }
-    } else if constexpr (std::is_same_v<Type, bool>) {
-        t = read_nested<int8_t>(in, bytes_left_limit) != 0;
     } else if constexpr (serde_is_enum_v<Type>) {
         auto const val = read_nested<serde_enum_serialized_t>(
           in, bytes_left_limit);
@@ -651,25 +611,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               type_str<Type>()));
         }
         t = static_cast<Type>(val);
-    } else if constexpr (std::is_scalar_v<Type>) {
-        if (unlikely(in.bytes_left() < sizeof(Type))) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "reading type {} of size {}: {} bytes left",
-              type_str<Type>(),
-              sizeof(Type),
-              in.bytes_left()));
-        }
-
-        if constexpr (sizeof(Type) == 1) {
-            t = in.consume_type<Type>();
-        } else if constexpr (std::is_same_v<float, Type>) {
-            t = bit_cast<float>(le32toh(in.consume_type<uint32_t>()));
-        } else if constexpr (std::is_same_v<double, Type>) {
-            t = bit_cast<double>(le64toh(in.consume_type<uint64_t>()));
-        } else {
-            t = ss::le_to_cpu(in.consume_type<Type>());
-        }
     } else if constexpr (reflection::is_std_vector<Type>) {
         using value_type = typename Type::value_type;
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
@@ -1015,3 +956,4 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 }
 
 } // namespace serde
+#include "serde/rw/scalar.h"
