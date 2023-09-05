@@ -990,14 +990,21 @@ class RpkTool:
             line = [x.strip() for x in line]
             if line[0] == "NODE-ID":
                 return None
+
+            def bool_or_none(value: str):
+                return None if value == "-" else value == "true"
+
+            def int_or_none(value: str):
+                return None if value == "-" else int(value)
+
             return RpkMaintenanceStatus(node_id=int(line[0]),
                                         enabled=line[1] == "true",
-                                        finished=line[2] == "true",
-                                        errors=line[3] == "true",
-                                        partitions=int(line[4]),
-                                        eligible=int(line[5]),
-                                        transferring=int(line[6]),
-                                        failed=int(line[7]))
+                                        finished=bool_or_none(line[2]),
+                                        errors=bool_or_none(line[3]),
+                                        partitions=int_or_none(line[4]),
+                                        eligible=int_or_none(line[5]),
+                                        transferring=int_or_none(line[6]),
+                                        failed=int_or_none(line[7]))
 
         cmd = [
             self._rpk_binary(),
