@@ -10,6 +10,8 @@
 package maintenance
 
 import (
+	"fmt"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -25,16 +27,24 @@ func newMaintenanceReportTable() *out.TabWriter {
 	return out.NewTable(headers...)
 }
 
+func nullableToStr[V any](v *V) string {
+	if v == nil {
+		return "-"
+	}
+
+	return fmt.Sprint(*v)
+}
+
 func addBrokerMaintenanceReport(table *out.TabWriter, b adminapi.Broker) {
 	table.Print(
 		b.NodeID,
 		b.Maintenance.Draining,
-		b.Maintenance.Finished,
-		b.Maintenance.Errors,
-		b.Maintenance.Partitions,
-		b.Maintenance.Eligible,
-		b.Maintenance.Transferring,
-		b.Maintenance.Failed)
+		nullableToStr(b.Maintenance.Finished),
+		nullableToStr(b.Maintenance.Errors),
+		nullableToStr(b.Maintenance.Partitions),
+		nullableToStr(b.Maintenance.Eligible),
+		nullableToStr(b.Maintenance.Transferring),
+		nullableToStr(b.Maintenance.Failed))
 }
 
 func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
