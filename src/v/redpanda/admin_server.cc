@@ -850,13 +850,6 @@ fill_maintenance_status(const cluster::broker_state& b_state) {
 
     ret.draining = b_state.get_maintenance_state()
                    == model::maintenance_state::active;
-    // ensure that the output json has all fields
-    ret.finished = false;
-    ret.errors = false;
-    ret.partitions = 0;
-    ret.transferring = 0;
-    ret.eligible = 0;
-    ret.failed = 0;
 
     return ret;
 }
