@@ -17,6 +17,7 @@
 #include "ssx/future-util.h"
 #include "transform/logger.h"
 #include "transform/transform_processor.h"
+#include "utils/human.h"
 #include "vassert.h"
 #include "vlog.h"
 #include "wasm/api.h"
@@ -318,7 +319,7 @@ ss::future<> manager::handle_transform_error(
       "transform {} errored on partition {}, delaying for {} then restarting",
       meta.name,
       ntp.tp.partition,
-      delay);
+      human::latency(delay));
     _queue.submit_delayed(delay, [this, id, ntp]() mutable {
         return start_processor(std::move(ntp), id);
     });
