@@ -90,6 +90,8 @@ struct follower_index_metadata {
         return suppress_heartbeats_count > 0;
     }
 
+    follower_req_seq next_follower_sequence() { return ++last_sent_seq; }
+
     vnode node_id;
     // index of last known log for this follower
     model::offset last_flushed_log_index;

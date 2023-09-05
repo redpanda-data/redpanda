@@ -2674,7 +2674,7 @@ void consensus::maybe_update_node_reply_timestamp(vnode id) {
 
 follower_req_seq consensus::next_follower_sequence(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
-        return it->second.last_sent_seq++;
+        return it->second.next_follower_sequence();
     }
 
     return follower_req_seq{};
