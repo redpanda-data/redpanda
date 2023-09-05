@@ -138,7 +138,10 @@ private:
     // Create a processor - this should only be called if it there is no
     // existing processor for this ntp + id.
     ss::future<> create_processor(
-      model::ntp, model::transform_id, model::transform_metadata);
+      model::ntp,
+      model::transform_id,
+      model::transform_metadata,
+      ss::lw_shared_ptr<probe>);
 
     ssx::work_queue _queue;
     std::unique_ptr<registry> _registry;

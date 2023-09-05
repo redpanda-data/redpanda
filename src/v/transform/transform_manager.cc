@@ -310,16 +310,16 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     }
     // Otherwise, start a processor for every partition we're a leader of.
     auto partitions = _registry->get_leader_partitions(transform->input_topic);
+    auto probe = _processors->get_or_create_probe(id, *transform);
     co_await ss::parallel_for_each(
-      partitions.begin(),
-      partitions.end(),
-      [this, id, transform = *std::move(transform)](
-        model::partition_id partition) {
+      partitions,
+      [this, id, transform = *std::move(transform), p = std::move(probe)](
+        model::partition_id partition_id) {
           auto ntp = model::ntp(
-            transform.input_topic.ns, transform.input_topic.tp, partition);
+            transform.input_topic.ns, transform.input_topic.tp, partition_id);
           // It's safe to directly create processors, because we deleted them
           // for a full restart from this deploy
-          return create_processor(std::move(ntp), id, transform);
+          return create_processor(std::move(ntp), id, transform, p);
       });
 }
 
@@ -370,17 +370,20 @@ manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
         entry->backoff()->mark_start_attempt();
         co_await entry->processor()->start();
     } else {
-        co_await create_processor(ntp, id, *std::move(transform));
+        auto probe = _processors->get_or_create_probe(id, *transform);
+        co_await create_processor(
+          ntp, id, *std::move(transform), std::move(probe));
     }
 }
 
 template<typename ClockType>
 ss::future<> manager<ClockType>::create_processor(
-  model::ntp ntp, model::transform_id id, model::transform_metadata meta) {
-    ss::lw_shared_ptr<transform::probe> probe
-      = _processors->get_or_create_probe(id, meta);
+  model::ntp ntp,
+  model::transform_id id,
+  model::transform_metadata meta,
+  ss::lw_shared_ptr<probe> p) {
     auto fut = co_await ss::coroutine::as_future(
-      _processor_factory->create_processor(id, ntp, meta, probe.get()));
+      _processor_factory->create_processor(id, ntp, meta, p.get()));
     if (fut.failed()) {
         vlog(
           tlog.warn,
@@ -398,8 +401,7 @@ ss::future<> manager<ClockType>::create_processor(
         // Ensure that we insert this transform into our mapping before we
         // start it, so that if start fails and calls the error callback
         // we properly know that it's in flight.
-        auto& entry = _processors->insert(
-          std::move(fut).get(), std::move(probe));
+        auto& entry = _processors->insert(std::move(fut).get(), std::move(p));
         vlog(tlog.info, "starting transform {} on {}", meta.name, ntp);
         entry.backoff()->mark_start_attempt();
         co_await entry.processor()->start();
