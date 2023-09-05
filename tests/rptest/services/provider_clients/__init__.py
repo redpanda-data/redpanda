@@ -7,5 +7,6 @@ def make_provider_client(provider, logger, region, key, secret):
     if provider == 'AWS':
         _client = EC2Client(region, key, secret, logger)
     elif provider == 'GCP':
-        _client = GCPClient(region, key, secret, logger)
+        # In scope of GCP, key contains path to keyfile
+        _client = GCPClient(region, key, logger)
     return _client
