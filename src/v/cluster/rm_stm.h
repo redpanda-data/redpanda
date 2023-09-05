@@ -713,64 +713,6 @@ private:
         }
     };
 
-    // When a request is retried while the first appempt is still
-    // being replicated the retried request is parked until the
-    // original request is replicated.
-    struct inflight_request {
-        int32_t last_seq{-1};
-        result<kafka_result> r = errc::success;
-        bool is_processing;
-        fragmented_vector<
-          ss::lw_shared_ptr<available_promise<result<kafka_result>>>>
-          parked;
-    };
-
-    // Redpanda uses optimistic replication to implement pipelining of
-    // idempotent replication requests. Just like with non-idempotent
-    // requests redpanda doesn't wait until previous request is replicated
-    // before processing the next.
-    //
-    // However with idempotency the requests are causally related: seq
-    // numbers should increase without gaps. So we need to prevent a
-    // case when a request A's replication starts before a request's B
-    // replication but then it fails while B's replication passes.
-    //
-    // We reply on conditional replication to guarantee that A and B
-    // share the same term and then on ours Raft's guarantees about order
-    // if A was enqueued before B within the same term then if A fails
-    // then B should fail too.
-    //
-    // inflight_requests hosts inflight requests before they are resolved
-    // and form a monotonicly increasing continuation without gaps of
-    // log_state's seq_table
-    struct inflight_requests {
-        mutex lock;
-        int32_t tail_seq{-1};
-        model::term_id term;
-        ss::circular_buffer<ss::lw_shared_ptr<inflight_request>> cache;
-
-        void forget() {
-            for (auto& inflight : cache) {
-                if (inflight->is_processing) {
-                    for (auto& pending : inflight->parked) {
-                        pending->set_value(errc::generic_tx_error);
-                    }
-                }
-            }
-            cache.clear();
-            tail_seq = -1;
-        }
-
-        std::optional<result<kafka_result>> known_seq(int32_t last_seq) const {
-            for (auto& seq : cache) {
-                if (seq->last_seq == last_seq && !seq->is_processing) {
-                    return seq->r;
-                }
-            }
-            return std::nullopt;
-        }
-    };
-
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
@@ -800,7 +742,6 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const mem_state&);
     friend std::ostream& operator<<(std::ostream&, const log_state&);
-    friend std::ostream& operator<<(std::ostream&, const inflight_requests&);
     ss::future<> maybe_log_tx_stats();
     void log_tx_stats();
 
@@ -815,11 +756,6 @@ private:
       model::producer_id,
       ss::lw_shared_ptr<mutex>>
       _tx_locks;
-    mt::unordered_map_t<
-      absl::flat_hash_map,
-      model::producer_identity,
-      ss::lw_shared_ptr<inflight_requests>>
-      _inflight_requests;
     log_state _log_state;
     mem_state _mem_state;
     ss::timer<clock_type> auto_abort_timer;

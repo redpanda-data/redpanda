@@ -263,11 +263,6 @@ rm_stm::rm_stm(
       mt::
         map<absl::flat_hash_map, model::producer_id, ss::lw_shared_ptr<mutex>>(
           _tx_root_tracker.create_child("tx-locks")))
-  , _inflight_requests(mt::map<
-                       absl::flat_hash_map,
-                       model::producer_identity,
-                       ss::lw_shared_ptr<inflight_requests>>(
-      _tx_root_tracker.create_child("in-flight")))
   , _log_state(_tx_root_tracker)
   , _mem_state(_tx_root_tracker)
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
@@ -2488,17 +2483,6 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
     return o;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const rm_stm::inflight_requests& reqs) {
-    fmt::print(
-      o,
-      "{{ tail: {}, term: {}, request cache size: {} }}",
-      reqs.tail_seq,
-      reqs.term,
-      reqs.cache.size());
-    return o;
-}
-
 std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
     fmt::print(
       o,
@@ -2560,13 +2544,6 @@ void rm_stm::setup_metrics() {
           labels)
           .aggregate(aggregate_labels),
         sm::make_gauge(
-          "idempotency_num_pids_inflight",
-          [this] { return _inflight_requests.size(); },
-          sm::description(
-            "Number of pids with in flight idempotent produce requests."),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_gauge(
           "tx_num_inflight_requests",
           [this] { return _log_state.ongoing_map.size(); },
           sm::description("Number of ongoing transactional requests."),
@@ -2593,10 +2570,9 @@ ss::future<> rm_stm::maybe_log_tx_stats() {
     auto units = co_await _state_lock.hold_read_lock();
     _ctx_log.debug(
       "tx memory snapshot stats: {{mem_state: {}, log_state: "
-      "{} inflight_requests: {} }}",
+      "{}}}",
       _mem_state,
-      _log_state,
-      _inflight_requests.size());
+      _log_state);
 }
 
 void rm_stm::log_tx_stats() {
