@@ -383,4 +383,15 @@ ss::future<> manager::create_processor(
     }
 }
 
+ss::future<> manager::drain_queue_for_test() {
+    ss::promise<> p;
+    auto f = p.get_future();
+    // Move the promise into the queue so we get
+    // broken promise exceptions if the queue is shutdown.
+    _queue.submit([p = std::move(p)]() mutable {
+        p.set_value();
+        return ss::now();
+    });
+    co_await std::move(f);
+}
 } // namespace transform

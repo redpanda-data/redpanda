@@ -68,7 +68,7 @@ public:
 
     // Create a processor with the given metadata and input partition.
     virtual ss::future<std::unique_ptr<processor>> create_processor(
-      model::transform_id, model::ntp, model::transform_metadata, probe*) const
+      model::transform_id, model::ntp, model::transform_metadata, probe*)
       = 0;
 };
 
@@ -107,6 +107,11 @@ public:
     // Called when processors have errors
     void on_transform_error(
       model::transform_id, model::ntp, model::transform_metadata);
+
+    // Exposed for testing, but drains all the pending operations.
+    //
+    // Any future here should resolve before calling `stop`.
+    ss::future<> drain_queue_for_test();
 
 private:
     // All these private methods must be call "on" the queue.
