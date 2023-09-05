@@ -32,6 +32,7 @@
 #include "raft/probe.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/replicate_batcher.h"
+#include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
@@ -109,7 +110,8 @@ public:
       keep_snapshotted_log = keep_snapshotted_log::no);
 
     /// Initial call. Allow for internal state recovery
-    ss::future<> start();
+    ss::future<>
+      start(std::optional<state_machine_manager_builder> = std::nullopt);
 
     /// Stop all communications.
     ss::future<> stop();
@@ -238,6 +240,8 @@ public:
     replicate_stages
     replicate_in_stages(model::record_batch_reader&&, replicate_options);
     uint64_t get_snapshot_size() const { return _snapshot_size; }
+
+    std::optional<state_machine_manager>& stm_manager() { return _stm_manager; }
 
     /**
      * Replication happens only when expected_term matches the current _term
@@ -831,6 +835,7 @@ private:
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
+    std::optional<state_machine_manager> _stm_manager;
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 

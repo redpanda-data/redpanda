@@ -9,6 +9,7 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -491,7 +492,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       "archival_metadata.snapshot",
       raft_priority());
 
-    co_await file_backed_stm_snapshot::persist_snapshot(
+    co_await file_backed_stm_snapshot::persist_local_snapshot(
       tmp_snapshot_mgr, std::move(snapshot));
 }
 
@@ -601,8 +602,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         // assumptions about whether batches were replicated or not. Explicitly
         // step down if we're still leader and force callers to re-sync in a
         // new term with a new leader.
-        if (_c->is_leader() && _c->term() == current_term) {
-            co_await _c->step_down(ssx::sformat(
+        if (_raft->is_leader() && _raft->term() == current_term) {
+            co_await _raft->step_down(ssx::sformat(
               "failed to replicate archival batch in term {}", current_term));
         }
         co_return result.error();
@@ -615,8 +616,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
             co_return errc::shutting_down;
         }
 
-        if (_c->is_leader() && _c->term() == current_term) {
-            co_await _c->step_down(ssx::sformat(
+        if (_raft->is_leader() && _raft->term() == current_term) {
+            co_await _raft->step_down(ssx::sformat(
               "failed to replicate archival batch in term {}", current_term));
         }
         co_return errc::replication_error;
@@ -708,7 +709,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     co_return errc::success;
 }
 
-ss::future<> archival_metadata_stm::apply(model::record_batch b) {
+ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
     if (b.header().type == model::record_batch_type::prefix_truncate) {
         // Special case handling for prefix_truncate batches: these originate
         // in log_eviction_stm, but affect the entire partition, local and
@@ -727,11 +728,10 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
                   apply_update_start_kafka_offset(val.kafka_start_offset);
               }
           });
-        _insync_offset = b.last_offset();
+
         co_return;
     }
     if (b.header().type != model::record_batch_type::archival_metadata) {
-        _insync_offset = b.last_offset();
         co_return;
     }
 
@@ -797,11 +797,10 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         };
     });
 
-    _insync_offset = b.last_offset();
     _manifest->advance_insync_offset(b.last_offset());
 }
 
-ss::future<> archival_metadata_stm::handle_raft_snapshot() {
+ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
     cloud_storage::partition_manifest new_manifest{
       _manifest->get_ntp(), _manifest->get_revision_id()};
 
@@ -821,7 +820,6 @@ ss::future<> archival_metadata_stm::handle_raft_snapshot() {
         cloud_storage_clients::bucket_name{*bucket}, new_manifest, rc_node);
 
     if (res == cloud_storage::download_result::notfound) {
-        _insync_offset = model::prev_offset(_raft->start_offset());
         set_next(_raft->start_offset());
         vlog(_logger.info, "handled log eviction, the manifest is absent");
         co_return;
@@ -842,12 +840,9 @@ ss::future<> archival_metadata_stm::handle_raft_snapshot() {
     if (iso == model::offset{}) {
         // Handle legacy manifests which don't have the 'insync_offset'
         // field.
-        _insync_offset = _manifest->get_last_offset();
-    } else {
-        _insync_offset = iso;
+        iso = _manifest->get_last_offset();
     }
-    auto next_offset = std::max(
-      _raft->start_offset(), model::next_offset(_insync_offset));
+    auto next_offset = std::max(_raft->start_offset(), model::next_offset(iso));
     set_next(next_offset);
 
     vlog(
@@ -859,7 +854,7 @@ ss::future<> archival_metadata_stm::handle_raft_snapshot() {
       get_last_offset());
 }
 
-ss::future<> archival_metadata_stm::apply_snapshot(
+ss::future<> archival_metadata_stm::apply_local_snapshot(
   stm_snapshot_header header, iobuf&& data) {
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
@@ -914,17 +909,15 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       get_last_offset(),
       _manifest->get_spillover_map().size());
 
-    _last_snapshot_offset = header.offset;
-    _insync_offset = header.offset;
     if (snap.dirty == state_dirty::dirty) {
         _last_clean_at = model::offset{0};
     } else {
-        _last_clean_at = _insync_offset;
+        _last_clean_at = header.offset;
     }
     co_return;
 }
 
-ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
+ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
     auto segments = segments_from_manifest(*_manifest);
     auto replaced = replaced_segments_from_manifest(*_manifest);
     auto spillover = spillover_from_manifest(*_manifest);
@@ -946,12 +939,12 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
     vlog(
       _logger.debug,
       "creating snapshot at offset: {}, remote start_offset: {}, "
-      "last_offset: "
-      "{}",
-      _insync_offset,
+      "last_offset: {}",
+      last_applied_offset(),
       get_start_offset(),
       get_last_offset());
-    co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
+    co_return stm_snapshot::create(
+      0, last_applied_offset(), std::move(snap_data));
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {
@@ -1204,7 +1197,7 @@ archival_metadata_stm::get_segments_to_cleanup() const {
 
 ss::future<> archival_metadata_stm::stop() {
     _download_as.request_abort();
-    co_await raft::state_machine::stop();
+    co_await persisted_stm<>::stop();
 }
 
 const cloud_storage::partition_manifest&

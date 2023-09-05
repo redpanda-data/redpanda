@@ -34,12 +34,12 @@
 #include <memory>
 
 using namespace std::chrono_literals; // NOLINT
-struct mux_state_machine_fixture {
-    mux_state_machine_fixture()
+struct simple_raft_fixture {
+    simple_raft_fixture()
       : _self{0}
       , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {}
 
-    void start_raft(storage::ntp_config::default_overrides overrides = {}) {
+    void create_raft(storage::ntp_config::default_overrides overrides = {}) {
         ss::smp::invoke_on_all([]() {
             // We want immediate elections, to avoid a sleep at the start of
             // every instantiation of a test setup.
@@ -113,21 +113,22 @@ struct mux_state_machine_fixture {
                       overrides)))
                   .then([this](ss::shared_ptr<storage::log> log) mutable {
                       auto group = raft::group_id(0);
-                      return _group_mgr.local()
-                        .create_group(
-                          group,
-                          {self_broker()},
-                          log,
-                          raft::with_learner_recovery_throttle::yes)
-                        .then([log](ss::lw_shared_ptr<raft::consensus> c) {
-                            return c->start().then([c] { return c; });
-                        });
+                      return _group_mgr.local().create_group(
+                        group,
+                        {self_broker()},
+                        log,
+                        raft::with_learner_recovery_throttle::yes);
                   })
                   .get0();
+    }
 
+    void start_raft(storage::ntp_config::default_overrides overrides = {}) {
+        create_raft(overrides);
+        _raft->start().get();
         _started = true;
     }
-    ~mux_state_machine_fixture() { stop_all(); }
+
+    ~simple_raft_fixture() { stop_all(); }
 
     void stop_all() {
         if (_started) {

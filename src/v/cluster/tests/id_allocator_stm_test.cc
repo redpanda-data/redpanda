@@ -13,7 +13,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "outcome.h"
-#include "raft/tests/mux_state_machine_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -37,24 +37,32 @@ using namespace std::chrono_literals;
 
 ss::logger idstmlog{"idstm-test"};
 
-FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
-    start_raft();
+struct id_allocator_stm_fixture : simple_raft_fixture {
+    void create_stm_and_start_raft() {
+        cfg.id_allocator_batch_size.set_value(int16_t(1));
+        cfg.id_allocator_log_capacity.set_value(int16_t(2));
+        create_raft();
+        raft::state_machine_manager_builder stm_m_builder;
 
+        _stm = stm_m_builder.create_stm<cluster::id_allocator_stm>(
+          idstmlog, _raft.get(), cfg);
+
+        _raft->start(std::move(stm_m_builder)).get();
+        _started = true;
+    }
+
+    ss::shared_ptr<cluster::id_allocator_stm> _stm;
     config::configuration cfg;
-    cfg.id_allocator_batch_size.set_value(int16_t(1));
-    cfg.id_allocator_log_capacity.set_value(int16_t(2));
+};
 
-    cluster::id_allocator_stm stm(idstmlog, _raft.get(), cfg);
-
-    stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
-
+FIXTURE_TEST(stm_monotonicity_test, id_allocator_stm_fixture) {
+    create_stm_and_start_raft();
     wait_for_confirmed_leader();
 
     int64_t last_id = -1;
 
     for (int i = 0; i < 5; i++) {
-        auto result = stm.allocate_id(1s).get0();
+        auto result = _stm->allocate_id(1s).get0();
 
         BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
         BOOST_REQUIRE_LT(last_id, result.id);
@@ -63,38 +71,30 @@ FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
     }
 }
 
-FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
-    start_raft();
-
-    config::configuration cfg;
-    cfg.id_allocator_batch_size.set_value(int16_t(1));
-    cfg.id_allocator_log_capacity.set_value(int16_t(2));
-
-    cluster::id_allocator_stm stm1(idstmlog, _raft.get(), cfg);
-    stm1.start().get0();
+FIXTURE_TEST(stm_restart_test, id_allocator_stm_fixture) {
+    create_stm_and_start_raft();
     wait_for_confirmed_leader();
 
     int64_t last_id = -1;
 
     for (int i = 0; i < 5; i++) {
-        auto result = stm1.allocate_id(1s).get0();
+        auto result = _stm->allocate_id(1s).get0();
 
         BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
         BOOST_REQUIRE_LT(last_id, result.id);
 
         last_id = result.id;
     }
-    stm1.stop().get0();
+    stop_all();
+    create_stm_and_start_raft();
+    wait_for_confirmed_leader();
 
-    cluster::id_allocator_stm stm2(idstmlog, _raft.get(), cfg);
-    stm2.start().get0();
     for (int i = 0; i < 5; i++) {
-        auto result = stm2.allocate_id(1s).get0();
+        auto result = _stm->allocate_id(1s).get0();
 
         BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
         BOOST_REQUIRE_LT(last_id, result.id);
 
         last_id = result.id;
     }
-    stm2.stop().get0();
 }

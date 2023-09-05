@@ -478,6 +478,7 @@ private:
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
 
     storage::kvstore& _kvstore;
+    config::binding<uint64_t> _max_concurrent_producer_ids;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

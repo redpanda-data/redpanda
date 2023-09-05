@@ -24,6 +24,7 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
+#include "raft/state_machine_manager.h"
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
@@ -221,7 +222,7 @@ struct raft_node {
         hbeats->start().get0();
         hbeats->register_group(consensus).get();
         started = true;
-        consensus->start().get0();
+        consensus->start(raft::state_machine_manager_builder{}).get0();
     }
 
     ss::future<> stop_node() {

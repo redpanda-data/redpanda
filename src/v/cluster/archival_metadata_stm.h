@@ -219,11 +219,14 @@ public:
 
     // Users of the stm need to know insync offset in order to pass
     // the proper value to mark_clean
-    model::offset get_insync_offset() const { return _insync_offset; }
+    model::offset get_insync_offset() const { return last_applied_offset(); }
 
     model::offset get_last_clean_at() const { return _last_clean_at; };
 
     model::offset max_collectible_offset() override;
+
+    std::string_view get_name() const final { return "archival_metadata_stm"; }
+    ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 private:
     ss::future<std::error_code> do_add_segments(
@@ -235,11 +238,11 @@ private:
     ss::future<std::error_code>
     do_replicate_commands(model::record_batch, ss::abort_source&);
 
-    ss::future<> apply(model::record_batch batch) override;
-    ss::future<> handle_raft_snapshot() override;
+    ss::future<> apply(const model::record_batch& batch) override;
+    ss::future<> apply_raft_snapshot(const iobuf&) override;
 
-    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_local_snapshot() override;
 
     struct segment;
     struct start_offset;
@@ -289,7 +292,7 @@ private:
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 
     // The offset of the last mark_clean_cmd applied: if the manifest is
-    // clean, this will equal _insync_offset.
+    // clean, this will equal last_applied_offset.
     model::offset _last_clean_at;
 
     // The offset of the last record that modified this stm

@@ -219,12 +219,12 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         return ss::make_ready_future<
           checked<model::term_id, tm_stm::op_status>>(
           tm_stm::op_status::not_leader);
     }
-    if (_insync_term != _c->term()) {
+    if (_insync_term != _raft->term()) {
         return ss::make_ready_future<
           checked<model::term_id, tm_stm::op_status>>(
           tm_stm::op_status::not_leader);
@@ -238,7 +238,7 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
                 if (!f.get0().has_value()) {
                     return tm_stm::op_status::unknown;
                 }
-                if (term != _c->term()) {
+                if (term != _raft->term()) {
                     return tm_stm::op_status::unknown;
                 }
                 return term;
@@ -250,6 +250,31 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
                 return tm_stm::op_status::unknown;
             }
         });
+}
+
+model::record_batch_reader make_checkpoint() {
+    storage::record_batch_builder builder(
+      model::record_batch_type::checkpoint, model::offset(0));
+    builder.add_raw_kv(iobuf(), iobuf());
+    return model::make_memory_record_batch_reader(std::move(builder).build());
+}
+
+ss::future<result<raft::replicate_result>>
+tm_stm::quorum_write_empty_batch(model::timeout_clock::time_point timeout) {
+    using ret_t = result<raft::replicate_result>;
+    // replicate checkpoint batch
+    return _raft
+      ->replicate(
+        make_checkpoint(),
+        raft::replicate_options(raft::consistency_level::quorum_ack))
+      .then([this, timeout](ret_t r) {
+          if (!r) {
+              return ss::make_ready_future<ret_t>(r);
+          }
+          return wait(r.value().last_offset, timeout).then([r]() mutable {
+              return r;
+          });
+      });
 }
 
 ss::future<> tm_stm::checkpoint_ongoing_txs() {
@@ -307,7 +332,7 @@ tm_stm::sync(model::timeout_clock::duration timeout) {
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
 tm_stm::do_sync(model::timeout_clock::duration timeout) {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -336,8 +361,8 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
         vlog(txlog.info, "got error {} on updating hash_ranges", r.error());
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down(
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down(
               "txn coordinator update_hash_ranges replication error");
         }
         if (r.error() == raft::errc::shutting_down) {
@@ -353,12 +378,12 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
           txlog.info,
           "timeout on waiting until {} is applied on updating hash_ranges",
           offset);
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down("txn coordinator apply timeout");
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down("txn coordinator apply timeout");
         }
         co_return op_status::unknown;
     }
-    if (_c->term() != term) {
+    if (_raft->term() != term) {
         vlog(
           txlog.info,
           "lost leadership while waiting until {} is applied on updating hash "
@@ -389,8 +414,8 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
           tx.pid,
           tx.etag,
           tx.tx_seq);
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down(
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down(
               "txn coordinator update_tx replication error");
         }
         if (r.error() == raft::errc::shutting_down) {
@@ -410,12 +435,12 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
           tx.id,
           tx.pid,
           tx.tx_seq);
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down("txn coordinator apply timeout");
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down("txn coordinator apply timeout");
         }
         co_return tm_stm::op_status::unknown;
     }
-    if (_c->term() != term) {
+    if (_raft->term() != term) {
         vlog(
           txlog.info,
           "lost leadership while waiting until {} is applied on updating tx:{} "
@@ -645,8 +670,8 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
     auto r = co_await replicate_quorum_ack(expected_term, std::move(batch));
 
     if (!r) {
-        if (_c->is_leader() && _c->term() == expected_term) {
-            co_await _c->step_down(
+        if (_raft->is_leader() && _raft->term() == expected_term) {
+            co_await _raft->step_down(
               "txn coordinator register_new_producer replication error");
         }
         co_return tm_stm::op_status::unknown;
@@ -657,7 +682,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
           model::timeout_clock::now() + _sync_timeout)) {
         co_return tm_stm::op_status::unknown;
     }
-    if (_c->term() != expected_term) {
+    if (_raft->term() != expected_term) {
         // we lost leadership during waiting
         co_return tm_stm::op_status::unknown;
     }
@@ -797,7 +822,7 @@ bool tm_stm::hosts(const kafka::transactional_id& tx_id) {
 }
 
 ss::future<>
-tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
+tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     vassert(
       hdr.version >= tm_snapshot_v0::version
         && hdr.version <= tm_snapshot::version,
@@ -813,8 +838,6 @@ tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
             _cache->set_log(entry);
             _pid_tx_id[entry.pid] = entry.id;
         }
-        _last_snapshot_offset = data.offset;
-        _insync_offset = data.offset;
     } else if (hdr.version == tm_snapshot::version) {
         auto data = reflection::adl<tm_snapshot>{}.from(data_parser);
 
@@ -824,8 +847,6 @@ tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
             _cache->set_log(entry);
             _pid_tx_id[entry.pid] = entry.id;
         }
-        _last_snapshot_offset = data.offset;
-        _insync_offset = data.offset;
         _hosted_txes = std::move(data.hash_ranges);
         _hosted_txes.inited = true;
     }
@@ -833,10 +854,10 @@ tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     return ss::now();
 }
 
-ss::future<stm_snapshot> tm_stm::take_snapshot() {
+ss::future<stm_snapshot> tm_stm::take_local_snapshot() {
     // Update hash ranges to always have batch in log
     // So it cannot be deleted with cleanup policy
-    if (_c->is_leader()) {
+    if (_raft->is_leader()) {
         auto sync_res = co_await sync();
         if (sync_res.has_error()) {
             throw std::runtime_error(fmt::format(
@@ -860,17 +881,17 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
     auto snapshot_version = active_snapshot_version();
     if (snapshot_version == tm_snapshot_v0::version) {
         tm_snapshot_v0 tm_ss;
-        tm_ss.offset = _insync_offset;
+        tm_ss.offset = last_applied_offset();
         tm_ss.transactions = _cache->get_log_transactions();
 
         iobuf tm_ss_buf;
         reflection::adl<tm_snapshot_v0>{}.to(tm_ss_buf, std::move(tm_ss));
 
         co_return stm_snapshot::create(
-          tm_snapshot_v0::version, _insync_offset, std::move(tm_ss_buf));
+          tm_snapshot_v0::version, last_applied_offset(), std::move(tm_ss_buf));
     } else {
         tm_snapshot tm_ss;
-        tm_ss.offset = _insync_offset;
+        tm_ss.offset = last_applied_offset();
         tm_ss.transactions = _cache->get_log_transactions();
         tm_ss.hash_ranges = _hosted_txes;
 
@@ -878,7 +899,7 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
         reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
 
         co_return stm_snapshot::create(
-          tm_snapshot::version, _insync_offset, std::move(tm_ss_buf));
+          tm_snapshot::version, last_applied_offset(), std::move(tm_ss_buf));
     }
 }
 
@@ -1002,16 +1023,15 @@ ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
     return ss::now();
 }
 
-ss::future<> tm_stm::apply(model::record_batch b) {
+ss::future<> tm_stm::apply(const model::record_batch& b) {
     const auto& hdr = b.header();
-    _insync_offset = b.last_offset();
 
     if (hdr.type == model::record_batch_type::tm_update) {
-        return apply_tm_update(std::move(hdr), std::move(b));
+        return apply_tm_update(hdr, b.copy());
     }
 
     if (hdr.type == model::record_batch_type::tx_tm_hosted_trasactions) {
-        return apply_hosted_transactions(std::move(b));
+        return apply_hosted_transactions(b.copy());
     }
 
     return ss::now();
@@ -1062,7 +1082,7 @@ absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
 }
 
 ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -1085,7 +1105,7 @@ tm_stm::delete_partition_from_tx(
   model::term_id term,
   kafka::transactional_id tid,
   tm_transaction::tx_partition ntp) {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -1140,14 +1160,12 @@ tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     co_return r0.error();
 }
 
-ss::future<> tm_stm::handle_raft_snapshot() {
+ss::future<> tm_stm::apply_raft_snapshot(const iobuf&) {
     return _cache->write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
           _cache->clear_log();
           _cache->clear_mem();
           _pid_tx_id.clear();
-          set_next(_c->start_offset());
-          _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });
 }

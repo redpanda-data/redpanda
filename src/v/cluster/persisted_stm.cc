@@ -15,6 +15,7 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
+#include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "ssx/sformat.h"
 #include "storage/kvstore.h"
@@ -61,25 +62,25 @@ persisted_stm<T>::persisted_stm(
   ss::logger& logger,
   raft::consensus* c,
   Args&&... args)
-  : raft::state_machine(c, logger, ss::default_priority_class())
-  , _c(c)
-  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), snapshot_mgr_name))
+  : _raft(c)
+  , _log(logger, ssx::sformat("[{} ({})]", _raft->ntp(), snapshot_mgr_name))
   , _snapshot_backend(snapshot_mgr_name, _log, c, std::forward<Args>(args)...) {
 }
 
 template<supported_stm_snapshot T>
-ss::future<std::optional<stm_snapshot>> persisted_stm<T>::load_snapshot() {
+ss::future<std::optional<stm_snapshot>>
+persisted_stm<T>::load_local_snapshot() {
     return _snapshot_backend.load_snapshot();
+}
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::stop() {
+    co_await raft::state_machine_base::stop();
+    co_await _gate.close();
 }
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::remove_persistent_state() {
     return _snapshot_backend.remove_persistent_state();
-}
-
-template<supported_stm_snapshot T>
-ss::future<> persisted_stm<T>::persist_snapshot(stm_snapshot&& snapshot) {
-    return _snapshot_backend.persist_snapshot(std::move(snapshot));
 }
 
 file_backed_stm_snapshot::file_backed_stm_snapshot(
@@ -88,7 +89,7 @@ file_backed_stm_snapshot::file_backed_stm_snapshot(
   , _log(log)
   , _snapshot_mgr(
       std::filesystem::path(c->log_config().work_directory()),
-      snapshot_name,
+      std::move(snapshot_name),
       ss::default_priority_class()) {}
 
 ss::future<> file_backed_stm_snapshot::remove_persistent_state() {
@@ -128,7 +129,7 @@ file_backed_stm_snapshot::load_snapshot() {
     co_return snapshot;
 }
 
-ss::future<> file_backed_stm_snapshot::persist_snapshot(
+ss::future<> file_backed_stm_snapshot::persist_local_snapshot(
   storage::simple_snapshot_manager& snapshot_mgr, stm_snapshot&& snapshot) {
     iobuf data_size_buf;
 
@@ -164,11 +165,12 @@ ss::future<> file_backed_stm_snapshot::persist_snapshot(
 }
 
 ss::future<>
-file_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
-    return persist_snapshot(_snapshot_mgr, std::move(snapshot)).then([this] {
-        return _snapshot_mgr.get_snapshot_size().then(
-          [this](uint64_t size) { _snapshot_size = size; });
-    });
+file_backed_stm_snapshot::persist_local_snapshot(stm_snapshot&& snapshot) {
+    return persist_local_snapshot(_snapshot_mgr, std::move(snapshot))
+      .then([this] {
+          return _snapshot_mgr.get_snapshot_size().then(
+            [this](uint64_t size) { _snapshot_size = size; });
+      });
 }
 
 const ss::sstring& file_backed_stm_snapshot::name() {
@@ -250,7 +252,7 @@ kvstore_backed_stm_snapshot::load_snapshot() {
 }
 
 ss::future<>
-kvstore_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
+kvstore_backed_stm_snapshot::persist_local_snapshot(stm_snapshot&& snapshot) {
     stm_thin_snapshot thin_snapshot{
       .offset = snapshot.header.offset, .data = std::move(snapshot.data)};
     auto serialized_snapshot = serde::to_iobuf(std::move(thin_snapshot));
@@ -273,66 +275,59 @@ size_t kvstore_backed_stm_snapshot::get_snapshot_size() const {
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::wait_for_snapshot_hydrated() {
-    auto f = ss::now();
-    if (unlikely(!_resolved_when_snapshot_hydrated.available())) {
-        f = _resolved_when_snapshot_hydrated.get_shared_future();
-    }
-    return f;
+    return _on_snapshot_hydrated.wait([this] { return _snapshot_hydrated; });
 }
 
 template<supported_stm_snapshot T>
-ss::future<> persisted_stm<T>::do_make_snapshot() {
-    auto snapshot = co_await take_snapshot();
+ss::future<> persisted_stm<T>::do_write_local_snapshot() {
+    auto snapshot = co_await take_local_snapshot();
     auto offset = snapshot.header.offset;
 
-    co_await persist_snapshot(std::move(snapshot));
+    co_await _snapshot_backend.persist_local_snapshot(std::move(snapshot));
     _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
 }
 
 template<supported_stm_snapshot T>
-void persisted_stm<T>::make_snapshot_in_background() {
-    ssx::spawn_with_gate(_gate, [this] { return make_snapshot(); });
+void persisted_stm<T>::write_local_snapshot_in_background() {
+    ssx::spawn_with_gate(_gate, [this] { return write_local_snapshot(); });
 }
 
 template<supported_stm_snapshot T>
-ss::future<> persisted_stm<T>::make_snapshot() {
+ss::future<> persisted_stm<T>::write_local_snapshot() {
     return _op_lock.with([this]() {
-        auto f = wait_for_snapshot_hydrated();
-        return f.then([this] { return do_make_snapshot(); });
+        return wait_for_snapshot_hydrated().then(
+          [this] { return do_write_local_snapshot(); });
     });
 }
 
 template<supported_stm_snapshot T>
-uint64_t persisted_stm<T>::get_snapshot_size() const {
+uint64_t persisted_stm<T>::get_local_snapshot_size() const {
     return _snapshot_backend.get_snapshot_size();
 }
 
 template<supported_stm_snapshot T>
 ss::future<>
-persisted_stm<T>::ensure_snapshot_exists(model::offset target_offset) {
+persisted_stm<T>::ensure_local_snapshot_exists(model::offset target_offset) {
     vlog(
       _log.debug,
       "ensure snapshot_exists with target offset: {}",
       target_offset);
     return _op_lock.with([this, target_offset]() {
-        auto f = wait_for_snapshot_hydrated();
-
-        return f.then([this, target_offset] {
+        return wait_for_snapshot_hydrated().then([this, target_offset] {
             if (target_offset <= _last_snapshot_offset) {
                 return ss::now();
             }
             return wait(target_offset, model::no_timeout)
               .then([this, target_offset]() {
                   vassert(
-                    target_offset <= _insync_offset,
+                    target_offset < next(),
                     "[{} ({})]  after we waited for target_offset ({}) "
-                    "_insync_offset "
-                    "({}) should have matched it or bypassed",
-                    _c->ntp(),
+                    "next ({}) must be greater",
+                    _raft->ntp(),
                     name(),
                     target_offset,
-                    _insync_offset);
-                  return do_make_snapshot();
+                    next());
+                  return do_write_local_snapshot();
               });
         });
     });
@@ -355,10 +350,10 @@ ss::future<> persisted_stm<T>::wait_offset_committed(
   model::offset offset,
   model::term_id term) {
     auto stop_cond = [this, offset, term] {
-        return _c->committed_offset() >= offset || _c->term() > term;
+        return _raft->committed_offset() >= offset || _raft->term() > term;
     };
 
-    return _c->commit_index_updated().wait(timeout, stop_cond);
+    return _raft->commit_index_updated().wait(timeout, stop_cond);
 }
 
 template<supported_stm_snapshot T>
@@ -366,9 +361,9 @@ ss::future<bool> persisted_stm<T>::do_sync(
   model::timeout_clock::duration timeout,
   model::offset offset,
   model::term_id term) {
-    const auto committed = _c->committed_offset();
-    const auto ntp = _c->ntp();
-    _c->events().notify_commit_index();
+    const auto committed = _raft->committed_offset();
+    const auto ntp = _raft->ntp();
+    _raft->events().notify_commit_index();
 
     if (offset > committed) {
         try {
@@ -395,7 +390,7 @@ ss::future<bool> persisted_stm<T>::do_sync(
         offset = committed;
     }
 
-    if (_c->term() == term) {
+    if (_raft->term() == term) {
         try {
             co_await wait(offset, model::timeout_clock::now() + timeout);
         } catch (const ss::broken_condition_variable&) {
@@ -424,7 +419,7 @@ ss::future<bool> persisted_stm<T>::do_sync(
               committed);
             co_return false;
         }
-        if (_c->term() == term) {
+        if (_raft->term() == term) {
             _insync_term = term;
             co_return true;
         }
@@ -437,8 +432,8 @@ ss::future<bool> persisted_stm<T>::do_sync(
 template<supported_stm_snapshot T>
 ss::future<bool>
 persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
-    auto term = _c->term();
-    if (!_c->is_leader()) {
+    auto term = _raft->term();
+    if (!_raft->is_leader()) {
         co_return false;
     }
     if (_insync_term == term) {
@@ -460,9 +455,10 @@ persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
     // committed index, so we won't need any additional flushes even if the
     // client produces with acks=1.
     model::offset sync_offset;
-    auto log_offsets = _c->log()->offsets();
+    auto log_offsets = _raft->log()->offsets();
     if (log_offsets.dirty_offset_term == term) {
-        auto last_term_start_offset = _c->log()->find_last_term_start_offset();
+        auto last_term_start_offset
+          = _raft->log()->find_last_term_start_offset();
         if (last_term_start_offset > model::offset{0}) {
             sync_offset = last_term_start_offset - model::offset{1};
         } else {
@@ -495,30 +491,31 @@ ss::future<bool> persisted_stm<T>::wait_no_throw(
           return false;
       })
       .handle_exception_type(
-        [this, offset, ntp = _c->ntp()](const ss::timed_out_error&) {
+        [this, offset, ntp = _raft->ntp()](const ss::timed_out_error&) {
             vlog(_log.warn, "timed out while waiting for offset: {}", offset);
             return false;
         })
-      .handle_exception([this, offset, ntp = _c->ntp()](std::exception_ptr e) {
-          vlog(
-            _log.error,
-            "An error {} happened during waiting for offset: {}",
-            e,
-            offset);
-          return false;
-      });
+      .handle_exception(
+        [this, offset, ntp = _raft->ntp()](std::exception_ptr e) {
+            vlog(
+              _log.error,
+              "An error {} happened during waiting for offset: {}",
+              e,
+              offset);
+            return false;
+        });
 }
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::start() {
     std::optional<stm_snapshot> maybe_snapshot;
     try {
-        maybe_snapshot = co_await load_snapshot();
+        maybe_snapshot = co_await load_local_snapshot();
     } catch (...) {
         vassert(
           false,
           "[[{}] ({})]Can't load snapshot from '{}'. Got error: {}",
-          _c->ntp(),
+          _raft->ntp(),
           name(),
           _snapshot_backend.store_path(),
           std::current_exception());
@@ -528,12 +525,13 @@ ss::future<> persisted_stm<T>::start() {
         stm_snapshot& snapshot = *maybe_snapshot;
 
         auto next_offset = model::next_offset(snapshot.header.offset);
-        if (next_offset >= _c->start_offset()) {
+        if (next_offset >= _raft->start_offset()) {
             vlog(
               _log.debug,
               "start with applied snapshot, set_next {}",
               next_offset);
-            co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
+            co_await apply_local_snapshot(
+              snapshot.header, std::move(snapshot.data));
             set_next(next_offset);
             _last_snapshot_offset = snapshot.header.offset;
         } else {
@@ -550,22 +548,19 @@ ss::future<> persisted_stm<T>::start() {
               _log.debug,
               "start with non-applied snapshot, set_next {}",
               next_offset);
-            _insync_offset = model::prev_offset(next_offset);
             set_next(next_offset);
         }
 
-        _resolved_when_snapshot_hydrated.set_value();
     } else {
-        auto offset = _c->start_offset();
+        auto offset = _raft->start_offset();
         vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
 
         if (offset >= model::offset(0)) {
-            _insync_offset = model::prev_offset(offset);
             set_next(offset);
         }
-        _resolved_when_snapshot_hydrated.set_value();
     }
-    co_await state_machine::start();
+    _snapshot_hydrated = true;
+    _on_snapshot_hydrated.broadcast();
 }
 
 template class persisted_stm<file_backed_stm_snapshot>;

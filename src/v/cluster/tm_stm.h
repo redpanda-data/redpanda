@@ -271,14 +271,16 @@ public:
     size_t tx_cache_size() const;
 
     std::optional<tm_transaction> oldest_tx() const;
+    std::string_view get_name() const final { return "tm_stm"; }
+    ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 protected:
-    ss::future<> handle_raft_snapshot() override;
+    ss::future<> apply_raft_snapshot(const iobuf&) final;
 
 private:
     std::optional<tm_transaction> find_tx(kafka::transactional_id);
-    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_local_snapshot() override;
 
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _transactional_id_expiration;
@@ -291,7 +293,7 @@ private:
     tm_tx_hosted_transactions _hosted_txes;
     mutex _tx_thrashing_lock;
 
-    ss::future<> apply(model::record_batch b) override;
+    ss::future<> apply(const model::record_batch& b) final;
     ss::future<> apply_hosted_transactions(model::record_batch b);
     ss::future<>
     apply_tm_update(model::record_batch_header hdr, model::record_batch b);
@@ -311,10 +313,12 @@ private:
       std::chrono::milliseconds,
       model::producer_identity);
     ss::future<stm_snapshot> do_take_snapshot();
+    ss::future<result<raft::replicate_result>>
+      quorum_write_empty_batch(model::timeout_clock::time_point);
 
     ss::future<result<raft::replicate_result>>
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
-        return _c->replicate(
+        return _raft->replicate(
           term,
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});

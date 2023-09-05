@@ -19,8 +19,9 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "raft/tests/mux_state_machine_fixture.h"
+#include "raft/state_machine_manager.h"
 #include "raft/tests/raft_group_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
@@ -28,6 +29,7 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -44,11 +46,11 @@ ss::logger logger{"archival_metadata_stm_test"};
 static ss::abort_source never_abort;
 
 struct archival_metadata_stm_base_fixture
-  : mux_state_machine_fixture
+  : simple_raft_fixture
   , http_imposter_fixture {
-    using mux_state_machine_fixture::start_raft;
-    using mux_state_machine_fixture::wait_for_becoming_leader;
-    using mux_state_machine_fixture::wait_for_confirmed_leader;
+    using simple_raft_fixture::start_raft;
+    using simple_raft_fixture::wait_for_becoming_leader;
+    using simple_raft_fixture::wait_for_confirmed_leader;
 
     archival_metadata_stm_base_fixture(
       const archival_metadata_stm_base_fixture&)
@@ -112,6 +114,7 @@ struct archival_metadata_stm_base_fixture
     }
 
     ~archival_metadata_stm_base_fixture() override {
+        stop_all();
         cloud_conn_pool.local().shutdown_connections();
         cloud_api.stop().get();
         cloud_conn_pool.stop().get();
@@ -128,16 +131,16 @@ struct archival_metadata_stm_base_fixture
 struct archival_metadata_stm_fixture : archival_metadata_stm_base_fixture {
     archival_metadata_stm_fixture() {
         // Archival metadata STM
-        start_raft();
-        archival_stm = std::make_unique<cluster::archival_metadata_stm>(
+        create_raft();
+        raft::state_machine_manager_builder builder;
+        archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
           _raft.get(), cloud_api.local(), feature_table.local(), logger);
 
-        archival_stm->start().get();
+        _raft->start(std::move(builder)).get();
+        _started = true;
     }
 
-    ~archival_metadata_stm_fixture() override { archival_stm->stop().get(); }
-
-    std::unique_ptr<cluster::archival_metadata_stm> archival_stm;
+    ss::shared_ptr<cluster::archival_metadata_stm> archival_stm;
 };
 
 using cloud_storage::partition_manifest;
@@ -265,12 +268,12 @@ void check_snapshot_size(
     BOOST_REQUIRE(snapshot_exists);
 
     BOOST_REQUIRE(
-      archival_stm.get_snapshot_size()
+      archival_stm.get_local_snapshot_size()
       == ss::file_size(snapshot_file_path.string()).get());
 }
 
 FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
-    start_raft();
+    create_raft();
     auto& ntp_cfg = _raft->log_config();
     partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
     m.add(
@@ -318,34 +321,32 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{42})
       .get();
 
-    cluster::archival_metadata_stm archival_stm(
+    raft::state_machine_manager_builder builder;
+    auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
       _raft.get(), cloud_api.local(), feature_table.local(), logger);
-
-    archival_stm.start().get();
+    _raft->start(std::move(builder)).get();
+    _started = true;
     wait_for_confirmed_leader();
-
     {
         std::stringstream s1, s2;
         m.serialize_json(s1);
-        archival_stm.manifest().serialize_json(s2);
+        archival_stm->manifest().serialize_json(s2);
         vlog(logger.info, "original manifest: {}", s1.str());
         vlog(logger.info, "restored manifest: {}", s2.str());
     }
 
-    BOOST_REQUIRE_EQUAL(archival_stm.get_start_offset(), model::offset{100});
-    BOOST_REQUIRE(archival_stm.manifest() == m);
-    check_snapshot_size(archival_stm, ntp_cfg);
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset{100});
+    BOOST_REQUIRE(archival_stm->manifest() == m);
+    check_snapshot_size(*archival_stm, ntp_cfg);
 
     // A snapshot constructed with make_snapshot is always clean
     BOOST_REQUIRE(
-      archival_stm.get_dirty()
+      archival_stm->get_dirty()
       == cluster::archival_metadata_stm::state_dirty::clean);
-
-    archival_stm.stop().get();
 }
 
 FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
-    start_raft();
+    create_raft();
     auto& ntp_cfg = _raft->log_config();
     partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
 
@@ -415,14 +416,15 @@ FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
     cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{42})
       .get();
 
-    cluster::archival_metadata_stm archival_stm(
+    raft::state_machine_manager_builder builder;
+    auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
       _raft.get(), cloud_api.local(), feature_table.local(), logger);
 
-    archival_stm.start().get();
-    auto action = ss::defer([&archival_stm] { archival_stm.stop().get(); });
+    _raft->start(std::move(builder)).get();
+    _started = true;
     wait_for_confirmed_leader();
 
-    auto replaced = archival_stm.manifest().replaced_segments();
+    auto replaced = archival_stm->manifest().replaced_segments();
     BOOST_REQUIRE_EQUAL(
       replaced[0].sname_format, cloud_storage::segment_name_format::v1);
     BOOST_REQUIRE_EQUAL(
@@ -556,7 +558,7 @@ class archival_metadata_stm_accessor {
 public:
     static ss::future<> persist_snapshot(
       storage::simple_snapshot_manager& mgr, cluster::stm_snapshot&& snapshot) {
-        return file_backed_stm_snapshot::persist_snapshot(
+        return file_backed_stm_snapshot::persist_local_snapshot(
           mgr, std::move(snapshot));
     }
 };
@@ -586,7 +588,7 @@ ss::future<> make_old_snapshot(
 FIXTURE_TEST(
   test_archival_metadata_stm_snapshot_version_compatibility,
   archival_metadata_stm_base_fixture) {
-    start_raft();
+    create_raft();
     auto& ntp_cfg = _raft->log_config();
     partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
     m.add(
@@ -617,16 +619,15 @@ FIXTURE_TEST(
 
     make_old_snapshot(ntp_cfg, m, model::offset{3}).get();
 
-    cluster::archival_metadata_stm archival_stm(
+    raft::state_machine_manager_builder builder;
+    auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
       _raft.get(), cloud_api.local(), feature_table.local(), logger);
-
-    archival_stm.start().get();
+    _raft->start(std::move(builder)).get();
+    _started = true;
     wait_for_confirmed_leader();
 
-    BOOST_REQUIRE(archival_stm.manifest() == m);
-    check_snapshot_size(archival_stm, ntp_cfg);
-
-    archival_stm.stop().get();
+    BOOST_REQUIRE(archival_stm->manifest() == m);
+    check_snapshot_size(*archival_stm, ntp_cfg);
 }
 
 FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {

@@ -207,7 +207,7 @@ FIXTURE_TEST(persisted_stm_kvstore_test, kvstore_test_fixture) {
         ss.header.snapshot_size = ss.data.size_bytes();
         copies.push_back(
           cluster::stm_snapshot{.header = ss.header, .data = ss.data.copy()});
-        snapshotters[i].persist_snapshot(std::move(ss)).get();
+        snapshotters[i].persist_local_snapshot(std::move(ss)).get();
     }
     /// Read data from snapshot, asserting all data matches stored copy
     for (auto i = 0; i < 10; ++i) {
