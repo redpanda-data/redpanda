@@ -130,6 +130,10 @@ public:
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
 
+    cloud_metadata::uploader& metadata_uploader() {
+        return *_metadata_uploader;
+    }
+
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
