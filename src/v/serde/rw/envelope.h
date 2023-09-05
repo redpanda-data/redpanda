@@ -22,9 +22,7 @@
 namespace serde {
 
 template<typename T>
-concept has_serde_write = requires(T t, iobuf& out) {
-    t.serde_write(out);
-};
+concept has_serde_write = requires(T t, iobuf& out) { t.serde_write(out); };
 
 template<typename T>
 concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {

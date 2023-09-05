@@ -12,8 +12,6 @@
 namespace serde {
 
 template<typename T>
-concept Reservable = requires(T t) {
-    t.reserve(0U);
-};
+concept Reservable = requires(T t) { t.reserve(0U); };
 
 } // namespace serde

@@ -22,8 +22,8 @@
 namespace serde {
 
 template<typename T>
-requires(serde_is_enum_v<std::decay_t<T>>) void tag_invoke(
-  tag_t<w>, iobuf& out, T t) {
+requires(serde_is_enum_v<std::decay_t<T>>)
+void tag_invoke(tag_t<w>, iobuf& out, T t) {
     using Type = std::decay_t<T>;
     auto const val = static_cast<std::underlying_type_t<Type>>(t);
     if (unlikely(
