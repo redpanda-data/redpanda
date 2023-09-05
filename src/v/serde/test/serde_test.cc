@@ -976,7 +976,7 @@ struct no_default_ctor
     int x;
 };
 
-static_assert(serde::has_serde_direct_read<no_default_ctor>);
+static_assert(serde::DirectReadable<no_default_ctor>);
 
 SEASTAR_THREAD_TEST_CASE(no_default_ctor_test) {
     BOOST_CHECK_EQUAL(serde_input(no_default_ctor(37)).x, 37);

@@ -1014,17 +1014,4 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
     return serde::read_nested<serde::serde_size_t>(size_reader, 0);
 }
 
-template<typename T>
-iobuf to_iobuf(T&& t) {
-    iobuf b;
-    write(b, std::forward<T>(t));
-    return b;
-}
-
-template<typename T>
-T from_iobuf(iobuf b) {
-    auto in = iobuf_parser{std::move(b)};
-    return read<T>(in);
-}
-
 } // namespace serde
