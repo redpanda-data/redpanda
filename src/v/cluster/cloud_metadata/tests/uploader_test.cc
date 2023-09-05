@@ -25,6 +25,7 @@
 #include "redpanda/tests/fixture.h"
 #include "storage/snapshot.h"
 #include "test_utils/async.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -50,9 +51,9 @@ public:
       , bucket(cloud_storage_clients::bucket_name("test-bucket")) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
-        tests::cooperative_spin_wait_with_timeout(5s, [this] {
+        RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
             return app.storage.local().get_cluster_uuid().has_value();
-        }).get();
+        });
         cluster_uuid = app.storage.local().get_cluster_uuid().value();
     }
 
@@ -106,6 +107,7 @@ public:
     }
 
 protected:
+    scoped_config test_local_cfg;
     cluster::consensus_ptr raft0;
     cluster::controller_stm& controller_stm;
     cloud_storage::remote& remote;
@@ -264,8 +266,8 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
     };
     const auto snap_offset = get_local_snap_offset();
 
-    config::shard_local_cfg()
-      .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
+    test_local_cfg.get("cloud_storage_cluster_metadata_upload_interval_ms")
+      .set_value(1000ms);
     cluster::cloud_metadata::uploader uploader(
       app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     cluster::cloud_metadata::cluster_metadata_id highest_meta_id{0};
@@ -333,8 +335,8 @@ FIXTURE_TEST(
     // Write a snapshot and begin the upload loop.
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [this] { return controller_stm.maybe_write_snapshot(); });
-    config::shard_local_cfg()
-      .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
+    test_local_cfg.get("cloud_storage_cluster_metadata_upload_interval_ms")
+      .set_value(1000ms);
     cluster::cloud_metadata::uploader uploader(
       app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] { return raft0->is_leader(); });
@@ -382,8 +384,8 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_run_loop, cluster_metadata_uploader_fixture) {
-    config::shard_local_cfg()
-      .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
+    test_local_cfg.get("cloud_storage_cluster_metadata_upload_interval_ms")
+      .set_value(1000ms);
     cluster::cloud_metadata::uploader uploader(
       app.raft_group_manager.local(), cluster_uuid, bucket, remote, raft0);
     retry_chain_node retry_node(
@@ -395,13 +397,10 @@ FIXTURE_TEST(test_run_loop, cluster_metadata_uploader_fixture) {
     for (int i = 0; i < 3; i++) {
         auto initial_meta_id = highest_meta_id;
         cluster::cloud_metadata::cluster_metadata_manifest manifest;
-        tests::cooperative_spin_wait_with_timeout(
-          10s,
-          [&]() -> ss::future<bool> {
-              return downloaded_manifest_has_higher_id(
-                initial_meta_id, &manifest);
-          })
-          .get();
+        RPTEST_REQUIRE_EVENTUALLY(10s, [&]() -> ss::future<bool> {
+            return downloaded_manifest_has_higher_id(
+              initial_meta_id, &manifest);
+        });
         BOOST_REQUIRE_GT(manifest.metadata_id, highest_meta_id);
         highest_meta_id = manifest.metadata_id;
 
