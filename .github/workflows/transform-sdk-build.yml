@@ -20,7 +20,6 @@ on:
   pull_request:
     branches:
       - dev
-      # Run on any backports
       - 'v*'
     paths:
       - 'src/go/transform-sdk/**'
@@ -28,7 +27,7 @@ on:
 
 jobs:
   test:
-    name: Run tests
+    name: Test transform-sdk
     runs-on: ubuntu-latest
     steps:
 

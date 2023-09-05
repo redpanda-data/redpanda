@@ -14,15 +14,15 @@ on:
       - '*'
   pull_request:
     branches:
-      - main
       - dev
+      - 'v*'
     paths:
       - .github/workflows/redpanda-migration-build.yml
       - src/go/cluster-to-redpanda-migration
 
 jobs:
   test:
-    name: Run tests
+    name: Test cluster-to-redpanda-migration
     strategy:
       matrix:
         os: [linux, darwin, windows]
