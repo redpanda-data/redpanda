@@ -45,11 +45,6 @@ static ss::sstring abort_idx_name(model::offset first, model::offset last) {
     return fmt::format("abort.idx.{}.{}", first, last);
 }
 
-static bool is_sequence(int32_t last_seq, int32_t next_seq) {
-    return (last_seq + 1 == next_seq)
-           || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
-}
-
 model::record_batch make_fence_batch_v1(
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -580,12 +575,6 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    // a client may start new transaction only when the previous
-    // tx is committed. since a client commits a transacitons
-    // strictly after all records are written it means that it
-    // won't be retrying old writes and we may reset the seq cache
-    _log_state.erase_pid_from_seq_table(pid);
-
     co_return synced_term;
 }
 
@@ -1082,73 +1071,6 @@ rm_stm::do_mark_expired(model::producer_identity pid) {
     // try_abort_old_tx it checks is tx expired or not.
     _log_state.expiration.erase(pid);
     co_return std::error_code(co_await do_try_abort_old_tx(pid));
-}
-
-bool rm_stm::check_seq(model::batch_identity bid, model::term_id term) {
-    auto& seq_it = _log_state.seq_table[bid.pid];
-    auto last_write_timestamp = model::timestamp::now().value();
-
-    if (!is_sequence(seq_it.entry.seq, bid.first_seq)) {
-        vlog(
-          _ctx_log.warn,
-          "provided seq:{} for pid:{} isn't a continuation of the last known "
-          "seq:{}",
-          bid.first_seq,
-          bid.pid,
-          seq_it.entry.seq);
-        return false;
-    }
-
-    seq_it.entry.update(bid.last_seq, kafka::offset{-1});
-
-    seq_it.entry.pid = bid.pid;
-    seq_it.entry.last_write_timestamp = last_write_timestamp;
-    seq_it.term = term;
-    return true;
-}
-
-std::optional<kafka::offset>
-rm_stm::known_seq(model::batch_identity bid) const {
-    auto pid_seq = _log_state.seq_table.find(bid.pid);
-    if (pid_seq == _log_state.seq_table.end()) {
-        return std::nullopt;
-    }
-    if (pid_seq->second.entry.seq == bid.last_seq) {
-        return pid_seq->second.entry.last_offset;
-    }
-    for (auto& entry : pid_seq->second.entry.seq_cache) {
-        if (entry.seq == bid.last_seq) {
-            return entry.offset;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<int32_t> rm_stm::tail_seq(model::producer_identity pid) const {
-    auto pid_seq = _log_state.seq_table.find(pid);
-    if (pid_seq == _log_state.seq_table.end()) {
-        return std::nullopt;
-    }
-    return pid_seq->second.entry.seq;
-}
-
-void rm_stm::set_seq(model::batch_identity bid, kafka::offset last_offset) {
-    auto pid_seq = _log_state.seq_table.find(bid.pid);
-    if (pid_seq != _log_state.seq_table.end()) {
-        if (pid_seq->second.entry.seq == bid.last_seq) {
-            pid_seq->second.entry.last_offset = last_offset;
-        }
-    }
-}
-
-void rm_stm::reset_seq(model::batch_identity bid, model::term_id term) {
-    _log_state.erase_pid_from_seq_table(bid.pid);
-    auto& seq_it = _log_state.seq_table[bid.pid];
-    seq_it.term = term;
-    seq_it.entry.seq = bid.last_seq;
-    seq_it.entry.last_offset = kafka::offset{-1};
-    seq_it.entry.pid = bid.pid;
-    seq_it.entry.last_write_timestamp = model::timestamp::now().value();
 }
 
 ss::future<result<kafka_result>> rm_stm::do_sync_and_transactional_replicate(
@@ -2470,7 +2392,7 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {
     fmt::print(
       o,
       "{{ fence_epochs: {}, ongoing_m: {}, ongoing_set: {}, prepared: {}, "
-      "aborted: {}, abort_indexes: {}, seq_table: {}, tx_seqs: {}, expiration: "
+      "aborted: {}, abort_indexes: {}, tx_seqs: {}, expiration: "
       "{}}}",
       state.fence_pid_epoch.size(),
       state.ongoing_map.size(),
@@ -2478,7 +2400,6 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {
       state.prepared.size(),
       state.aborted.size(),
       state.abort_indexes.size(),
-      state.seq_table.size(),
       state.current_txes.size(),
       state.expiration.size());
     return o;

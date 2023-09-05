@@ -402,12 +402,6 @@ private:
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
 
-    bool check_seq(model::batch_identity, model::term_id);
-    std::optional<kafka::offset> known_seq(model::batch_identity) const;
-    void set_seq(model::batch_identity, kafka::offset);
-    void reset_seq(model::batch_identity, model::term_id);
-    std::optional<int32_t> tail_seq(model::producer_identity) const;
-
     ss::future<result<kafka_result>> do_replicate(
       model::batch_identity,
       model::record_batch_reader,
@@ -610,29 +604,15 @@ private:
           expiration_info>
           expiration;
 
-        void erase_pid_from_seq_table(const model::producer_identity& pid) {
-            auto it = seq_table.find(pid);
-            if (it == seq_table.end()) {
-                return;
-            }
-            erase_seq(it);
-        }
-
-        void erase_seq(seq_map::const_iterator it) { seq_table.erase(it); }
-
-        void clear_seq_table() { seq_table.clear(); }
-
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
             ongoing_map.erase(pid);
             prepared.erase(pid);
-            erase_pid_from_seq_table(pid);
             current_txes.erase(pid);
             expiration.erase(pid);
         }
 
         void reset() {
-            clear_seq_table();
             fence_pid_epoch.clear();
             ongoing_map.clear();
             ongoing_set.clear();
