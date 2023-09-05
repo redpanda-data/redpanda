@@ -290,8 +290,8 @@ ss::future<> manager<ClockType>::handle_leadership_change(
     auto transforms = _registry->lookup_by_input_topic(
       model::topic_namespace_view(ntp));
     co_await ss::parallel_for_each(
-      transforms, [this, ntp = std::move(ntp)](const auto& entry) {
-          return start_processor(ntp, entry.first);
+      transforms, [this, ntp = std::move(ntp)](model::transform_id id) {
+          return start_processor(ntp, id);
       });
 }
 

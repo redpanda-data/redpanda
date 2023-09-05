@@ -59,15 +59,14 @@ public:
         return leaders;
     }
 
-    absl::flat_hash_map<model::transform_id, model::transform_metadata>
+    absl::flat_hash_set<model::transform_id>
     lookup_by_input_topic(model::topic_namespace_view tp_ns) const override {
         const auto& transforms = _states.back().transforms;
-        absl::flat_hash_map<model::transform_id, model::transform_metadata>
-          result;
+        absl::flat_hash_set<model::transform_id> result;
         for (const auto& entry : transforms) {
             const auto& input = entry.second.input_topic;
             if (input.ns == tp_ns.ns && input.tp == tp_ns.tp) {
-                result.emplace(entry.first, entry.second);
+                result.emplace(entry.first);
             }
         }
         return result;

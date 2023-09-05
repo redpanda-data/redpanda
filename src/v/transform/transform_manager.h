@@ -47,7 +47,7 @@ public:
       get_leader_partitions(model::topic_namespace_view) const = 0;
 
     // Get all the transforms with this ns_tp as the input source.
-    virtual absl::flat_hash_map<model::transform_id, model::transform_metadata>
+    virtual absl::flat_hash_set<model::transform_id>
       lookup_by_input_topic(model::topic_namespace_view) const = 0;
 
     // Lookup a transform by ID
