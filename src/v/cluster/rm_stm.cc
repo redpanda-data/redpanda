@@ -2538,7 +2538,7 @@ void rm_stm::setup_metrics() {
       {
         sm::make_gauge(
           "idempotency_pid_cache_size",
-          [this] { return _log_state.seq_table.size(); },
+          [this] { return _producers.size(); },
           sm::description(
             "Number of active producers (known producer_id seq number pairs)."),
           labels)
