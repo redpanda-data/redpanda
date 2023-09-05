@@ -112,7 +112,7 @@ node exists that is already in maintenance mode then an error will be returned.
 				}
 				addBrokerMaintenanceReport(table, b)
 				table.Flush()
-				if b.Maintenance.Draining && b.Maintenance.Finished {
+				if b.Maintenance.Draining && b.Maintenance.Finished != nil && *b.Maintenance.Finished {
 					fmt.Printf("\nAll partitions on node %d have drained.\n", nodeID)
 					return
 				}

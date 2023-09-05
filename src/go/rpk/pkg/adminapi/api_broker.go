@@ -22,13 +22,13 @@ const (
 )
 
 type MaintenanceStatus struct {
-	Draining     bool `json:"draining"`
-	Finished     bool `json:"finished"`
-	Errors       bool `json:"errors"`
-	Partitions   int  `json:"partitions"`
-	Eligible     int  `json:"eligible"`
-	Transferring int  `json:"transferring"`
-	Failed       int  `json:"failed"`
+	Draining     bool  `json:"draining"`
+	Finished     *bool `json:"finished"`
+	Errors       *bool `json:"errors"`
+	Partitions   *int  `json:"partitions"`
+	Eligible     *int  `json:"eligible"`
+	Transferring *int  `json:"transferring"`
+	Failed       *int  `json:"failed"`
 }
 
 // MembershipStatus enumerates possible membership states for brokers.
