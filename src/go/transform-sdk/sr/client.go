@@ -17,9 +17,11 @@ package sr
 import (
 	"encoding/binary"
 	"errors"
+	"math"
 	"strconv"
 	"unsafe"
 
+	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/cache"
 	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/rwbuf"
 )
 
@@ -84,7 +86,7 @@ type SchemaRegistryClient interface {
 
 type (
 	clientOpts struct {
-		disableCaches bool
+		maxCacheSize int
 	}
 	// ClientOpt is an option to configure a SchemaRegistryClient
 	ClientOpt     interface{ apply(*clientOpts) }
@@ -104,45 +106,47 @@ type (
 	clientImpl        struct{}
 	cachingClientImpl struct {
 		underlying                  SchemaRegistryClient
-		schemaByIdCache             map[schemaId]*Schema
-		schemaBySubjectVersionCache map[subjectVersion]*SubjectSchema
+		schemaByIdCache             cache.Cache[schemaId, *Schema]
+		schemaBySubjectVersionCache cache.Cache[subjectVersion, *SubjectSchema]
 	}
 )
 
-// WithCachesDisabled disables any caching done by the client
-func WithCachesDisabled() ClientOpt {
+// MaxCacheEntries configures how many entries to cache within the client.
+//
+// By default the cache is unbounded, use 0 to disable the cache.
+func MaxCacheEntries(size int) ClientOpt {
 	return clientOptFunc(func(o *clientOpts) {
-		o.disableCaches = true
+		o.maxCacheSize = size
 	})
 }
 
 // NewClient creates a new SchemaRegistryClient with the specified options applied.
 func NewClient(opts ...ClientOpt) (c SchemaRegistryClient) {
 	o := clientOpts{
-		disableCaches: false,
+		maxCacheSize: math.MaxInt,
 	}
 	for _, opt := range opts {
 		opt.apply(&o)
 	}
 	c = &clientImpl{}
-	if o.disableCaches {
+	if o.maxCacheSize <= 0 {
 		return c
 	}
 	return &cachingClientImpl{
 		underlying:                  c,
-		schemaByIdCache:             make(map[schemaId]*Schema),
-		schemaBySubjectVersionCache: make(map[subjectVersion]*SubjectSchema),
+		schemaByIdCache:             cache.New[schemaId, *Schema](o.maxCacheSize),
+		schemaBySubjectVersionCache: cache.New[subjectVersion, *SubjectSchema](o.maxCacheSize),
 	}
 }
 
 func (sr *cachingClientImpl) LookupSchemaById(id int) (s *Schema, err error) {
-	cached, ok := sr.schemaByIdCache[schemaId(id)]
+	cached, ok := sr.schemaByIdCache.Get(schemaId(id))
 	if ok {
 		return cached, nil
 	}
 	s, err = sr.underlying.LookupSchemaById(id)
 	if err != nil {
-		sr.schemaByIdCache[schemaId(id)] = s
+		sr.schemaByIdCache.Put(schemaId(id), s)
 	}
 	return
 }
@@ -171,13 +175,13 @@ func (sr *clientImpl) LookupSchemaById(id int) (*Schema, error) {
 }
 
 func (sr *cachingClientImpl) LookupSchemaByVersion(subject string, version int) (s *SubjectSchema, err error) {
-	cached, ok := sr.schemaBySubjectVersionCache[subjectVersion{subject, version}]
+	cached, ok := sr.schemaBySubjectVersionCache.Get(subjectVersion{subject, version})
 	if ok {
 		return cached, nil
 	}
 	s, err = sr.underlying.LookupSchemaByVersion(subject, version)
 	if err != nil {
-		sr.schemaBySubjectVersionCache[subjectVersion{subject, version}] = s
+		sr.schemaBySubjectVersionCache.Put(subjectVersion{subject, version}, s)
 	}
 	return
 }
@@ -215,7 +219,7 @@ func (sr *clientImpl) LookupSchemaByVersion(subject string, version int) (s *Sub
 func (sr *cachingClientImpl) CreateSchema(subject string, schema Schema) (s *SubjectSchema, err error) {
 	s, err = sr.underlying.CreateSchema(subject, schema)
 	if err == nil {
-		sr.schemaBySubjectVersionCache[subjectVersion{subject, s.Version}] = s
+		sr.schemaBySubjectVersionCache.Put(subjectVersion{subject, s.Version}, s)
 	}
 	return
 }
