@@ -13,7 +13,7 @@
 #include "cluster/logger.h"
 #include "cluster/persisted_stm.h"
 #include "cluster/tx_gateway_frontend.h"
-#include "cluster/tx_snapshot_adl_utils.h"
+#include "cluster/tx_snapshot_utils.h"
 #include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"

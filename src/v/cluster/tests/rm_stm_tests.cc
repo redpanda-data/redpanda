@@ -11,7 +11,7 @@
 #include "cluster/rm_stm.h"
 #include "cluster/tests/randoms.h"
 #include "cluster/tests/rm_stm_test_fixture.h"
-#include "cluster/tx_snapshot_adl_utils.h"
+#include "cluster/tx_snapshot_utils.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
