@@ -672,6 +672,7 @@ struct ntp_report {
     size_t size_bytes;
     std::optional<uint8_t> under_replicated_replicas;
     size_t reclaimable_size_bytes;
+    std::chrono::milliseconds ms_since_leadership_status_change;
 };
 
 partition_status to_partition_status(const ntp_report& ntpr) {
@@ -682,7 +683,9 @@ partition_status to_partition_status(const ntp_report& ntpr) {
       .revision_id = ntpr.leader.revision_id,
       .size_bytes = ntpr.size_bytes,
       .under_replicated_replicas = ntpr.under_replicated_replicas,
-      .reclaimable_size_bytes = ntpr.reclaimable_size_bytes};
+      .reclaimable_size_bytes = ntpr.reclaimable_size_bytes,
+      .ms_since_leadership_status_change
+      = ntpr.ms_since_leadership_status_change};
 }
 
 ss::chunked_fifo<ntp_report> collect_shard_local_reports(
@@ -706,6 +709,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                 .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
                 .under_replicated_replicas = p.second->get_under_replicated(),
                 .reclaimable_size_bytes = p.second->reclaimable_local_size_bytes(),
+                .ms_since_leadership_status_change = p.second->ms_since_leadership_status_change(),
               };
           });
     } else {
@@ -721,6 +725,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                 .size_bytes = partition->size_bytes() + partition->non_log_disk_size_bytes(),
                 .under_replicated_replicas = partition->get_under_replicated(),
                 .reclaimable_size_bytes = partition->reclaimable_local_size_bytes(),
+                .ms_since_leadership_status_change = partition->ms_since_leadership_status_change(),
                 });
             }
         }
@@ -821,11 +826,17 @@ health_monitor_backend::get_cluster_health_overview(
     absl::node_hash_set<model::ntp> leaderless;
     absl::node_hash_set<model::ntp> under_replicated;
 
+    auto reporting_threshold
+      = config::shard_local_cfg().leaderless_reporting_threshold_ms();
     for (const auto& [_, report] : _reports) {
         for (const auto& [tp_ns, partitions] : report.topics) {
             for (const auto& partition : partitions) {
+                auto report_as_leaderless
+                  = !partition.leader_id
+                    && partition.ms_since_leadership_status_change
+                         >= reporting_threshold;
                 if (
-                  !partition.leader_id.has_value()
+                  report_as_leaderless
                   && leaderless.size() < max_partitions_report) {
                     leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
                 }
