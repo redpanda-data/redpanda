@@ -39,6 +39,8 @@ namespace transform {
 
 namespace {
 
+using namespace std::chrono_literals;
+
 struct transform_entry {
     model::transform_id id;
     model::transform_metadata meta;
@@ -374,6 +376,36 @@ public:
     }
 
 private:
+    /**
+     * Parse a ntp and transform from a given string.
+     *
+     * Format is: (input topic)->(output topic)/(partition id)
+     */
+    std::pair<model::ntp, model::transform_metadata>
+    transform_and_partition(std::string_view str) {
+        auto split_idx = str.find_last_of('/');
+        if (split_idx == std::string_view::npos) {
+            throw std::runtime_error(
+              ss::format("invalid transfrom and partition {}", str));
+        }
+        auto meta = parse_transform(str.substr(0, split_idx));
+        int32_t partition_id = 0;
+        if (!absl::SimpleAtoi(str.substr(split_idx + 1), &partition_id)) {
+            throw std::runtime_error(
+              ss::format("invalid partition: {}", str.substr(split_idx + 1)));
+        }
+        model::ntp topic_partition = {
+          meta.input_topic.ns,
+          meta.input_topic.tp,
+          model::partition_id(partition_id)};
+        return std::make_pair(topic_partition, std::move(meta));
+    }
+
+    /**
+     * Parse a ntp from a given string.
+     *
+     * Format is: (topic)/(partition id)
+     */
     model::ntp parse_ntp(std::string_view str) {
         std::vector<std::string_view> parts = absl::StrSplit(str, '/');
         if (parts.size() != 2) {
@@ -449,6 +481,138 @@ TEST_F(TransformManagerTest, DeleteTransform) {
     drain_queue();
     EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
     delete_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
+}
+
+TEST_F(TransformManagerTest, NamesCanBeReused) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar#1");
+    drain_queue();
+    delete_transform("foo->bar#1");
+    // deploy version two
+    deploy_transform("foo->bar#2");
+    drain_queue();
+    EXPECT_THAT(
+      status(),
+      status_is(
+        "foo->bar#1/1",
+        lifecycle_status::destroyed,
+        "foo->bar#2/1",
+        lifecycle_status::active));
+}
+
+TEST_F(TransformManagerTest, SameTopicMultipleTransforms) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    deploy_transform("foo->qux");
+    drain_queue();
+    EXPECT_THAT(
+      status(),
+      status_is(
+        "foo->bar/1",
+        lifecycle_status::active,
+        "foo->qux/1",
+        lifecycle_status::active));
+}
+
+TEST_F(TransformManagerTest, SameTransformMultiplePartitions) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    become_leader("foo/2");
+    become_leader("foo/3");
+    drain_queue();
+    EXPECT_THAT(
+      status(),
+      status_is(
+        "foo->bar/1",
+        lifecycle_status::active,
+        "foo->bar/2",
+        lifecycle_status::active,
+        "foo->bar/3",
+        lifecycle_status::active));
+}
+
+TEST_F(TransformManagerTest, FailuresAreRestarted) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    drain_queue();
+    for (auto expected_delay : {1s, 2s, 4s, 8s, 16s}) {
+        report_error("foo->bar/1");
+        drain_queue();
+        EXPECT_THAT(
+          status(), status_is("foo->bar/1", lifecycle_status::inactive));
+        ss::manual_clock::advance(expected_delay);
+        drain_queue();
+        EXPECT_THAT(
+          status(), status_is("foo->bar/1", lifecycle_status::active));
+    }
+}
+
+TEST_F(TransformManagerTest, BackoffIsResetAfterSomeTime) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    drain_queue();
+    report_error("foo->bar/1");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::inactive));
+    ss::manual_clock::advance(1s);
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+    // if a transform runs for an hour, we should not delay for 2s now
+    ss::manual_clock::advance(1h);
+    report_error("foo->bar/1");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::inactive));
+    ss::manual_clock::advance(1s);
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+}
+
+TEST_F(TransformManagerTest, RedeployDuringBackoff) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+    report_error("foo->bar/1");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::inactive));
+    deploy_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+    ss::manual_clock::advance(1s);
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+}
+
+TEST_F(TransformManagerTest, LoseLeadershipDuringBackoff) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+    report_error("foo->bar/1");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::inactive));
+    lose_leadership("foo/1");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
+    ss::manual_clock::advance(1s);
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
+}
+
+TEST_F(TransformManagerTest, DeleteDuringBackoff) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+    report_error("foo->bar/1");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::inactive));
+    delete_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
+    ss::manual_clock::advance(1s);
     drain_queue();
     EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
 }
