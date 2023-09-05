@@ -85,7 +85,7 @@ heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
                 vlog(r->_ctxlog.trace, "[{}] heartbeat skipped", id);
                 continue;
             }
-            auto const seq_id = follower_metadata.last_sent_seq++;
+            auto const seq_id = follower_metadata.next_follower_sequence();
             auto hb_meta = r->meta();
             follower_metadata.last_sent_protocol_meta = hb_meta;
             pending_beats[id.id()].emplace_back(
@@ -172,7 +172,7 @@ heartbeat_manager::requests_for_range_v2() {
             }
             vlog(r->_ctxlog.trace, "[{}] full heartbeat", id);
             r->_probe->full_heartbeat();
-            auto const seq_id = follower_metadata.last_sent_seq++;
+            auto const seq_id = follower_metadata.next_follower_sequence();
 
             follower_metadata.last_sent_protocol_meta = raft_metadata;
             group_beat.data = heartbeat_request_data{
