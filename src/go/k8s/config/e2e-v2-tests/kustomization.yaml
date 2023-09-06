@@ -1,0 +1,53 @@
+# Adds namespace to all resources.
+namespace: redpanda
+
+bases:
+- ../rbac/bases/operator
+patches:
+  - target:
+      kind: ClusterRole
+      name: .*
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: redpanda-operator
+  - target:
+      kind: Role
+      name: .*
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: redpanda-operator
+  - target:
+      kind: ClusterRoleBinding
+      name: .*
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: redpanda-operator
+      - op: replace
+        path: /roleRef/name
+        value: redpanda-operator
+      - op: replace
+        path: /subjects/0/name
+        value: redpanda-operator
+      - op: replace
+        path: /subjects/0/namespace
+        value: redpanda
+  - target:
+      kind: RoleBinding
+      name: .*
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: redpanda-operator
+      - op: replace
+        path: /roleRef/name
+        value: redpanda-operator
+      - op: replace
+        path: /subjects/0/name
+        value: redpanda-operator
+      - op: replace
+        path: /subjects/0/namespace
+        value: redpanda
+
