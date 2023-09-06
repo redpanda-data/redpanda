@@ -753,26 +753,17 @@ public:
      */
     template<typename Func>
     void for_each_record(Func f) const {
-        verify_iterable();
-        iobuf_const_parser parser(_records);
-        for (auto i = 0; i < _header.record_count; i++) {
-            if constexpr (std::is_same_v<
-                            std::invoke_result_t<Func, model::record>,
-                            void>) {
-                f(model::parse_one_record_copy_from_buffer(parser));
-
+        auto it = record_batch_iterator::create(*this);
+        while (it.has_next()) {
+            if constexpr (std::is_void_v<
+                            std::invoke_result_t<Func, model::record>>) {
+                f(it.next());
             } else {
-                ss::stop_iteration s = f(
-                  model::parse_one_record_copy_from_buffer(parser));
+                ss::stop_iteration s = f(it.next());
                 if (s == ss::stop_iteration::yes) {
                     return;
                 }
             }
-        }
-        if (unlikely(parser.bytes_left())) {
-            throw std::out_of_range(fmt::format(
-              "Record iteration stopped with {} bytes remaining",
-              parser.bytes_left()));
         }
     }
 
