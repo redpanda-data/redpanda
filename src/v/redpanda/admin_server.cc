@@ -80,6 +80,7 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
 #include "redpanda/admin/api-doc/transaction.json.hh"
+#include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/api-doc/usage.json.hh"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -323,6 +324,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "debug");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "cluster");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "transform");
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
@@ -339,6 +342,7 @@ void admin_server::configure_admin_routes() {
     register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
+    register_wasm_transform_routes();
 }
 
 namespace {
@@ -5444,4 +5448,35 @@ admin_server::sampled_memory_profile_handler(
 
     co_return co_await ss::make_ready_future<ss::json::json_return_type>(
       std::move(resp));
+}
+
+void admin_server::register_wasm_transform_routes() {
+    register_route_raw_async<superuser>(
+      ss::httpd::transform_json::deploy_transform,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return deploy_transform(std::move(req), std::move(rep));
+      });
+    register_route<user>(
+      ss::httpd::transform_json::list_transforms,
+      [this](auto req) { return list_transforms(std::move(req)); });
+    register_route<superuser>(
+      ss::httpd::transform_json::delete_transform,
+      [this](auto req) { return delete_transform(std::move(req)); });
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::delete_transform(std::unique_ptr<ss::http::request>) {
+    throw ss::httpd::bad_request_exception("data transforms not enabled");
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
+    throw ss::httpd::bad_request_exception("data transforms not enabled");
+}
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::deploy_transform(
+  std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>) {
+    throw ss::httpd::bad_request_exception("data transforms not enabled");
 }
