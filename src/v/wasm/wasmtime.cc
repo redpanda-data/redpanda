@@ -707,6 +707,8 @@ public:
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
         auto user_module = co_await _workers.submit([this, &meta, &buf] {
             vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
+            // This can be a large contiguous allocation, however it happens on
+            // an alien thread so it bypasses the seastar allocator.
             bytes b = iobuf_to_bytes(buf);
             wasmtime_module_t* user_module_ptr = nullptr;
             handle<wasmtime_error_t, wasmtime_error_delete> error{
