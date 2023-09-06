@@ -167,7 +167,7 @@ NoncloudTierConfigs = {
     #             egress|       cloud cache size|connections # limit|
     #           # of brokers|           partitions min|           memory per broker|
     "docker-local":
-    AdvertisedTierConfig(3 * MiB, 9 * MiB, 3, 128 * MiB, 20 * GiB, 1, 100, 100,
+    AdvertisedTierConfig(3 * MiB, 9 * MiB, 3, 128 * MiB, 20 * GiB, 1, 25, 100,
                          2 * GiB),
 }
 
