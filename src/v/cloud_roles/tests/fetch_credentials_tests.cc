@@ -237,6 +237,8 @@ FIXTURE_TEST(test_sts_credentials, fixture) {
 
     config::shard_local_cfg().cloud_storage_credentials_host.set_value(
       std::optional<ss::sstring>{"localhost"});
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().cloud_storage_credentials_host.reset(); });
 
     when()
       .request("/")

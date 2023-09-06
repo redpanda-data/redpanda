@@ -3320,6 +3320,9 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
         BOOST_REQUIRE_GT(
           disk_log->size_bytes(), tc.expected_bytes_left - segment_size);
     }
+    config::shard_local_cfg().cloud_storage_enabled.reset();
+    config::shard_local_cfg().retention_bytes.reset();
+    config::shard_local_cfg().retention_local_target_bytes_default.reset();
 }
 
 FIXTURE_TEST(issue_8091, storage_test_fixture) {

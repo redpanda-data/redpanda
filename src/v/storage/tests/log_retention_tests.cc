@@ -12,6 +12,8 @@
 // fixture
 #include "test_utils/fixture.h"
 
+#include <seastar/util/defer.hh>
+
 #include <optional>
 
 struct gc_fixture {
@@ -248,6 +250,8 @@ FIXTURE_TEST(retention_by_size_with_remote_write, gc_fixture) {
      */
 
     config::shard_local_cfg().get("cloud_storage_enabled").set_value(true);
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().get("cloud_storage_enabled").reset(); });
 
     size_t size_limit = 1000;
 
@@ -316,6 +320,11 @@ FIXTURE_TEST(retention_by_time_with_remote_write, gc_fixture) {
     // this test assumes that retention overrides are applied, which they are
     // not, if operating in nonstrict mode.
     config::shard_local_cfg().get("retention_local_strict").set_value(true);
+
+    auto reset_cfg = ss::defer([] {
+        config::shard_local_cfg().get("cloud_storage_enabled").reset();
+        config::shard_local_cfg().get("retention_local_strict").reset();
+    });
 
     storage::ntp_config config{
       storage::log_builder_ntp(), builder.get_log_config().base_dir};
