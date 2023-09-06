@@ -1394,7 +1394,7 @@ configuration::configuration()
       "Time that segment can be kept locally without uploading it to the "
       "remote storage (sec)",
       {.visibility = visibility::tunable},
-      std::nullopt)
+      1h)
   , cloud_storage_manifest_max_upload_interval_sec(
       *this,
       "cloud_storage_manifest_max_upload_interval_sec",
