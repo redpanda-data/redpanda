@@ -11,7 +11,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
-#include "serde/is_serde_compatible.h"
 #include "serde/serde.h"
 #include "test_utils/randoms.h"
 #include "tristate.h"
@@ -245,7 +244,6 @@ SEASTAR_THREAD_TEST_CASE(array_test) {
     auto b = iobuf();
 
     serde::write(b, std::array<int, 3>{1, 2, 3});
-    static_assert(serde::is_serde_compatible_v<std::array<int, 3>>);
 
     auto parser = iobuf_parser{std::move(b)};
     auto const m = serde::read<std::array<int, 3>>(parser);
