@@ -37,6 +37,7 @@ v_cc_library(
     heartbeats.cc
     state_machine_manager.cc
     state_machine_base.cc
+    recovery_scheduler.cc
   DEPS
     v::storage
     raft_rpc
