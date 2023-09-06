@@ -87,8 +87,9 @@ ss::future<> segment_chunks::start() {
           .waiters = {expiry_handler_impl}};
     }
 
-    _eviction_timer.set_callback(
-      [this] { ssx::background = trim_chunk_files(); });
+    _eviction_timer.set_callback([this] {
+        ssx::spawn_with_gate(_gate, [this] { return trim_chunk_files(); });
+    });
     _eviction_timer.rearm(_eviction_jitter());
     return ss::now();
 }
@@ -200,7 +201,6 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
 }
 
 ss::future<> segment_chunks::trim_chunk_files() {
-    gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
     vlog(_ctxlog.trace, "starting chunk trim");
@@ -304,10 +304,12 @@ ss::future<> chunk_eviction_strategy::close_files(
     }
 
     auto close_results = co_await ss::when_all(fs.begin(), fs.end());
-    for (const auto& result : close_results) {
+    for (auto& result : close_results) {
         if (result.failed()) {
             vlog(
-              rtc.warn, "failed to close a chunk file handle during eviction");
+              rtc.warn,
+              "failed to close a chunk file handle during eviction: {}",
+              result.get_exception());
         }
     }
 }
