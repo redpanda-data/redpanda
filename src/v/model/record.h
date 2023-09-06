@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
@@ -576,6 +577,34 @@ struct batch_identity {
     bool has_idempotent() { return pid.id >= 0; }
 };
 
+// A simple iterator for model::record_batch
+//
+// Usage:
+//
+// ```
+// auto it = model::record_batch_iterator::create(batch);
+// while (it.has_next()) {
+//   model::record record = it.next();
+//   // do something with record
+//   co_await ss::coroutine::maybe_yield();
+// }
+// ```
+class record_batch_iterator {
+public:
+    bool has_next() const noexcept;
+
+    model::record next();
+
+    static record_batch_iterator create(const model::record_batch& b);
+
+private:
+    record_batch_iterator(int32_t rc, iobuf_const_parser p);
+
+    int32_t _index = 0;
+    int32_t _record_count;
+    iobuf_const_parser _parser;
+};
+
 // 57 bytes
 constexpr uint32_t packed_record_batch_header_size
   = sizeof(model::record_batch_header::header_crc)          // 4
@@ -832,6 +861,7 @@ private:
 
     explicit operator bool() const noexcept { return !empty(); }
     friend class ss::optimized_optional<record_batch>;
+    friend class record_batch_iterator;
 
     template<typename Func>
     friend ss::future<>
