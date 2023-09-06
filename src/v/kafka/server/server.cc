@@ -52,6 +52,7 @@
 #include "security/exceptions.h"
 #include "security/gssapi_authenticator.h"
 #include "security/mtls.h"
+#include "security/oidc_authenticator.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
@@ -544,6 +545,16 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
                 ctx.connection()->server().gssapi_principal_mapper().rules(),
                 config::shard_local_cfg().sasl_kerberos_principal(),
                 config::shard_local_cfg().sasl_kerberos_keytab()));
+        }
+    }
+
+    if (supports(security::oidc_authenticator::name)) {
+        supported_sasl_mechanisms.emplace_back(
+          security::oidc_authenticator::name);
+
+        if (request.data.mechanism == security::oidc_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::oidc_authenticator>());
         }
     }
 

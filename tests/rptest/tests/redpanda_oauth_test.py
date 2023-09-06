@@ -142,17 +142,11 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
         # metadata requests to behave nicely.
         producer.poll(0.0)
 
-        with expect_exception(KafkaException, lambda _: True):
-            producer.list_topics(timeout=5)
+        producer.list_topics(timeout=5)
 
         self.logger.info('Flushing {} records...'.format(len(producer)))
 
-        # Without the OIDC PoC, Producer.flush raises an AttributeError for some
-        # reason (rather than just failing). With OIDC support in place, this works
-        # as expected.
-        # TODO: Remove Me
-        with expect_exception(AttributeError, lambda _: True):
-            producer.flush()
+        producer.flush()
 
         self.logger.debug(f"{self.produce_messages} {self.produce_errors}")
         # assert len(self.produce_messages) == 3, f"Expected 3 messages, got {len(self.produce_messages)}"

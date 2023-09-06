@@ -4,6 +4,7 @@ v_cc_library(
     scram_algorithm.cc
     scram_authenticator.cc
     gssapi_authenticator.cc
+    oidc_authenticator.cc
     credential.cc
     acl.cc
     mtls.cc

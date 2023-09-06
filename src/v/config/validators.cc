@@ -109,7 +109,7 @@ std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
 std::optional<ss::sstring>
 validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
     static const absl::flat_hash_set<std::string_view> supported{
-      "GSSAPI", "SCRAM"};
+      "GSSAPI", "SCRAM", "OAUTHBEARER"};
 
     // Validate results
     for (const auto& m : mechanisms) {
