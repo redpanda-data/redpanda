@@ -1,21 +1,7 @@
 import os
-import yaml
 
 from enum import Enum
 from typing import Optional
-
-rp_profiles_path = os.path.join(os.path.dirname(__file__),
-                                "rp_config_profiles")
-tiers_config_filename = os.path.join(rp_profiles_path,
-                                     "redpanda.cloud-tiers-config.yml")
-
-
-def load_tier_profiles():
-    with open(os.path.join(os.path.dirname(__file__), tiers_config_filename),
-              "r") as f:
-        # TODO: validate input
-        _profiles = yaml.safe_load(f)['config_profiles']
-    return _profiles
 
 
 class CloudTierName(Enum):

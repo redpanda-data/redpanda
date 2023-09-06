@@ -3,13 +3,25 @@ import json
 import os
 import requests
 import uuid
-
+import yaml
 from dataclasses import dataclass, field
 from typing import Optional
-
 from ducktape.utils.util import wait_until
-
 from rptest.services.provider_clients import make_provider_client
+
+rp_profiles_path = os.path.join(os.path.dirname(__file__),
+                                "rp_config_profiles")
+tiers_config_filename = os.path.join(rp_profiles_path,
+                                     "redpanda.cloud-tiers-config.yml")
+
+
+def load_tier_profiles():
+    with open(os.path.join(os.path.dirname(__file__), tiers_config_filename),
+              "r") as f:
+        # TODO: validate input
+        _profiles = yaml.safe_load(f)['config_profiles']
+    return _profiles
+
 
 SaslCredentials = collections.namedtuple("SaslCredentials",
                                          ["username", "password", "algorithm"])
