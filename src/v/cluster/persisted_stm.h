@@ -60,6 +60,10 @@ struct stm_snapshot {
     }
 };
 
+// stm_snapshots powered by a seperate file on disk.
+//
+// This is the default backend for stm_snapshots and works well when
+// there are very few partitions (ie for internal topics).
 class file_backed_stm_snapshot {
 public:
     file_backed_stm_snapshot(
@@ -81,6 +85,11 @@ private:
     size_t _snapshot_size{0};
 };
 
+// stm_snapshots powered by the kvstore.
+//
+// This backend is recommended when it's possible there will be many partitions
+// for a given stm, as the alternative (files) does not scale well with many
+// partitions.
 class kvstore_backed_stm_snapshot {
 public:
     kvstore_backed_stm_snapshot(
