@@ -54,6 +54,7 @@ v_cc_library(
     v::pandaproxy_schema_registry
     v::migrations
     v::storage_resource_mgmt
+    v::version 
   )
 
 add_subdirectory(tests)

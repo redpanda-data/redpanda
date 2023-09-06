@@ -9,6 +9,7 @@ v_cc_library(
     Seastar::seastar
     v::model
     v::config
+    v::version
   )
 
 add_dependencies(v_features kafka_codegen_headers)
