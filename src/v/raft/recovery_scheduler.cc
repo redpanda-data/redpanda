@@ -210,12 +210,7 @@ void recovery_scheduler_base::activate_some() {
 void recovery_scheduler_base::tick() {
     auto gate_guard = _gate.hold();
 
-    vlog(
-      raftlog.debug,
-      "tick: active {}/{}, pending {}",
-      _active.size(),
-      _max_active(),
-      _pending.size());
+    size_t prev_active = _active.size();
 
     activate_some();
 
@@ -230,7 +225,9 @@ void recovery_scheduler_base::tick() {
 
     vlog(
       raftlog.debug,
-      "updated recovery stats (active: {}, pending: {}, offsets pending: {})",
+      "after tick: "
+      "active count: {} -> {}, pending count: {}, offsets pending: {}",
+      prev_active,
       _active.size(),
       _pending.size(),
       _offsets_pending);

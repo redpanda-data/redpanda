@@ -1097,6 +1097,9 @@ void application::wire_up_redpanda_services(
               = config::shard_local_cfg().raft_io_timeout_ms.bind(),
               .enable_lw_heartbeat
               = config::shard_local_cfg().raft_enable_lw_heartbeat.bind(),
+              .recovery_concurrency_per_shard
+              = config::shard_local_cfg()
+                  .raft_recovery_concurrency_per_shard.bind(),
             };
         },
         [] {

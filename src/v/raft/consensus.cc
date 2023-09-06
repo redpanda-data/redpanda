@@ -101,6 +101,7 @@ consensus::consensus(
   std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
     recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
+  recovery_scheduler& recovery_scheduler,
   features::feature_table& ft,
   std::optional<voter_priority> voter_priority_override,
   keep_snapshotted_log should_keep_snapshotted_log)
@@ -134,6 +135,7 @@ consensus::consensus(
   , _storage(storage)
   , _recovery_throttle(recovery_throttle)
   , _recovery_mem_quota(recovery_mem_quota)
+  , _recovery_scheduler(recovery_scheduler)
   , _features(ft)
   , _snapshot_mgr(
       std::filesystem::path(_log->config().work_directory()),
