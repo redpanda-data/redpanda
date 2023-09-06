@@ -142,15 +142,15 @@ inline cluster_report_filter random_cluster_report_filter() {
       })};
 }
 
-inline tx_snapshot_v4::tx_data_snapshot random_tx_data_snapshot() {
-    return tx_snapshot_v4::tx_data_snapshot{
+inline cluster::tx_data_snapshot random_tx_data_snapshot() {
+    return cluster::tx_data_snapshot{
       model::random_producer_identity(),
       tests::random_named_int<model::tx_seq>(),
       tests::random_named_int<model::partition_id>()};
 }
 
-inline expiration_snapshot random_expiration_snapshot() {
-    return expiration_snapshot{
+inline cluster::expiration_snapshot random_expiration_snapshot() {
+    return cluster::expiration_snapshot{
       model::random_producer_identity(),
       tests::random_duration<rm_stm::duration_type>()};
 }
@@ -166,19 +166,21 @@ inline rm_stm::abort_index random_abort_index() {
     return {model::random_offset(), model::random_offset()};
 }
 
-inline rm_stm::seq_cache_entry random_seq_cache_entry() {
+inline cluster::deprecated_seq_entry::deprecated_seq_cache_entry
+random_seq_cache_entry() {
     return {
       random_generators::get_int<int32_t>(),
       tests::random_named_int<kafka::offset>()};
 }
 
-inline rm_stm::seq_entry random_seq_entry() {
-    return {
-      model::random_producer_identity(),
-      random_generators::get_int<int32_t>(),
-      tests::random_named_int<kafka::offset>(),
-      tests::random_circular_buffer(random_seq_cache_entry),
-      random_generators::get_int<int64_t>()};
+inline cluster::deprecated_seq_entry random_seq_entry() {
+    cluster::deprecated_seq_entry entry;
+    entry.pid = model::random_producer_identity(),
+    entry.seq = random_generators::get_int<int32_t>(),
+    entry.last_offset = tests::random_named_int<kafka::offset>(),
+    entry.seq_cache = tests::random_circular_buffer(random_seq_cache_entry),
+    entry.last_write_timestamp = random_generators::get_int<int64_t>();
+    return entry;
 }
 
 inline tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {

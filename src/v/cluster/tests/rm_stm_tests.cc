@@ -732,46 +732,177 @@ void async_ser_verify(T type) {
     BOOST_REQUIRE(sync_deser_type == async_deser_type);
 }
 
+cluster::tx_snapshot_v3 make_tx_snapshot_v3() {
+    return reflection::tx_snapshot_v3{
+      .fenced = tests::random_frag_vector(model::random_producer_identity),
+      .ongoing = tests::random_frag_vector(model::random_tx_range),
+      .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+      .aborted = tests::random_frag_vector(model::random_tx_range),
+      .abort_indexes = tests::random_frag_vector(cluster::random_abort_index),
+      .offset = model::random_offset(),
+      .seqs = tests::random_frag_vector(cluster::random_seq_entry),
+      .tx_seqs = tests::random_frag_vector(cluster::random_tx_seqs_snapshot),
+      .expiration = tests::random_frag_vector(
+        cluster::random_expiration_snapshot)};
+};
+
+cluster::tx_snapshot_v4 make_tx_snapshot_v4() {
+    return cluster::tx_snapshot_v4{
+      .fenced = tests::random_frag_vector(model::random_producer_identity),
+      .ongoing = tests::random_frag_vector(model::random_tx_range),
+      .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+      .aborted = tests::random_frag_vector(model::random_tx_range),
+      .abort_indexes = tests::random_frag_vector(cluster::random_abort_index),
+      .offset = model::random_offset(),
+      .seqs = tests::random_frag_vector(cluster::random_seq_entry),
+      .tx_data = tests::random_frag_vector(cluster::random_tx_data_snapshot),
+      .expiration = tests::random_frag_vector(
+        cluster::random_expiration_snapshot)};
+}
+
+cluster::tx_snapshot make_tx_snapshot_v5(cluster::producer_state_manager& mgr) {
+    auto producers = tests::random_frag_vector(
+      tests::random_producer_state, 50, mgr);
+    fragmented_vector<cluster::producer_state_snapshot> snapshots;
+    for (auto producer : producers) {
+        snapshots.push_back(producer->snapshot(kafka::offset{0}));
+    }
+    cluster::tx_snapshot snap;
+    snap.offset = model::random_offset();
+    snap.producers = std::move(snapshots),
+    snap.fenced = tests::random_frag_vector(model::random_producer_identity),
+    snap.ongoing = tests::random_frag_vector(model::random_tx_range),
+    snap.prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+    snap.aborted = tests::random_frag_vector(model::random_tx_range),
+    snap.abort_indexes = tests::random_frag_vector(cluster::random_abort_index),
+    snap.tx_data = tests::random_frag_vector(cluster::random_tx_data_snapshot),
+    snap.expiration = tests::random_frag_vector(
+      cluster::random_expiration_snapshot);
+    return snap;
+}
+
 SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
     // Checks equivalence of async and sync adl serialized snapshots.
     // Serialization of snapshots is switched to async with this commit,
     // makes sure the snapshots are compatible pre/post upgrade.
 
-    auto make_tx_snapshot = []() {
-        return reflection::tx_snapshot_v4{
-          .fenced = tests::random_frag_vector(model::random_producer_identity),
-          .ongoing = tests::random_frag_vector(model::random_tx_range),
-          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
-          .aborted = tests::random_frag_vector(model::random_tx_range),
-          .abort_indexes = tests::random_frag_vector(
-            cluster::random_abort_index),
-          .offset = model::random_offset(),
-          .seqs = tests::random_frag_vector(cluster::random_seq_entry),
-          .tx_data = tests::random_frag_vector(
-            cluster::random_tx_data_snapshot),
-          .expiration = tests::random_frag_vector(
-            cluster::random_expiration_snapshot)};
-    };
-
-    auto make_tx_snapshot_v3 = []() {
-        return reflection::tx_snapshot_v3{
-          .fenced = tests::random_frag_vector(model::random_producer_identity),
-          .ongoing = tests::random_frag_vector(model::random_tx_range),
-          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
-          .aborted = tests::random_frag_vector(model::random_tx_range),
-          .abort_indexes = tests::random_frag_vector(
-            cluster::random_abort_index),
-          .offset = model::random_offset(),
-          .seqs = tests::random_frag_vector(cluster::random_seq_entry),
-          .tx_seqs = tests::random_frag_vector(
-            cluster::random_tx_seqs_snapshot),
-          .expiration = tests::random_frag_vector(
-            cluster::random_expiration_snapshot)};
-    };
-
-    sync_ser_verify(make_tx_snapshot());
-    async_ser_verify(make_tx_snapshot());
+    sync_ser_verify(make_tx_snapshot_v4());
+    async_ser_verify(make_tx_snapshot_v4());
 
     sync_ser_verify(make_tx_snapshot_v3());
     sync_ser_verify(make_tx_snapshot_v3());
+}
+
+FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
+    stm.testing_only_disable_auto_abort();
+
+    stm.start().get0();
+    wait_for_confirmed_leader();
+
+    int num_producers = 5;
+    // populate some state.
+    for (int i = 0; i < num_producers; i++) {
+        auto pid = model::producer_identity{i, 0};
+        for (int j = 0; j < 25; j += 5) {
+            auto rreader = make_rreader(pid, j, 5, false);
+            auto offset_r = stm
+                              .replicate(
+                                rreader.id,
+                                std::move(rreader.reader),
+                                raft::replicate_options(
+                                  raft::consistency_level::quorum_ack))
+                              .get0();
+            BOOST_REQUIRE((bool)offset_r);
+            wait_for_kafka_offset_apply(offset_r.value().last_offset).get0();
+        }
+    }
+    BOOST_REQUIRE_EQUAL(producers().size(), num_producers);
+    auto snap_v4_bytes
+      = local_snapshot(cluster::tx_snapshot_v4::version).get0();
+    auto snap_v5_bytes = local_snapshot(cluster::tx_snapshot::version).get0();
+
+    iobuf_parser v4_parser(std::move(snap_v4_bytes.data));
+    iobuf_parser v5_parser(std::move(snap_v5_bytes.data));
+    auto snap_v4 = reflection::async_adl<reflection::tx_snapshot_v4>{}
+                     .from(v4_parser)
+                     .get0();
+    auto snap_v5
+      = reflection::async_adl<reflection::tx_snapshot>{}.from(v5_parser).get0();
+
+    BOOST_REQUIRE_EQUAL(snap_v4.seqs.size(), num_producers);
+    BOOST_REQUIRE_EQUAL(snap_v5.producers.size(), num_producers);
+
+    for (auto& seq_entry : snap_v4.seqs) {
+        auto match = std::find_if(
+          snap_v5.producers.begin(),
+          snap_v5.producers.end(),
+          [&](const cluster::producer_state_snapshot& producer) {
+              auto& back = producer._finished_requests.back();
+              return producer._id == seq_entry.pid
+                     && seq_entry.last_offset == back._last_offset
+                     && seq_entry.seq == back._last_sequence
+                     && seq_entry.seq_cache.size()
+                          == producer._finished_requests.size();
+          });
+        BOOST_REQUIRE(match != snap_v5.producers.end());
+    }
+    // Check the stm can apply v3/v4/v5 snapshots
+    {
+        auto snap_v3 = make_tx_snapshot_v3();
+        snap_v3.offset = stm.last_applied_offset();
+        auto num_producers_from_snapshot = snap_v3.seqs.size();
+
+        iobuf buf;
+        reflection::adl<reflection::tx_snapshot_v3>{}.to(
+          buf, std::move(snap_v3));
+        cluster::stm_snapshot_header hdr{
+          .version = reflection::tx_snapshot_v3::version,
+          .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
+          .offset = stm.last_stable_offset(),
+        };
+        apply_snapshot(hdr, std::move(buf)).get0();
+
+        // validate producer stat after snapshot
+        BOOST_REQUIRE_EQUAL(num_producers_from_snapshot, producers().size());
+    }
+    {
+        auto snap_v4 = make_tx_snapshot_v4();
+        snap_v4.offset = stm.last_applied_offset();
+        auto num_producers_from_snapshot = snap_v4.seqs.size();
+
+        iobuf buf;
+        reflection::adl<reflection::tx_snapshot_v4>{}.to(
+          buf, std::move(snap_v4));
+        cluster::stm_snapshot_header hdr{
+          .version = reflection::tx_snapshot_v4::version,
+          .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
+          .offset = stm.last_stable_offset(),
+        };
+        apply_snapshot(hdr, std::move(buf)).get0();
+
+        // validate producer stat after snapshot
+        BOOST_REQUIRE_EQUAL(num_producers_from_snapshot, producers().size());
+    }
+
+    {
+        snap_v5 = make_tx_snapshot_v5(_producer_state_manager.local());
+        snap_v5.offset = stm.last_applied_offset();
+        auto num_producers_from_snapshot = snap_v5.producers.size();
+
+        iobuf buf;
+        reflection::async_adl<reflection::tx_snapshot>{}
+          .to(buf, std::move(snap_v5))
+          .get();
+        cluster::stm_snapshot_header hdr{
+          .version = reflection::tx_snapshot::version,
+          .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
+          .offset = stm.last_stable_offset(),
+        };
+        apply_snapshot(hdr, std::move(buf)).get0();
+
+        // validate producer stat after snapshot
+        BOOST_REQUIRE_EQUAL(num_producers_from_snapshot, producers().size());
+    }
 }

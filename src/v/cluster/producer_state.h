@@ -34,6 +34,7 @@ concept AcceptsUnits = requires(Func f, ssx::semaphore_units units) {
 
 class producer_state_manager;
 class producer_state;
+struct producer_state_snapshot;
 class request;
 
 using producer_ptr = ss::lw_shared_ptr<producer_state>;
@@ -83,6 +84,8 @@ public:
     request_state state() const { return _state; }
     result_promise_t::future_type result() const;
 
+    bool operator==(const request&) const;
+
 private:
     request_state _state{request_state::initialized};
     seq_t _first_sequence;
@@ -117,6 +120,7 @@ public:
 
     void shutdown();
 
+    bool operator==(const requests&) const;
     friend std::ostream& operator<<(std::ostream&, const requests&);
 
 private:
@@ -149,12 +153,17 @@ public:
       , _post_eviction_hook(std::move(hook)) {
         register_self();
     }
+    producer_state(
+      producer_state_manager&,
+      ss::noncopyable_function<void()> hook,
+      producer_state_snapshot) noexcept;
 
     producer_state(const producer_state&) = delete;
     producer_state& operator=(producer_state&) = delete;
     producer_state(producer_state&&) noexcept = delete;
     producer_state& operator=(producer_state&& other) noexcept = delete;
     ~producer_state() noexcept { deregister_self(); }
+    bool operator==(const producer_state& other) const;
 
     friend std::ostream& operator<<(std::ostream& o, const producer_state&);
 
@@ -201,6 +210,8 @@ public:
 
     std::optional<seq_t> last_sequence_number() const;
 
+    producer_state_snapshot snapshot(kafka::offset log_start_offset) const;
+
 private:
     // Register/deregister with manager.
     void register_self();
@@ -236,4 +247,18 @@ private:
     friend class producer_state_manager;
     friend struct ::test_fixture;
 };
+
+struct producer_state_snapshot {
+    struct finished_request {
+        seq_t _first_sequence;
+        seq_t _last_sequence;
+        kafka::offset _last_offset;
+    };
+
+    model::producer_identity _id;
+    raft::group_id _group;
+    std::vector<finished_request> _finished_requests;
+    std::chrono::milliseconds _ms_since_last_update;
+};
+
 } // namespace cluster

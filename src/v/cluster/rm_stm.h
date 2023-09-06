@@ -47,6 +47,8 @@
 
 namespace mt = util::mem_tracked;
 
+struct rm_stm_test_fixture;
+
 namespace cluster {
 
 /**
@@ -85,72 +87,6 @@ public:
         model::producer_identity pid;
 
         bool operator==(const prepare_marker&) const = default;
-    };
-
-    struct seq_cache_entry {
-        int32_t seq{-1};
-        kafka::offset offset;
-
-        bool operator==(const seq_cache_entry&) const = default;
-    };
-
-    struct seq_entry {
-        static const int seq_cache_size = 5;
-        model::producer_identity pid;
-        int32_t seq{-1};
-        kafka::offset last_offset{-1};
-        ss::circular_buffer<seq_cache_entry> seq_cache;
-        model::timestamp::type last_write_timestamp;
-
-        seq_entry copy() const {
-            seq_entry ret;
-            ret.pid = pid;
-            ret.seq = seq;
-            ret.last_offset = last_offset;
-            ret.seq_cache.reserve(seq_cache.size());
-            std::copy(
-              seq_cache.cbegin(),
-              seq_cache.cend(),
-              std::back_inserter(ret.seq_cache));
-            ret.last_write_timestamp = last_write_timestamp;
-            return ret;
-        }
-
-        void update(int32_t new_seq, kafka::offset new_offset) {
-            if (new_seq < seq) {
-                return;
-            }
-
-            if (seq == new_seq) {
-                last_offset = new_offset;
-                return;
-            }
-
-            if (seq >= 0 && last_offset >= kafka::offset{0}) {
-                auto entry = seq_cache_entry{.seq = seq, .offset = last_offset};
-                seq_cache.push_back(entry);
-                while (seq_cache.size() >= seq_entry::seq_cache_size) {
-                    seq_cache.pop_front();
-                }
-            }
-
-            seq = new_seq;
-            last_offset = new_offset;
-        }
-
-        bool operator==(const seq_entry& other) const {
-            if (this == &other) {
-                return true;
-            }
-            return pid == other.pid && seq == other.seq
-                   && last_offset == other.last_offset
-                   && last_write_timestamp == other.last_write_timestamp
-                   && std::equal(
-                     seq_cache.begin(),
-                     seq_cache.end(),
-                     other.seq_cache.begin(),
-                     other.seq_cache.end());
-        }
     };
 
     struct abort_snapshot {
@@ -342,6 +278,7 @@ private:
       model::timeout_clock::duration);
     ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_local_snapshot() override;
+    ss::future<stm_snapshot> do_take_local_snapshot(uint8_t version);
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
 
@@ -443,11 +380,6 @@ private:
      */
     ss::future<model::offset> bootstrap_committed_offset();
 
-    struct seq_entry_wrapper {
-        seq_entry entry;
-        model::term_id term;
-    };
-
     util::mem_tracker _tx_root_tracker{"tx-mem-root"};
     // The state of this state machine maybe change via two paths
     //
@@ -483,10 +415,6 @@ private:
                      absl::flat_hash_map,
                      model::producer_identity,
                      prepare_marker>(_tracker))
-          , seq_table(mt::map<
-                      absl::node_hash_map,
-                      model::producer_identity,
-                      seq_entry_wrapper>(_tracker))
           , current_txes(
               mt::map<absl::flat_hash_map, model::producer_identity, tx_data>(
                 _tracker))
@@ -525,17 +453,6 @@ private:
         fragmented_vector<tx_range> aborted;
         fragmented_vector<abort_index> abort_indexes;
         abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
-        // the only piece of data which we update on replay and before
-        // replicating the command. we use the highest seq number to resolve
-        // conflicts. if the replication fails we reject a command but clients
-        // by spec should be ready for thier commands being rejected so it's
-        // ok by design to have false rejects
-        using seq_map = mt::unordered_map_t<
-          absl::node_hash_map,
-          model::producer_identity,
-          seq_entry_wrapper>;
-
-        seq_map seq_table;
         mt::unordered_map_t<
           absl::flat_hash_map,
           model::producer_identity,
@@ -710,11 +627,13 @@ private:
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
     ss::sharded<producer_state_manager>& _producer_state_manager;
-    mt::map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>
-      _producers;
+    using producers_t = mt::
+      map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>;
+    producers_t _producers;
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
     ss::abort_source _as;
+    friend struct ::rm_stm_test_fixture;
 };
 
 struct fence_batch_data {
