@@ -862,6 +862,7 @@ void application::configure_admin_server() {
       admin_server_cfg_from_global_cfg(sched_groups),
       std::ref(stress_fiber_manager),
       std::ref(partition_manager),
+      std::ref(raft_group_manager),
       controller.get(),
       std::ref(shard_table),
       std::ref(metadata_cache),
