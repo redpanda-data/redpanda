@@ -14,6 +14,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "cluster/tests/health_monitor_test_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -33,6 +34,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -361,4 +363,227 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
               return it->is_alive == cluster::alive::no;
           });
     }).get();
+}
+
+// tests below are non-rp-fixture unit tests but we don't want to add another
+// binary just for that
+
+struct health_report_unit : cluster::health_report_accessor {};
+
+namespace {
+using namespace cluster;
+using namespace model;
+
+enum part_status { HEALTHY, LEADERLESS, URP };
+
+topic_status
+make_ts(ss::sstring name, const std::vector<part_status>& status_list) {
+    ss::chunked_fifo<cluster::partition_status> statuses;
+
+    partition_id pid{0};
+    for (auto status : status_list) {
+        partition_status s = [&]() -> partition_status {
+            switch (status) {
+            case HEALTHY:
+                return partition_status{.leader_id = model::node_id(0)};
+            case LEADERLESS:
+                return partition_status{.leader_id = std::nullopt};
+            case URP:
+                return partition_status{
+                  .leader_id = model::node_id(0),
+                  .under_replicated_replicas = 1};
+            default:
+                BOOST_FAIL("huh");
+            };
+        }();
+
+        s.id = pid++;
+        statuses.emplace_back(s);
+    }
+
+    return {{model::kafka_namespace, topic{name}}, std::move(statuses)};
+}
+
+node_health_report
+make_nhr(int nid, const std::vector<topic_status>& statuses) {
+    node_health_report nhr;
+    nhr.id = node_id{nid};
+    std::move(statuses.begin(), statuses.end(), std::back_inserter(nhr.topics));
+    return nhr;
+};
+
+struct node_and_status {
+    int nid;
+    std::vector<topic_status> statuses;
+};
+
+auto make_reports(const std::vector<node_and_status>& statuses) {
+    health_report_accessor::report_cache_t ret;
+    for (auto& s : statuses) {
+        ret[node_id{s.nid}] = make_nhr(s.nid, s.statuses);
+    }
+    return ret;
+};
+
+} // namespace
+
+namespace cluster {
+
+std::ostream& operator<<(
+  std::ostream& os, const health_report_accessor::aggregated_report& r) {
+    os << "{lcount: " << r.leaderless_count
+       << ", ucount: " << r.under_replicated_count << ", leaderless: {";
+
+    for (auto& e : r.leaderless) {
+        os << e << ", ";
+    }
+    os << "}, under_replicated: {";
+    for (auto& e : r.under_replicated) {
+        os << e << ", ";
+    }
+    os << "}}";
+    return os;
+}
+} // namespace cluster
+
+FIXTURE_TEST(test_aggregate, health_report_unit) {
+    using report = health_report_accessor::aggregated_report;
+
+    const ss::sstring topic_a = "topic_a";
+    auto healthy_a = make_ts(topic_a, {HEALTHY, HEALTHY});
+    auto healthy_leaderless_a = make_ts(topic_a, {HEALTHY, LEADERLESS});
+    auto healthy_urp_a = make_ts(topic_a, {HEALTHY, URP});
+    auto urp_a = make_ts(topic_a, {URP});
+
+    model::ntp ntp0_a{model::kafka_namespace, topic_a, 0};
+    model::ntp ntp1_a{model::kafka_namespace, topic_a, 1};
+    model::ntp ntp2_a{model::kafka_namespace, topic_a, 2};
+
+    const ss::sstring topic_b = "topic_b";
+    auto healthy_b = make_ts(topic_b, {HEALTHY, HEALTHY});
+    auto healthy_leaderless_b = make_ts(topic_b, {HEALTHY, LEADERLESS});
+    auto healthy_urp_b = make_ts(topic_b, {HEALTHY, URP});
+    auto urp_b = make_ts(topic_b, {URP});
+
+    model::ntp ntp0_b{model::kafka_namespace, topic_b, 0};
+    model::ntp ntp1_b{model::kafka_namespace, topic_b, 1};
+    model::ntp ntp2_b{model::kafka_namespace, topic_b, 2};
+
+    report_cache_t empty_reports{{model::node_id(0), {}}};
+
+    {
+        // empty input, empty report
+        auto r = aggregate(empty_reports);
+        BOOST_CHECK_EQUAL(r, (report{}));
+    }
+
+    {
+        // healthy input, empty report
+        auto input_reports = make_reports({{0, {healthy_a}}});
+        auto result = aggregate(input_reports);
+        BOOST_CHECK_EQUAL(result, (report{}));
+    }
+
+    {
+        // 1 node, 1 topic, HL
+        auto input_reports = make_reports({{0, {healthy_leaderless_a}}});
+        auto result = aggregate(input_reports);
+        aggregated_report expected = {
+          .leaderless = {ntp1_a}, .leaderless_count = 1};
+        BOOST_CHECK_EQUAL(result, expected);
+    }
+
+    {
+        // 2 identical nodes: 1 topic, HL
+        auto input_reports = make_reports(
+          {{0, {healthy_leaderless_a}}, {1, {healthy_leaderless_a}}});
+        auto result = aggregate(input_reports);
+        aggregated_report expected = {
+          .leaderless = {ntp1_a}, .leaderless_count = 1};
+        BOOST_CHECK_EQUAL(result, expected);
+    }
+
+    {
+        // node 0: a: HL
+        // node 1: b: HL
+        auto input_reports = make_reports(
+          {{0, {healthy_leaderless_a}}, {1, {healthy_leaderless_b}}});
+        auto result = aggregate(input_reports);
+        aggregated_report expected = {
+          .leaderless = {ntp1_a, ntp1_b}, .leaderless_count = 2};
+        BOOST_CHECK_EQUAL(result, expected);
+    }
+
+    {
+        // node 0: a: HL
+        // node 0: b: HU
+        auto input_reports = make_reports(
+          {{0, {healthy_leaderless_a, healthy_urp_b}}});
+        auto result = aggregate(input_reports);
+        aggregated_report expected = {
+          .leaderless = {ntp1_a},
+          .under_replicated = {ntp1_b},
+          .leaderless_count = 1,
+          .under_replicated_count = 1};
+        BOOST_CHECK_EQUAL(result, expected);
+    }
+
+    {
+        // node 0: a: HL
+        // node 1: b: HU
+        auto input_reports = make_reports(
+          {{0, {healthy_leaderless_a}}, {1, {healthy_urp_b}}});
+        auto result = aggregate(input_reports);
+        aggregated_report expected = {
+          .leaderless = {ntp1_a},
+          .under_replicated = {ntp1_b},
+          .leaderless_count = 1,
+          .under_replicated_count = 1};
+        BOOST_CHECK_EQUAL(result, expected);
+    }
+}
+
+FIXTURE_TEST(test_report_truncation, health_report_unit) {
+    constexpr size_t max_count
+      = health_report_accessor::aggregated_report::max_partitions_report;
+
+    auto test_unhealthy = [&](size_t unhealthy_count, part_status pstatus) {
+        std::vector<topic_status> statuses;
+        for (size_t i = 0; i < unhealthy_count; i++) {
+            auto tn = fmt::format("topic_{}", i);
+            auto status = make_ts(tn, {pstatus});
+            statuses.emplace_back(status);
+        }
+
+        health_report_accessor::report_cache_t reports;
+        reports[model::node_id(0)] = make_nhr(0, statuses);
+
+        auto result = aggregate(reports);
+
+        size_t expected_leaderless = pstatus == LEADERLESS ? unhealthy_count
+                                                           : 0;
+        size_t expected_urp = pstatus == URP ? unhealthy_count : 0;
+
+        // now verify that the counts are as expected, except that the list size
+        // is always clamped to the max
+        BOOST_CHECK_EQUAL(
+          result.leaderless.size(), std::min(expected_leaderless, max_count));
+        BOOST_CHECK_EQUAL(result.leaderless_count, expected_leaderless);
+
+        BOOST_CHECK_EQUAL(
+          result.under_replicated.size(), std::min(expected_urp, max_count));
+        BOOST_CHECK_EQUAL(result.under_replicated_count, expected_urp);
+    };
+
+    test_unhealthy(0, LEADERLESS);
+    test_unhealthy(0, URP);
+
+    test_unhealthy(max_count - 1, LEADERLESS);
+    test_unhealthy(max_count - 1, URP);
+
+    test_unhealthy(max_count, LEADERLESS);
+    test_unhealthy(max_count, URP);
+
+    test_unhealthy(max_count + 1, LEADERLESS);
+    test_unhealthy(max_count + 1, URP);
 }
