@@ -31,6 +31,7 @@
 #include <wasmtime/config.h>
 #include <wasmtime/error.h>
 #include <wasmtime/extern.h>
+#include <wasmtime/func.h>
 #include <wasmtime/instance.h>
 #include <wasmtime/memory.h>
 #include <wasmtime/store.h>
@@ -154,13 +155,12 @@ wasmtime_val_t convert_to_wasmtime(T value) {
 
 class memory : public ffi::memory {
 public:
-    explicit memory(wasmtime_context_t* ctx, wasmtime_memory_t* mem)
-      : ffi::memory()
-      , _ctx(ctx)
-      , _underlying(mem) {}
+    explicit memory(wasmtime_context_t* ctx)
+      : _ctx(ctx)
+      , _underlying() {}
 
     void* translate_raw(size_t guest_ptr, size_t len) final {
-        auto memory_size = wasmtime_memory_data_size(_ctx, _underlying);
+        auto memory_size = wasmtime_memory_data_size(_ctx, &_underlying);
         if ((guest_ptr + len) > memory_size) [[unlikely]] {
             throw wasm_exception(
               ss::format(
@@ -171,12 +171,14 @@ public:
               errc::user_code_failure);
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        return wasmtime_memory_data(_ctx, _underlying) + guest_ptr;
+        return wasmtime_memory_data(_ctx, &_underlying) + guest_ptr;
     }
+
+    void set_underlying_memory(wasmtime_memory_t* m) { _underlying = *m; }
 
 private:
     wasmtime_context_t* _ctx;
-    wasmtime_memory_t* _underlying;
+    wasmtime_memory_t _underlying;
 };
 
 struct host_function_environment {
@@ -187,12 +189,18 @@ struct host_function_environment {
 
 template<auto value>
 struct host_function;
+
 template<
   typename Module,
   typename ReturnType,
   typename... ArgTypes,
   ReturnType (Module::*module_func)(ArgTypes...)>
 struct host_function<module_func> {
+public:
+    /**
+     * Register a host function such that it can be invoked from the Wasmtime
+     * VM.
+     */
     static void reg(
       wasmtime_linker_t* linker,
       host_function_environment* env,
@@ -206,88 +214,118 @@ struct host_function<module_func> {
         // Takes ownership of inputs and outputs
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
-        auto* err = wasmtime_linker_define_func(
-          linker,
-          Module::name.data(),
-          Module::name.size(),
-          function_name.data(),
-          function_name.size(),
-          functype.get(),
-          [](
-            void* env,
-            wasmtime_caller_t* caller,
-            const wasmtime_val_t* args,
-            size_t nargs,
-            wasmtime_val_t* results,
-            size_t) -> wasm_trap_t* {
-              auto* fenv = static_cast<host_function_environment*>(env);
-              auto* host_module = static_cast<Module*>(fenv->host_module);
-              constexpr std::string_view memory_export_name = "memory";
-              wasmtime_extern_t extern_item;
-              bool ok = wasmtime_caller_export_get(
-                caller,
-                memory_export_name.data(),
-                memory_export_name.size(),
-                &extern_item);
-              if (!ok || extern_item.kind != WASMTIME_EXTERN_MEMORY)
-                [[unlikely]] {
-                  constexpr std::string_view error = "Missing memory export";
-                  vlog(wasm_log.warn, "{}", error);
-                  return wasmtime_trap_new(error.data(), error.size());
-              }
-              memory mem(
-                wasmtime_caller_context(caller), &extern_item.of.memory);
 
-              try {
-                  auto raw = to_raw_values({args, nargs});
+        handle<wasmtime_error_t, wasmtime_error_delete> error(
+          wasmtime_linker_define_func(
+            linker,
+            Module::name.data(),
+            Module::name.size(),
+            function_name.data(),
+            function_name.size(),
+            functype.get(),
+            &invoke_host_fn,
+            env,
+            /*finalizer=*/nullptr));
+        check_error(error.get());
+    }
 
-                  auto host_params = ffi::extract_parameters<ArgTypes...>(
-                    &mem, raw, 0);
-                  if constexpr (std::is_void_v<ReturnType>) {
-                      std::apply(
-                        module_func,
-                        std::tuple_cat(
-                          std::make_tuple(host_module),
-                          std::move(host_params)));
-                  } else if constexpr (ss::is_future<ReturnType>::value) {
-                      auto fut = ss::alien::submit_to(
-                        *fenv->alien,
-                        fenv->shard_id,
-                        [host_module,
-                         host_params = std::move(host_params)]() mutable {
-                            return std::apply(
-                              module_func,
-                              std::tuple_cat(
-                                std::make_tuple(host_module),
-                                std::move(host_params)));
-                        });
-                      *results
-                        = convert_to_wasmtime<typename ReturnType::value_type>(
-                          std::move(fut).get());
-                  } else {
-                      ReturnType host_result = std::apply(
-                        module_func,
-                        std::tuple_cat(
-                          std::make_tuple(host_module),
-                          std::move(host_params)));
-                      *results = convert_to_wasmtime<ReturnType>(
-                        std::move(host_result));
-                  }
-              } catch (const std::exception& e) {
-                  vlog(wasm_log.warn, "Failure executing host function: {}", e);
-                  std::string_view msg = e.what();
-                  return wasmtime_trap_new(msg.data(), msg.size());
-              }
-              return nullptr;
-          },
-          env,
-          nullptr);
-
-        if (err) [[unlikely]] {
-            throw wasm::wasm_exception(
-              ss::format("Unable to register {}", function_name),
-              errc::engine_creation_failure);
+private:
+    /**
+     * All the boilerplate setup needed to invoke a host function from the VM.
+     *
+     * Extracts the memory module, and handles exceptions from our host
+     * functions.
+     */
+    static wasm_trap_t* invoke_host_fn(
+      void* env,
+      wasmtime_caller_t* caller,
+      const wasmtime_val_t* args,
+      size_t nargs,
+      wasmtime_val_t* results,
+      size_t nresults) {
+        auto* fenv = static_cast<host_function_environment*>(env);
+        auto* host_module = static_cast<Module*>(fenv->host_module);
+        memory mem(wasmtime_caller_context(caller));
+        wasm_trap_t* trap = extract_memory(caller, &mem);
+        if (trap != nullptr) {
+            return trap;
         }
+        try {
+            do_invoke_host_fn(
+              host_module,
+              &mem,
+              fenv->alien,
+              fenv->shard_id,
+              {args, nargs},
+              {results, nresults});
+            return nullptr;
+        } catch (const std::exception& e) {
+            vlog(wasm_log.warn, "Failure executing host function: {}", e);
+            std::string_view msg = e.what();
+            return wasmtime_trap_new(msg.data(), msg.size());
+        }
+    }
+
+    /**
+     * Translate wasmtime types into our native types, then invoke the
+     * corresponding host function, translating the response types into the
+     * correct types.
+     */
+    static void do_invoke_host_fn(
+      Module* host_module,
+      memory* mem,
+      ss::alien::instance* alien,
+      ss::shard_id shard_id,
+      std::span<const wasmtime_val_t> args,
+      std::span<wasmtime_val_t> results) {
+        auto raw = to_raw_values(args);
+        auto host_params = ffi::extract_parameters<ArgTypes...>(mem, raw, 0);
+        if constexpr (std::is_void_v<ReturnType>) {
+            std::apply(
+              module_func,
+              std::tuple_cat(
+                std::make_tuple(host_module), std::move(host_params)));
+        } else if constexpr (ss::is_future<ReturnType>::value) {
+            auto fut = ss::alien::submit_to(
+              *alien,
+              shard_id,
+              [host_module, host_params = std::move(host_params)]() mutable {
+                  return std::apply(
+                    module_func,
+                    std::tuple_cat(
+                      std::make_tuple(host_module), std::move(host_params)));
+              });
+            results[0] = convert_to_wasmtime<typename ReturnType::value_type>(
+              std::move(fut).get());
+        } else {
+            ReturnType host_result = std::apply(
+              module_func,
+              std::tuple_cat(
+                std::make_tuple(host_module), std::move(host_params)));
+            results[0] = convert_to_wasmtime<ReturnType>(
+              std::move(host_result));
+        }
+    }
+
+    /**
+     * Our ABI contract expects a "memory" export from the module that we can
+     * use to access the VM's memory space.
+     */
+    static wasm_trap_t* extract_memory(wasmtime_caller_t* caller, memory* mem) {
+        constexpr std::string_view memory_export_name = "memory";
+        wasmtime_extern_t extern_item;
+        bool ok = wasmtime_caller_export_get(
+          caller,
+          memory_export_name.data(),
+          memory_export_name.size(),
+          &extern_item);
+        if (!ok || extern_item.kind != WASMTIME_EXTERN_MEMORY) [[unlikely]] {
+            constexpr std::string_view error = "Missing memory export";
+            vlog(wasm_log.warn, "{}", error);
+            return wasmtime_trap_new(error.data(), error.size());
+        }
+        mem->set_underlying_memory(&extern_item.of.memory);
+        return nullptr;
     }
 };
 
