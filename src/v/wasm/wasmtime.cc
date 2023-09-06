@@ -690,7 +690,7 @@ public:
         co_await ss::smp::invoke_on_all([this] {
             return _workers.submit([] {
                 // wasmtime needs some signals for it's handling, make sure we
-                // unblock them
+                // unblock them.
                 auto mask = ss::make_empty_sigset_mask();
                 sigaddset(&mask, SIGSEGV);
                 sigaddset(&mask, SIGILL);
@@ -738,8 +738,11 @@ private:
 std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     wasm_config_t* config = wasm_config_new();
 
+    // Spend more time compiling so that we can have faster code.
     wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
+    // Fuel allows us to stop execution after some time.
     wasmtime_config_consume_fuel_set(config, true);
+    // We want to enable memcopy and other efficent memcpy operators
     wasmtime_config_wasm_bulk_memory_set(config, true);
     // Our internal build disables this feature, so we don't need to turn it
     // off, otherwise we'd want to turn this off by default.
@@ -749,11 +752,12 @@ std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     // we're willing to allocate in Redpanda.
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     wasmtime_config_max_wasm_stack_set(config, 128_KiB);
-    // This disables static memory
+    // This disables static memory, see:
+    // https://docs.wasmtime.dev/contributing-architecture.html#linear-memory
     wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
     wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
     wasmtime_config_dynamic_memory_reserved_for_growth_set(config, 0_KiB);
-    // don't modify the unwind info as registering these symbols causes C++
+    // Don't modify the unwind info as registering these symbols causes C++
     // exceptions to grab a lock in libgcc and deadlock the Redpanda process.
     wasmtime_config_native_unwind_info_set(config, false);
 
