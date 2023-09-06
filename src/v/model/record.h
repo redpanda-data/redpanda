@@ -769,16 +769,9 @@ public:
 
     template<typename Func>
     ss::future<> for_each_record_async(Func f) const {
-        verify_iterable();
-        iobuf_const_parser parser(_records);
-        for (auto i = 0; i < _header.record_count; i++) {
-            co_await ss::futurize_invoke(
-              f, model::parse_one_record_copy_from_buffer(parser));
-        }
-        if (unlikely(parser.bytes_left())) {
-            throw std::out_of_range(fmt::format(
-              "Record iteration stopped with {} bytes remaining",
-              parser.bytes_left()));
+        auto it = record_batch_iterator::create(*this);
+        while (it.has_next()) {
+            co_await ss::futurize_invoke(f, it.next());
         }
     }
 
