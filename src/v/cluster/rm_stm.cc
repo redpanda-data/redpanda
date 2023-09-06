@@ -2672,15 +2672,18 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 }
 
 ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
-    return _state_lock.hold_write_lock().then(
-      [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
-          vlog(_ctx_log.debug, "Resetting all state, reason: log eviction");
-          _log_state.reset();
-          _mem_state = mem_state{_tx_root_tracker};
-          set_next(_raft->start_offset());
-          return ss::now();
-      });
+    auto units = co_await _state_lock.hold_write_lock();
+    vlog(
+      _ctx_log.info,
+      "Resetting all state, reason: log eviction, offset: {}",
+      _raft->start_offset());
+    _log_state.reset();
+    _mem_state = mem_state{_tx_root_tracker};
+    co_await reset_producers();
+    set_next(_raft->start_offset());
+    co_return;
 }
+
 std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
     fmt::print(
       o,

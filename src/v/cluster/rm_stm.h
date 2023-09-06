@@ -379,7 +379,6 @@ private:
     ss::future<fragmented_vector<rm_stm::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
     producer_ptr maybe_create_producer(model::producer_identity);
-    ss::future<> evict_producer(model::producer_identity);
     void cleanup_producer_state(model::producer_identity);
     ss::future<> reset_producers();
     model::record_batch make_fence_batch(
