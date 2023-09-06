@@ -4756,6 +4756,10 @@ void admin_server::register_cluster_routes() {
                 ret.all_nodes = health_overview.all_nodes;
                 ret.nodes_down = health_overview.nodes_down;
 
+                ret.leaderless_count = health_overview.leaderless_count;
+                ret.under_replicated_count
+                  = health_overview.under_replicated_count;
+
                 for (auto& ntp : health_overview.leaderless_partitions) {
                     ret.leaderless_partitions.push(fmt::format(
                       "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
