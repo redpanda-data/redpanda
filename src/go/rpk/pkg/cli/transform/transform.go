@@ -1,0 +1,27 @@
+// Copyright 2023 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+package transform
+
+import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+)
+
+func NewCommand(_ afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "transform",
+		Aliases: []string{"wasm", "transfrom"}, //nolint:misspell // auto correct a common misspelling
+		Short:   "Develop, deploy and manage Redpanda data transforms",
+	}
+	p.InstallKafkaFlags(cmd)
+	// TODO(rockwood): Add commands
+	return cmd
+}
