@@ -1,0 +1,14 @@
+{
+    "namespace": "transform::rpc::impl",
+    "service_name": "transform_rpc",
+    "includes": [
+        "transform/rpc/serde.h"
+    ],
+    "methods": [
+        {
+            "name": "produce",
+            "input_type": "produce_request",
+            "output_type": "produce_reply"
+        }
+    ]
+}
