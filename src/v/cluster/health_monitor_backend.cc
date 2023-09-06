@@ -42,6 +42,7 @@
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -791,32 +792,58 @@ health_monitor_backend::get_node_drain_status(
 
 health_monitor_backend::aggregated_report
 health_monitor_backend::aggregate_reports(report_cache_t& reports) {
-    // The size of the health status must be bounded: if all partitions
-    // on a system with 50k partitions are under-replicated, it is not helpful
-    // to try and cram all 50k NTPs into a vector here.
-    constexpr size_t max_partitions_report = 128;
+    struct collector {
+        absl::node_hash_set<model::ntp> to_ntp_set() const {
+            absl::node_hash_set<model::ntp> ret;
+            for (const auto& [topic, parts] : t_to_p) {
+                for (auto part : parts) {
+                    ret.emplace(topic.ns, topic.tp, part);
+                    if (
+                      ret.size() == aggregated_report::max_partitions_report) {
+                        return ret;
+                    }
+                }
+            }
+            return ret;
+        }
 
-    aggregated_report ret;
+        size_t count() const {
+            size_t sum = 0;
+            for (const auto& [_, parts] : t_to_p) {
+                sum += parts.size();
+            }
+            return sum;
+        }
+
+        absl::node_hash_map<
+          model::topic_namespace,
+          absl::node_hash_set<model::partition_id>>
+          t_to_p;
+    };
+
+    collector leaderless, urp;
 
     for (const auto& [_, report] : reports) {
         for (const auto& [tp_ns, partitions] : report.topics) {
+            auto& leaderless_this_topic = leaderless.t_to_p[tp_ns];
+            auto& urp_this_topic = urp.t_to_p[tp_ns];
+
             for (const auto& partition : partitions) {
-                if (
-                  !partition.leader_id.has_value()
-                  && ret.leaderless.size() < max_partitions_report) {
-                    ret.leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
+                if (!partition.leader_id.has_value()) {
+                    leaderless_this_topic.emplace(partition.id);
                 }
-                if (
-                  partition.under_replicated_replicas.value_or(0) > 0
-                  && ret.under_replicated.size() < max_partitions_report) {
-                    ret.under_replicated.emplace(
-                      tp_ns.ns, tp_ns.tp, partition.id);
+                if (partition.under_replicated_replicas.value_or(0) > 0) {
+                    urp_this_topic.emplace(partition.id);
                 }
             }
         }
     }
 
-    return ret;
+    return {
+      .leaderless = leaderless.to_ntp_set(),
+      .under_replicated = urp.to_ntp_set(),
+      .leaderless_count = leaderless.count(),
+      .under_replicated_count = urp.count()};
 }
 
 ss::future<cluster_health_overview>
@@ -853,6 +880,9 @@ health_monitor_backend::get_cluster_health_overview(
     move_into(ret.leaderless_partitions, aggr_report.leaderless);
     move_into(ret.under_replicated_partitions, aggr_report.under_replicated);
 
+    ret.leaderless_count = aggr_report.leaderless_count;
+    ret.under_replicated_count = aggr_report.under_replicated_count;
+
     ret.controller_id = _raft0->get_leader_id();
 
     // cluster is not healthy if some nodes are down
@@ -865,8 +895,8 @@ health_monitor_backend::get_cluster_health_overview(
         ret.unhealthy_reasons.emplace_back("leaderless_partitions");
     }
 
-    // cluster is not healthy if some partitions have fewer replicas than their
-    // configured amount
+    // cluster is not healthy if some partitions have fewer replicas than
+    // their configured amount
     if (!ret.under_replicated_partitions.empty()) {
         ret.unhealthy_reasons.emplace_back("under_replicated_partitions");
     }
