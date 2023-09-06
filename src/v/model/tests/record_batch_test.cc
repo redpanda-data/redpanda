@@ -78,3 +78,15 @@ SEASTAR_THREAD_TEST_CASE(set_max_timestamp) {
     BOOST_TEST(crc == batch.header().crc);
     BOOST_TEST(hdr_crc == batch.header().header_crc);
 }
+
+SEASTAR_THREAD_TEST_CASE(iterator) {
+    auto b = model::test::make_random_batch(model::offset(0), 10, false);
+
+    auto it = model::record_batch_iterator::create(b);
+    for (int i = 0; i < b.record_count(); ++i) {
+        BOOST_TEST(it.has_next());
+        model::record r = it.next();
+        BOOST_TEST(r.offset_delta() == i);
+    }
+    BOOST_TEST(!it.has_next());
+}
