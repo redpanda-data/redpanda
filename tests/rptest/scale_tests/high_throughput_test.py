@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
 import itertools
 import math
 import re
@@ -299,11 +300,9 @@ class HighThroughputTest(PreallocNodesTest):
             self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
             retention_local_bytes)
 
-    def get_node(self, idx: int):
-        node = self.redpanda.nodes[idx]
-        node_id = self.redpanda.node_id(node)
-        node_str = f"{node.account.hostname} (node_id: {node_id})"
-        return node, node_id, node_str
+    def get_node(self):
+        idx = random.randrange(len(self.cluster.nodes))
+        return self.cluster.nodes[idx]
 
     @cluster(num_nodes=5)
     def test_throughput_simple(self):
@@ -539,8 +538,8 @@ class HighThroughputTest(PreallocNodesTest):
 
     def stage_block_node_traffic(self):
         wait_time = 120
-        node, _, node_str = self.get_node(0)
-        self.logger.info(f"Isolating node {node_str}")
+        node = self.get_node()
+        self.logger.info(f"Isolating node {node.name}")
         with FailureInjector(self.redpanda) as fi:
             fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
             self.logger.info(
@@ -555,9 +554,9 @@ class HighThroughputTest(PreallocNodesTest):
         wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
 
     def stage_stop_wait_start(self, forced_stop: bool, downtime: int):
-        node, node_id, node_str = self.get_node(1)
+        node = self.get_node()
         self.logger.info(
-            f"Stopping node {node_str} {'ungracefully' if forced_stop else 'gracefully'}"
+            f"Stopping node {node.name} {'ungracefully' if forced_stop else 'gracefully'}"
         )
         self.redpanda.stop_node(node,
                                 forced=forced_stop,
@@ -567,7 +566,8 @@ class HighThroughputTest(PreallocNodesTest):
         time.sleep(downtime)
 
         restart_timeout = 300 + int(900 * downtime / 60)
-        self.logger.info(f"Restarting node {node_str} for {restart_timeout} s")
+        self.logger.info(
+            f"Restarting node {node.name} for {restart_timeout} s")
         self.redpanda.start_node(node, timeout=600)
         wait_until(self.redpanda.healthy,
                    timeout_sec=restart_timeout,
@@ -669,7 +669,7 @@ class HighThroughputTest(PreallocNodesTest):
             self.free_preallocated_nodes()
 
     def stage_decommission_and_add(self):
-        node, node_id, node_str = self.get_node(1)
+        node, node_id, node_str = self.get_node()
 
         def topic_partitions_on_node():
             try:
