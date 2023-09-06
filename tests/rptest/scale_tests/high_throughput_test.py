@@ -492,19 +492,17 @@ class HighThroughputTest(PreallocNodesTest):
         re.compile('storage - .* - Stopping parser, short read. .*')
     ] + RESTART_LOG_ALLOW_LIST
 
-    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=COMBO_PRELOADED_LOG_ALLOW_LIST)
-    def test_combo_preloaded(self):
+    def test_ht003_kgofailure(self):
         """
-        Preloads cluster with large number of messages/segments that are also
-        replicated to the cloud, and then run various different test stages
-        on the cluster:
+        Generates the maximum possible load to the cluster onto a topic that
+        is replicated to the cloud, and then run various different test
+        stages on the cluster:
         - rolling restart
         - stop and start single node, various scenarios
         - isolate and restore a node
         """
         # Generate a realistic number of segments per partition.
-        self.load_many_segments()
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
                                self.msg_size) as tgen:
