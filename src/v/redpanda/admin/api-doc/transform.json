@@ -1,0 +1,162 @@
+{
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "apis": [
+    {
+      "path": "/v1/transform/deploy",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Deploy a transform based on the provided metadata and wasm binary in the request payload. The payload should be the transform metadata in JSON format immediately followed by the WebAssembly binary without any delimiters.",
+          "nickname": "deploy_transform",
+          "consumes": [
+            "application/json+wasm"
+          ],
+          "type": "void",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform/{name}",
+      "operations": [
+        {
+          "method": "DELETE",
+          "summary": "Delete a transform.",
+          "type": "void",
+          "nickname": "delete_transform",
+          "consumes": [
+            "application/json"
+          ],
+          "produces": [
+            "application/json"
+          ],
+          "parameters": [
+            {
+              "name": "name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform",
+      "operations": [
+        {
+          "method": "GET",
+          "type": "array",
+          "items": {
+            "type": "transform_metadata"
+          },
+          "summary": "List all transforms, the status report contains a cluster wide aggregated view of the live transform execution state.",
+          "nickname": "list_transforms",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    }
+  ],
+  "models": {
+    "deploy_transform_request": {
+      "id": "deploy_transform_request",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "input_topic": {
+          "type": "string"
+        },
+        "output_topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "environment_variable"
+          },
+          "description": "The environment variable configuration for a transform"
+        }
+      }
+    },
+    "transform_metadata": {
+      "id": "transform_metadata",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "input_topic": {
+          "type": "string"
+        },
+        "output_topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "type": "array",
+          "items": {
+            "type": "partition_transform_status"
+          }
+        },
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "environment_variable"
+          },
+          "description": "The environment variable configuration for a transform"
+        }
+      }
+    },
+    "partition_transform_status": {
+      "id": "partition_transform_status",
+      "description": "The status of a single partition's transform",
+      "properties": {
+        "node_id": {
+          "type": "int",
+          "description": "id of a node"
+        },
+        "partition": {
+          "type": "int",
+          "description": "partition in the input topic"
+        },
+        "core": {
+          "type": "int",
+          "description": "id of a core on a given node"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "inactive",
+            "errored",
+            "unknown"
+          ],
+          "description": "the status of a transform"
+        }
+      }
+    },
+    "environment_variable": {
+      "id": "environment_variable",
+      "description": "Single key value pair for an environment",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
