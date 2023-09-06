@@ -53,11 +53,6 @@ struct echo_resp
     ss::sstring str;
 };
 
-static_assert(serde::is_serde_compatible_v<echo_req>);
-static_assert(serde::is_serde_compatible_v<echo_resp>);
-static_assert(rpc::is_rpc_adl_exempt<echo_req>);
-static_assert(rpc::is_rpc_adl_exempt<echo_resp>);
-
 struct cnt_req
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
@@ -141,10 +136,6 @@ struct echo_resp_serde_only
     }
 };
 
-// serde-only type needs to have serde support
-static_assert(serde::is_serde_compatible_v<echo_req_serde_only>);
-static_assert(serde::is_serde_compatible_v<echo_resp_serde_only>);
-
 // serde-only type needs to be example from adl
 static_assert(rpc::is_rpc_adl_exempt<echo_req_serde_only>);
 static_assert(rpc::is_rpc_adl_exempt<echo_resp_serde_only>);
@@ -211,9 +202,6 @@ struct echo_resp
         }
     }
 };
-
-static_assert(serde::is_serde_compatible_v<echo_req>);
-static_assert(rpc::is_rpc_adl_exempt<echo_req>);
 
 static_assert(rpc::is_rpc_adl_exempt<echo_req>);
 static_assert(rpc::is_rpc_adl_exempt<echo_resp>);
