@@ -144,7 +144,20 @@ private:
     void on_leadership_changed(
       raft::group_id, model::term_id, std::optional<model::node_id>);
 
+    /**
+     * @brief Stucture holding the aggregated results of partition status.
+     */
     struct aggregated_report {
+        // The size of the health status must be bounded: if all partitions
+        // on a system with 50k partitions are under-replicated, it is not
+        // helpful to try and cram all 50k NTPs into a vector here.
+        static constexpr size_t max_partitions_report = 128;
+
+        /**
+         * List of leaderless or under-replicated ntps reported by any node.
+         * The size of either list is capped at max_partitions_report, and
+         * other elements are dropped.
+         */
         absl::node_hash_set<model::ntp> leaderless, under_replicated;
 
         /**
@@ -188,5 +201,7 @@ private:
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;
     cluster::notification_id_type _next_callback_id{0};
+
+    friend struct health_report_accessor;
 };
 } // namespace cluster
