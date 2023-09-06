@@ -2,6 +2,12 @@ run:
   skip-files:
     - internal/util/pod/pod.go
 linters-settings:
+  # If gofumpt is run outside a module, it assumes Go 1.0 rather than the
+  # latest Go. We always want the latest formatting.
+  #
+  # https://github.com/mvdan/gofumpt/issues/137
+  gofumpt:
+    lang-version: "1.21"
   dupl:
     threshold: 100
   funlen:
