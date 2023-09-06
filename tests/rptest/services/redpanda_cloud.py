@@ -75,26 +75,33 @@ GiB = MiB * kiB
 
 # yapf: disable
 AdvertisedTierConfigs = {
-    #   ingress|          segment size|       partitions max|
-    #             egress|       cloud cache size|connections # limit|
-    #           # of brokers|           partitions min|           memory per broker|
+    #    +- ingress_rate
+    #    |        +- egress_rate
+    #    |        |        +- num_brokers
+    #    |        |        |   +- segment_size
+    #    |        |        |   |         +- cloud_cache_size
+    #    |        |        |   |         |          +- partitions_min
+    #    |        |        |   |         |          |   +- partitions_max
+    #    |        |        |   |         |          |   |      +- connections_limit
+    #    |        |        |   |         |          |   |      |     +- memory_per_broker
+    #    |        |        |   |         |          |   |      |     |
     CloudTierName.AWS_1: AdvertisedTierConfig(
-         25*MiB,  75*MiB,  3,  512*MiB,  300*GiB,   20, 1000,  1500, 16*GiB
+         20*MiB,  60*MiB,  3,  512*MiB,  300*GiB,   20, 1000,  1500, 32*GiB
     ),
     CloudTierName.AWS_2: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  512*MiB,  500*GiB,   50, 2000,  3750, 32*GiB
+         50*MiB, 150*MiB,  3,  512*MiB,  500*GiB,   50, 2000,  3750, 64*GiB
     ),
     CloudTierName.AWS_3: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  512*MiB,  500*GiB,  100, 5000,  7500, 32*GiB
+        100*MiB, 200*MiB,  6,  512*MiB,  500*GiB,  100, 5000,  7500, 64*GiB
     ),
     CloudTierName.AWS_4: AdvertisedTierConfig(
         200*MiB, 400*MiB,  6,    1*GiB, 1000*GiB,  100, 5000, 15000, 96*GiB
     ),
     CloudTierName.AWS_5: AdvertisedTierConfig(
-        300*MiB, 600*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 22500, 96*GiB
+        400*MiB, 800*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
     ),
     CloudTierName.GCP_1: AdvertisedTierConfig(
-         25*MiB,  60*MiB,  3,  512*MiB,  150*GiB,   20,  500,  1500,  8*GiB
+         20*MiB,  60*MiB,  3,  512*MiB,  150*GiB,   20,  500,  1500,  16*GiB
     ),
     CloudTierName.GCP_2: AdvertisedTierConfig(
          50*MiB, 150*MiB,  3,  512*MiB,  300*GiB,   50, 1000,  3750, 32*GiB
