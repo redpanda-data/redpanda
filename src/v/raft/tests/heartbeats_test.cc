@@ -88,6 +88,7 @@ raft::heartbeat_reply_v2 random_reply() {
                 = tests::random_named_int<model::offset>(),
                 .last_term_base_offset
                 = tests::random_named_int<model::offset>(),
+                .may_recover = tests::random_bool(),
               });
         } else {
             reply.add(g, random_reply_status());
@@ -146,6 +147,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_reply_for_each) {
                 = tests::random_named_int<model::offset>(),
                 .last_term_base_offset
                 = tests::random_named_int<model::offset>(),
+                .may_recover = tests::random_bool(),
               });
         } else {
             auto status = random_reply_status();

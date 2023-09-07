@@ -48,13 +48,14 @@ using group_id = named_type<int64_t, struct raft_group_id_type>;
 
 struct protocol_metadata
   : serde::
-      envelope<protocol_metadata, serde::version<0>, serde::compat_version<0>> {
+      envelope<protocol_metadata, serde::version<1>, serde::compat_version<0>> {
     group_id group;
     model::offset commit_index;
     model::term_id term;
     model::offset prev_log_index;
     model::term_id prev_log_term;
     model::offset last_visible_index;
+    model::offset dirty_offset;
 
     friend std::ostream&
     operator<<(std::ostream& o, const protocol_metadata& m);
@@ -69,7 +70,8 @@ struct protocol_metadata
           term,
           prev_log_index,
           prev_log_term,
-          last_visible_index);
+          last_visible_index,
+          dirty_offset);
     }
 };
 
@@ -313,7 +315,7 @@ enum class reply_result : uint8_t {
 struct append_entries_reply
   : serde::envelope<
       append_entries_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -335,6 +337,13 @@ struct append_entries_reply
     /// \brief did the rpc succeed or not
     reply_result result = reply_result::failure;
 
+    // Hint from follower to leader, indicating they are ready for
+    // recovery traffic (false if they may not have enough resources to
+    // handle recovery).
+    // This is true by default to reflect the legacy case, where
+    // older nodes are always ready for recovery.
+    bool may_recover = true;
+
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
 
@@ -351,7 +360,8 @@ struct append_entries_reply
           last_flushed_log_index,
           last_dirty_log_index,
           last_term_base_offset,
-          result);
+          result,
+          may_recover);
     }
 };
 
@@ -545,7 +555,7 @@ struct snapshot_metadata {
 struct install_snapshot_request
   : serde::envelope<
       install_snapshot_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
@@ -564,6 +574,8 @@ struct install_snapshot_request
     iobuf chunk;
     // true if this is the last chunk
     bool done;
+    // leader dirty offset
+    model::offset dirty_offset;
 
     raft::group_id target_group() const { return group; }
     vnode source_node() const { return node_id; }
@@ -584,7 +596,8 @@ struct install_snapshot_request
           last_included_index,
           file_offset,
           chunk,
-          done);
+          done,
+          dirty_offset);
     }
 };
 
@@ -607,7 +620,8 @@ public:
           .last_included_index = _ptr->last_included_index,
           .file_offset = _ptr->file_offset,
           .chunk = _ptr->chunk.copy(),
-          .done = _ptr->done};
+          .done = _ptr->done,
+          .dirty_offset = _ptr->dirty_offset};
     }
     raft::group_id target_group() const { return _ptr->target_group(); }
     vnode target_node() const { return _ptr->target_node_id; }
@@ -837,12 +851,6 @@ using keep_snapshotted_log = ss::bool_class<struct keep_snapshotted_log_tag>;
 } // namespace raft
 
 namespace reflection {
-
-template<>
-struct adl<raft::protocol_metadata> {
-    void to(iobuf& out, raft::protocol_metadata request);
-    raft::protocol_metadata from(iobuf_parser& in);
-};
 
 template<>
 struct adl<raft::snapshot_metadata> {

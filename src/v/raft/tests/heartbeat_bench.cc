@@ -62,6 +62,7 @@ struct fixture {
               .prev_log_term = tests::random_named_int<model::term_id>(),
               .last_visible_index = tests::random_named_int<model::offset>(),
             };
+            meta.dirty_offset = meta.prev_log_index;
             req.heartbeats.push_back(raft::heartbeat_metadata{
               .meta = meta,
               .node_id = raft::vnode(

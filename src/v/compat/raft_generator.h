@@ -190,7 +190,7 @@ struct instance_generator<raft::install_snapshot_request> {
           .chunk = bytes_to_iobuf(
             random_generators::get_bytes(random_generators::get_int(1, 512))),
           .done = tests::random_bool(),
-        };
+          .dirty_offset = tests::random_named_int<model::offset>()};
     }
 
     static std::vector<raft::install_snapshot_request> limits() { return {}; }
@@ -251,6 +251,7 @@ struct instance_generator<raft::protocol_metadata> {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
     }
 
@@ -285,6 +286,12 @@ struct instance_generator<raft::heartbeat_request> {
               vnode{target_node_id, tests::random_named_int<model::revision_id>()},
           },
         }};
+
+        for (auto& hb : ret.heartbeats) {
+            // for heartbeats dirty_offset and prev_log_index are always the
+            // same.
+            hb.meta.dirty_offset = hb.meta.prev_log_index;
+        }
 
         /*
          * the serialization step for heartbeat_request will automatically sort
@@ -340,6 +347,7 @@ struct instance_generator<raft::append_entries_reply> {
              raft::reply_result::failure,
              raft::reply_result::group_unavailable,
              raft::reply_result::timeout}),
+          .may_recover = tests::random_bool(),
         };
     }
 
@@ -384,6 +392,12 @@ struct instance_generator<raft::heartbeat_reply> {
         };
 
         std::sort(ret.meta.begin(), ret.meta.end(), sorter_fn{});
+
+        // For old-style heartbeats may_recover is not serialized and defaults
+        // to true.
+        for (auto& r : ret.meta) {
+            r.may_recover = true;
+        }
 
         return ret;
     }

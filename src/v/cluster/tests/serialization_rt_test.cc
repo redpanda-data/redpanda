@@ -1828,6 +1828,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .chunk = bytes_to_iobuf(
             random_generators::get_bytes(random_generators::get_int(1024))),
           .done = tests::random_bool(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
         /*
          * manual adl/serde test to workaround iobuf being move-only
@@ -1842,6 +1843,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .file_offset = orig.file_offset,
               .chunk = orig.chunk.copy(),
               .done = orig.done,
+              .dirty_offset = orig.dirty_offset,
             };
             auto serde_out = serde::to_iobuf(std::move(serde_in));
             auto from_serde = serde::from_iobuf<raft::install_snapshot_request>(
@@ -1902,6 +1904,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .prev_log_term = tests::random_named_int<model::term_id>(),
               .last_visible_index = tests::random_named_int<model::offset>(),
             };
+            meta.dirty_offset
+              = meta.prev_log_index; // always true for heartbeats
             raft::heartbeat_metadata hm{
               .meta = meta,
               .node_id = raft::
@@ -1982,6 +1986,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
         roundtrip_test(data);
     }
@@ -2003,6 +2008,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
 
         raft::append_entries_request data{
@@ -2057,6 +2063,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .last_dirty_log_index = tests::random_named_int<model::offset>(),
           .last_term_base_offset = tests::random_named_int<model::offset>(),
           .result = raft::reply_result::group_unavailable,
+          .may_recover = tests::random_bool(),
         };
         roundtrip_test(data);
     }

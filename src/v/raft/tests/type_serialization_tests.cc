@@ -79,6 +79,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
       .prev_log_index = model::offset(99),
       .prev_log_term = model::term_id(-1),
       .last_visible_index = model::offset(200),
+      .dirty_offset = model::offset(99),
     };
     raft::append_entries_request req(
       raft::vnode(model::node_id(1), model::revision_id(10)),
@@ -104,6 +105,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     BOOST_REQUIRE_EQUAL(d.metadata().prev_log_term, meta.prev_log_term);
     BOOST_REQUIRE_EQUAL(
       d.metadata().last_visible_index, meta.last_visible_index);
+    BOOST_REQUIRE_EQUAL(d.metadata().dirty_offset, meta.dirty_offset);
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
@@ -141,6 +143,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
         req.heartbeats[i].meta.prev_log_index = model::offset(i);
         req.heartbeats[i].meta.prev_log_term = model::term_id(i);
         req.heartbeats[i].meta.last_visible_index = model::offset(i);
+        req.heartbeats[i].meta.dirty_offset = model::offset(i);
         req.heartbeats[i].target_node_id = raft::vnode(
           model::node_id(0), model::revision_id(i));
     }
@@ -160,6 +163,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
           res.heartbeats[i].meta.prev_log_term, model::term_id(i));
         BOOST_REQUIRE_EQUAL(
           res.heartbeats[i].meta.last_visible_index, model::offset(i));
+        BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].meta.dirty_offset, model::offset(i));
         BOOST_REQUIRE_EQUAL(
           res.heartbeats[i].target_node_id,
           raft::vnode(model::node_id(0), model::revision_id(i)));
@@ -247,6 +252,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
           expected[gr].last_dirty_log_index,
           result.meta[i].last_dirty_log_index);
         BOOST_REQUIRE_EQUAL(expected[gr].result, result.meta[i].result);
+        // v1 heartbeats always have default may_recover
+        BOOST_REQUIRE_EQUAL(result.meta[i].may_recover, true);
     }
 }
 
@@ -555,6 +562,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
       .prev_log_index = model::offset(99),
       .prev_log_term = model::term_id(-1),
       .last_visible_index = model::offset(200),
+      .dirty_offset = model::offset(99),
     };
     raft::append_entries_request req(
       raft::vnode(model::node_id(1), model::revision_id(10)),
@@ -588,6 +596,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
       decoded_req.metadata().prev_log_term, meta.prev_log_term);
     BOOST_REQUIRE_EQUAL(
       decoded_req.metadata().last_visible_index, meta.last_visible_index);
+    BOOST_REQUIRE_EQUAL(decoded_req.metadata().dirty_offset, meta.dirty_offset);
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
