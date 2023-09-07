@@ -26,7 +26,7 @@ require (
 	github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524
 	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230511045643-19a90983809d
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.8.2
+	github.com/stretchr/testify v1.8.4
 	github.com/twmb/franz-go v1.14.1
 	github.com/twmb/franz-go/pkg/kadm v1.9.0
 	gopkg.in/yaml.v2 v2.4.0
