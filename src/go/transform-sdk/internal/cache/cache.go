@@ -7,7 +7,7 @@ type (
 		value           V
 		insertionNumber int
 	}
-	// A cache that evicts based on number of entries
+	// A cache that evicts in FIFO order based on number of entries
 	Cache[K comparable, V any] struct {
 		underlying                 map[K]entry[V]
 		latestEntryInsertionNumber int
