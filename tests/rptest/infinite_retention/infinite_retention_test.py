@@ -735,8 +735,7 @@ class InfiniteRetentionTest(PreallocNodesTest):
             scrub_start = time.time()
             # Run 'rp_storage_tool' to check for anomalies
             try:
-                self.redpanda.stop_and_scrub_object_storage(
-                    run_timeout=self.params.target_runtime * 2)
+                self.redpanda.stop_and_scrub_object_storage(run_timeout=1800)
             except Exception as exc:
                 self.logger.warn("Exception detected while running scrub")
                 scrub_exceptions += [exc]
