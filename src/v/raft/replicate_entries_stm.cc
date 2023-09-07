@@ -295,7 +295,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
 
     // wait for the requests to be dispatched in background and then release
     // units
-    (void)ss::with_gate(_req_bg, [this]() {
+    ssx::spawn_with_gate(_req_bg, [this]() {
         // Wait until all RPCs will be dispatched
         return _dispatch_sem.wait(_requests_count).then([this] {
             // release memory reservations, and destroy data
