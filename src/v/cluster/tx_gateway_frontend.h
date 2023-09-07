@@ -37,7 +37,8 @@ public:
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache>&);
+      ss::sharded<cluster::tm_stm_cache>&,
+      config::binding<uint64_t> max_transactions_per_coordinator);
 
     ss::future<std::optional<model::node_id>>
       find_coordinator(kafka::transactional_id);
@@ -101,6 +102,7 @@ private:
     ss::timer<model::timeout_clock> _expire_timer;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _transactions_enabled;
+    config::binding<uint64_t> _max_transactions_per_coordinator;
 
     // Transaction GA includes: KIP_447, KIP-360, fix for compaction tx_group*
     // records, perf fix#1(Do not writing preparing state on disk in tm_stn),
@@ -195,8 +197,21 @@ private:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::timeout_clock::duration);
+    ss::future<cluster::init_tm_tx_reply> init_tm_tx_locally(
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::timeout_clock::duration,
+      model::producer_identity,
+      model::partition_id);
+    ss::future<cluster::init_tm_tx_reply> limit_init_tm_tx(
+      ss::shared_ptr<tm_stm>,
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::timeout_clock::duration,
+      model::producer_identity);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shared_ptr<tm_stm>,
+      model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::timeout_clock::duration,
@@ -259,10 +274,12 @@ private:
     void expire_old_txs();
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
     ss::future<> expire_old_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
-    ss::future<> do_expire_old_tx(
+    ss::future<tx_errc> do_expire_old_tx(
       ss::shared_ptr<tm_stm>,
+      model::term_id term,
       kafka::transactional_id,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      bool ignore_update_ts);
 
     friend tx_gateway;
 };
