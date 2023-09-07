@@ -55,3 +55,34 @@ func TestCacheMaxSize(t *testing.T) {
 		t.Fatalf("got: %v want: %v", v, "thud")
 	}
 }
+
+func TestCacheLRU(t *testing.T) {
+	c := cache.New[int, string](3)
+	c.Put(1, "foo")
+	c.Put(2, "bar")
+	c.Put(3, "qux")
+	v := expectValue(t, c, 1)
+	if v != "foo" {
+		t.Fatalf("got: %v want: %v", v, "baz")
+	}
+	// this should evict key 2 because it's LRU
+	c.Put(4, "baz")
+	if c.Size() != 3 {
+		t.Fatalf("got: %v want: 3", c.Size())
+	}
+	if _, ok := c.Get(2); ok {
+		t.Fatalf("got: %v want: false", ok)
+	}
+	v = expectValue(t, c, 1)
+	if v != "foo" {
+		t.Fatalf("got: %v want: %v", v, "baz")
+	}
+	v = expectValue(t, c, 3)
+	if v != "qux" {
+		t.Fatalf("got: %v want: %v", v, "qux")
+	}
+	v = expectValue(t, c, 4)
+	if v != "baz" {
+		t.Fatalf("got: %v want: %v", v, "thud")
+	}
+}
