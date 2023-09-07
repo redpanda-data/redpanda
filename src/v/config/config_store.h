@@ -52,7 +52,7 @@ public:
      *        mix node & cluster config properties.
      * @return map of property name to error.  Empty on clean load.
      */
-    virtual error_map_t read_yaml(
+    error_map_t read_yaml(
       const YAML::Node& root_node,
       const std::set<std::string_view> ignore_missing = {}) {
         error_map_t errors;
