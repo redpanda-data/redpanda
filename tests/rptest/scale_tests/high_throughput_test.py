@@ -34,7 +34,7 @@ from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
                                       SISettings, RedpandaServiceCloud)
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import firewall_blocked
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
@@ -163,7 +163,7 @@ def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
         ) >= tier_cfg.egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate}"
 
 
-class HighThroughputTest(PreallocNodesTest):
+class HighThroughputTest(RedpandaTest):
     small_segment_size = 4 * KiB
     unavailable_timeout = 60
     msg_size = 128 * KiB
@@ -191,7 +191,6 @@ class HighThroughputTest(PreallocNodesTest):
 
         super(HighThroughputTest,
               self).__init__(test_ctx,
-                             1,
                              *args,
                              num_brokers=num_brokers,
                              extra_rp_conf=extra_rp_conf,
