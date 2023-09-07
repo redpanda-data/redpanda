@@ -30,7 +30,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda_cloud import CloudTierName
+from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
                                       SISettings)
 from rptest.services.rpk_consumer import RpkConsumer
@@ -179,27 +179,15 @@ class HighThroughputTest(PreallocNodesTest):
         num_brokers = None
 
         if cloud_tier == CloudTierName.DOCKER:
-            # TODO: Eventually modify this to mirror only the parameters for which are
-            # modified by the cloud configuration tiers
+            # TODO: Bake the docker config into a higher layer that will
+            # automatically load these settings upon call to make_rp_service
+            config = AdvertisedTierConfigs[CloudTierName.DOCKER]
+            num_brokers = config.num_brokers
             extra_rp_conf = {
-                'log_segment_size': self.tier_config.segment_size,
-                'cloud_storage_cache_size': self.tier_config.cloud_cache_size,
-                'cloud_storage_segment_size_min': 1,
-                'log_segment_size_min': 1024,
-
-                # Disable segment merging: when we create many small segments
-                # to pad out tiered storage metadata, we don't want them to
-                # get merged together.
-                'cloud_storage_enable_segment_merging': False,
-                'disable_batch_cache': True,
-                'partition_autobalancing_node_availability_timeout_sec':
-                self.unavailable_timeout,
-                'partition_autobalancing_mode': 'continuous',
-                'raft_learner_recovery_rate': 10 * GiB,
-                'cloud_storage_max_readers_per_shard': 256,
-                'kafka_connections_max': self.tier_config.connections_limit,
+                'log_segment_size': config.segment_size,
+                'cloud_storage_cache_size': config.cloud_cache_size,
+                'kafka_connections_max': config.connections_limit,
             }
-            num_brokers = self.tier_config.num_brokers
 
         super(HighThroughputTest,
               self).__init__(test_ctx,
