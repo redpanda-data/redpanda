@@ -26,9 +26,9 @@ func New[K comparable, V any](maxSize int) Cache[K, V] {
 
 // Put adds an entry into the cache
 func (c *Cache[K, V]) Put(k K, v V) {
+	c.prune()
 	c.underlying[k] = entry[V]{value: v, insertionNumber: c.latestEntryInsertionNumber}
 	c.latestEntryInsertionNumber += 1
-	c.prune()
 }
 
 // Get extracts a value from the cache
@@ -46,7 +46,7 @@ func (c *Cache[K, V]) Size() int {
 }
 
 func (c *Cache[K, V]) prune() {
-	for len(c.underlying) > c.maxEntries {
+	for len(c.underlying) >= c.maxEntries {
 		var key K
 		min := math.MaxInt
 		for k, e := range c.underlying {
