@@ -156,7 +156,7 @@ private:
     ss::future<> do_next_adaptive_fallocation();
     ss::future<> hydrate_last_half_page();
     ss::future<> do_truncation(size_t);
-    ss::future<> do_append(const char* buf, const size_t n);
+    ss::future<> do_append(const char* buf, size_t n);
 
     /*
      * committed offset isn't updated until the background write is dispatched.

@@ -144,7 +144,8 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
     });
 }
 
-ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
+ss::future<> segment_appender::do_append(const char* buf, size_t n) {
+    while(true) {
     vassert(!_closed, "append() on closed segment: {}", *this);
 
     /*
@@ -155,12 +156,12 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
     if (unlikely(!_head && _committed_offset > 0)) {
         _head = co_await internal::chunks().get();
         co_await hydrate_last_half_page();
-        co_return co_await do_append(buf, n);
+        continue;
     }
 
     if (next_committed_offset() + n > _fallocation_offset) {
         co_await do_next_adaptive_fallocation();
-        co_return co_await do_append(buf, n);
+        continue;
     }
 
     size_t written = 0;
@@ -183,7 +184,10 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
     auto chunk = co_await internal::chunks().get();
     vassert(!_head, "cannot overwrite existing chunk");
     _head = std::move(chunk);
-    co_return co_await do_append(buf + written, n - written);
+
+    buf += written;
+    n -= written;
+    }
 }
 
 void segment_appender::check_no_dispatched_writes() {
