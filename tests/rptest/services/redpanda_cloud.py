@@ -36,6 +36,7 @@ TIER_DEFAULTS = {PROVIDER_AWS: "tier-1-aws", PROVIDER_GCP: "tier-1-gcp"}
 
 
 class CloudTierName(Enum):
+    DOCKER = 'docker-local'
     AWS_1 = 'tier-1-aws'
     AWS_2 = 'tier-2-aws'
     AWS_3 = 'tier-3-aws'
@@ -114,6 +115,9 @@ AdvertisedTierConfigs = {
     ),
     CloudTierName.GCP_5: AdvertisedTierConfig(
         400*MiB, 600*MiB, 12,    1*GiB,  750*GiB,  100, 7500, 22500, 32*GiB
+    ),
+    CloudTierName.DOCKER: AdvertisedTierConfig(
+        3*MiB,   9*MiB,   3,   128*MiB,  20*GiB,   1,   25,   100,   2*GiB
     ),
 }
 # yapf: enable

@@ -30,7 +30,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda_cloud import AdvertisedTierConfig, CloudTierName
+from rptest.services.redpanda_cloud import CloudTierName
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
                                       SISettings)
 from rptest.services.rpk_consumer import RpkConsumer
@@ -163,16 +163,6 @@ def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
         ) >= tier_cfg.egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate}"
 
 
-NoncloudTierConfigs = {
-    #   ingress|          segment size|       partitions max|
-    #             egress|       cloud cache size|connections # limit|
-    #           # of brokers|           partitions min|           memory per broker|
-    "docker-local":
-    AdvertisedTierConfig(3 * MiB, 9 * MiB, 3, 128 * MiB, 20 * GiB, 1, 25, 100,
-                         2 * GiB),
-}
-
-
 class HighThroughputTest(PreallocNodesTest):
     small_segment_size = 4 * KiB
     unavailable_timeout = 60
@@ -184,9 +174,11 @@ class HighThroughputTest(PreallocNodesTest):
         # Default set to tier-1-aws is a temporary work around for
         # https://github.com/redpanda-data/cloudv2/issues/7903
         cloud_tier_str = test_ctx.globals.get("cloud_tier", "tier-1-aws")
-        if cloud_tier_str in NoncloudTierConfigs.keys():
-            cloud_tier = None
-            self.tier_config = NoncloudTierConfigs[cloud_tier_str]
+        cloud_tier = CloudTierName(cloud_tier_str)
+        extra_rp_conf = None
+        num_brokers = None
+
+        if cloud_tier == CloudTierName.DOCKER:
             # TODO: Eventually modify this to mirror only the parameters for which are
             # modified by the cloud configuration tiers
             extra_rp_conf = {
@@ -209,16 +201,6 @@ class HighThroughputTest(PreallocNodesTest):
             }
             num_brokers = self.tier_config.num_brokers
 
-        else:
-            try:
-                cloud_tier = CloudTierName(cloud_tier_str)
-            except ValueError:
-                raise RuntimeError(
-                    f"Unknown cloud tier specified: {cloud_tier_str}. Supported tiers: {CloudTierName.list()+NoncloudTierConfigs.keys()}"
-                )
-            extra_rp_conf = None
-            num_brokers = None
-
         super(HighThroughputTest,
               self).__init__(test_ctx,
                              1,
@@ -229,9 +211,8 @@ class HighThroughputTest(PreallocNodesTest):
                              disable_cloud_storage_diagnostics=True,
                              **kwargs)
 
-        if cloud_tier is not None:
-            self.tier_config = self.redpanda.advertised_tier_config
-        else:
+        self.tier_config = self.redpanda.advertised_tier_config
+        if cloud_tier == CloudTierName.DOCKER:
             si_settings = SISettings(
                 test_ctx,
                 log_segment_size=self.small_segment_size,
