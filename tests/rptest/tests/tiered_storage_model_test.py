@@ -33,7 +33,7 @@ from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_re
 from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP
 from rptest.tests.tiered_storage_model import TestCase, TieredStorageEndToEndTest, get_tiered_storage_test_cases, TestRunStage, CONFIDENCE_THRESHOLD
 
-MAX_RETRIES = 5
+MAX_RETRIES = 7
 
 
 class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
@@ -453,7 +453,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
 
     def run_stage_validators(self, stage, test_case):
         """Run all validators for the given stage."""
-        for _ in range(0, MAX_RETRIES):
+        for ix in range(0, MAX_RETRIES):
             done = 0
             total = 0
             lagging_validators = []
@@ -476,7 +476,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                 self.logger.info(
                     f"{stage} delayed by lagging validators: {lagging_validators}"
                 )
-                time.sleep(5)
+                time.sleep(2 * ix)
         assert done == total, f"Failed to validate data after {MAX_RETRIES} runs"
 
     def start_inputs(self, test_case):

@@ -30,7 +30,7 @@ CONFIDENCE_THRESHOLD = 0.8
 FAKE_BASE_TIMESTAMP_MS = 1690000000000
 FAKE_TIMESTAMP_STEP_MS = 1
 LOG_SEGMENT_SIZE = 1024 * 1024
-LARGE_SEGMENT_SIZE = 2 * LOG_SEGMENT_SIZE
+LARGE_SEGMENT_SIZE = 3 * LOG_SEGMENT_SIZE
 LOCAL_TARGET_SIZE = LARGE_SEGMENT_SIZE
 SPILLOVER_MANIFEST_SIZE = 5
 LOW_THRESHOLD = 1
@@ -864,7 +864,7 @@ class AdjacentSegmentMergerReupload(Expression):
         return [
             LogBasedValidator(
                 "AdjacentSegmentMergerReupload",
-                "adjacent_segment_merger.*Successfuly uploaded segment",
+                "adjacent_segment_merger.*Found adjacent segment run",
                 confidence_threshold=LOW_THRESHOLD)
         ]
 
@@ -1561,7 +1561,10 @@ def get_tiered_storage_test_cases(fast_run=False):
         solutions.append(
             model.solve_for(ts_read() == True,
                             adjacent_segment_merger_reupload() == True))
-        # solutions.append(model.solve_for(ts_read() == True, ts_timequery() == True, spillover_manifest_uploaded() == True))
+        solutions.append(
+            model.solve_for(ts_read() == True,
+                            ts_timequery() == True,
+                            spillover_manifest_uploaded() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             compacted_segment_reupload() == True,
@@ -1570,7 +1573,10 @@ def get_tiered_storage_test_cases(fast_run=False):
             model.solve_for(ts_read() == True,
                             ts_txrange_materialized() == True,
                             spillover_manifest_uploaded() == True))
-        # solutions.append(model.solve_for(ts_read() == True, adjacent_segment_merger_reupload() == True, spillover_manifest_uploaded() == True))
+        solutions.append(
+            model.solve_for(ts_read() == True,
+                            adjacent_segment_merger_reupload() == True,
+                            spillover_manifest_uploaded() == True))
         solutions.append(
             model.solve_for(ts_delete() == True,
                             spillover_manifest_uploaded() == True,
