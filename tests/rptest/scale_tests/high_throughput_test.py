@@ -27,9 +27,9 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST,
-                                      AdvertisedTierConfig, CloudTierName,
-                                      MetricsEndpoint, SISettings)
+from rptest.services.redpanda_cloud import AdvertisedTierConfig, CloudTierName
+from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
+                                      SISettings)
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import firewall_blocked
