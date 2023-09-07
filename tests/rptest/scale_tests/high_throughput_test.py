@@ -181,7 +181,9 @@ class HighThroughputTest(PreallocNodesTest):
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
 
-        cloud_tier_str = test_ctx.globals.get("cloud_tier", "docker-local")
+        # Default set to tier-1-aws is a temporary work around for
+        # https://github.com/redpanda-data/cloudv2/issues/7903
+        cloud_tier_str = test_ctx.globals.get("cloud_tier", "tier-1-aws")
         if cloud_tier_str in NoncloudTierConfigs.keys():
             cloud_tier = None
             self.tier_config = NoncloudTierConfigs[cloud_tier_str]
