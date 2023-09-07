@@ -131,6 +131,11 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		require.NoError(t, err)
 
 		assert.Equal(t, "operator.redpanda.com/finalizer", createTopic.ObjectMeta.Finalizers[0])
+		assert.NotEmpty(t, createTopic.Status.Conditions)
+		cond := createTopic.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
 	})
 	t.Run("create_topic_that_already_exist", func(t *testing.T) {
 		topicName := "create-already-existent-test-topic"
@@ -190,6 +195,11 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		require.NoError(t, err)
 
 		assert.Equal(t, "operator.redpanda.com/finalizer", createTopic.ObjectMeta.Finalizers[0])
+		assert.NotEmpty(t, createTopic.Status.Conditions)
+		cond := createTopic.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
 	})
 	t.Run("add_partition", func(t *testing.T) {
 		topicName := "partition-count-change"
@@ -248,6 +258,18 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		resp, err := reqMeta.RequestWith(ctx, kafkaCl)
 		assert.NoError(t, err)
 		assert.Equal(t, *partitionCountChange.Spec.Partitions, len(resp.Topics[0].Partitions))
+
+		err = c.Get(ctx, types.NamespacedName{
+			Name:      topicName,
+			Namespace: testNamespace,
+		}, &partitionCountChange)
+		require.NoError(t, err)
+
+		assert.NotEmpty(t, partitionCountChange.Status.Conditions)
+		cond := partitionCountChange.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
 	})
 	t.Run("unable_to_remove_partition", func(t *testing.T) {
 		topicName := "scale-down-partition-count"
@@ -296,6 +318,18 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		// and reconcile
 		_, err = tr.Reconcile(ctx, req)
 		assert.Error(t, err)
+
+		err = c.Get(ctx, types.NamespacedName{
+			Name:      topicName,
+			Namespace: testNamespace,
+		}, &partitionCountChange)
+		require.NoError(t, err)
+
+		assert.NotEmpty(t, partitionCountChange.Status.Conditions)
+		cond := partitionCountChange.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, v1alpha1.FailedReason, cond.Reason)
 	})
 	t.Run("unable_to_increase_replication_factor", func(t *testing.T) {
 		topicName := "change-replication-factor"
@@ -414,6 +448,18 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 			delete(removeProperty.Spec.AdditionalConfig, conf.Key)
 		}
 		assert.Len(t, removeProperty.Spec.AdditionalConfig, 0)
+
+		err = c.Get(ctx, types.NamespacedName{
+			Name:      removeTopicPropertyName,
+			Namespace: testNamespace,
+		}, &removeProperty)
+		require.NoError(t, err)
+
+		assert.NotEmpty(t, removeProperty.Status.Conditions)
+		cond := removeProperty.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
 	})
 	t.Run("both_tiered_storage_property", func(t *testing.T) {
 		// Redpanda fails to set both remote.read and write when passed
@@ -504,6 +550,65 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 			delete(tieredStorageConf.Spec.AdditionalConfig, conf.Key)
 		}
 		assert.Len(t, tieredStorageConf.Spec.AdditionalConfig, 0)
+
+		err = c.Get(ctx, types.NamespacedName{
+			Name:      twoTieredStorageConfTopicName,
+			Namespace: testNamespace,
+		}, &tieredStorageConf)
+		require.NoError(t, err)
+
+		assert.NotEmpty(t, tieredStorageConf.Status.Conditions)
+		cond := tieredStorageConf.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
+	})
+	t.Run("check_status_after_reconciliation", func(t *testing.T) {
+		topicName := "topic-cr-status"
+
+		topicStatus := v1alpha1.Topic{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       topicName,
+				Namespace:  testNamespace,
+				Generation: 1,
+			},
+			Spec: v1alpha1.TopicSpec{
+				Partitions:        pointer.Int(3),
+				ReplicationFactor: pointer.Int(1),
+				AdditionalConfig:  nil,
+				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
+					Brokers: []string{seedBroker},
+				},
+			},
+		}
+
+		err := c.Create(ctx, &topicStatus)
+		require.NoError(t, err)
+
+		req := ctrl.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      topicName,
+				Namespace: testNamespace,
+			},
+		}
+		result, err := tr.Reconcile(ctx, req)
+		assert.NoError(t, err)
+
+		assert.False(t, result.Requeue)
+		assert.Equal(t, time.Second*3, result.RequeueAfter)
+
+		err = c.Get(ctx, types.NamespacedName{
+			Name:      topicName,
+			Namespace: testNamespace,
+		}, &topicStatus)
+		assert.NoError(t, err)
+
+		assert.Equal(t, topicStatus.Generation, topicStatus.Status.ObservedGeneration)
+		cond := topicStatus.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
+		assert.Equal(t, topicStatus.Generation, cond.ObservedGeneration)
 	})
 	t.Run("update_topic_configuration", func(t *testing.T) {
 		updateTopicName := "update-topic-config"
@@ -558,6 +663,18 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 			delete(updateTopic.Spec.AdditionalConfig, conf.Key)
 		}
 		assert.Len(t, updateTopic.Spec.AdditionalConfig, 0)
+
+		err = c.Get(ctx, types.NamespacedName{
+			Name:      updateTopicName,
+			Namespace: testNamespace,
+		}, &updateTopic)
+		assert.NoError(t, err)
+
+		assert.NotEmpty(t, updateTopic.Status.Conditions)
+		cond := updateTopic.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
 	})
 	t.Run("ignore_not_found", func(t *testing.T) {
 		topicName := "ignore-not-found"
