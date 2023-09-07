@@ -19,7 +19,6 @@ commands:
       --set image.repository=localhost/redpanda-operator --namespace redpanda --create-namespace
       redpanda-operator redpanda/operator --set additionalCmdFlags="{--additional-controllers=all}"
   - command: "sh -c 'until kustomize build config/e2e-v2-tests 2>> tests/_e2e_artifacts/kustomize-output.txt | kubectl apply -f - 1>> tests/_e2e_artifacts/kubectl-output.txt 2>> tests/_e2e_artifacts/kubectl-error-output.txt; do sleep 0.5; done'"
-    background: true
 artifactsDir: tests/_e2e_artifacts_v2
 timeout: 720
 reportFormat: xml
