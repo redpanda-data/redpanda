@@ -666,8 +666,8 @@ class SecurityConfig:
     # sasl is required
     def sasl_enabled(self):
         return (self.kafka_enable_authorization is None and self.enable_sasl
-                and self.endpoint_authn_method is None
-                ) or self.endpoint_authn_method == "sasl"
+                and self.endpoint_authn_method
+                is None) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
     def mtls_identity_enabled(self):
@@ -2352,8 +2352,10 @@ class RedpandaService(RedpandaServiceBase):
             admin_client = self._admin
 
         patch_result = admin_client.patch_cluster_config(
-            upsert={k: v
-                    for k, v in values.items() if v is not None},
+            upsert={
+                k: v
+                for k, v in values.items() if v is not None
+            },
             remove=[k for k, v in values.items() if v is None])
         new_version = patch_result['config_version']
 
