@@ -858,18 +858,16 @@ private:
 template<typename Func>
 inline ss::future<>
 for_each_record(const model::record_batch& batch, Func&& f) {
-    batch.verify_iterable();
     return ss::do_with(
-      iobuf_const_parser(batch.data()),
+      record_batch_iterator::create(batch),
       record{},
-      [record_count = batch.record_count(), f = std::forward<Func>(f)](
-        iobuf_const_parser& parser, record& record) mutable {
-          return ss::do_for_each(
-            boost::counting_iterator<int32_t>(0),
-            boost::counting_iterator<int32_t>(record_count),
-            [&parser, &record, f = std::forward<Func>(f)](int32_t) {
-                record = model::parse_one_record_copy_from_buffer(parser);
-                return f(record);
+      [f = std::forward<Func>(f)](
+        record_batch_iterator& it, record& r) mutable {
+          return ss::do_until(
+            [&it]() { return !it.has_next(); },
+            [&it, &r, f = std::forward<Func>(f)]() {
+                r = it.next();
+                return ss::futurize_invoke(f, r);
             });
       });
 }
