@@ -12,6 +12,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -50,11 +51,22 @@ func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 This command is provided for use in scripts.  For interactive editing, or bulk
 changes, use the 'edit' and 'import' commands respectively.
 
+You may also use <key>=<value> notation for setting configuration properties:
+
+  rpk cluster config set delete_retention_ms=-1
+
 If an empty string is given as the value, the property is reset to its default.`,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			key := args[0]
-			value := args[1]
+			var key, value string
+			if len(args) == 1 && strings.Contains(args[0], "=") {
+				kv := strings.SplitN(args[0], "=", 2)
+				key, value = kv[0], kv[1]
+			} else if len(args) == 2 {
+				key, value = args[0], args[1]
+			} else {
+				out.Die("invalid arguments: %v, please use one of 'rpk cluster config set <key> <value>' or 'rpk cluster config set <key>=<value>'", args)
+			}
 
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
