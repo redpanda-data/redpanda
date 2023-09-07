@@ -145,48 +145,48 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 }
 
 ss::future<> segment_appender::do_append(const char* buf, size_t n) {
-    while(true) {
-    vassert(!_closed, "append() on closed segment: {}", *this);
+    while (true) {
+        vassert(!_closed, "append() on closed segment: {}", *this);
 
-    /*
-     * if there is no current active chunk then we need to rehydrate. this can
-     * happen because of truncation or because the appender had been idle and
-     * its chunk was reclaimed into the chunk cache.
-     */
-    if (unlikely(!_head && _committed_offset > 0)) {
-        _head = co_await internal::chunks().get();
-        co_await hydrate_last_half_page();
-        continue;
-    }
-
-    if (next_committed_offset() + n > _fallocation_offset) {
-        co_await do_next_adaptive_fallocation();
-        continue;
-    }
-
-    size_t written = 0;
-    if (likely(_head)) {
-        const size_t sz = _head->append(buf + written, n - written);
-        written += sz;
-        _bytes_flush_pending += sz;
-        if (_head->is_full()) {
-            dispatch_background_head_write();
+        /*
+         * if there is no current active chunk then we need to rehydrate. this
+         * can happen because of truncation or because the appender had been
+         * idle and its chunk was reclaimed into the chunk cache.
+         */
+        if (unlikely(!_head && _committed_offset > 0)) {
+            _head = co_await internal::chunks().get();
+            co_await hydrate_last_half_page();
+            continue;
         }
-    }
-    if (written == n) {
-        co_return;
-    }
 
-    // barrier. do not hold the units!
-    auto units = co_await ss::get_units(_concurrent_flushes, 1);
-    units.return_all();
+        if (next_committed_offset() + n > _fallocation_offset) {
+            co_await do_next_adaptive_fallocation();
+            continue;
+        }
 
-    auto chunk = co_await internal::chunks().get();
-    vassert(!_head, "cannot overwrite existing chunk");
-    _head = std::move(chunk);
+        size_t written = 0;
+        if (likely(_head)) {
+            const size_t sz = _head->append(buf + written, n - written);
+            written += sz;
+            _bytes_flush_pending += sz;
+            if (_head->is_full()) {
+                dispatch_background_head_write();
+            }
+        }
+        if (written == n) {
+            co_return;
+        }
 
-    buf += written;
-    n -= written;
+        // barrier. do not hold the units!
+        auto units = co_await ss::get_units(_concurrent_flushes, 1);
+        units.return_all();
+
+        auto chunk = co_await internal::chunks().get();
+        vassert(!_head, "cannot overwrite existing chunk");
+        _head = std::move(chunk);
+
+        buf += written;
+        n -= written;
     }
 }
 
