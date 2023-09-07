@@ -32,7 +32,7 @@ from rptest.services.openmessaging_benchmark_configs import \
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
-                                      SISettings)
+                                      SISettings, RedpandaServiceCloud)
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import firewall_blocked
@@ -218,6 +218,13 @@ class HighThroughputTest(PreallocNodesTest):
                       retention_bytes=-1)
         ]
 
+    def tearDown(self):
+        # These tests may run on cloud ec2 instances where between each test
+        # the same cluster is used. Therefore state between runs will still exist,
+        # remove the topic after each test run to clean out old state.
+        if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in self._ctx.globals:
+            self.rpk.delete_topic(self.topic)
+
     def load_many_segments(self):
         """
         This methods intended use is to pre-load the cluster (and S3) with
@@ -283,39 +290,6 @@ class HighThroughputTest(PreallocNodesTest):
             # Test will assert if advertised throughput isn't met
             time.sleep(15)
 
-    def _stage_setup_cluster(self, name, partitions):
-        """
-        Setup cluster for tests. FMC/BYOC
-        """
-        topic_config = {
-            # Use a tiny segment size so we can generate many cloud segments
-            # very quickly.
-            'segment.bytes': 256 * MiB,
-
-            # Use infinite retention so there aren't sudden, drastic,
-            # unrealistic GCing of logs.
-            'retention.bytes': -1,
-
-            # Keep the local retention low for now so we don't get bogged down
-            # with an inordinate number of local segments.
-            'retention.local.target.bytes': 2 * 256 * MiB,
-            'cleanup.policy': 'delete',
-        }
-
-        self.logger.info("Setting up cluster")
-        # Returned object is 'map', convert it to list
-        _li = list(self.rpk.list_topics())
-        if name in _li:
-            self.logger.info("Recreating test topic")
-            self.rpk.delete_topic(name)
-        else:
-            self.logger.info("Creating test topic")
-        self.rpk.create_topic(name,
-                              partitions=partitions,
-                              replicas=1,
-                              config=topic_config)
-        return
-
     def _get_swarm_connections_count(self, nodes):
         _list = []
         for sw_node in nodes:
@@ -331,14 +305,9 @@ class HighThroughputTest(PreallocNodesTest):
     @cluster(num_nodes=3)
     def test_max_connections(self):
         # Consts
-        TOPIC_NAME = "maxconnections-check"
         PRODUCER_TIMEOUT_MS = 5000
 
         tier_config = self.redpanda.advertised_tier_config
-        _partition_count = tier_config.num_brokers
-
-        # Prepare cluster
-        self._stage_setup_cluster(TOPIC_NAME, _partition_count)
 
         # setup ProducerSwarm parameters
         producer_kwargs = {}
@@ -373,7 +342,7 @@ class HighThroughputTest(PreallocNodesTest):
             _records = records_per_producer * idx
             _swarm_node = ProducerSwarm(self._ctx,
                                         self.redpanda,
-                                        TOPIC_NAME,
+                                        self.topic,
                                         int(_conn_per_node),
                                         int(_records),
                                         timeout_ms=PRODUCER_TIMEOUT_MS,
@@ -435,7 +404,7 @@ class HighThroughputTest(PreallocNodesTest):
             records_per_producer * _conn_per_node * idx
             for idx in range(len(self.cluster.nodes), 0, -1)
         ])
-        for partition in self.rpk.describe_topic(TOPIC_NAME):
+        for partition in self.rpk.describe_topic(self.topic):
             # Add currect high watermark for topic
             _hwm += partition.high_watermark
 
@@ -446,10 +415,6 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.warn(f"Expected more than {reasonably_expected} messages "
                          f"out of {expected_msg_count}, actual {_hwm}")
         assert _hwm >= expected_msg_count
-
-        # stage delete
-        self.logger.warn("Deleting topic")
-        self.rpk.delete_topic(TOPIC_NAME)
 
         # Assert that target connection count is reached
         self.logger.warn(
