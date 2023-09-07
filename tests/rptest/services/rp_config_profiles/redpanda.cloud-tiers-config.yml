@@ -5,241 +5,253 @@ config_profiles:
     nodes_count: 3
     storage_type: local-path
     cluster_config:
-      topic_partitions_per_shard: 360
-      kafka_connections_max: 1600
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 536870912
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 268435456
-      max_compacted_log_segment_size: 1073741824
-      cloud_storage_cache_size: 314572800000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 26214400
-      kafka_throughput_limit_node_out_bps: 62914560
+      topic_partitions_per_shard: '334'
+      kafka_connections_max: '1600'
+      max_concurrent_producer_ids: '1600'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '536870912'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '536870912'
+      compacted_log_segment_size: '268435456'
+      max_compacted_log_segment_size: '1073741824'
+      cloud_storage_cache_size: '314572800000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '26214400'
+      kafka_throughput_limit_node_out_bps: '62914560'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 1000
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '1000'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '12'
   tier-2-aws:
     cloud_provider: aws
     machine_type: i3en.2xlarge
     nodes_count: 3
     storage_type: local-path
     cluster_config:
-      topic_partitions_per_shard: 299
-      kafka_connections_max: 3850
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 536870912
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 268435456
-      max_compacted_log_segment_size: 1073741824
-      cloud_storage_cache_size: 524288000000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 52428800
-      kafka_throughput_limit_node_out_bps: 157286400
+      topic_partitions_per_shard: '286'
+      kafka_connections_max: '3850'
+      max_concurrent_producer_ids: '3850'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '536870912'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '536870912'
+      compacted_log_segment_size: '268435456'
+      max_compacted_log_segment_size: '1073741824'
+      cloud_storage_cache_size: '524288000000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '52428800'
+      kafka_throughput_limit_node_out_bps: '157286400'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 2000
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '2000'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '24'
   tier-3-aws:
     cloud_provider: aws
     machine_type: i3en.2xlarge
     nodes_count: 6
     storage_type: local-path
     cluster_config:
-      topic_partitions_per_shard: 366
-      kafka_connections_max: 7600
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 536870912
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 268435456
-      max_compacted_log_segment_size: 1073741824
-      cloud_storage_cache_size: 524288000000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 104857600
-      kafka_throughput_limit_node_out_bps: 209715200
+      topic_partitions_per_shard: '358'
+      kafka_connections_max: '7600'
+      max_concurrent_producer_ids: '7600'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '536870912'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '536870912'
+      compacted_log_segment_size: '268435456'
+      max_compacted_log_segment_size: '1073741824'
+      cloud_storage_cache_size: '524288000000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '104857600'
+      kafka_throughput_limit_node_out_bps: '209715200'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 2500
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '2500'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '48'
   tier-4-aws:
     cloud_provider: aws
     machine_type: i3en.3xlarge
     nodes_count: 6
     storage_type: local-path
     cluster_config:
-      topic_partitions_per_shard: 233
-      kafka_connections_max: 15100
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 1073741824
-      log_segment_size_min: 16777216
-      log_segment_size_max: 1073741824
-      compacted_log_segment_size: 536870912
-      max_compacted_log_segment_size: 2147483648
-      cloud_storage_cache_size: 1048576000000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 209715200
-      kafka_throughput_limit_node_out_bps: 419430400
+      topic_partitions_per_shard: '228'
+      kafka_connections_max: '15100'
+      max_concurrent_producer_ids: '15100'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '1073741824'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '1073741824'
+      compacted_log_segment_size: '536870912'
+      max_compacted_log_segment_size: '2147483648'
+      cloud_storage_cache_size: '1048576000000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '209715200'
+      kafka_throughput_limit_node_out_bps: '419430400'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 2500
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '2500'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '50'
   tier-5-aws:
     cloud_provider: aws
     machine_type: i3en.3xlarge
     nodes_count: 9
     storage_type: local-path
     cluster_config:
-      topic_partitions_per_shard: 232
-      kafka_connections_max: 22600
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 1073741824
-      log_segment_size_min: 16777216
-      log_segment_size_max: 1073741824
-      compacted_log_segment_size: 536870912
-      max_compacted_log_segment_size: 2147483648
-      cloud_storage_cache_size: 1048576000000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 314572800
-      kafka_throughput_limit_node_out_bps: 629145600
+      topic_partitions_per_shard: '228'
+      kafka_connections_max: '30100'
+      max_concurrent_producer_ids: '30100'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '1073741824'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '1073741824'
+      compacted_log_segment_size: '536870912'
+      max_compacted_log_segment_size: '2147483648'
+      cloud_storage_cache_size: '1048576000000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '314572800'
+      kafka_throughput_limit_node_out_bps: '629145600'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 2500
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '2500'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '50'
   tier-1-gcp:
     cloud_provider: gcp
-    machine_type: n2-standard-2
+    machine_type: n2-standard-4
     nodes_count: 3
     storage_type: local-path
     storage_size_bytes: 1610612736000
     cluster_config:
-      topic_partitions_per_shard: 578
-      kafka_connections_max: 1600
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 536870912
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 268435456
-      max_compacted_log_segment_size: 1073741824
-      cloud_storage_cache_size: 157286400000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 26214400
-      kafka_throughput_limit_node_out_bps: 62914560
+      topic_partitions_per_shard: '167'
+      kafka_connections_max: '1600'
+      max_concurrent_producer_ids: '1600'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '536870912'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '536870912'
+      compacted_log_segment_size: '268435456'
+      max_compacted_log_segment_size: '1073741824'
+      cloud_storage_cache_size: '157286400000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '26214400'
+      kafka_throughput_limit_node_out_bps: '62914560'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 500
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '500'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '12'
   tier-2-gcp:
     cloud_provider: gcp
     machine_type: n2-standard-8
@@ -247,40 +259,42 @@ config_profiles:
     storage_type: local-path
     storage_size_bytes: 3221225472000
     cluster_config:
-      topic_partitions_per_shard: 157
-      kafka_connections_max: 3850
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 536870912
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 268435456
-      max_compacted_log_segment_size: 1073741824
-      cloud_storage_cache_size: 314572800000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 52428800
-      kafka_throughput_limit_node_out_bps: 157286400
+      topic_partitions_per_shard: '143'
+      kafka_connections_max: '3850'
+      max_concurrent_producer_ids: '3850'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '536870912'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '536870912'
+      compacted_log_segment_size: '268435456'
+      max_compacted_log_segment_size: '1073741824'
+      cloud_storage_cache_size: '314572800000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '52428800'
+      kafka_throughput_limit_node_out_bps: '157286400'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 1000
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '1000'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '24'
   tier-3-gcp:
     cloud_provider: gcp
     machine_type: n2-standard-8
@@ -288,81 +302,85 @@ config_profiles:
     storage_type: local-path
     storage_size_bytes: 3221225472000
     cluster_config:
-      topic_partitions_per_shard: 224
-      kafka_connections_max: 7600
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 536870912
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 268435456
-      max_compacted_log_segment_size: 1073741824
-      cloud_storage_cache_size: 335544320000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 104857600
-      kafka_throughput_limit_node_out_bps: 209715200
+      topic_partitions_per_shard: '215'
+      kafka_connections_max: '7600'
+      max_concurrent_producer_ids: '7600'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '536870912'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '536870912'
+      compacted_log_segment_size: '268435456'
+      max_compacted_log_segment_size: '1073741824'
+      cloud_storage_cache_size: '335544320000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '104857600'
+      kafka_throughput_limit_node_out_bps: '209715200'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 1500
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '1500'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '48'
   tier-4-gcp:
     cloud_provider: gcp
     machine_type: n2-standard-8
     nodes_count: 9
     storage_type: local-path
-    storage_size_bytes: 3221225472000
+    storage_size_bytes: 6442450944000
     cluster_config:
-      topic_partitions_per_shard: 245
-      kafka_connections_max: 15100
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 536870912
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 268435456
-      max_compacted_log_segment_size: 1073741824
-      cloud_storage_cache_size: 367001600000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 209715200
-      kafka_throughput_limit_node_out_bps: 419430400
+      topic_partitions_per_shard: '239'
+      kafka_connections_max: '15100'
+      max_concurrent_producer_ids: '15100'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '536870912'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '536870912'
+      compacted_log_segment_size: '268435456'
+      max_compacted_log_segment_size: '1073741824'
+      cloud_storage_cache_size: '367001600000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '209715200'
+      kafka_throughput_limit_node_out_bps: '419430400'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: '1666.666667'
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '1667'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '50'
   tier-5-gcp:
     cloud_provider: gcp
     machine_type: n2-standard-8
@@ -370,37 +388,39 @@ config_profiles:
     storage_type: local-path
     storage_size_bytes: 6442450944000
     cluster_config:
-      topic_partitions_per_shard: 273
-      kafka_connections_max: 22600
-      topic_fds_per_partition: 100
-      topic_memory_per_partition: 10485760
-      log_segment_size: 1073741824
-      log_segment_size_min: 16777216
-      log_segment_size_max: 536870912
-      compacted_log_segment_size: 536870912
-      max_compacted_log_segment_size: 2147483648
-      cloud_storage_cache_size: 786432000000
-      retention_local_target_ms_default: 43200000
-      cloud_storage_segment_max_upload_interval_sec: 3600
-      log_segment_ms_min: 300000
-      rpc_server_listen_backlog: 1000
-      kafka_rpc_server_tcp_recv_buf: 102400
-      kafka_rpc_server_tcp_send_buf: 102400
-      kafka_connection_rate_limit: 1000
-      kafka_throughput_limit_node_in_bps: 419430400
-      kafka_throughput_limit_node_out_bps: 629145600
+      topic_partitions_per_shard: '268'
+      kafka_connections_max: '22600'
+      max_concurrent_producer_ids: '22600'
+      topic_fds_per_partition: '100'
+      topic_memory_per_partition: '10485760'
+      log_segment_size: '1073741824'
+      log_segment_size_min: '16777216'
+      log_segment_size_max: '1073741824'
+      compacted_log_segment_size: '536870912'
+      max_compacted_log_segment_size: '2147483648'
+      cloud_storage_cache_size: '786432000000'
+      retention_local_target_ms_default: '43200000'
+      cloud_storage_segment_max_upload_interval_sec: '3600'
+      log_segment_ms_min: '300000'
+      rpc_server_listen_backlog: '1000'
+      kafka_rpc_server_tcp_recv_buf: '102400'
+      kafka_rpc_server_tcp_send_buf: '102400'
+      kafka_connection_rate_limit: '1000'
+      kafka_throughput_limit_node_in_bps: '419430400'
+      kafka_throughput_limit_node_out_bps: '629145600'
       enable_controller_log_rate_limiting: true
-      rps_limit_topic_operations: 100
-      rps_limit_acls_and_users_operations: 100
-      rps_limit_node_management_operations: 10
-      rps_limit_move_operations: 1875
-      rps_limit_configuration_operations: 10
-      kafka_batch_max_bytes: 1048576
+      rps_limit_topic_operations: '100'
+      rps_limit_acls_and_users_operations: '100'
+      rps_limit_node_management_operations: '10'
+      rps_limit_move_operations: '1875'
+      rps_limit_configuration_operations: '10'
+      kafka_batch_max_bytes: '1048576'
       enable_usage: true
       aggregate_metrics: true
       kafka_enable_partition_reassignment: false
       partition_autobalancing_mode: continuous
-      group_topic_partitions: 16
+      group_topic_partitions: '16'
       cloud_storage_enable_remote_read: true
       cloud_storage_enable_remote_write: true
-      default_topic_replications: 3
+      default_topic_replications: '3'
+      transaction_coordinator_partitions: '50'
