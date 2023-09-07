@@ -57,6 +57,7 @@ adjacent_segment_merger::adjacent_segment_merger(
 ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 
 void adjacent_segment_merger::set_enabled(bool enabled) {
+    vlog(_ctxlog.trace, "Setting adjacent segment merger enabled: {}", enabled);
     _job_enabled = enabled;
 }
 
@@ -150,6 +151,11 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
     };
 
     if (!enabled()) {
+        vlog(
+          _ctxlog.trace,
+          "Adjacent segment merging is disabled, config: {}, job: {}",
+          _config_enabled(),
+          _job_enabled);
         co_return result;
     }
 
