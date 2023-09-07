@@ -1193,8 +1193,12 @@ class RedpandaServiceBase(Service):
 
             # List of regexes that will fail the test on if they appear in the log
             match_terms = [
-                "Segmentation fault", "[Aa]ssert",
-                "Exceptional future ignored", "UndefinedBehaviorSanitizer"
+                "Segmentation fault",
+                "[Aa]ssert",
+                "Exceptional future ignored",
+                "UndefinedBehaviorSanitizer",
+                "Aborting on shard",
+                "libc++abi: terminating due to uncaught exception",
             ]
             if self._raise_on_errors:
                 match_terms.append("^ERROR")
