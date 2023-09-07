@@ -12,6 +12,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/redpanda-data/console/backend/pkg/config"
 	corev1 "k8s.io/api/core/v1"
@@ -237,4 +238,81 @@ func (t *Topic) GetName() string {
 		topicName = *t.Spec.OverwriteTopicName
 	}
 	return topicName
+}
+
+const (
+	// ReadyCondition indicates the resource is ready and fully reconciled.
+	// If the Condition is False, the resource SHOULD be considered to be in the process of reconciling and not a
+	// representation of actual state.
+	ReadyCondition = "Ready"
+)
+
+const (
+	// ProgressingReason indicates a condition or event observed progression, for example when the reconciliation of a
+	// resource or an action has started.
+	//
+	// When this reason is given, other conditions and types MAY no longer be considered as an up-to-date observation.
+	// Producers of the specific condition type or event SHOULD provide more information about the expectations and
+	// precise meaning in their API specification.
+	//
+	// More information about the reason or the current state of the progression MAY be available as additional metadata
+	// in an attached message.
+	ProgressingReason string = "Progressing"
+
+	// SucceededReason indicates a condition or event observed a success, for example when declared desired state
+	// matches actual state, or a performed action succeeded.
+	//
+	// More information about the reason of success MAY be available as additional metadata in an attached message.
+	SucceededReason string = "Succeeded"
+
+	// FailedReason indicates a condition or event observed a failure, for example when declared state does not match
+	// actual state, or a performed action failed.
+	//
+	// More information about the reason of failure MAY be available as additional metadata in an attached message.
+	FailedReason string = "Failed"
+)
+
+// TopicProgressing resets any failures and registers progress toward
+// reconciling the given Topic by setting the meta.ReadyCondition to
+// 'Unknown' for meta.ProgressingReason.
+func TopicProgressing(topic *Topic) *Topic {
+	return setCondition(ProgressingReason, "Topic reconciliation in progress", metav1.ConditionUnknown, topic)
+}
+
+// TopicReady resets any failures and registers ready condition
+// the given Topic by setting the meta.ReadyCondition to
+// 'Ready' for meta.SucceededReason.
+func TopicReady(topic *Topic) *Topic {
+	return setCondition(SucceededReason, "Topic reconciliation succeeded", metav1.ConditionTrue, topic)
+}
+
+// TopicFailed resets all conditions to failure the given Topic
+// by setting the meta.ReadyCondition to 'Failed' for meta.FailedReason.
+func TopicFailed(topic *Topic) *Topic {
+	return setCondition(FailedReason, "Topic reconciliation failed", metav1.ConditionFalse, topic)
+}
+
+func setCondition(reason, message string, status metav1.ConditionStatus, topic *Topic) *Topic {
+	condition := metav1.Condition{
+		Type:               ReadyCondition,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: topic.Generation,
+		LastTransitionTime: metav1.NewTime(time.Now()),
+	}
+
+	for i := range topic.Status.Conditions {
+		if topic.Status.Conditions[i].Type == ReadyCondition {
+			if topic.Status.Conditions[i].Status == status &&
+				topic.Status.Conditions[i].Reason == reason {
+				return topic
+			}
+			topic.Status.Conditions[i] = condition
+			return topic
+		}
+	}
+
+	topic.Status.Conditions = append(topic.Status.Conditions, condition)
+	return topic
 }

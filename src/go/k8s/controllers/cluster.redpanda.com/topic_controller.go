@@ -22,6 +22,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kuberecorder "k8s.io/client-go/tools/record"
@@ -97,7 +98,14 @@ func (r *TopicReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 	}
 
-	result, err := r.reconcile(ctx, topic, l)
+	topic, result, err := r.reconcile(ctx, topic, l)
+
+	// Update status after reconciliation.
+	if updateStatusErr := r.patchTopicStatus(ctx, topic, l); updateStatusErr != nil {
+		l.Error(updateStatusErr, "unable to update topic status after reconciliation")
+		err = errors.Join(err, updateStatusErr)
+		result.Requeue = true
+	}
 
 	// Log reconciliation duration
 	durationMsg := fmt.Sprintf("reconciliation finished in %s", time.Since(start).String())
@@ -111,6 +119,7 @@ func (r *TopicReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	} else if !topic.DeletionTimestamp.IsZero() {
 		patch := client.MergeFrom(topic.DeepCopy())
 		controllerutil.RemoveFinalizer(topic, FinalizerKey)
+		topic = v1alpha1.TopicReady(topic)
 		if err = r.Patch(ctx, topic, patch); err != nil {
 			l.Error(err, "unable to remove finalizer")
 			return ctrl.Result{}, err
@@ -126,7 +135,7 @@ func (r *TopicReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *TopicReconciler) reconcile(ctx context.Context, topic *v1alpha1.Topic, l logr.Logger) (ctrl.Result, error) {
+func (r *TopicReconciler) reconcile(ctx context.Context, topic *v1alpha1.Topic, l logr.Logger) (*v1alpha1.Topic, ctrl.Result, error) {
 	l = l.WithName("reconcile")
 
 	interval := v1.Duration{Duration: time.Second * 3}
@@ -134,9 +143,15 @@ func (r *TopicReconciler) reconcile(ctx context.Context, topic *v1alpha1.Topic, 
 		interval = *topic.Spec.SynchronizationInterval
 	}
 
+	if topic.Status.ObservedGeneration != topic.Generation {
+		topic.Status.ObservedGeneration = topic.Generation
+		topic = v1alpha1.TopicProgressing(topic)
+		l.V(TraceLevel).Info("bump observed generation", "observed generation", topic.Generation)
+	}
+
 	kafkaClient, err := r.createKafkaClient(ctx, topic, l)
 	if err != nil {
-		return ctrl.Result{}, err
+		return v1alpha1.TopicFailed(topic), ctrl.Result{}, err
 	}
 	defer kafkaClient.Close()
 
@@ -154,35 +169,35 @@ func (r *TopicReconciler) reconcile(ctx context.Context, topic *v1alpha1.Topic, 
 		l.V(DebugLevel).Info("delete topic", "topic-name", topic.GetName())
 		err = r.deleteTopic(ctx, topic, kafkaClient)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to delete topic: %w", err)
+			return v1alpha1.TopicFailed(topic), ctrl.Result{}, fmt.Errorf("unable to delete topic: %w", err)
 		}
-		return ctrl.Result{}, nil
+		return v1alpha1.TopicReady(topic), ctrl.Result{}, nil
 	}
 
 	if _, err = r.describeTopic(ctx, topic, kafkaClient); errors.Is(err, kerr.UnknownTopicOrPartition) {
 		err = r.createTopic(ctx, topic, kafkaClient, partition, replicationFactor)
 		if err != nil && !errors.Is(err, kerr.TopicAlreadyExists) {
-			return ctrl.Result{}, err
+			return v1alpha1.TopicFailed(topic), ctrl.Result{}, err
 		}
 		l.V(DebugLevel).Info("topic created",
 			"topic-name", topic.GetName(),
 			"topic-configuration", topic.Spec.AdditionalConfig,
 			"topic-partition", partition,
 			"topic-replication-factor", replicationFactor)
-		return ctrl.Result{RequeueAfter: interval.Duration}, nil
+		return v1alpha1.TopicReady(topic), ctrl.Result{RequeueAfter: interval.Duration}, nil
 	}
 
 	l.V(DebugLevel).Info("reconcile partition count", "partition", partition)
 	var numReplicas int16
 	numReplicas, err = r.reconcilePartition(ctx, topic, kafkaClient, int(partition))
 	if err != nil {
-		return ctrl.Result{}, err
+		return v1alpha1.TopicFailed(topic), ctrl.Result{}, err
 	}
 
 	l.V(DebugLevel).Info("topic configuration synchronization", "topic-configuration", topic.Spec.AdditionalConfig)
 	resp, err := r.describeTopic(ctx, topic, kafkaClient)
 	if err != nil {
-		return ctrl.Result{}, err
+		return v1alpha1.TopicFailed(topic), ctrl.Result{}, err
 	}
 
 	setConf, specialWriteConf, deleteConf := generateConf(resp.Resources[0].Configs, topic.Spec.AdditionalConfig, replicationFactor, numReplicas)
@@ -193,15 +208,24 @@ func (r *TopicReconciler) reconcile(ctx context.Context, topic *v1alpha1.Topic, 
 	// https://github.com/redpanda-data/redpanda/issues/4499
 	if len(specialWriteConf) > 0 {
 		if err = r.alterTopicConfiguration(ctx, topic, specialWriteConf, deleteConf, kafkaClient, l); err != nil {
-			return ctrl.Result{}, err
+			return v1alpha1.TopicFailed(topic), ctrl.Result{}, err
 		}
 	}
 
 	if err = r.alterTopicConfiguration(ctx, topic, setConf, deleteConf, kafkaClient, l); err != nil {
-		return ctrl.Result{}, err
+		return v1alpha1.TopicFailed(topic), ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: interval.Duration}, nil
+	return r.successfulTopicReconciliation(topic), ctrl.Result{RequeueAfter: interval.Duration}, nil
+}
+
+func (r *TopicReconciler) successfulTopicReconciliation(topic *v1alpha1.Topic) *v1alpha1.Topic {
+	if r.EventRecorder != nil {
+		r.EventRecorder.AnnotatedEventf(topic,
+			map[string]string{v2.GroupVersion.Group + "/revision": topic.ResourceVersion},
+			corev1.EventTypeNormal, v1alpha1.EventTopicSynced, "configuration synced")
+	}
+	return v1alpha1.TopicReady(topic)
 }
 
 func (r *TopicReconciler) reconcilePartition(ctx context.Context, topic *v1alpha1.Topic, cl *kgo.Client, partition int) (int16, error) {
@@ -407,6 +431,26 @@ func (r *TopicReconciler) deleteTopic(ctx context.Context, topic *v1alpha1.Topic
 	}
 
 	return nil
+}
+
+func (r *TopicReconciler) patchTopicStatus(ctx context.Context, topic *v1alpha1.Topic, l logr.Logger) error {
+	key := client.ObjectKeyFromObject(topic)
+	latest := &v1alpha1.Topic{}
+	err := r.Client.Get(ctx, key, latest)
+	if client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("retrieve current topic resource for update statue: %w", err)
+	}
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+
+	patch := client.MergeFrom(latest)
+	b, err := patch.Data(topic)
+	if err == nil && len(b) != 0 {
+		l.V(TraceLevel).Info("patch topic status", "patch-type", patch.Type(), "patch-body", string(b))
+	}
+
+	return r.Client.Status().Patch(ctx, topic, patch)
 }
 
 func generateConf(
