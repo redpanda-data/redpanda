@@ -510,7 +510,8 @@ public:
       model::topic_namespace_view tp_ns,
       int partitions = 1,
       std::optional<cluster::topic_properties> props = std::nullopt,
-      int16_t replication_factor = 1) {
+      int16_t replication_factor = 1,
+      bool wait = true) {
         std::vector<cluster::topic_configuration> cfgs = {
           cluster::topic_configuration{
             tp_ns.ns, tp_ns.tp, partitions, replication_factor}};
@@ -522,7 +523,7 @@ public:
           .create_topics(
             cluster::without_custom_assignments(std::move(cfgs)),
             model::no_timeout)
-          .then([this](std::vector<cluster::topic_result> results) {
+          .then([this, wait](std::vector<cluster::topic_result> results) {
               vassert(
                 results.size() == 1,
                 "expected exactly 1 result but got {}",
@@ -534,7 +535,11 @@ public:
                     result.tp_ns,
                     cluster::make_error_code(result.ec).message()));
               }
-              return wait_for_topics(std::move(results));
+
+              if (wait) {
+                  return wait_for_topics(std::move(results));
+              }
+              return ss::make_ready_future<>();
           });
     }
 
