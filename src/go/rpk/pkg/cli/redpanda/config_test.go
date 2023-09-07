@@ -243,8 +243,8 @@ func TestSetCommand(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		cfgFile string
-		exp     string
 		args    []string
+		exp     string
 	}{
 		{
 			name: "set without config file on disk",
@@ -269,8 +269,7 @@ pandaproxy: {}
 schema_registry: {}
 `,
 			args: []string{"redpanda.rack", "redpanda-rack"},
-		},
-		{
+		}, {
 			name: "set with loaded config",
 			cfgFile: `redpanda:
     data_directory: data/dir
@@ -310,6 +309,85 @@ rpk:
     tune_cpu: true
 `,
 			args: []string{"rpk.tune_cpu", "true"},
+		}, {
+			name: "set with =",
+			args: []string{"rpk.tune_cpu=true"},
+			cfgFile: `redpanda:
+    data_directory: data/dir
+    rack: redpanda-rack
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    tune_network: true
+    tune_disk_scheduler: true
+`,
+			exp: `redpanda:
+    data_directory: data/dir
+    rack: redpanda-rack
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    tune_network: true
+    tune_disk_scheduler: true
+    tune_cpu: true
+`,
+		}, {
+			name: "set with = negative number",
+			args: []string{"redpanda.rpc_server.port=-1"},
+			cfgFile: `redpanda:
+    data_directory: data/dir
+    rack: redpanda-rack
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    tune_network: true
+    tune_disk_scheduler: true
+`,
+			exp: `redpanda:
+    data_directory: data/dir
+    rack: redpanda-rack
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: -1
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    tune_network: true
+    tune_disk_scheduler: true
+`,
 		},
 	} {
 		fs := afero.NewMemMapFs()
@@ -317,23 +395,18 @@ rpk:
 		// We create a config file in default redpanda location
 		if test.cfgFile != "" {
 			err := afero.WriteFile(fs, "/etc/redpanda/redpanda.yaml", []byte(test.cfgFile), 0o644)
-			if err != nil {
-				t.Errorf("unexpected failure writing passed config file: %v", err)
-			}
+			require.NoError(t, err, "unexpected failure writing passed config file: %v", err)
 		}
 
 		c := set(fs, new(config.Params))
 		c.SetArgs(test.args)
 		err := c.Execute()
-		if err != nil {
-			t.Errorf("error during command execution: %v", err)
-		}
+		require.NoError(t, err, "error during command execution: %v", err)
 
 		// Read back from that default location and compare.
 		file, err := afero.ReadFile(fs, "/etc/redpanda/redpanda.yaml")
-		if err != nil {
-			t.Errorf("unexpected failure reading config file: %v", err)
-		}
+		require.NoError(t, err, "unexpected failure reading config file: %v", err)
+
 		require.Equal(t, test.exp, string(file))
 	}
 }
