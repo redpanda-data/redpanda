@@ -153,20 +153,14 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
      * its chunk was reclaimed into the chunk cache.
      */
     if (unlikely(!_head && _committed_offset > 0)) {
-        return internal::chunks()
-          .get()
-          .then([this](ss::lw_shared_ptr<chunk> chunk) {
-              _head = std::move(chunk);
-          })
-          .then([this, buf, n] {
-              return hydrate_last_half_page().then(
-                [this, buf, n] { return do_append(buf, n); });
-          });
+        _head = co_await internal::chunks().get();
+        co_await hydrate_last_half_page();
+        co_return co_await do_append(buf, n);
     }
 
     if (next_committed_offset() + n > _fallocation_offset) {
-        return do_next_adaptive_fallocation().then(
-          [this, buf, n] { return do_append(buf, n); });
+        co_await do_next_adaptive_fallocation();
+        co_return co_await do_append(buf, n);
     }
 
     size_t written = 0;
@@ -179,20 +173,17 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
         }
     }
     if (written == n) {
-        return ss::make_ready_future<>();
+        co_return;
     }
 
-    return ss::get_units(_concurrent_flushes, 1)
-      .then([this, next_buf = buf + written, next_sz = n - written](
-              ssx::semaphore_units) {
-          // do not hold the units!
-          return internal::chunks().get().then(
-            [this, next_buf, next_sz](ss::lw_shared_ptr<chunk> chunk) {
-                vassert(!_head, "cannot overwrite existing chunk");
-                _head = std::move(chunk);
-                return do_append(next_buf, next_sz);
-            });
-      });
+    // barrier. do not hold the units!
+    auto units = co_await ss::get_units(_concurrent_flushes, 1);
+    units.return_all();
+
+    auto chunk = co_await internal::chunks().get();
+    vassert(!_head, "cannot overwrite existing chunk");
+    _head = std::move(chunk);
+    co_return co_await do_append(buf + written, n - written);
 }
 
 void segment_appender::check_no_dispatched_writes() {
