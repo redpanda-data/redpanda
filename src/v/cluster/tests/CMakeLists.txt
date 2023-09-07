@@ -120,3 +120,17 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::seastar_testing_main v::cluster
   LABELS cluster
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME plugin_test
+  SOURCES 
+    plugin_table_test.cc
+    plugin_frontend_validation_test.cc
+  LIBRARIES 
+    v::gtest_main 
+    v::cluster
+  ARGS "-- -c 1"
+  LABELS cluster
+)

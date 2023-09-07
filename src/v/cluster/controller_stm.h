@@ -15,6 +15,7 @@
 #include "cluster/config_manager.h"
 #include "cluster/controller_log_limiter.h"
 #include "cluster/feature_backend.h"
+#include "cluster/plugin_backend.h"
 #include "cluster/security_manager.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "raft/mux_state_machine.h"
@@ -33,7 +34,8 @@ class controller_stm final
       members_manager,
       config_manager,
       feature_backend,
-      bootstrap_backend> {
+      bootstrap_backend,
+      plugin_backend> {
 public:
     template<typename... Args>
     controller_stm(

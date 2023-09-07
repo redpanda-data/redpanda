@@ -135,6 +135,16 @@
             "name": "get_partition_state",
             "input_type": "partition_state_request",
             "output_type": "partition_state_reply"
+        },
+        {
+            "name": "upsert_plugin",
+            "input_type": "upsert_plugin_request",
+            "output_type": "upsert_plugin_response"
+        },
+        {
+            "name": "remove_plugin",
+            "input_type": "remove_plugin_request",
+            "output_type": "remove_plugin_response"
         }
     ]
 }

@@ -2216,6 +2216,7 @@ void application::start_runtime_services(
             sched_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_topics_frontend()),
+            std::ref(controller->get_plugin_frontend()),
             std::ref(controller->get_members_manager()),
             std::ref(metadata_cache),
             std::ref(controller->get_security_frontend()),

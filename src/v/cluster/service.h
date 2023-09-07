@@ -28,6 +28,7 @@ public:
       ss::scheduling_group,
       ss::smp_service_group,
       ss::sharded<topics_frontend>&,
+      ss::sharded<plugin_frontend>&,
       ss::sharded<members_manager>&,
       ss::sharded<metadata_cache>&,
       ss::sharded<security_frontend>&,
@@ -118,6 +119,12 @@ public:
     ss::future<partition_state_reply> get_partition_state(
       partition_state_request&&, rpc::streaming_context&) final;
 
+    ss::future<upsert_plugin_response>
+    upsert_plugin(upsert_plugin_request&&, rpc::streaming_context&) final;
+
+    ss::future<remove_plugin_response>
+    remove_plugin(remove_plugin_request&&, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::
@@ -171,5 +178,6 @@ private:
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<rpc::connection_cache>& _conn_cache;
     ss::sharded<partition_manager>& _partition_manager;
+    ss::sharded<plugin_frontend>& _plugin_frontend;
 };
 } // namespace cluster

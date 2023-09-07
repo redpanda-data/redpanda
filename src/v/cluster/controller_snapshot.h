@@ -213,12 +213,22 @@ struct metrics_reporter_t
     auto serde_fields() { return std::tie(cluster_info); }
 };
 
+struct plugins_t
+  : public serde::
+      envelope<plugins_t, serde::version<0>, serde::compat_version<0>> {
+    absl::btree_map<model::transform_id, model::transform_metadata> transforms;
+
+    friend bool operator==(const plugins_t&, const plugins_t&) = default;
+
+    auto serde_fields() { return std::tie(transforms); }
+};
+
 } // namespace controller_snapshot_parts
 
 struct controller_snapshot
   : public serde::checksum_envelope<
       controller_snapshot,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     controller_snapshot_parts::bootstrap_t bootstrap;
     controller_snapshot_parts::features_t features;
@@ -227,6 +237,7 @@ struct controller_snapshot
     controller_snapshot_parts::topics_t topics;
     controller_snapshot_parts::security_t security;
     controller_snapshot_parts::metrics_reporter_t metrics_reporter;
+    controller_snapshot_parts::plugins_t plugins;
 
     friend bool
     operator==(const controller_snapshot&, const controller_snapshot&)

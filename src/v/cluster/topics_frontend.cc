@@ -68,6 +68,7 @@ topics_frontend::topics_frontend(
   ss::sharded<cluster::members_table>& members_table,
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& shard_table,
+  plugin_table& plugin_table,
   config::binding<unsigned> hard_max_disk_usage_ratio)
   : _self(self)
   , _stm(s)
@@ -79,6 +80,7 @@ topics_frontend::topics_frontend(
   , _as(as)
   , _cloud_storage_api(cloud_storage_api)
   , _features(features)
+  , _plugin_table(plugin_table)
   , _members_table(members_table)
   , _pm(pm)
   , _shard_table(shard_table)
@@ -525,6 +527,18 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
     auto topic_meta_opt = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!topic_meta_opt.has_value()) {
         topic_result result(std::move(tp_ns), errc::topic_not_exists);
+        return ss::make_ready_future<topic_result>(result);
+    }
+    // Before deleting a topic we need to make sure there are no transforms
+    // hooked up to it first.
+    //
+    // NOTE: This is best effort validation, it's possible for a plugin creation
+    // racing in a suspension point and there being a dangling topic for a
+    // plugin.
+    auto source_transforms = _plugin_table.find_by_input_topic(tp_ns);
+    auto sink_transforms = _plugin_table.find_by_output_topic(tp_ns);
+    if (!source_transforms.empty() || !sink_transforms.empty()) {
+        topic_result result(std::move(tp_ns), errc::source_topic_still_in_use);
         return ss::make_ready_future<topic_result>(result);
     }
     auto& topic_meta = topic_meta_opt.value().get();
@@ -980,6 +994,34 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
         co_return make_error_result(
           p_cfg.tp_ns, errc::topic_invalid_partitions);
+    }
+
+    // NOTE: This is best effort validation, it's possible for a plugin creation
+    // racing in a suspension point and there being extra partitions on an input
+    // topic that were added.
+    auto transforms = _plugin_table.find_by_input_topic(p_cfg.tp_ns);
+    // Check that all the topics are copartitioned
+    for (const auto& entry : transforms) {
+        for (const auto& output_topic : entry.second.output_topics) {
+            auto output_tp_cfg = _topics.local().get_topic_cfg(output_topic);
+            if (!output_tp_cfg) {
+                vlog(
+                  clusterlog.error,
+                  "invalid transform (id={}) output topic {} doesn't exist",
+                  entry.first,
+                  output_topic);
+                co_return make_error_result(
+                  p_cfg.tp_ns, errc::topic_invalid_config);
+            }
+            // We enforce the input topic has as many partitions as the
+            // output topic (copartitioning).
+            if (
+              p_cfg.new_total_partition_count
+              < output_tp_cfg->partition_count) {
+                co_return make_error_result(
+                  p_cfg.tp_ns, errc::topic_invalid_partitions);
+            }
+        }
     }
 
     auto units = co_await _allocator.invoke_on(

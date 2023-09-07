@@ -119,3 +119,5 @@ inline void validate_utf8(std::string_view s, Thrower&& thrower) {
 inline void validate_utf8(std::string_view s) {
     validate_utf8(s, default_utf8_thrower{});
 }
+
+bool is_valid_utf8(std::string_view s);

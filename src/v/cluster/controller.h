@@ -58,7 +58,9 @@ public:
     ss::sharded<config_manager>& get_config_manager() {
         return _config_manager;
     }
-
+    ss::sharded<plugin_frontend>& get_plugin_frontend() {
+        return _plugin_frontend;
+    }
     ss::sharded<members_table>& get_members_table() { return _members_table; }
     ss::sharded<topic_table>& get_topics_state() { return _tp_state; }
     ss::sharded<partition_leaders_table>& get_partition_leaders() {
@@ -242,6 +244,10 @@ private:
     ss::sharded<node_status_table>& _node_status_table;
     controller_probe _probe;
     ss::sharded<bootstrap_backend> _bootstrap_backend; // single instance
+
+    ss::sharded<plugin_frontend> _plugin_frontend; // instance per core
+    ss::sharded<plugin_table> _plugin_table;       // instance per core
+    ss::sharded<plugin_backend> _plugin_backend;   // single instance
     bool _is_ready = false;
 };
 

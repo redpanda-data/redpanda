@@ -20,6 +20,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "raft/types.h"
 #include "security/acl.h"
@@ -3924,6 +3925,74 @@ static const ss::sstring archival_stm_snapshot = "archival_metadata.snapshot";
 static const ss::sstring rm_stm_snapshot = "tx.snapshot";
 static const ss::sstring tm_stm_snapshot = "tx.coordinator.snapshot";
 static const ss::sstring id_allocator_snapshot = "id.snapshot";
+
+/**
+ * Create/update a (Wasm) plugin.
+ */
+struct upsert_plugin_request
+  : serde::envelope<
+      upsert_plugin_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::transform_metadata transform;
+    model::timeout_clock::duration timeout{};
+
+    friend bool
+    operator==(const upsert_plugin_request&, const upsert_plugin_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(transform, timeout); }
+};
+struct upsert_plugin_response
+  : serde::envelope<
+      upsert_plugin_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    errc ec;
+
+    friend bool
+    operator==(const upsert_plugin_response&, const upsert_plugin_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+/**
+ * Remove a (Wasm) plugin.
+ */
+struct remove_plugin_request
+  : serde::envelope<
+      remove_plugin_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    model::transform_name name;
+    model::timeout_clock::duration timeout{};
+
+    friend bool
+    operator==(const remove_plugin_request&, const remove_plugin_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(name, timeout); }
+};
+struct remove_plugin_response
+  : serde::envelope<
+      remove_plugin_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    uuid_t uuid;
+    errc ec;
+
+    friend bool
+    operator==(const remove_plugin_response&, const remove_plugin_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(uuid, ec); }
+};
 
 } // namespace cluster
 namespace std {

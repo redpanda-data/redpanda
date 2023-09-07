@@ -85,6 +85,11 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::no_partition_assignments:
     case cluster::errc::failed_to_create_partition:
     case cluster::errc::partition_operation_failed:
+    case cluster::errc::transform_invalid_create:
+    case cluster::errc::transform_invalid_environment:
+    case cluster::errc::transform_does_not_exist:
+    case cluster::errc::transform_invalid_update:
+    case cluster::errc::transform_invalid_source:
         break;
     }
     return error_code::unknown_server_error;

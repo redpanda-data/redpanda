@@ -36,6 +36,8 @@
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
+#include "cluster/plugin_backend.h"
+#include "cluster/plugin_frontend.h"
 #include "cluster/raft0_utils.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/security_frontend.h"
@@ -172,6 +174,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_feature_table),
             std::ref(_feature_backend));
       })
+      .then([this] { return _plugin_table.start(); })
+      .then([this] { return _plugin_backend.start_single(&_plugin_table); })
       .then([this] {
           return _config_frontend.start(
             std::ref(_stm),
@@ -232,7 +236,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_members_manager),
             std::ref(_config_manager),
             std::ref(_feature_backend),
-            std::ref(_bootstrap_backend));
+            std::ref(_bootstrap_backend),
+            std::ref(_plugin_backend));
       })
       .then([this] {
           return _members_frontend.start(
@@ -275,10 +280,25 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_members_table),
             std::ref(_partition_manager),
             std::ref(_shard_table),
+            ss::sharded_parameter(
+              [this] { return std::ref(_plugin_table.local()); }),
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
                   .storage_space_alert_free_threshold_percent.bind();
             }));
+      })
+      .then([this] {
+          return _plugin_frontend.start(
+            _raft0->self().id(),
+            ss::sharded_parameter(
+              [this] { return &_partition_leaders.local(); }),
+            ss::sharded_parameter([this] { return &_plugin_table.local(); }),
+            ss::sharded_parameter([this] { return &_tp_state.local(); }),
+            ss::sharded_parameter([this] {
+                return _stm.local_is_initialized() ? &_stm.local() : nullptr;
+            }),
+            ss::sharded_parameter([this] { return &_connections.local(); }),
+            ss::sharded_parameter([this] { return &_as.local(); }));
       })
       .then([this] {
           return _members_backend.start_single(
@@ -572,6 +592,7 @@ ss::future<> controller::stop() {
           .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
+          .then([this] { return _plugin_frontend.stop(); })
           .then([this] { return _ephemeral_credential_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
           .then([this] { return _members_frontend.stop(); })
@@ -584,6 +605,8 @@ ss::future<> controller::stop() {
           .then([this] { return _tp_state.stop(); })
           .then([this] { return _members_manager.stop(); })
           .then([this] { return _stm.stop(); })
+          .then([this] { return _plugin_backend.stop(); })
+          .then([this] { return _plugin_table.stop(); })
           .then([this] { return _drain_manager.stop(); })
           .then([this] { return _partition_balancer_state.stop(); })
           .then([this] { return _partition_allocator.stop(); })
