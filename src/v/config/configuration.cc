@@ -2522,9 +2522,10 @@ configuration::error_map_t configuration::load(const YAML::Node& root_node) {
         throw std::invalid_argument("'redpanda' root is required");
     }
 
-    const auto& ignore = node().property_names();
+    auto ignore = node().property_names();
+    ignore.merge(node().property_aliases());
 
-    return config_store::read_yaml(root_node["redpanda"], ignore);
+    return config_store::read_yaml(root_node["redpanda"], std::move(ignore));
 }
 
 configuration& shard_local_cfg() {
