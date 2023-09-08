@@ -41,6 +41,7 @@ v_cc_library(
     segment_chunk_data_source.cc
     async_manifest_view.cc
     materialized_manifest_cache.cc
+    anomalies_detector.cc
   DEPS
     Seastar::seastar
     v::bytes
