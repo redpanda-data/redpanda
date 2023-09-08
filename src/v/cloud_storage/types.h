@@ -290,6 +290,18 @@ struct cache_usage_target {
     }
 };
 
+struct spillover_manifest_path_components {
+    model::offset base;
+    model::offset last;
+    kafka::offset base_kafka;
+    kafka::offset next_kafka;
+    model::timestamp base_ts;
+    model::timestamp last_ts;
+};
+
+std::ostream&
+operator<<(std::ostream& o, const spillover_manifest_path_components& c);
+
 } // namespace cloud_storage
 
 namespace std {

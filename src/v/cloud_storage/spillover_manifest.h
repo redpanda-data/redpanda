@@ -17,30 +17,6 @@
 
 namespace cloud_storage {
 
-struct spillover_manifest_path_components {
-    model::offset base;
-    model::offset last;
-    kafka::offset base_kafka;
-    kafka::offset next_kafka;
-    model::timestamp base_ts;
-    model::timestamp last_ts;
-};
-
-inline std::ostream&
-operator<<(std::ostream& o, const spillover_manifest_path_components& c) {
-    fmt::print(
-      o,
-      "{{base: {}, last: {}, base_kafka: {}, next_kafka: {}, base_ts: {}, "
-      "last_ts: {}}}",
-      c.base,
-      c.last,
-      c.base_kafka,
-      c.next_kafka,
-      c.base_ts,
-      c.last_ts);
-    return o;
-}
-
 namespace {
 
 remote_manifest_path generate_spillover_manifest_path(
