@@ -15,12 +15,14 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
+#include "kafka/server/partition_proxy.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "transform/rpc/deps.h"
 #include "transform/rpc/serde.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -60,12 +62,10 @@ cluster::errc map_errc(std::error_code ec) {
 } // namespace
 
 local_service::local_service(
-  ss::sharded<cluster::shard_table>* shard_table,
-  ss::sharded<cluster::metadata_cache>* metadata_cache,
-  ss::sharded<cluster::partition_manager>* partition_manager)
-  : _shard_table(shard_table)
-  , _metadata_cache(metadata_cache)
-  , _partition_manager(partition_manager) {}
+  std::unique_ptr<topic_metadata_cache> metadata_cache,
+  std::unique_ptr<partition_manager> partition_manager)
+  : _metadata_cache(std::move(metadata_cache))
+  , _partition_manager(std::move(partition_manager)) {}
 
 ss::future<ss::chunked_fifo<transformed_topic_data_result>>
 local_service::produce(
@@ -94,13 +94,13 @@ local_service::produce(
 ss::future<transformed_topic_data_result> local_service::produce(
   transformed_topic_data data, model::timeout_clock::duration timeout) {
     auto ktp = model::ktp(data.tp.topic, data.tp.partition);
-    auto shard = _shard_table->local().shard_for(ktp);
+    auto shard = _partition_manager->shard_owner(ktp);
     if (!shard) {
         co_return transformed_topic_data_result(
           data.tp, cluster::errc::not_leader);
     }
 
-    auto topic_cfg = _metadata_cache->local().get_topic_cfg(ktp.as_tn_view());
+    auto topic_cfg = _metadata_cache->find_topic_cfg(ktp.as_tn_view());
     if (!topic_cfg) {
         co_return transformed_topic_data_result(
           data.tp, cluster::errc::topic_not_exists);
@@ -108,7 +108,7 @@ ss::future<transformed_topic_data_result> local_service::produce(
     // TODO: More validation of the batches, such as null record rejection and
     // crc checks.
     uint32_t max_batch_size = topic_cfg->properties.batch_max_bytes.value_or(
-      _metadata_cache->local().get_default_batch_max_bytes());
+      _metadata_cache->get_default_batch_max_bytes());
     for (const auto& batch : data.batches) {
         if (uint32_t(batch.size_bytes()) > max_batch_size) [[unlikely]] {
             co_return transformed_topic_data_result(
@@ -118,30 +118,19 @@ ss::future<transformed_topic_data_result> local_service::produce(
     auto rdr = model::make_foreign_fragmented_memory_record_batch_reader(
       std::move(data.batches));
     // TODO: schema validation
-    auto ec = co_await _partition_manager->invoke_on(
+    auto ec = co_await _partition_manager->invoke_on_shard(
       *shard,
-      [&ktp, timeout](
-        cluster::partition_manager& mgr,
-        model::record_batch_reader rdr) mutable {
-          auto partition = mgr.get(ktp);
-          if (!partition || !partition->is_leader()) {
-              return ss::make_ready_future<cluster::errc>(
-                cluster::errc::not_leader);
-          }
-          if (partition->is_read_replica_mode_enabled()) {
-              return ss::make_ready_future<cluster::errc>(
-                cluster::errc::invalid_request);
-          }
+      ktp,
+      [timeout, r = std::move(rdr)](kafka::partition_proxy* partition) mutable {
           return partition
-            ->replicate(std::move(rdr), make_replicate_options(timeout))
-            .then([](result<cluster::kafka_result> result) {
+            ->replicate(std::move(r), make_replicate_options(timeout))
+            .then([](result<model::offset> result) {
                 if (result.has_error()) {
                     return map_errc(result.assume_error());
                 }
                 return cluster::errc::success;
             });
-      },
-      std::move(rdr));
+      });
 
     co_return transformed_topic_data_result(data.tp, ec);
 }

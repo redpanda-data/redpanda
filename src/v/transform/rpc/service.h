@@ -11,10 +11,13 @@
 
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
+#include "transform/rpc/deps.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
 
 #include <seastar/core/sharded.hh>
+
+#include <memory>
 
 namespace transform::rpc {
 
@@ -25,9 +28,8 @@ namespace transform::rpc {
 class local_service {
 public:
     local_service(
-      ss::sharded<cluster::shard_table>* shard_table,
-      ss::sharded<cluster::metadata_cache>* metadata_cache,
-      ss::sharded<cluster::partition_manager>* partition_manager);
+      std::unique_ptr<topic_metadata_cache> metadata_cache,
+      std::unique_ptr<partition_manager> partition_manager);
 
     ss::future<ss::chunked_fifo<transformed_topic_data_result>> produce(
       ss::chunked_fifo<transformed_topic_data> topic_data,
@@ -37,9 +39,8 @@ private:
     ss::future<transformed_topic_data_result>
       produce(transformed_topic_data, model::timeout_clock::duration);
 
-    ss::sharded<cluster::shard_table>* _shard_table;
-    ss::sharded<cluster::metadata_cache>* _metadata_cache;
-    ss::sharded<cluster::partition_manager>* _partition_manager;
+    std::unique_ptr<topic_metadata_cache> _metadata_cache;
+    std::unique_ptr<partition_manager> _partition_manager;
 };
 
 /**
