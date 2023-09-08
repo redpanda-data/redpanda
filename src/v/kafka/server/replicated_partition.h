@@ -157,12 +157,12 @@ public:
     timequery(storage::timequery_config cfg) final;
 
     ss::future<result<model::offset>>
-      replicate(model::record_batch_reader, raft::replicate_options);
+      replicate(model::record_batch_reader, raft::replicate_options) final;
 
     raft::replicate_stages replicate(
       model::batch_identity,
       model::record_batch_reader&&,
-      raft::replicate_options);
+      raft::replicate_options) final;
 
     ss::future<storage::translating_reader> make_reader(
       storage::log_reader_config cfg,

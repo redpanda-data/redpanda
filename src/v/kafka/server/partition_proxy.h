@@ -16,6 +16,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
+#include "model/record_batch_reader.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 
@@ -60,6 +61,15 @@ public:
           = 0;
         virtual ss::future<error_code> validate_fetch_offset(
           model::offset, bool, model::timeout_clock::time_point)
+          = 0;
+
+        virtual ss::future<result<model::offset>>
+          replicate(model::record_batch_reader, raft::replicate_options) = 0;
+
+        virtual raft::replicate_stages replicate(
+          model::batch_identity,
+          model::record_batch_reader&&,
+          raft::replicate_options)
           = 0;
 
         virtual result<partition_info> get_partition_info() const = 0;
@@ -134,6 +144,18 @@ public:
 
     result<partition_info> get_partition_info() const {
         return _impl->get_partition_info();
+    }
+
+    ss::future<result<model::offset>> replicate(
+      model::record_batch_reader r, raft::replicate_options opts) const {
+        return _impl->replicate(std::move(r), opts);
+    }
+
+    raft::replicate_stages replicate(
+      model::batch_identity bi,
+      model::record_batch_reader&& r,
+      raft::replicate_options opts) {
+        return _impl->replicate(bi, std::move(r), opts);
     }
 
 private:
