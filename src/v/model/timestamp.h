@@ -14,6 +14,7 @@
 #include "seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/manual_clock.hh>
 
 #include <chrono>
 #include <compare>
@@ -96,6 +97,12 @@ inline timestamp_clock::duration duration_since_epoch(timestamp ts) {
 }
 
 inline timestamp to_timestamp(timestamp_clock::time_point ts) {
+    return timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+                       ts.time_since_epoch())
+                       .count());
+}
+
+inline timestamp to_timestamp(ss::manual_clock::time_point ts) {
     return timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
                        ts.time_since_epoch())
                        .count());
