@@ -465,10 +465,26 @@ ss::future<bool> ntp_archiver::sync_for_tests() {
 }
 
 ss::future<std::error_code> ntp_archiver::process_anomalies(
-  model::timestamp, cloud_storage::scrub_status, cloud_storage::anomalies) {
-    // TODO: This is a stub for the anomaly "write path". A future commit will
-    // fill this in.
-    co_return cluster::errc::success;
+  model::timestamp scrub_timestamp,
+  cloud_storage::scrub_status status,
+  cloud_storage::anomalies detected) {
+    // If there's ongoing housekeeping job, let it finish first.
+    auto units = co_await ss::get_units(_mutex, 1, _as);
+
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+    auto deadline = ss::lowres_clock::now() + sync_timeout;
+
+    auto error = co_await _parent.archival_meta_stm()->process_anomalies(
+      scrub_timestamp, status, std::move(detected), deadline, _as);
+    if (error != cluster::errc::success) {
+        vlog(
+          _rtclog.warn,
+          "Failed to replicate process anomalies command: {}",
+          error.message());
+    }
+
+    co_return error;
 }
 
 ss::future<> ntp_archiver::upload_until_term_change() {

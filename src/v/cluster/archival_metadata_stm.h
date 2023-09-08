@@ -75,6 +75,10 @@ public:
     /// Totally replace the manifest
     cleanup_archive(model::offset start_rp_offset, uint64_t removed_size_bytes);
     command_batch_builder& replace_manifest(iobuf);
+    command_batch_builder& process_anomalies(
+      model::timestamp scrub_timestamp,
+      cloud_storage::scrub_status status,
+      cloud_storage::anomalies detected);
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
@@ -154,6 +158,13 @@ public:
     ss::future<std::error_code> cleanup_archive(
       model::offset start_rp_offset,
       uint64_t removed_size_bytes,
+      ss::lowres_clock::time_point deadline,
+      ss::abort_source&);
+
+    ss::future<std::error_code> process_anomalies(
+      model::timestamp scrub_timestamp,
+      cloud_storage::scrub_status status,
+      cloud_storage::anomalies detected,
       ss::lowres_clock::time_point deadline,
       ss::abort_source&);
 
@@ -258,6 +269,7 @@ private:
     struct reset_metadata_cmd;
     struct spillover_cmd;
     struct replace_manifest_cmd;
+    struct process_anomalies_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -283,6 +295,7 @@ private:
     void apply_reset_metadata();
     void apply_spillover(const spillover_cmd& so);
     void apply_replace_manifest(iobuf);
+    void apply_process_anomalies(iobuf);
 
 private:
     prefix_logger _logger;
