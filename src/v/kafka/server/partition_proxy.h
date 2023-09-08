@@ -164,5 +164,7 @@ private:
 
 std::optional<partition_proxy>
 make_partition_proxy(const model::ktp&, cluster::partition_manager&);
+std::optional<partition_proxy>
+make_partition_proxy(const model::ntp&, cluster::partition_manager&);
 
 } // namespace kafka
