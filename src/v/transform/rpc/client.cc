@@ -23,6 +23,7 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
+#include "transform/rpc/deps.h"
 #include "transform/rpc/logger.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
@@ -44,6 +45,7 @@
 #include <chrono>
 #include <exception>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <system_error>
 #include <utility>
@@ -87,18 +89,18 @@ cluster::errc map_errc(std::error_code ec) {
 
 client::client(
   model::node_id self,
-  ss::sharded<cluster::partition_leaders_table>* l,
+  std::unique_ptr<partition_leader_cache> l,
   ss::sharded<::rpc::connection_cache>* c,
   ss::sharded<local_service>* s)
   : _self(self)
-  , _leaders(l)
+  , _leaders(std::move(l))
   , _connections(c)
   , _local_service(s) {}
 
 ss::future<cluster::errc> client::produce(
   model::topic_partition tp, ss::chunked_fifo<model::record_batch> batches) {
     vlog(log.trace, "producing {} batches to {}", batches.size(), tp);
-    auto leader = _leaders->local().get_leader(
+    auto leader = _leaders->get_leader_node(
       model::topic_namespace_view(model::kafka_namespace, tp.topic),
       tp.partition);
     if (!leader) {
@@ -134,9 +136,10 @@ client::do_remote_produce(model::node_id node, produce_request req) {
                     ss::this_shard_id(),
                     node,
                     timeout,
-                    [&req](impl::transform_rpc_client_protocol proto) mutable {
+                    [req = req.share()](
+                      impl::transform_rpc_client_protocol proto) mutable {
                         return proto.produce(
-                          req.share(),
+                          std::move(req),
                           ::rpc::client_opts(
                             model::timeout_clock::now() + timeout));
                     })

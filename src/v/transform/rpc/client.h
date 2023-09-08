@@ -18,12 +18,15 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
+#include "transform/rpc/deps.h"
 #include "transform/rpc/service.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
+
+#include <memory>
 
 namespace transform::rpc {
 
@@ -38,7 +41,7 @@ class client {
 public:
     client(
       model::node_id self,
-      ss::sharded<cluster::partition_leaders_table>*,
+      std::unique_ptr<partition_leader_cache>,
       ss::sharded<::rpc::connection_cache>*,
       ss::sharded<local_service>*);
     client(client&&) = delete;
@@ -59,7 +62,7 @@ private:
 
     model::node_id _self;
     // need partition_leaders_table to know which node owns the partitions
-    ss::sharded<cluster::partition_leaders_table>* _leaders;
+    std::unique_ptr<partition_leader_cache> _leaders;
     ss::sharded<::rpc::connection_cache>* _connections;
     ss::sharded<local_service>* _local_service;
 };
