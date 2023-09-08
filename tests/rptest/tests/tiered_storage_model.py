@@ -241,22 +241,23 @@ class EffectValidator(ABC):
         pass
 
 
+ExpressionType = Enum("ExpressionType", ["Bool", "Int", "Offset"])
+
+
 class Expression:
     """Base class for both inputs and effects"""
     def __init__(self,
                  model: Model,
                  name: str,
-                 _type: bool,
+                 _type: ExpressionType,
                  maybe_comment: Optional[str] = None):
         self.__name = name
         self.__type = _type
-        if self.__type not in ["Bool", "Int", "Offset"]:
-            raise ValueError(f"can't initialize {name}, unknown type {_type}")
-        if self.__type == "Bool":
+        if self.__type == ExpressionType.Bool:
             self.__expr = z3.Bool(name)
-        elif self.__type == "Int":
+        elif self.__type == ExpressionType.Int:
             self.__expr = z3.Int(name)
-        elif self.__type == "Offset":
+        elif self.__type == ExpressionType.Offset:
             self.__expr = z3.Int(name)
         self.__comment = maybe_comment
         model._register(self)
@@ -722,7 +723,7 @@ class ProducerInput(TestInput):
 
 class TS_Write(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_Write", "Bool",
+        super().__init__(model, "TS_Write", ExpressionType.Bool,
                          "Segment is uploaded to S3")
 
     class Bucket_validator(BucketBasedValidator):
@@ -753,7 +754,7 @@ class TS_Write(Expression):
 
 class TS_Read(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_Read", "Bool",
+        super().__init__(model, "TS_Read", ExpressionType.Bool,
                          "Segment is downloaded from S3")
 
     def make_validators(self) -> List[EffectValidator]:
@@ -767,7 +768,8 @@ class TS_Read(Expression):
 
 class SegmentRoll(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "SegmentRoll", "Bool", "Segment is rolled")
+        super().__init__(model, "SegmentRoll", ExpressionType.Bool,
+                         "Segment is rolled")
 
     def make_validators(self) -> List[EffectValidator]:
         """Create set of effect observers to run while the data is produced or consumed"""
@@ -782,7 +784,7 @@ class SegmentRoll(Expression):
 
 class SegmentsRemoved(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "SegmentsRemoved", "Bool",
+        super().__init__(model, "SegmentsRemoved", ExpressionType.Bool,
                          "Segments are removed from local storage")
 
     def make_validators(self) -> List[EffectValidator]:
@@ -798,7 +800,7 @@ class SegmentsRemoved(Expression):
 class ApplySpilloverTriggered(Expression):
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "SpilloverHousekeepingTriggered", "Bool",
+            model, "SpilloverHousekeepingTriggered", ExpressionType.Bool,
             "Housekeeping triggered spillover in the ntp_archiver")
 
     def make_validators(self) -> List[EffectValidator]:
@@ -812,7 +814,7 @@ class ApplySpilloverTriggered(Expression):
 
 class TS_ManifestUploaded(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_ManifestUploaded", "Bool",
+        super().__init__(model, "TS_ManifestUploaded", ExpressionType.Bool,
                          "Manifest is uploaded to S3")
 
     def make_validators(self) -> List[EffectValidator]:
@@ -825,8 +827,8 @@ class TS_ManifestUploaded(Expression):
 
 class SpilloverManifestUploaded(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "SpilloverManifestUploaded", "Bool",
-                         "Spillover manifest is uploaded")
+        super().__init__(model, "SpilloverManifestUploaded",
+                         ExpressionType.Bool, "Spillover manifest is uploaded")
 
     class Bucket_validator(BucketBasedValidator):
         def __init__(self):
@@ -856,7 +858,8 @@ class SpilloverManifestUploaded(Expression):
 class AdjacentSegmentMergerReupload(Expression):
     """Checks that adjacent segment reupload is triggered"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "AdjacentSegmentMergerReupload", "Bool",
+        super().__init__(model, "AdjacentSegmentMergerReupload",
+                         ExpressionType.Bool,
                          "Adjacent segment reupload is triggered")
 
     def make_validators(self) -> List[EffectValidator]:
@@ -872,7 +875,8 @@ class AdjacentSegmentMergerReupload(Expression):
 class CompactedReupload(Expression):
     """Checks that compacted segment reupload is triggered"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "CompactedSegmentReupload", "Bool",
+        super().__init__(model, "CompactedSegmentReupload",
+                         ExpressionType.Bool,
                          "Compacted segment reupload is triggered")
 
     class Bucket_validator(BucketBasedValidator):
@@ -903,7 +907,7 @@ class CompactedReupload(Expression):
 
 class TopicCompactionEnabled(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TopicCompactionEnabled", "Bool",
+        super().__init__(model, "TopicCompactionEnabled", ExpressionType.Bool,
                          "Topic compaction is enabled")
 
     def make_inputs(self) -> List[TestInput]:
@@ -922,7 +926,7 @@ class TopicCompactionEnabled(Expression):
 
 class RemoteWriteTopicConfig(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "RemoteWriteTopicConfig", "Bool",
+        super().__init__(model, "RemoteWriteTopicConfig", ExpressionType.Bool,
                          "redpanda.remote.write topic property is set")
 
     def make_inputs(self) -> List[TestInput]:
@@ -934,7 +938,7 @@ class RemoteWriteTopicConfig(Expression):
 
 class RemoteReadTopicConfig(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "RemoteReadTopicConfig", "Bool",
+        super().__init__(model, "RemoteReadTopicConfig", ExpressionType.Bool,
                          "redpanda.remote.read topic property is set")
 
     def make_inputs(self) -> List[TestInput]:
@@ -946,7 +950,8 @@ class RemoteReadTopicConfig(Expression):
 
 class RemoteWriteClusterConfig(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "RemoteWriteClusterConfig", "Bool",
+        super().__init__(model, "RemoteWriteClusterConfig",
+                         ExpressionType.Bool,
                          "cloud_storage_enable_remote_write config is set")
 
     def make_inputs(self) -> List[TestInput]:
@@ -958,7 +963,7 @@ class RemoteWriteClusterConfig(Expression):
 
 class RemoteReadClusterConfig(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "RemoteReadClusterConfig", "Bool",
+        super().__init__(model, "RemoteReadClusterConfig", ExpressionType.Bool,
                          "cloud_storage_enable_remote_read config is set")
 
     def make_inputs(self) -> List[TestInput]:
@@ -971,7 +976,7 @@ class RemoteReadClusterConfig(Expression):
 class ShortLocalRetentionTopicConfig(Expression):
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "ShortLocalRetentionTopicConfig", "Bool",
+            model, "ShortLocalRetentionTopicConfig", ExpressionType.Bool,
             "retention.local.target.bytes config is set to small value (1 segment size)"
         )
 
@@ -990,7 +995,7 @@ class ShortLocalRetentionTopicConfig(Expression):
 class EnableSpillover(Expression):
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "EnableSpillover", "Bool",
+            model, "EnableSpillover", ExpressionType.Bool,
             "Spillover is enabled by setting cloud_storage_spillover_manifest_max_segments to small value"
         )
 
@@ -1006,7 +1011,7 @@ class EnableSpillover(Expression):
 class TS_Housekeeping(Expression):
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "TS_Housekeeping", "Bool",
+            model, "TS_Housekeeping", ExpressionType.Bool,
             "Housekeeping is enabled by setting cloud_storage_housekeeping_interval_ms to small value"
         )
 
@@ -1020,7 +1025,8 @@ class TS_Housekeeping(Expression):
 
 class LocalStorageHousekeeping(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "LocalStorageHousekeeping", "Bool",
+        super().__init__(model, "LocalStorageHousekeeping",
+                         ExpressionType.Bool,
                          "Housekeeping in the local storage is triggered")
 
     def make_validators(self) -> List[EffectValidator]:
@@ -1033,7 +1039,8 @@ class LocalStorageHousekeeping(Expression):
 
 class EnableAdjacentSegmentMerging(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "EnableAdjacentSegmentMerging", "Bool",
+        super().__init__(model, "EnableAdjacentSegmentMerging",
+                         ExpressionType.Bool,
                          "Adjacent segment merging is enabled")
 
     def make_inputs(self):
@@ -1047,7 +1054,8 @@ class EnableAdjacentSegmentMerging(Expression):
 
 class EnableCompactedSegmentReupload(Expression):
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "EnableCompactedSegmentReupload", "Bool",
+        super().__init__(model, "EnableCompactedSegmentReupload",
+                         ExpressionType.Bool,
                          "Compacted segment reupload is enabled")
 
     def make_inputs(self):
@@ -1061,7 +1069,7 @@ class EnableCompactedSegmentReupload(Expression):
 class SegmentSelfCompaction(Expression):
     """Segment was self compacted in the local storage"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "SegmentSelfCompaction", "Bool",
+        super().__init__(model, "SegmentSelfCompaction", ExpressionType.Bool,
                          "Segment was self compacted")
 
     def make_validators(self):
@@ -1075,7 +1083,8 @@ class SegmentSelfCompaction(Expression):
 class AdjacentSegmentCompaction(Expression):
     """Adjacent segments compacted in the local storage"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "AdjacentSegmentCompaction", "Bool",
+        super().__init__(model, "AdjacentSegmentCompaction",
+                         ExpressionType.Bool,
                          "Adjacent segments were compacted")
 
     def make_validators(self):
@@ -1089,7 +1098,8 @@ class AdjacentSegmentCompaction(Expression):
 class TS_Timequery(Expression):
     """Timequery is used with tiered-storage"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_Timequery", "Bool", "Timequery is used")
+        super().__init__(model, "TS_Timequery", ExpressionType.Bool,
+                         "Timequery is used")
 
     def make_inputs(self) -> List[TestInput]:
         return [
@@ -1103,7 +1113,7 @@ class TS_Timequery(Expression):
 class TS_ChunkedRead(Expression):
     """Chunked read from the tiered-storage"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_ChunkedRead", "Bool",
+        super().__init__(model, "TS_ChunkedRead", ExpressionType.Bool,
                          "Chunked read is used")
 
     def make_validators(self):
@@ -1122,7 +1132,7 @@ class TS_ChunkedRead(Expression):
 class EnableChunkedRead(Expression):
     """Chunked reads are enabled"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "EnableChunkedRead", "Bool",
+        super().__init__(model, "EnableChunkedRead", ExpressionType.Bool,
                          "Chunked reads are enabled")
 
     def make_inputs(self):
@@ -1135,7 +1145,7 @@ class EnableChunkedRead(Expression):
 class TS_TxRangeMaterialized(Expression):
     """tx-manifest is downloaded and used when reading from the topic"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_TxRangeMaterialized", "Bool",
+        super().__init__(model, "TS_TxRangeMaterialized", ExpressionType.Bool,
                          "tx-manifest is used when reading from the topic")
 
     def make_validators(self):
@@ -1154,7 +1164,7 @@ class TS_TxRangeMaterialized(Expression):
 class TransactionsAborted(Expression):
     """Produces uses transactions and aborts some of them"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TransactionsAborted", "Bool",
+        super().__init__(model, "TransactionsAborted", ExpressionType.Bool,
                          "Transactions are aborted")
 
     def make_inputs(self):
@@ -1172,7 +1182,8 @@ class TransactionsAborted(Expression):
 class TS_UploadIntervalTriggerWrite(Expression):
     """Segment upload triggered by time limit"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_UploadIntervalTriggerWrite", "Bool",
+        super().__init__(model, "TS_UploadIntervalTriggerWrite",
+                         ExpressionType.Bool,
                          "Segment upload triggered by time limit")
 
     def make_validators(self):
@@ -1187,7 +1198,7 @@ class TS_UploadIntervalTriggerWrite(Expression):
 class EnableUploadInterval(Expression):
     """Timeboxed uploads are enabled"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "EnableUploadInterval", "Bool",
+        super().__init__(model, "EnableUploadInterval", ExpressionType.Bool,
                          "Timeboxed uploads are enabled")
 
     def make_inputs(self):
@@ -1203,7 +1214,7 @@ class EnableUploadInterval(Expression):
 class TS_Delete(Expression):
     """The segment is deleted from the cloud storage"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_Delete", "Bool",
+        super().__init__(model, "TS_Delete", ExpressionType.Bool,
                          "Segment is deleted from the cloud storage")
 
     def make_validators(self):
@@ -1218,7 +1229,7 @@ class TS_Delete(Expression):
 class TS_STM_DeleteByGC(Expression):
     """Segment deletion triggered by garbage collection"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_STM_DeleteByGC", "Bool",
+        super().__init__(model, "TS_STM_DeleteByGC", ExpressionType.Bool,
                          "Segment deletion triggered by garbage collection")
 
     def make_validators(self):
@@ -1233,7 +1244,7 @@ class TS_STM_DeleteByGC(Expression):
 class TS_STM_GarbageCollect(Expression):
     """GC is applied to the data in the STM"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_STM_GarbageCollect", "Bool",
+        super().__init__(model, "TS_STM_GarbageCollect", ExpressionType.Bool,
                          "GC is applied to the data in the STM")
 
     def make_validators(self):
@@ -1253,7 +1264,7 @@ class TS_STM_SizeBasedRetentionApplied(Expression):
     """Size based retention is triggered in tiered-storage in the STM region of the log"""
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "TS_STM_SizeBasedRetentionApplied", "Bool",
+            model, "TS_STM_SizeBasedRetentionApplied", ExpressionType.Bool,
             "Size based retention is triggered in tiered-storage")
 
     def make_validators(self):
@@ -1269,7 +1280,7 @@ class TS_STM_SizeBasedRetentionApplied(Expression):
 class TS_Spillover_DeleteByGC(Expression):
     """Segment deletion from the archive triggered by garbage collection"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_Spillover_DeleteByGC", "Bool",
+        super().__init__(model, "TS_Spillover_DeleteByGC", ExpressionType.Bool,
                          "Segment deletion triggered by garbage collection")
 
     def make_validators(self):
@@ -1290,7 +1301,7 @@ class TS_Spillover_GarbageCollect(Expression):
     """GC is applied to the data in the spillover region of the log"""
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "TS_Spillover_GarbageCollect", "Bool",
+            model, "TS_Spillover_GarbageCollect", ExpressionType.Bool,
             "GC is applied to the data in the spillover region of the log")
 
     def make_validators(self):
@@ -1307,7 +1318,8 @@ class TS_Spillover_SizeBasedRetentionApplied(Expression):
     """Size based retention is applied to the data in the spillover region of the log"""
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "TS_Spillover_SizeBasedRetentionApplied", "Bool",
+            model, "TS_Spillover_SizeBasedRetentionApplied",
+            ExpressionType.Bool,
             "Size based retention is applied to the data in the spillover region of the log"
         )
 
@@ -1324,7 +1336,8 @@ class TS_Spillover_SizeBasedRetentionApplied(Expression):
 class TS_Spillover_ManifestDeleted(Expression):
     """Spillover manifest deleted from the cloud storage"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(model, "TS_Spillover_ManifestDeleted", "Bool",
+        super().__init__(model, "TS_Spillover_ManifestDeleted",
+                         ExpressionType.Bool,
                          "Spillover manifest deleted from the cloud storage")
 
     def make_validators(self):
@@ -1344,7 +1357,8 @@ class TS_SmallSizeBasedRetentionTopicConfig(Expression):
     """
     def __init__(self, model: Model = Model.default()):
         super().__init__(
-            model, "TS_SmallSizeBasedRetentionTopicConfig", "Bool",
+            model, "TS_SmallSizeBasedRetentionTopicConfig",
+            ExpressionType.Bool,
             "Size based retention is set for the topic using retention.bytes config"
         )
 
