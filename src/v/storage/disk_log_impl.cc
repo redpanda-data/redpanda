@@ -1296,8 +1296,13 @@ ss::future<> disk_log_impl::apply_segment_ms() {
                                        // bouncer condition checked this
     co_await last->release_appender(_readers_cache.get());
     auto offsets = last->offsets();
-    co_await new_segment(
-      offsets.committed_offset + model::offset{1}, offsets.term, pc);
+    auto new_so = model::next_offset(offsets.committed_offset);
+    co_await new_segment(new_so, offsets.term, pc);
+    vlog(
+      stlog.trace,
+      "{} segment.ms applied, new segment start offset: {}",
+      config().ntp(),
+      seg_ms.value());
 }
 
 ss::future<model::record_batch_reader>
