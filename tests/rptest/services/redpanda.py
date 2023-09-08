@@ -1718,8 +1718,17 @@ class RedpandaService(Service):
                 f"Scanning node {node.account.hostname} log for errors...")
 
             crash_log = None
+            match_terms = [
+                "Segmentation fault",
+                "[Aa]ssert",
+                "Exceptional future ignored",
+                "UndefinedBehaviorSanitizer",
+                "Aborting on shard",
+                "libc++abi: terminating due to uncaught exception",
+            ]
+            match_expr = " ".join(f"-e \"{t}\"" for t in match_terms)
             for line in node.account.ssh_capture(
-                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+                    f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
                 if 'SEGV' in line and ('x-amz-id' in line
                                        or 'x-amz-request' in line):
