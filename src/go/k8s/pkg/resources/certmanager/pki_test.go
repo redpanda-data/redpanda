@@ -37,13 +37,13 @@ func TestKafkaAPIWithMultipleTLSListeners(t *testing.T) {
 			expectedCertificates: []string{"cluster-kafka-root-certificate", "cluster-redpanda"},
 		},
 	}
-	for _, tc := range testcases {
+	for i, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().Build()
 			pkiRes, err := certmanager.NewPki(
 				context.TODO(),
 				c,
-				&tc.cluster,
+				&testcases[i].cluster,
 				"cluster.local1",
 				"cluster.local",
 				scheme.Scheme,
