@@ -16,6 +16,7 @@ v_cc_library(
     sasl_client.cc
   DEPS
     v::kafka_protocol
+    v::security
     v::ssx
     v::storage # batch builder
     v::cluster # log cert reload helper

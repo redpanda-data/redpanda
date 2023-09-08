@@ -17,7 +17,6 @@
 #include <seastar/util/bool_class.hh>
 
 #include <fmt/core.h>
-#include <re2/re2.h>
 
 #include <regex>
 
