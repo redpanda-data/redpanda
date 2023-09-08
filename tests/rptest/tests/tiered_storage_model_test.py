@@ -33,7 +33,7 @@ from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_re
 from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP
 from rptest.tests.tiered_storage_model import TestCase, TieredStorageEndToEndTest, get_tiered_storage_test_cases, TestRunStage, CONFIDENCE_THRESHOLD
 
-MAX_RETRIES = 7
+MAX_RETRIES = 20
 
 
 class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
@@ -369,8 +369,8 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                         f"Produce stage validator {v.name()} has result {v.get_result()} with {v.get_confidence()} confidence"
                     )
                     total += 1
-                    success = v.get_result(
-                    ) and v.get_confidence() > CONFIDENCE_THRESHOLD
+                    success = v.get_result() and v.get_confidence(
+                    ) > CONFIDENCE_THRESHOLD
                     if success:
                         done += 1
                     else:

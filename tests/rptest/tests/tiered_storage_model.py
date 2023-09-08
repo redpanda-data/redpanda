@@ -1378,6 +1378,42 @@ class TS_SmallSizeBasedRetentionTopicConfig(Expression):
         ]
 
 
+class SegmentRolledByTimeout(Expression):
+    """Segment is rolled because of segment.ms property"""
+    def __init__(self, model: Model = Model.default()):
+        super().__init__(model, "SegmentRolledByTimeout", ExpressionType.Bool,
+                         "Segment is rolled because of segment.ms property")
+
+    def make_validators(self):
+        return [
+            LogBasedValidator("SegmentRolledByTimeout_log",
+                              "segment.ms applied, new segment start offset",
+                              execution_stage=TestRunStage.Produce),
+        ]
+
+
+class EnableSegmentMs(Expression):
+    """segment.ms is enabled for the topic"""
+    def __init__(self, model: Model = Model.default()):
+        super().__init__(model, "EnableSegmentMs", ExpressionType.Bool,
+                         "segment.ms is enabled for the topic")
+
+    def make_inputs(self):
+        return [
+            TopicConfigInput("EnableSegmentMs_topic_conf",
+                             "segment.ms",
+                             "10",
+                             stage=TestRunStage.Startup),
+            # We need to have larger segments to trigger segment.ms
+            TopicConfigInput("LogSegmentSize_topic_conf",
+                             "segment.bytes",
+                             str(1024 * 1024 * 128),
+                             stage=TestRunStage.Startup),
+            # ClusterConfigInput("SetLowCompactionInterval_rp_conf",
+            #                    {"log_compaction_interval_ms": "10"}),
+        ]
+
+
 class TestCase(dict):
     """Base class for test cases"""
     def __init__(self, validators, inputs, name="None"):
@@ -1466,6 +1502,9 @@ def get_tiered_storage_test_cases(fast_run=False):
     # Transactions
     ts_txrange_materialized = TS_TxRangeMaterialized()
     transactions_aborted = TransactionsAborted()
+    # segment.ms
+    segment_rolled_by_timeout = SegmentRolledByTimeout()
+    enable_segment_ms = EnableSegmentMs()
 
     model.add(ts_write.requires(segment_roll() == True))
     model.add(
@@ -1555,11 +1594,16 @@ def get_tiered_storage_test_cases(fast_run=False):
     model.add(
         ts_spillover_size_based_retention_applied.requires(
             ts_small_size_based_retention_topic_config() == True))
+    # segment.ms
+    model.add(segment_rolled_by_timeout.requires(enable_segment_ms() == True))
 
     tc_list = []
 
     solutions = []
     if fast_run:
+        solutions.append(
+            model.solve_for(ts_read() == True,
+                            segment_rolled_by_timeout() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             ts_chunked_read() == True))
@@ -1571,10 +1615,18 @@ def get_tiered_storage_test_cases(fast_run=False):
                             spillover_manifest_uploaded() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
+                            spillover_manifest_uploaded() == True,
+                            segment_rolled_by_timeout() == True))
+        solutions.append(
+            model.solve_for(ts_read() == True,
                             ts_txrange_materialized() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             adjacent_segment_merger_reupload() == True))
+        solutions.append(
+            model.solve_for(ts_read() == True,
+                            adjacent_segment_merger_reupload() == True,
+                            segment_rolled_by_timeout() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             ts_timequery() == True,
@@ -1642,6 +1694,10 @@ def get_tiered_storage_test_cases(fast_run=False):
                 spillover_manifest_uploaded() == True,
                 spillover_manifest_uploaded() == False,
             ],
+            [
+                segment_rolled_by_timeout() == True,
+                segment_rolled_by_timeout() == False,
+            ],
         ])
 
         # Check timequery. Note that the compaction and transactions are not used
@@ -1669,6 +1725,10 @@ def get_tiered_storage_test_cases(fast_run=False):
                 spillover_manifest_uploaded() == True,
                 spillover_manifest_uploaded() == False,
             ],
+            [
+                segment_rolled_by_timeout() == True,
+                segment_rolled_by_timeout() == False,
+            ],
         ])
 
     for desc, solution in solutions:
@@ -1685,7 +1745,7 @@ def get_tiered_storage_test_cases(fast_run=False):
 
 
 if __name__ == '__main__':
-    cases = get_tiered_storage_test_cases(True)
+    cases = get_tiered_storage_test_cases(False)
     for c in cases:
         print(f"test case {c}")
         for v in c.validators():
