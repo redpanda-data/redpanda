@@ -12,7 +12,7 @@ class InstallPackClient:
 
     def getInstallPack(self, version):
         headers = {'Authorization': "{} {}".format(self._authType, self._auth)}
-        with requests.get(self._baseURLTmpl.format(version=version),
+        with requests.get(self._baseURLTmpl.format(install_pack_ver=version),
                           headers=headers,
                           stream=True) as r:
             if r.status_code != requests.status_codes.codes.ok:
