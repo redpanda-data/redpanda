@@ -640,8 +640,13 @@ private:
 
     std::optional<ntp_level_probe> _probe{std::nullopt};
 
+    ss::sharded<features::feature_table>& _feature_table;
+
     // NTP level adjacent segment merging job
     std::unique_ptr<housekeeping_job> _local_segment_merger;
+
+    // NTP level scrubbing job
+    std::unique_ptr<housekeeping_job> _scrubber;
 
     // The archival metadata stm has its own clean/dirty mechanism, but it
     // is expensive to persistently mark it clean after each segment upload,
@@ -655,8 +660,6 @@ private:
     // then upload at the next opportunity.
     config::binding<std::optional<std::chrono::seconds>>
       _manifest_upload_interval;
-
-    ss::sharded<features::feature_table>& _feature_table;
 
     ss::shared_ptr<cloud_storage::async_manifest_view> _manifest_view;
 

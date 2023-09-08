@@ -14,6 +14,7 @@
 #include "archival/archival_policy.h"
 #include "archival/logger.h"
 #include "archival/retention_calculator.h"
+#include "archival/scrubber.h"
 #include "archival/segment_reupload.h"
 #include "archival/types.h"
 #include "cloud_storage/async_manifest_view.h"
@@ -143,6 +144,29 @@ maybe_make_adjacent_segment_merger(
     return result;
 }
 
+static std::unique_ptr<scrubber> maybe_make_scrubber(
+  ntp_archiver& self,
+  cloud_storage::remote& remote,
+  retry_chain_logger& logger,
+  features::feature_table& feature_table,
+  const storage::ntp_config& cfg,
+  bool am_leader) {
+    std::unique_ptr<scrubber> result = nullptr;
+    if (!cfg.is_read_replica_mode_enabled()) {
+        result = std::make_unique<scrubber>(
+          self,
+          remote,
+          logger,
+          feature_table,
+          config::shard_local_cfg().cloud_storage_enable_scrubbing.bind(),
+          config::shard_local_cfg().cloud_storage_scrubbing_interval_ms.bind(),
+          config::shard_local_cfg()
+            .cloud_storage_scrubbing_interval_jitter_ms.bind());
+        result->set_enabled(am_leader);
+    }
+    return result;
+}
+
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   ss::lw_shared_ptr<const configuration> conf,
@@ -170,12 +194,19 @@ ntp_archiver::ntp_archiver(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _housekeeping_jitter(_housekeeping_interval(), housekeeping_jit)
   , _next_housekeeping(_housekeeping_jitter())
+  , _feature_table(parent.feature_table())
   , _local_segment_merger(maybe_make_adjacent_segment_merger(
       *this, _rtclog, parent.log()->config(), parent.is_leader()))
+  , _scrubber(maybe_make_scrubber(
+      *this,
+      _remote,
+      _rtclog,
+      _feature_table.local(),
+      parent.log()->config(),
+      parent.is_leader()))
   , _manifest_upload_interval(
       config::shard_local_cfg()
         .cloud_storage_manifest_max_upload_interval_sec.bind())
-  , _feature_table(parent.feature_table())
   , _manifest_view(std::move(amv)) {
     _housekeeping_interval.watch([this] {
         _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>{
@@ -224,6 +255,10 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
         _local_segment_merger->set_enabled(
           is_leader
           && config::shard_local_cfg().cloud_storage_enable_segment_merging());
+    }
+
+    if (_scrubber) {
+        _scrubber->set_enabled(is_leader);
     }
 }
 
@@ -763,6 +798,14 @@ ss::future<> ntp_archiver::stop() {
         }
         co_await _local_segment_merger.get()->stop();
     }
+
+    if (_scrubber) {
+        if (!_scrubber->interrupted()) {
+            _scrubber->interrupt();
+        }
+        co_await _scrubber->stop();
+    }
+
     _as.request_abort();
     _uploads_active.broken();
     _leader_cond.broken();
@@ -2711,6 +2754,11 @@ ntp_archiver::get_housekeeping_jobs() {
     if (_local_segment_merger) {
         res.emplace_back(std::ref(*_local_segment_merger));
     }
+
+    if (_scrubber) {
+        res.emplace_back(std::ref(*_scrubber));
+    }
+
     return res;
 }
 
