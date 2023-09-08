@@ -464,6 +464,13 @@ ss::future<bool> ntp_archiver::sync_for_tests() {
     co_return false;
 }
 
+ss::future<std::error_code> ntp_archiver::process_anomalies(
+  model::timestamp, cloud_storage::scrub_status, cloud_storage::anomalies) {
+    // TODO: This is a stub for the anomaly "write path". A future commit will
+    // fill this in.
+    co_return cluster::errc::success;
+}
+
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 

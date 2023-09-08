@@ -28,6 +28,7 @@ scrubber::scrubber(
   , _remote(remote)
   , _logger(logger)
   , _feature_table(feature_table)
+  , _detector{_archiver.get_bucket_name(), _archiver.get_ntp(), _archiver.get_revision_id(), _remote, _logger, _as}
   , _scheduler(
       [this] { return _archiver.manifest().last_partition_scrub(); },
       std::move(interval),
@@ -68,10 +69,65 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
 
     vlog(_logger.debug, "Starting scrub ...");
 
+    // TODO: make the timeout dynamic
+    retry_chain_node anomaly_detection_rtc(1min, 100ms, &rtc_node);
+    auto detect_result = co_await _detector.run(anomaly_detection_rtc);
+
+    // The quota accounting below compensates for the fact that
+    // `run_quota_t` is signed, but `result::ops` is unsigned. Avoid
+    // overflow when computing `consumed` and underflow when computing
+    // `remaining`.
+    run_quota_t consumed = [&detect_result]() {
+        if (detect_result.ops > std::numeric_limits<run_quota_t::type>::max()) {
+            return run_quota_t{std::numeric_limits<run_quota_t::type>::max()};
+        }
+
+        return run_quota_t{static_cast<run_quota_t::type>(detect_result.ops)};
+    }();
+
+    run_quota_t remaining = [&quota, &consumed]() {
+        if (consumed >= quota) {
+            return run_quota_t{0};
+        }
+
+        return quota - consumed;
+    }();
+
+    if (detect_result.status == cloud_storage::scrub_status::failed) {
+        vlog(
+          _logger.debug,
+          "Scrub failed after {} operations. Will retry ...",
+          detect_result.ops);
+        co_return run_result{
+          .status = run_status::failed,
+          .consumed = consumed,
+          .remaining = remaining};
+    }
+
+    if (_as.abort_requested()) {
+        co_return run_result{
+          .status = run_status::failed,
+          .consumed = consumed,
+          .remaining = remaining};
+    }
+
+    vlog(
+      _logger.debug,
+      "Scrub finished with status {} and detected {}",
+      detect_result.status,
+      detect_result.detected);
+    auto replicate_result = co_await _archiver.process_anomalies(
+      model::timestamp::now(),
+      detect_result.status,
+      std::move(detect_result.detected));
+
     _scheduler.pick_next_scrub_time();
 
     co_return run_result{
-      .status = run_status::ok, .consumed = run_quota_t{0}, .remaining = quota};
+      .status = replicate_result == cluster::errc::success ? run_status::ok
+                                                           : run_status::failed,
+      .consumed = consumed,
+      .remaining = remaining};
 }
 
 void scrubber::interrupt() { _as.request_abort(); }

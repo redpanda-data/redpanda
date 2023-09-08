@@ -137,6 +137,8 @@ public:
     /// Get revision id
     model::initial_revision_id get_revision_id() const;
 
+    const cloud_storage_clients::bucket_name& get_bucket_name() const;
+
     /// Get time when partition manifest was last uploaded
     const ss::lowres_clock::time_point get_last_manfiest_upload_time() const {
         return _last_manifest_upload_time;
@@ -338,6 +340,11 @@ public:
     /// the current term. Returns false if the sync was not successful.
     /// Must be called before updating archival metadata.
     ss::future<bool> sync_for_tests();
+
+    ss::future<std::error_code> process_anomalies(
+      model::timestamp scrub_timestamp,
+      cloud_storage::scrub_status status,
+      cloud_storage::anomalies detected);
 
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
@@ -561,8 +568,6 @@ private:
 
     /// Method to use with lazy_abort_source
     std::optional<ss::sstring> upload_should_abort();
-
-    const cloud_storage_clients::bucket_name& get_bucket_name() const;
 
     // Adjacent segment merging
 

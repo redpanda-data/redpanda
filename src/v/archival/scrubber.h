@@ -13,6 +13,7 @@
 #include "archival/fwd.h"
 #include "archival/scrubber_scheduler.h"
 #include "archival/types.h"
+#include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
@@ -25,6 +26,17 @@
 
 namespace archival {
 
+/*
+ * Scrubber housekeeping job managed by the upload_housekeeping_service.
+ * Each cloud storage enabled partition gets its own scrubber which is owned
+ * by the ntp_archiver_service.
+ *
+ * The goal of the scrubber is to periodically analyse the uploaded cloud
+ * storage data and metadata, detect anomalies and report them to the cloud
+ * storage layer. Detection is handled by the cloud_storage::anomalies_detector
+ * class and anomalies are persisted on the partition's log and managed by the
+ * partition manifset and archival STM.
+ */
 class scrubber : public housekeeping_job {
 public:
     scrubber(
@@ -73,12 +85,13 @@ private:
     // Binding to cloud_storage_scrubbing_enabled cluster config
     config::binding<bool> _config_enabled;
 
-    [[maybe_unused]] ntp_archiver& _archiver;
-    [[maybe_unused]] cloud_storage::remote& _remote;
-    [[maybe_unused]] retry_chain_logger& _logger;
+    ntp_archiver& _archiver;
+    cloud_storage::remote& _remote;
+    retry_chain_logger& _logger;
 
     features::feature_table& _feature_table;
 
+    cloud_storage::anomalies_detector _detector;
     scrubber_scheduler<std::chrono::system_clock> _scheduler;
 };
 
