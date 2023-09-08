@@ -247,6 +247,19 @@ class OMBSampleConfigurations:
         "warmup_duration_minutes": 5,
     }
 
+    RELEASE_CERT_SMOKE_LOAD_625k_BACKLOG = {
+        "name": "SmokeLoad625kReleaseCert",
+        "topics": 1,
+        "partitions_per_topic": 100,
+        "subscriptions_per_topic": 1,
+        "consumer_per_subscription": 8,
+        "producers_per_topic": 16,
+        "producer_rate": 625000,
+        "consumer_backlog_size_GB": 10,
+        "test_duration_minutes": 5,
+        "warmup_duration_minutes": 5,
+    }
+
     # ------- Workload configurations end--------
 
     # We have another level of indirection from name -> driver/workload
@@ -280,5 +293,7 @@ class OMBSampleConfigurations:
         "TOPIC1_PART100_1KB_4PROD_1250K_RATE":
         (TOPIC1_PART100_1KB_4PROD_1250K_RATE, PROD_ENV_VALIDATOR),
         "RELEASE_CERT_SMOKE_LOAD_625k":
-        (RELEASE_CERT_SMOKE_LOAD_625k, RELEASE_SMOKE_TEST_VALIDATOR)
+        (RELEASE_CERT_SMOKE_LOAD_625k, RELEASE_SMOKE_TEST_VALIDATOR),
+        "RELEASE_CERT_SMOKE_LOAD_625k_BACKLOG":
+        (RELEASE_CERT_SMOKE_LOAD_625k_BACKLOG, RELEASE_SMOKE_TEST_VALIDATOR)
     }
