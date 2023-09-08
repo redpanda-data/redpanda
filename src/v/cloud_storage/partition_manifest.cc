@@ -837,6 +837,10 @@ size_t partition_manifest::replaced_segments_count() const {
     return _replaced.size();
 }
 
+model::timestamp partition_manifest::last_partition_scrub() const {
+    return _last_partition_scrub;
+}
+
 std::optional<size_t> partition_manifest::move_aligned_offset_range(
   const segment_meta& replacing_segment) {
     size_t total_replaced_size = 0;
@@ -1020,7 +1024,8 @@ partition_manifest partition_manifest::clone() const {
       _archive_start_offset_delta,
       _archive_clean_offset,
       _archive_size_bytes,
-      spillover);
+      spillover,
+      _last_partition_scrub);
     return tmp;
 }
 
@@ -1392,6 +1397,8 @@ struct partition_manifest_handler
                 _start_kafka_offset = kafka::offset(u);
             } else if (_manifest_key == "archive_size_bytes") {
                 _archive_size_bytes = u;
+            } else if (_manifest_key == "last_partition_scrub") {
+                _last_partition_scrub = model::timestamp(u);
             } else {
                 return false;
             }
@@ -1721,6 +1728,7 @@ struct partition_manifest_handler
     std::optional<model::offset> _archive_clean_offset;
     std::optional<kafka::offset> _start_kafka_offset;
     std::optional<size_t> _archive_size_bytes;
+    std::optional<model::timestamp> _last_partition_scrub;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -1873,7 +1881,8 @@ constexpr auto to_underlying(Enum e) {
 void partition_manifest::do_update(partition_manifest_handler&& handler) {
     if (
       handler._version != to_underlying(manifest_version::v1)
-      && handler._version != to_underlying(manifest_version::v2)) {
+      && handler._version != to_underlying(manifest_version::v2)
+      && handler._version != to_underlying(manifest_version::v3)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "partition manifest version {} is not supported",
@@ -1940,6 +1949,9 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
 
     _start_kafka_offset_override = handler._start_kafka_offset.value_or(
       kafka::offset{});
+
+    _last_partition_scrub = handler._last_partition_scrub.value_or(
+      model::timestamp::missing());
 }
 
 // This object is supposed to track state of the asynchronous
@@ -2075,6 +2087,10 @@ void partition_manifest::serialize_begin(
     if (_archive_size_bytes != 0) {
         w.Key("archive_size_bytes");
         w.Int64(static_cast<int64_t>(_archive_size_bytes));
+    }
+    if (_last_partition_scrub != model::timestamp::missing()) {
+        w.Key("last_partition_scrub");
+        w.Int64(static_cast<int64_t>(_last_partition_scrub()));
     }
     cursor->prologue_done = true;
 }
@@ -2429,7 +2445,7 @@ partition_manifest::timequery(model::timestamp t) const {
 struct partition_manifest_serde
   : public serde::envelope<
       partition_manifest_serde,
-      serde::version<to_underlying(manifest_version::v2)>,
+      serde::version<to_underlying(manifest_version::v3)>,
       serde::compat_version<0>> {
     model::ntp _ntp;
     model::initial_revision_id _rev;
@@ -2450,6 +2466,7 @@ struct partition_manifest_serde
     kafka::offset _start_kafka_offset;
     size_t archive_size_bytes;
     iobuf _spillover_manifests_serialized;
+    model::timestamp _last_partition_scrub;
 };
 
 static_assert(

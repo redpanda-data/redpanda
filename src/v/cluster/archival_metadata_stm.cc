@@ -149,7 +149,7 @@ struct archival_metadata_stm::replace_manifest_cmd {
 
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<3>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<4>, serde::compat_version<0>> {
     /// List of segments
     fragmented_vector<segment> segments;
     /// List of replaced segments
@@ -184,6 +184,8 @@ struct archival_metadata_stm::snapshot
     kafka::offset start_kafka_offset;
     // List of spillover manifests
     fragmented_vector<segment> spillover_manifests;
+    // Timestamp of last completed scrub
+    model::timestamp last_partition_scrub;
 };
 
 inline archival_metadata_stm::segment
@@ -897,7 +899,8 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       snap.archive_start_offset_delta,
       snap.archive_clean_offset,
       snap.archive_size_bytes,
-      snap.spillover_manifests);
+      snap.spillover_manifests,
+      snap.last_partition_scrub);
 
     vlog(
       _logger.info,
@@ -934,7 +937,8 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
       .archive_clean_offset = _manifest->get_archive_clean_offset(),
       .archive_size_bytes = _manifest->archive_size_bytes(),
       .start_kafka_offset = _manifest->get_start_kafka_offset_override(),
-      .spillover_manifests = std::move(spillover)});
+      .spillover_manifests = std::move(spillover),
+      .last_partition_scrub = _manifest->last_partition_scrub()});
 
     vlog(
       _logger.debug,

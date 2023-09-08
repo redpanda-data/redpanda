@@ -152,7 +152,8 @@ public:
       model::offset_delta archive_start_offset_delta,
       model::offset archive_clean_offset,
       uint64_t archive_size_bytes,
-      const fragmented_vector<segment_t>& spillover)
+      const fragmented_vector<segment_t>& spillover,
+      model::timestamp last_partition_scrub)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -165,7 +166,8 @@ public:
       , _archive_start_offset_delta(archive_start_offset_delta)
       , _archive_clean_offset(archive_clean_offset)
       , _start_kafka_offset_override(start_kafka_offset)
-      , _archive_size_bytes(archive_size_bytes) {
+      , _archive_size_bytes(archive_size_bytes)
+      , _last_partition_scrub(last_partition_scrub) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -445,6 +447,8 @@ public:
     /// Return the number of replaced segments currently awaiting deletion.
     size_t replaced_segments_count() const;
 
+    model::timestamp last_partition_scrub() const;
+
     /// Removes all replaced segments from the manifest.
     /// Method 'replaced_segments' will return empty value
     /// after the call.
@@ -496,7 +500,8 @@ public:
           _archive_clean_offset,
           _start_kafka_offset_override,
           _archive_size_bytes,
-          _spillover_manifests);
+          _spillover_manifests,
+          _last_partition_scrub);
     }
     auto serde_fields() const {
         // this list excludes _mem_tracker, which is not serialized
@@ -515,7 +520,8 @@ public:
           _archive_clean_offset,
           _start_kafka_offset_override,
           _archive_size_bytes,
-          _spillover_manifests);
+          _spillover_manifests,
+          _last_partition_scrub);
     }
 
     /// Compare two manifests for equality. Don't compare the mem_tracker.
@@ -608,6 +614,8 @@ private:
     uint64_t _archive_size_bytes{0};
     /// Map of spillover manifests that were uploaded to S3
     spillover_manifest_map _spillover_manifests;
+    // Timestamps at which the last partition scrub completed
+    model::timestamp _last_partition_scrub;
 
     // The starting offset for a Kafka batch in the segment that corresponds
     // with `_start_offset`. This value is computed from
