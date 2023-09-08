@@ -416,13 +416,6 @@ static partition_produce_stages produce_topic_partition(
                       ntp,
                       source_shard);
                 }
-                if (partition->is_read_replica_mode_enabled()) {
-                    return finalize_request_with_error_code(
-                      error_code::invalid_topic_exception,
-                      std::move(dispatch),
-                      ntp,
-                      source_shard);
-                }
 
                 auto probe = std::addressof(partition->probe());
                 return pandaproxy::schema_registry::maybe_validate_schema_id(
