@@ -138,7 +138,8 @@ schema_registry: {}
             with open(os.path.join(d, 'redpanda.yaml')) as f:
                 expected_config = yaml.full_load(expected)
                 actual_config = yaml.full_load(f.read())
-                if actual_config['redpanda']['seed_servers'] != expected_config:
+                if actual_config['redpanda'][
+                        'seed_servers'] != expected_config:
                     self.logger.error("Configs differ")
                     self.logger.error(
                         f"Expected: {yaml.dump(expected_config)}")

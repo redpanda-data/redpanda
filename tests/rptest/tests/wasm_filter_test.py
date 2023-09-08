@@ -70,8 +70,8 @@ class WasmFilterTest(WasmTest):
         # Consume from materialized topic
         def finished():
             self.logger.info("Recs read: %s" % consumer.results.num_records())
-            return consumer.is_finished(
-            ) or consumer.results.num_records() >= expected_total
+            return consumer.is_finished() or consumer.results.num_records(
+            ) >= expected_total
 
         consumer.start()
         wait_until(finished, timeout_sec=10, backoff_sec=1)
