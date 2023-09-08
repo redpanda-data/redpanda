@@ -205,6 +205,65 @@ type TopicStatus struct {
 	// Conditions holds the conditions for the Topic.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// TopicConfiguration is the last snapshot of the topic configuration during successful reconciliation.
+	TopicConfiguration []Configuration `json:"topicConfiguration,omitempty"`
+}
+
+// Configuration was copied from https://github.com/twmb/franz-go/blob/01651affd204d4a3577a341e748c5d09b52587f8/pkg/kmsg/generated.go#L24593-L24634
+type Configuration struct {
+	// Name is a key this entry corresponds to (e.g. segment.bytes).
+	Name string `json:"name"`
+
+	// Value is the value for this config key. If the key is sensitive,
+	// the value will be null.
+	Value *string `json:"value,omitempty"`
+
+	// ReadOnly signifies whether this is not a dynamic config option.
+	//
+	// Note that this field is not always correct, and you may need to check
+	// whether the Source is any dynamic enum. See franz-go#91 for more details.
+	ReadOnly bool `json:"readOnly"`
+
+	// IsDefault is whether this is a default config option. This has been
+	// replaced in favor of Source.
+	IsDefault bool `json:"isDefault"`
+
+	// Source is where this config entry is from.
+	//
+	// This field has a default of -1.
+	Source string `json:"source"`
+
+	// IsSensitive signifies whether this is a sensitive config key, which
+	// is either a password or an unknown type.
+	IsSensitive bool `json:"isSensitive"`
+
+	// ConfigSynonyms contains fallback key/value pairs for this config
+	// entry, in order of preference. That is, if a config entry is both
+	// dynamically configured and has a default, the top level return will be
+	// the dynamic configuration, while its "synonym" will be the default.
+	ConfigSynonyms []ConfigSynonyms `json:"configSynonyms,omitempty"`
+
+	// ConfigType specifies the configuration data type.
+	ConfigType string `json:"configType"`
+
+	// Documentation is optional documentation for the config entry.
+	Documentation *string `json:"documentation,omitempty"`
+
+	// UnknownTags are tags Kafka sent that we do not know the purpose of.
+	UnknownTags map[string]string `json:"unknownTags"`
+}
+
+// ConfigSynonyms was copied from https://github.com/twmb/franz-go/blob/01651affd204d4a3577a341e748c5d09b52587f8/pkg/kmsg/generated.go#L24569-L24578
+type ConfigSynonyms struct {
+	Name string `json:"name"`
+
+	Value *string `json:"value,omitempty"`
+
+	Source string `json:"source"`
+
+	// UnknownTags are tags Kafka sent that we do not know the purpose of.
+	UnknownTags map[string]string `json:"unknownTags,omitempty"`
 }
 
 //+kubebuilder:object:root=true

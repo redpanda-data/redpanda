@@ -184,8 +184,13 @@ func (r *TopicReconciler) reconcile(ctx context.Context, topic *v1alpha1.Topic, 
 			"topic-configuration", topic.Spec.AdditionalConfig,
 			"topic-partition", partition,
 			"topic-replication-factor", replicationFactor)
+		r.reportStatusTopicConfiguration(ctx, topic, kafkaClient)
 		return v1alpha1.TopicReady(topic), ctrl.Result{RequeueAfter: interval.Duration}, nil
 	}
+
+	defer func() {
+		r.reportStatusTopicConfiguration(ctx, topic, kafkaClient)
+	}()
 
 	l.V(DebugLevel).Info("reconcile partition count", "partition", partition)
 	var numReplicas int16
@@ -226,6 +231,49 @@ func (r *TopicReconciler) successfulTopicReconciliation(topic *v1alpha1.Topic) *
 			corev1.EventTypeNormal, v1alpha1.EventTopicSynced, "configuration synced")
 	}
 	return v1alpha1.TopicReady(topic)
+}
+
+func (r *TopicReconciler) reportStatusTopicConfiguration(ctx context.Context, topic *v1alpha1.Topic, kafkaClient *kgo.Client) {
+	resp, err := r.describeTopic(ctx, topic, kafkaClient)
+	if err != nil {
+		v1alpha1.TopicFailed(topic)
+		return
+	}
+
+	topic.Status.TopicConfiguration = make([]v1alpha1.Configuration, 0, len(resp.Resources[0].Configs))
+
+	for i := range resp.Resources[0].Configs {
+		conf := resp.Resources[0].Configs[i]
+		topicConf := v1alpha1.Configuration{
+			Name:          conf.Name,
+			Value:         conf.Value,
+			ReadOnly:      conf.ReadOnly,
+			IsDefault:     conf.ReadOnly,
+			Source:        conf.Source.String(),
+			IsSensitive:   conf.IsSensitive,
+			ConfigType:    conf.ConfigType.String(),
+			Documentation: conf.Documentation,
+			UnknownTags:   convertUnknownTags(conf.UnknownTags),
+		}
+		for j := range conf.ConfigSynonyms {
+			synonyms := conf.ConfigSynonyms[j]
+			topicConf.ConfigSynonyms = append(topicConf.ConfigSynonyms, v1alpha1.ConfigSynonyms{
+				Name:        synonyms.Name,
+				Value:       synonyms.Value,
+				Source:      synonyms.Source.String(),
+				UnknownTags: convertUnknownTags(synonyms.UnknownTags),
+			})
+		}
+		topic.Status.TopicConfiguration = append(topic.Status.TopicConfiguration, topicConf)
+	}
+}
+
+func convertUnknownTags(tags kmsg.Tags) map[string]string {
+	result := make(map[string]string)
+	tags.Each(func(u uint32, bytes []byte) {
+		result[strconv.Itoa(int(u))] = string(bytes)
+	})
+	return result
 }
 
 func (r *TopicReconciler) reconcilePartition(ctx context.Context, topic *v1alpha1.Topic, cl *kgo.Client, partition int) (int16, error) {
