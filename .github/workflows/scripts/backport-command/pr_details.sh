@@ -64,5 +64,5 @@ fi
 
 git push --set-upstream origin "$head_branch"
 git remote rm upstream
-echo "::set-output name=head_branch::$head_branch"
-echo "::set-output name=fixing_issue_urls::$fixing_issue_urls"
+echo "head_branch=$head_branch" >>$GITHUB_OUTPUT
+echo "fixing_issue_urls=$fixing_issue_urls" >>$GITHUB_OUTPUT
