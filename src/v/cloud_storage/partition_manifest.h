@@ -153,7 +153,8 @@ public:
       model::offset archive_clean_offset,
       uint64_t archive_size_bytes,
       const fragmented_vector<segment_t>& spillover,
-      model::timestamp last_partition_scrub)
+      model::timestamp last_partition_scrub,
+      anomalies detected_anomalies)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -167,7 +168,8 @@ public:
       , _archive_clean_offset(archive_clean_offset)
       , _start_kafka_offset_override(start_kafka_offset)
       , _archive_size_bytes(archive_size_bytes)
-      , _last_partition_scrub(last_partition_scrub) {
+      , _last_partition_scrub(last_partition_scrub)
+      , _detected_anomalies(std::move(detected_anomalies)) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -449,6 +451,8 @@ public:
 
     model::timestamp last_partition_scrub() const;
 
+    const anomalies& detected_anomalies() const;
+
     /// Removes all replaced segments from the manifest.
     /// Method 'replaced_segments' will return empty value
     /// after the call.
@@ -532,6 +536,11 @@ public:
     void from_iobuf(iobuf in);
 
     iobuf to_iobuf() const;
+
+    void process_anomalies(
+      model::timestamp scrub_timestamp,
+      scrub_status status,
+      anomalies detected);
 
 private:
     std::optional<kafka::offset> compute_start_kafka_offset_local() const;
@@ -621,6 +630,8 @@ private:
     // with `_start_offset`. This value is computed from
     // `compute_start_kafka_offset_local` and is not in the serialized manifest.
     mutable std::optional<kafka::offset> _cached_start_kafka_offset_local;
+
+    anomalies _detected_anomalies;
 };
 
 } // namespace cloud_storage

@@ -841,6 +841,10 @@ model::timestamp partition_manifest::last_partition_scrub() const {
     return _last_partition_scrub;
 }
 
+const anomalies& partition_manifest::detected_anomalies() const {
+    return _detected_anomalies;
+}
+
 std::optional<size_t> partition_manifest::move_aligned_offset_range(
   const segment_meta& replacing_segment) {
     size_t total_replaced_size = 0;
@@ -1025,7 +1029,8 @@ partition_manifest partition_manifest::clone() const {
       _archive_clean_offset,
       _archive_size_bytes,
       spillover,
-      _last_partition_scrub);
+      _last_partition_scrub,
+      _detected_anomalies);
     return tmp;
 }
 
@@ -2541,6 +2546,41 @@ void partition_manifest::from_iobuf(iobuf in) {
     // `_start_offset` can be modified in the above so invalidate
     // the dependent cached value.
     _cached_start_kafka_offset_local = std::nullopt;
+}
+
+void partition_manifest::process_anomalies(
+  model::timestamp scrub_timestamp, scrub_status status, anomalies detected) {
+    // Firstly, update the in memory list of anomalies.
+    // If the entires log was scrubbed, overwrite the old anomalies,
+    // otherwise append to them.
+    if (status == scrub_status::full) {
+        _detected_anomalies = std::move(detected);
+    } else if (status == scrub_status::partial) {
+        _detected_anomalies += std::move(detected);
+    }
+
+    // Secondly, remove any anomalies that are not present in manifest.
+    // Such cases can occur when scrubbing races with manifest uploads.
+    if (
+      _detected_anomalies.missing_partition_manifest
+      && _cloud_log_size_bytes == 0) {
+        _detected_anomalies.missing_partition_manifest = false;
+    }
+
+    auto& missing_spills = _detected_anomalies.missing_spillover_manifests;
+
+    erase_if(missing_spills, [this](const auto& spill_comp) {
+        return _spillover_manifests.find(spill_comp.base)
+               == _spillover_manifests.end();
+    });
+
+    auto first_kafka_offset = full_log_start_kafka_offset();
+    auto& missing_segs = _detected_anomalies.missing_segments;
+    erase_if(missing_segs, [&first_kafka_offset](const auto& meta) {
+        return meta.next_kafka_offset() <= first_kafka_offset;
+    });
+
+    _last_partition_scrub = scrub_timestamp;
 }
 
 } // namespace cloud_storage
