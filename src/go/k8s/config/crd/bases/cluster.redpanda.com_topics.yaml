@@ -348,6 +348,86 @@ spec:
                   the Topic.
                 format: int64
                 type: integer
+              topicConfiguration:
+                description: TopicConfiguration is the last snapshot of the topic
+                  configuration during successful reconciliation.
+                items:
+                  description: Configuration was copied from https://github.com/twmb/franz-go/blob/01651affd204d4a3577a341e748c5d09b52587f8/pkg/kmsg/generated.go#L24593-L24634
+                  properties:
+                    configSynonyms:
+                      description: ConfigSynonyms contains fallback key/value pairs
+                        for this config entry, in order of preference. That is, if
+                        a config entry is both dynamically configured and has a default,
+                        the top level return will be the dynamic configuration, while
+                        its "synonym" will be the default.
+                      items:
+                        description: ConfigSynonyms was copied from https://github.com/twmb/franz-go/blob/01651affd204d4a3577a341e748c5d09b52587f8/pkg/kmsg/generated.go#L24569-L24578
+                        properties:
+                          name:
+                            type: string
+                          source:
+                            type: string
+                          unknownTags:
+                            additionalProperties:
+                              type: string
+                            description: UnknownTags are tags Kafka sent that we do
+                              not know the purpose of.
+                            type: object
+                          value:
+                            type: string
+                        required:
+                        - name
+                        - source
+                        type: object
+                      type: array
+                    configType:
+                      description: ConfigType specifies the configuration data type.
+                      type: string
+                    documentation:
+                      description: Documentation is optional documentation for the
+                        config entry.
+                      type: string
+                    isDefault:
+                      description: IsDefault is whether this is a default config option.
+                        This has been replaced in favor of Source.
+                      type: boolean
+                    isSensitive:
+                      description: IsSensitive signifies whether this is a sensitive
+                        config key, which is either a password or an unknown type.
+                      type: boolean
+                    name:
+                      description: Name is a key this entry corresponds to (e.g. segment.bytes).
+                      type: string
+                    readOnly:
+                      description: "ReadOnly signifies whether this is not a dynamic
+                        config option. \n Note that this field is not always correct,
+                        and you may need to check whether the Source is any dynamic
+                        enum. See franz-go#91 for more details."
+                      type: boolean
+                    source:
+                      description: "Source is where this config entry is from. \n
+                        This field has a default of -1."
+                      type: string
+                    unknownTags:
+                      additionalProperties:
+                        type: string
+                      description: UnknownTags are tags Kafka sent that we do not
+                        know the purpose of.
+                      type: object
+                    value:
+                      description: Value is the value for this config key. If the
+                        key is sensitive, the value will be null.
+                      type: string
+                  required:
+                  - configType
+                  - isDefault
+                  - isSensitive
+                  - name
+                  - readOnly
+                  - source
+                  - unknownTags
+                  type: object
+                type: array
             type: object
         type: object
     served: true
