@@ -44,8 +44,10 @@ head_branch=$(echo "backport-pr-$PR_NUMBER-$BACKPORT_BRANCH-$suffix" | sed 's/ /
 git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
 
 if ! git cherry-pick -x $BACKPORT_COMMITS; then
-  msg="Failed to run cherry-pick command. I executed the commands below:\n
+  msg="Failed to create a backport PR to $BACKPORT_BRANCH branch. I tried:\n
 \`\`\`\r
+git remote add upstream "https://github.com/$TARGET_FULL_REPO.git"
+git fetch --all
 git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
 git cherry-pick -x $BACKPORT_COMMITS
 \`\`\`"
