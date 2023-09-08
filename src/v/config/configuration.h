@@ -292,6 +292,10 @@ struct configuration final : public config_store {
       cloud_storage_cluster_metadata_upload_interval_ms;
     property<double> cloud_storage_idle_threshold_rps;
     property<bool> cloud_storage_enable_segment_merging;
+    property<bool> cloud_storage_enable_scrubbing;
+    property<std::chrono::milliseconds> cloud_storage_scrubbing_interval_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_scrubbing_interval_jitter_ms;
     property<bool> cloud_storage_disable_upload_loop_for_tests;
     property<bool> cloud_storage_disable_read_replica_loop_for_tests;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
