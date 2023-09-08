@@ -836,6 +836,8 @@ class simple_fetch_planner final : public fetch_planner::impl {
  */
 
 static ss::future<> fetch_topic_partitions(op_context& octx) {
+    octx.rctx.probe().increment_poll_count();
+
     auto planner = make_fetch_planner<simple_fetch_planner>();
 
     auto fetch_plan = planner.create_plan(octx);

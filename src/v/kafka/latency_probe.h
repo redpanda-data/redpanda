@@ -55,6 +55,20 @@ public:
              labels,
              [this] { return _produce_latency.internal_histogram_logform(); })
              .aggregate(aggregate_labels)});
+
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("fetch_stats"),
+          {// Amount of times we polled partitions for fetch data, i.e.: created
+           // and executed the fetch plan. Use in combination with per handler
+           // fetch metrics to get the ratio for how often we poll for a fetch
+           // request
+           sm::make_counter(
+             "poll_count",
+             sm::description("Amount of times we polled partitions for "
+                             "fetch data"),
+             labels,
+             [this] { return _poll_count; })
+             .aggregate(aggregate_labels)});
     }
 
     void setup_public_metrics() {
@@ -89,7 +103,10 @@ public:
         _fetch_latency.record(micros.count());
     }
 
+    void increment_poll_count() { ++_poll_count; }
+
 private:
+    size_t _poll_count = 0;
     hist_t _produce_latency;
     hist_t _fetch_latency;
     ssx::metrics::metric_groups _metrics
