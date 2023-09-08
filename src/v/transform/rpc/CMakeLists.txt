@@ -14,16 +14,18 @@ v_cc_library(
     logger.h
     serde.h
     service.h
+    deps.h
   SRCS
     client.cc
     logger.cc
     serde.cc
     service.cc
+    deps.cc
   DEPS
     generated_transform_rpc 
     v::cluster
     v::model
     v::rpc
+    v::kafka
     Seastar::seastar
 )
-
