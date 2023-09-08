@@ -458,6 +458,8 @@ private:
     ss::future<std::unique_ptr<ss::http::reply>> get_manifest(
       std::unique_ptr<ss::http::request> req,
       std::unique_ptr<ss::http::reply> rep);
+    ss::future<ss::json::json_return_type>
+      get_cloud_storage_anomalies(std::unique_ptr<ss::http::request>);
 
     /// Self test routes
     ss::future<ss::json::json_return_type>

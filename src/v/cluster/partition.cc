@@ -267,6 +267,15 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
     return status;
 }
 
+std::optional<cloud_storage::anomalies>
+partition::get_cloud_storage_anomalies() const {
+    if (!_archival_meta_stm || !is_leader()) {
+        return std::nullopt;
+    }
+
+    return _archival_meta_stm->manifest().detected_anomalies();
+}
+
 bool partition::is_remote_fetch_enabled() const {
     const auto& cfg = _raft->log_config();
     if (_feature_table.local().is_active(features::feature::cloud_retention)) {

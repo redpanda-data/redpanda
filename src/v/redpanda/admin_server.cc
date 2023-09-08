@@ -15,6 +15,7 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_partition.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
@@ -5099,6 +5100,44 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
 
     return json;
 }
+ss::httpd::shadow_indexing_json::cloud_storage_partition_anomalies
+map_anomalies_to_json(
+  const model::ntp& ntp,
+  const model::initial_revision_id& initial_rev,
+  const cloud_storage::anomalies& detected) {
+    ss::httpd::shadow_indexing_json::cloud_storage_partition_anomalies json;
+    json.ns = ntp.ns();
+    json.topic = ntp.tp.topic();
+    json.partition = ntp.tp.partition();
+    json.revision_id = initial_rev();
+
+    if (detected.missing_partition_manifest) {
+        json.missing_partition_manifest = true;
+    }
+
+    if (detected.missing_spillover_manifests.size() > 0) {
+        const auto& missing_spills = detected.missing_spillover_manifests;
+        for (auto iter = missing_spills.begin(); iter != missing_spills.end();
+             ++iter) {
+            json.missing_spillover_manifests.push(
+              cloud_storage::generate_spillover_manifest_path(
+                ntp, initial_rev, *iter)()
+                .string());
+        }
+    }
+
+    if (detected.missing_segments.size() > 0) {
+        cloud_storage::partition_manifest tmp{ntp, initial_rev};
+        const auto& missing_segs = detected.missing_segments;
+        for (auto iter = missing_segs.begin(); iter != missing_segs.end();
+             ++iter) {
+            json.missing_segments.push(
+              tmp.generate_segment_path(*iter)().string());
+        }
+    }
+
+    return json;
+}
 } // namespace
 
 ss::future<ss::json::json_return_type>
@@ -5317,6 +5356,51 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_manifest(
       });
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_cloud_storage_anomalies(
+  std::unique_ptr<ss::http::request> req) {
+    const model::ntp ntp = parse_ntp_from_request(req->param);
+
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, ntp);
+    }
+
+    const auto& topic_table = _controller->get_topics_state().local();
+    const auto initial_rev = topic_table.get_initial_revision(ntp);
+    if (!initial_rev) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("topic {} not found", ntp.tp));
+    }
+
+    const auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "{} could not be found on the node. Perhaps it has been moved "
+          "during the redirect.",
+          ntp));
+    }
+
+    auto status = co_await _partition_manager.invoke_on(
+      *shard,
+      [&ntp](const auto& pm) -> std::optional<cloud_storage::anomalies> {
+          const auto& partitions = pm.partitions();
+          auto partition_iter = partitions.find(ntp);
+
+          if (partition_iter == partitions.end()) {
+              return std::nullopt;
+          }
+
+          return partition_iter->second->get_cloud_storage_anomalies();
+      });
+
+    if (!status) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "Cloud partition {} could not be found on shard {}.", ntp, *shard));
+    }
+
+    co_return map_anomalies_to_json(ntp, *initial_rev, *status);
+}
+
 void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
@@ -5366,6 +5450,10 @@ void admin_server::register_shadow_indexing_routes() {
         std::unique_ptr<ss::http::reply> rep) {
           return get_manifest(std::move(req), std::move(rep));
       });
+
+    register_route<user>(
+      ss::httpd::shadow_indexing_json::get_cloud_storage_anomalies,
+      [this](auto req) { return get_cloud_storage_anomalies(std::move(req)); });
 }
 
 constexpr std::string_view to_string_view(service_kind kind) {
