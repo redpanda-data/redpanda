@@ -29,3 +29,5 @@ v_cc_library(
     v::kafka
     Seastar::seastar
 )
+
+add_subdirectory(tests)
