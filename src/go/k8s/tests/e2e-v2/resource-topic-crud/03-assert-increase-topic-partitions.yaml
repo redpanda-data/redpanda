@@ -1,0 +1,13 @@
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Topic
+metadata:
+  name: test-topic
+status:
+  conditions:
+    - message: Topic reconciliation succeeded
+      observedGeneration: 3
+      reason: Succeeded
+      status: "True"
+      type: Ready
+  observedGeneration: 3

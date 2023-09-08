@@ -1,0 +1,8 @@
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Topic
+metadata:
+  name: test-topic
+spec:
+  additionalConfig:
+    segment.bytes: "17777777"
