@@ -149,7 +149,7 @@ KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.4.1
 KUTTL_VERSION ?= v0.15.0
 
-GOLANGCI_LINT_VERSION ?= v1.52.2
+GOLANGCI_LINT_VERSION ?= v1.54.2
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
