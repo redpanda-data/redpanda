@@ -82,7 +82,7 @@ func TestEnsureConfigMap(t *testing.T) {
 			expectedString: "empty_seed_starts_cluster: false",
 		},
 	}
-	for _, tc := range testcases {
+	for i, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().Build()
 			secret := v1.Secret{
@@ -97,7 +97,7 @@ func TestEnsureConfigMap(t *testing.T) {
 			require.NoError(t, c.Create(context.TODO(), &secret))
 			cfgRes := resources.NewConfigMap(
 				c,
-				&tc.cluster,
+				&testcases[i].cluster,
 				scheme.Scheme,
 				"cluster.local",
 				types.NamespacedName{Name: "test", Namespace: "test"},

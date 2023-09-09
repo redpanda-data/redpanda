@@ -409,7 +409,7 @@ func TestCurrentVersion(t *testing.T) {
 		}, 2, "v21.11.11", true},
 	}
 
-	for _, tt := range tests {
+	for i, tt := range tests {
 		c := fake.NewClientBuilder().Build()
 		for i := range tt.pods {
 			pod := tt.pods[i]
@@ -437,7 +437,7 @@ func TestCurrentVersion(t *testing.T) {
 			0)
 		sts.LastObservedState = &v1.StatefulSet{
 			Spec: v1.StatefulSetSpec{
-				Replicas: &tt.expectedReplicas,
+				Replicas: &tests[i].expectedReplicas,
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{Name: redpandaContainerName, Image: "vectorized/redpanda:v21.11.11"}},

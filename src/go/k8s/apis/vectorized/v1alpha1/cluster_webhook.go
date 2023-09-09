@@ -384,7 +384,7 @@ func (r *Cluster) validateKafkaListeners(l logr.Logger) field.ErrorList {
 			p.TLS.NodeSecretRef,
 			nil,
 			field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("tls"),
-			&p.External,
+			&r.Spec.Configuration.KafkaAPI[i].External,
 			field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("external"),
 			r.GetNamespace())
 		allErrs = append(allErrs, tlsErrs...)
