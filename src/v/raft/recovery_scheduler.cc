@@ -9,6 +9,7 @@
 
 #include "raft/recovery_scheduler.h"
 
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus.h"
 #include "seastar/core/coroutine.hh"
 #include "vassert.h"
@@ -121,6 +122,8 @@ recovery_scheduler_base::recovery_scheduler_base(
             request_tick();
         }
     });
+
+    setup_metrics();
 }
 
 recovery_scheduler_base::~recovery_scheduler_base() {
@@ -341,6 +344,47 @@ recovery_status recovery_scheduler_base::get_status() {
       .partitions_active = _active.size(),
       .offsets_pending = uint64_t(std::max(_offsets_pending, int64_t(0))),
     };
+}
+
+void recovery_scheduler_base::setup_metrics() {
+    namespace sm = ss::metrics;
+
+    auto setup = [this](ssx::metrics::metric_groups& metrics) {
+        auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                                  ? std::vector<sm::label>{sm::shard_label}
+                                  : std::vector<sm::label>{};
+
+        metrics.add_group(
+          prometheus_sanitize::metrics_name("raft:recovery"),
+          {
+            sm::make_gauge(
+              "partitions_to_recover",
+              [this] { return _active.size() + _pending.size(); },
+              sm::description("Number of partition replicas that have to "
+                              "recover for this node."))
+              .aggregate(aggregate_labels),
+            sm::make_gauge(
+              "partitions_active",
+              [this] { return _active.size(); },
+              sm::description("Number of partition replicas are currently "
+                              "recovering on this node."))
+              .aggregate(aggregate_labels),
+            sm::make_gauge(
+              "offsets_pending",
+              [this] { return _offsets_pending; },
+              sm::description("Sum of offsets that partitions on this node "
+                              "need to recover."))
+              .aggregate(aggregate_labels),
+          });
+    };
+
+    if (!config::shard_local_cfg().disable_metrics()) {
+        setup(_metrics);
+    }
+
+    if (!config::shard_local_cfg().disable_public_metrics()) {
+        setup(_public_metrics);
+    }
 }
 
 } // namespace raft

@@ -17,7 +17,7 @@
 #include "seastar/core/lowres_clock.hh"
 #include "seastar/core/timer.hh"
 #include "seastarx.h"
-#include "ssx/semaphore.h"
+#include "ssx/metrics.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <fmt/core.h>
@@ -135,6 +135,8 @@ private:
      */
     virtual void request_tick() = 0;
 
+    void setup_metrics();
+
 private:
     config::binding<size_t> _max_active;
 
@@ -146,6 +148,11 @@ private:
     state_list _pending;
 
     int64_t _offsets_pending = 0;
+
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 /**
