@@ -138,13 +138,24 @@ func (d *Deployment) Key() types.NamespacedName {
 	return types.NamespacedName{Name: d.consoleobj.GetName(), Namespace: d.consoleobj.GetNamespace()}
 }
 
+func (d *Deployment) getServiceAccountKey() types.NamespacedName {
+	var key types.NamespacedName
+	key.Name = d.consoleobj.GetName()
+	key.Namespace = d.consoleobj.GetNamespace()
+	if d.consoleobj.Spec.ServiceAccount != nil && *d.consoleobj.Spec.ServiceAccount != "" {
+		key.Name = *d.consoleobj.Spec.ServiceAccount
+	}
+	return key
+}
+
 // ensureServiceAccount gets or creates Service Account
 // It's best practice to use a separate Service Account per app instead of using the default
 func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
+	saKey := d.getServiceAccountKey()
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        d.consoleobj.GetName(),
-			Namespace:   d.consoleobj.GetNamespace(),
+			Name:        saKey.Name,
+			Namespace:   saKey.Namespace,
 			Labels:      labels.ForConsole(d.consoleobj),
 			Annotations: map[string]string{},
 		},
