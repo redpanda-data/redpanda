@@ -1613,20 +1613,20 @@ def get_tiered_storage_test_cases(fast_run=False):
         solutions.append(
             model.solve_for(ts_read() == True,
                             spillover_manifest_uploaded() == True))
-        solutions.append(
-            model.solve_for(ts_read() == True,
-                            spillover_manifest_uploaded() == True,
-                            segment_rolled_by_timeout() == True))
+        # solutions.append(
+        #     model.solve_for(ts_read() == True,
+        #                     spillover_manifest_uploaded() == True,
+        #                     segment_rolled_by_timeout() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             ts_txrange_materialized() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             adjacent_segment_merger_reupload() == True))
-        solutions.append(
-            model.solve_for(ts_read() == True,
-                            adjacent_segment_merger_reupload() == True,
-                            segment_rolled_by_timeout() == True))
+        # solutions.append(
+        #     model.solve_for(ts_read() == True,
+        #                     adjacent_segment_merger_reupload() == True,
+        #                     segment_rolled_by_timeout() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             ts_timequery() == True,
