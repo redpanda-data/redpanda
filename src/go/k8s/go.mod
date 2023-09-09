@@ -392,3 +392,5 @@ replace (
 	github.com/docker/docker => github.com/docker/docker v20.10.24+incompatible
 	github.com/opencontainers/go-digest => github.com/opencontainers/go-digest v1.0.1-0.20220411205349-bde1400a84be
 )
+
+replace github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.4

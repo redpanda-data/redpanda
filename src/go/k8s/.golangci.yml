@@ -44,7 +44,6 @@ linters:
   enable:
     - asciicheck
     - bodyclose
-    - depguard
     - dogsled
     - dupl
     - errcheck
@@ -83,6 +82,7 @@ linters:
   # don't enable:
   # - gochecknoinits # the kubebuilder and kubernetes library enforce using init functions
   # - lll # the markers from controller-gen are 270 characters long
+  # - depguard
   # - asciicheck
   # - gochecknoglobals
   # - gocognit

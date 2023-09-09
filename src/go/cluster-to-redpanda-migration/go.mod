@@ -7,7 +7,7 @@ require (
 	github.com/r3labs/diff/v3 v3.0.1
 	github.com/redpanda-data/redpanda/src/go/k8s v0.0.0-20230711000139-412f31a082ac
 	github.com/spf13/cobra v1.6.1
-	github.com/stretchr/testify v1.8.2
+	github.com/stretchr/testify v1.8.4
 	k8s.io/api v0.26.2
 	k8s.io/apimachinery v0.26.2
 	k8s.io/kubectl v0.26.0
