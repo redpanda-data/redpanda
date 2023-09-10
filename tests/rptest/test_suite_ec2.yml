@@ -5,8 +5,8 @@ ec2:
     - scale_tests
 
   excluded:
+    - redpanda_cloud_tests
     - tests/librdkafka_test.py # normally disabled
     - tests/e2e_iam_role_test.py # use static credentials
     - tests/consumer_group_recovery_tool_test.py # use script available in dockerfile
     - scale_tests/many_partitions_test.py::ManyPartitionsTest.test_many_partitions_tiered_storage # time consuming in main suite
-    - scale_tests/high_throughput_test.py::HighThroughputTest2.test_max_connections # not compatible with locally deployed Redpanda

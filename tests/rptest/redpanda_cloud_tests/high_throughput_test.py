@@ -281,7 +281,7 @@ class HighThroughputTest(RedpandaTest):
         idx = random.randrange(len(self.cluster.nodes))
         return self.cluster.nodes[idx]
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=2)
     def test_throughput_simple(self):
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
@@ -426,7 +426,7 @@ class HighThroughputTest(RedpandaTest):
         re.compile('storage - .* - Stopping parser, short read. .*')
     ] + RESTART_LOG_ALLOW_LIST
 
-    @cluster(num_nodes=5, log_allow_list=COMBO_PRELOADED_LOG_ALLOW_LIST)
+    @cluster(num_nodes=2, log_allow_list=COMBO_PRELOADED_LOG_ALLOW_LIST)
     def test_ht003_kgofailure(self):
         """
         Generates the maximum possible load to the cluster onto a topic that
@@ -510,7 +510,7 @@ class HighThroughputTest(RedpandaTest):
 
     # Temporary ignore until TS metrics can be queried via public_metrics
     @ignore  # https://github.com/redpanda-data/cloudv2/issues/8845
-    @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
+    @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
         Make segments replicate to the cloud, then disrupt S3 connectivity
@@ -660,7 +660,7 @@ class HighThroughputTest(RedpandaTest):
 
     # Temporary ignore until TS metrics can be queried via public_metrics
     @ignore  # https://github.com/redpanda-data/cloudv2/issues/8845
-    @cluster(num_nodes=6, log_allow_list=NOS3_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_cloud_cache_thrash(self):
         """
         Try to exhaust cloud cache by reading at random offsets with many
