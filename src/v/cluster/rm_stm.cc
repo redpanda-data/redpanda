@@ -973,6 +973,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
   model::record_batch_reader b,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
+    auto holder = _gate.hold();
     auto unit = co_await _state_lock.hold_read_lock();
     if (bid.is_transactional) {
         auto pid = bid.pid.get_id();
@@ -990,6 +991,7 @@ ss::future<> rm_stm::stop() {
     _as.request_abort();
     auto_abort_timer.cancel();
     _log_stats_timer.cancel();
+    co_await _gate.close();
     co_await reset_producers();
     co_await persisted_stm<>::stop();
 }

@@ -633,6 +633,7 @@ private:
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
     ss::abort_source _as;
+    ss::gate _gate;
     friend struct ::rm_stm_test_fixture;
 };
 
