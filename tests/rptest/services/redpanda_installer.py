@@ -355,6 +355,9 @@ class RedpandaInstaller:
                     page += 1
                     self._redpanda.logger.debug(f"Reading next page {page}")
 
+            assert releases, "no releases found, github issue?"
+
+            self._redpanda.logger.debug(f"fetched releases: {releases}")
             open(RELEASES_CACHE_FILE, 'w').write(json.dumps(releases))
 
         finally:
