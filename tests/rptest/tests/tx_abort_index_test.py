@@ -38,11 +38,13 @@ class TxAbortSnapshotTest(RedpandaTest):
     Checks that the abort indexes for deleted segment offsets are cleaned up.
     """
     def __init__(self, test_context: TestContext):
+        # NOTE this should work with delete_retention_ms instead of log_retention_ms, but due to
+        # https://github.com/redpanda-data/redpanda/issues/13362 this is not possible
         extra_rp_conf = {
             "default_topic_replications": 3,
             "default_topic_partitions": 1,
             "log_segment_size": 1048576,
-            "delete_retention_ms": 1,
+            "log_retention_ms": 1,
             "abort_index_segment_size": 2
         }
         super(TxAbortSnapshotTest, self).__init__(test_context=test_context,
