@@ -762,6 +762,10 @@ spec:
                     format: duration
                     type: string
                 type: object
+              serviceAccount:
+                description: The name of the ServiceAccount to be used by the Redpanda
+                  pods
+                type: string
             required:
             - clusterRef
             - connect
