@@ -89,7 +89,7 @@ You may also use <key>=<value> notation for setting configuration properties:
 			}
 			y := cfg.ActualRedpandaYamlOrDefaults() // we set fields in the raw file without writing env / flag overrides
 			err = config.Set(y, key, value)
-			out.MaybeDie(err, "unable to set %q:%v", args[0], err)
+			out.MaybeDie(err, "unable to set %q: %v", key, err)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
 		},

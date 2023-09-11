@@ -1581,7 +1581,11 @@ func Set[T any](p *T, key, value string) error {
 		case "false":
 			value = "null"
 		default:
-			return fmt.Errorf("%s must be true or {}", key)
+			// If the final tag is 'tls', it might be a value. So we continue
+			// and handle below.
+			if finalTag != "tls" {
+				return fmt.Errorf("%s must be true or {}", key)
+			}
 		}
 		if finalTag == "enabled" {
 			tags = tags[:len(tags)-1]
