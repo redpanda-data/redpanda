@@ -7,11 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
 import itertools
 import math
 import re
 import time
-from typing import Optional
+import json
 
 from ducktape.mark import ignore, ok_to_fail
 from ducktape.tests.test import TestContext
@@ -19,19 +20,21 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from contextlib import contextmanager
 from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.kgo_verifier_services import (KgoVerifierProducer,
-                                                   KgoVerifierRandomConsumer)
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
+    KgoVerifierRandomConsumer)
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST,
-                                      AdvertisedTierConfig, CloudTierName,
-                                      MetricsEndpoint, SISettings)
+from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName
+from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
+                                      SISettings, RedpandaServiceCloud)
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import firewall_blocked
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
@@ -43,140 +46,151 @@ minutes = 60
 hours = 60 * minutes
 
 
-class CloudTierConfig:
-    def __init__(self, ingress_rate: float, egress_rate: float,
-                 num_brokers: int, num_brokers_scaled: int, segment_size: int,
-                 cloud_cache_size: int, partitions_min: int,
-                 partitions_max: int, connections_limit: Optional[int],
-                 rpo: int, memory_per_broker: int) -> None:
-        self.ingress_rate = int(ingress_rate)
-        self.egress_rate = int(egress_rate)
-        self.num_brokers = num_brokers
-        self.num_brokers_scaled = num_brokers_scaled
-        self.segment_size = segment_size
-        self.cloud_cache_size = cloud_cache_size
-        self.partitions_min = partitions_min
-        self.partitions_max = partitions_max
-        self.connections_limit = connections_limit
-        self.rpo = rpo
-        self.memory_per_broker = memory_per_broker
-        self.scaling_factor = num_brokers_scaled / num_brokers
+class HighThroughputTestTrafficGenerator:
+    """
+    Generic traffic generator that skews the consumer load to be a multiple
+    of the produce load. This is because the predefined cloud v2 tiers have
+    higher egress maximum allowed load then ingress, by a factor of at most
+    3x in some tiers.
+    """
+    def __init__(self, context, redpanda, topic, msg_size, asymetry=3):
+        t = time.time()
+        self._logger = redpanda.logger
+        self._producer_start_time = t
+        self._producer_end_time = t
+        self._consumer_start_time = t
+        self._consumer_end_time = t
+        self._msg_size = msg_size
+        self._msg_count = 5_000_000_000_000
+        self._producer = KgoVerifierProducer(context,
+                                             redpanda,
+                                             topic,
+                                             msg_size=self._msg_size,
+                                             msg_count=self._msg_count)
 
-    @property
-    def segment_size_scaled(self):
-        return int(self.segment_size * self.scaling_factor)
+        # Level of asymetry is equal to the number of parallel consumers
+        self._consumer = KgoVerifierConsumerGroupConsumer(
+            context,
+            redpanda,
+            topic,
+            self._msg_size,
+            asymetry,
+            loop=True,
+            max_msgs=self._msg_count,
+            debug_logs=True,
+            trace_logs=True)
 
-    @property
-    def partitions_max_scaled(self):
-        return int(self.partitions_max * self.scaling_factor)
+    def wait_for_traffic(self, acked=1, timeout_sec=30):
+        wait_until(lambda: self._producer.produce_status.acked >= acked,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=1.0)
 
-    @property
-    def ingress_rate_scaled(self):
-        return int(self.ingress_rate * self.scaling_factor)
+    def start(self):
+        self._logger.info("Starting producer")
+        self._producer.start()
+        self._producer_start_time = time.time()
+        self.wait_for_traffic(acked=1, timeout_sec=10)
+        # Give the producer a head start
+        time.sleep(3)  # TODO: Edit maybe make this configurable?
+        self._logger.info("Starting consumer")
+        self._consumer.start()
+        self._consumer_start_time = time.time()
+        wait_until(
+            lambda: self._consumer.consumer_status.validator.total_reads >= 1,
+            timeout_sec=30)
 
-    @property
-    def egress_rate_scaled(self):
-        return int(self.egress_rate * self.scaling_factor)
+    def stop(self):
+        self._logger.info("Stopping all traffic generation")
+        self._producer.stop()
+        self._consumer.stop()
+        self._producer.wait()
+        self._logger.info("Producer stopped")
+        self._producer_stop_time = time.time()
+        self._consumer.wait()
+        self._logger.info("Consumer stopped")
+        self._consumer_stop_time = time.time()
 
-    @property
-    def connections_limit_scaled(self):
-        if self.connections_limit is None:
-            return None
-        return int(self.connections_limit * self.scaling_factor)
-
-
-# yapf: disable
-CloudTierConfigs = {
-    # In-order parameters value:
-    #  1  ingress
-    #  2  egress
-    #  3  num_brokers
-    #  4  num_brokers_scaled
-    #  5  segment_size
-    #  6  cloud_cache_size
-    #  7  partitions_min
-    #  8  partitions_max
-    #  9  connections
-    #  10 rpo
-    #  11 memory_per_broker
-    "Upscale-1": CloudTierConfig(
-        1.7*GiB, 8.5*GiB, 13,  4, 512*MiB,   10*MiB, 1024, 1024,  None, 1*hours, 96*GiB
-    ),
-    "tier-1-aws": CloudTierConfig(
-         25*MiB,  75*MiB,  3,  3, 512*MiB,  300*GiB,   20, 1000,  1500, 1*hours, 16*GiB
-    ),
-    "tier-2-aws": CloudTierConfig(
-         50*MiB, 150*MiB,  3,  3, 512*MiB,  500*GiB,   50, 2000,  3750, 1*hours, 32*GiB
-    ),
-    "tier-3-aws": CloudTierConfig(
-        100*MiB, 200*MiB,  6,  6, 512*MiB,  500*GiB,  100, 5000,  7500, 1*hours, 32*GiB
-    ),
-    "tier-4-aws": CloudTierConfig(
-        200*MiB, 400*MiB,  6,  6,   1*GiB, 1000*GiB,  100, 5000, 15000, 1*hours, 96*GiB
-    ),
-    "tier-5-aws": CloudTierConfig(
-        300*MiB, 600*MiB,  9,  9,   1*GiB, 1000*GiB,  150, 7500, 22500, 1*hours, 96*GiB
-    ),
-    "tier-1-gcp": CloudTierConfig(
-         25*MiB,  60*MiB,  3,  3, 512*MiB,  150*GiB,   20,  500,  1500, 1*hours,  8*GiB
-    ),
-    "tier-2-gcp": CloudTierConfig(
-         50*MiB, 150*MiB,  3,  3, 512*MiB,  300*GiB,   50, 1000,  3750, 1*hours, 32*GiB
-    ),
-    "tier-3-gcp": CloudTierConfig(
-        100*MiB, 200*MiB,  6,  6, 512*MiB,  320*GiB,  100, 3000,  7500, 1*hours, 32*GiB
-    ),
-    "tier-4-gcp": CloudTierConfig(
-        200*MiB, 400*MiB,  9,  9, 512*MiB,  350*GiB,  100, 5000, 15000, 1*hours, 32*GiB
-    ),
-    "tier-5-gcp": CloudTierConfig(
-        400*MiB, 600*MiB, 12, 12,   1*GiB,  750*GiB,  100, 7500, 22500, 1*hours, 32*GiB
-    ),
-}
-# yapf: enable
-
-NoncloudTierConfigs = {
-    #   ingress|          segment size|       partitions max|
-    #             egress|       cloud cache size|connections # limit|
-    #           # of brokers|           partitions min|           memory per broker|
-    "docker-local":
-    AdvertisedTierConfig(3 * MiB, 9 * MiB, 3, 128 * MiB, 20 * GiB, 1, 100, 100,
-                         2 * GiB),
-}
+    def throughput(self):
+        producer_total_time = self._producer_stop_time - self._producer_start_time
+        consumer_total_time = self._consumer_stop_time - self._consumer_start_time
+        if producer_total_time == 0 or consumer_total_time == 0:
+            return {}
+        producer_status = self._producer.produce_status
+        consumer_status = self._consumer.consumer_status
+        producer_bytes_written = self._msg_size * producer_status.acked
+        consumer_bytes_read = self._msg_size * consumer_status.validator.total_reads
+        return {
+            'producer': {
+                'errors': producer_status.bad_offsets,
+                'total_successful_requests': producer_status.acked,
+                'bytes_written': producer_bytes_written,
+                'ingress_throughput':
+                producer_bytes_written / producer_total_time
+            },
+            'consumer': {
+                'errors': consumer_status.errors,
+                'total_successful_requests':
+                consumer_status.validator.total_reads,
+                'bytes_read': consumer_bytes_read,
+                'egress_throughput': consumer_bytes_read / consumer_total_time
+            }
+        }
 
 
-class HighThroughputTest2(PreallocNodesTest):
+@contextmanager
+def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
+    tgen = HighThroughputTestTrafficGenerator(context, redpanda, *args,
+                                              **kwargs)
+    tgen.start()
+    try:
+        yield tgen
+    except:
+        redpanda.logger.exception("Exception within traffic_generator method")
+        raise
+    finally:
+        tgen.stop()
+        throughput = tgen.throughput()
+        redpanda.logger.info(
+            f'HighThroughputTrafficGenerator reported throughput: {json.dumps(throughput, sort_keys=True, indent=4)}'
+        )
+        producer_throughput = throughput['producer']['ingress_throughput']
+        consumer_throughput = throughput['consumer']['egress_throughput']
+        assert (
+            producer_throughput / 0.1
+        ) >= tier_cfg.ingress_rate, f"Observed producer throughput {producer_throughput} too low, expected: {tier_cfg.ingress_rate}"
+        assert (
+            consumer_throughput / 0.1
+        ) >= tier_cfg.egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate}"
+
+
+class HighThroughputTest(RedpandaTest):
+    small_segment_size = 4 * KiB
+    unavailable_timeout = 60
+    msg_size = 128 * KiB
+
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
 
-        cloud_tier_str = test_ctx.globals.get("cloud_tier", "docker-local")
-        if cloud_tier_str in NoncloudTierConfigs.keys():
-            cloud_tier = None
-            self.tier_config = NoncloudTierConfigs[cloud_tier_str]
+        # Default set to tier-1-aws is a temporary work around for
+        # https://github.com/redpanda-data/cloudv2/issues/7903
+        cloud_tier_str = test_ctx.globals.get("cloud_tier", "tier-1-aws")
+        cloud_tier = CloudTierName(cloud_tier_str)
+        extra_rp_conf = None
+        num_brokers = None
+
+        if cloud_tier == CloudTierName.DOCKER:
+            # TODO: Bake the docker config into a higher layer that will
+            # automatically load these settings upon call to make_rp_service
+            config = AdvertisedTierConfigs[CloudTierName.DOCKER]
+            num_brokers = config.num_brokers
             extra_rp_conf = {
-                'log_segment_size': self.tier_config.segment_size,
-                'cloud_storage_cache_size': self.tier_config.cloud_cache_size,
-                # Disable segment merging: when we create many small segments
-                # to pad out tiered storage metadata, we don't want them to
-                # get merged together.
-                'cloud_storage_enable_segment_merging': False,
-                'disable_batch_cache': True,
+                'log_segment_size': config.segment_size,
+                'cloud_storage_cache_size': config.cloud_cache_size,
+                'kafka_connections_max': config.connections_limit,
             }
-            num_brokers = self.tier_config.num_brokers
 
-        else:
-            try:
-                cloud_tier = CloudTierName(cloud_tier_str)
-            except ValueError:
-                raise RuntimeError(
-                    f"Unknown cloud tier specified: {cloud_tier_str}. Supported tiers: {CloudTierName.list()+NoncloudTierConfigs.keys()}"
-                )
-            extra_rp_conf = None
-            num_brokers = None
-
-        super(HighThroughputTest2,
+        super(HighThroughputTest,
               self).__init__(test_ctx,
-                             1,
                              *args,
                              num_brokers=num_brokers,
                              extra_rp_conf=extra_rp_conf,
@@ -184,88 +198,96 @@ class HighThroughputTest2(PreallocNodesTest):
                              disable_cloud_storage_diagnostics=True,
                              **kwargs)
 
-        if cloud_tier is not None:
-            self.tier_config = self.redpanda.advertised_tier_config
+        self.tier_config = self.redpanda.advertised_tier_config
+        if cloud_tier == CloudTierName.DOCKER:
+            si_settings = SISettings(
+                test_ctx,
+                log_segment_size=self.small_segment_size,
+                cloud_storage_cache_size=self.tier_config.cloud_cache_size,
+            )
+            self.redpanda.set_si_settings(si_settings)
+            self.s3_port = si_settings.cloud_storage_api_endpoint_port
+
         test_ctx.logger.info(f"Cloud tier {cloud_tier}: {self.tier_config}")
 
         self.rpk = RpkTool(self.redpanda)
-
-    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_throughput_simple(self):
-
-        ingress_rate = self.tier_config.ingress_rate
         self.topics = [
-            TopicSpec(partition_count=self.tier_config.partitions_min)
+            TopicSpec(partition_count=self.tier_config.partitions_max,
+                      replication_factor=3,
+                      retention_bytes=-1)
         ]
-        super(HighThroughputTest2, self).setUp()
 
-        target_run_time = 15
-        target_data_size = target_run_time * ingress_rate
-        msg_count = int(math.sqrt(target_data_size) / 2)
-        msg_size = target_data_size // msg_count
-        self.logger.info(
-            f"Producing {msg_count} messages of {msg_size} B, "
-            f"{msg_count*msg_size} B total, target rate {ingress_rate} B/s")
+    def tearDown(self):
+        # These tests may run on cloud ec2 instances where between each test
+        # the same cluster is used. Therefore state between runs will still exist,
+        # remove the topic after each test run to clean out old state.
+        if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in self._ctx.globals:
+            self.rpk.delete_topic(self.topic)
 
-        # if this is a redpanda cloud cluster,
-        # use the default test superuser user/pass
-        security_config = self.redpanda.security_config()
-        username = security_config.get('sasl_plain_username', None)
-        password = security_config.get('sasl_plain_password', None)
-        enable_tls = security_config.get('enable_tls', False)
-        producer0 = KgoVerifierProducer(self.test_context,
-                                        self.redpanda,
-                                        self.topic,
-                                        msg_size=msg_size,
-                                        msg_count=msg_count,
-                                        username=username,
-                                        password=password,
-                                        enable_tls=enable_tls)
-        producer0.start()
-        start = time.time()
-
-        producer0.wait()
-        time0 = time.time() - start
-
-        producer0.stop()
-        producer0.free()
-
-        rate0 = msg_count * msg_size / time0
-        self.logger.info(f"Producer: {time0} s, {rate0} B/s")
-        assert rate0 / ingress_rate > 0.5, f"Producer rate is too low. measured: {rate0} B/s, expected: {ingress_rate} B/s"
-
-    def _stage_setup_cluster(self, name, partitions):
+    def load_many_segments(self):
         """
-        Setup cluster for tests. FMC/BYOC
+        This methods intended use is to pre-load the cluster (and S3) with
+        small segments to bootstrap a test enviornment that would stress
+        the tiered storage subsytem.
         """
-        topic_config = {
-            # Use a tiny segment size so we can generate many cloud segments
-            # very quickly.
-            'segment.bytes': 256 * MiB,
+        cloud_segment_size = self.msg_size * 4
+        num_segments_per_partition = 1000
+        target_cloud_segments = num_segments_per_partition * self.tier_config.partitions_max
+        total_bytes_to_produce = target_cloud_segments * cloud_segment_size
+        total_messages = int((total_bytes_to_produce / self.msg_size) * 1.2)
+        self.redpanda.logger.info(
+            f"Total bytes: {total_bytes_to_produce} total messages: {total_messages}"
+        )
+        assert cloud_segment_size >= self.msg_size
+        producer = KgoVerifierProducer(self.test_context, self.redpanda,
+                                       self.topic, self.msg_size,
+                                       total_messages)
 
-            # Use infinite retention so there aren't sudden, drastic,
-            # unrealistic GCing of logs.
-            'retention.bytes': -1,
+        self.adjust_topic_segment_properties(cloud_segment_size,
+                                             cloud_segment_size * 2)
 
-            # Keep the local retention low for now so we don't get bogged down
-            # with an inordinate number of local segments.
-            'retention.local.target.bytes': 2 * 256 * MiB,
-            'cleanup.policy': 'delete',
-        }
+        # Wait for at least as long as it would take to produce the data to the cluster
+        # at the given tiers expected ingress rate. Add in a little more time to account
+        # for any network hiccups or transitent errors
+        estimated_produce_time_secs = int(
+            (total_bytes_to_produce / self.tier_config.ingress_rate) * 1.2)
+        try:
+            producer.start()
+            wait_until(lambda: nodes_report_cloud_segments(
+                self.redpanda, target_cloud_segments),
+                       timeout_sec=estimated_produce_time_secs,
+                       backoff_sec=5)
+        finally:
+            producer.stop()
+            producer.wait(timeout_sec=600)
 
-        self.logger.info("Setting up cluster")
-        # Returned object is 'map', convert it to list
-        _li = list(self.rpk.list_topics())
-        if name in _li:
-            self.logger.info("Recreating test topic")
-            self.rpk.delete_topic(name)
-        else:
-            self.logger.info("Creating test topic")
-        self.rpk.create_topic(name,
-                              partitions=partitions,
-                              replicas=1,
-                              config=topic_config)
-        return
+        # Once some segments are generated, configure the topic to use more
+        # realistic sizes.
+        retention_bytes = int(self.tier_config.ingress_rate * 6 * hours /
+                              self.tier_config.partitions_max)
+        self.adjust_topic_segment_properties(self.tier_config.segment_size,
+                                             retention_bytes)
+
+    def adjust_topic_segment_properties(self, segment_bytes: int,
+                                        retention_local_bytes: int):
+        self.rpk.alter_topic_config(self.topic,
+                                    TopicSpec.PROPERTY_SEGMENT_SIZE,
+                                    segment_bytes)
+        self.rpk.alter_topic_config(
+            self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+            retention_local_bytes)
+
+    def get_node(self):
+        idx = random.randrange(len(self.cluster.nodes))
+        return self.cluster.nodes[idx]
+
+    @cluster(num_nodes=2)
+    def test_throughput_simple(self):
+        with traffic_generator(self.test_context, self.redpanda,
+                               self.tier_config, self.topic,
+                               self.msg_size) as _:
+            # Test will assert if advertised throughput isn't met
+            time.sleep(15)
 
     def _get_swarm_connections_count(self, nodes):
         _list = []
@@ -282,14 +304,9 @@ class HighThroughputTest2(PreallocNodesTest):
     @cluster(num_nodes=3)
     def test_max_connections(self):
         # Consts
-        TOPIC_NAME = "maxconnections-check"
         PRODUCER_TIMEOUT_MS = 5000
 
         tier_config = self.redpanda.advertised_tier_config
-        _partition_count = tier_config.num_brokers
-
-        # Prepare cluster
-        self._stage_setup_cluster(TOPIC_NAME, _partition_count)
 
         # setup ProducerSwarm parameters
         producer_kwargs = {}
@@ -324,7 +341,7 @@ class HighThroughputTest2(PreallocNodesTest):
             _records = records_per_producer * idx
             _swarm_node = ProducerSwarm(self._ctx,
                                         self.redpanda,
-                                        TOPIC_NAME,
+                                        self.topic,
                                         int(_conn_per_node),
                                         int(_records),
                                         timeout_ms=PRODUCER_TIMEOUT_MS,
@@ -386,7 +403,7 @@ class HighThroughputTest2(PreallocNodesTest):
             records_per_producer * _conn_per_node * idx
             for idx in range(len(self.cluster.nodes), 0, -1)
         ])
-        for partition in self.rpk.describe_topic(TOPIC_NAME):
+        for partition in self.rpk.describe_topic(self.topic):
             # Add currect high watermark for topic
             _hwm += partition.high_watermark
 
@@ -398,10 +415,6 @@ class HighThroughputTest2(PreallocNodesTest):
                          f"out of {expected_msg_count}, actual {_hwm}")
         assert _hwm >= expected_msg_count
 
-        # stage delete
-        self.logger.warn("Deleting topic")
-        self.rpk.delete_topic(TOPIC_NAME)
-
         # Assert that target connection count is reached
         self.logger.warn(
             f"Reached {connectMax} of {tier_config.connections_limit} needed")
@@ -409,189 +422,40 @@ class HighThroughputTest2(PreallocNodesTest):
 
         return
 
+    COMBO_PRELOADED_LOG_ALLOW_LIST = [
+        re.compile('storage - .* - Stopping parser, short read. .*')
+    ] + RESTART_LOG_ALLOW_LIST
 
-class HighThroughputTest(PreallocNodesTest):
-    # Redpanda is responsible for bounding its own startup time via
-    # STORAGE_TARGET_REPLAY_BYTES.  The resulting walltime for startup
-    # depends on the speed of the disk.  60 seconds is long enough
-    # for an i3en.xlarge (and more than enough for faster instance types)
-    EXPECT_START_TIME = 60
-
-    LEADER_BALANCER_PERIOD_MS = 30000
-    topic_name = "tiered_storage_topic"
-    small_segment_size = 4 * KiB
-    num_segments_per_partition = 1000
-    unavailable_timeout = 60
-    msg_size = 128 * KiB
-
-    def __init__(self, test_ctx: TestContext, *args, **kwargs):
-        self._ctx = test_ctx
-
-        cloud_tier = test_ctx.globals.get("cloud_tier",
-                                          "Upscale-1").removeprefix("Tier-")
-        self.config = CloudTierConfigs.get(cloud_tier)
-        assert not self.config is None, f"Unknown cloud tier specified: {cloud_tier}. "\
-            f"Supported tiers: {CloudTierConfigs.keys()}"
-        test_ctx.logger.info(
-            f"Cloud tier {cloud_tier}: {self.config.__dict__}")
-
-        extra_rp_conf = {
-            # In testing tiered storage, we care about creating as many
-            # cloud segments as possible. To that end, bounding the segment
-            # size isn't productive.
-            'cloud_storage_segment_size_min': 1,
-            'log_segment_size_min': 1024,
-
-            # Disable segment merging: when we create many small segments
-            # to pad out tiered storage metadata, we don't want them to
-            # get merged together.
-            'cloud_storage_enable_segment_merging': False,
-            'disable_batch_cache': True,
-            'cloud_storage_cache_check_interval': 1000,
-        }
-        if not self.config.connections_limit_scaled is None:
-            extra_rp_conf |= {
-                'kafka_connections_max': self.config.connections_limit_scaled
-            }
-
-        super(HighThroughputTest,
-              self).__init__(test_ctx,
-                             *args,
-                             num_brokers=self.config.num_brokers_scaled,
-                             node_prealloc_count=1,
-                             extra_rp_conf=extra_rp_conf,
-                             disable_cloud_storage_diagnostics=True,
-                             **kwargs)
-        si_settings = SISettings(
-            self.redpanda._context,
-            log_segment_size=self.small_segment_size,
-            cloud_storage_cache_size=self.config.cloud_cache_size,
-        )
-        self.redpanda.set_si_settings(si_settings)
-        self.rpk = RpkTool(self.redpanda)
-        self.s3_port = si_settings.cloud_storage_api_endpoint_port
-
-    def setup_cluster(self,
-                      segment_bytes: int,
-                      retention_local_bytes: int,
-                      extra_cluster_props: dict = {}):
-        self.redpanda.set_cluster_config(
-            {
-                'partition_autobalancing_node_availability_timeout_sec':
-                self.unavailable_timeout,
-                'partition_autobalancing_mode': 'continuous',
-                'raft_learner_recovery_rate': 10 * GiB,
-            } | extra_cluster_props)
-        topic_config = {
-            # Use a tiny segment size so we can generate many cloud segments
-            # very quickly.
-            'segment.bytes': segment_bytes,
-
-            # Use infinite retention so there aren't sudden, drastic,
-            # unrealistic GCing of logs.
-            'retention.bytes': -1,
-
-            # Keep the local retention low for now so we don't get bogged down
-            # with an inordinate number of local segments.
-            'retention.local.target.bytes': retention_local_bytes,
-            'cleanup.policy': 'delete',
-        }
-        self.rpk.create_topic(self.topic_name,
-                              partitions=self.config.partitions_max_scaled,
-                              replicas=3,
-                              config=topic_config)
-
-    def load_many_segments(self):
-        target_cloud_segments = self.num_segments_per_partition * self.config.partitions_max_scaled
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                self.small_segment_size,  # msg_size
-                int(2 * target_cloud_segments),  # msg_count
-                custom_node=[self.preallocated_nodes[0]])
-            try:
-                producer.start()
-                wait_until(lambda: nodes_report_cloud_segments(
-                    self.redpanda, target_cloud_segments),
-                           timeout_sec=600,
-                           backoff_sec=5)
-            finally:
-                producer.stop()
-                producer.wait(timeout_sec=600)
-        finally:
-            self.free_preallocated_nodes()
-
-        # Once some segments are generated, configure the topic to use more
-        # realistic sizes.
-        retention_bytes = int(self.config.ingress_rate_scaled * 6 * hours /
-                              self.config.partitions_max_scaled)
-        self.rpk.alter_topic_config(self.topic_name, 'segment.bytes',
-                                    self.config.segment_size_scaled)
-        self.rpk.alter_topic_config(self.topic_name,
-                                    'retention.local.target.bytes',
-                                    retention_bytes)
-
-    def get_node(self, idx: int):
-        node = self.redpanda.nodes[idx]
-        node_id = self.redpanda.node_id(node)
-        node_str = f"{node.account.hostname} (node_id: {node_id})"
-        return node, node_id, node_str
-
-    @ok_to_fail
-    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_combo_preloaded(self):
+    @cluster(num_nodes=2, log_allow_list=COMBO_PRELOADED_LOG_ALLOW_LIST)
+    def test_ht003_kgofailure(self):
         """
-        Preloads cluster with large number of messages/segments that are also
-        replicated to the cloud, and then run various different test stages
-        on the cluster:
+        Generates the maximum possible load to the cluster onto a topic that
+        is replicated to the cloud, and then run various different test
+        stages on the cluster:
         - rolling restart
         - stop and start single node, various scenarios
         - isolate and restore a node
         """
-        self.setup_cluster(segment_bytes=self.small_segment_size,
-                           retention_local_bytes=2 * self.small_segment_size)
         # Generate a realistic number of segments per partition.
-        self.load_many_segments()
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
-                custom_node=[self.preallocated_nodes[0]])
-            try:
-                producer.start()
-                wait_until(lambda: producer.produce_status.acked > 10000,
-                           timeout_sec=60,
-                           backoff_sec=1.0)
+        with traffic_generator(self.test_context, self.redpanda,
+                               self.tier_config, self.topic,
+                               self.msg_size) as tgen:
+            # Wait until theres some traffic
+            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
 
-                # Run a rolling restart.
-                self.stage_rolling_restart()
+            # Run a rolling restart.
+            self.stage_rolling_restart()
 
-                # Hard stop, then restart.
-                self.stage_stop_wait_start(forced_stop=True, downtime=0)
+            # Hard stop, then restart.
+            self.stage_stop_wait_start(forced_stop=True, downtime=0)
 
-                # Stop a node, wait for enough time for movement to occur, then
-                # restart.
-                self.stage_stop_wait_start(forced_stop=False,
-                                           downtime=self.unavailable_timeout)
+            # Stop a node, wait for enough time for movement to occur, then
+            # restart.
+            self.stage_stop_wait_start(forced_stop=False,
+                                       downtime=self.unavailable_timeout)
 
-                # Stop a node and wait for really long time to collect a lot
-                # of under-replicated msgs, then restart.
-                # This is not to be run nightly so disabled for now
-                #self.stage_stop_wait_start(forced_stop=False, downtime=60*30)
-
-                # Block traffic to/from one node.
-                self.stage_block_node_traffic()
-            finally:
-                producer.stop()
-                producer.wait(timeout_sec=600)
-        finally:
-            self.free_preallocated_nodes()
+            # Block traffic to/from one node.
+            self.stage_block_node_traffic()
 
     NOS3_LOG_ALLOW_LIST = [
         re.compile("s3 - .* - Accessing .*, unexpected REST API error "
@@ -608,25 +472,26 @@ class HighThroughputTest(PreallocNodesTest):
                                             stop_timeout=600)
 
     def stage_block_node_traffic(self):
-        node, node_id, node_str = self.get_node(0)
-        self.logger.info(f"Isolating node {node_str}")
+        wait_time = 120
+        node = self.get_node()
+        self.logger.info(f"Isolating node {node.name}")
         with FailureInjector(self.redpanda) as fi:
             fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
-            try:
-                wait_until(lambda: False, timeout_sec=120, backoff_sec=1)
-            except:
-                pass
+            self.logger.info(
+                f"Running for {wait_time}s while failure injected")
+            time.sleep(wait_time)
 
-        try:
-            wait_until(lambda: False, timeout_sec=120, backoff_sec=1)
-        except:
-            pass
+        self.logger.info(
+            f"Running for {wait_time}s after injected failure removed")
+        time.sleep(wait_time)
+        self.logger.info(
+            f"Waiting for the cluster to return to a healthy state")
         wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
 
     def stage_stop_wait_start(self, forced_stop: bool, downtime: int):
-        node, node_id, node_str = self.get_node(1)
+        node = self.get_node()
         self.logger.info(
-            f"Stopping node {node_str} {'ungracefully' if forced_stop else 'gracefully'}"
+            f"Stopping node {node.name} {'ungracefully' if forced_stop else 'gracefully'}"
         )
         self.redpanda.stop_node(node,
                                 forced=forced_stop,
@@ -636,44 +501,30 @@ class HighThroughputTest(PreallocNodesTest):
         time.sleep(downtime)
 
         restart_timeout = 300 + int(900 * downtime / 60)
-        self.logger.info(f"Restarting node {node_str} for {restart_timeout} s")
+        self.logger.info(
+            f"Restarting node {node.name} for {restart_timeout} s")
         self.redpanda.start_node(node, timeout=600)
         wait_until(self.redpanda.healthy,
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
-    @ok_to_fail
-    @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
+    # Temporary ignore until TS metrics can be queried via public_metrics
+    @ignore  # https://github.com/redpanda-data/cloudv2/issues/8845
+    @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
         Make segments replicate to the cloud, then disrupt S3 connectivity
         and restore it
         """
-        segment_size = int(self.config.segment_size_scaled / 8)
-        self.setup_cluster(segment_bytes=segment_size,
-                           retention_local_bytes=2 * segment_size)
-
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
-                custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
-                       backoff_sec=1.0)
-
+        segment_size = int(self.tier_config.segment_size / 8)
+        self.adjust_topic_segment_properties(segment_bytes=segment_size,
+                                             retention_local_bytes=2 *
+                                             segment_size)
+        with traffic_generator(self.test_context, self.redpanda,
+                               self.tier_config, self.topic,
+                               self.msg_size) as _:
             # S3 up -> down -> up
             self.stage_block_s3()
-
-        finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
-            self.free_preallocated_nodes()
 
     def _cloud_storage_no_new_errors(self, redpanda, logger=None):
         num_errors = redpanda.metric_sum(
@@ -690,11 +541,11 @@ class HighThroughputTest(PreallocNodesTest):
 
     def stage_block_s3(self):
         self.logger.info(
-            f"Getting the first {self.config.partitions_max_scaled} segments into the cloud"
+            f"Getting the first {self.tier_config.partitions_max} segments into the cloud"
         )
         wait_until(lambda: nodes_report_cloud_segments(
-            self.redpanda, self.config.partitions_max_scaled),
-                   timeout_sec=120,
+            self.redpanda, self.tier_config.partitions_max),
+                   timeout_sec=600,
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
@@ -723,18 +574,19 @@ class HighThroughputTest(PreallocNodesTest):
         this stage alone is too heavy and long-lasting, so it's put into a
         separate test.
         """
-        self.setup_cluster(segment_bytes=self.small_segment_size,
-                           retention_local_bytes=2 * self.small_segment_size)
+        self.adjust_topic_segment_properties(
+            segment_bytes=self.small_segment_size,
+            retention_local_bytes=2 * self.small_segment_size)
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         try:
             producer = KgoVerifierProducer(
                 self.test_context,
                 self.redpanda,
-                self.topic_name,
+                self.topic,
                 msg_size=self.msg_size,
                 msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
+                rate_limit_bps=self.tier_config.ingress_rate,
                 custom_node=[self.preallocated_nodes[0]])
             try:
                 producer.start()
@@ -753,11 +605,11 @@ class HighThroughputTest(PreallocNodesTest):
             self.free_preallocated_nodes()
 
     def stage_decommission_and_add(self):
-        node, node_id, node_str = self.get_node(1)
+        node, node_id, node_str = self.get_node()
 
         def topic_partitions_on_node():
             try:
-                parts = self.redpanda.partitions(self.topic_name)
+                parts = self.redpanda.partitions(self.topic)
             except StopIteration:
                 return 0
             n = sum([
@@ -806,72 +658,53 @@ class HighThroughputTest(PreallocNodesTest):
         )
         self.logger.info(f"{topic_partitions_on_node()} partitions moved")
 
-    @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
+    # Temporary ignore until TS metrics can be queried via public_metrics
+    @ignore  # https://github.com/redpanda-data/cloudv2/issues/8845
+    @cluster(num_nodes=3, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_cloud_cache_thrash(self):
         """
         Try to exhaust cloud cache by reading at random offsets with many
         consumers
         """
-        segment_size = int(self.config.segment_size_scaled / 8)
-        self.setup_cluster(segment_bytes=segment_size,
-                           retention_local_bytes=2 * segment_size,
-                           extra_cluster_props={
-                               'cloud_storage_max_readers_per_shard': 256,
-                           })
+        segment_size = int(self.tier_config.segment_size / 8)
+        self.adjust_topic_segment_properties(segment_bytes=segment_size,
+                                             retention_local_bytes=2 *
+                                             segment_size)
 
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
-                custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
-                       backoff_sec=1.0)
+        with traffic_generator(self.test_context, self.redpanda,
+                               self.tier_config, self.topic,
+                               self.msg_size) as tgen:
+            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
             wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, self.config.partitions_max_scaled),
+                self.redpanda, self.tier_config.partitions_max),
                        timeout_sec=600,
                        backoff_sec=5)
-            producer.wait_for_offset_map()
+            tgen._producer.wait_for_offset_map()
 
             # Exhaust cloud cache with multiple consumers
             # reading at random offsets
-            self.stage_cloud_cache_thrash()
-
-        finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
-            self.free_preallocated_nodes()
-
-    def stage_cloud_cache_thrash(self):
-        self.logger.info(f"Starting consumers")
-        consumer = KgoVerifierRandomConsumer(
-            self.test_context,
-            self.redpanda,
-            self.topic_name,
-            msg_size=self.msg_size,
-            rand_read_msgs=1,
-            parallel=4,
-            nodes=[self.preallocated_nodes[0]],
-            debug_logs=True,
-        )
-        try:
-            consumer.start(clean=False)
-            time.sleep(240)
-        finally:
-            self.logger.info(f"Stopping consumers")
-            consumer.stop()
-            consumer.wait(timeout_sec=600)
+            self.logger.info(f"Starting thrashing consumers")
+            consumer = KgoVerifierRandomConsumer(self.test_context,
+                                                 self.redpanda,
+                                                 self.topic,
+                                                 msg_size=self.msg_size,
+                                                 rand_read_msgs=1,
+                                                 parallel=4,
+                                                 debug_logs=True)
+            try:
+                consumer.start(clean=False)
+                time.sleep(240)
+            finally:
+                self.logger.info(f"Stopping thrashing consumers")
+                consumer.stop()
+                consumer.wait(timeout_sec=600)
 
     @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
-        self.setup_cluster(segment_bytes=self.small_segment_size,
-                           retention_local_bytes=2 * self.small_segment_size)
+        self.adjust_topic_segment_properties(
+            segment_bytes=self.small_segment_size,
+            retention_local_bytes=2 * self.small_segment_size)
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         producer = None
@@ -879,10 +712,10 @@ class HighThroughputTest(PreallocNodesTest):
             producer = KgoVerifierProducer(
                 self.test_context,
                 self.redpanda,
-                self.topic_name,
+                self.topic,
                 msg_size=self.msg_size,
                 msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
+                rate_limit_bps=self.tier_config.ingress_rate,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
             wait_until(lambda: producer.produce_status.acked > 10000,
@@ -922,7 +755,7 @@ class HighThroughputTest(PreallocNodesTest):
         while consume_count > 0:
             consumer = RpkConsumer(self._ctx,
                                    self.redpanda,
-                                   self.topic_name,
+                                   self.topic,
                                    num_msgs=consume_count)
             consumer.start()
             wait_until(lambda: random_stop_check(consumer),
@@ -967,13 +800,14 @@ class HighThroughputTest(PreallocNodesTest):
             assert expected_offset == actual_offset, "expected_offset != actual_offset"
 
     # The testcase occasionally fails on various parts:
-    # - toing on `_consume_from_offset(self.topic_name, 1, p_id, "newest", 30)`
+    # - toing on `_consume_from_offset(self.topic, 1, p_id, "newest", 30)`
     # - failing to ensure all manifests are in the cloud in `stop_and_scrub_object_storage`
     @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume_miss_cache(self):
-        self.setup_cluster(segment_bytes=self.small_segment_size,
-                           retention_local_bytes=2 * self.small_segment_size)
+        self.adjust_topic_segment_properties(
+            segment_bytes=self.small_segment_size,
+            retention_local_bytes=2 * self.small_segment_size)
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         producer = None
@@ -981,10 +815,10 @@ class HighThroughputTest(PreallocNodesTest):
             producer = KgoVerifierProducer(
                 self.test_context,
                 self.redpanda,
-                self.topic_name,
+                self.topic,
                 msg_size=self.msg_size,
                 msg_count=5 * 1024 * 1024 * 1024 * 1024,
-                rate_limit_bps=self.config.ingress_rate_scaled,
+                rate_limit_bps=self.tier_config.ingress_rate,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
             wait_until(lambda: producer.produce_status.acked > 10000,
@@ -1012,7 +846,7 @@ class HighThroughputTest(PreallocNodesTest):
         # for consuming messages after we produce enough data to push them out
         # of the batch cache.
         last_offsets = [(p.id, p.high_watermark)
-                        for p in self.rpk.describe_topic(self.topic_name)
+                        for p in self.rpk.describe_topic(self.topic)
                         if p.high_watermark is not None]
 
         partition_size_check: list[MetricCheck] = []
@@ -1030,8 +864,8 @@ class HighThroughputTest(PreallocNodesTest):
         # For a test on 4x `is4gen.4xlarge` there is about 0.13 GiB/s of throughput per node.
         # This would mean we'd be waiting 90GiB / 0.13 GiB/s = 688s or 11.5 minutes to ensure
         # the cache has been filled by the producer.
-        produce_rate_per_node_bytes_s = self.config.ingress_rate_scaled / self.config.num_brokers_scaled
-        batch_cache_max_memory = self.config.memory_per_broker
+        produce_rate_per_node_bytes_s = self.tier_config.ingress_rate / self.tier_config.num_brokers
+        batch_cache_max_memory = self.tier_config.memory_per_broker
         time_till_memory_full_per_node = batch_cache_max_memory / produce_rate_per_node_bytes_s
         required_wait_time_s = 1.5 * time_till_memory_full_per_node
 
@@ -1042,7 +876,7 @@ class HighThroughputTest(PreallocNodesTest):
 
         current_sent = producer.produce_status.sent
         expected_sent = math.ceil(
-            (self.config.num_brokers_scaled * batch_cache_max_memory) /
+            (self.tier_config.num_brokers * batch_cache_max_memory) /
             self.msg_size)
 
         self.logger.info(
@@ -1060,7 +894,7 @@ class HighThroughputTest(PreallocNodesTest):
                    backoff_sec=30)
 
         post_prod_offsets = [(p.id, p.high_watermark)
-                             for p in self.rpk.describe_topic(self.topic_name)
+                             for p in self.rpk.describe_topic(self.topic)
                              if p.high_watermark is not None]
 
         offset_deltas = [
@@ -1097,7 +931,7 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Ensure there are metrics available for the topic we're consuming from
         for p_id, _ in last_offsets:
-            self._consume_from_offset(self.topic_name, 1, p_id, "newest", 30)
+            self._consume_from_offset(self.topic, 1, p_id, "newest", 30)
 
         # Stop the producer temporarily as produce requests can cause
         # batch cache reads which causes false negatives on cache misses.
@@ -1123,7 +957,7 @@ class HighThroughputTest(PreallocNodesTest):
         timeout_seconds = 60
 
         for p_id, p_hw in last_offsets:
-            self._consume_from_offset(self.topic_name, messages_to_read, p_id,
+            self._consume_from_offset(self.topic, messages_to_read, p_id,
                                       str(p_hw), timeout_seconds)
 
         def check_cache_bytes_ratio(old, new):
@@ -1146,7 +980,7 @@ class HighThroughputTest(PreallocNodesTest):
     def _run_omb(self, produce_bps,
                  validator_overrides) -> OpenMessagingBenchmark:
         topic_count = 1
-        partitions_per_topic = self.config.partitions_max_scaled
+        partitions_per_topic = self.tier_config.partitions_max
         workload = {
             "name": "StabilityTest",
             "topics": topic_count,
@@ -1197,25 +1031,25 @@ class HighThroughputTest(PreallocNodesTest):
             'partition_autobalancing_mode': 'continuous',
             'raft_learner_recovery_rate': 10 * GiB,
         }
-        self.rpk.create_topic(self.topic_name,
-                              partitions=self.config.partitions_max_scaled,
+        self.rpk.create_topic(self.topic,
+                              partitions=self.tier_config.partitions_max,
                               replicas=3,
                               config=config)
 
         producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
-            self.topic_name,
+            self.topic,
             msg_size=self.msg_size,
             msg_count=5_000_000_000_000,
-            rate_limit_bps=self.config.ingress_rate_scaled)
+            rate_limit_bps=self.tier_config.ingress_rate)
         producer.start()
 
         # produce 10 mins worth of consume data onto S3.
         produce_time_s = 4 * 60
         messages_to_produce = (produce_time_s * consume_rate) / self.msg_size
         time_to_wait = (messages_to_produce *
-                        self.msg_size) / self.config.ingress_rate_scaled
+                        self.msg_size) / self.tier_config.ingress_rate
 
         wait_until(
             lambda: producer.produce_status.acked >= messages_to_produce,
@@ -1235,13 +1069,13 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Run a usual producer + consumer workload and a S3 producer + consumer workload concurrently
         # Ensure that the S3 workload doesn't effect the usual workload majorly.
-        benchmark = self._run_omb(self.config.ingress_rate_scaled / 2,
+        benchmark = self._run_omb(self.tier_config.ingress_rate / 2,
                                   validator_overrides)
 
         # This consumer should largely be reading from S3
         consumer = RpkConsumer(self._ctx,
                                self.redpanda,
-                               self.topic_name,
+                               self.topic,
                                offset="oldest",
                                num_msgs=messages_to_produce)
         consumer.start()
@@ -1300,7 +1134,7 @@ class HighThroughputTest(PreallocNodesTest):
         consume_count = 100
         consumer = RpkConsumer(self._ctx,
                                self.redpanda,
-                               self.topic_name,
+                               self.topic,
                                offset="newest",
                                num_msgs=consume_count)
         consumer.start()

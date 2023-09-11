@@ -2990,7 +2990,7 @@ class RedpandaService(RedpandaServiceBase):
                            memory_allocation_warning_threshold=
                            memory_allocation_warning_threshold_bytes)
 
-        if override_cfg_params or self._extra_node_conf[node]:
+        if override_cfg_params or node in self._extra_node_conf:
             doc = yaml.full_load(conf)
             doc["redpanda"].update(self._extra_node_conf[node])
             self.logger.debug(
