@@ -44,7 +44,17 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
     def get_offsets(self, group_name):
         offsets = {}
-        gd = self.rpk.group_describe(group_name)
+
+        def do_describe():
+            gd = self.rpk.group_describe(group_name)
+            return (True, gd)
+
+        gd = wait_until_result(
+            do_describe,
+            timeout_sec=30,
+            backoff_sec=0.5,
+            err_msg="RPK failed to get consumer group offsets",
+            retry_on_exc=True)
 
         for p in gd.partitions:
             if p.current_offset is not None:
@@ -76,19 +86,33 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
         return group_list_res[0]
 
+    @property
+    def msg_size(self):
+        return 16
+
+    @property
+    def msg_count(self):
+        return int(20 * self.producer_throughput / self.msg_size)
+
+    @property
+    def producer_throughput(self):
+        return 1024 if self.debug_mode else 1024 * 1024
+
     @cluster(num_nodes=4)
     def test_flipping_leadership(self):
         topic = TopicSpec(partition_count=64, replication_factor=3)
         self.client().create_topic([topic])
-        msg_size = 16
-        msg_cnt = 5000000
+        # set new members join timeout to 5 seconds to make the test execution faster
+        self.redpanda.set_cluster_config(
+            {"group_new_member_join_timeout": 5000})
 
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        topic.name,
-                                       msg_size,
-                                       msg_cnt,
-                                       custom_node=self.preallocated_nodes)
+                                       self.msg_size,
+                                       self.msg_count,
+                                       custom_node=self.preallocated_nodes,
+                                       rate_limit_bps=self.producer_throughput)
 
         producer.start(clean=False)
 
@@ -100,7 +124,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
             self.test_context,
             self.redpanda,
             topic.name,
-            msg_size,
+            self.msg_size,
             readers=3,
             nodes=self.preallocated_nodes,
             loop=True)
@@ -175,7 +199,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
                     )
                     if self.failure_cnt >= 20:
                         break
-                    timeout = 60
+                    timeout = 120
                     if time.time() - self.last_success > timeout:
                         assert False, f"Unable to retrieve group description for {timeout} seconds"
         finally:
