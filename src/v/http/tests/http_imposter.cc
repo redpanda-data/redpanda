@@ -139,6 +139,10 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
 
               auto response = lookup(lookup_r);
               repl.set_status(response.status);
+              for (const auto& [k, v] : response.headers) {
+                  repl.add_header(k, v);
+              }
+
               return response.body;
           }
       },

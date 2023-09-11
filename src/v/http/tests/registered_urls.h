@@ -24,6 +24,7 @@ namespace http_test_utils {
 struct response {
     using status_type = ss::http::reply::status_type;
     ss::sstring body;
+    std::vector<std::pair<ss::sstring, ss::sstring>> headers;
     status_type status;
 };
 
@@ -95,6 +96,10 @@ struct registered_urls {
 
             void then_reply_with(
               ss::sstring content, ss::http::reply::status_type status);
+
+            void then_reply_with(
+              std::vector<std::pair<ss::sstring, ss::sstring>> headers,
+              ss::http::reply::status_type status);
 
             add_mapping_when& with_method(ss::httpd::operation_type m);
 
