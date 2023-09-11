@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -67,13 +68,27 @@ Indexing can be used to set specific items in an array. You can index one past
 the end of an array to extend it:
 
   rpk redpanda config set redpanda.advertised_kafka_api[1] '{address: 0.0.0.0, port: 9092}'
+
+You may also use <key>=<value> notation for setting configuration properties:
+
+  rpk redpanda config set redpanda.kafka_api[0].port=9092
 `,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+
+			var key, value string
+			if len(args) == 1 && strings.Contains(args[0], "=") {
+				kv := strings.SplitN(args[0], "=", 2)
+				key, value = kv[0], kv[1]
+			} else if len(args) == 2 {
+				key, value = args[0], args[1]
+			} else {
+				out.Die("invalid arguments: %v, please use one of 'rpk redpanda config set <key> <value>' or 'rpk redpanda config set <key>=<value>'", args)
+			}
 			y := cfg.ActualRedpandaYamlOrDefaults() // we set fields in the raw file without writing env / flag overrides
-			err = config.Set(y, args[0], args[1])
+			err = config.Set(y, key, value)
 			out.MaybeDie(err, "unable to set %q:%v", args[0], err)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
