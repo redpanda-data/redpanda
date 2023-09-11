@@ -15,3 +15,4 @@ cloud:
     - tests/services_self_test.py::OpenBenchmarkSelfTest
     - scale_tests/high_throughput_test.py::HighThroughputTest2.test_throughput_simple
     - scale_tests/high_throughput_test.py::HighThroughputTest2.test_max_connections
+    - redpanda_cloud_tests/config_profile_verify_test.py::ConfigProfileVerifyTest.test_config_profile_verify
