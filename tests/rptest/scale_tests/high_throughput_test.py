@@ -428,7 +428,7 @@ class HighThroughputTest(PreallocNodesTest):
         self._ctx = test_ctx
 
         cloud_tier = test_ctx.globals.get("cloud_tier",
-                                          "Upscale-1").removeprefix("Tier-")
+                                          "tier-1-aws").removeprefix("Tier-")
         self.config = CloudTierConfigs.get(cloud_tier)
         assert not self.config is None, f"Unknown cloud tier specified: {cloud_tier}. "\
             f"Supported tiers: {CloudTierConfigs.keys()}"
@@ -1311,3 +1311,39 @@ class HighThroughputTest(PreallocNodesTest):
 
         consumer.stop()
         consumer.free()
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_ht004_minpartomb(self):
+        validator_overrides = {
+            OMBSampleConfigurations.E2E_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(51)],
+            OMBSampleConfigurations.E2E_LATENCY_AVG:
+            [OMBSampleConfigurations.lte(145)],
+        }
+        partitions_per_topic = self.config.partitions_max_scaled
+        workload = {
+            "name": "HT004-MINPARTOMB",
+            "topics": 1,
+            "partitions_per_topic": partitions_per_topic,
+            "subscriptions_per_topic": 1,
+            "consumer_per_subscription": 3,
+            "producers_per_topic": 1,
+            "producer_rate": int(self.config.ingress_rate_scaled / 8),
+            "message_size": 8 * KiB,
+            "consumer_backlog_size_GB": 0,
+            "test_duration_minutes": 1,
+            "warmup_duration_minutes": 1,
+            "use_randomized_payloads": True,
+            "random_bytes_ratio": 0.5,
+            "randomized_payload_pool_size": 100,
+        }
+
+        benchmark = OpenMessagingBenchmark(
+            self._ctx, self.redpanda, "SIMPLE_DRIVER",
+            (workload, OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
+             | validator_overrides))
+
+        benchmark.start()
+        benchmark_time_min = benchmark.benchmark_time() + 1
+        benchmark.wait(timeout_sec=benchmark_time_min * 60)
+        benchmark.check_succeed()
