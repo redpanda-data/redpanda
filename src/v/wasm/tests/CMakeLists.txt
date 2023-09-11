@@ -13,6 +13,8 @@ v_cc_library(
 
 set(TESTDATA_DIR "${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata")
 
+find_package(Avro)
+
 rp_test(
   UNIT_TEST
   GTEST
@@ -23,17 +25,20 @@ rp_test(
   LIBRARIES 
     v::gtest_main
     v::wasm_test_fixture
+    Avro::avro
   BUILD_DEPENDENCIES
     wasm_testdata_identity
+    wasm_testdata_schema_registry
+    wasm_testdata_setup_panic
     wasm_testdata_transform_error
     wasm_testdata_transform_panic
-    wasm_testdata_setup_panic
     wasm_testdata_wasi
   INPUT_FILES
     "${TESTDATA_DIR}/identity.wasm"
+    "${TESTDATA_DIR}/schema-registry.wasm"
+    "${TESTDATA_DIR}/setup-panic.wasm"
     "${TESTDATA_DIR}/transform-error.wasm"
     "${TESTDATA_DIR}/transform-panic.wasm"
-    "${TESTDATA_DIR}/setup-panic.wasm"
     "${TESTDATA_DIR}/wasi.wasm"
   ARGS "-- -c 1"
   LABELS wasm
