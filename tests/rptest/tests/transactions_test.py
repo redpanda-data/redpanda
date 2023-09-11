@@ -746,6 +746,29 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             p.flush()
             producers.append(p)
 
+        # Wait until eviction kicks in.
+        def wait_for_eviction():
+            brokers = self.redpanda.started_nodes()
+            metrics = self.redpanda.metrics_sample(
+                "idempotency_pid_cache_size", brokers)
+            producers_per_node = defaultdict(int)
+            for m in metrics.samples:
+                id = self.redpanda.node_id(m.node)
+                producers_per_node[id] += int(m.value)
+
+            self.redpanda.logger.debug(
+                f"active producers: {producers_per_node}")
+
+            return len(producers_per_node) == len(brokers) and all([
+                num == max_concurrent_producer_ids
+                for num in producers_per_node.values()
+            ])
+
+        wait_until(wait_for_eviction,
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Producers not evicted in time")
+
         try:
             test_producer.produce(topic,
                                   'test',
