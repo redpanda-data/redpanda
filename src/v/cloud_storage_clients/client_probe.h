@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "net/types.h"
 #include "ssx/metrics.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -44,6 +45,8 @@ enum class op_type_tag { upload, download };
 ///       time-series.
 class client_probe : public http::client_probe {
 public:
+    using hist_t = log_hist_internal;
+
     /// \brief Probe c-tor for S3 client
     ///
     /// \param disable is used to switch the internal monitoring off

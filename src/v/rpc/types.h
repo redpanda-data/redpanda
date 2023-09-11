@@ -18,7 +18,7 @@
 #include "outcome.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
-#include "utils/hdr_hist.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -406,12 +406,14 @@ inline void netbuf::set_min_compression_bytes(size_t min) {
 
 class method_probes {
 public:
-    hdr_hist& latency_hist() { return _latency_hist; }
-    const hdr_hist& latency_hist() const { return _latency_hist; }
+    using hist_t = log_hist_internal;
+
+    hist_t& latency_hist() { return _latency_hist; }
+    const hist_t& latency_hist() const { return _latency_hist; }
 
 private:
-    // roughly 2024 bytes
-    hdr_hist _latency_hist{120s, 1ms};
+    // roughly 208 bytes
+    hist_t _latency_hist;
 };
 
 /// \brief most method implementations will be codegenerated

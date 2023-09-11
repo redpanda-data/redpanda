@@ -16,8 +16,10 @@
 #include "coproc/fwd.h"
 #include "features/feature_table.h"
 #include "kafka/latency_probe.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fwd.h"
+#include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "net/server.h"
 #include "security/fwd.h"
@@ -66,7 +68,7 @@ public:
     ~server() noexcept override = default;
     server(const server&) = delete;
     server& operator=(const server&) = delete;
-    server(server&&) noexcept = default;
+    server(server&&) noexcept = delete;
     server& operator=(server&&) noexcept = delete;
 
     std::string_view name() const final { return "kafka rpc protocol"; }
@@ -171,6 +173,10 @@ public:
 
     ssx::semaphore& memory_fetch_sem() noexcept { return _memory_fetch_sem; }
 
+    handler_probe& handler_probe(api_key key) {
+        return _handler_probes.get_probe(key);
+    }
+
 private:
     void setup_metrics();
 
@@ -202,6 +208,7 @@ private:
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;
     ssx::semaphore _memory_fetch_sem;
+    handler_probe_manager _handler_probes;
 
     class latency_probe _probe;
     ss::metrics::metric_groups _metrics;

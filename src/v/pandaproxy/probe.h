@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include "utils/hdr_hist.h"
+#include "seastarx.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/http/json_path.hh>
@@ -22,10 +23,11 @@ namespace pandaproxy {
 /// If the request is good, measure latency, otherwise record the error.
 class http_status_metric {
 public:
+    using hist_t = log_hist_internal;
     class measurement {
     public:
         measurement(
-          http_status_metric* p, std::unique_ptr<hdr_hist::measurement> m)
+          http_status_metric* p, std::unique_ptr<hist_t::measurement> m)
           : _p(p)
           , _m(std::move(m)) {}
 
@@ -41,17 +43,17 @@ public:
             } else {
                 ++_p->_5xx_count;
             }
-            _m->set_trace(false);
+            _m->cancel();
         }
 
     private:
         http_status_metric* _p;
-        std::unique_ptr<hdr_hist::measurement> _m;
+        std::unique_ptr<hist_t::measurement> _m;
     };
-    hdr_hist& hist() { return _hist; }
+    hist_t& hist() { return _hist; }
     auto auto_measure() { return measurement{this, _hist.auto_measure()}; }
 
-    hdr_hist _hist;
+    hist_t _hist;
     int64_t _5xx_count{0};
     int64_t _4xx_count{0};
     int64_t _3xx_count{0};
