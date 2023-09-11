@@ -189,21 +189,102 @@ void recovery_scheduler_base::activate_some() {
         return;
     }
 
-    std::vector<std::pair<int, follower_recovery_state*>> to_sort;
-    to_sort.reserve(_pending.size());
+    struct item {
+        model::node_id leader_id;
+        follower_recovery_state* frs = nullptr;
+    };
+
+    // 1. Split the pending queue into sub-queues based on the priority class.
+    // A sub-queue for each class will be scheduled separately.
+
+    absl::btree_map<int, ss::chunked_fifo<item>> priority2items;
+    size_t leaderless_count = 0;
     for (auto& frs : _pending) {
+        auto leader_id = frs._parent->get_leader_id();
+        if (!leader_id) {
+            // don't schedule leaderless partitions at all, as it is unclear if
+            // they will be able to make progress.
+            leaderless_count += 1;
+            continue;
+        }
+
         int priority = (is_internal(frs.ntp()) ? 0 : 1);
-        to_sort.emplace_back(priority, &frs);
+        priority2items[priority].push_back(
+          item{.leader_id = *leader_id, .frs = &frs});
     }
 
-    size_t to_activate = std::min(
-      _pending.size(), _max_active() - _active.size());
-    std::nth_element(
-      to_sort.begin(), to_sort.begin() + to_activate, to_sort.end());
-    to_sort.resize(to_activate);
+    // 2. Schedule each sub-queue fairly - by trying to allocate roughly equal
+    // number of slots to each peer node.
 
-    for (auto [prio, frs] : to_sort) {
-        activate(*frs);
+    absl::flat_hash_map<model::node_id, size_t> node2active_count;
+    for (const auto& frs : _active) {
+        auto leader_id = frs._parent->get_leader_id();
+        if (!leader_id) {
+            leaderless_count += 1;
+            continue;
+        }
+        node2active_count[*leader_id] += 1;
+    }
+
+    auto fairly_schedule = [&](const ss::chunked_fifo<item>& items) {
+        absl::flat_hash_map<
+          model::node_id,
+          ss::chunked_fifo<follower_recovery_state*>>
+          node2items;
+        for (const auto& item : items) {
+            node2items[item.leader_id].push_back(item.frs);
+        }
+
+        struct node {
+            model::node_id id;
+            size_t active_count = 0;
+
+            bool operator<(const node& other) const {
+                return active_count > other.active_count;
+            }
+        };
+
+        std::priority_queue<node> node_queue;
+        for (const auto& [id, items] : node2items) {
+            node_queue.push(
+              node{.id = id, .active_count = node2active_count[id]});
+        }
+
+        while (!node_queue.empty() && _active.size() < _max_active()) {
+            auto cur = node_queue.top();
+            node_queue.pop();
+            auto& items = node2items[cur.id];
+            vassert(
+              !items.empty(), "items for a node in the queue cannot be empty");
+            activate(*items.front());
+            items.pop_front();
+            auto& active = node2active_count[cur.id];
+            active += 1;
+
+            if (!items.empty()) {
+                node_queue.push(node{.id = cur.id, .active_count = active});
+            }
+        }
+    };
+
+    vlog(
+      raftlog.debug,
+      "leaderless count: {}; active counts by node before scheduling: {}",
+      leaderless_count,
+      node2active_count);
+
+    for (const auto& [prio, items] : priority2items) {
+        if (_active.size() >= _max_active()) {
+            break;
+        }
+
+        fairly_schedule(items);
+
+        vlog(
+          raftlog.debug,
+          "active counts by node after scheduling priority class {}: {}",
+          prio,
+          node2active_count);
     }
 }
 
