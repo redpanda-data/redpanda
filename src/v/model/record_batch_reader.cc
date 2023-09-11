@@ -224,6 +224,8 @@ make_fragmented_memory_storage_batches(Container batches) {
             } else {
                 data.emplace_back(std::exchange(data_chunk, {}));
             }
+            data_chunk.reserve(
+              std::min(elements_per_fragment, batches.size() - i));
         }
         auto& b = *it;
         data_chunk.push_back(std::move(b));
