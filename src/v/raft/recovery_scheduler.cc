@@ -208,7 +208,28 @@ void recovery_scheduler_base::activate_some() {
             continue;
         }
 
-        int priority = (is_internal(frs.ntp()) ? 0 : 1);
+        // ordinary user partition needing recovery
+        int priority = 0;
+
+        if (is_internal(frs.ntp())) {
+            // internal partitions get higher priority as we want them fully
+            // operational before waiting for all the user data to be recovered.
+            priority = -1;
+        } else {
+            auto config = frs._parent->config();
+            bool is_learner = !config.contains(frs._parent->self())
+                              || !config.is_voter(frs._parent->self());
+            if (is_learner) {
+                // learners (i.e. partitions on the nodes where they are being
+                // moved to) get lower priority as we want partitions to regain
+                // their full replication factor first (we typically wait for
+                // learners to fully recover before removing other replicas and
+                // thus they don't conribute to the number of under-replicated
+                // partitions)
+                priority = 1;
+            }
+        }
+
         priority2items[priority].push_back(
           item{.leader_id = *leader_id, .frs = &frs});
     }
