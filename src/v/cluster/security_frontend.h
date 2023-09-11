@@ -26,7 +26,8 @@ namespace cluster {
 class security_frontend final {
 public:
     security_frontend(
-      model::node_id,
+      model::node_id self,
+      controller* controller,
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
@@ -64,7 +65,13 @@ public:
     static std::optional<user_and_credential>
     get_bootstrap_user_creds_from_env();
 
+    ss::future<std::error_code>
+      wait_until_caughtup_with_leader(model::timeout_clock::duration);
+
 private:
+    ss::future<result<model::offset>>
+      get_leader_committed(model::timeout_clock::duration);
+
     ss::future<std::vector<errc>> do_create_acls(
       std::vector<security::acl_binding>, model::timeout_clock::duration);
 
@@ -83,6 +90,7 @@ private:
       model::timeout_clock::duration);
 
     model::node_id _self;
+    controller* _controller;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;

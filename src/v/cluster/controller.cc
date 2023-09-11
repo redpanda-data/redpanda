@@ -250,6 +250,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
       .then([this] {
           return _security_frontend.start(
             _raft0->self().id(),
+            this,
             std::ref(_stm),
             std::ref(_connections),
             std::ref(_partition_leaders),

@@ -10,6 +10,7 @@
 #include "cluster/service.h"
 
 #include "cluster/config_frontend.h"
+#include "cluster/controller.h"
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/feature_manager.h"
@@ -40,6 +41,7 @@ namespace cluster {
 service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
+  controller* controller,
   ss::sharded<topics_frontend>& tf,
   ss::sharded<plugin_frontend>& pf,
   ss::sharded<members_manager>& mm,
@@ -55,6 +57,7 @@ service::service(
   ss::sharded<rpc::connection_cache>& conn_cache,
   ss::sharded<partition_manager>& partition_manager)
   : controller_service(sg, ssg)
+  , _controller(controller)
   , _topics_frontend(tf)
   , _members_manager(mm)
   , _md_cache(cache)
@@ -745,6 +748,26 @@ ss::future<partition_state_reply> service::get_partition_state(
   partition_state_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
         return do_get_partition_state(req);
+    });
+}
+
+ss::future<controller_committed_offset_reply>
+service::get_controller_committed_offset(
+  controller_committed_offset_request&&, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this]() {
+        return ss::smp::submit_to(controller_stm_shard, [this]() {
+            if (!_controller->is_raft0_leader()) {
+                return ss::make_ready_future<controller_committed_offset_reply>(
+                  controller_committed_offset_reply{
+                    .result = errc::not_leader_controller});
+            }
+            return _controller->linearizable_barrier().then([](auto r) {
+                const auto errc = r.has_error() ? errc::not_leader_controller
+                                                : errc::success;
+                return controller_committed_offset_reply{
+                  .last_committed = r.value(), .result = errc};
+            });
+        });
     });
 }
 

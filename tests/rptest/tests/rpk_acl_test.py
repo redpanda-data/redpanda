@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
+from rptest.services.failure_injector import make_failure_injector, FailureSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
@@ -26,15 +26,84 @@ class RpkACLTest(RedpandaTest):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = 'sasl'
-        super(RpkACLTest, self).__init__(test_ctx,
-                                         security=security,
-                                         *args,
-                                         **kwargs)
+        super(RpkACLTest,
+              self).__init__(test_ctx,
+                             security=security,
+                             extra_rp_conf={'election_timeout_ms': 10000},
+                             *args,
+                             **kwargs)
         self._rpk = RpkTool(redpanda=self.redpanda,
                             username=self.username,
                             password=self.password,
                             sasl_mechanism=self.mechanism)
         self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
+
+    def _superclient(self):
+        return RpkTool(self.redpanda,
+                       username=self.superuser.username,
+                       password=self.superuser.password,
+                       sasl_mechanism=self.mechanism)
+
+    @cluster(num_nodes=3)
+    def test_modify_then_query_error(self):
+        """
+        This test ensures that even in cases where multiple nodes may
+        think they are the leader, the freshest data is returned
+        """
+        superclient = self._superclient()
+        superclient.acl_create_allow_cluster(self.superuser.username,
+                                             "describe")
+
+        # Modify an ACL
+        self._rpk.sasl_allow_principal(f'User:{self.username}', ['CREATE'],
+                                       'topic', 'foo', self.superuser.username,
+                                       self.superuser.password,
+                                       self.superuser.algorithm)
+        described = superclient.acl_list()
+        assert 'CREATE' in described, "Failed to modify ACL"
+        assert self.redpanda.search_log_any(
+            ".*Failed waiting on catchup with controller leader.*") is False
+
+        # Network partition the leader away from the rest of the cluster
+        with make_failure_injector(self.redpanda) as fi:
+            fi.inject_failure(
+                FailureSpec(FailureSpec.FAILURE_ISOLATE,
+                            self.redpanda.controller()))
+
+            # Timeout must be larger then hardcoded timeout of 5s within redpanda
+            _ = superclient.acl_list(request_timeout_overhead=30)
+
+            # Of the other remaining nodes, none can be declared a leader before
+            # the election timeout occurs; also the "current" leader is technically
+            # stale so it cannot be sure its returning the freshest data either. In
+            # all cases the log below should be observed on the node handling the req.
+            assert self.redpanda.search_log_any(
+                ".*Failed waiting on catchup with controller leader.*") is True
+
+    @cluster(num_nodes=3)
+    def test_modify_then_query(self):
+        """
+        This test ensures that sending a command to enable an ACL then
+        querying it (on a node that may be a follower) returns the most
+        up to data result
+        """
+        # All operations apart from 'ALL'
+        operations = [
+            'DESCRIBE', 'READ', 'WRITE', 'CREATE', 'DELETE', 'ALTER',
+            'DESCRIBE_CONFIGS', 'ALTER_CONFIGS'
+        ]
+        superclient = self._superclient()
+        superclient.acl_create_allow_cluster(self.superuser.username,
+                                             "describe")
+
+        for op in operations:
+            self._rpk.sasl_allow_principal(f'User:{self.username}', [op],
+                                           'topic', 'foo',
+                                           self.superuser.username,
+                                           self.superuser.password,
+                                           self.superuser.algorithm)
+            described = superclient.acl_list()
+            assert op in described, f"Failed looking for {op} in {described}"
 
     @cluster(num_nodes=1)
     def test_create_update(self):
