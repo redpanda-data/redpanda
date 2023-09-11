@@ -260,11 +260,11 @@ eviction_policy::collect_reclaimable_offsets() {
      */
     const auto collection_threshold = [this] {
         const auto& lm = _storage->local().log_mgr();
-        if (!lm.config().delete_retention().has_value()) {
+        if (!lm.config().log_retention().has_value()) {
             return model::timestamp(0);
         }
         const auto now = model::timestamp::now().value();
-        const auto retention = lm.config().delete_retention().value().count();
+        const auto retention = lm.config().log_retention().value().count();
         return model::timestamp(now - retention);
     };
 
