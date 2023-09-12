@@ -104,6 +104,17 @@ fetch_dep(hdrhistogram
   REPO https://github.com/HdrHistogram/HdrHistogram_c
   TAG 0.11.5)
 
+# We need submodules for wasmtime to compile
+FetchContent_Declare(
+  wasmtime
+  GIT_REPOSITORY https://github.com/bytecodealliance/wasmtime
+  GIT_TAG 8efcb9851602287fd07a1a1e91501f51f2653d7e
+  GIT_PROGRESS TRUE
+  USES_TERMINAL_DOWNLOAD TRUE
+  OVERRIDE_FIND_PACKAGE
+  SYSTEM
+  SOURCE_SUBDIR crates/c-api)
+
 FetchContent_MakeAvailable(
     fmt
     rapidjson
@@ -115,6 +126,7 @@ FetchContent_MakeAvailable(
     avro
     tinygo
     wasmedge
+    wasmtime
     hdrhistogram)
 
 add_library(Crc32c::crc32c ALIAS crc32c)

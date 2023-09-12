@@ -57,6 +57,7 @@ public:
       first_bucket_upper_bound - 1);
     static constexpr int first_bucket_exp = 64 - first_bucket_clz;
 
+    using duration_type = duration_t;
     using clock_type = std::chrono::high_resolution_clock;
 
     /// \brief move-only type to tracking durations

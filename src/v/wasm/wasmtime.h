@@ -8,16 +8,14 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#pragma once
 
-#include "wasm/api.h"
+#include "seastarx.h"
+#include "ssx/thread_worker.h"
+#include "wasm/fwd.h"
 
-#include "wasm/schema_registry.h"
-#include "wasm/wasmtime.h"
+#include <seastar/core/future.hh>
 
-namespace wasm {
-std::unique_ptr<runtime>
-runtime::create_default(pandaproxy::schema_registry::api* schema_reg) {
-    return wasmtime::create_runtime(
-      wasm::schema_registry::make_default(schema_reg));
+namespace wasm::wasmtime {
+std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry>);
 }
-} // namespace wasm

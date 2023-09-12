@@ -623,6 +623,9 @@ public:
       : _config_ctx(WasmEdge_ConfigureCreate())
       , _sr(std::move(sr)) {}
 
+    ss::future<> start() final { co_return; }
+    ss::future<> stop() final { co_return; }
+
     ss::future<std::unique_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) final {
         // TODO: Move compilation to here and reuse the compiled artifact
