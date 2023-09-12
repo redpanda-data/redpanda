@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM public.ecr.aws/docker/library/ubuntu:kinetic-20230412 as base
+FROM public.ecr.aws/docker/library/ubuntu:jammy-20230816 as base
 
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
