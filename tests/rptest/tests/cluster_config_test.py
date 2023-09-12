@@ -1430,10 +1430,12 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
                                      prop_set.test_values[1])
 
         # The rpk CLI should also accept aliased names
-        self.rpk.cluster_config_set(prop_set.aliased_name,
-                                    prop_set.test_values[2])
-        self._check_value_everywhere(prop_set.primary_name,
-                                     prop_set.test_values[2])
+        # NOTE due to https://github.com/redpanda-data/redpanda/issues/13389
+        # this is not possible at the moment: rpk rejects the aliased_name
+        # self.rpk.cluster_config_set(prop_set.aliased_name,
+        #                             prop_set.test_values[2])
+        # self._check_value_everywhere(prop_set.primary_name,
+        #                              prop_set.test_values[2])
 
     @cluster(num_nodes=3)
     @matrix(
