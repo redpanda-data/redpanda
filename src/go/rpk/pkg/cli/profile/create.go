@@ -109,7 +109,7 @@ rpk always switches to the newly created profile.
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&set, "set", "s", nil, "Create and switch to a new profile, setting profile fields with key=value pairs")
+	cmd.Flags().StringArrayVarP(&set, "set", "s", nil, "Create and switch to a new profile, setting profile fields with key=value pairs")
 	cmd.Flags().StringVar(&fromRedpanda, "from-redpanda", "", "Create and switch to a new profile from a redpanda.yaml file")
 	cmd.Flags().StringVar(&fromProfile, "from-profile", "", "Create and switch to a new profile from an existing profile or from a profile in a yaml file")
 	cmd.Flags().StringVar(&fromCloud, "from-cloud", "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
