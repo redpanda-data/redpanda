@@ -60,6 +60,10 @@ public:
         return model::ntp(_tp_ns.ns, _tp_ns.tp, model::partition_id{p});
     }
 
+    bool topic_exists() const {
+        return _md.local().get_topic_cfg(_tp_ns).has_value();
+    }
+
     const model::ns& ns() const { return _tp_ns.ns; }
     const model::topic& topic() const { return _tp_ns.tp; }
 
