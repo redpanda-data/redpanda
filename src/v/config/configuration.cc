@@ -139,7 +139,9 @@ configuration::configuration()
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",
-      "Required memory per partition when creating topics",
+      "Memory required per partition replica: topic creation is prevented if "
+      "it would result in the ratio of memory to partition replicas being "
+      "lower than this value.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_MiB,
       {
@@ -150,7 +152,9 @@ configuration::configuration()
   , topic_fds_per_partition(
       *this,
       "topic_fds_per_partition",
-      "Required file handles per partition when creating topics",
+      "File descriptors required per partition replica: topic creation is "
+      "prevented if it would result in the ratio of file descriptor limit to "
+      "partition replicas being lower than this value.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5,
       {
@@ -161,8 +165,9 @@ configuration::configuration()
   , topic_partitions_per_shard(
       *this,
       "topic_partitions_per_shard",
-      "Maximum number of partitions which may be allocated to one shard (CPU "
-      "core)",
+      "Maximum partition replicas per shard: topic creation is prevented if "
+      "it would result in the ratio of partition replicas to shards being "
+      "higher than this value.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1000,
       {
