@@ -16,7 +16,7 @@
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
-#include "rpc/connection_cache.h"
+#include "rpc/connection_set.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
@@ -77,8 +77,7 @@ private:
     ss::future<result<node_status>>
       send_node_status_request(model::node_id, node_status_request);
 
-    ss::future<ss::shard_id>
-      maybe_create_client(model::node_id, net::unresolved_address);
+    ss::future<> maybe_create_client(model::node_id, net::unresolved_address);
 
     void setup_metrics(ssx::metrics::metric_groups&);
 
@@ -107,7 +106,7 @@ private:
     config::binding<std::chrono::milliseconds> _period;
     config::binding<std::chrono::milliseconds> _max_reconnect_backoff;
     config::tls_config _rpc_tls_config;
-    ss::sharded<rpc::connection_cache> _node_connection_cache;
+    rpc::connection_set _node_connection_set;
 
     absl::flat_hash_set<model::node_id> _discovered_peers;
     ss::gate _gate;
@@ -120,7 +119,7 @@ private:
     ssx::metrics::metric_groups _public_metrics
       = ssx::metrics::metric_groups::make_public();
 
-    ss::sharded<ss::abort_source>& _as;
+    ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
     struct member_notification {
         member_notification(model::node_id id, model::membership_state state)
           : id(id)

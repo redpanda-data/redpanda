@@ -14,6 +14,7 @@
 #include "kafka/client/sasl_client.h"
 #include "net/connection.h"
 #include "net/dns.h"
+#include "rpc/rpc_utils.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -23,7 +24,7 @@ ss::future<shared_broker_t> make_broker(
   model::node_id node_id,
   net::unresolved_address addr,
   const configuration& config) {
-    return cluster::maybe_build_reloadable_certificate_credentials(
+    return rpc::maybe_build_reloadable_certificate_credentials(
              config.broker_tls())
       .then([addr, client_id = config.client_identifier()](
               ss::shared_ptr<ss::tls::certificate_credentials> creds) mutable {
