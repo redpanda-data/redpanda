@@ -163,8 +163,8 @@ class CloudStorageCompactionTest(EndToEndTest):
                    backoff_sec=5)
 
     @cluster(num_nodes=9)
-    @matrix(
-        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        docker_use_arbitrary=True))
     def test_read_from_replica(self, cloud_storage_type):
         self.start_workload()
         self.start_consumer(num_nodes=2,
