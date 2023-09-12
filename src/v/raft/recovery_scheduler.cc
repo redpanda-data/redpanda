@@ -145,6 +145,17 @@ void recovery_scheduler_base::add(follower_recovery_state& frs) {
         frs._is_active = true;
     } else if (is_internal(frs.ntp()) && _active.size() < _max_active()) {
         frs._is_active = true;
+    } else if (
+      frs._our_last_offset == model::offset{}
+      && frs._leader_last_offset == model::offset{0}) {
+        // Special case for newly created partitions: we probably missed the
+        // first append_entries with the configuration batch because the
+        // partition hasn't yet been created.
+        //
+        // Allow "recovery" (which will hopefully be short and sweet)
+        // immediately. This is not necessary for correctness, but we do it to
+        // avoid a spurious spike in stats when the new topic is created.
+        frs._is_active = true;
     }
 
     if (frs._is_active) {
