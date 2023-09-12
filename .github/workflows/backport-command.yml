@@ -70,15 +70,15 @@ jobs:
         id: user
         run: |
           username=$(gh api user --jq .login)
-          echo ::set-output name=username::"$username"
-          echo ::set-output name=repo::"$TARGET_REPO"
-          echo ::set-output name=email::"vbot@redpanda.com"
+          echo "username=$username" >> $GITHUB_OUTPUT
+          echo "repo=$TARGET_REPO" >> $GITHUB_OUTPUT
+          echo "email=vbot@redpanda.com" >> $GITHUB_OUTPUT
 
       - name: Get assignees
         env:
           ASSIGNEES: ${{ toJson(github.event.client_payload.github.payload.issue.assignees) }}
         id: assignees
-        run: echo ::set-output name=assignees::$(echo "$ASSIGNEES" | jq -r '.[].login' | paste -s -d ',' -)
+        run: echo "assignees=$(echo $ASSIGNEES | jq -r '.[].login' | paste -s -d ',' -)" >> $GITHUB_OUTPUT
 
       - name: Discover and create milestone
         env:
@@ -105,7 +105,7 @@ jobs:
         env:
           REVIEWERS: ${{ toJson(github.event.client_payload.pull_request.requested_reviewers) }}
         id: reviewers
-        run: echo ::set-output name=reviewers::$(echo "$REVIEWERS" | jq -r '.[].login' | paste -s -d ',' -)
+        run: echo "reviewers=$(echo $REVIEWERS | jq -r '.[].login' | paste -s -d ',' -)" >> $GITHUB_OUTPUT
 
       - name: Get commits of PR
         if: needs.backport-type.outputs.commented_on == 'pr'
@@ -115,7 +115,7 @@ jobs:
         id: backport_commits
         run: |
           backport_commits=$(gh api "repos/$TARGET_FULL_REPO/pulls/$BACKPORT_PR_NUMBER/commits" --jq .[].sha | paste -s -d ' ' -)
-          echo ::set-output name=backport_commits::$backport_commits
+          echo "backport_commits=$backport_commits" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@v3
         if: needs.backport-type.outputs.commented_on == 'pr'

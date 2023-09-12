@@ -19,7 +19,7 @@ if [[ $(echo "$CLIENT_PAYLOAD" | jq 'has("pull_request")') == true ]]; then
 else
   commented_on="issue"
 fi
-echo "::set-output name=commented_on::$commented_on"
+echo "commented_on=$commented_on" >>$GITHUB_OUTPUT
 
 if ! gh_branch_exists "$ARG1"; then
   new_arg=$ARG1
@@ -40,5 +40,5 @@ if ! gh_branch_exists "$ARG1"; then
   fi
 fi
 
-echo "::set-output name=backport_branch::${backport_branch-$ARG1}"
-echo "::set-output name=target_milestone::${target_milestone-$MILESTONE_ARG}"
+echo "backport_branch=${backport_branch-$ARG1}" >>$GITHUB_OUTPUT
+echo "target_milestone=${target_milestone-$MILESTONE_ARG}" >>$GITHUB_OUTPUT
