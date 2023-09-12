@@ -15,13 +15,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(_ afero.Fs, p *config.Params) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "transform",
 		Aliases: []string{"wasm", "transfrom"}, //nolint:misspell // auto correct a common misspelling
 		Short:   "Develop, deploy and manage Redpanda data transforms",
 	}
 	p.InstallKafkaFlags(cmd)
-	// TODO(rockwood): Add commands
+	cmd.AddCommand(
+		newDeleteCommand(fs, p),
+	)
 	return cmd
 }
