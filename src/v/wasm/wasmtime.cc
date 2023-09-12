@@ -444,7 +444,7 @@ public:
       , _wasi_module(std::move(wasi_module))
       , _linker(std::move(l))
       , _instance(instance)
-      , _workers(workers)
+      , _alien_thread_pool(workers)
       , _host_function_environments(std::move(host_function_environments)) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
@@ -517,7 +517,7 @@ private:
     }
 
     ss::future<> initialize_wasi() {
-        return _workers->submit([this] {
+        return _alien_thread_pool->submit([this] {
             // TODO: Consider having a different amount of fuel for
             // initialization.
             reset_fuel();
@@ -552,7 +552,7 @@ private:
 
     ss::future<transform_result>
     invoke_transform(const model::record_batch* batch) {
-        return _workers->submit([this, batch] {
+        return _alien_thread_pool->submit([this, batch] {
             std::vector<uint64_t> latencies;
             auto* ctx = wasmtime_store_context(_store.get());
             wasmtime_extern_t cb;
@@ -627,7 +627,7 @@ private:
     std::unique_ptr<wasi::preview1_module> _wasi_module;
     handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
-    ssx::sharded_thread_worker* _workers;
+    ssx::sharded_thread_worker* _alien_thread_pool;
     std::vector<std::unique_ptr<host_function_environment>>
       _host_function_environments;
 };
@@ -646,12 +646,12 @@ public:
       , _meta(std::move(meta))
       , _sr(sr)
       , _logger(l)
-      , _workers(w) {}
+      , _alien_thread_pool(w) {}
 
     ss::future<std::unique_ptr<engine>> make_engine() final {
         ss::alien::instance* alien = &ss::engine().alien();
         ss::shard_id shard_id = ss::this_shard_id();
-        return _workers->submit(
+        return _alien_thread_pool->submit(
           [this, alien, shard_id]() -> std::unique_ptr<engine> {
               handle<wasmtime_store_t, wasmtime_store_delete> store{
                 wasmtime_store_new(_engine, nullptr, nullptr)};
@@ -702,7 +702,7 @@ public:
                 std::move(wasi_module),
                 std::move(host_function_envs),
                 instance,
-                _workers);
+                _alien_thread_pool);
           });
     }
 
@@ -712,7 +712,7 @@ private:
     model::transform_metadata _meta;
     schema_registry* _sr;
     ss::logger* _logger;
-    ssx::sharded_thread_worker* _workers;
+    ssx::sharded_thread_worker* _alien_thread_pool;
 };
 
 class wasmtime_runtime : public runtime {
@@ -724,9 +724,9 @@ public:
       , _sr(std::move(sr)) {}
 
     ss::future<> start() override {
-        co_await _workers.start({.name = "wasm"});
+        co_await _alien_thread_pool.start({.name = "wasm"});
         co_await ss::smp::invoke_on_all([this] {
-            return _workers.submit([] {
+            return _alien_thread_pool.submit([] {
                 // wasmtime needs some signals for it's handling, make sure we
                 // unblock them.
                 auto mask = ss::make_empty_sigset_mask();
@@ -739,38 +739,39 @@ public:
         });
     }
 
-    ss::future<> stop() override { return _workers.stop(); }
+    ss::future<> stop() override { return _alien_thread_pool.stop(); }
 
     ss::future<std::unique_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
-        auto user_module = co_await _workers.submit([this, &meta, &buf] {
-            vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
-            // This can be a large contiguous allocation, however it happens on
-            // an alien thread so it bypasses the seastar allocator.
-            bytes b = iobuf_to_bytes(buf);
-            wasmtime_module_t* user_module_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_module_new(
-                _engine.get(), b.data(), b.size(), &user_module_ptr)};
-            check_error(error.get());
-            std::shared_ptr<wasmtime_module_t> user_module{
-              user_module_ptr, wasmtime_module_delete};
-            wasm_log.info("Finished compiling wasm module {}", meta.name);
-            return user_module;
-        });
+        auto user_module = co_await _alien_thread_pool.submit(
+          [this, &meta, &buf] {
+              vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
+              // This can be a large contiguous allocation, however it happens
+              // on an alien thread so it bypasses the seastar allocator.
+              bytes b = iobuf_to_bytes(buf);
+              wasmtime_module_t* user_module_ptr = nullptr;
+              handle<wasmtime_error_t, wasmtime_error_delete> error{
+                wasmtime_module_new(
+                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
+              check_error(error.get());
+              std::shared_ptr<wasmtime_module_t> user_module{
+                user_module_ptr, wasmtime_module_delete};
+              wasm_log.info("Finished compiling wasm module {}", meta.name);
+              return user_module;
+          });
         co_return std::make_unique<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
           user_module,
           _sr.get(),
           logger,
-          &_workers);
+          &_alien_thread_pool);
     }
 
 private:
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
-    ssx::sharded_thread_worker _workers;
+    ssx::sharded_thread_worker _alien_thread_pool;
 };
 
 } // namespace
