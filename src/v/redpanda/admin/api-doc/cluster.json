@@ -107,7 +107,11 @@
                     "items": {
                         "type": "string"
                     },
-                    "description": "list of partitions for which no leader is elected"
+                    "description": "List of partitions for which no leader is elected (truncated at 128 entries)"
+                },
+                "leaderless_count": {
+                    "type": "int",
+                    "description": "Total count of leaderless partitions: is larger than the list of the leaderless_partitions array if the array was truncated."
                 },
                 "under_replicated_partitions": {
                     "type": "array",
@@ -115,6 +119,10 @@
                         "type": "string"
                     },
                     "description": "list of partitions where one or more replicas has not replicated all data"
+                },
+                "under_replicated_count": {
+                    "type": "int",
+                    "description": "Total count of under-replicated partitions: is larger than the list of the under_replicated_partitions if the array was truncated."
                 },
                 "bytes_in_cloud_storage": {
                     "type": "long",

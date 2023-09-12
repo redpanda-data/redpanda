@@ -49,11 +49,18 @@ class ClusterHealthOverviewTest(RedpandaTest):
         if hov['is_healthy']:
             assert len(hov['nodes_down']) == 0
             assert len(hov['leaderless_partitions']) == 0
+            assert hov['leaderless_count'] == 0
             assert len(hov['under_replicated_partitions']) == 0
+            assert hov['under_replicated_count'] == 0
             assert len(hov['unhealthy_reasons']) == 0
             assert len(hov['all_nodes']) > 0
         else:
             assert len(hov['unhealthy_reasons']) > 0
+            # these next two are true just because we don't go over the max of 128
+            # reported partitions in these tests
+            assert len(hov['leaderless_partitions']) == hov['leaderless_count']
+            assert len(hov['under_replicated_partitions']
+                       ) == hov['under_replicated_count']
 
         return hov
 

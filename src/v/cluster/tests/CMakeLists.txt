@@ -6,6 +6,14 @@ rp_test(
   LABELS cluster
 )
 
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME health_report
+  SOURCES health_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::cluster
+  LABELS cluster
+)
+
 set(srcs
     partition_allocator_tests.cc
     partition_balancer_planner_test.cc
