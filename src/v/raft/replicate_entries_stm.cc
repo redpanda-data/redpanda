@@ -233,9 +233,26 @@ replicate_entries_stm::append_to_self() {
  */
 inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
     if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
+        const follower_index_metadata& f_meta = it->second;
+
+        auto seq_it = _followers_seq.find(id);
+        vassert(
+          seq_it != _followers_seq.end(),
+          "No follower sequence found for {}",
+          id);
+        if (
+          !f_meta.is_learner
+          && follower_index_metadata::is_first_request(seq_it->second)) {
+            // If this is the first request (probably, replicating the
+            // configuration after a leadership change), we don't have enough
+            // info to make a decision on whether to skip. Send the request to a
+            // voter regardless, as it is likely to be in-sync.
+            return false;
+        }
+
         const auto timeout = clock_type::now()
                              - _ptr->_replicate_append_timeout;
-        if (it->second.last_received_reply_timestamp < timeout) {
+        if (f_meta.last_received_reply_timestamp < timeout) {
             vlog(
               _ctxlog.trace,
               "Skipping sending append request to {} - didn't receive "
@@ -243,13 +260,13 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
               id);
             return true;
         }
-        if (it->second.last_sent_offset != _meta.prev_log_index) {
+        if (f_meta.last_sent_offset != _meta.prev_log_index) {
             vlog(
               _ctxlog.trace,
               "Skipping sending append request to {} - last sent offset: {}, "
               "expected follower last offset: {}",
               id,
-              it->second.last_sent_offset,
+              f_meta.last_sent_offset,
               _meta.prev_log_index);
             return true;
         }

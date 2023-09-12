@@ -94,6 +94,8 @@ struct follower_index_metadata {
 
     follower_req_seq next_follower_sequence() { return ++last_sent_seq; }
 
+    static bool is_first_request(follower_req_seq seq) { return seq() == 1; }
+
     vnode node_id;
     // index of last known log for this follower
     model::offset last_flushed_log_index;
