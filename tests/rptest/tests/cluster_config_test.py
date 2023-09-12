@@ -142,21 +142,21 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         # NOTE: due to https://github.com/redpanda-data/redpanda/issues/13362
         # only the proper name works here
         self.redpanda.start_node(
-            node, override_cfg_params={"log_retention_ms": '9876'})
+            node, override_cfg_params={"delete_retention_ms": '9876'})
 
         # On first startup, redpanda should notice the value in
         # redpanda.yaml and import it into central config store
         assert admin.get_cluster_config(
-        )["log_retention_ms"] == 9876, f"trouble with the value for log_retention_ms at first start"
+        )["delete_retention_ms"] == 9876, f"trouble with the value for log_retention_ms at first start"
 
         # On second startup, central config is already initialized,
         # so the modified value in redpanda.yaml should be ignored.
         # NOTE: same issue as above
         self.redpanda.restart_nodes(
-            [node], override_cfg_params={"log_retention_ms": '1234'})
+            [node], override_cfg_params={"delete_retention_ms": '1234'})
 
         assert admin.get_cluster_config(
-        )["log_retention_ms"] == 9876, f"trouble with the value for log_retention_ms after restart"
+        )["delete_retention_ms"] == 9876, f"trouble with the value for log_retention_ms after restart"
         assert self.redpanda.search_log_any(
             f"Ignoring value for 'log_retention_ms'")
 
@@ -1376,10 +1376,6 @@ cloud_storage_graceful_transfer_timeout = PropertyAliasData(
     aliased_name="cloud_storage_graceful_transfer_timeout",
     redpanda_version=(23, 2),
     test_values=(1234, 1235, 1236))
-log_retention_ms = PropertyAliasData(primary_name="log_retention_ms",
-                                     aliased_name="delete_retention_ms",
-                                     redpanda_version=(23, 3),
-                                     test_values=(1000000, -1, 500000))
 
 
 class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
@@ -1394,8 +1390,7 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         pass  # Will start cluster in test
 
     @cluster(num_nodes=3)
-    @matrix(
-        prop_set=[cloud_storage_graceful_transfer_timeout, log_retention_ms])
+    @matrix(prop_set=[cloud_storage_graceful_transfer_timeout])
     def test_aliasing(self, prop_set: PropertyAliasData):
         """
         Validate that configuration property aliases enable the various means
@@ -1438,9 +1433,8 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
                                      prop_set.test_values[2])
 
     @cluster(num_nodes=3)
-    @matrix(
-        wipe_cache=[False, True],
-        prop_set=[cloud_storage_graceful_transfer_timeout, log_retention_ms])
+    @matrix(wipe_cache=[False, True],
+            prop_set=[cloud_storage_graceful_transfer_timeout])
     def test_aliasing_with_upgrade(self, wipe_cache: bool,
                                    prop_set: PropertyAliasData):
         """
