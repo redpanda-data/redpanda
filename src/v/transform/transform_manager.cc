@@ -29,7 +29,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
-#include <seastar/coroutine/parallel_for_each.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/multi_index/composite_key.hpp>
@@ -43,7 +43,6 @@
 #include <future>
 #include <iterator>
 #include <memory>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -85,6 +84,11 @@ private:
         base_duration, max_duration);
 };
 
+// The lexicographically smallest ntp
+// NOLINTNEXTLINE(cert-err58-cpp)
+const static model::ntp min_ntp = model::ntp(
+  model::ns(""), model::topic(""), model::partition_id::min());
+
 } // namespace
 
 // The underlying container for holding processors and indexing them correctly.
@@ -95,133 +99,109 @@ private:
 // complicated table of indexes.
 template<typename ClockType>
 class processor_table {
-    struct key_index_t {};
-    struct ntp_index_t {};
-    struct id_index_t {};
-
-    class entry_t {
-    public:
-        entry_t(
-          std::unique_ptr<transform::processor> processor,
-          ss::lw_shared_ptr<transform::probe> probe)
-          : _processor(std::move(processor))
-          , _probe(std::move(probe))
-          , _backoff(std::make_unique<processor_backoff<ClockType>>()) {}
-
-        processor* processor() const { return _processor.get(); }
-        ss::lw_shared_ptr<probe> probe() const { return _probe; }
-        processor_backoff<ClockType>* backoff() const { return _backoff.get(); }
-
-        const model::ntp& ntp() const { return _processor->ntp(); }
-        model::transform_id id() const { return _processor->id(); }
-
-    private:
-        std::unique_ptr<transform::processor> _processor;
-        ss::lw_shared_ptr<transform::probe> _probe;
-        std::unique_ptr<processor_backoff<ClockType>> _backoff;
+    struct entry_t {
+        std::unique_ptr<transform::processor> processor;
+        ss::lw_shared_ptr<transform::probe> probe;
+        processor_backoff<ClockType> backoff;
     };
 
-    using underlying_t = boost::multi_index::multi_index_container<
-      entry_t,
-      boost::multi_index::indexed_by<
-        // uniquely indexed by id and ntp together
-        boost::multi_index::hashed_unique<
-          boost::multi_index::tag<key_index_t>,
-          boost::multi_index::composite_key<
-            entry_t,
-            boost::multi_index::
-              const_mem_fun<entry_t, model::transform_id, &entry_t::id>,
-            boost::multi_index::
-              const_mem_fun<entry_t, const model::ntp&, &entry_t::ntp>>,
-          boost::multi_index::composite_key_hash<
-            std::hash<model::transform_id>,
-            std::hash<model::ntp>>>,
-        // indexed by ntp
-        boost::multi_index::hashed_non_unique<
-          boost::multi_index::tag<ntp_index_t>,
-          boost::multi_index::
-            const_mem_fun<entry_t, const model::ntp&, &entry_t::ntp>,
-          std::hash<model::ntp>,
-          std::equal_to<>>,
-        // indexed by id
-        boost::multi_index::hashed_non_unique<
-          boost::multi_index::tag<id_index_t>,
-          boost::multi_index::
-            const_mem_fun<entry_t, model::transform_id, &entry_t::id>,
-          std::hash<model::transform_id>,
-          std::equal_to<>>>>;
-
 public:
-    const entry_t& insert(
-      std::unique_ptr<processor> processor,
-      ss::lw_shared_ptr<transform::probe> probe) {
-        auto [it, inserted] = _underlying.emplace(
-          std::move(processor), std::move(probe));
-        vassert(inserted, "invalid transform processor management");
-        return *it;
+    entry_t&
+    insert(std::unique_ptr<processor> processor, ss::lw_shared_ptr<probe> p) {
+        auto id = processor->id();
+        auto ntp = processor->ntp();
+        auto [table_it, table_inserted] = _table.emplace(
+          std::make_pair(id, ntp), entry_t{std::move(processor), std::move(p)});
+        vassert(table_inserted, "invalid transform processor management");
+        auto [index_it, index_inserted] = _ntp_index.emplace(
+          std::make_pair(ntp, id));
+        vassert(index_inserted, "invalid transform processor management");
+        return table_it->second;
     }
 
     ss::lw_shared_ptr<probe> get_or_create_probe(
       model::transform_id id, const model::transform_metadata& meta) {
-        auto& id_index = _underlying.template get<id_index_t>();
-        auto it = id_index.find(id);
-        if (it == id_index.end()) {
-            auto probe = ss::make_lw_shared<transform::probe>();
-            probe->setup_metrics(meta.name);
-            return probe;
+        auto it = _table.lower_bound(std::make_pair(id, min_ntp));
+        if (it != _table.end() && it->first.first == id) {
+            return it->second.probe;
         }
-        return it->probe();
+        auto probe = ss::make_lw_shared<transform::probe>();
+        probe->setup_metrics(meta.name());
+        return probe;
     }
 
     bool contains(model::transform_id id, const model::ntp& ntp) {
-        auto& by_key = _underlying.template get<key_index_t>();
-        return by_key.contains(std::make_tuple(id, ntp));
+        return _table.contains(std::make_pair(id, ntp));
     }
 
-    const entry_t* get_or_null(model::transform_id id, const model::ntp& ntp) {
-        auto& by_key = _underlying.template get<key_index_t>();
-        auto it = by_key.find(std::make_tuple(id, ntp));
-        if (it == by_key.end()) {
+    entry_t* get_or_null(model::transform_id id, const model::ntp& ntp) {
+        auto it = _table.find(std::make_pair(id, ntp));
+        if (it == _table.end()) {
             return nullptr;
         }
-        return std::addressof(*it);
+        return std::addressof(it->second);
     }
 
     ss::future<> clear() {
         co_await ss::parallel_for_each(
-          _underlying.begin(),
-          _underlying.end(),
+          _table.begin(),
+          _table.end(),
           // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-          [](auto& e) { return e.processor()->stop(); });
-        _underlying.clear();
+          [](auto& e) { return e.second.processor->stop(); });
+        _table.clear();
+        _ntp_index.clear();
     }
 
-    ss::future<> erase_by_id(model::transform_id id) {
-        auto& by_id = _underlying.template get<id_index_t>();
-        auto range = by_id.equal_range(id);
-        co_await ss::parallel_for_each(
-          range.first,
-          range.second,
-          // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-          [](auto& e) { return e.processor()->stop(); });
-        by_id.erase(range.first, range.second);
+    ss::future<> erase_by_id(model::transform_id target_id) {
+        // Take advantage that the _table is sorted by id, then ntp.
+        // we're looking for a range of ids in _table.
+        auto it = _table.lower_bound(std::make_pair(target_id, min_ntp));
+        // copy the iterator so that we can erase the whole ID range.
+        auto begin = it;
+        ss::chunked_fifo<ss::future<>> stop_futures;
+        while (it != _table.end()) {
+            auto [id, ntp] = it->first;
+            if (id != target_id) {
+                break;
+            }
+            stop_futures.push_back(it->second.processor->stop());
+            vassert(
+              _ntp_index.erase(std::make_pair(ntp, id)) > 0,
+              "inconsistent index");
+            ++it;
+            co_await ss::coroutine::maybe_yield();
+        }
+        co_await ss::when_all(stop_futures.begin(), stop_futures.end());
+        _table.erase(begin, it);
     }
 
     // Clear our all the transforms with a given ntp and return all the IDs that
     // no longer exist.
-    ss::future<> erase_by_ntp(model::ntp ntp) {
-        auto& by_ntp = _underlying.template get<ntp_index_t>();
-        auto range = by_ntp.equal_range(ntp);
-        co_await ss::parallel_for_each(
-          range.first,
-          range.second,
-          // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-          [](auto& e) { return e.processor()->stop(); });
-        by_ntp.erase(range.first, range.second);
+    ss::future<> erase_by_ntp(model::ntp target_ntp) {
+        auto it = _ntp_index.lower_bound(
+          std::pair(target_ntp, model::transform_id::min()));
+        ss::chunked_fifo<entry_t> entries;
+        ss::chunked_fifo<ss::future<>> stop_futures;
+        while (it != _ntp_index.end()) {
+            auto [ntp, id] = std::move(*it);
+            if (ntp != target_ntp) {
+                break;
+            }
+            auto node = _table.extract(std::make_pair(id, ntp));
+            stop_futures.push_back(node.mapped().processor->stop());
+            // delay destroying the processor until after it's stopped.
+            entries.push_back(std::move(node.mapped()));
+            it = _ntp_index.erase(it);
+            co_await ss::coroutine::maybe_yield();
+        }
+        co_await ss::when_all(stop_futures.begin(), stop_futures.end());
     }
 
 private:
-    underlying_t _underlying;
+    // We take advantage of these containers being sorted to perform the correct
+    // queries.
+    absl::btree_map<std::pair<model::transform_id, model::ntp>, entry_t> _table;
+    absl::btree_set<std::pair<model::ntp, model::transform_id>> _ntp_index;
 };
 
 template<typename ClockType>
@@ -309,13 +289,12 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     }
     // Otherwise, start a processor for every partition we're a leader of.
     auto partitions = _registry->get_leader_partitions(transform->input_topic);
-    auto probe = _processors->get_or_create_probe(id, *transform);
     for (model::partition_id partition : partitions) {
         auto ntp = model::ntp(
           transform->input_topic.ns, transform->input_topic.tp, partition);
         // It's safe to directly create processors, because we deleted them
         // for a full restart from this deploy
-        co_await create_processor(std::move(ntp), id, *transform, probe);
+        co_await create_processor(std::move(ntp), id, *transform);
     }
 }
 
@@ -326,8 +305,8 @@ ss::future<> manager<ClockType>::handle_transform_error(
     if (!entry) {
         co_return;
     }
-    co_await entry->processor()->stop();
-    auto delay = entry->backoff()->next_backoff_duration();
+    co_await entry->processor->stop();
+    auto delay = entry->backoff.next_backoff_duration();
     vlog(
       tlog.info,
       "transform {} errored on partition {}, delaying for {} then restarting",
@@ -345,7 +324,7 @@ manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
     auto* entry = _processors->get_or_null(id, ntp);
     // It's possible something else came along and kicked this processor and
     // that worked.
-    if (entry && entry->processor()->is_running()) {
+    if (entry && entry->processor->is_running()) {
         co_return;
     }
     auto transform = _registry->lookup_by_id(id);
@@ -363,21 +342,17 @@ manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
         co_return;
     }
     if (entry) {
-        entry->backoff()->mark_start_attempt();
-        co_await entry->processor()->start();
+        entry->backoff.mark_start_attempt();
+        co_await entry->processor->start();
     } else {
-        auto probe = _processors->get_or_create_probe(id, *transform);
-        co_await create_processor(
-          ntp, id, *std::move(transform), std::move(probe));
+        co_await create_processor(ntp, id, *std::move(transform));
     }
 }
 
 template<typename ClockType>
 ss::future<> manager<ClockType>::create_processor(
-  model::ntp ntp,
-  model::transform_id id,
-  model::transform_metadata meta,
-  ss::lw_shared_ptr<probe> p) {
+  model::ntp ntp, model::transform_id id, model::transform_metadata meta) {
+    auto p = _processors->get_or_create_probe(id, meta);
     auto fut = co_await ss::coroutine::as_future(
       _processor_factory->create_processor(id, ntp, meta, p.get()));
     if (fut.failed()) {
@@ -399,8 +374,8 @@ ss::future<> manager<ClockType>::create_processor(
         // we properly know that it's in flight.
         auto& entry = _processors->insert(std::move(fut).get(), std::move(p));
         vlog(tlog.info, "starting transform {} on {}", meta.name, ntp);
-        entry.backoff()->mark_start_attempt();
-        co_await entry.processor()->start();
+        entry.backoff.mark_start_attempt();
+        co_await entry.processor->start();
     }
 }
 
