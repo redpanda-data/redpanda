@@ -128,8 +128,13 @@ public:
     /// The functor should be reenterable since it can be called many times.
     /// On success it should return content_length. On failure it should
     /// allow the exception from the input_stream to propagate.
-    using try_consume_stream = ss::noncopyable_function<ss::future<uint64_t>(
+    using a = ss::noncopyable_function<ss::future<uint64_t>(
       uint64_t, ss::input_stream<char>)>;
+    using b = ss::noncopyable_function<ss::future<uint64_t>(
+      uint64_t,
+      ss::input_stream<char>,
+      ss::lw_shared_ptr<cloud_storage_clients::client_pool::client_lease>)>;
+    using try_consume_stream = std::variant<a, b>;
 
     /// Functor that should be provided by user when list_objects api is called.
     /// It receives every key that matches the query as well as it's modifiation

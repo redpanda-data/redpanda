@@ -673,7 +673,13 @@ ss::future<download_result> remote::download_stream(
 
     auto lease = co_await [this, &fib] {
         auto m = _probe.client_acquisition();
-        return _pool.local().acquire(fib.root_abort_source());
+        return _pool.local()
+          .acquire(fib.root_abort_source())
+          .then([](auto lease) {
+              return ss::make_lw_shared<
+                cloud_storage_clients::client_pool::client_lease>(
+                std::move(lease));
+          });
     }();
 
     auto permit = fib.retry();
@@ -684,7 +690,7 @@ ss::future<download_result> remote::download_stream(
           api_activity_notification::segment_download, parent);
 
         auto download_latency_measure = download_latency_measurement();
-        auto resp = co_await lease.client->get_object(
+        auto resp = co_await lease->client->get_object(
           bucket, path, fib.get_timeout(), false, byte_range);
 
         if (resp) {
@@ -693,8 +699,14 @@ ss::future<download_result> remote::download_stream(
               resp.value()->get_headers().at(
                 boost::beast::http::field::content_length));
             try {
-                uint64_t content_length = co_await cons_str(
-                  length, resp.value()->as_input_stream());
+                uint64_t content_length{};
+                if (std::holds_alternative<a>(cons_str)) {
+                    content_length = co_await std::get<a>(cons_str)(
+                      length, resp.value()->as_input_stream());
+                } else if (std::holds_alternative<b>(cons_str)) {
+                    content_length = co_await std::get<b>(cons_str)(
+                      length, resp.value()->as_input_stream(), lease);
+                }
                 _probe.successful_download();
                 _probe.register_download_size(content_length);
                 co_return download_result::success;
@@ -712,7 +724,7 @@ ss::future<download_result> remote::download_stream(
 
         download_latency_measure.reset();
 
-        lease.client->shutdown();
+        lease->client->shutdown();
 
         switch (resp.error()) {
         case cloud_storage_clients::error_outcome::retry:

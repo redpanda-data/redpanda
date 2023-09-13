@@ -60,7 +60,23 @@ public:
       : std::runtime_error(m) {}
 };
 
+struct stream_with_leased_client : public ss::data_source_impl {
+    using lease_t
+      = ss::lw_shared_ptr<cloud_storage_clients::client_pool::client_lease>;
+
+    ss::future<ss::temporary_buffer<char>> get() override {
+        co_return co_await stream.read();
+    }
+
+    ss::future<> close() override { co_return co_await stream.close(); }
+
+    lease_t lease;
+    ss::input_stream<char> stream;
+};
+
 class remote_segment final {
+    ss::future<stream_with_leased_client> build_stream();
+
 public:
     remote_segment(
       remote& r,
@@ -114,7 +130,8 @@ public:
       kafka::offset start,
       kafka::offset end,
       std::optional<model::timestamp>,
-      ss::io_priority_class);
+      ss::io_priority_class,
+      bool skip_cache = false);
 
     /// Hydrate the segment for segment meta version v2 or lower. For v3 or
     /// higher, only hydrate the index. If the index hydration fails, fall back

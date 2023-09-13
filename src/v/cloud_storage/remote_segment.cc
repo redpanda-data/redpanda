@@ -51,6 +51,7 @@
 #include <fmt/core.h>
 
 #include <exception>
+#include <utility>
 
 namespace {
 class bounded_stream final : public ss::data_source_impl {
@@ -273,18 +274,55 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     co_return storage::segment_reader_handle(std::move(data_stream));
 }
 
+ss::future<stream_with_leased_client> remote_segment::build_stream() {
+    retry_chain_node local_rtc(
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+
+    stream_with_leased_client slc;
+    auto res = co_await _api.download_segment(
+      _bucket,
+      _path,
+      [&slc](
+        uint64_t size_bytes,
+        ss::input_stream<char> s,
+        stream_with_leased_client::lease_t lease) {
+          slc.stream = std::move(s);
+          slc.lease = std::move(lease);
+          return ss::make_ready_future<uint64_t>(size_bytes);
+      },
+      local_rtc);
+
+    if (res != download_result::success) {
+        vlog(_ctxlog.debug, "Failed to create stream for {}", _path);
+        throw download_exception(res, _path);
+    }
+
+    co_return slc;
+}
+
 ss::future<remote_segment::input_stream_with_offsets>
 remote_segment::offset_data_stream(
   kafka::offset start,
   kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  bool skip_cache) {
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
     co_await hydrate();
 
     std::optional<offset_index::find_result> indexed_pos;
     std::optional<uint16_t> prefetch_override = std::nullopt;
+
+    if (skip_cache) {
+        vlog(_ctxlog.info, "using direct stream to serve request");
+        auto stream = std::make_unique<stream_with_leased_client>(
+          co_await build_stream());
+        co_return input_stream_with_offsets{
+          .stream = ss::input_stream<char>{ss::data_source{std::move(stream)}},
+          .rp_offset = _base_rp_offset,
+          .kafka_offset = _base_rp_offset - _base_offset_delta};
+    }
 
     // Perform index lookup by timestamp or offset. This reduces the number
     // of hydrated chunks required to serve the request.
@@ -1345,7 +1383,8 @@ remote_segment_batch_reader::init_parser() {
       model::offset_cast(_config.start_offset),
       model::offset_cast(_config.max_offset),
       _config.first_timestamp,
-      priority_manager::local().shadow_indexing_priority());
+      priority_manager::local().shadow_indexing_priority(),
+      true);
 
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
