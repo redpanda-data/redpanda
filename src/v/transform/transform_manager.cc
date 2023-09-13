@@ -289,10 +289,9 @@ ss::future<> manager<ClockType>::handle_leadership_change(
     // We're the leader - start all the processor that aren't already running
     auto transforms = _registry->lookup_by_input_topic(
       model::topic_namespace_view(ntp));
-    co_await ss::parallel_for_each(
-      transforms, [this, ntp = std::move(ntp)](model::transform_id id) {
-          return start_processor(ntp, id);
-      });
+    for (model::transform_id id : transforms) {
+        co_await start_processor(ntp, id);
+    }
 }
 
 template<typename ClockType>
@@ -311,16 +310,13 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     // Otherwise, start a processor for every partition we're a leader of.
     auto partitions = _registry->get_leader_partitions(transform->input_topic);
     auto probe = _processors->get_or_create_probe(id, *transform);
-    co_await ss::parallel_for_each(
-      partitions,
-      [this, id, transform = *std::move(transform), p = std::move(probe)](
-        model::partition_id partition_id) {
-          auto ntp = model::ntp(
-            transform.input_topic.ns, transform.input_topic.tp, partition_id);
-          // It's safe to directly create processors, because we deleted them
-          // for a full restart from this deploy
-          return create_processor(std::move(ntp), id, transform, p);
-      });
+    for (model::partition_id partition : partitions) {
+        auto ntp = model::ntp(
+          transform->input_topic.ns, transform->input_topic.tp, partition);
+        // It's safe to directly create processors, because we deleted them
+        // for a full restart from this deploy
+        co_await create_processor(std::move(ntp), id, *transform, probe);
+    }
 }
 
 template<typename ClockType>
