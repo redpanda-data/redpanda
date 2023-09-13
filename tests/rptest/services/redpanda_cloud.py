@@ -1,3 +1,4 @@
+import base64
 import collections
 import json
 import os
@@ -609,6 +610,26 @@ class CloudCluster():
                                "testing is not supported at this time.")
 
         return
+
+    def get_public_metrics(self):
+        """Public metrics endpoint for prometheus text format.
+
+        :return: string or None if failure
+        """
+
+        cluster = self._get_cluster(self.config.id)
+        base_url = cluster['status']['listeners']['redpandaConsole'][
+            'default']['urls'][0]
+        username = cluster['spec']['consolePrometheusCredentials']['username']
+        password = cluster['spec']['consolePrometheusCredentials']['password']
+        b64 = base64.b64encode(bytes(f'{username}:{password}', 'utf-8'))
+        token = b64.decode('utf-8')
+        headers = {'Authorization': f'Basic {token}'}
+        return self.cloudv2._http_get(
+            endpoint=f'/api/cloud/prometheus/public_metrics',
+            base_url=base_url,
+            override_headers=headers,
+            text_response=True)
 
     def update_cluster_acls(self, superuser):
         if superuser is not None and not self.clusterUserExists(
