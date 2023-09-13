@@ -83,13 +83,13 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::chrono::milliseconds& v) {
-    uint64_t _tmp = v.count();
+    auto _tmp = v.count();
     rjson_serialize(w, _tmp);
 }
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::chrono::seconds& v) {
-    uint64_t _tmp = v.count();
+    auto _tmp = v.count();
     rjson_serialize(w, _tmp);
 }
 
