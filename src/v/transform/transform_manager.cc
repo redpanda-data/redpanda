@@ -363,7 +363,7 @@ ss::future<> manager<ClockType>::create_processor(
           fut.get_exception());
         // Delay some time before attempting to recreate a processor
         // TODO: Should we have more sophisticated backoff mechanisms?
-        constexpr auto recreate_attempt_delay = 10s;
+        constexpr auto recreate_attempt_delay = 30s;
         _queue.submit_delayed<ClockType>(
           recreate_attempt_delay, [this, ntp = std::move(ntp), id]() mutable {
               return start_processor(std::move(ntp), id);
