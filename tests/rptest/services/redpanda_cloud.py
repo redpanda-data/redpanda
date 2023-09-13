@@ -1,3 +1,4 @@
+import base64
 import collections
 import json
 import os
@@ -167,15 +168,24 @@ class RpCloudApiClient(object):
             self._token = j['access_token']
         return self._token
 
-    def _http_get(self, endpoint='', base_url=None, **kwargs):
-        token = self._get_token()
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Accept': 'application/json'
-        }
+    def _http_get(self,
+                  endpoint='',
+                  base_url=None,
+                  override_headers=None,
+                  text_response=False,
+                  **kwargs):
+        headers = override_headers
+        if headers is None:
+            token = self._get_token()
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json'
+            }
         _base = base_url if base_url else self._config.api_url
         resp = requests.get(f'{_base}{endpoint}', headers=headers, **kwargs)
         _r = self._handle_error(resp)
+        if text_response:
+            return _r if _r is None else _r.text
         return _r if _r is None else _r.json()
 
     def _http_post(self, base_url=None, endpoint='', **kwargs):
@@ -600,6 +610,26 @@ class CloudCluster():
                                "testing is not supported at this time.")
 
         return
+
+    def get_public_metrics(self):
+        """Public metrics endpoint for prometheus text format.
+
+        :return: string or None if failure
+        """
+
+        cluster = self._get_cluster(self.config.id)
+        base_url = cluster['status']['listeners']['redpandaConsole'][
+            'default']['urls'][0]
+        username = cluster['spec']['consolePrometheusCredentials']['username']
+        password = cluster['spec']['consolePrometheusCredentials']['password']
+        b64 = base64.b64encode(bytes(f'{username}:{password}', 'utf-8'))
+        token = b64.decode('utf-8')
+        headers = {'Authorization': f'Basic {token}'}
+        return self.cloudv2._http_get(
+            endpoint=f'/api/cloud/prometheus/public_metrics',
+            base_url=base_url,
+            override_headers=headers,
+            text_response=True)
 
     def update_cluster_acls(self, superuser):
         if superuser is not None and not self.clusterUserExists(

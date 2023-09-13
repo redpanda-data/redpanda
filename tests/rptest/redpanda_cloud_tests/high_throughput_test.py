@@ -508,8 +508,6 @@ class HighThroughputTest(RedpandaTest):
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
-    # Temporary ignore until TS metrics can be queried via public_metrics
-    @ignore  # https://github.com/redpanda-data/cloudv2/issues/8845
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
@@ -658,8 +656,6 @@ class HighThroughputTest(RedpandaTest):
         )
         self.logger.info(f"{topic_partitions_on_node()} partitions moved")
 
-    # Temporary ignore until TS metrics can be queried via public_metrics
-    @ignore  # https://github.com/redpanda-data/cloudv2/issues/8845
     @cluster(num_nodes=3, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_cloud_cache_thrash(self):
         """
