@@ -1088,3 +1088,9 @@ class Admin:
         it would not make sense to send it to just any node.
         """
         return self._request("GET", "raft/recovery/status", node=node).json()
+
+    def get_cloud_storage_anomalies(self, namespace: str, topic: str,
+                                    partition: int):
+        return self._request(
+            "GET",
+            f"cloud_storage/anomalies/{namespace}/{topic}/{partition}").json()
