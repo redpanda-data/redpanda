@@ -20,8 +20,6 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/noncopyable_function.hh>
 
-#include <absl/container/flat_hash_map.h>
-
 namespace ssx {
 
 /**
@@ -48,13 +46,15 @@ private:
     error_reporter_fn _error_reporter;
     ss::future<> _tail = ss::now();
     ss::abort_source _as;
-    uint64_t _delayed_id = 0;
-    absl::flat_hash_map<uint64_t, ss::future<>> _delayed_tasks;
+    ss::gate _gate;
 };
 
 template<typename Clock>
 void work_queue::submit_delayed(
   Clock::duration delay, ss::noncopyable_function<ss::future<>()> fn) {
+    if (_as.abort_requested()) {
+        return;
+    }
     submit_after(ss::sleep_abortable<Clock>(delay, _as), std::move(fn));
 }
 } // namespace ssx
