@@ -63,6 +63,7 @@ enum class feature : std::uint64_t {
     delete_records = 1ULL << 29U,
     lightweight_heartbeats = 1ULL << 30U,
     raft_coordinated_recovery = 1ULL << 31U,
+    cloud_storage_scrubbing = 1ULL << 32U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -293,7 +294,12 @@ constexpr static std::array feature_schema{
     feature::raft_coordinated_recovery,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
-};
+  feature_spec{
+    cluster::cluster_version{11},
+    "cloud_storage_scrubbing",
+    feature::cloud_storage_scrubbing,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always}};
 
 std::string_view to_string_view(feature);
 std::string_view to_string_view(feature_state::state);
