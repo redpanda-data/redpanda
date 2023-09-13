@@ -167,15 +167,24 @@ class RpCloudApiClient(object):
             self._token = j['access_token']
         return self._token
 
-    def _http_get(self, endpoint='', base_url=None, **kwargs):
-        token = self._get_token()
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Accept': 'application/json'
-        }
+    def _http_get(self,
+                  endpoint='',
+                  base_url=None,
+                  override_headers=None,
+                  text_response=False,
+                  **kwargs):
+        headers = override_headers
+        if headers is None:
+            token = self._get_token()
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json'
+            }
         _base = base_url if base_url else self._config.api_url
         resp = requests.get(f'{_base}{endpoint}', headers=headers, **kwargs)
         _r = self._handle_error(resp)
+        if text_response:
+            return _r if _r is None else _r.text
         return _r if _r is None else _r.json()
 
     def _http_post(self, base_url=None, endpoint='', **kwargs):
