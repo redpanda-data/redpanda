@@ -32,10 +32,31 @@ type Partition struct {
 	Replicas    []Replica `json:"replicas"`
 }
 
-// Reconfiguration is the detail of a partition reconfiguration. There are
-// many keys returned, so the raw response is just unmarshalled into an
-// interface.
-type Reconfiguration map[string]interface{}
+type Operation struct {
+	Core        int    `json:"core"`
+	RetryNumber int    `json:"retry_number"`
+	Revision    int    `json:"revision"`
+	Status      string `json:"status"`
+	Type        string `json:"type"`
+}
+
+type Status struct {
+	NodeID     int         `json:"node_id"`
+	Operations []Operation `json:"operations"`
+}
+
+// Reconfiguration is the detail of a partition reconfiguration.
+type ReconfigurationsResponse struct {
+	Ns                     string    `json:"ns"`
+	Topic                  string    `json:"topic"`
+	PartitionID            int       `json:"partition"`
+	PartitionSize          int       `json:"partition_size"`
+	BytesMoved             int       `json:"bytes_moved"`
+	BytesLeft              int       `json:"bytes_left_to_move"`
+	PreviousReplicas       []Replica `json:"previous_replicas"`
+	NewReplicas            []Replica `json:"current_replicas"`
+	ReconciliationStatuses []Status  `json:"reconciliation_statuses"`
+}
 
 // GetPartition returns detailed partition information.
 func (a *AdminAPI) GetPartition(
@@ -51,7 +72,7 @@ func (a *AdminAPI) GetPartition(
 }
 
 // Reconfigurations returns the list of ongoing partition reconfigurations.
-func (a *AdminAPI) Reconfigurations(ctx context.Context) ([]Reconfiguration, error) {
-	var response []Reconfiguration
-	return response, a.sendAny(ctx, http.MethodGet, "/v1/partitions/reconfigurations", nil, &response)
+func (a *AdminAPI) Reconfigurations(ctx context.Context) ([]ReconfigurationsResponse, error) {
+	var rr []ReconfigurationsResponse
+	return rr, a.sendAny(ctx, http.MethodGet, "/v1/partitions/reconfigurations", nil, &rr)
 }
