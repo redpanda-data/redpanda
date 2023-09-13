@@ -180,6 +180,10 @@ segment_set& disk_log_builder::get_log_segments() {
     return segment_set;
 }
 
+readers_cache* disk_log_builder::get_readers_cache() {
+    return get_disk_log_impl()._readers_cache.get();
+}
+
 segment& disk_log_builder::get_segment(size_t index) {
     auto& segment_set = get_log_segments();
     vassert(

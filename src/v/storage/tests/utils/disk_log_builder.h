@@ -325,6 +325,9 @@ public:
     ss::shared_ptr<log> get_log();
     disk_log_impl& get_disk_log_impl();
     segment_set& get_log_segments();
+    
+    readers_cache* get_readers_cache();
+
     // Index range is [0....total_segments)
     segment& get_segment(size_t index);
     segment_index& get_seg_index_ptr(size_t index);
@@ -339,6 +342,14 @@ public:
     // Default consume
     auto consume(log_reader_config config = reader_config()) {
         return _log->make_reader(config).then(
+          [](model::record_batch_reader reader) {
+              return model::consume_reader_to_memory(
+                std::move(reader), model::no_timeout);
+          });
+    }
+
+    auto consume_unchecked(log_reader_config config = reader_config()) {
+        return get_disk_log_impl().make_unchecked_reader(config).then(
           [](model::record_batch_reader reader) {
               return model::consume_reader_to_memory(
                 std::move(reader), model::no_timeout);
