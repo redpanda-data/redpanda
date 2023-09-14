@@ -10,7 +10,7 @@ v_cc_library(
     Seastar::seastar
     v::model_test_utils
     v::gtest_main
-  )
+)
 
 rp_test(
   UNIT_TEST
@@ -19,6 +19,20 @@ rp_test(
     transform_processor
   SOURCES
     transform_processor_test.cc
+  LIBRARIES 
+    v::gtest_main
+    v::transform_test_fixture
+  ARGS "-- -c 1"
+  LABELS transform
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME
+    transform_manager
+  SOURCES
+    transform_manager_test.cc
   LIBRARIES 
     v::gtest_main
     v::transform_test_fixture

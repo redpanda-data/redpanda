@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <iosfwd>
 
 /// \brief usage: fmt::format("{}", human::bytes(3234.234));
@@ -23,8 +24,13 @@ struct bytes {
     friend std::ostream& operator<<(std::ostream& o, const bytes&);
 };
 struct latency {
+    // the input should be in microseconds
     explicit latency(double x)
       : value(x) {}
+    template<typename Duration>
+    explicit latency(Duration d)
+      : value(
+        std::chrono::duration_cast<std::chrono::microseconds>(d).count()) {}
     double value;
     friend std::ostream& operator<<(std::ostream& o, const latency&);
 };

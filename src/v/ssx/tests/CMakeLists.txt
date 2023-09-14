@@ -15,6 +15,16 @@ rp_test(
 
 rp_test(
   UNIT_TEST
+  GTEST
+  BINARY_NAME ssx_gunit
+  SOURCES
+    work_queue_test.cc
+  LIBRARIES v::gtest_main v::ssx
+  LABELS ssx
+)
+
+rp_test(
+  UNIT_TEST
   BINARY_NAME ssx_multi_thread
   SOURCES
     abort_source_test.cc

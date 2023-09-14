@@ -47,11 +47,14 @@ public:
       std::vector<std::unique_ptr<sink>>,
       probe*);
 
-    ss::future<> start();
-    ss::future<> stop();
+    virtual ~processor() = default;
+    virtual ss::future<> start();
+    virtual ss::future<> stop();
 
+    bool is_running() const;
     model::transform_id id() const;
     const model::ntp& ntp() const;
+    const model::transform_metadata& meta() const;
 
 private:
     ss::future<> run_transform_loop();

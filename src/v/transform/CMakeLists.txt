@@ -4,11 +4,13 @@ v_cc_library(
     probe.h
     logger.h
     transform_processor.h
+    transform_manager.h
     io.h
   SRCS
     probe.cc
     logger.cc
     transform_processor.cc
+    transform_manager.cc
   DEPS
     v::wasm
     v::model
