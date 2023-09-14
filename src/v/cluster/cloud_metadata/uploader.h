@@ -30,6 +30,8 @@ class group_manager;
 
 namespace cluster::cloud_metadata {
 
+class offsets_upload_requestor;
+
 // Periodically uploads cluster metadata within a given term.
 //
 // It is expected that this is instantiated on all controller replicas. Unlike
@@ -48,7 +50,8 @@ public:
       storage::api& storage,
       cloud_storage_clients::bucket_name bucket,
       cloud_storage::remote& remote,
-      consensus_ptr raft0);
+      consensus_ptr raft0,
+      ss::shared_ptr<offsets_upload_requestor> offsets_uploader);
 
     // Begins the upload loop and listens for leadership changes.
     void start();
@@ -118,6 +121,7 @@ private:
     model::cluster_uuid _cluster_uuid;
     cloud_storage::remote& _remote;
     consensus_ptr _raft0;
+    ss::shared_ptr<offsets_upload_requestor> _offsets_uploader;
     const cloud_storage_clients::bucket_name _bucket;
 
     config::binding<std::chrono::milliseconds> _upload_interval_ms;

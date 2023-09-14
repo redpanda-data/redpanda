@@ -113,6 +113,7 @@
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/json/json_elements.hh>
@@ -2400,7 +2401,15 @@ void application::start_runtime_services(
           .get();
     }
     syschecks::systemd_message("Starting controller").get();
-    controller->start(cd, app_signal.abort_source()).get0();
+    ss::shared_ptr<cluster::cloud_metadata::offsets_upload_requestor>
+      offsets_upload_requestor;
+    if (offsets_upload_router.local_is_initialized()) {
+        offsets_upload_requestor = offsets_upload_router.local_shared();
+    }
+    controller
+      ->start(
+        cd, app_signal.abort_source(), std::move(offsets_upload_requestor))
+      .get0();
 
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.

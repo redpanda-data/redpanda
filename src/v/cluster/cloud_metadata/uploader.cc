@@ -15,6 +15,7 @@
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/key_utils.h"
 #include "cluster/cloud_metadata/manifest_downloads.h"
+#include "cluster/cloud_metadata/offsets_upload_rpc_types.h"
 #include "cluster/logger.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
@@ -41,7 +42,8 @@ uploader::uploader(
   storage::api& storage,
   cloud_storage_clients::bucket_name bucket,
   cloud_storage::remote& remote,
-  consensus_ptr raft0)
+  consensus_ptr raft0,
+  ss::shared_ptr<offsets_upload_requestor> offsets_uploader)
   : _group_manager(group_manager)
   , _storage(storage)
   , _cluster_uuid(
@@ -49,6 +51,7 @@ uploader::uploader(
                                   : model::cluster_uuid{})
   , _remote(remote)
   , _raft0(std::move(raft0))
+  , _offsets_uploader(std::move(offsets_uploader))
   , _bucket(bucket)
   , _upload_interval_ms(
       config::shard_local_cfg()
