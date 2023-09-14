@@ -1063,6 +1063,11 @@ class Field:
         type_name, _ = self._redpanda_type()
         return type_name not in WITHOUT_DEFAULT_EQUALITY_OPERATOR
 
+    @property
+    def is_error_code(self):
+        type_name, _ = self._redpanda_type()
+        return type_name == "kafka::error_code"
+
 
 HEADER_TEMPLATE = """
 #pragma once
@@ -1114,6 +1119,9 @@ struct {{ struct.name }} {
 {%- endif %}
 {%- if struct.is_default_comparable %}
     friend bool operator==(const {{ struct.name }}&, const {{ struct.name }}&) = default;
+{%- endif %}
+{%- if op_type == "response" %}
+    bool errored() const;
 {%- endif %}
 {% endmacro %}
 
@@ -1178,6 +1186,8 @@ COMBINED_SOURCE_TEMPLATE = """
 {%- endfor %}
 
 #include "kafka/protocol/wire.h"
+
+#include <algorithm>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -1444,6 +1454,52 @@ writer.write_tags(std::move({{ tf }}));
 {%- endif %}
 {%- endmacro %}
 
+{% macro render_errored_source(struct) %}
+{%- if op_type == "response" %}
+{%- if not struct.fields %}
+bool {{ struct.name }}::errored() const {
+    return false;
+}
+{%- else %}
+bool {{ struct.name }}::errored() const {
+    bool ret = false;
+    {%- for field in struct.fields %}
+    {%- if field.is_error_code %}
+    if ({{ field.name }} != kafka::error_code::none) {
+        return true;
+    }
+    {%- elif field.is_array and field.type().value_type().is_struct %}
+    {%- if field.nullable() %}
+    if ({{ field.name }}) {
+        ret = std::any_of(
+          {{ field.name }}->begin(),
+          {{ field.name }}->end(),
+          [](auto& item) { return item.errored(); });
+
+        if (ret) {
+            return ret;
+        }
+    }
+
+    {%- else %}
+    ret = std::any_of(
+      {{ field.name }}.begin(),
+      {{ field.name }}.end(),
+      [](auto& item) { return item.errored(); });
+
+    if (ret) {
+        return ret;
+    }
+    {%- endif %}
+    {%- endif %}
+    {%- endfor %}
+
+    return ret;
+}
+{%- endif %}
+{%- endif %}
+{% endmacro %}
+
 namespace kafka {
 
 {%- if struct.fields %}
@@ -1592,6 +1648,7 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
     return o << "{}";
 }
 {%- endif %}
+{{ render_errored_source(struct) }}
 {% endfor %}
 }
 """
