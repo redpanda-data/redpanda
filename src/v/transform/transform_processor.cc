@@ -43,7 +43,7 @@ processor::processor(
   , _error_callback(std::move(cb))
   , _probe(p)
   , _task(ss::now())
-  , _logger(tlog, ss::format("{}/{}", meta.name(), _ntp.tp.partition)) {
+  , _logger(tlog, ss::format("{}/{}", _meta.name(), _ntp.tp.partition())) {
     vassert(
       _sinks.size() == 1,
       "expected only a single sink, got: {}",
