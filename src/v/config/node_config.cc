@@ -137,7 +137,7 @@ node_config::node_config() noexcept
       "operator intervention is needed to startup the broker. Limit is not "
       "enforced in developer mode.",
       {.visibility = visibility::user},
-      std::nullopt)
+      5)
   , upgrade_override_checks(
       *this,
       "upgrade_override_checks",
