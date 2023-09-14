@@ -25,6 +25,7 @@
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "raft/consensus.h"
+#include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -39,6 +40,7 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/metrics_api.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -305,24 +307,48 @@ remote_segment::offset_data_stream(
   kafka::offset start,
   kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
-  ss::io_priority_class io_priority,
-  bool skip_cache) {
+  ss::io_priority_class io_priority) {
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
-    co_await hydrate();
 
-    std::optional<offset_index::find_result> indexed_pos;
-    std::optional<uint16_t> prefetch_override = std::nullopt;
+    // skip_cache = random_generators::get_int(100)
+    //              >= config::shard_local_cfg().skip_cache_chance();
 
-    if (skip_cache) {
-        vlog(_ctxlog.info, "using direct stream to serve request");
+    auto skip_cache = _cache.should_skip_cache();
+
+    bool is_materialized = is_state_materialized();
+    if (skip_cache && !is_legacy_mode_engaged() && _coarse_index.has_value()) {
+        is_materialized = cache_element_status::available
+                          == co_await _cache.is_cached(get_path_to_chunk(
+                            get_chunk_start_for_kafka_offset(start)));
+        if (is_state_materialized() && !is_materialized) {
+            vlog(
+              _ctxlog.info,
+              "index present but chunk for kafka offset {} absent, cache will "
+              "be skipped",
+              start);
+        }
+    }
+
+    if (skip_cache & !is_materialized) {
+        vlog(
+          _ctxlog.info,
+          "using direct stream to serve request {{{}-{}}}",
+          start,
+          end);
         auto stream = std::make_unique<stream_with_leased_client>(
           co_await build_stream());
         co_return input_stream_with_offsets{
           .stream = ss::input_stream<char>{ss::data_source{std::move(stream)}},
           .rp_offset = _base_rp_offset,
-          .kafka_offset = _base_rp_offset - _base_offset_delta};
+          .kafka_offset = _base_rp_offset - _base_offset_delta,
+          .persistent = false};
     }
+
+    co_await hydrate();
+
+    std::optional<offset_index::find_result> indexed_pos;
+    std::optional<uint16_t> prefetch_override = std::nullopt;
 
     // Perform index lookup by timestamp or offset. This reduces the number
     // of hydrated chunks required to serve the request.
@@ -506,7 +532,14 @@ ss::future<> remote_segment::put_chunk_in_cache(
   ss::input_stream<char> stream,
   chunk_start_offset_t chunk_start) {
     try {
-        co_await _cache.put(get_path_to_chunk(chunk_start), stream, reservation)
+        co_await _cache
+          .put(
+            get_path_to_chunk(chunk_start),
+            stream,
+            reservation,
+            priority_manager::local().shadow_indexing_priority(),
+            128_KiB,
+            1)
           .finally([&stream] { return stream.close(); });
     } catch (...) {
         auto put_exception = std::current_exception();
@@ -1366,6 +1399,11 @@ remote_segment_batch_reader::read_some(
             co_return ss::circular_buffer<model::record_batch>{};
         }
         _bytes_consumed = new_bytes_consumed.value();
+
+        // if (_config.over_budget && should_reset_parser) {
+        //     co_await _parser->close();
+        //     _parser.reset();
+        // }
     }
     _total_size = 0;
     co_return std::move(_ringbuf);
@@ -1383,8 +1421,10 @@ remote_segment_batch_reader::init_parser() {
       model::offset_cast(_config.start_offset),
       model::offset_cast(_config.max_offset),
       _config.first_timestamp,
-      priority_manager::local().shadow_indexing_priority(),
-      true);
+      priority_manager::local().shadow_indexing_priority());
+
+    // Reset parser if overbudget when stream is not disk-based
+    should_reset_parser = !stream_off.persistent;
 
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(

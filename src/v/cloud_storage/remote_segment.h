@@ -68,7 +68,16 @@ struct stream_with_leased_client : public ss::data_source_impl {
         co_return co_await stream.read();
     }
 
-    ss::future<> close() override { co_return co_await stream.close(); }
+    ss::future<> close() override {
+        auto is_eof = stream.eof();
+        co_await stream.close();
+        if (!is_eof) {
+            vlog(
+              cst_log.info,
+              "stopping leased client because it did not consume stream");
+            lease->client->shutdown();
+        }
+    }
 
     lease_t lease;
     ss::input_stream<char> stream;
@@ -123,6 +132,7 @@ public:
         ss::input_stream<char> stream;
         model::offset rp_offset;
         kafka::offset kafka_offset;
+        bool persistent{true};
     };
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
@@ -130,8 +140,7 @@ public:
       kafka::offset start,
       kafka::offset end,
       std::optional<model::timestamp>,
-      ss::io_priority_class,
-      bool skip_cache = false);
+      ss::io_priority_class);
 
     /// Hydrate the segment for segment meta version v2 or lower. For v3 or
     /// higher, only hydrate the index. If the index hydration fails, fall back
@@ -346,6 +355,8 @@ class remote_segment_batch_reader final {
     friend class remote_segment_batch_consumer;
 
 public:
+    bool should_reset_parser{false};
+
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
       const storage::log_reader_config& config,

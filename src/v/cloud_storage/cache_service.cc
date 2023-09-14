@@ -21,6 +21,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/metrics_api.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -65,6 +66,164 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 }
 
 static constexpr std::string_view tmp_extension{".part"};
+
+namespace {
+
+using namespace std::chrono_literals;
+
+[[maybe_unused]] bool has_label(
+  const ss::metrics::impl::labels_type& labels,
+  std::string_view k,
+  std::string_view v) {
+    return std::find_if(
+             labels.cbegin(),
+             labels.cend(),
+             [&](const auto& pair) {
+                 return pair.first == k && pair.second == v;
+             })
+           != labels.cend();
+}
+
+struct cache_control {
+    static constexpr ss::lowres_clock::duration limit = 10s;
+
+public:
+    explicit cache_control()
+      : _updated(ss::lowres_clock::now())
+      , _duration(limit) {}
+
+    bool should_skip_cache() {
+        const auto now = ss::lowres_clock::now();
+        const auto delta = now - _updated;
+
+        if (delta > _duration) {
+            _updated = now;
+            if (_throttled) {
+                _duration = 3s;
+                vlog(
+                  cst_log.info,
+                  "un-throttling cache access for {}ms",
+                  _duration);
+                _throttled = false;
+            } else {
+                auto curr_delta = current_consumption_delta();
+                _throttled = curr_delta <= 0.0;
+                _duration = limit;
+                vlog(
+                  cst_log.info,
+                  "calculated consumption delta: {}, throttling: {}",
+                  curr_delta,
+                  _throttled);
+            }
+        }
+
+        return _throttled;
+    }
+
+private:
+    double queue_adjusted_consumption(std::string_view class_name) {
+        auto all_metrics = *ss::metrics::impl::get_values();
+        auto metric_values_v = all_metrics.values;
+        auto metadata_v = all_metrics.metadata;
+
+        auto values_it = metric_values_v.cbegin();
+
+        for (auto it = metadata_v->cbegin();
+             it != metadata_v->cend() && values_it != metric_values_v.cend();
+             ++it, ++values_it) {
+            if (it->mf.name != "io_queue_adjusted_consumption") {
+                continue;
+            }
+
+            auto values = values_it->begin();
+            for (const auto& metric_info : it->metrics) {
+                const auto& labels = metric_info.id.labels();
+                if (
+                  has_label(labels, "mountpoint", "/var/lib/redpanda/data")
+                  && has_label(labels, "class", class_name)) {
+                    return values->d();
+                }
+                values++;
+            }
+        }
+
+        return 0;
+    }
+
+    double current_consumption_delta() {
+        const auto raft_cons = queue_adjusted_consumption("raft");
+        const auto si_cons = queue_adjusted_consumption("shadow-indexing");
+        const auto delta = raft_cons - si_cons;
+        vlog(
+          cst_log.info,
+          "raft cons: {} SI cons: {} delta: {}",
+          raft_cons,
+          si_cons,
+          delta);
+        return delta;
+    }
+
+    std::optional<uint64_t> current_p95_latency() {
+        auto all_metrics = *ss::metrics::impl::get_values();
+        auto metric_values_v = all_metrics.values;
+        auto metadata_v = all_metrics.metadata;
+
+        std::vector<std::pair<double, long>> counts{};
+        bool found_family = false;
+        auto values_it = metric_values_v.cbegin();
+        for (auto it = metadata_v->cbegin();
+             it != metadata_v->cend() && values_it != metric_values_v.cend()
+             && !found_family;
+             ++it, ++values_it) {
+            if (it->mf.name != "kafka_latency_produce_latency_us") {
+                continue;
+            }
+
+            found_family = true;
+            for (const auto& bucket :
+                 values_it->begin()->get_histogram().buckets) {
+                counts.emplace_back(bucket.upper_bound, bucket.count);
+            }
+        }
+
+        if (counts.empty()) {
+            vlog(cst_log.error, "metrics no count!!");
+            return std::nullopt;
+        }
+
+        auto result = counts.front().first;
+        const auto p95_count = counts.back().second * 0.95;
+        for (const auto& [u, c] : counts) {
+            if (c < p95_count) {
+                result = u;
+            } else {
+                break;
+            }
+        }
+        return result;
+    }
+
+    ss::lowres_clock::time_point _updated;
+    uint64_t _current_p95_latency{0};
+    ss::lowres_clock::duration _duration;
+    bool _throttled{false};
+};
+
+static thread_local std::unique_ptr<cache_control> cache_controller;
+
+void init_cc() { cache_controller = std::make_unique<cache_control>(); }
+
+bool control_skip_cache() {
+    if (unlikely(!cache_controller)) {
+        init_cc();
+    }
+
+    return cache_controller->should_skip_cache();
+}
+
+} // namespace
+
+bool cache::should_skip_cache() const { return control_skip_cache(); }
 
 cache::cache(
   std::filesystem::path cache_dir,
