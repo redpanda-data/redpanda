@@ -514,13 +514,16 @@ class HighThroughputTest(RedpandaTest):
         Make segments replicate to the cloud, then disrupt S3 connectivity
         and restore it
         """
-        segment_size = int(self.tier_config.segment_size / 8)
-        self.adjust_topic_segment_properties(segment_bytes=segment_size,
-                                             retention_local_bytes=2 *
-                                             segment_size)
+        segment_size = 16 * MiB  # Min segment size across all tiers
+        self.adjust_topic_segment_properties(
+            segment_bytes=segment_size, retention_local_bytes=segment_size)
+
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
-                               self.msg_size) as _:
+                               self.msg_size) as tgen:
+            # Wait until theres some traffic
+            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
+
             # S3 up -> down -> up
             self.stage_block_s3()
 
@@ -538,11 +541,8 @@ class HighThroughputTest(RedpandaTest):
         return increase == 0
 
     def stage_block_s3(self):
-        self.logger.info(
-            f"Getting the first {self.tier_config.partitions_upper_limit} segments into the cloud"
-        )
-        wait_until(lambda: nodes_report_cloud_segments(
-            self.redpanda, self.tier_config.partitions_upper_limit),
+        self.logger.info(f"Getting the first 100 segments into the cloud")
+        wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100),
                    timeout_sec=600,
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
@@ -662,17 +662,15 @@ class HighThroughputTest(RedpandaTest):
         Try to exhaust cloud cache by reading at random offsets with many
         consumers
         """
-        segment_size = int(self.tier_config.segment_size / 8)
-        self.adjust_topic_segment_properties(segment_bytes=segment_size,
-                                             retention_local_bytes=2 *
-                                             segment_size)
+        segment_size = 16 * MiB  # Min segment size across all tiers
+        self.adjust_topic_segment_properties(
+            segment_bytes=segment_size, retention_local_bytes=segment_size)
 
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
                                self.msg_size) as tgen:
             tgen.wait_for_traffic(acked=10000, timeout_sec=60)
-            wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, self.tier_config.partitions_upper_limit),
+            wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100),
                        timeout_sec=600,
                        backoff_sec=5)
             tgen._producer.wait_for_offset_map()
