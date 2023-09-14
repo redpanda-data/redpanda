@@ -348,6 +348,7 @@ private:
     void register_self_test_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
+    void register_wasm_transform_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -483,6 +484,14 @@ private:
       restart_service_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       sampled_memory_profile_handler(std::unique_ptr<ss::http::request>);
+
+    // Transform routes
+    ss::future<std::unique_ptr<ss::http::reply>> deploy_transform(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<ss::json::json_return_type>
+      list_transforms(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      delete_transform(std::unique_ptr<ss::http::request>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,
