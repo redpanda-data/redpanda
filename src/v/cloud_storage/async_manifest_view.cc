@@ -32,6 +32,7 @@
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/util/defer.hh>
@@ -379,7 +380,7 @@ async_manifest_view::async_manifest_view(
       _remote.local().materialized().get_materialized_manifest_cache()) {}
 
 ss::future<> async_manifest_view::start() {
-    ssx::background = run_bg_loop();
+    ssx::spawn_with_gate(_gate, [this] { return run_bg_loop(); });
     co_return;
 }
 
@@ -391,7 +392,6 @@ ss::future<> async_manifest_view::stop() {
 
 ss::future<> async_manifest_view::run_bg_loop() {
     std::exception_ptr exc_ptr;
-    ss::gate::holder h(_gate);
     try {
         while (!_as.abort_requested()) {
             co_await _cvar.when(
