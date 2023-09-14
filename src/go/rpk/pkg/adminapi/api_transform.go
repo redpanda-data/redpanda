@@ -16,14 +16,9 @@ import (
 
 const (
 	baseTransformEndpoint = "/v1/transform/"
-	deleteSuffix          = "delete"
 )
-
-type transformDeleteRequest struct {
-	Name string `json:"name"`
-}
 
 // Delete a wasm transform in a cluster.
 func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, name string) error {
-	return a.sendToLeader(ctx, http.MethodPost, baseTransformEndpoint+deleteSuffix, transformDeleteRequest{name}, nil)
+	return a.sendToLeader(ctx, http.MethodDelete, baseTransformEndpoint+name, nil, nil)
 }
