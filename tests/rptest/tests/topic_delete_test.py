@@ -666,12 +666,17 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
             sizes = []
             while crnt <= finish:
-                size = sum(1 for _ in self._blobs_for_topic(topic_name))
-
-                if len(sizes) > 0 and size > 0:
-                    assert size <= sizes[-1]
-
+                objects = list(self._blobs_for_topic(topic_name))
+                self.logger.debug(f"objects for {topic_name=} : {objects}")
+                size = len(objects)
                 sizes.append(size)
+                if len(sizes) > 1:
+                    assert sizes[-2] >= sizes[
+                        -1], f"Count of blobs for {topic_name=} is increasing, {sizes=}"
+                    if sizes[-1] == 0:
+                        # early exit, no more objects in cloud storage
+                        break
+
                 time.sleep(interval)
                 crnt = datetime.datetime.now()
 
