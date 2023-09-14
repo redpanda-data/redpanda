@@ -229,13 +229,17 @@ cat /tmp/license.md | sort | uniq
 | github.com/hashicorp/go-multierror                    | MPL-2.0                   |
 | github.com/lestrrat-go/jwx                            | MIT License               |
 | github.com/lorenzosaino/go-sysctl                     | BSD 3-Clause License      |
+| github.com/mattn/go-runewidth                         | MIT License               |
+| github.com/mitchellh/colorstring                      | MIT License               |
 | github.com/moby/term                                  | Apache License 2.0        |
 | github.com/opencontainers/image-spec/specs-go         | Apache License 2.0        |
 | github.com/pkg/browser                                | BSD 2-Clause License      |
 | github.com/pkg/errors                                 | BSD 2-Clause License      |
 | github.com/prometheus/client_model/go                 | Apache License 2.0        |
 | github.com/prometheus/common                          | Apache License 2.0        |
+| github.com/rivo/uniseg                                | MIT License               |
 | github.com/safchain/ethtool                           | Apache License 2.0        |
+| github.com/schollz/progressbar/v3                     | MIT License               |
 | github.com/sethgrid/pester                            | MIT License               |
 | github.com/spf13/afero                                | Apache License 2.0        |
 | github.com/spf13/cobra                                | Apache License 2.0        |
