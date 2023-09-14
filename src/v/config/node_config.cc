@@ -142,7 +142,7 @@ node_config::node_config() noexcept
       "operator intervention is needed to startup the broker. Limit is not "
       "enforced in developer mode.",
       {.visibility = visibility::user},
-      std::nullopt)
+      5)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
