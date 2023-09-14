@@ -185,15 +185,28 @@ public:
               r.data.throttle_time_ms, throttle_delay_ms());
         }
 
-        vlog(
-          klog.trace,
-          "[{}:{}] sending {}:{} for {}, response {}",
-          _conn->client_host(),
-          _conn->client_port(),
-          ResponseType::api_type::key,
-          ResponseType::api_type::name,
-          _header.client_id,
-          r);
+        if (r.data.errored()) {
+            vlog(
+              klog.debug,
+              "[{}:{}] sending {}:{} for {}, response {}",
+              _conn->client_host(),
+              _conn->client_port(),
+              ResponseType::api_type::key,
+              ResponseType::api_type::name,
+              _header.client_id,
+              r);
+        } else {
+            vlog(
+              klog.trace,
+              "[{}:{}] sending {}:{} for {}, response {}",
+              _conn->client_host(),
+              _conn->client_port(),
+              ResponseType::api_type::key,
+              ResponseType::api_type::name,
+              _header.client_id,
+              r);
+        }
+
         /// KIP-511 bumps api_versions_request/response to 3, past the first
         /// supported flex version for this API, and makes an exception
         /// that there will be no tags in the response header.
