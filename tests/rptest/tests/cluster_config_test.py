@@ -1377,7 +1377,9 @@ cloud_storage_graceful_transfer_timeout = PropertyAliasData(
 log_retention_ms = PropertyAliasData(primary_name="log_retention_ms",
                                      aliased_name="delete_retention_ms",
                                      redpanda_version=(23, 3),
-                                     test_values=(1000000, -1, 500000))
+                                     test_values=(1000000, 300000, 500000))
+# NOTE due to https://github.com/redpanda-data/redpanda/issues/13432 ,
+# test_values can't be -1 (a valid value nonetheless to signal infinite value)
 
 
 class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
