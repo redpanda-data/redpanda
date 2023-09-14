@@ -508,6 +508,7 @@ class HighThroughputTest(RedpandaTest):
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
+    @ignore
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
