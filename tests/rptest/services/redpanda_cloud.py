@@ -70,6 +70,20 @@ class AdvertisedTierConfig:
         self.connections_limit = connections_limit
         self.memory_per_broker = memory_per_broker
 
+    @property
+    def partitions_upper_limit(self):
+        """
+        This value represents a rough value for the estimated maximum number
+        of partitions that can be made on a new cluster via 1st create topics req.
+
+        When attempting to issue create_topics request for the actual advertised
+        maximum, the request may fail because per shard partition limits are
+        exhausted. This may occur because other system topics may exist and the
+        fact that the partition allocator isn't guaranteed to perfectly distribute
+        the partitions across all shards evenly.
+        """
+        return int(self.partitions_max * 0.8)
+
 
 kiB = 1024
 MiB = kiB * kiB

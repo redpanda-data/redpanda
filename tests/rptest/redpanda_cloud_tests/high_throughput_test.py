@@ -212,7 +212,7 @@ class HighThroughputTest(RedpandaTest):
 
         self.rpk = RpkTool(self.redpanda)
         self.topics = [
-            TopicSpec(partition_count=self.tier_config.partitions_max,
+            TopicSpec(partition_count=self.tier_config.partitions_upper_limit,
                       replication_factor=3,
                       retention_bytes=-1)
         ]
@@ -232,7 +232,7 @@ class HighThroughputTest(RedpandaTest):
         """
         cloud_segment_size = self.msg_size * 4
         num_segments_per_partition = 1000
-        target_cloud_segments = num_segments_per_partition * self.tier_config.partitions_max
+        target_cloud_segments = num_segments_per_partition * self.tier_config.partitions_upper_limit
         total_bytes_to_produce = target_cloud_segments * cloud_segment_size
         total_messages = int((total_bytes_to_produce / self.msg_size) * 1.2)
         self.redpanda.logger.info(
@@ -264,7 +264,7 @@ class HighThroughputTest(RedpandaTest):
         # Once some segments are generated, configure the topic to use more
         # realistic sizes.
         retention_bytes = int(self.tier_config.ingress_rate * 6 * hours /
-                              self.tier_config.partitions_max)
+                              self.tier_config.partitions_upper_limit)
         self.adjust_topic_segment_properties(self.tier_config.segment_size,
                                              retention_bytes)
 
@@ -539,10 +539,10 @@ class HighThroughputTest(RedpandaTest):
 
     def stage_block_s3(self):
         self.logger.info(
-            f"Getting the first {self.tier_config.partitions_max} segments into the cloud"
+            f"Getting the first {self.tier_config.partitions_upper_limit} segments into the cloud"
         )
         wait_until(lambda: nodes_report_cloud_segments(
-            self.redpanda, self.tier_config.partitions_max),
+            self.redpanda, self.tier_config.partitions_upper_limit),
                    timeout_sec=600,
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
@@ -672,7 +672,7 @@ class HighThroughputTest(RedpandaTest):
                                self.msg_size) as tgen:
             tgen.wait_for_traffic(acked=10000, timeout_sec=60)
             wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, self.tier_config.partitions_max),
+                self.redpanda, self.tier_config.partitions_upper_limit),
                        timeout_sec=600,
                        backoff_sec=5)
             tgen._producer.wait_for_offset_map()
@@ -976,7 +976,7 @@ class HighThroughputTest(RedpandaTest):
     def _run_omb(self, produce_bps,
                  validator_overrides) -> OpenMessagingBenchmark:
         topic_count = 1
-        partitions_per_topic = self.tier_config.partitions_max
+        partitions_per_topic = self.tier_config.partitions_upper_limit
         workload = {
             "name": "StabilityTest",
             "topics": topic_count,
@@ -1027,10 +1027,11 @@ class HighThroughputTest(RedpandaTest):
             'partition_autobalancing_mode': 'continuous',
             'raft_learner_recovery_rate': 10 * GiB,
         }
-        self.rpk.create_topic(self.topic,
-                              partitions=self.tier_config.partitions_max,
-                              replicas=3,
-                              config=config)
+        self.rpk.create_topic(
+            self.topic,
+            partitions=self.tier_config.partitions_upper_limit,
+            replicas=3,
+            config=config)
 
         producer = KgoVerifierProducer(
             self.test_context,
