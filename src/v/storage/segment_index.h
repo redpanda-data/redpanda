@@ -29,6 +29,11 @@
 
 namespace storage {
 
+// this type is meant to force the use of ss::lower_system_clock, since it's
+// cheaper than std::system_clock while being good enough for the purpose of
+// retention
+using broker_timestamp_t = ss::lowres_system_clock::time_point;
+
 // clang-format off
 // this truth table shows which timestamps gets used as retention_timestamp
 //
@@ -143,7 +148,7 @@ public:
 
     void maybe_track(
       const model::record_batch_header&,
-      std::optional<model::timestamp> new_broker_ts,
+      std::optional<broker_timestamp_t> new_broker_ts,
       size_t filepos);
     std::optional<entry> find_nearest(model::offset);
     std::optional<entry> find_nearest(model::timestamp);

@@ -98,9 +98,22 @@ void segment_index::swap_index_state(index_state&& o) {
     std::swap(_state, o);
 }
 
+// helper for segment_index::maybe_track, converts betwen optional-wrapped
+// broker_timestamp_t and model::timestamp
+constexpr auto to_optional_model_timestamp(std::optional<broker_timestamp_t> in)
+  -> std::optional<model::timestamp> {
+    if (unlikely(!in.has_value())) {
+        return std::nullopt;
+    }
+    // conversion from broker_timestamp_t to system_clock in this way it's
+    // possible because they share the same epoch
+    return model::to_timestamp(
+      std::chrono::system_clock::time_point{in->time_since_epoch()});
+}
+
 void segment_index::maybe_track(
   const model::record_batch_header& hdr,
-  std::optional<model::timestamp> new_broker_ts,
+  std::optional<broker_timestamp_t> new_broker_ts,
   size_t filepos) {
     _acc += hdr.size_bytes;
 
@@ -117,7 +130,7 @@ void segment_index::maybe_track(
           hdr.last_offset(),
           hdr.first_timestamp,
           hdr.max_timestamp,
-          new_broker_ts,
+          to_optional_model_timestamp(new_broker_ts),
           path().is_internal_topic()
             || hdr.type == model::record_batch_type::raft_data)) {
         _acc = 0;
