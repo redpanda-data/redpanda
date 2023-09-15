@@ -375,6 +375,28 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     co_return _translator->from_log_offset(first_local_offset);
 }
 
+model::offset replicated_partition::high_watermark() const {
+    vlog(klog.trace, "SHAI(1): high_watermark");
+    if (_partition->is_read_replica_mode_enabled()) {
+        vlog(klog.trace, "SHAI(2): is_read_replica_mode_enabled");
+        if (_partition->cloud_data_available()) {
+            vlog(klog.trace, "SHAI(3): cloud_data_available");
+            return _partition->next_cloud_offset();
+        } else {
+            vlog(klog.trace, "SHAI(4): !cloud_data_available");
+            return model::offset(0);
+        }
+    }
+    auto raft_watermark = _partition->high_watermark();
+
+    auto majority = _partition->raft()->majority_replicated_index();
+    auto visibility = _partition->raft()->visibility_upper_bound_index();
+    vlog(klog.trace, "SHAI(5): majority_replicated_index:{} visibility_upper_bound_index:{}", majority, visibility);
+    auto kafka_watermark = _translator->from_log_offset(raft_watermark);
+    vlog(klog.trace, "SHAI(6): {}->{}", raft_watermark, kafka_watermark);
+    return kafka_watermark;
+}
+
 ss::future<error_code> replicated_partition::prefix_truncate(
   model::offset kafka_truncation_offset,
   ss::lowres_clock::time_point deadline) {
