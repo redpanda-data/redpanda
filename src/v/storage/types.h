@@ -12,6 +12,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/limits.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -325,6 +326,8 @@ struct log_reader_config {
     // use this option when a reader shouldn't perturb the cache (e.g.
     // historical read-once workloads like compaction).
     bool skip_batch_cache{false};
+
+    model::isolation_level isolation_level{model::isolation_level::read_uncommitted};
 
     log_reader_config(
       model::offset start_offset,
