@@ -1,5 +1,6 @@
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from rptest.services.provider_clients.client_utils import query_instance_meta
 
@@ -163,7 +164,7 @@ class EC2Client:
         # There can be only one such object, no need to validate
         return _r[VPCS_PEERING_LABEL][0]["Status"]["Code"]
 
-    def get_route_table_ids_for_cluster(self, network_id):
+    def get_route_tables_for_cluster(self, network_id):
         _filters = [{
             "Name": "tag:purpose",
             "Values": ["private"]
@@ -171,19 +172,37 @@ class EC2Client:
             "Name": "tag:Name",
             "Values": [f"network-{network_id}"]
         }]
-        _r = self._cli.describe_route_tables(Filters=_filters)
-        return [_t[RTB_ID_LABEL] for _t in _r[RTBS_LABEL]]
+        _r = self.get_route_tables(filters=_filters)
+        # TODO: Handle errors
+        return _r
 
-    def get_route_table_ids_for_vpc(self, vpc_id):
-        _filters = [{"Name": "vpc-id", "Values": [vpc_id]}]
-        _r = self._cli.describe_route_tables(Filters=_filters)
-        return [_t[RTB_ID_LABEL] for _t in _r[RTBS_LABEL]]
+    def get_route_tables_for_vpc(self, vpc_id):
+        _r = self.get_route_tables(filters=[{
+            "Name": "vpc-id",
+            "Values": [vpc_id]
+        }])
+        # TODO: Handle errors
+        return _r
+
+    def get_route_tables(self, ids=[], filters=[]):
+        return self._cli.describe_route_tables(Filters=filters,
+                                               RouteTableIds=ids)
 
     def create_route(self, rtb_id, destCidrBlock, vpc_peering_id):
-        _r = self._cli.create_route(RouteTableId=rtb_id,
-                                    DestinationCidrBlock=destCidrBlock,
-                                    VpcPeeringConnectionId=vpc_peering_id)
-        if not _r['Return']:
+        try:
+            _r = self._cli.create_route(RouteTableId=rtb_id,
+                                        DestinationCidrBlock=destCidrBlock,
+                                        VpcPeeringConnectionId=vpc_peering_id)
+        except ClientError as e:
+            # Check if this is RouteAlreadyExists
+            if 'RouteAlreadyExists' in e.response['Error']['Code']:
+                # get existing route
+                self._log.warning(f"Route already exists in table '{rtb_id}':"
+                                  f" '{destCidrBlock}'/'{vpc_peering_id}'")
+                return None
+            else:
+                raise RuntimeError(e)
+        if _r and not _r['Return']:
             self._log.warning(f"Failed to create route in '{rtb_id}' "
                               f"for '{destCidrBlock}'")
         return _r

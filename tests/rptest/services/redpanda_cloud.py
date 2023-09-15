@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Optional
 from ducktape.utils.util import wait_until
 from rptest.services.provider_clients import make_provider_client
+from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 
 rp_profiles_path = os.path.join(os.path.dirname(__file__),
                                 "rp_config_profiles")
@@ -940,32 +941,51 @@ class CloudCluster():
 
         return
 
+    def _ensure_routes(self, rtables, cidr, vpc_id):
+        def _route_exists(routes, _cidr):
+            # Lookup CIDR and VpcId in table
+            for _route in routes:
+                if _route['DestinationCidrBlock'] == _cidr and \
+                    'VpcPeeringConnectionId' in _route and \
+                    _route['VpcPeeringConnectionId'] == self.current.vpc_peering_id:
+                    return True
+            return False
+
+        # Iterate through table and create if not exists
+        for _tbl in rtables:
+            # Check if this route is already exists in this table
+            if _route_exists(_tbl['Routes'], cidr):
+                self._logger.debug(f"Route to '{cidr}' already exists "
+                                   f"in table with id '{_tbl}'")
+                continue
+            else:
+                # Create it if not
+                self.provider_cli.create_route(_tbl['RouteTableId'], cidr,
+                                               vpc_id)
+        return
+
     def _create_routes_to_ducktape(self):
         # Create routes from CloudV2 to Ducktape (10.10.xxx -> 172...)
         # aws ec2 describe-route-tables --filter "Name=tag:Name,Values=network-cjah1ecce8edpeoj0li0" "Name=tag:purpose,Values=private" | jq -r '.RouteTables[].RouteTableId' | while read -r route_table_id; do aws ec2 create-route --route-table-id $route_table_id --destination-cidr-block 172.31.0.0/16 --vpc-peering-connection-id pcx-0581b037d9e93593e; done;
         # FMC: handled by CloudV2 and ID count get_rtb results in zero
         # BYOC: Should create routes
-        _rtbs = self.provider_cli.get_route_table_ids_for_cluster(
+        _rtbs = self.provider_cli.get_route_tables_for_cluster(
             self.current.network_id)
-        for _rtb_id in _rtbs:
-            self.provider_cli.create_route(
-                _rtb_id,
-                self.current.aws_vpc_peering['AccepterVpcInfo']['CidrBlock'],
-                self.current.vpc_peering_id)
-
+        self._ensure_routes(
+            _rtbs[RTBS_LABEL],
+            self.current.aws_vpc_peering['AccepterVpcInfo']['CidrBlock'],
+            self.current.vpc_peering_id)
         return
 
     def _create_routes_to_cluster(self):
         # Create routes from Ducktape to CloudV2
         # aws ec2 --region us-west-2 create-route --route-table-id rtb-02e89e44cb4da000d --destination-cidr-block 10.10.0.0/16 --vpc-peering-connection-id pcx-0581b037d9e93593e
-        _rtbs = self.provider_cli.get_route_table_ids_for_vpc(
+        _rtbs = self.provider_cli.get_route_tables_for_vpc(
             self.current.peer_vpc_id)
-        for _rtb_id in _rtbs:
-            self.provider_cli.create_route(
-                _rtb_id,
-                self.current.aws_vpc_peering['RequesterVpcInfo']['CidrBlock'],
-                self.current.vpc_peering_id)
-
+        self._ensure_routes(
+            _rtbs[RTBS_LABEL],
+            self.current.aws_vpc_peering['RequesterVpcInfo']['CidrBlock'],
+            self.current.vpc_peering_id)
         return
 
     def _create_vpc_peering_fmc(self):
@@ -992,34 +1012,43 @@ class CloudCluster():
                 endpoint=self.current.network_endpoint, json=_body)
             if resp is None:
                 # Check if such peering exists
-                self._logger.warning(self.cloudv2.lasterror)
+                # self._logger.warning(self.cloudv2.lasterror)
                 if "network peering already exists" in self.cloudv2.lasterror:
                     self.vpc_peering = self.cloudv2._http_get(
                         endpoint=self.current.network_endpoint)[0]
-                    self.current.vpc_peering_id = self.vpc_peering
                     # State should be ready at this point
                     self._logger.warning(
-                        "Found VPC peering connection "
+                        "Found Cloud VPC peering connection "
                         f"'{self.vpc_peering['displayName']}', "
                         f"state '{self.vpc_peering['state']}'")
-                    return
+                    # Search for AWS peering
+                    self.current.vpc_peering_id = \
+                        self.provider_cli.find_vpc_peering_connection(
+                            "active", self.current)
+                    if self.current.vpc_peering_id is None:
+                        raise RuntimeError("AWS VPC Peering connection "
+                                           f"not found: {self.current}")
+                    else:
+                        self.current.aws_vpc_peering = \
+                            self.provider_cli.get_vpc_peering_connection(
+                                self.current.vpc_peering_id)
                 else:
                     raise RuntimeError(self.cloudv2.lasterror)
             else:
                 self._logger.debug(f"Created VPC peering: '{resp}'")
                 self.vpc_peering = resp
 
-            # 3.
-            # Wait for "pending acceptance"
-            self._wait_peering_status_cluster("pending acceptance")
+                # 3.
+                # Wait for "pending acceptance"
+                self._wait_peering_status_cluster("pending acceptance")
 
-            # Find id of the correct peering VPC
-            self.current.vpc_peering_id = self.provider_cli.find_vpc_peering_connection(
-                "pending-acceptance", self.current)
+                # Find id of the correct peering VPC
+                self.current.vpc_peering_id = self.provider_cli.find_vpc_peering_connection(
+                    "pending-acceptance", self.current)
 
-            # 4. Accept it on AWS
-            self.current.aws_vpc_peering = self.provider_cli.accept_vpc_peering(
-                self.current.vpc_peering_id)
+                # 4. Accept it on AWS
+                self.current.aws_vpc_peering = self.provider_cli.accept_vpc_peering(
+                    self.current.vpc_peering_id)
 
             # 5.
             self._create_routes_to_ducktape()
