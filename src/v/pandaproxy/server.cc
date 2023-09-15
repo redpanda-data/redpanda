@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "model/metadata.h"
+#include "net/tls_certificate_probe.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/probe.h"
@@ -20,6 +21,10 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/reply.hh>
+#include <seastar/net/tls.hh>
+
+#include <fmt/chrono.h>
+#include <fmt/ranges.h>
 
 #include <charconv>
 #include <exception>
@@ -204,16 +209,16 @@ ss::future<> server::start(
 
         ss::shared_ptr<ss::tls::server_credentials> cred;
         if (it != endpoints_tls.end()) {
-            auto builder = co_await it->config.get_credentials_builder();
-            if (builder) {
-                cred = co_await builder->build_reloadable_server_credentials(
-                  [](
-                    const std::unordered_set<ss::sstring>& updated,
-                    const std::exception_ptr& eptr) {
-                      rpc::log_certificate_reload_event(
-                        plog, "API TLS", updated, eptr);
-                  });
-            }
+            cred = co_await net::build_reloadable_server_credentials_with_probe(
+              it->config,
+              _public_metrics_group_name,
+              it->name,
+              [](
+                const std::unordered_set<ss::sstring>& updated,
+                const std::exception_ptr& eptr) {
+                  rpc::log_certificate_reload_event(
+                    plog, "API TLS", updated, eptr);
+              });
         }
         co_await _server.listen(addr, cred);
     }
