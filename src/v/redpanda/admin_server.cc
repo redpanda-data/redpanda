@@ -3640,6 +3640,47 @@ admin_server::find_tx_coordinator_handler(
 }
 
 ss::future<ss::json::json_return_type>
+admin_server::describe_tx_registry_handler(
+  std::unique_ptr<ss::http::request> req) {
+    if (need_redirect_to_leader(model::tx_registry_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::tx_registry_ntp);
+    }
+
+    ss::httpd::transaction_json::describe_tx_registry_reply reply;
+    auto r = co_await _tx_registry_frontend.local().route_locally(
+      cluster::describe_tx_registry_request());
+    if (r.ec != cluster::tx_errc::none) {
+        reply.ec = static_cast<int>(r.ec);
+        co_return ss::json::json_return_type(std::move(reply));
+    }
+    reply.ec = 0;
+
+    reply.version = r.id();
+    for (auto& [partition, hosted] : r.mapping) {
+        ss::httpd::transaction_json::tx_mapping_entry entry;
+        entry.partition_id = partition();
+
+        ss::httpd::transaction_json::hosted_txs hosted_txs;
+        for (auto tx_id : hosted.excluded_transactions) {
+            hosted_txs.excluded_transactions.push(tx_id());
+        }
+        for (auto tx_id : hosted.included_transactions) {
+            hosted_txs.included_transactions.push(tx_id());
+        }
+        for (auto range : hosted.hash_ranges.ranges) {
+            ss::httpd::transaction_json::hash_range hash_range;
+            hash_range.first = range.first;
+            hash_range.last = range.last;
+            hosted_txs.hash_ranges.push(hash_range);
+        }
+        entry.hosted_txs = hosted_txs;
+        reply.tx_mapping.push(entry);
+    }
+
+    co_return ss::json::json_return_type(std::move(reply));
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     auto& tx_frontend = _partition_manager.local().get_tx_frontend();
     if (!tx_frontend.local_is_initialized()) {
@@ -3710,6 +3751,12 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::find_coordinator,
       [this](std::unique_ptr<ss::http::request> req) {
           return find_tx_coordinator_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::transaction_json::describe_tx_registry,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return describe_tx_registry_handler(std::move(req));
       });
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2020 Redpanda Data, Inc.
+// Copyright 2023 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -25,6 +25,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "rpc/connection_cache.h"
+#include "utils/gate_guard.h"
 #include "vformat.h"
 
 #include <seastar/core/coroutine.hh>
@@ -59,6 +60,37 @@ tx_registry_frontend::tx_registry_frontend(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value()) {
+}
+
+template<typename Func>
+auto tx_registry_frontend::with_stm(Func&& func) {
+    auto partition = _partition_manager.local().get(model::tx_registry_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_registry_ntp);
+        return func(tx_errc::partition_not_found);
+    }
+
+    auto stm = partition->tx_registry_stm();
+
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tx_registry_stm of the {}' partition",
+          model::tx_registry_ntp);
+        return func(tx_errc::stm_not_found);
+    }
+
+    if (stm->gate().is_closed()) {
+        return func(tx_errc::not_coordinator);
+    }
+
+    return ss::with_gate(
+      stm->gate(), [func = std::forward<Func>(func), stm]() mutable {
+          vlog(txlog.trace, "entered tx_registry_stm's gate");
+          return func(stm).finally(
+            [] { vlog(txlog.trace, "leaving tx_registry_stm's gate"); });
+      });
 }
 
 ss::future<bool> tx_registry_frontend::ensure_tx_topic_exists() {
@@ -97,6 +129,39 @@ ss::future<bool> tx_registry_frontend::ensure_tx_topic_exists() {
     }
 
     co_return false;
+}
+
+ss::future<describe_tx_registry_reply>
+tx_registry_frontend::route_locally(describe_tx_registry_request&& r) {
+    return do_route_locally(std::move(r));
+}
+
+ss::future<describe_tx_registry_reply> tx_registry_frontend::process_locally(
+  ss::shared_ptr<cluster::tx_registry_stm> stm,
+  describe_tx_registry_request&&) {
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        vlog(clusterlog.trace, "can't sync tx registry");
+        co_return describe_tx_registry_reply(tx_errc::leader_not_found);
+    }
+
+    describe_tx_registry_reply r;
+    r.ec = tx_errc::none;
+    r.id = repartitioning_id(-1);
+
+    if (!stm->is_initialized()) {
+        co_return r;
+    }
+
+    if (stm->seen_unknown_batch_subtype()) {
+        co_return r;
+    }
+
+    auto mapping = stm->get_mapping();
+    r.id = mapping.id;
+    r.mapping = mapping.mapping;
+
+    co_return r;
 }
 
 ss::future<find_coordinator_reply> tx_registry_frontend::find_coordinator(
@@ -155,7 +220,7 @@ ss::future<find_coordinator_reply> tx_registry_frontend::find_coordinator(
         auto leader = leader_opt.value();
 
         if (leader == _self) {
-            r = co_await find_coordinator_locally(tid);
+            r = co_await route_locally(find_coordinator_request(tid));
         } else {
             vlog(
               clusterlog.trace,
@@ -226,47 +291,55 @@ tx_registry_frontend::dispatch_find_coordinator(
 }
 
 ss::future<find_coordinator_reply>
-tx_registry_frontend::find_coordinator_locally(kafka::transactional_id tid) {
-    auto shard = _shard_table.local().shard_for(model::tx_registry_ntp);
-
-    if (unlikely(!shard)) {
-        auto retries = _metadata_dissemination_retries;
-        auto delay_ms = _metadata_dissemination_retry_delay_ms;
-        auto aborted = false;
-        while (!aborted && !shard && 0 < retries--) {
-            aborted = !co_await sleep_abortable(delay_ms, _as);
-            shard = _shard_table.local().shard_for(model::tx_registry_ntp);
-        }
-
-        if (!shard) {
-            vlog(
-              clusterlog.warn,
-              "can't find {} in the shard table",
-              model::tx_registry_ntp);
-            co_return find_coordinator_reply(
-              std::nullopt, std::nullopt, errc::not_leader);
-        }
-    }
-
-    co_return co_await _partition_manager.invoke_on(
-      *shard, _ssg, [this, tid](cluster::partition_manager& mgr) mutable {
-          auto partition = mgr.get(model::tx_registry_ntp);
-          if (!partition) {
-              vlog(
-                clusterlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_registry_ntp);
-              return ss::make_ready_future<find_coordinator_reply>(
-                find_coordinator_reply(
-                  std::nullopt, std::nullopt, errc::topic_not_exists));
-          }
-          return do_find_coordinator_locally(tid);
-      });
+tx_registry_frontend::route_locally(find_coordinator_request&& r) {
+    return do_route_locally(std::move(r));
 }
 
-ss::future<find_coordinator_reply>
-tx_registry_frontend::do_find_coordinator_locally(kafka::transactional_id tid) {
-    return find_coordinator_statically(tid);
+ss::future<find_coordinator_reply> tx_registry_frontend::process_locally(
+  ss::shared_ptr<cluster::tx_registry_stm> stm, find_coordinator_request&& r) {
+    auto tid = r.tid;
+
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        vlog(clusterlog.info, "can't sync tx registry");
+        co_return find_coordinator_reply(errc::not_leader);
+    }
+    auto term = term_opt.value();
+
+    if (stm->seen_unknown_batch_subtype()) {
+        // it may happen only if there was a downgrade from a a patch release
+        // we assume that before it happen a user restore default static
+        // partitioning so it's safe to fall back to it
+        co_return co_await find_coordinator_statically(tid);
+    }
+
+    auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
+    if (!cfg) {
+        vlog(
+          clusterlog.warn,
+          "can't find {} in the metadata cache",
+          model::tx_manager_nt);
+        co_return find_coordinator_reply(errc::topic_not_exists);
+    }
+
+    auto wunits = co_await stm->write_lock();
+    auto inited = co_await stm->try_init_mapping(term, cfg->partition_count);
+    if (!inited) {
+        co_return find_coordinator_reply(errc::not_leader);
+    }
+    wunits.return_all();
+
+    auto runits = co_await stm->read_lock();
+
+    auto partition = stm->find_hosting_partition(tid);
+    if (!partition) {
+        co_return find_coordinator_reply(errc::generic_tx_error);
+    }
+
+    auto ntp = model::ntp(
+      model::tx_manager_nt.ns, model::tx_manager_nt.tp, partition.value());
+    auto leader = _metadata_cache.local().get_leader_id(ntp);
+    co_return find_coordinator_reply(leader, ntp, errc::success);
 }
 
 ss::future<find_coordinator_reply>
@@ -377,6 +450,50 @@ ss::future<bool> tx_registry_frontend::try_create_tx_topic() {
             model::tx_manager_topic,
             e);
           return false;
+      });
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_registry_frontend::do_route_locally(T&& request) {
+    vlog(txlog.trace, "processing name:{} {}", T::name, request);
+
+    auto shard = _shard_table.local().shard_for(model::tx_registry_ntp);
+
+    if (!shard.has_value()) {
+        vlog(
+          txlog.warn,
+          "sending name:{} {} ec:{}",
+          T::name,
+          request,
+          tx_errc::shard_not_found);
+        co_return typename T::reply(tx_errc::shard_not_found);
+    }
+
+    gate_guard guard{_gate};
+
+    co_return co_await container().invoke_on(
+      *shard,
+      _ssg,
+      [request = std::move(request)](tx_registry_frontend& self) mutable {
+          return ss::with_gate(
+            self._gate, [&self, request = std::move(request)]() mutable {
+                return self.with_stm(
+                  [&self, request = std::move(request)](
+                    checked<ss::shared_ptr<tx_registry_stm>, tx_errc>
+                      r) mutable {
+                      if (!r) {
+                          return ss::make_ready_future<typename T::reply>(
+                            typename T::reply(r.error()));
+                      }
+                      auto stm = r.value();
+                      return self.process_locally(stm, std::move(request))
+                        .then([](typename T::reply r) {
+                            vlog(txlog.trace, "sending name:{} {}", T::name, r);
+                            return r;
+                        });
+                  });
+            });
       });
 }
 

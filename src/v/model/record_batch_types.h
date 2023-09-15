@@ -44,7 +44,8 @@ enum class record_batch_type : int8_t {
     tx_tm_hosted_trasactions = 24,   // tx_tm_hosted_trasactions_batch_type
     prefix_truncate = 25,            // log prefix truncation type
     plugin_update = 26,              // Wasm plugin update
-    MAX = plugin_update
+    tx_registry = 27,                // tx_registry_batch_type
+    MAX = tx_registry
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);

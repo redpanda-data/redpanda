@@ -13,6 +13,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/tx_hash_ranges.h"
 #include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
@@ -184,35 +185,6 @@ enum class partition_removal_mode : uint8_t {
     global = 1
 };
 
-struct try_abort_request
-  : serde::
-      envelope<try_abort_request, serde::version<0>, serde::compat_version<0>> {
-    model::partition_id tm;
-    model::producer_identity pid;
-    model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout{};
-
-    try_abort_request() noexcept = default;
-
-    try_abort_request(
-      model::partition_id tm,
-      model::producer_identity pid,
-      model::tx_seq tx_seq,
-      model::timeout_clock::duration timeout)
-      : tm(tm)
-      , pid(pid)
-      , tx_seq(tx_seq)
-      , timeout(timeout) {}
-
-    friend bool operator==(const try_abort_request&, const try_abort_request&)
-      = default;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const try_abort_request& r);
-
-    auto serde_fields() { return std::tie(tm, pid, tx_seq, timeout); }
-};
-
 struct try_abort_reply
   : serde::
       envelope<try_abort_reply, serde::version<0>, serde::compat_version<0>> {
@@ -247,6 +219,38 @@ struct try_abort_reply
     }
 
     auto serde_fields() { return std::tie(commited, aborted, ec); }
+};
+
+struct try_abort_request
+  : serde::
+      envelope<try_abort_request, serde::version<0>, serde::compat_version<0>> {
+    using reply = try_abort_reply;
+    static constexpr const std::string_view name = "try_abort";
+
+    model::partition_id tm;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout{};
+
+    try_abort_request() noexcept = default;
+
+    try_abort_request(
+      model::partition_id tm,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout)
+      : tm(tm)
+      , pid(pid)
+      , tx_seq(tx_seq)
+      , timeout(timeout) {}
+
+    friend bool operator==(const try_abort_request&, const try_abort_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const try_abort_request& r);
+
+    auto serde_fields() { return std::tie(tm, pid, tx_seq, timeout); }
 };
 
 struct init_tm_tx_request
@@ -991,12 +995,63 @@ struct abort_group_tx_reply
     auto serde_fields() { return std::tie(ec); }
 };
 
+struct find_coordinator_reply
+  : serde::envelope<
+      find_coordinator_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    std::optional<model::node_id> coordinator{std::nullopt};
+    std::optional<model::ntp> ntp{std::nullopt};
+    errc ec{errc::generic_tx_error}; // this should have been tx_errc
+
+    find_coordinator_reply() noexcept = default;
+
+    // this is a hack to blend find_coordinator_reply into do_route_locally
+    find_coordinator_reply(tx_errc tx_ec)
+      : coordinator(std::nullopt)
+      , ntp(std::nullopt) {
+        if (tx_ec == tx_errc::none) {
+            ec = errc::success;
+        } else if (tx_ec == tx_errc::shard_not_found) {
+            ec = errc::not_leader;
+        } else {
+            ec = errc::generic_tx_error;
+        }
+    }
+
+    find_coordinator_reply(errc ec)
+      : coordinator(std::nullopt)
+      , ntp(std::nullopt)
+      , ec(ec) {}
+
+    find_coordinator_reply(
+      std::optional<model::node_id> coordinator,
+      std::optional<model::ntp> ntp,
+      errc ec)
+      : coordinator(coordinator)
+      , ntp(ntp)
+      , ec(ec) {}
+
+    friend bool
+    operator==(const find_coordinator_reply&, const find_coordinator_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const find_coordinator_reply& r);
+
+    auto serde_fields() { return std::tie(coordinator, ntp, ec); }
+};
+
 struct find_coordinator_request
   : serde::envelope<
       find_coordinator_request,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+    using reply = find_coordinator_reply;
+    static constexpr const std::string_view name = "find_coordinator";
 
     kafka::transactional_id tid;
 
@@ -1015,35 +1070,28 @@ struct find_coordinator_request
     auto serde_fields() { return std::tie(tid); }
 };
 
-struct find_coordinator_reply
-  : serde::envelope<
-      find_coordinator_reply,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
+struct describe_tx_registry_reply {
+    repartitioning_id id;
+    absl::flat_hash_map<model::partition_id, hosted_txs> mapping;
+    tx_errc ec{};
 
-    std::optional<model::node_id> coordinator{std::nullopt};
-    std::optional<model::ntp> ntp{std::nullopt};
-    errc ec{errc::generic_tx_error};
+    describe_tx_registry_reply() noexcept = default;
 
-    find_coordinator_reply() noexcept = default;
-
-    find_coordinator_reply(
-      std::optional<model::node_id> coordinator,
-      std::optional<model::ntp> ntp,
-      errc ec)
-      : coordinator(coordinator)
-      , ntp(ntp)
-      , ec(ec) {}
-
-    friend bool
-    operator==(const find_coordinator_reply&, const find_coordinator_reply&)
-      = default;
+    describe_tx_registry_reply(tx_errc ec)
+      : ec(ec) {}
 
     friend std::ostream&
-    operator<<(std::ostream& o, const find_coordinator_reply& r);
+    operator<<(std::ostream& o, const describe_tx_registry_reply& r);
+};
 
-    auto serde_fields() { return std::tie(coordinator, ntp, ec); }
+struct describe_tx_registry_request {
+    using reply = describe_tx_registry_reply;
+    static constexpr const std::string_view name = "describe_tx_registry";
+
+    describe_tx_registry_request() noexcept = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const describe_tx_registry_request& r);
 };
 
 struct join_node_request
@@ -3945,6 +3993,7 @@ static const ss::sstring archival_stm_snapshot = "archival_metadata.snapshot";
 static const ss::sstring rm_stm_snapshot = "tx.snapshot";
 static const ss::sstring tm_stm_snapshot = "tx.coordinator.snapshot";
 static const ss::sstring id_allocator_snapshot = "id.snapshot";
+static const ss::sstring tx_registry_snapshot = "tx_registry.snapshot";
 
 /**
  * Create/update a (Wasm) plugin.

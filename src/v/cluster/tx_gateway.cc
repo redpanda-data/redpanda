@@ -44,8 +44,7 @@ tx_gateway::fetch_tx(fetch_tx_request&& request, rpc::streaming_context&) {
 
 ss::future<try_abort_reply>
 tx_gateway::try_abort(try_abort_request&& request, rpc::streaming_context&) {
-    return _tx_gateway_frontend.local().try_abort_locally(
-      request.tm, request.pid, request.tx_seq, request.timeout);
+    return _tx_gateway_frontend.local().route_locally(std::move(request));
 }
 
 ss::future<init_tm_tx_reply>
@@ -119,7 +118,7 @@ ss::future<abort_group_tx_reply> tx_gateway::abort_group_tx(
 
 ss::future<find_coordinator_reply> tx_gateway::find_coordinator(
   find_coordinator_request&& r, rpc::streaming_context&) {
-    return _tx_registry_frontend.local().find_coordinator_locally(r.tid);
+    return _tx_registry_frontend.local().route_locally(std::move(r));
 }
 
 } // namespace cluster

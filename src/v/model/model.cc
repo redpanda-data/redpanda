@@ -361,6 +361,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::prefix_truncate";
     case record_batch_type::plugin_update:
         return o << "batch_type::plugin_update";
+    case record_batch_type::tx_registry:
+        return o << "batch_type::tx_registry";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

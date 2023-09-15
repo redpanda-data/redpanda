@@ -24,6 +24,7 @@
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
+#include "cluster/tx_gateway_service.h"
 #include "cluster/tx_helpers.h"
 #include "config/configuration.h"
 #include "errc.h"
@@ -125,6 +126,13 @@ static tm_transaction as_tx(
     return tx;
 }
 
+static auto send(tx_gateway_client_protocol& cp, try_abort_request&& request) {
+    auto timeout = request.timeout;
+    return cp.try_abort(
+      std::move(request),
+      rpc::client_opts(model::timeout_clock::now() + timeout));
+}
+
 template<typename Func>
 auto tx_gateway_frontend::with_stm(model::partition_id tm, Func&& func) {
     model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
@@ -145,11 +153,115 @@ auto tx_gateway_frontend::with_stm(model::partition_id tm, Func&& func) {
         return func(tx_errc::not_coordinator);
     }
 
-    return ss::with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
-        vlog(txlog.trace, "entered tm_stm's gate");
-        return func(stm).finally(
-          [] { vlog(txlog.trace, "leaving tm_stm's gate"); });
-    });
+    return ss::with_gate(
+      stm->gate(), [func = std::forward<Func>(func), stm]() mutable {
+          vlog(txlog.trace, "entered tm_stm's gate");
+          return func(stm).finally(
+            [] { vlog(txlog.trace, "leaving tm_stm's gate"); });
+      });
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_gateway_frontend::do_route_globally(model::ntp tx_ntp, T&& request) {
+    if (!_metadata_cache.local().contains(tx_ntp)) {
+        vlog(txlog.warn, "can't find {} in the metadata cache", tx_ntp);
+        co_return typename T::reply(tx_errc::partition_not_exists);
+    }
+
+    auto leader_opt = _leaders.local().get_leader(tx_ntp);
+    if (!leader_opt) {
+        vlog(txlog.warn, "can't find a leader for {}", tx_ntp);
+        co_return typename T::reply(tx_errc::leader_not_found);
+    }
+    auto leader = leader_opt.value();
+
+    auto _self = _controller->self();
+    if (leader == _self) {
+        co_return co_await do_route_locally(tx_ntp, std::move(request));
+    }
+
+    co_return co_await do_dispatch(leader, std::move(request));
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_gateway_frontend::do_dispatch(model::node_id target, T&& request) {
+    vlog(
+      txlog.trace,
+      "dispatching name:{}, from:{}, to:{}, request:{}",
+      T::name,
+      _controller->self(),
+      target,
+      request);
+    auto timeout = request.timeout;
+    return _connection_cache.local()
+      .with_node_client<tx_gateway_client_protocol>(
+        _controller->self(),
+        ss::this_shard_id(),
+        target,
+        timeout,
+        [request = std::move(request)](tx_gateway_client_protocol cp) mutable {
+            return send(cp, std::move(request));
+        })
+      .then(&rpc::get_ctx_data<typename T::reply>)
+      .then([](result<typename T::reply> r) {
+          if (r.has_error()) {
+              vlog(txlog.warn, "received name:{} error:{}", T::name, r.error());
+              return typename T::reply(tx_errc::unknown_server_error);
+          }
+          auto reply = r.value();
+          vlog(txlog.trace, "received name:{} {}", T::name, reply);
+          return reply;
+      });
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_gateway_frontend::do_route_locally(model::ntp tx_ntp, T&& request) {
+    vlog(txlog.trace, "processing name:{} {}", T::name, request);
+
+    auto shard = _shard_table.local().shard_for(tx_ntp);
+
+    if (!shard.has_value()) {
+        vlog(
+          txlog.warn,
+          "sending name:{} {} ec:{}",
+          T::name,
+          request,
+          tx_errc::shard_not_found);
+        co_return typename T::reply(tx_errc::shard_not_found);
+    }
+
+    co_return co_await container().invoke_on(
+      *shard,
+      _ssg,
+      [tm = tx_ntp.tp.partition, request = std::move(request)](
+        tx_gateway_frontend& self) -> ss::future<typename T::reply> {
+          if (self._gate.is_closed()) {
+              return ss::make_ready_future<typename T::reply>(
+                tx_errc::not_coordinator);
+          }
+
+          return ss::with_gate(
+            self._gate, [&self, tm, request = std::move(request)] {
+                return self.with_stm(
+                  tm,
+                  [&self, request = std::move(request)](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) mutable {
+                      if (!r) {
+                          return ss::make_ready_future<typename T::reply>(
+                            r.error());
+                      }
+                      auto stm = r.value();
+                      return self.process_locally(stm, std::move(request))
+                        .then([](typename T::reply r) {
+                            vlog(txlog.trace, "sending name:{} {}", T::name, r);
+                            return r;
+                        });
+                  });
+            });
+      });
 }
 
 static add_paritions_tx_reply make_add_partitions_error_response(
@@ -562,156 +674,17 @@ ss::future<fetch_tx_reply> tx_gateway_frontend::dispatch_fetch_tx(
       });
 }
 
-ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
-  model::partition_id tm,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    if (!_metadata_cache.local().contains(model::tx_manager_nt, tm)) {
-        vlog(
-          txlog.warn, "can't find {}/{} partition", model::tx_manager_nt, tm);
-        co_return try_abort_reply{tx_errc::partition_not_exists};
-    }
-    model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
-
-    auto leader_opt = _leaders.local().get_leader(tx_ntp);
-
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
-    while (!aborted && !leader_opt && 0 < retries--) {
-        aborted = !co_await sleep_abortable(delay_ms, _as);
-        leader_opt = _leaders.local().get_leader(tx_ntp);
-    }
-
-    if (!leader_opt) {
-        vlog(txlog.warn, "can't find a leader for {}", tx_ntp);
-        co_return try_abort_reply{tx_errc::leader_not_found};
-    }
-
-    auto leader = leader_opt.value();
-    auto _self = _controller->self();
-
-    if (leader == _self) {
-        co_return co_await try_abort_locally(tm, pid, tx_seq, timeout);
-    }
-
-    vlog(
-      txlog.trace,
-      "dispatching name:try_abort, pid:{}, tx_seq:{}, from:{}, to:{}",
-      pid,
-      tx_seq,
-      _self,
-      leader);
-
-    auto reply = co_await dispatch_try_abort(leader, tm, pid, tx_seq, timeout);
-
-    vlog(
-      txlog.trace,
-      "received name:try_abort, pid:{}, tx_seq:{}, ec:{}, committed:{}, "
-      "aborted:{}",
-      pid,
-      tx_seq,
-      reply.ec,
-      reply.commited,
-      reply.aborted);
-
-    co_return reply;
-}
-
-ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
-  model::partition_id tm,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    vlog(
-      txlog.trace, "processing name:try_abort, pid:{}, tx_seq:{}", pid, tx_seq);
-
-    model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
-    auto shard = _shard_table.local().shard_for(tx_ntp);
-
-    if (!shard) {
-        vlog(
-          txlog.trace,
-          "sending name:try_abort, pid:{}, tx_seq:{}, ec:{}",
-          pid,
-          tx_seq,
-          tx_errc::shard_not_found);
-        co_return try_abort_reply{tx_errc::shard_not_found};
-    }
-
-    auto reply = co_await container().invoke_on(
-      shard.value(),
-      _ssg,
-      [pid, tx_seq, timeout, tm](
-        tx_gateway_frontend& self) -> ss::future<try_abort_reply> {
-          return ss::with_gate(
-            self._gate,
-            [pid, tx_seq, timeout, tm, &self]() -> ss::future<try_abort_reply> {
-                return self.with_stm(
-                  tm,
-                  [pid, tx_seq, timeout, &self](
-                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
-                      if (r) {
-                          return self.do_try_abort(
-                            r.value(), pid, tx_seq, timeout);
-                      }
-                      return ss::make_ready_future<try_abort_reply>(
-                        try_abort_reply{r.error()});
-                  });
-            });
-      });
-
-    vlog(
-      txlog.trace,
-      "sending name:try_abort, pid:{}, tx_seq:{}, ec:{}, committed:{}, "
-      "aborted:{}",
-      pid,
-      tx_seq,
-      reply.ec,
-      reply.commited,
-      reply.aborted);
-    co_return reply;
-}
-
-ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
-  model::node_id leader,
-  model::partition_id tm,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    return _connection_cache.local()
-      .with_node_client<tx_gateway_client_protocol>(
-        _controller->self(),
-        ss::this_shard_id(),
-        leader,
-        timeout,
-        [tm, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
-            return cp.try_abort(
-              try_abort_request{tm, pid, tx_seq, timeout},
-              rpc::client_opts(model::timeout_clock::now() + timeout));
-        })
-      .then(&rpc::get_ctx_data<try_abort_reply>)
-      .then([](result<try_abort_reply> r) {
-          if (r.has_error()) {
-              vlog(txlog.warn, "got error {} on remote try abort", r.error());
-              return try_abort_reply{tx_errc::unknown_server_error};
-          }
-
-          return r.value();
-      });
-}
-
-ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
-  ss::shared_ptr<tm_stm> stm,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    return stm->read_lock().then([this, stm, pid, tx_seq, timeout](
+ss::future<try_abort_reply> tx_gateway_frontend::process_locally(
+  ss::shared_ptr<tm_stm> stm, try_abort_request&& request) {
+    return stm->read_lock().then([this, stm, request = std::move(request)](
                                    ss::basic_rwlock<>::holder unit) {
         return stm->barrier()
-          .then([this, stm, pid, tx_seq, timeout](
+          .then([this, stm, request = std::move(request)](
                   checked<model::term_id, tm_stm::op_status> term_opt) {
+              auto pid = request.pid;
+              auto tx_seq = request.tx_seq;
+              auto timeout = request.timeout;
+
               if (!term_opt.has_value()) {
                   if (term_opt.error() == tm_stm::op_status::not_leader) {
                       return ss::make_ready_future<try_abort_reply>(
@@ -986,37 +959,16 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     auto leader = leader_opt.value();
     auto _self = _controller->self();
 
-    if (leader == _self) {
-        co_return co_await init_tm_tx_locally(
-          tx_id,
-          transaction_timeout_ms,
-          timeout,
-          expected_pid,
-          tx_ntp.tp.partition);
+    if (leader != _self) {
+        co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
     }
 
-    // Kafka does not dispatch this request. So we should delete this logic in
-    // future TODO: https://github.com/redpanda-data/redpanda/issues/6418
-    co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
-
-    vlog(
-      txlog.trace,
-      "dispatching name:init_tm_tx, tx_id:{}, from:{}, to:{}",
+    co_return co_await init_tm_tx_locally(
       tx_id,
-      _self,
-      leader);
-
-    auto reply = co_await dispatch_init_tm_tx(
-      leader, tx_id, transaction_timeout_ms, timeout);
-
-    vlog(
-      txlog.trace,
-      "received name:init_tm_tx, tx_id:{}, pid:{}, ec: {}",
-      tx_id,
-      reply.pid,
-      reply.ec);
-
-    co_return reply;
+      transaction_timeout_ms,
+      timeout,
+      expected_pid,
+      tx_ntp.tp.partition);
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
@@ -1098,34 +1050,6 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
       reply.ec);
 
     co_return reply;
-}
-
-ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
-  model::node_id leader,
-  kafka::transactional_id tx_id,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout) {
-    return _connection_cache.local()
-      .with_node_client<cluster::tx_gateway_client_protocol>(
-        _controller->self(),
-        ss::this_shard_id(),
-        leader,
-        timeout,
-        [tx_id, transaction_timeout_ms, timeout](
-          tx_gateway_client_protocol cp) {
-            return cp.init_tm_tx(
-              init_tm_tx_request{tx_id, transaction_timeout_ms, timeout},
-              rpc::client_opts(model::timeout_clock::now() + timeout));
-        })
-      .then(&rpc::get_ctx_data<init_tm_tx_reply>)
-      .then([](result<init_tm_tx_reply> r) {
-          if (r.has_error()) {
-              vlog(txlog.warn, "got error {} on remote init tm tx", r.error());
-              return init_tm_tx_reply{tx_errc::invalid_txn_state};
-          }
-
-          return r.value();
-      });
 }
 
 namespace {
@@ -3302,6 +3226,20 @@ ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
     // init_producer_id, add_offsets_to_txn etc
     auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
     co_return co_await get_tx(term, stm, tid, timeout);
+}
+
+ss::future<try_abort_reply>
+tx_gateway_frontend::route_globally(try_abort_request&& r) {
+    auto ntp = model::ntp(
+      model::tx_manager_nt.ns, model::tx_manager_nt.tp, r.tm);
+    return do_route_globally(ntp, std::move(r));
+}
+
+ss::future<try_abort_reply>
+tx_gateway_frontend::route_locally(try_abort_request&& r) {
+    auto ntp = model::ntp(
+      model::tx_manager_nt.ns, model::tx_manager_nt.tp, r.tm);
+    return do_route_locally(ntp, std::move(r));
 }
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(

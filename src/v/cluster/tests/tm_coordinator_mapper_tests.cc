@@ -8,17 +8,17 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/tm_stm.h"
-#include "cluster/tm_tx_hash_ranges.h"
 #include "cluster/tx_coordinator_mapper.h"
+#include "cluster/tx_hash_ranges.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 #include <cstdint>
 
 void check_hash_range_distribuiton(int32_t partitions_amount) {
-    cluster::tm_hash_ranges_set hash_ranges{};
+    cluster::tx_hash_ranges_set hash_ranges{};
     for (int i = 0; i < partitions_amount; ++i) {
-        hash_ranges.ranges.push_back(cluster::default_tm_hash_range(
+        hash_ranges.ranges.push_back(cluster::default_hash_range(
           model::partition_id(i), partitions_amount));
     }
     BOOST_REQUIRE_EQUAL(hash_ranges.ranges[0].first, 0);
@@ -65,9 +65,9 @@ void check_get_partition_from_default_distribution(int32_t partitions_amount) {
         cluster::tx_tm_hash_max, partitions_amount),
       model::partition_id(partitions_amount - 1));
 
-    cluster::tm_hash_ranges_set hash_ranges{};
+    cluster::tx_hash_ranges_set hash_ranges{};
     for (int i = 0; i < partitions_amount; ++i) {
-        hash_ranges.ranges.push_back(cluster::default_tm_hash_range(
+        hash_ranges.ranges.push_back(cluster::default_hash_range(
           model::partition_id(i), partitions_amount));
     }
 
@@ -84,7 +84,7 @@ void check_get_partition_from_default_distribution(int32_t partitions_amount) {
 
         BOOST_REQUIRE_EQUAL(
           cluster::get_partition_from_default_distribution(
-            cluster::tm_tx_hash_type(
+            cluster::tx_hash_type(
               (uint64_t(hash_ranges.ranges[i].first)
                + uint64_t(hash_ranges.ranges[i].last))
               / 2),

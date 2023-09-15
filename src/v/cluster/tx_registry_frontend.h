@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Redpanda Data, Inc.
+ * Copyright 2023 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,6 +11,8 @@
 
 #pragma once
 #include "cluster/fwd.h"
+#include "cluster/tx_gateway_frontend.h"
+#include "cluster/tx_registry_stm.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
 #include "rpc/fwd.h"
@@ -22,7 +24,8 @@
 
 namespace cluster {
 
-class tx_registry_frontend {
+class tx_registry_frontend final
+  : public ss::peering_sharded_service<tx_registry_frontend> {
 public:
     tx_registry_frontend(
       ss::smp_service_group,
@@ -37,11 +40,14 @@ public:
 
     ss::future<bool> ensure_tx_topic_exists();
 
+    ss::future<describe_tx_registry_reply>
+    route_locally(describe_tx_registry_request&&);
+
     ss::future<find_coordinator_reply>
       find_coordinator(kafka::transactional_id, model::timeout_clock::duration);
 
     ss::future<find_coordinator_reply>
-      find_coordinator_locally(kafka::transactional_id);
+    route_locally(find_coordinator_request&&);
 
     ss::future<> stop() {
         _as.request_abort();
@@ -50,6 +56,7 @@ public:
 
 private:
     ss::abort_source _as;
+    ss::gate _gate;
     ss::smp_service_group _ssg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::shard_table>& _shard_table;
@@ -62,11 +69,20 @@ private:
     int16_t _metadata_dissemination_retries{1};
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
 
+    template<typename T>
+    ss::future<typename T::reply> do_route_locally(T&&);
+
+    template<typename Func>
+    auto with_stm(Func&& func);
+
     ss::future<find_coordinator_reply> dispatch_find_coordinator(
       model::node_id, kafka::transactional_id, model::timeout_clock::duration);
 
-    ss::future<find_coordinator_reply>
-      do_find_coordinator_locally(kafka::transactional_id);
+    ss::future<find_coordinator_reply> process_locally(
+      ss::shared_ptr<cluster::tx_registry_stm>, find_coordinator_request&&);
+
+    ss::future<describe_tx_registry_reply> process_locally(
+      ss::shared_ptr<cluster::tx_registry_stm>, describe_tx_registry_request&&);
 
     ss::future<find_coordinator_reply>
       find_coordinator_statically(kafka::transactional_id);
