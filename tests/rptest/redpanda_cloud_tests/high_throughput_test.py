@@ -163,6 +163,15 @@ def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
         ) >= tier_cfg.egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate}"
 
 
+def get_globals_value(globals, key_name, default=None):
+    _config = {}
+    if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
+        # Load needed config values from cloud section
+        # of globals prior to actual cluster creation
+        _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
+    return _config.get(key_name, default)
+
+
 class HighThroughputTest(RedpandaTest):
     small_segment_size = 4 * KiB
     unavailable_timeout = 60
@@ -170,10 +179,10 @@ class HighThroughputTest(RedpandaTest):
 
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
-
-        # Default set to tier-1-aws is a temporary work around for
-        # https://github.com/redpanda-data/cloudv2/issues/7903
-        cloud_tier_str = test_ctx.globals.get("cloud_tier", "tier-1-aws")
+        # Get tier value
+        cloud_tier_str = get_globals_value(self._ctx.globals,
+                                           "config_profile_name",
+                                           default="tier-1-aws")
         cloud_tier = CloudTierName(cloud_tier_str)
         extra_rp_conf = None
         num_brokers = None
