@@ -581,7 +581,9 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0};
     populate_node_status_table(unavailable_nodes).get();
 
-    auto planner = make_planner();
+    const size_t max_concurrent_actions = 50;
+    auto planner = make_planner(
+      model::partition_autobalancing_mode::continuous, max_concurrent_actions);
     auto plan_data = planner.plan_actions(hr, as).get();
     check_violations(plan_data, unavailable_nodes, {});
 

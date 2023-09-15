@@ -57,7 +57,6 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<unsigned>&& max_disk_usage_percent,
   config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
   config::binding<std::chrono::milliseconds>&& tick_interval,
-  config::binding<size_t>&& movement_batch_size_bytes,
   config::binding<size_t>&& max_concurrent_actions,
   config::binding<double>&& moves_drop_threshold,
   config::binding<size_t>&& segment_fallocation_step,
@@ -77,7 +76,6 @@ partition_balancer_backend::partition_balancer_backend(
   , _storage_space_alert_free_threshold_percent(
       std::move(storage_space_alert_free_threshold_percent))
   , _tick_interval(std::move(tick_interval))
-  , _movement_batch_size_bytes(std::move(movement_batch_size_bytes))
   , _max_concurrent_actions(std::move(max_concurrent_actions))
   , _concurrent_moves_drop_threshold(std::move(moves_drop_threshold))
   , _segment_fallocation_step(std::move(segment_fallocation_step))
@@ -356,7 +354,6 @@ ss::future<> partition_balancer_backend::do_tick() {
             .mode = _mode(),
             .soft_max_disk_usage_ratio = soft_max_disk_usage_ratio,
             .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
-            .movement_disk_size_batch = _movement_batch_size_bytes(),
             .max_concurrent_actions = _max_concurrent_actions(),
             .node_availability_timeout_sec = _availability_timeout(),
             .ondemand_rebalance_requested

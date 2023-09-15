@@ -102,9 +102,7 @@ public:
     }
 
     bool can_add_reassignment() const {
-        if (_planned_moves_size_bytes >= config().movement_disk_size_batch) {
-            return false;
-        } else if (
+        if (
           state().topics().updates_in_progress().size() + _reassignments.size()
           >= config().max_concurrent_actions) {
             return false;
@@ -149,7 +147,6 @@ private:
     absl::node_hash_map<model::ntp, absl::flat_hash_map<model::node_id, size_t>>
       _moving_ntp2replica_sizes;
     absl::node_hash_map<model::ntp, allocated_partition> _reassignments;
-    uint64_t _planned_moves_size_bytes = 0;
     size_t _failed_actions_count = 0;
     // we track missing partition size info separately as it requires force
     // refresh of health report
@@ -341,8 +338,6 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
         switch (update.get_state()) {
         case reconfiguration_state::in_progress:
         case reconfiguration_state::force_update:
-            ctx._planned_moves_size_bytes += max_size;
-
             for (const auto& bs : moving_from) {
                 auto node_it = ctx.node_disk_reports.find(bs.node_id);
                 if (node_it != ctx.node_disk_reports.end()) {
@@ -768,13 +763,11 @@ auto partition_balancer_planner::request_context::do_with_partition(
             } else {
                 _reassignments.emplace(
                   ntp, std::move(*reassignable._reallocated));
-                _planned_moves_size_bytes += reassignable._size_bytes;
             }
         } else if (reassignment_it != _reassignments.end()) {
             // We no longer need to reassign this partition (presumably due to
             // revert)
             _reassignments.erase(reassignment_it);
-            _planned_moves_size_bytes -= reassignable._size_bytes;
         }
     });
 
