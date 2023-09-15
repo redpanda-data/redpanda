@@ -81,7 +81,8 @@ using validators = make_validator_types<
   cleanup_policy_validator,
   remote_read_and_write_are_not_supported_for_read_replica,
   batch_max_bytes_limits,
-  subject_name_strategy_validator>;
+  subject_name_strategy_validator,
+  locked_segment_size_validator>;
 
 static std::vector<creatable_topic_configs>
 properties_to_result_configs(config_map_t config_map) {

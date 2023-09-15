@@ -10,9 +10,12 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/server/handlers/topics/types.h"
+
+#include <optional>
 
 namespace kafka {
 template<typename Request, typename T>
@@ -286,5 +289,63 @@ using timestamp_type_validator
   = configuration_value_validator<timestamp_type_validator_details>;
 using cleanup_policy_validator
   = configuration_value_validator<cleanup_policy_validator_details>;
+
+template<typename T>
+struct locked_range {
+    T min;
+    T max;
+};
+
+struct locked_segment_size_validator_details {
+    using locked_type = uint64_t;
+
+    static constexpr const char* error_message
+      = "segment.bytes is out of range of locked_min/max ";
+    static constexpr const auto config_name = topic_property_segment_size;
+
+    static locked_range<std::optional<locked_type>> get_locked_range() {
+        return locked_range<std::optional<locked_type>>{
+          .min = config::shard_local_cfg().log_segment_size_locked_min(),
+          .max = config::shard_local_cfg().log_segment_size_locked_max()};
+    }
+};
+
+// TODO(@NyaliaLui): Consider a concept that checks for presence of
+// locked_range or something like that
+template<typename T>
+struct locked_range_validator {
+    static constexpr const char* error_message = T::error_message;
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool is_valid(const creatable_topic& c) {
+        auto config_entries = config_map(c.configs);
+        auto end = config_entries.end();
+
+        auto iter = config_entries.find(T::config_name);
+
+        if (end == iter) {
+            return true;
+        }
+
+        // configuration_value_validator already does the value check so no need
+        // to do that again here.
+        auto tp_prop_val = boost::lexical_cast<typename T::locked_type>(
+          iter->second);
+        auto locked_range = T::get_locked_range();
+
+        if (locked_range.min && tp_prop_val < locked_range.min.value()) {
+            return false;
+        }
+
+        if (locked_range.max && tp_prop_val > locked_range.max.value()) {
+            return false;
+        }
+
+        return true;
+    }
+};
+
+using locked_segment_size_validator
+  = locked_range_validator<locked_segment_size_validator_details>;
 
 } // namespace kafka

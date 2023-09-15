@@ -1868,6 +1868,25 @@ class LockedConfigsTest(RedpandaTest):
         wait_for_version_sync(admin, self.redpanda,
                               patch_result['config_version'])
 
+        # Try to create a topic out-of-range of the locked min
+        rpk = RpkTool(self.redpanda)
+        try:
+            rpk.create_topic(
+                'pandatopic',
+                config={'segment.bytes': self.LOCKED_SEGMENT_SIZE_MIN - 1})
+        except RpkException as ex:
+            r = re.compile(
+                r'^.*STATUS\s+(?P<topic>\S+)\s+INVALID_CONFIG:(?P<errmsg>.+).$'
+            )
+            m = re.match(r, ex.msg)
+            if m is not None:
+                assert m.group('topic') == 'pandatopic'
+                errmsg = m.group('errmsg')
+                self.logger.debug(f'errmsg {errmsg}')
+                assert errmsg == 'segment.bytes is out of range of locked_min/max '
+            else:
+                raise
+
     @cluster(num_nodes=3)
     def test_locked_configs_restart(self):
         # Tests that locked configs persist between broker restart.
