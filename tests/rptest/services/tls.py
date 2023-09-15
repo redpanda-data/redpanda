@@ -57,6 +57,193 @@ keyUsage         = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = clientAuth
 """
 
+# Culled from https://pki-tutorial.readthedocs.io/en/latest/simple/index.html
+
+_root_ca_config_tmpl = """
+# Redpanda Root CA
+
+# The [default] section contains global constants that can be referred to from
+# the entire configuration file. It may also hold settings pertaining to more
+# than one openssl command.
+
+[ default ]
+ca                      = {name}                    # CA name
+dir                     = {dir}                     # Top dir
+
+# The next part of the configuration file is used by the openssl req command.
+# It defines the CA's key pair, its DN, and the desired extensions for the CA
+# certificate.
+
+[ req ]
+default_bits            = 2048                  # RSA key size
+encrypt_key             = yes                   # Protect private key
+default_md              = sha256                # MD to use
+utf8                    = yes                   # Input is UTF-8
+string_mask             = utf8only              # Emit UTF-8 strings
+prompt                  = no                    # Don't prompt for DN
+distinguished_name      = ca_dn                 # DN section
+req_extensions          = ca_reqext             # Desired extensions
+
+[ ca_dn ]
+0.domainComponent       = "org"
+1.domainComponent       = "simple"
+organizationName        = "Redpanda"
+organizationalUnitName  = "Redpanda Root CA"
+commonName              = "{name}"
+
+[ ca_reqext ]
+keyUsage                = critical,keyCertSign,cRLSign
+basicConstraints        = critical,CA:true
+subjectKeyIdentifier    = hash
+
+# The remainder of the configuration file is used by the openssl ca command.
+# The CA section defines the locations of CA assets, as well as the policies
+# applying to the CA.
+
+[ ca ]
+default_ca              = root_ca               # The default CA section
+
+[ root_ca ]
+certificate             = $dir/ca/$ca.crt       # The CA cert
+private_key             = $dir/ca/$ca/private/$ca.key # CA private key
+new_certs_dir           = $dir/ca/$ca           # Certificate archive
+serial                  = $dir/ca/$ca/db/$ca.crt.srl # Serial number file
+crlnumber               = $dir/ca/$ca/db/$ca.crl.srl # CRL number file
+database                = $dir/ca/$ca/db/$ca.db # Index file
+unique_subject          = no                    # Require unique subject
+default_days            = 30                    # How long to certify for
+default_md              = sha256                # MD to use
+policy                  = match_pol             # Default naming policy
+email_in_dn             = no                    # Add email to cert DN
+preserve                = no                    # Keep passed DN ordering
+name_opt                = ca_default            # Subject DN display options
+cert_opt                = ca_default            # Certificate display options
+copy_extensions         = none                  # Copy extensions from CSR
+x509_extensions         = signing_ca_ext        # Default cert extensions
+default_crl_days        = 365                   # How long before next CRL
+crl_extensions          = crl_ext               # CRL extensions
+
+# Naming policies control which parts of a DN end up in the certificate and
+# under what circumstances certification should be denied.
+
+[ match_pol ]
+organizationName        = match                 # Must match 'Redpanda'
+commonName              = supplied              # Must be present
+
+# Certificate extensions define what types of certificates the CA is able to
+# create.
+
+[ root_ca_ext ]
+keyUsage                = critical,keyCertSign,cRLSign
+basicConstraints        = critical,CA:true
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always
+
+[ signing_ca_ext ]
+keyUsage                = critical,keyCertSign,cRLSign
+basicConstraints        = critical,CA:true
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always
+
+# CRL extensions exist solely to point to the CA certificate that has issued
+# the CRL.
+
+[ crl_ext ]
+authorityKeyIdentifier  = keyid:always
+"""
+
+_signing_ca_config_tmpl = """
+# Redpanda Signing CA
+
+# The [default] section contains global constants that can be referred to from
+# the entire configuration file. It may also hold settings pertaining to more
+# than one openssl command.
+
+[ default ]
+ca                      = {name}                    # CA name
+dir                     = {dir}                     # Top dir
+
+# The next part of the configuration file is used by the openssl req command.
+# It defines the CA's key pair, its DN, and the desired extensions for the CA
+# certificate.
+
+[ req ]
+default_bits            = 2048                  # RSA key size
+encrypt_key             = yes                   # Protect private key
+default_md              = sha256                  # MD to use
+utf8                    = yes                   # Input is UTF-8
+string_mask             = utf8only              # Emit UTF-8 strings
+prompt                  = no                    # Don't prompt for DN
+distinguished_name      = ca_dn                 # DN section
+req_extensions          = ca_reqext             # Desired extensions
+
+[ ca_dn ]
+organizationName        = "Redpanda"
+organizationalUnitName  = "Redpanda Signing CA"
+commonName              = "{name}"
+
+[ ca_reqext ]
+keyUsage                = critical,keyCertSign,cRLSign
+basicConstraints        = critical,CA:true,pathlen:0
+subjectKeyIdentifier    = hash
+
+# The remainder of the configuration file is used by the openssl ca command.
+# The CA section defines the locations of CA assets, as well as the policies
+# applying to the CA.
+
+[ ca ]
+default_ca              = signing_ca            # The default CA section
+
+[ signing_ca ]
+certificate             = $dir/ca/$ca.crt       # The CA cert
+private_key             = $dir/ca/$ca/private/$ca.key # CA private key
+new_certs_dir           = $dir/ca/$ca           # Certificate archive
+serial                  = $dir/ca/$ca/db/$ca.crt.srl # Serial number file
+crlnumber               = $dir/ca/$ca/db/$ca.crl.srl # CRL number file
+database                = $dir/ca/$ca/db/$ca.db # Index file
+unique_subject          = no                    # Require unique subject
+default_days            = 7                     # How long to certify for
+default_md              = sha256                  # MD to use
+policy                  = match_pol             # Default naming policy
+email_in_dn             = no                    # Add email to cert DN
+preserve                = no                    # Keep passed DN ordering
+name_opt                = ca_default            # Subject DN display options
+cert_opt                = ca_default            # Certificate display options
+copy_extensions         = copy                  # Copy extensions from CSR
+x509_extensions         = server_ext             # Default cert extensions
+default_crl_days        = 7                     # How long before next CRL
+crl_extensions          = crl_ext               # CRL extensions
+
+# Naming policies control which parts of a DN end up in the certificate and
+# under what circumstances certification should be denied.
+
+[ match_pol ]
+organizationName        = match                 # Must match 'Redpanda'
+commonName              = supplied              # Must be present
+
+# Certificate extensions define what types of certificates the CA is able to
+# create.
+
+[ server_ext ]
+keyUsage                = critical,digitalSignature,keyEncipherment
+basicConstraints        = CA:false
+extendedKeyUsage        = serverAuth,clientAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always
+
+[ signing_ca_ext ]
+keyUsage                = critical,keyCertSign,cRLSign
+basicConstraints        = critical,CA:true
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always
+
+# CRL extensions exist solely to point to the CA certificate that has issued
+# the CRL.
+
+[ crl_ext ]
+authorityKeyIdentifier  = keyid:always
+"""
+
 _node_config_tmpl = """
 # OpenSSL node configuration file
 [ req ]
@@ -70,6 +257,37 @@ organizationName = Redpanda
 
 [ extensions ]
 subjectAltName = critical,DNS:{host}
+"""
+
+_server_config_tmpl = """
+# TLS server certificate request
+
+# This file is used by the openssl req command. The subjectAltName cannot be
+# prompted for and must be specified in the SAN environment variable.
+
+[ default ]
+SAN                     = DNS:yourdomain.tld    # Default value
+
+[ req ]
+default_bits            = 2048                  # RSA key size
+encrypt_key             = no                    # Protect private key
+default_md              = sha256                # MD to use
+utf8                    = yes                   # Input is UTF-8
+string_mask             = utf8only              # Emit UTF-8 strings
+prompt                  = no                    # Prompt for DN
+distinguished_name      = server_dn             # DN template
+req_extensions          = server_reqext         # Desired extensions
+
+[ server_dn ]
+organizationName = Redpanda
+{common_name}
+
+[ server_reqext ]
+subjectAltName          = critical,DNS:{host}
+keyUsage                = critical,digitalSignature,keyEncipherment
+basicConstraints        = CA:false
+extendedKeyUsage        = serverAuth,clientAuth
+subjectKeyIdentifier    = hash
 """
 
 CertificateAuthority = collections.namedtuple("CertificateAuthority",
@@ -88,14 +306,16 @@ class TLSCertManager:
     it is common for clients to take paths to these files, it is best to keep
     the instance alive for as long as the files are in use.
     """
-    def __init__(self, logger):
+    def __init__(self, logger, ca_end_date=None, cert_expiry_days=1):
         self._logger = logger
         self._dir = tempfile.TemporaryDirectory()
+        self._ca_end_date = ca_end_date
+        self._cert_expiry_days = cert_expiry_days
         self._ca = self._create_ca()
         self.certs = {}
 
-    def _with_dir(self, name):
-        return os.path.join(self._dir.name, name)
+    def _with_dir(self, *args):
+        return os.path.join(self._dir.name, *args)
 
     def _exec(self, cmd):
         self._logger.info(f"Running command: {cmd}")
@@ -132,7 +352,6 @@ class TLSCertManager:
             f.write(_ca_config_tmpl.format(dir=self._dir.name))
 
         self._exec(f"openssl genrsa -out {key} 2048")
-
         self._exec(f"openssl req -new -x509 -config {cfg} "
                    f"-key {key} -out {crt} -days 365 -batch")
 
@@ -152,7 +371,8 @@ class TLSCertManager:
                     host: str,
                     *,
                     common_name: typing.Optional[str] = None,
-                    name: typing.Optional[str] = None):
+                    name: typing.Optional[str] = None,
+                    faketime: typing.Optional[str] = '-0d'):
         name = name or host
 
         cfg = self._with_dir(f"{name}.conf")
@@ -173,10 +393,153 @@ class TLSCertManager:
         self._exec(f"openssl req -new -config {cfg} "
                    f"-key {key} -out {csr} -batch")
 
-        self._exec(f"openssl ca -config {self.ca.cfg} -keyfile "
-                   f"{self.ca.key} -cert {self.ca.crt} -policy signing_policy "
-                   f"-extensions signing_node_req -in {csr} -out {crt} "
-                   f"-outdir {self._dir.name} -batch")
+        self._exec(
+            f"faketime -f {faketime} openssl ca -config {self.ca.cfg} -keyfile "
+            f"{self.ca.key} -cert {self.ca.crt} -policy signing_policy "
+            f"-extensions signing_node_req -in {csr} -out {crt} "
+            f"-days {self._cert_expiry_days} -outdir {self._dir.name} -batch")
+
+        cert = Certificate(cfg, key, crt, self.ca)
+        self.certs[name] = cert
+        return cert
+
+
+# TODO(oren): Might want to add the ability to generate CRLs, though
+# I'm not sure there's an easy  way to transmit those to redpanda
+# without also causing other verification steps to fail.
+class TLSChainCACertManager(TLSCertManager):
+    """
+    Similar to TLSCertManager, but generates a chain of CAs,
+    starting with a self-signed root CA and followed by signing
+    CAs of incrementally decreasing lifetime.
+
+    The length of the CA chain, CA expiry increment, and signed
+    cert expiry are all configurable (in days) at the constructor.
+
+    Should drop in cleanly for TLSCertManager.
+    """
+    DEFAULT_EXPIRY_DAYS = 365
+
+    def __init__(self,
+                 logger,
+                 chain_len=2,
+                 cert_expiry_days=1,
+                 ca_expiry_days=7):
+        assert chain_len > 0
+        self._logger = logger
+        self._dir = tempfile.TemporaryDirectory()
+        self.cert_expiry_days = cert_expiry_days
+        self.ca_expiry_days = ca_expiry_days
+        self._cas = []
+        self._cas.append(
+            self._create_ca(
+                'root-ca',
+                _root_ca_config_tmpl,
+                days=chain_len * self.ca_expiry_days,
+            ))
+        for i in range(1, chain_len):
+            self._cas.append(
+                self._create_ca(
+                    f'signing-ca-{i-1}',
+                    _signing_ca_config_tmpl,
+                    days=(chain_len - i) * ca_expiry_days,
+                    parent_cfg=self._cas[-1].cfg,
+                    ext='signing_ca_ext',
+                ))
+        self._cert_chain = self._create_ca_cert_chain(
+            [ca.crt for ca in self._cas])
+        self.certs = {}
+
+    @property
+    def ca(self) -> CertificateAuthority:
+        return self._cert_chain
+
+    @property
+    def signing_ca(self) -> CertificateAuthority:
+        return self._cas[-1]
+
+    def _create_ca(self,
+                   ca: str,
+                   tmpl: str,
+                   days: int = DEFAULT_EXPIRY_DAYS,
+                   parent_cfg: typing.Optional[str] = None,
+                   ext: str = 'root_ca_ext') -> CertificateAuthority:
+        dir = self._with_dir('ca')
+        pvt = self._with_dir('ca', ca, 'private')
+        db = self._with_dir('ca', ca, 'db')
+        certs = self._with_dir('certs')
+
+        cfg = self._with_dir(f"{ca}.conf")
+        selfsign = parent_cfg is None
+        parent_cfg = cfg if selfsign else self._with_dir(parent_cfg)
+        key = os.path.join(pvt, f"{ca}.key")
+        csr = os.path.join(dir, f"{ca}.csr")
+        crt = os.path.join(dir, f"{ca}.crt")
+        idx = os.path.join(db, f"{ca}.db")
+        srl = os.path.join(db, f"{ca}.crt.srl")
+
+        with open(f"{cfg}", "w") as f:
+            f.write(tmpl.format(dir=self._dir.name, name=ca))
+
+        os.makedirs(pvt, mode=0o700, exist_ok=True)
+        os.makedirs(db, exist_ok=True)
+        os.makedirs(certs, exist_ok=True)
+
+        if os.path.exists(idx): os.remove(idx)
+        if os.path.exists(srl): os.remove(srl)
+        pathlib.Path(idx).touch()
+        pathlib.Path(idx + ".attr").touch()
+        with open(srl, 'w') as f:
+            f.writelines(["01"])
+
+        self._exec(
+            f"openssl req -new -nodes -config {cfg} -out {csr} -keyout {key}")
+        self._exec(
+            f"openssl ca {'-selfsign' if selfsign else ''} -config {parent_cfg} "
+            f"-in {csr} -out {crt} -extensions {ext} -days {days} -batch")
+
+        return CertificateAuthority(cfg, key, crt)
+
+    def _create_ca_cert_chain(self, files: list[str]) -> CertificateAuthority:
+        out = self._with_dir('ca', 'signing-ca-chain.pem')
+        pathlib.Path(out).touch()
+        with open(out, 'w') as outfile:
+            for fname in reversed(files):
+                with open(fname, 'r') as infile:
+                    outfile.write(infile.read())
+
+        with open(out, 'r') as f:
+            self._logger.debug(f"CA chain: {f.read()}")
+
+        return CertificateAuthority(None, None, out)
+
+    def create_cert(self,
+                    host: str,
+                    *,
+                    common_name: typing.Optional[str] = None,
+                    name: typing.Optional[str] = None,
+                    faketime: typing.Optional[str] = '-0d') -> Certificate:
+        name = name or host
+
+        cfg = self._with_dir(f"{name}.conf")
+        key = self._with_dir('certs', f"{name}.key")
+        csr = self._with_dir('certs', f"{name}.csr")
+        crt = self._with_dir('certs', f"{name}.crt")
+
+        with open(cfg, "w") as f:
+            if common_name is None:
+                common_name = f"commonName = {name}"
+            else:
+                common_name = f"commonName = {common_name}"
+            f.write(
+                _server_config_tmpl.format(host=host, common_name=common_name))
+
+        self._exec(f"openssl req -new -nodes -config {cfg} "
+                   f"-keyout {key} -out {csr} -batch")
+        self._exec(
+            f"faketime -f {faketime} openssl ca -config {self.signing_ca.cfg} -policy match_pol "
+            f"-in {csr} -out {crt} -extensions server_ext -days {self.cert_expiry_days} -batch"
+        )
 
         cert = Certificate(cfg, key, crt, self.ca)
         self.certs[name] = cert
