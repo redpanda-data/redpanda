@@ -600,6 +600,15 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         that local deletion proceeds, and remote deletion eventually
         gives up.
         """
+
+        # Empirically, this test has been prone to races between the finalize
+        # stage of remote partition and the scrubber. Set a generous grace period
+        # to avoid these natural races.
+        self.redpanda.set_cluster_config({
+            "cloud_storage_topic_purge_grace_period_ms":
+            5000,
+        })
+
         self._populate_topic(self.topic)
         keys_before = set(
             o.key for o in self.redpanda.cloud_storage_client.list_objects(
@@ -644,7 +653,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self.kafka_tools.delete_topic(next_topic)
         wait_until(lambda: topic_storage_purged(self.redpanda, next_topic),
-                   timeout_sec=30,
+                   timeout_sec=35,
                    backoff_sec=1)
 
         self._validate_topic_deletion(next_topic, cloud_storage_type)
