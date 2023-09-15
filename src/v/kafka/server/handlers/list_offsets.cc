@@ -21,6 +21,8 @@
 #include "kafka/server/response.h"
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
+#include "vlog.h"
+#include "kafka/server/logger.h"
 
 namespace kafka {
 
@@ -93,6 +95,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     }
 
     auto offset = kafka_partition->high_watermark();
+    vlog(klog.trace, "SHAI(7): {}", offset);
     if (isolation_lvl == model::isolation_level::read_committed) {
         auto maybe_lso = kafka_partition->last_stable_offset();
         if (unlikely(!maybe_lso)) {
@@ -100,6 +103,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
               ktp.get_partition(), maybe_lso.error());
         }
         offset = maybe_lso.value();
+        vlog(klog.trace, "SHAI(8): {}", offset);
     }
 
     /*
@@ -107,14 +111,17 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
      * that the actual timestamp be returned. only the offset is required.
      */
     if (timestamp == list_offsets_request::earliest_timestamp) {
+        vlog(klog.trace, "SHAI(9)");
         // verify that the leader is up to date so that it is guaranteed to be
         // working with the most up to date value of start offset
         auto maybe_start_ofs = co_await kafka_partition->sync_effective_start();
         if (!maybe_start_ofs) {
+            vlog(klog.trace, "SHAI(10)");
             co_return list_offsets_response::make_partition(
               ktp.get_partition(), maybe_start_ofs.error());
         }
 
+        vlog(klog.trace, "SHAI(11): {}", maybe_start_ofs.value());
         co_return list_offsets_response::make_partition(
           ktp.get_partition(),
           model::timestamp(-1),
@@ -122,6 +129,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           kafka_partition->leader_epoch());
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {
+        vlog(klog.trace, "SHAI(12): {}", offset);
         co_return list_offsets_response::make_partition(
           ktp.get_partition(),
           model::timestamp(-1),
@@ -136,9 +144,11 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
       octx.rctx.abort_source().local()});
     auto id = ktp.get_partition();
     if (res) {
+        vlog(klog.trace, "SHAI(13): {}", res->offset);
         co_return list_offsets_response::make_partition(
           id, res->time, res->offset, kafka_partition->leader_epoch());
     }
+    vlog(klog.trace, "SHAI(14)");
     co_return list_offsets_response::make_partition(id, error_code::none);
 }
 
