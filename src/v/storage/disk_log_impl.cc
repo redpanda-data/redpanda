@@ -1172,6 +1172,17 @@ size_t disk_log_impl::max_segment_size() const {
         result = std::min(*max_limit, result);
     }
 
+    auto min_locked_limit
+      = config::shard_local_cfg().log_segment_size_locked_min();
+    auto max_locked_limit
+      = config::shard_local_cfg().log_segment_size_locked_max();
+    if (min_locked_limit) {
+        result = std::max(*min_locked_limit, result);
+    }
+    if (max_locked_limit) {
+        result = std::min(*max_locked_limit, result);
+    }
+
     return result;
 }
 

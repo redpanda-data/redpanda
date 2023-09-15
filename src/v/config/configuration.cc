@@ -57,6 +57,22 @@ configuration::configuration()
        .example = "268435456",
        .visibility = visibility::tunable},
       std::nullopt)
+  , log_segment_size_locked_min(
+      *this,
+      "log_segment_size_locked_min",
+      "Lower bound on topic segment.bytes:  reject topics with lower values",
+      {.needs_restart = needs_restart::no,
+       .example = "16777216",
+       .visibility = visibility::tunable},
+      1_MiB)
+  , log_segment_size_locked_max(
+      *this,
+      "log_segment_size_locked_max",
+      "Upper bound on topic segment.bytes: reject topics with higher values",
+      {.needs_restart = needs_restart::no,
+       .example = "268435456",
+       .visibility = visibility::tunable},
+      std::nullopt)
   , log_segment_size_jitter_percent(
       *this,
       "log_segment_size_jitter_percent",
