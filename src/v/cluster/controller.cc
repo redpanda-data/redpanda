@@ -533,8 +533,6 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             config::shard_local_cfg()
               .partition_autobalancing_tick_interval_ms.bind(),
             config::shard_local_cfg()
-              .partition_autobalancing_movement_batch_size_bytes.bind(),
-            config::shard_local_cfg()
               .partition_autobalancing_concurrent_moves.bind(),
             config::shard_local_cfg()
               .partition_autobalancing_tick_moves_drop_threshold.bind(),

@@ -35,8 +35,6 @@ struct planner_config {
     // Planner won't plan a move that will result in destination node(s) going
     // over this ratio.
     double hard_max_disk_usage_ratio;
-    // Size of partitions that can be planned to move in one request
-    size_t movement_disk_size_batch;
     // Max number of actions that can be scheduled in one planning iteration
     size_t max_concurrent_actions;
     std::chrono::seconds node_availability_timeout_sec;

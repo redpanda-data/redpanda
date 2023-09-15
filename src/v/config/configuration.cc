@@ -2094,8 +2094,10 @@ configuration::configuration()
       *this,
       "partition_autobalancing_movement_batch_size_bytes",
       "Total size of partitions that autobalancer is going to move in one "
-      "batch",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "batch (deprecated, use partition_autobalancing_concurrent_moves to "
+      "limit the autobalancer concurrency)",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       5_GiB)
   , partition_autobalancing_concurrent_moves(
       *this,
