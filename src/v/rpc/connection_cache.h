@@ -15,7 +15,6 @@
 #include "outcome.h"
 #include "outcome_future_utils.h"
 #include "rpc/backoff_policy.h"
-#include "rpc/connection_set.h"
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
@@ -24,82 +23,42 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
-
 #include <chrono>
 #include <unordered_map>
 
 namespace rpc {
-
-class connection_allocation_strategy {
-public:
-    connection_allocation_strategy(
-      unsigned max_connections_per_node, unsigned total_shards);
-
-    // \brief Returns whether a node has already been assigned connections.
-    bool has_connection_assignments_for(model::node_id) const;
-
-    struct connection_assignment_action {
-        model::node_id node;
-        ss::shard_id shard;
-    };
-    using remove_mapping_action = connection_assignment_action;
-
-    struct shard_assignment_action {
-        model::node_id node;
-        ss::shard_id src_shard;
-        ss::shard_id conn_shard;
-    };
-
-    struct changes {
-        std::vector<connection_assignment_action> add_connections;
-        std::vector<connection_assignment_action> remove_connections;
-        std::vector<shard_assignment_action> add_mapping;
-        std::vector<remove_mapping_action> remove_mapping;
-    };
-
-    changes create_connection_assignments_for(model::node_id);
-    changes remove_connection_assignments_for(model::node_id);
-
-    const absl::flat_hash_set<ss::shard_id>&
-    get_connection_shards(model::node_id id) const {
-        return _node_to_shards.at(id);
-    }
-
-private:
-    unsigned _total_shards;
-    unsigned _max_connections_per_node;
-
-    absl::flat_hash_map<model::node_id, absl::flat_hash_set<ss::shard_id>>
-      _node_to_shards;
-    std::vector<std::pair<ss::shard_id, size_t>> _connections_per_shard;
-
-    std::mt19937 _g;
-
-    void get_shard_to_connection_assignments(changes&, model::node_id);
-};
-
 class connection_cache final
   : public ss::peering_sharded_service<connection_cache> {
-    static constexpr ss::shard_id _coordinator_shard = ss::shard_id{0};
-
 public:
     using transport_ptr = ss::lw_shared_ptr<rpc::reconnect_transport>;
     using underlying = std::unordered_map<model::node_id, transport_ptr>;
     using iterator = typename underlying::iterator;
 
+    static inline ss::shard_id shard_for(
+      model::node_id self,
+      ss::shard_id src,
+      model::node_id node,
+      ss::shard_id max_shards = ss::smp::count);
+
     explicit connection_cache(
       ss::sharded<ss::abort_source>&,
-      std::optional<connection_cache_label> label = std::nullopt,
-      unsigned connections_per_node = 8);
+      std::optional<connection_cache_label> label = std::nullopt);
 
-    bool contains(model::node_id n) const { return _cache.contains(n); }
-    transport_ptr get(model::node_id n) const { return _cache.get(n); }
+    bool contains(model::node_id n) const {
+        return _cache.find(n) != _cache.end();
+    }
+    transport_ptr get(model::node_id n) const { return _cache.find(n)->second; }
 
-    /// \brief for unit testing
+    /// \brief needs to be a future, because mutations may come from different
+    /// fibers and they need to be synchronized
     ss::future<>
     emplace(model::node_id n, rpc::transport_configuration c, backoff_policy);
+
+    /// \brief removes the node *and* closes the connection
+    ss::future<> remove(model::node_id n);
+
+    /// \brief similar to remove but removes all nodes.
+    ss::future<> remove_all();
 
     /// \brief closes all connections
     ss::future<> do_shutdown();
@@ -111,11 +70,11 @@ public:
      * RPC version to use for newly constructed `transport` objects
      */
     transport_version get_default_transport_version() {
-        return _cache.get_default_transport_version();
+        return _default_transport_version;
     }
 
     void set_default_transport_version(transport_version v) {
-        _cache.set_default_transport_version(v);
+        _default_transport_version = v;
     }
 
     template<typename Protocol, typename Func>
@@ -127,29 +86,38 @@ public:
       timeout_spec connection_timeout,
       Func&& f) {
         using ret_t = result_wrap_t<std::invoke_result_t<Func, Protocol>>;
-
-        if (_gate.is_closed()) {
-            return ss::futurize<ret_t>::convert(
-              rpc::make_error_code(errc::shutting_down));
-        }
-
         auto shard = rpc::connection_cache::shard_for(self, src_shard, node_id);
-        if (!shard) {
-            return ss::futurize<ret_t>::convert(
-              rpc::make_error_code(errc::missing_node_rpc_client));
-        }
 
         return container().invoke_on(
-          *shard,
+          shard,
           [node_id, f = std::forward<Func>(f), connection_timeout](
-            connection_cache& cache) mutable {
-              if (cache._gate.is_closed()) {
+            rpc::connection_cache& cache) mutable {
+              if (cache._shutting_down) {
                   return ss::futurize<ret_t>::convert(
                     rpc::make_error_code(errc::shutting_down));
               }
-
-              return cache._cache.with_node_client<Protocol, Func>(
-                node_id, connection_timeout, std::forward<Func>(f));
+              if (!cache.contains(node_id)) {
+                  // No client available
+                  return ss::futurize<ret_t>::convert(
+                    rpc::make_error_code(errc::missing_node_rpc_client));
+              }
+              return ss::do_with(
+                cache.get(node_id),
+                [connection_timeout = connection_timeout.timeout_at(),
+                 f = std::forward<Func>(f)](auto& transport_ptr) mutable {
+                    return transport_ptr->get_connected(connection_timeout)
+                      .then([f = std::forward<Func>(f)](
+                              result<ss::lw_shared_ptr<rpc::transport>>
+                                transport) mutable {
+                          if (!transport) {
+                              // Connection error
+                              return ss::futurize<ret_t>::convert(
+                                transport.error());
+                          }
+                          return ss::futurize<ret_t>::convert(
+                            f(Protocol(transport.value())));
+                      });
+                });
           });
     }
 
@@ -174,80 +142,56 @@ public:
     /// when a down node comes back to life: the first time we see
     /// a message from a re-awakened peer, we reset their backoff.
     ss::future<> reset_client_backoff(
-      model::node_id self, ss::shard_id src_shard, model::node_id node_id);
+      model::node_id self, ss::shard_id src_shard, model::node_id node_id) {
+        auto shard = rpc::connection_cache::shard_for(self, src_shard, node_id);
 
-    ss::future<> remove_broker_client(model::node_id self, model::node_id id);
-
-    ss::future<> update_broker_client(
-      model::node_id self,
-      model::node_id node,
-      net::unresolved_address addr,
-      config::tls_config tls_config,
-      rpc::backoff_policy backoff = connection_set::default_backoff_policy());
-
-    std::optional<ss::shard_id> shard_for(
-      model::node_id self,
-      ss::shard_id src,
-      model::node_id node,
-      ss::shard_id max_shards = ss::smp::count) const;
+        return container().invoke_on(
+          shard, [node_id](rpc::connection_cache& cache) mutable {
+              if (!cache.contains(node_id)) {
+                  // No client available
+                  return;
+              }
+              auto recon_transport = cache.get(node_id);
+              recon_transport->reset_backoff();
+          });
+    }
 
 private:
     std::optional<connection_cache_label> _label;
-    connection_set _cache;
+    mutex _mutex; // to add/remove nodes
+    underlying _cache;
+    transport_version _default_transport_version{transport_version::v2};
     ss::gate _gate;
     ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
     bool _shutting_down = false;
-
-    bool is_shutting_down() const {
-        return _gate.is_closed() || _shutting_down;
-    }
-
-    struct coordinator_state {
-        mutex mtx; // to add/remove nodes
-        connection_allocation_strategy alloc_strat;
-    };
-
-    // Only initialized on the coordinator shard
-    std::unique_ptr<coordinator_state> _coordinator_state;
-
-    struct connection_config {
-        model::node_id self;
-        model::node_id dest_node;
-        net::unresolved_address addr;
-        config::tls_config tls_config;
-        rpc::backoff_policy backoff;
-    };
-
-    ss::future<> update_broker_client_coordinator(connection_config);
-    ss::future<>
-    remove_broker_client_coordinator(model::node_id self, model::node_id dest);
-
-    ss::future<> apply_changes(
-      connection_allocation_strategy::changes,
-      std::optional<connection_config>);
-
-    // Shard-local map that where connections for a given shard are located
-    absl::flat_hash_map<model::node_id, ss::shard_id> _connection_map;
-
-    ss::future<> add_or_update_connection_location(
-      ss::shard_id dest_shard, model::node_id node, ss::shard_id conn_loc) {
-        return container().invoke_on(dest_shard, [node, conn_loc](auto& cache) {
-            if (cache.is_shutting_down()) {
-                return;
-            }
-            cache._connection_map[node] = conn_loc;
-        });
-    }
-
-    ss::future<>
-    remove_connection_location(ss::shard_id dest_shard, model::node_id node) {
-        return container().invoke_on(dest_shard, [node](auto& cache) {
-            if (cache.is_shutting_down()) {
-                return;
-            }
-            cache._connection_map.erase(node);
-        });
-    }
 };
+inline ss::shard_id connection_cache::shard_for(
+  model::node_id self,
+  ss::shard_id src_shard,
+  model::node_id n,
+  ss::shard_id total_shards) {
+    if (ss::smp::count <= 8) {
+        return src_shard;
+    }
+    static const constexpr size_t vnodes = 8;
+    /// make deterministic - choose 1 prime to mix node_id with
+    /// https://planetmath.org/goodhashtableprimes
+    static const constexpr std::array<size_t, vnodes> universe{
+      {12582917,
+       25165843,
+       50331653,
+       100663319,
+       201326611,
+       402653189,
+       805306457,
+       1610612741}};
+
+    // NOLINTNEXTLINE
+    size_t h = universe[jump_consistent_hash(src_shard, vnodes)];
+    boost::hash_combine(h, std::hash<model::node_id>{}(n));
+    boost::hash_combine(h, std::hash<model::node_id>{}(self));
+    // use self node id to shift jump_consistent_hash_assignment
+    return jump_consistent_hash(h, total_shards);
+}
 
 } // namespace rpc

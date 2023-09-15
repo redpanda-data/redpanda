@@ -21,7 +21,6 @@
 #include "net/dns.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
-#include "rpc/rpc_utils.h"
 #include "rpc/types.h"
 
 #include <seastar/core/sharded.hh>
@@ -92,6 +91,19 @@ inline std::vector<topic_result> create_topic_results(
       });
 }
 
+inline rpc::backoff_policy default_backoff_policy() {
+    return rpc::make_exponential_backoff_policy<rpc::clock_type>(
+      std::chrono::seconds(1), std::chrono::seconds(15));
+}
+
+ss::future<> add_one_tcp_client(
+  ss::shard_id owner,
+  ss::sharded<rpc::connection_cache>& clients,
+  model::node_id node,
+  net::unresolved_address addr,
+  config::tls_config tls_config,
+  rpc::backoff_policy backoff_policy = default_backoff_policy());
+
 ss::future<> update_broker_client(
   model::node_id,
   ss::sharded<rpc::connection_cache>&,
@@ -131,6 +143,39 @@ auto with_client(
 /// Creates current broker instance using its configuration.
 model::broker make_self_broker(const config::node_config& node_cfg);
 
+/// \brief Log reload credential event
+/// The function is supposed to be invoked from the callback passed to
+/// 'build_reloadable_*_credentials' methods.
+///
+/// \param log is a ss::logger instance that should be used
+/// \param system_name is a name of the subsystem that uses credentials
+/// \param updated is a set of updated credential names
+/// \param eptr is an exception ptr in case of error
+void log_certificate_reload_event(
+  ss::logger& log,
+  const char* system_name,
+  const std::unordered_set<ss::sstring>& updated,
+  const std::exception_ptr& eptr);
+
+inline ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
+maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
+    return std::move(tls_config)
+      .get_credentials_builder()
+      .then([](std::optional<ss::tls::credentials_builder> credentials) {
+          if (credentials) {
+              return credentials->build_reloadable_certificate_credentials(
+                [](
+                  const std::unordered_set<ss::sstring>& updated,
+                  const std::exception_ptr& eptr) {
+                    log_certificate_reload_event(
+                      clusterlog, "Client TLS", updated, eptr);
+                });
+          }
+          return ss::make_ready_future<
+            ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);
+      });
+}
+
 template<typename Proto, typename Func>
 requires requires(Func&& f, Proto c) { f(c); }
 auto do_with_client_one_shot(
@@ -139,8 +184,7 @@ auto do_with_client_one_shot(
   rpc::clock_type::duration connection_timeout,
   rpc::transport_version v,
   Func&& f) {
-    return rpc::maybe_build_reloadable_certificate_credentials(
-             std::move(tls_config))
+    return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
       .then([v,
              f = std::forward<Func>(f),
              connection_timeout,

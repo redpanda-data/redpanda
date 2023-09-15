@@ -96,11 +96,95 @@ ss::future<> move_persistent_stm_state(
 
 namespace cluster {
 
+std::vector<ss::shard_id>
+virtual_nodes(model::node_id self, model::node_id node) {
+    std::set<ss::shard_id> owner_shards;
+    for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
+        auto shard = rpc::connection_cache::shard_for(self, i, node);
+        owner_shards.insert(shard);
+    }
+    return std::vector<ss::shard_id>(owner_shards.begin(), owner_shards.end());
+}
+
 ss::future<> remove_broker_client(
   model::node_id self,
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id id) {
-    return clients.local().remove_broker_client(self, id);
+    auto shards = virtual_nodes(self, id);
+    vlog(clusterlog.debug, "Removing {} TCP client from shards {}", id, shards);
+    return ss::do_with(
+      std::move(shards), [id, &clients](std::vector<ss::shard_id>& i) {
+          return ss::do_for_each(i, [id, &clients](ss::shard_id i) {
+              return clients.invoke_on(i, [id](rpc::connection_cache& cache) {
+                  return cache.remove(id);
+              });
+          });
+      });
+}
+
+ss::future<> maybe_create_tcp_client(
+  rpc::connection_cache& cache,
+  model::node_id node,
+  net::unresolved_address rpc_address,
+  config::tls_config tls_config,
+  rpc::backoff_policy backoff) {
+    auto f = ss::now();
+    if (cache.contains(node)) {
+        // client is already there, check if configuration changed
+        if (cache.get(node)->server_address() == rpc_address) {
+            // If configuration did not changed, do nothing
+            return f;
+        }
+        // configuration changed, first remove the client
+        f = cache.remove(node);
+    }
+    // there is no client in cache, create new
+    return f.then([&cache,
+                   node,
+                   rpc_address = std::move(rpc_address),
+                   tls_config = std::move(tls_config),
+                   backoff = std::move(backoff)]() mutable {
+        return maybe_build_reloadable_certificate_credentials(
+                 std::move(tls_config))
+          .then(
+            [&cache,
+             node,
+             rpc_address = std::move(rpc_address),
+             backoff = std::move(backoff)](
+              ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
+                return cache.emplace(
+                  node,
+                  rpc::transport_configuration{
+                    .server_addr = std::move(rpc_address),
+                    .credentials = cert,
+                    .disable_metrics = net::metrics_disabled(
+                      config::shard_local_cfg().disable_metrics),
+                    .version = cache.get_default_transport_version()},
+                  std::move(backoff));
+            });
+    });
+}
+
+ss::future<> add_one_tcp_client(
+  ss::shard_id owner,
+  ss::sharded<rpc::connection_cache>& clients,
+  model::node_id node,
+  net::unresolved_address addr,
+  config::tls_config tls_config,
+  rpc::backoff_policy backoff) {
+    return clients.invoke_on(
+      owner,
+      [node,
+       rpc_address = std::move(addr),
+       tls_config = std::move(tls_config),
+       backoff = std::move(backoff)](rpc::connection_cache& cache) mutable {
+          return maybe_create_tcp_client(
+            cache,
+            node,
+            std::move(rpc_address),
+            std::move(tls_config),
+            std::move(backoff));
+      });
 }
 
 ss::future<> update_broker_client(
@@ -109,8 +193,20 @@ ss::future<> update_broker_client(
   model::node_id node,
   net::unresolved_address addr,
   config::tls_config tls_config) {
-    return clients.local().update_broker_client(
-      self, node, std::move(addr), std::move(tls_config));
+    auto shards = virtual_nodes(self, node);
+    vlog(clusterlog.debug, "Adding {} TCP client on shards:{}", node, shards);
+    return ss::do_with(
+      std::move(shards),
+      [&clients, node, addr, tls_config = std::move(tls_config)](
+        std::vector<ss::shard_id>& shards) mutable {
+          return ss::do_for_each(
+            shards,
+            [node, addr, &clients, tls_config = std::move(tls_config)](
+              ss::shard_id shard) mutable {
+                return add_one_tcp_client(
+                  shard, clients, node, addr, tls_config);
+            });
+      });
 }
 
 model::broker make_self_broker(const config::node_config& node_cfg) {
@@ -149,6 +245,33 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
         .cores = ss::smp::count,
         .available_memory_gb = total_mem_gb,
         .available_disk_gb = disk_gb});
+}
+
+void log_certificate_reload_event(
+  ss::logger& log,
+  const char* system_name,
+  const std::unordered_set<ss::sstring>& updated,
+  const std::exception_ptr& eptr) {
+    if (eptr) {
+        try {
+            std::rethrow_exception(eptr);
+        } catch (...) {
+            vlog(
+              log.error,
+              "{} credentials reload error {}",
+              system_name,
+              std::current_exception());
+        }
+    } else {
+        for (const auto& name : updated) {
+            vlog(
+              log.info,
+              "{} key or certificate file "
+              "updated - {}",
+              system_name,
+              name);
+        }
+    }
 }
 
 bool has_local_replicas(
