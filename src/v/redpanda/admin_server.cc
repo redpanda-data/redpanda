@@ -134,6 +134,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <regex>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -1424,6 +1425,119 @@ void config_multi_property_validation(
           "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
 }
+
+/**
+ * A helper method to map locked cluster properties to their corresponding
+ * topic-level properties
+ * TODO(@NyaliaLui): Define a type mapping and templatize this method because
+ * configuration properties do not have the same type. Also, keep in mind that
+ * some topic_configs are optional and some are tristate.
+ */
+std::optional<uint64_t> topic_property_from_locked_property(
+  const ss::sstring& locked_prop_name,
+  const cluster::topic_configuration& tp_config) {
+    // TODO(@NyaliaLui): Don't forget to include compacted_log_segment_size
+    if (
+      locked_prop_name == "log_segment_size_locked_min"
+      || locked_prop_name == "log_segment_size_locked_max") {
+        return tp_config.properties.segment_size;
+    } else {
+        // TODO(@NyaliaLui): Consider a static_assert and making the method
+        // constexpr
+        vlog(logger.error, "Undefined locked property name");
+        return std::nullopt;
+    }
+}
+
+/**
+ * A helper method to check locked configs in the request. Throws if:
+ * - Requested locked min > locked max
+ * - A pre-existing topic violates a requested locked config
+ */
+void check_locked_configs(
+  const cluster::config_update_request& req,
+  const cluster::topic_table& topic_table) {
+    const std::regex locked_min_regex("^[a-z_]+locked_min$"),
+      locked_max_regex("^[a-z_]+locked_max$");
+    const std::regex locked_bool_regex("^[a-z_]+locked$");
+
+    // Check locked ranges in the request, throw if min > max
+    // TODO(@NyaliaLui): This will regex_match on locked_min_regex and
+    // locked_max_regex.
+
+    using tp_md_ref_t
+      = std::optional<std::reference_wrapper<const cluster::topic_metadata>>;
+    std::vector<tp_md_ref_t> all_topic_md;
+    auto all_topics = topic_table.all_topics();
+    all_topic_md.reserve(all_topics.size());
+    // Create list of topic_metadata_ref from the topics list
+    for (const auto& topic_ns : all_topics) {
+        all_topic_md.push_back(topic_table.get_topic_metadata_ref(topic_ns));
+    }
+
+    // For each locked config, compare it against each topic_metadata_ref
+    for (const auto& [prop_key, prop_val] : req.upsert) {
+        // Compare locked_min
+        if (std::regex_match(prop_key.c_str(), locked_min_regex)) {
+            vlog(
+              logger.info, "Locked min conf {}, value {}", prop_key, prop_val);
+            auto locked_min_int = std::stoll(prop_val);
+            for (auto& tp_md_ref : all_topic_md) {
+                if (tp_md_ref) {
+                    // Get corresponding topic-level config
+                    auto& tp_config = tp_md_ref->get().get_configuration();
+                    auto tp_prop_val = topic_property_from_locked_property(
+                      prop_key, tp_config);
+                    if (
+                      tp_prop_val
+                      && tp_prop_val.value()
+                           < static_cast<uint64_t>(locked_min_int)) {
+                        std::string msg = fmt::format(
+                          "Failed to lock: topics {} has out-of-range value",
+                          tp_config.tp_ns.tp);
+                        // TODO(@NyaliaLui): Don't throw until we have all
+                        // topics that violate. Or just add to errors map.
+                        throw ss::httpd::base_exception(
+                          msg, ss::http::reply::status_type::conflict, "json");
+                    }
+                }
+            }
+        }
+
+        // Compare locked_max
+        if (std::regex_match(prop_key.c_str(), locked_max_regex)) {
+            vlog(
+              logger.info, "Locked max conf {}, value {}", prop_key, prop_val);
+            auto locked_max_int = std::stoll(prop_val);
+            for (auto& tp_md_ref : all_topic_md) {
+                if (tp_md_ref) {
+                    // Get corresponding topic-level config
+                    auto& tp_config = tp_md_ref->get().get_configuration();
+                    auto tp_prop_val = topic_property_from_locked_property(
+                      prop_key, tp_config);
+                    if (
+                      tp_prop_val
+                      && tp_prop_val.value()
+                           > static_cast<uint64_t>(locked_max_int)) {
+                        std::string msg = fmt::format(
+                          "Failed to lock: topics {} has out-of-range value",
+                          tp_config.tp_ns.tp);
+                        // TODO(@NyaliaLui): Don't throw until we have all
+                        // topics that violate. Or just add to errors map.
+                        throw ss::httpd::base_exception(
+                          msg, ss::http::reply::status_type::conflict, "json");
+                    }
+                }
+            }
+        }
+
+        // Compare locked_bools
+        if (std::regex_match(prop_key.c_str(), locked_bool_regex)) {
+            vlog(
+              logger.info, "Locked bool conf {}, value {}", prop_key, prop_val);
+        }
+    }
+}
 } // namespace
 
 void admin_server::register_cluster_config_routes() {
@@ -1630,6 +1744,9 @@ admin_server::patch_cluster_config_handler(
         // any multi-property validation errors
         config_multi_property_validation(
           auth_state.get_username(), _schema_registry, update, cfg, errors);
+
+        // Check for violations to locked properties
+        check_locked_configs(update, _controller->get_topics_state().local());
 
         if (!errors.empty()) {
             json::StringBuffer buf;
