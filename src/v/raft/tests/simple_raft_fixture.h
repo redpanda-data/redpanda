@@ -87,6 +87,8 @@ struct simple_raft_fixture {
                   .raft_io_timeout_ms
                   = config::mock_binding<std::chrono::milliseconds>(30s),
                   .enable_lw_heartbeat = config::mock_binding<bool>(true),
+                  .recovery_concurrency_per_shard
+                  = config::mock_binding<size_t>(64),
                 };
             },
             [] {

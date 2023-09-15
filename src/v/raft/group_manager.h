@@ -15,6 +15,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
+#include "raft/recovery_scheduler.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
 #include "ssx/metrics.h"
@@ -43,6 +44,7 @@ public:
         config::binding<std::chrono::milliseconds> heartbeat_timeout;
         config::binding<std::chrono::milliseconds> raft_io_timeout_ms;
         config::binding<bool> enable_lw_heartbeat;
+        config::binding<size_t> recovery_concurrency_per_shard;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 
@@ -85,6 +87,10 @@ public:
         _notifications.unregister_cb(id);
     }
 
+    recovery_status get_recovery_status() {
+        return _recovery_scheduler.get_status();
+    }
+
 private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
@@ -106,6 +112,7 @@ private:
     storage::api& _storage;
     coordinated_recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
+    recovery_scheduler _recovery_scheduler;
     features::feature_table& _feature_table;
     bool _is_ready;
 };

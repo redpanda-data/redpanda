@@ -250,6 +250,15 @@ configuration::configuration()
       "enables raft optimization of heartbeats",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , raft_recovery_concurrency_per_shard(
+      *this,
+      "raft_recovery_concurrency_per_shard",
+      "How many partitions may simultaneously recover data to a particular "
+      "shard. This is limited to avoid overwhelming nodes when they come back "
+      "online after an outage.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      64,
+      {.min = 1, .max = 16384})
   , enable_usage(
       *this,
       "enable_usage",

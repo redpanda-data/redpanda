@@ -31,6 +31,7 @@
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
 #include "raft/recovery_memory_quota.h"
+#include "raft/recovery_scheduler.h"
 #include "raft/replicate_batcher.h"
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
@@ -105,6 +106,7 @@ public:
       storage::api&,
       std::optional<std::reference_wrapper<coordinated_recovery_throttle>>,
       recovery_memory_quota&,
+      recovery_scheduler&,
       features::feature_table&,
       std::optional<voter_priority> = std::nullopt,
       keep_snapshotted_log = keep_snapshotted_log::no);
@@ -729,6 +731,14 @@ private:
           features::feature::raft_append_entries_serde);
     }
 
+    // Called when during processing of an append_entries request we realize
+    // that we need recovery or that the leader is already recovering us.
+    // Will initialize or update _follower_recovery_state.
+    void upsert_recovery_state(
+      model::offset our_last_offset,
+      model::offset leader_last_offset,
+      bool already_recovering);
+
     // args
     vnode _self;
     raft::group_id _group;
@@ -806,6 +816,7 @@ private:
     std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
       _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
+    recovery_scheduler& _recovery_scheduler;
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     uint64_t _snapshot_size{0};
@@ -836,6 +847,13 @@ private:
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
     std::optional<state_machine_manager> _stm_manager;
+    /**
+     * If a follower notices that it requires recovery, it starts tracking
+     * that via this object, which holds a place in the recovery_scheduler
+     * queue to regulate how many raft groups can go into recovery concurrently.
+     */
+    std::optional<follower_recovery_state> _follower_recovery_state;
+
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 

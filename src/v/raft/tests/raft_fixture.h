@@ -183,6 +183,7 @@ private:
     ss::sharded<features::feature_table> _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
+    recovery_scheduler _recovery_scheduler;
     std::unique_ptr<heartbeat_manager> _hb_manager;
     leader_update_clb_t _leader_clb;
     prefix_logger _logger;

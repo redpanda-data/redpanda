@@ -47,15 +47,24 @@ group_manager::group_manager(
   , _storage(storage.local())
   , _recovery_throttle(recovery_throttle.local())
   , _recovery_mem_quota(std::move(recovery_mem_cfg))
+  , _recovery_scheduler(
+      _configuration.recovery_concurrency_per_shard,
+      _configuration.heartbeat_interval)
   , _feature_table(feature_table.local())
   , _is_ready(false) {
     setup_metrics();
 }
 
-ss::future<> group_manager::start() { return _heartbeats.start(); }
+ss::future<> group_manager::start() {
+    co_await _heartbeats.start();
+    co_await _recovery_scheduler.start();
+}
 
 ss::future<> group_manager::stop() {
     auto f = _gate.close();
+
+    f = f.then([this] { return _recovery_scheduler.stop(); });
+
     if (!_heartbeats.is_stopped()) {
         // In normal redpanda process shutdown, heartbeats would
         // have been stopped earlier.  Do it here if that didn't happen,
@@ -107,6 +116,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
         _recovery_throttle)
                                        : std::nullopt,
       _recovery_mem_quota,
+      _recovery_scheduler,
       _feature_table,
       _is_ready ? std::nullopt : std::make_optional(min_voter_priority),
       keep_snapshotted_log);

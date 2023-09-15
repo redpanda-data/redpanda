@@ -222,6 +222,7 @@ admin_server::admin_server(
   admin_server_cfg cfg,
   ss::sharded<stress_fiber_manager>& looper,
   ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<raft::group_manager>& rgm,
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
@@ -244,6 +245,7 @@ admin_server::admin_server(
   , _cfg(std::move(cfg))
   , _stress_fiber_manager(looper)
   , _partition_manager(pm)
+  , _raft_group_manager(rgm)
   , _controller(controller)
   , _shard_table(st)
   , _metadata_cache(metadata_cache)
@@ -1767,15 +1769,44 @@ admin_server::raft_transfer_leadership_handler(
       });
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_raft_recovery_status_handler(
+  std::unique_ptr<ss::http::request>) {
+    ss::httpd::raft_json::recovery_status result;
+
+    // Aggregate recovery status from all shards
+    auto s = co_await _raft_group_manager.map_reduce0(
+      [](auto& rgm) -> raft::recovery_status {
+          return rgm.get_recovery_status();
+      },
+      raft::recovery_status{},
+      [](raft::recovery_status acc, raft::recovery_status update) {
+          acc.merge(update);
+          return acc;
+      });
+
+    result.partitions_to_recover = s.partitions_to_recover;
+    result.partitions_active = s.partitions_active;
+    result.offsets_pending = s.offsets_pending;
+    co_return result;
+}
+
 void admin_server::register_raft_routes() {
     register_route<superuser>(
       ss::httpd::raft_json::raft_transfer_leadership,
       [this](std::unique_ptr<ss::http::request> req) {
           return raft_transfer_leadership_handler(std::move(req));
       });
+
+    register_route<auth_level::user>(
+      ss::httpd::raft_json::get_raft_recovery_status,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return get_raft_recovery_status_handler(std::move(req));
+      });
 }
 
 namespace {
+
 // TODO: factor out generic serialization from seastar http exceptions
 security::scram_credential parse_scram_credential(const json::Document& doc) {
     if (!doc.IsObject()) {

@@ -347,6 +347,8 @@ raft_node_instance::raft_node_instance(
         .default_read_buffer_size = config::mock_binding<size_t>(128_KiB),
       };
   })
+  , _recovery_scheduler(
+      config::mock_binding<size_t>(64), config::mock_binding(10ms))
   , _leader_clb(std::move(leader_update_clb))
   , _logger(test_log, fmt::format("[node: {}]", _id)) {
     config::shard_local_cfg().disable_metrics.set_value(true);
@@ -401,6 +403,7 @@ ss::future<> raft_node_instance::start(
       _storage.local(),
       _recovery_throttle.local(),
       _recovery_mem_quota,
+      _recovery_scheduler,
       _features.local());
     co_await _hb_manager->register_group(_raft);
     co_await _raft->start(std::move(builder));
