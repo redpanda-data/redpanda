@@ -138,12 +138,12 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     auto& hdr = batch.header();
     bool hdr_changed = false;
     if (hdr.attrs.is_transactional() && !hdr.attrs.is_control()) {
-        hdr.attrs.unset_transactional_type();
+        //hdr.attrs.unset_transactional_type();
         // We do not recompute crc here as the batch records may
         // be filtered in step 4 in which case we need to recompute
         // it anyway. It is expensive to loop through the batch and
         // is wasteful to do it twice.
-        hdr_changed = true;
+        //hdr_changed = true;
     }
 
     // 1. compute which records to keep
@@ -358,12 +358,13 @@ bool tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
         break;
     }
     }
-    auto discard = batch_type == model::control_record_type::tx_commit
-                   || batch_type == model::control_record_type::tx_abort;
-    if (discard) {
-        _stats._tx_control_batches_discarded++;
-    }
-    return discard;
+    return false;
+    //auto discard = batch_type == model::control_record_type::tx_commit
+    //               || batch_type == model::control_record_type::tx_abort;
+    //if (discard) {
+    //    _stats._tx_control_batches_discarded++;
+    //}
+    //return discard;
 }
 
 bool tx_reducer::handle_tx_data_batch(const model::record_batch& b) {
