@@ -53,7 +53,7 @@ changes, use the 'edit' and 'import' commands respectively.
 
 You may also use <key>=<value> notation for setting configuration properties:
 
-  rpk cluster config set delete_retention_ms=-1
+  rpk cluster config set log_retention_ms=-1
 
 If an empty string is given as the value, the property is reset to its default.`,
 		Args: cobra.MinimumNArgs(1),
