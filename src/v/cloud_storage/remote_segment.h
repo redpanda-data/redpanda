@@ -132,6 +132,9 @@ public:
     /// file is not present in cache, the returned file handle is unopened.
     ss::future<ss::file> materialize_chunk(chunk_start_offset_t);
 
+    /// Return memory occupied by the object
+    size_t estimate_memory_use() const;
+
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
     bool download_in_progress() const noexcept {

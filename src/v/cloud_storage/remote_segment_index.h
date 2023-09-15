@@ -69,6 +69,9 @@ public:
         int64_t file_pos;
     };
 
+    /// Estimate memory usage by the index
+    size_t estimate_memory_use() const;
+
     /// Find index entry which is strictly lower than the redpanda offset
     ///
     /// The returned value has rp_offset less than upper_bound.

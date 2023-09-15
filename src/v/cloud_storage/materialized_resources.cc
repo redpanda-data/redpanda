@@ -15,6 +15,7 @@
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
 #include "config/configuration.h"
+#include "resource_mgmt/memory_groups.h"
 #include "ssx/future-util.h"
 #include "vlog.h"
 
@@ -31,16 +32,6 @@ using namespace std::chrono_literals;
 static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;
 static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
 
-// If no reader limit is set, permit the per-shard partition count limit,
-// multiplied by this factor (i.e. each partition gets this many readers
-// on average).
-static constexpr uint32_t default_reader_factor = 1;
-
-// If no materialized segment limit is set, permit the per-shard partition count
-// limit, multiplied by this factor (i.e. each partition gets this many segments
-// on average).
-static constexpr uint32_t default_segment_factor = 2;
-
 materialized_resources::materialized_resources()
   : _stm_jitter(stm_jitter_duration)
   , _max_partitions_per_shard(
@@ -54,23 +45,24 @@ materialized_resources::materialized_resources()
   , _max_segments_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_materialized_segments_per_shard.bind())
-  , _segment_reader_units(max_segment_readers(), "cst_segment_reader")
-  , _partition_reader_units(max_partition_readers(), "cst_partition_reader")
-  , _segment_units(max_segments(), "cst_segment")
+  , _mem_units(
+      memory_groups::tiered_storage_max_memory(),
+      "cst_materialized_resources_memory")
   , _manifest_meta_size(
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
       config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
-    _max_segment_readers_per_shard.watch(
-      [this]() { _segment_reader_units.set_capacity(max_segment_readers()); });
-    _max_partition_readers_per_shard.watch([this]() {
-        _partition_reader_units.set_capacity(max_partition_readers());
+    _max_segment_readers_per_shard.watch([]() {
+        // TODO: update _mem_units
     });
-    _max_segments_per_shard.watch(
-      [this]() { _segment_units.set_capacity(max_segments()); });
-    _max_partitions_per_shard.watch([this]() {
-        _segment_reader_units.set_capacity(max_segment_readers());
-        _partition_reader_units.set_capacity(max_partition_readers());
+    _max_partition_readers_per_shard.watch([]() {
+        // TODO: update _mem_units
+    });
+    _max_segments_per_shard.watch([]() {
+        // TODO: update _mem_units
+    });
+    _max_partitions_per_shard.watch([]() {
+        // TODO: update _mem_units
     });
     _manifest_meta_size.watch([this] {
         ssx::background = ss::with_gate(_gate, [this] {
@@ -95,9 +87,7 @@ ss::future<> materialized_resources::stop() {
 
     _stm_timer.cancel();
 
-    _segment_units.broken();
-    _segment_reader_units.broken();
-    _partition_reader_units.broken();
+    _mem_units.broken();
 
     co_await _gate.close();
     cst_log.debug("Stopped materialized_segments...");
@@ -115,45 +105,118 @@ ss::future<> materialized_resources::start() {
     co_return;
 }
 
+inline ssize_t projected_remote_segment_reader_memory_usage() {
+    // We can't measure memory consumption by the buffer directly but
+    // we can estimate it by using readahead count and read buffer size.
+    // ss::input_stream doesn't consume that much memory all the time, only
+    // if it's actively used.
+    return static_cast<ssize_t>(
+      config::shard_local_cfg().storage_read_buffer_size()
+      * config::shard_local_cfg().storage_read_readahead_count());
+}
+
+inline ssize_t projected_remote_partition_reader_memory_usage() {
+    // This value is just an estimate of a real thing. The reader contains
+    // a bunch of fileds and offset translation state which is variable size.
+    // We can't really know in advance how big it is (usually it's not big).
+    static size_t sz = remote_partition::reader_mem_use_estimate();
+    return static_cast<ssize_t>(sz);
+}
+
+inline ssize_t projected_remote_segment_memory_usage() {
+    // This is an estimate. When the reader is created it's size should be
+    // checked and if it's lareger units should be acquired. If it's smaller
+    // some units should be released.
+    static constexpr size_t segment_index_projected_size = 0x1000;
+    return sizeof(remote_segment) + segment_index_projected_size;
+}
+
 materialized_manifest_cache&
 materialized_resources::get_materialized_manifest_cache() {
     return *_manifest_cache;
 }
 
 size_t materialized_resources::max_segment_readers() const {
-    return static_cast<size_t>(_max_segment_readers_per_shard().value_or(
-      _max_partitions_per_shard() * default_reader_factor));
+    // TODO: implement override logic
+    return memory_groups::tiered_storage_max_memory()
+           / projected_remote_segment_reader_memory_usage();
 }
 
 size_t materialized_resources::max_partition_readers() const {
-    return static_cast<size_t>(_max_partition_readers_per_shard().value_or(
-      _max_partitions_per_shard() * default_reader_factor));
+    // TODO: fixme
+    return memory_groups::tiered_storage_max_memory()
+           / projected_remote_partition_reader_memory_usage();
 }
 
 size_t materialized_resources::max_segments() const {
-    return static_cast<size_t>(_max_segments_per_shard().value_or(
-      _max_partitions_per_shard() * default_segment_factor));
+    // TODO: fixme
+    return memory_groups::tiered_storage_max_memory()
+           / projected_remote_segment_memory_usage();
 }
 
 size_t materialized_resources::current_segment_readers() const {
-    return _segment_reader_units.outstanding();
+    size_t n = 0;
+    for (const auto& s : _materialized) {
+        n += s.readers.size();
+    }
+    return n;
 }
 
 size_t materialized_resources::current_partition_readers() const {
-    return _partition_reader_units.outstanding();
+    // TODO: fixme
+    return 0;
 }
 
 size_t materialized_resources::current_segments() const {
-    return _segment_units.outstanding();
+    return _materialized.size();
 }
 
 void materialized_resources::register_segment(materialized_segment_state& s) {
+    // We can only estimate the actual memory usage after the object is
+    // created. We're using projected memory useage to actually acquire the
+    // units. To fix this we need to check the acquired units and adjust
+    // them. If the units overshoot we need to return some. Otherwise we
+    // need to adopt extra units. When this happens the semaphore counter
+    // may go negative. This means that we used more memory than needed.
+    // In this case we need to mark the segment using 'overcommit' flag
+    // so next eviction will remove it.
+    auto estimate = s.segment->estimate_memory_use();
+    auto units = s._units.count();
+    if (units > estimate) {
+        vlog(
+          cst_log.debug,
+          "Returning extra units. Current: {}, extimate: {}",
+          units,
+          estimate);
+        s._units.return_units(units - estimate);
+    } else {
+        vlog(
+          cst_log.debug,
+          "Adopting extra units. Current: {}, extimate: {}",
+          units,
+          estimate);
+        auto tr = _mem_units.take(estimate - units);
+        s._units.adopt(std::move(tr.units));
+        if (tr.checkpoint_hint) {
+            // We hit the memory limit and the semaphore counter
+            // went below zero. We need to mark this segment as a
+            // candidate for eviction.
+            s.overcommit = true;
+            vlog(
+              cst_log.info,
+              "{} Overcommit detected, segment overshoot by {}",
+              s.segment->get_ntp(),
+              estimate - units);
+        }
+    }
     _materialized.push_back(s);
 }
 
 ss::future<segment_reader_units>
 materialized_resources::get_segment_reader_units() {
-    if (_segment_reader_units.available_units() <= 0) {
+    // Estimate segment reader memory requirements
+    auto size_bytes = projected_remote_segment_reader_memory_usage();
+    if (_mem_units.available_units() <= size_bytes) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
         _segment_readers_delayed += 1;
@@ -161,38 +224,40 @@ materialized_resources::get_segment_reader_units() {
         trim_segment_readers(max_segment_readers() / 2);
     }
 
-    auto semaphore_units = co_await _segment_reader_units.get_units(1);
+    auto semaphore_units = co_await _mem_units.get_units(size_bytes);
     co_return segment_reader_units{std::move(semaphore_units)};
 }
 
 ss::future<ssx::semaphore_units>
-materialized_resources::get_partition_reader_units(size_t n) {
-    if (_partition_reader_units.available_units() <= 0) {
+materialized_resources::get_partition_reader_units() {
+    auto sz = projected_remote_partition_reader_memory_usage();
+    if (_mem_units.available_units() <= sz) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
         _partition_readers_delayed += 1;
     }
-    return _partition_reader_units.get_units(n);
+    return _mem_units.get_units(sz);
 }
 
 ss::future<segment_units> materialized_resources::get_segment_units() {
-    if (_segment_units.available_units() <= 0) {
+    auto sz = projected_remote_segment_memory_usage();
+    if (_mem_units.available_units() <= sz) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
         _segments_delayed += 1;
 
         trim_segments(max_segments() / 2);
     }
-    auto semaphore_units = co_await _segment_units.get_units(1);
+    auto semaphore_units = co_await _mem_units.get_units(sz);
     co_return segment_units{std::move(semaphore_units)};
 }
 
 void materialized_resources::trim_segment_readers(size_t target_free) {
     vlog(
       cst_log.debug,
-      "Trimming segment readers until {} reader slots are free (current {})",
+      "Trimming segment readers until {} bytes are free (current {})",
       target_free,
-      _segment_reader_units.available_units());
+      _mem_units.available_units());
 
     // We sort segments by their reader count before culling, to avoid unfairly
     // targeting whichever segments happen to be first in the list.
@@ -226,8 +291,7 @@ void materialized_resources::trim_segment_readers(size_t target_free) {
     }
 
     for (auto i = candidates.rbegin();
-         i != candidates.rend()
-         && _segment_reader_units.current() < target_free;
+         i != candidates.rend() && _mem_units.current() < target_free;
          ++i) {
         auto& st = i->second.get();
 
@@ -241,8 +305,7 @@ void materialized_resources::trim_segment_readers(size_t target_free) {
 
         // Readers hold a reference to the segment, so for the
         // segment.owned() check to pass, we need to clear them out.
-        while (!st.readers.empty()
-               && _segment_reader_units.current() < target_free) {
+        while (!st.readers.empty() && _mem_units.current() < target_free) {
             auto partition = st.parent;
             // TODO: consider asserting here instead: it's a bug for
             // 'partition' to be null, since readers outlive the partition, and
@@ -291,7 +354,7 @@ void materialized_resources::trim_segments(std::optional<size_t> target_free) {
         auto deadline = st.atime + stm_max_idle_time;
 
         // We freed enough, drop out of iterating over segments
-        if (target_free && _segment_units.current() >= target_free) {
+        if (target_free && _mem_units.current() >= target_free) {
             break;
         }
 
@@ -336,8 +399,7 @@ void materialized_resources::maybe_trim_segment(
         // this will delete and unlink the object from
         // _materialized collection
         if (st.parent) {
-            to_offload.push_back(
-              std::make_pair(st.parent.get(), st.base_rp_offset()));
+            to_offload.emplace_back(st.parent.get(), st.base_rp_offset());
         } else {
             // This cannot happen, because materialized_segment_state
             // is only instantiated by remote_partition and will

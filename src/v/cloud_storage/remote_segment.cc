@@ -365,6 +365,16 @@ remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
     return pos;
 }
 
+size_t remote_segment::estimate_memory_use() const {
+    // NOTE: this is imprecise and doesn't account for certain
+    // things (e.g. chunks api)
+    size_t res = sizeof(remote_segment);
+    if (_index) {
+        res += _index->estimate_memory_use();
+    }
+    return res;
+}
+
 std::optional<offset_index::find_result>
 remote_segment::maybe_get_offsets(model::timestamp ts) {
     if (!_index) {
