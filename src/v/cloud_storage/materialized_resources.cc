@@ -48,6 +48,7 @@ materialized_resources::materialized_resources()
   , _mem_units(
       memory_groups::tiered_storage_max_memory(),
       "cst_materialized_resources_memory")
+  , _hydration_units(max_parallel_hydrations(), "cst_hydrations")
   , _manifest_meta_size(
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
@@ -55,8 +56,10 @@ materialized_resources::materialized_resources()
     _max_segment_readers_per_shard.watch([]() {
         // TODO: update _mem_units
     });
-    _max_partition_readers_per_shard.watch([]() {
-        // TODO: update _mem_units
+    _max_partition_readers_per_shard.watch([this]() {
+        // The 'max_connections' parameter can't be changed without restarting
+        // redpanda.
+        _hydration_units.set_capacity(max_parallel_hydrations());
     });
     _max_segments_per_shard.watch([]() {
         // TODO: update _mem_units
@@ -88,6 +91,8 @@ ss::future<> materialized_resources::stop() {
     _stm_timer.cancel();
 
     _mem_units.broken();
+
+    _hydration_units.broken();
 
     co_await _gate.close();
     cst_log.debug("Stopped materialized_segments...");
@@ -142,10 +147,16 @@ size_t materialized_resources::max_segment_readers() const {
            / projected_remote_segment_reader_memory_usage();
 }
 
-size_t materialized_resources::max_partition_readers() const {
-    // TODO: fixme
-    return memory_groups::tiered_storage_max_memory()
-           / projected_remote_partition_reader_memory_usage();
+size_t materialized_resources::max_parallel_hydrations() const {
+    auto max_connections
+      = config::shard_local_cfg().cloud_storage_max_connections();
+    auto n_readers = config::shard_local_cfg()
+                       .cloud_storage_max_partition_readers_per_shard();
+    if (n_readers) {
+        return std::min(
+          static_cast<unsigned>(max_connections), n_readers.value());
+    }
+    return max_connections / 2;
 }
 
 size_t materialized_resources::max_segments() const {
@@ -237,6 +248,12 @@ materialized_resources::get_partition_reader_units() {
         _partition_readers_delayed += 1;
     }
     return _mem_units.get_units(sz);
+}
+
+ss::future<ssx::semaphore_units>
+materialized_resources::get_hydration_units(size_t n) {
+    auto u = co_await _hydration_units.get_units(n);
+    co_return std::move(u);
 }
 
 ss::future<segment_units> materialized_resources::get_segment_units() {

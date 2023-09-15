@@ -68,6 +68,11 @@ public:
 
     ts_read_path_probe& get_read_path_probe();
 
+    /// Acquire hydration units
+    ///
+    /// The undrlying semaphore limits number of parallel hydrations
+    ss::future<ssx::semaphore_units> get_hydration_units(size_t n);
+
 private:
     /// Timer use to periodically evict stale segment readers
     ss::timer<ss::lowres_clock> _stm_timer;
@@ -79,7 +84,7 @@ private:
     config::binding<std::optional<uint32_t>> _max_segments_per_shard;
 
     size_t max_segment_readers() const;
-    size_t max_partition_readers() const;
+    size_t max_parallel_hydrations() const;
     size_t max_segments() const;
 
     /// How many remote_segment_batch_reader instances exist
@@ -138,6 +143,7 @@ private:
     ss::gate _gate;
 
     adjustable_semaphore _mem_units;
+    adjustable_semaphore _hydration_units;
 
     /// Size of the materialized_manifest_cache
     config::binding<size_t> _manifest_meta_size;

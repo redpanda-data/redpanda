@@ -18,6 +18,7 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/util.h"
 #include "model/metadata.h"
+#include "ssx/semaphore.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -628,6 +629,7 @@ ss::future<download_result> remote::download_stream(
       cons_str,
       parent,
       stream_label,
+      false,
       [&metrics] { return metrics.download_latency_measurement(); },
       [&metrics] { metrics.failed_download_metric(); },
       [&metrics] { metrics.download_backoff_metric(); },
@@ -646,6 +648,7 @@ ss::future<download_result> remote::download_segment(
       cons_str,
       parent,
       "segment",
+      true,
       [this] { return _probe.segment_download(); },
       [this] { _probe.failed_download(); },
       [this] { _probe.download_backoff(); },
@@ -662,6 +665,7 @@ ss::future<download_result> remote::download_stream(
   const try_consume_stream& cons_str,
   retry_chain_node& parent,
   const std::string_view stream_label,
+  bool acquire_hydration_units,
   DownloadLatencyMeasurementFn download_latency_measurement,
   FailedDownloadMetricFn failed_download_metric,
   DownloadBackoffMetricFn download_backoff_metric,
@@ -670,6 +674,11 @@ ss::future<download_result> remote::download_stream(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
+
+    ssx::semaphore_units hu;
+    if (acquire_hydration_units) {
+        hu = co_await _materialized->get_hydration_units(1);
+    }
 
     auto lease = co_await [this, &fib] {
         auto m = _probe.client_acquisition();
