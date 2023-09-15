@@ -327,7 +327,10 @@ class HighThroughputTest(RedpandaTest):
         msg_rate = int((0.1 * MiB) // effective_msg_size)
         messages_per_sec_per_producer = msg_rate // _conn_per_node
         # single producer runtime
-        target_runtime_s = 30
+        # Roughly every 500 connection needs 30 seconds to ramp up
+        _tier_coefficient = (_target_per_node // 500) + (
+            (_target_per_node % 500) > 0)
+        target_runtime_s = 30 * _tier_coefficient
         # for 50 MiB total messag30e count is 3060
         records_per_producer = messages_per_sec_per_producer * target_runtime_s
 
@@ -338,12 +341,11 @@ class HighThroughputTest(RedpandaTest):
         swarm = []
         for idx in range(len(self.cluster.nodes), 0, -1):
             # First one will be longest, last shortest
-            _records = records_per_producer * idx
             _swarm_node = ProducerSwarm(self._ctx,
                                         self.redpanda,
                                         self.topic,
                                         int(_conn_per_node),
-                                        int(_records),
+                                        int(records_per_producer),
                                         timeout_ms=PRODUCER_TIMEOUT_MS,
                                         **producer_kwargs)
 
@@ -399,21 +401,21 @@ class HighThroughputTest(RedpandaTest):
 
         # Check message count
         _hwm = 0
-        expected_msg_count = sum([
-            records_per_producer * _conn_per_node * idx
-            for idx in range(len(self.cluster.nodes), 0, -1)
-        ])
+        # Message count is producers * total connections
+        expected_msg_count = records_per_producer * _total
+        # Since there is +10% on connections set
+        # Message count should be > expected * 0.9
+        # or _target connections number * per producer
+        reasonably_expected = records_per_producer * _target
+
         for partition in self.rpk.describe_topic(self.topic):
             # Add currect high watermark for topic
             _hwm += partition.high_watermark
 
         # Check that all messages make it through
-        # Since there is +10% on connections set
-        # Message count should be > expected * 0.9
-        reasonably_expected = int(expected_msg_count * 0.9)
         self.logger.warn(f"Expected more than {reasonably_expected} messages "
                          f"out of {expected_msg_count}, actual {_hwm}")
-        assert _hwm >= expected_msg_count
+        assert _hwm >= reasonably_expected
 
         # Assert that target connection count is reached
         self.logger.warn(
