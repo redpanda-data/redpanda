@@ -929,7 +929,7 @@ static storage::log_config manager_config_from_global_config(
       priority_manager::local().compaction_priority(),
       config::shard_local_cfg().retention_bytes.bind(),
       config::shard_local_cfg().log_compaction_interval_ms.bind(),
-      config::shard_local_cfg().delete_retention_ms.bind(),
+      config::shard_local_cfg().log_retention_ms.bind(),
       storage::with_cache(!config::shard_local_cfg().disable_batch_cache()),
       storage::batch_cache::reclaim_options{
         .growth_window = config::shard_local_cfg().reclaim_growth_window(),

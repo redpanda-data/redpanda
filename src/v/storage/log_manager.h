@@ -69,7 +69,7 @@ struct log_config {
       ss::io_priority_class compaction_priority,
       config::binding<std::optional<size_t>> ret_bytes,
       config::binding<std::chrono::milliseconds> compaction_ival,
-      config::binding<std::optional<std::chrono::milliseconds>> del_ret,
+      config::binding<std::optional<std::chrono::milliseconds>> log_ret,
       with_cache c,
       batch_cache::reclaim_options recopts,
       std::chrono::milliseconds rdrs_cache_eviction_timeout,
@@ -97,8 +97,8 @@ struct log_config {
     // same as retention.bytes in kafka
     config::binding<std::optional<size_t>> retention_bytes;
     config::binding<std::chrono::milliseconds> compaction_interval;
-    // same as delete.retention.ms in kafka - default 1 week
-    config::binding<std::optional<std::chrono::milliseconds>> delete_retention;
+    // same as log.retention.ms in kafka - default 1 week
+    config::binding<std::optional<std::chrono::milliseconds>> log_retention;
     with_cache cache = with_cache::yes;
     batch_cache::reclaim_options reclaim_opts{
       .growth_window = std::chrono::seconds(3),

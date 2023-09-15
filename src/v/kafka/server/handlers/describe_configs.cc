@@ -489,11 +489,11 @@ static void report_broker_config(
       resource,
       result,
       "log.retention.ms",
-      config::shard_local_cfg().delete_retention_ms,
+      config::shard_local_cfg().log_retention_ms,
       include_synonyms,
       maybe_make_documentation(
         include_documentation,
-        config::shard_local_cfg().delete_retention_ms.desc()),
+        config::shard_local_cfg().log_retention_ms.desc()),
       [](const std::optional<std::chrono::milliseconds>& ret) {
           return ssx::sformat("{}", ret.value_or(-1ms).count());
       });
@@ -666,14 +666,14 @@ ss::future<response_ptr> describe_configs_handler::handle(
             add_topic_config_if_requested(
               resource,
               result,
-              config::shard_local_cfg().delete_retention_ms.name(),
+              config::shard_local_cfg().log_retention_ms.name(),
               ctx.metadata_cache().get_default_retention_duration(),
               topic_property_retention_duration,
               topic_config->properties.retention_duration,
               request.data.include_synonyms,
               maybe_make_documentation(
                 request.data.include_documentation,
-                config::shard_local_cfg().delete_retention_ms.desc()));
+                config::shard_local_cfg().log_retention_ms.desc()));
 
             add_topic_config_if_requested(
               resource,

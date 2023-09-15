@@ -192,7 +192,7 @@ public:
             return read_replica_retention;
         }
 
-        return config::shard_local_cfg().delete_retention_ms();
+        return config::shard_local_cfg().log_retention_ms();
     }
 
     bool is_archival_enabled() const {

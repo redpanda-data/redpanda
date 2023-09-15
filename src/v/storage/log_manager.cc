@@ -80,7 +80,7 @@ log_config::log_config(
   , retention_bytes(config::mock_binding<std::optional<size_t>>(std::nullopt))
   , compaction_interval(
       config::mock_binding<std::chrono::milliseconds>(std::chrono::minutes(10)))
-  , delete_retention(
+  , log_retention(
       config::mock_binding<std::optional<std::chrono::milliseconds>>(
         std::chrono::minutes(10080)))
   , file_config(std::move(file_cfg)) {}
@@ -108,7 +108,7 @@ log_config::log_config(
   ss::io_priority_class compaction_priority,
   config::binding<std::optional<size_t>> ret_bytes,
   config::binding<std::chrono::milliseconds> compaction_ival,
-  config::binding<std::optional<std::chrono::milliseconds>> del_ret,
+  config::binding<std::optional<std::chrono::milliseconds>> log_ret,
   with_cache c,
   batch_cache::reclaim_options recopts,
   std::chrono::milliseconds rdrs_cache_eviction_timeout,
@@ -122,7 +122,7 @@ log_config::log_config(
   , compaction_priority(compaction_priority)
   , retention_bytes(std::move(ret_bytes))
   , compaction_interval(std::move(compaction_ival))
-  , delete_retention(std::move(del_ret))
+  , log_retention(std::move(log_ret))
   , cache(c)
   , reclaim_opts(recopts)
   , readers_cache_eviction_timeout(rdrs_cache_eviction_timeout)
@@ -279,11 +279,11 @@ ss::future<> log_manager::housekeeping_loop() {
      * data older than this threshold may be garbage collected
      */
     const auto collection_threshold = [this] {
-        if (!_config.delete_retention().has_value()) {
+        if (!_config.log_retention().has_value()) {
             return model::timestamp(0);
         }
         const auto now = model::timestamp::now().value();
-        const auto retention = _config.delete_retention().value().count();
+        const auto retention = _config.log_retention().value().count();
         return model::timestamp(now - retention);
     };
 
@@ -730,13 +730,12 @@ std::ostream& operator<<(std::ostream& o, const log_config& c) {
     } else {
         o << "nullopt";
     }
-    return o << ", compaction_interval_ms:" << c.compaction_interval().count()
-             << ", delete_retention_ms:"
-             << c.delete_retention()
-                  .value_or(std::chrono::milliseconds(-1))
-                  .count()
-             << ", with_cache:" << c.cache
-             << ", reclaim_opts:" << c.reclaim_opts << "}";
+    return o
+           << ", compaction_interval_ms:" << c.compaction_interval().count()
+           << ", delete_retention_ms:"
+           << c.log_retention().value_or(std::chrono::milliseconds(-1)).count()
+           << ", with_cache:" << c.cache << ", reclaim_opts:" << c.reclaim_opts
+           << "}";
 }
 std::ostream& operator<<(std::ostream& o, const log_manager& m) {
     return o << "{config:" << m._config << ", logs.size:" << m._logs.size()
@@ -802,12 +801,11 @@ void log_manager::trigger_gc() {
 
 gc_config log_manager::default_gc_config() const {
     model::timestamp collection_threshold;
-    if (!_config.delete_retention()) {
+    if (!_config.log_retention()) {
         collection_threshold = model::timestamp(0);
     } else {
         collection_threshold = model::timestamp(
-          model::timestamp::now().value()
-          - _config.delete_retention()->count());
+          model::timestamp::now().value() - _config.log_retention()->count());
     }
     return {collection_threshold, _config.retention_bytes()};
 }

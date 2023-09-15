@@ -488,11 +488,11 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
         segment_urls.emplace_back(path, deletion_expected);
     }
 
-    config::shard_local_cfg().delete_retention_ms.set_value(
+    config::shard_local_cfg().log_retention_ms.set_value(
       std::chrono::milliseconds{1min});
     archiver.apply_retention().get();
     archiver.garbage_collect().get();
-    config::shard_local_cfg().delete_retention_ms.reset();
+    config::shard_local_cfg().log_retention_ms.reset();
 
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
@@ -621,10 +621,10 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
     auto spill_path = generate_spill_manifest_path(
       manifest_ntp, manifest_revision, *(spills.begin()));
 
-    config::shard_local_cfg().delete_retention_ms.set_value(
+    config::shard_local_cfg().log_retention_ms.set_value(
       std::chrono::milliseconds{5min});
     auto reset_cfg = ss::defer(
-      [] { config::shard_local_cfg().delete_retention_ms.reset(); });
+      [] { config::shard_local_cfg().log_retention_ms.reset(); });
 
     // Apply retention within the archive.
     archiver.apply_archive_retention().get();
@@ -742,10 +742,10 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
     }).get();
 
     listen();
-    config::shard_local_cfg().delete_retention_ms.set_value(
+    config::shard_local_cfg().log_retention_ms.set_value(
       std::chrono::milliseconds{1min});
     auto reset_cfg = ss::defer(
-      [] { config::shard_local_cfg().delete_retention_ms.reset(); });
+      [] { config::shard_local_cfg().log_retention_ms.reset(); });
 
     config::shard_local_cfg()
       .cloud_storage_max_segments_pending_deletion_per_partition(2);

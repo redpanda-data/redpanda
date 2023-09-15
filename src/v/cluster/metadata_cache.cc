@@ -262,7 +262,7 @@ std::optional<size_t> metadata_cache::get_default_retention_bytes() const {
 }
 std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_retention_duration() const {
-    return config::shard_local_cfg().delete_retention_ms();
+    return config::shard_local_cfg().log_retention_ms();
 }
 std::optional<size_t>
 metadata_cache::get_default_retention_local_target_bytes() const {
