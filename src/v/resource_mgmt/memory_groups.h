@@ -23,7 +23,7 @@ struct memory_groups {
     }
     /// \brief includes raft & all services
     static size_t rpc_total_memory() {
-        // 30%
+        // 20%
         return ss::memory::stats().total_memory() * .20;
     }
 
@@ -48,6 +48,11 @@ struct memory_groups {
     }
 
     static size_t recovery_max_memory() {
+        return ss::memory::stats().total_memory() * .10;
+    }
+
+    /// Max memory that both cloud storage uploads and read-path could use
+    static size_t tiered_storage_max_memory() {
         return ss::memory::stats().total_memory() * .10;
     }
 };
