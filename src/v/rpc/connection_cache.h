@@ -161,8 +161,7 @@ public:
       model::node_id self,
       model::node_id node,
       net::unresolved_address addr,
-      config::tls_config tls_config,
-      rpc::backoff_policy backoff = connection_set::default_backoff_policy());
+      config::tls_config tls_config);
 
 private:
     std::optional<connection_cache_label> _label;

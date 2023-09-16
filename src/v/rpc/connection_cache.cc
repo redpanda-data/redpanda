@@ -109,33 +109,20 @@ ss::future<> connection_cache::update_broker_client(
   model::node_id self,
   model::node_id node,
   net::unresolved_address addr,
-  config::tls_config tls_config,
-  rpc::backoff_policy backoff) {
+  config::tls_config tls_config) {
     auto shards = virtual_nodes(self, node);
     vlog(rpclog.debug, "Adding {} TCP client on shards:{}", node, shards);
 
     co_await ss::parallel_for_each(
       shards,
-      [this,
-       node,
-       addr = std::move(addr),
-       tls_config = std::move(tls_config),
-       backoff = std::move(backoff)](auto shard) {
+      [this, node, addr = std::move(addr), tls_config = std::move(tls_config)](
+        auto shard) {
           return container().invoke_on(
-            shard,
-            [node, addr, tls_config, backoff](connection_cache& cache) mutable {
-                return cache._mutex.with(
-                  [&cache,
-                   node,
-                   tls_config = std::move(tls_config),
-                   addr = std::move(addr),
-                   backoff = std::move(backoff)]() mutable {
-                      return cache._cache.try_add_or_update(
-                        node,
-                        std::move(addr),
-                        std::move(tls_config),
-                        std::move(backoff));
-                  });
+            shard, [node, addr, tls_config](connection_cache& cache) mutable {
+                return cache._mutex.with([&cache, node, tls_config, addr]() {
+                    return cache._cache.try_add_or_update(
+                      node, addr, tls_config);
+                });
             });
       });
 }
