@@ -1009,17 +1009,20 @@ class NodeDecommissionSpaceManagementTest(RedpandaTest):
 
     @skip_debug_mode
     @cluster(num_nodes=5)
-    def test_decommission(self):
+    @matrix(single_partition=[True, False])
+    def test_decommission(self, single_partition):
         log_segment_size = 1024 * 1024
 
-        partition_count = 16
-        replication_factor = 3
         segments_per_partition = 50
         segments_per_partition_trimmed = 20
-
-        # decommission gets stuck with the following:
-        # partition_count = 4
-        # replication_factor = 1
+        if single_partition:
+            # decommission will get stuck with the following params
+            # if we don't take reclaimable partition sizes into account:
+            partition_count = 4
+            replication_factor = 1
+        else:
+            partition_count = 16
+            replication_factor = 3
 
         target_size = log_segment_size * (
             segments_per_partition * partition_count * replication_factor //
