@@ -43,7 +43,7 @@ node_status_backend::node_status_backend(
   , _period(std::move(period))
   , _max_reconnect_backoff(std::move(max_reconnect_backoff))
   , _rpc_tls_config(config::node().rpc_server_tls())
-  , _node_connection_set(rpc::connection_cache_label{"node_status_backend"}) {
+  , _as(as) {
     if (!config::shard_local_cfg().disable_public_metrics()) {
         setup_metrics(_public_metrics);
     }
@@ -72,16 +72,12 @@ node_status_backend::node_status_backend(
               new_backoff.count());
             // Invalidate all transports so they are created afresh with new
             // backoff.
-            return _node_connection_set.remove_all();
+            return _node_connection_cache.invoke_on_all(
+              [](rpc::connection_cache& local) { return local.remove_all(); });
         });
     });
 
     _timer.set_callback([this] { tick(); });
-
-    _as_subscription = as.local().subscribe([this]() mutable noexcept {
-        ssx::spawn_with_gate(
-          _gate, [this] { return _node_connection_set.remove_all(); });
-    });
 }
 
 ss::future<> node_status_backend::drain_notifications_queue() {
@@ -135,9 +131,11 @@ ss::future<> node_status_backend::handle_members_updated_notification(
 
 ss::future<> node_status_backend::start() {
     vassert(ss::this_shard_id() == shard, "invoked on a wrong shard");
-    _timer.rearm(ss::lowres_clock::now());
 
-    return ss::now();
+    co_await _node_connection_cache.start(
+      std::ref(_as), rpc::connection_cache_label{"node_status_backend"});
+
+    _timer.rearm(ss::lowres_clock::now());
 }
 
 ss::future<> node_status_backend::stop() {
@@ -149,8 +147,7 @@ ss::future<> node_status_backend::stop() {
     _members_table.local().unregister_members_updated_notification(
       _members_table_notification_handle);
     _timer.cancel();
-    return _gate.close().then(
-      [this] { return _node_connection_set.remove_all(); });
+    return _gate.close().then([this] { return _node_connection_cache.stop(); });
 }
 
 void node_status_backend::tick() {
@@ -214,14 +211,17 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
         co_return make_error_code(errc::node_does_not_exists);
     }
 
-    co_await maybe_create_client(target, nm->get().broker.rpc_address());
+    auto connection_source_shard = co_await maybe_create_client(
+      target, nm->get().broker.rpc_address());
 
     // auto send_by = rpc::clock_type::now() + _period();
     auto opts = rpc::client_opts(_period());
     auto timeout = opts.timeout;
     auto reply
-      = co_await _node_connection_set
+      = co_await _node_connection_cache.local()
           .with_node_client<node_status_rpc_client_protocol>(
+            _self,
+            connection_source_shard,
             target,
             timeout,
             [opts = std::move(opts), r = std::move(r)](auto client) mutable {
@@ -232,10 +232,21 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
     co_return process_reply(reply);
 }
 
-ss::future<> node_status_backend::maybe_create_client(
+ss::future<ss::shard_id> node_status_backend::maybe_create_client(
   model::node_id target, net::unresolved_address address) {
-    co_await _node_connection_set.try_add_or_update(
-      target, address, _rpc_tls_config, create_backoff_policy());
+    auto source_shard = connection_source_shard(target);
+    auto target_shard = rpc::connection_cache::shard_for(
+      _self, source_shard, target);
+
+    co_await add_one_tcp_client(
+      target_shard,
+      _node_connection_cache,
+      target,
+      address,
+      _rpc_tls_config,
+      create_backoff_policy());
+
+    co_return source_shard;
 }
 
 result<node_status>
@@ -279,7 +290,8 @@ node_status_backend::process_request(node_status_request request) {
       // Check if the peer has atleast 2 missed heart beats. This avoids
       // a cross shard invoke in happy path when no reset is needed.
       && ss::lowres_clock::now() - sender_md->last_seen > 2 * _period()) {
-        _node_connection_set.reset_client_backoff(sender);
+        co_await _node_connection_cache.local().reset_client_backoff(
+          _self, connection_source_shard(sender), sender);
     }
 
     co_return node_status_reply{.replier_metadata = {.node_id = _self}};
