@@ -59,7 +59,6 @@ struct configuration final : public config_store {
     bounded_property<std::optional<int>> rpc_server_listen_backlog;
     bounded_property<std::optional<int>> rpc_server_tcp_recv_buf;
     bounded_property<std::optional<int>> rpc_server_tcp_send_buf;
-    bounded_property<int> rpc_client_connections_per_peer;
     // Coproc
     deprecated_property enable_coproc;
     deprecated_property coproc_max_inflight_bytes;

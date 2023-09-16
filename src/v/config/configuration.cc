@@ -131,14 +131,6 @@ configuration::configuration()
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
-  , rpc_client_connections_per_peer(
-      *this,
-      "rpc_client_connections_per_peer",
-      "The maximum number of connections a broker will open to each of its "
-      "peers",
-      {.example = "8"},
-      1,
-      {.min = 1})
   , enable_coproc(*this, "enable_coproc")
   , coproc_max_inflight_bytes(*this, "coproc_max_inflight_bytes")
   , coproc_max_ingest_bytes(*this, "coproc_max_ingest_bytes")
