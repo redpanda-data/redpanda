@@ -59,18 +59,6 @@ rp_test(
 rp_test(
   UNIT_TEST
   GTEST
-  BINARY_NAME work_queue_test
-  SOURCES
-    work_queue_test.cc
-  LIBRARIES 
-    v::gtest_main
-    v::wasm
-  LABELS wasm
-)
-
-rp_test(
-  UNIT_TEST
-  GTEST
   BINARY_NAME ffi_helpers_test
   SOURCES
     ffi_helpers_test.cc
