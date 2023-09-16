@@ -337,15 +337,26 @@ struct raft_node {
 
     void
     create_connection_to(model::node_id self, const model::broker& broker) {
-        cache.local()
-          .update_broker_client(
-            self,
-            broker.id(),
-            broker.rpc_address(),
-            config::tls_config{},
-            rpc::make_exponential_backoff_policy<rpc::clock_type>(
-              std::chrono::milliseconds(1), std::chrono::milliseconds(1)))
-          .get();
+        for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
+            auto sh = rpc::connection_cache::shard_for(self, i, broker.id());
+            cache
+              .invoke_on(
+                sh,
+                [&broker](rpc::connection_cache& c) {
+                    if (c.contains(broker.id())) {
+                        return seastar::make_ready_future<>();
+                    }
+
+                    return c.emplace(
+                      broker.id(),
+                      {.server_addr = broker.rpc_address(),
+                       .disable_metrics = net::metrics_disabled::yes},
+                      rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                        std::chrono::milliseconds(1),
+                        std::chrono::milliseconds(1)));
+                })
+              .get0();
+        }
     }
 
     bool started = false;
