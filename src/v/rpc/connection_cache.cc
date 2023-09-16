@@ -35,7 +35,7 @@ ss::future<> connection_cache::emplace(
                         n,
                         c = std::move(c),
                         backoff_policy = std::move(backoff_policy)]() mutable {
-        if (_cache.contains(n)) {
+        if (_cache.find(n) != _cache.end()) {
             return;
         }
         _cache.emplace(
@@ -45,12 +45,32 @@ ss::future<> connection_cache::emplace(
     });
 }
 ss::future<> connection_cache::remove(model::node_id n) {
-    return _mutex.with([this, n]() { return _cache.remove(n); });
+    return _mutex
+      .with([this, n]() -> transport_ptr {
+          auto it = _cache.find(n);
+          if (it == _cache.end()) {
+              return nullptr;
+          }
+          auto ptr = it->second;
+          _cache.erase(it);
+          return ptr;
+      })
+      .then([](transport_ptr ptr) {
+          if (!ptr) {
+              return ss::now();
+          }
+          return ptr->stop().finally([ptr] {});
+      });
 }
 
 ss::future<> connection_cache::remove_all() {
     auto units = co_await _mutex.get_units();
-    co_await _cache.remove_all();
+    auto cache = std::exchange(_cache, {});
+    co_await parallel_for_each(cache, [](auto& it) {
+        auto& [_, cli] = it;
+        return cli->stop();
+    });
+    cache.clear();
 }
 
 /// \brief closes all client connections
@@ -59,8 +79,12 @@ ss::future<> connection_cache::do_shutdown() {
     _shutting_down = true;
     // Exchange ensures the cache is invalidated and concurrent
     // accesses wait on the mutex to populate new entries.
-    co_await _cache.remove_all();
-
+    auto cache = std::exchange(_cache, {});
+    co_await parallel_for_each(cache, [](auto& it) {
+        auto& [_, cli] = it;
+        return cli->stop();
+    });
+    cache.clear();
     // mark mutex as broken to prevent new connections from being created
     // after stop
     _mutex.broken();
