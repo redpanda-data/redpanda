@@ -78,20 +78,19 @@ private:
     ss::timer<ss::lowres_clock> _stm_timer;
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
 
-    config::binding<uint32_t> _max_partitions_per_shard;
     config::binding<std::optional<uint32_t>> _max_segment_readers_per_shard;
     config::binding<std::optional<uint32_t>> _max_partition_readers_per_shard;
-    config::binding<std::optional<uint32_t>> _max_segments_per_shard;
+    config::binding<size_t> _storage_read_buffer_size;
+    config::binding<int16_t> _storage_read_readahead_count;
 
-    size_t max_segment_readers() const;
+    size_t max_memory_utilization() const;
     size_t max_parallel_hydrations() const;
-    size_t max_segments() const;
 
     /// How many remote_segment_batch_reader instances exist
     size_t current_segment_readers() const;
 
     /// How many partition_record_batch_reader_impl instances exist
-    size_t current_partition_readers() const;
+    size_t current_ongoing_hydrations() const;
 
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;

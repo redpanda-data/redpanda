@@ -34,17 +34,16 @@ static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
 
 materialized_resources::materialized_resources()
   : _stm_jitter(stm_jitter_duration)
-  , _max_partitions_per_shard(
-      config::shard_local_cfg().topic_partitions_per_shard.bind())
   , _max_segment_readers_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_segment_readers_per_shard.bind())
   , _max_partition_readers_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_partition_readers_per_shard.bind())
-  , _max_segments_per_shard(
-      config::shard_local_cfg()
-        .cloud_storage_max_materialized_segments_per_shard.bind())
+  , _storage_read_buffer_size(
+      config::shard_local_cfg().storage_read_buffer_size.bind())
+  , _storage_read_readahead_count(
+      config::shard_local_cfg().storage_read_readahead_count.bind())
   , _mem_units(
       memory_groups::tiered_storage_max_memory(),
       "cst_materialized_resources_memory")
@@ -53,19 +52,18 @@ materialized_resources::materialized_resources()
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
       config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
-    _max_segment_readers_per_shard.watch([]() {
-        // TODO: update _mem_units
-    });
+    auto update_max_mem = [this]() {
+        // Update memory capacity to accomodate new max number of segment
+        // readers
+        _mem_units.set_capacity(max_memory_utilization());
+    };
+    _max_segment_readers_per_shard.watch(update_max_mem);
+    _storage_read_buffer_size.watch(update_max_mem);
+    _storage_read_readahead_count.watch(update_max_mem);
     _max_partition_readers_per_shard.watch([this]() {
         // The 'max_connections' parameter can't be changed without restarting
         // redpanda.
         _hydration_units.set_capacity(max_parallel_hydrations());
-    });
-    _max_segments_per_shard.watch([]() {
-        // TODO: update _mem_units
-    });
-    _max_partitions_per_shard.watch([]() {
-        // TODO: update _mem_units
     });
     _manifest_meta_size.watch([this] {
         ssx::background = ss::with_gate(_gate, [this] {
@@ -141,10 +139,17 @@ materialized_resources::get_materialized_manifest_cache() {
     return *_manifest_cache;
 }
 
-size_t materialized_resources::max_segment_readers() const {
-    // TODO: implement override logic
-    return memory_groups::tiered_storage_max_memory()
-           / projected_remote_segment_reader_memory_usage();
+size_t materialized_resources::max_memory_utilization() const {
+    auto max_readers
+      = config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard();
+    if (max_readers.has_value()) {
+        auto max_mem = projected_remote_segment_reader_memory_usage()
+                       * max_readers.value();
+        return std::min(
+          memory_groups::tiered_storage_max_memory(),
+          static_cast<size_t>(max_mem));
+    }
+    return memory_groups::tiered_storage_max_memory();
 }
 
 size_t materialized_resources::max_parallel_hydrations() const {
@@ -159,12 +164,6 @@ size_t materialized_resources::max_parallel_hydrations() const {
     return max_connections / 2;
 }
 
-size_t materialized_resources::max_segments() const {
-    // TODO: fixme
-    return memory_groups::tiered_storage_max_memory()
-           / projected_remote_segment_memory_usage();
-}
-
 size_t materialized_resources::current_segment_readers() const {
     size_t n = 0;
     for (const auto& s : _materialized) {
@@ -173,9 +172,8 @@ size_t materialized_resources::current_segment_readers() const {
     return n;
 }
 
-size_t materialized_resources::current_partition_readers() const {
-    // TODO: fixme
-    return 0;
+size_t materialized_resources::current_ongoing_hydrations() const {
+    return _hydration_units.outstanding();
 }
 
 size_t materialized_resources::current_segments() const {
@@ -232,7 +230,7 @@ materialized_resources::get_segment_reader_units() {
         // saturated
         _segment_readers_delayed += 1;
 
-        trim_segment_readers(max_segment_readers() / 2);
+        trim_segment_readers(max_memory_utilization() / 2);
     }
 
     auto semaphore_units = co_await _mem_units.get_units(size_bytes);
@@ -263,7 +261,7 @@ ss::future<segment_units> materialized_resources::get_segment_units() {
         // saturated
         _segments_delayed += 1;
 
-        trim_segments(max_segments() / 2);
+        trim_segments(max_memory_utilization() / 2);
     }
     auto semaphore_units = co_await _mem_units.get_units(sz);
     co_return segment_units{std::move(semaphore_units)};

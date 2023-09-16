@@ -1836,14 +1836,20 @@ configuration::configuration()
   , cloud_storage_max_partition_readers_per_shard(
       *this,
       "cloud_storage_max_partition_readers_per_shard",
-      "Maximum concurrent partition readers of remote data per CPU core.  If "
-      "unset, "
-      "value of `topic_partitions_per_shard` is used, i.e. one reader per "
-      "partition if the shard is at its maximum partition capacity.  These "
-      "readers have the"
-      "lifetime of a Kafka consume request, so this property controls how many "
-      "consume"
-      "requests to remote data can make progress at the same time.",
+      "Maximum concurrent segment hydrations of remote data per CPU core.  If "
+      "unset, value of `cloud_storage_max_connections / 2` is used, which "
+      "means that half of available S3 bandwidth could be used to download "
+      "data from S3. If the cloud storage "
+      "cache is empty every new segment reader will require a download. This "
+      "will lead to 1:1 mapping between number of partitions scanned by the "
+      "fetch request and number of parallel "
+      "downloads. If this value is too large the downloads can affect other "
+      "workloads. In case of any problem caused by the tiered-storage reads "
+      "this value can be lowered. "
+      "This will only affect segment hydrations (downloads) but won't affect "
+      "cached segments. If fetch request is reading from the tiered-storage "
+      "cache its concurrency will only "
+      "be limited by available memory.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
   , cloud_storage_max_materialized_segments_per_shard(
@@ -1851,7 +1857,7 @@ configuration::configuration()
       "cloud_storage_max_materialized_segments_per_shard",
       "Maximum concurrent readers of remote data per CPU core.  If unset, "
       "value of `topic_partitions_per_shard` multiplied by 2 is used.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.visibility = visibility::deprecated},
       std::nullopt)
   , cloud_storage_cache_chunk_size(
       *this,
