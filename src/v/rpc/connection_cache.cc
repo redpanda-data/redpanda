@@ -10,9 +10,6 @@
 #include "rpc/connection_cache.h"
 
 #include "rpc/backoff_policy.h"
-#include "rpc/logger.h"
-
-#include <seastar/core/loop.hh>
 
 #include <fmt/format.h>
 
@@ -76,55 +73,6 @@ void connection_cache::shutdown() {
 ss::future<> connection_cache::stop() {
     shutdown();
     return _gate.close();
-}
-
-namespace {
-std::vector<ss::shard_id>
-virtual_nodes(model::node_id self, model::node_id node) {
-    std::set<ss::shard_id> owner_shards;
-    for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
-        auto shard = rpc::connection_cache::shard_for(self, i, node);
-        owner_shards.insert(shard);
-    }
-    return std::vector<ss::shard_id>(owner_shards.begin(), owner_shards.end());
-}
-} // namespace
-
-ss::future<>
-connection_cache::remove_broker_client(model::node_id self, model::node_id id) {
-    auto shards = virtual_nodes(self, id);
-    vlog(rpclog.debug, "Removing {} TCP client from shards {}", id, shards);
-    return ss::do_with(
-      std::move(shards), [this, id](std::vector<ss::shard_id>& i) {
-          return ss::do_for_each(i, [this, id](ss::shard_id i) {
-              return container().invoke_on(
-                i, [id](rpc::connection_cache& cache) {
-                    return cache.remove(id);
-                });
-          });
-      });
-}
-
-ss::future<> connection_cache::update_broker_client(
-  model::node_id self,
-  model::node_id node,
-  net::unresolved_address addr,
-  config::tls_config tls_config) {
-    auto shards = virtual_nodes(self, node);
-    vlog(rpclog.debug, "Adding {} TCP client on shards:{}", node, shards);
-
-    co_await ss::parallel_for_each(
-      shards,
-      [this, node, addr = std::move(addr), tls_config = std::move(tls_config)](
-        auto shard) {
-          return container().invoke_on(
-            shard, [node, addr, tls_config](connection_cache& cache) mutable {
-                return cache._mutex.with([&cache, node, tls_config, addr]() {
-                    return cache._cache.try_add_or_update(
-                      node, addr, tls_config);
-                });
-            });
-      });
 }
 
 } // namespace rpc
