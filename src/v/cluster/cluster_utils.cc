@@ -151,6 +151,33 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
         .available_disk_gb = disk_gb});
 }
 
+void log_certificate_reload_event(
+  ss::logger& log,
+  const char* system_name,
+  const std::unordered_set<ss::sstring>& updated,
+  const std::exception_ptr& eptr) {
+    if (eptr) {
+        try {
+            std::rethrow_exception(eptr);
+        } catch (...) {
+            vlog(
+              log.error,
+              "{} credentials reload error {}",
+              system_name,
+              std::current_exception());
+        }
+    } else {
+        for (const auto& name : updated) {
+            vlog(
+              log.info,
+              "{} key or certificate file "
+              "updated - {}",
+              system_name,
+              name);
+        }
+    }
+}
+
 bool has_local_replicas(
   model::node_id self, const std::vector<model::broker_shard>& replicas) {
     return std::find_if(

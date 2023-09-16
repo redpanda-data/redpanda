@@ -84,7 +84,6 @@
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_sampling.h"
-#include "rpc/rpc_utils.h"
 #include "ssx/abort_source.h"
 #include "ssx/thread_worker.h"
 #include "storage/backlog_controller.h"
@@ -1613,7 +1612,7 @@ void application::wire_up_redpanda_services(
                                     const std::unordered_set<ss::sstring>&
                                       updated,
                                     const std::exception_ptr& eptr) {
-                                      rpc::log_certificate_reload_event(
+                                      cluster::log_certificate_reload_event(
                                         _log, "Kafka RPC TLS", updated, eptr);
                                   })
                                 .get0()
@@ -1817,7 +1816,7 @@ void application::wire_up_bootstrap_services() {
                           [this](
                             const std::unordered_set<ss::sstring>& updated,
                             const std::exception_ptr& eptr) {
-                              rpc::log_certificate_reload_event(
+                              cluster::log_certificate_reload_event(
                                 _log, "Internal RPC TLS", updated, eptr);
                           })
                         .get0()

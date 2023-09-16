@@ -8,7 +8,6 @@ v_cc_library(
     connection_cache.cc
     connection_set.cc
     rpc_server.cc
-    rpc_utils.cc
   DEPS
     Seastar::seastar
     v::bytes
