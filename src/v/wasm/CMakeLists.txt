@@ -13,7 +13,6 @@ v_cc_library(
     transform_module.cc
     wasi.cc
     wasmtime.cc
-    work_queue.cc
   DEPS
     wasmtime
     v::storage
