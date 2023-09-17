@@ -15,6 +15,7 @@
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/smp.hh>
 
 #include <fmt/format.h>
 
@@ -166,6 +167,7 @@ ss::future<> connection_cache::emplace(
       n,
       ss::make_lw_shared<rpc::reconnect_transport>(
         std::move(c), std::move(backoff_policy), _label, n));
+    _connection_map[n] = ss::this_shard_id();
 }
 
 /// \brief closes all client connections
