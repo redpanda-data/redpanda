@@ -375,6 +375,20 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     co_return _translator->from_log_offset(first_local_offset);
 }
 
+model::offset replicated_partition::high_watermark() const {
+    if (_partition->is_read_replica_mode_enabled()) {
+        if (_partition->cloud_data_available()) {
+            return _partition->next_cloud_offset();
+        } else {
+            return model::offset(0);
+        }
+    }
+    auto raft_watermark = _partition->high_watermark();
+    auto kafka_watermark = _translator->from_log_offset(raft_watermark);
+    vlog(klog.trace, "high_watermark: translated raft offset {} to kafka offset {}", raft_watermark, kafka_watermark);
+    return kafka_watermark;
+}
+
 ss::future<error_code> replicated_partition::prefix_truncate(
   model::offset kafka_truncation_offset,
   ss::lowres_clock::time_point deadline) {

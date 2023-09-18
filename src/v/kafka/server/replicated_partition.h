@@ -75,16 +75,7 @@ public:
         return kafka_start_offset_with_override(start_offset_override.value());
     }
 
-    model::offset high_watermark() const final {
-        if (_partition->is_read_replica_mode_enabled()) {
-            if (_partition->cloud_data_available()) {
-                return _partition->next_cloud_offset();
-            } else {
-                return model::offset(0);
-            }
-        }
-        return _translator->from_log_offset(_partition->high_watermark());
-    }
+    model::offset high_watermark() const final;
     /**
      * According to Kafka protocol semantics a log_end_offset is an offset that
      * is assigned to the next record produced to a log
