@@ -304,6 +304,15 @@ class SchemaRegistryEndpoints(RedpandaTest):
                              data=data,
                              **kwargs)
 
+    def _delete_config_subject(self,
+                               subject,
+                               headers=HTTP_POST_HEADERS,
+                               **kwargs):
+        return self._request("DELETE",
+                             f"config/{subject}",
+                             headers=headers,
+                             **kwargs)
+
     def _get_mode(self, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET", "mode", headers=headers, **kwargs)
 
@@ -882,6 +891,54 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.debug("Get subject config - should be overriden")
         result_raw = self._get_config_subject(subject=f"{topic}-key")
         assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"
+
+        prev_compat = result_raw.json()["compatibilityLevel"]
+        global_config = self._get_config().json()
+
+        result_raw = self._delete_config_subject(subject=f"{topic}-key")
+        assert result_raw.json(
+        )["compatibilityLevel"] == prev_compat, f"{json.dumps(result_raw.json(), indent=1)}"
+
+        self.logger.debug("Second DELETE should return 40401")
+        result_raw = self._delete_config_subject(subject=f"{topic}-key")
+        assert result_raw.status_code == requests.codes.not_found, result_raw.status_code
+        assert result_raw.json(
+        )["error_code"] == 40401, f"Wrong err code: {result_raw.json()}"
+        assert result_raw.json(
+        )["message"] == f"Subject '{topic}-key' not found.", f"{json.dumps(result_raw.json(), indent=1)}"
+
+        self.logger.debug(
+            "GET config/{subject} should indicate missing subject-level config"
+        )
+        result_raw = self._get_config_subject(subject=f"{topic}-key")
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40408
+        assert result_raw.json(
+        )["message"] == f"Subject '{topic}-key' does not have subject-level compatibility configured"
+
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              fallback=True)
+        assert result_raw.json(
+        )["compatibilityLevel"] == global_config["compatibilityLevel"]
+
+        self.logger.debug(
+            "Subject compatibility should reflect the new global config")
+        global_config = self._set_config(
+            data=json.dumps({"compatibility": "NONE"}))
+        assert global_config.json()["compatibility"] == "NONE"
+
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              fallback=True)
+        assert result_raw.json()["compatibilityLevel"] == global_config.json(
+        )["compatibility"]
+
+        self.logger.debug("DELETE on non-existant subject should 404")
+        result_raw = self._delete_config_subject(subject=f"foo-key")
+        assert result_raw.status_code == requests.codes.not_found, result_raw.status_code
+        assert result_raw.json(
+        )["error_code"] == 40401, f"Wrong err code: {result_raw.json()}"
+        assert result_raw.json(
+        )["message"] == f"Subject 'foo-key' not found.", f"{json.dumps(result_raw.json(), indent=1)}"
 
     @cluster(num_nodes=3)
     def test_mode(self):
@@ -1926,6 +1983,25 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
                                               auth=(super_username,
                                                     super_password))
         assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"
+
+        global_config = self._get_config(auth=(super_username,
+                                               super_password)).json()
+
+        old_config = result_raw.json()
+
+        result_raw = self._delete_config_subject(subject=f"{topic}-key",
+                                                 auth=(super_username,
+                                                       super_password))
+        assert result_raw.json(
+        )["compatibilityLevel"] == old_config["compatibilityLevel"]
+        #, f"{json.dumps(result_raw.json(), indent=1)}, {json.dumps(global_config, indent=1)}"
+
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              fallback=True,
+                                              auth=(super_username,
+                                                    super_password))
+        assert result_raw.json(
+        )["compatibilityLevel"] == global_config["compatibilityLevel"]
 
     @cluster(num_nodes=3)
     def test_mode(self):
