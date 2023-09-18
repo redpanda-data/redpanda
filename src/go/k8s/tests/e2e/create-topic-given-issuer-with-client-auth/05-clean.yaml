@@ -19,4 +19,10 @@ delete:
     namespace: redpanda-system
   - apiVersion: cert-manager.io/v1
     kind: ClusterIssuer
-    name: cluster-tls-root-issuer
+    name: cluster-tls-root-issuer-with-auth
+  - apiVersion: cert-manager.io/v1
+    kind: Issuer
+    name: cluster-tls-selfsigned-issuer-with-auth
+  - apiVersion: cert-manager.io/v1
+    kind: Certificate
+    name: cluster-tls-root-certificate-with-auth
