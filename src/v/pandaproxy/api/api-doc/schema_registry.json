@@ -84,6 +84,49 @@
             }
           }
         }
+      },
+      "delete": {
+        "summary": "Delete the compatibility level for a subject.",
+        "operationId": "delete_config_subject",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "compatibility": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Subject not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
       }
     },
     "/config": {
