@@ -310,10 +310,8 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
     consumer.assign(tps);
     consumer.seekToEnd(tps);
     long end = consumer.position(tp);
-    long written = -1;
     synchronized (this) {
       partition.endOffset = end;
-      written = partition.writtenOffset;
     }
     consumer.seekToBeginning(tps);
 
@@ -321,7 +319,7 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
     long lastOpId = -1;
     long lastTxId = -1;
 
-    while (consumer.position(tp) < end && consumer.position(tp) <= written) {
+    while (consumer.position(tp) < end) {
       synchronized (this) { partition.readPosition = consumer.position(tp); }
       ConsumerRecords<String, String> records
           = consumer.poll(Duration.ofMillis(10000));
