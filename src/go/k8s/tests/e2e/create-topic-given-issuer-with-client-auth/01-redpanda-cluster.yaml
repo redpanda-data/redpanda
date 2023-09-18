@@ -25,7 +25,7 @@ spec:
           enabled: true
           requireClientAuth: true
           issuerRef:
-            name: cluster-tls-root-issuer
+            name: cluster-tls-root-issuer-with-auth
             kind: ClusterIssuer
     schemaRegistry:
       port: 8081
@@ -33,7 +33,7 @@ spec:
         enabled: true
         requireClientAuth: true
         issuerRef:
-          name: cluster-tls-root-issuer
+          name: cluster-tls-root-issuer-with-auth
           kind: ClusterIssuer
     adminApi:
       - port: 9644

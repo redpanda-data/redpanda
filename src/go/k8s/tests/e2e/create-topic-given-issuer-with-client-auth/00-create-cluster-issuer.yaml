@@ -1,7 +1,7 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-selfsigned-issuer
+  name: cluster-tls-selfsigned-issuer-with-auth
   namespace: cert-manager
 spec:
   selfSigned: {}
@@ -9,7 +9,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-root-certificate
+  name: cluster-tls-root-certificate-with-auth
   namespace: cert-manager
 spec:
   isCA: true
@@ -20,13 +20,13 @@ spec:
     - "cluster.local"
   issuerRef:
     kind: Issuer
-    name: cluster-tls-selfsigned-issuer
-  secretName: cluster-tls-root-certificate
+    name: cluster-tls-selfsigned-issuer-with-auth
+  secretName: cluster-tls-root-certificate-with-auth
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: cluster-tls-root-issuer
+  name: cluster-tls-root-issuer-with-auth
 spec:
   ca:
-    secretName: cluster-tls-root-certificate
+    secretName: cluster-tls-root-certificate-with-auth
