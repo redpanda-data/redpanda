@@ -139,3 +139,54 @@ class ClusterMetadataUploadTest(RedpandaTest):
         # since this test focuses on cluster metadata only.
         self.redpanda.si_settings.set_expected_damage(
             {"ntr_no_topic_manifest"})
+
+    @cluster(num_nodes=3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_uploads_after_wipe(self, cloud_storage_type):
+        """
+        Ensure that metadata uploads proceed after a cluster wipe, upholding
+        the invariant that manifest IDs are monotonically increasing, even for
+        the new cluster.
+        """
+        admin = self.redpanda._admin
+        admin.put_feature("controller_snapshots", {"state": "active"})
+        wait_until(lambda: self.bucket_has_metadata(1),
+                   timeout_sec=10,
+                   backoff_sec=1)
+        orig_cluster_uuid_resp: str = admin.get_cluster_uuid(
+            self.redpanda.nodes[0])
+
+        # Wipe the directory away, simulating a full cluster outage.
+        self.redpanda.stop()
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        orig_cluster_uuid, orig_highest_manifest_id = \
+            check_cluster_metadata_is_consistent(s3_snapshot)
+        assert orig_cluster_uuid in orig_cluster_uuid_resp, \
+            f"{orig_cluster_uuid_resp} vs {orig_cluster_uuid}"
+        for n in self.redpanda.nodes:
+            self.redpanda.remove_local_data(n)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda._admin.put_feature("controller_snapshots",
+                                         {"state": "active"})
+
+        # The new cluster should begin uploading new metadata without clearing
+        # out the metadata from the old cluster.
+        wait_until(lambda: self.bucket_has_metadata(2),
+                   timeout_sec=10,
+                   backoff_sec=1)
+        self.redpanda.stop()
+
+        # The new cluster should upload starting at a higher metadata ID than
+        # that used by the first cluster.
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        new_cluster_uuid, new_highest_manifest_id = check_cluster_metadata_is_consistent(
+            s3_snapshot)
+        assert new_cluster_uuid != orig_cluster_uuid
+
+        assert new_highest_manifest_id > orig_highest_manifest_id, \
+            f"{new_highest_manifest_id} vs {orig_highest_manifest_id}"
+
+        # The topic manifest may not have been uploaded yet, but that's fine
+        # since this test focuses on cluster metadata only.
+        self.redpanda.si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest"})
