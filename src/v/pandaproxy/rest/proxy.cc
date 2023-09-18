@@ -22,7 +22,6 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
 #include "security/ephemeral_credential_store.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -46,7 +45,7 @@ public:
     ss::future<server::reply_t>
     operator()(server::request_t rq, server::reply_t rp) const {
         auto units = co_await _os();
-        auto guard = gate_guard(_g);
+        auto guard = _g.hold();
         co_return co_await _h(std::move(rq), std::move(rp));
     }
 
@@ -151,7 +150,7 @@ ss::future<> proxy::do_start() {
     if (_is_started) {
         co_return;
     }
-    auto guard = gate_guard(_gate);
+    auto guard = _gate.hold();
     try {
         co_await configure();
         vlog(plog.info, "Pandaproxy successfully initialized");
