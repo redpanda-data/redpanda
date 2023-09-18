@@ -173,6 +173,10 @@ static error_code map_produce_error_code(std::error_code ec) {
         }
     }
 
+    if (ec.category() == kafka::error_category()) {
+        return static_cast<error_code>(ec.value());
+    }
+
     return error_code::request_timed_out;
 }
 
