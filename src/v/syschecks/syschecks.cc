@@ -53,6 +53,9 @@ ss::future<> disk(const ss::sstring& path) {
     return ss::check_direct_io_support(path).then([path] {
         return ss::file_system_at(path).then([path](auto fs) {
             checklog.info0("Detected file system type is {}", to_string(fs));
+            // all of ext2, 3 and 4 are detected as ext2, so we just assume an
+            // ext2 detection means ext4 for now, see:
+            // https://github.com/redpanda-data/redpanda/issues/13469
             if (fs == ss::fs_type::ext2) {
                 checklog.warn(
                   "Path: `{}' is on ext4, not XFS. This will probably work, "
