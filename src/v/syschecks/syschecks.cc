@@ -53,6 +53,7 @@ ss::future<> disk(const ss::sstring& path) {
     return ss::check_direct_io_support(path).then([path] {
         return ss::file_system_at(path).then([path](auto fs) {
             checklog.info0("Detected file system type is {}", to_string(fs));
+            if (fs == ss::fs_type::ext2) {
                 checklog.warn(
                   "Path: `{}' is on ext4, not XFS. This will probably work, "
                   "but Redpanda is only tested on XFS and XFS is recommended "
