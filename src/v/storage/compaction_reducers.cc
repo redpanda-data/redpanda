@@ -136,15 +136,6 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // aborted list of transactions. Marking these batches here as
     // non transactional means that clients skip that extra check.
     auto& hdr = batch.header();
-    bool hdr_changed = false;
-    if (hdr.attrs.is_transactional() && !hdr.attrs.is_control()) {
-        hdr.attrs.unset_transactional_type();
-        // We do not recompute crc here as the batch records may
-        // be filtered in step 4 in which case we need to recompute
-        // it anyway. It is expensive to loop through the batch and
-        // is wasteful to do it twice.
-        hdr_changed = true;
-    }
 
     // 1. compute which records to keep
     const auto base = batch.base_offset();
@@ -163,10 +154,6 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
 
     // 3. keep all records
     if (offset_deltas.size() == static_cast<size_t>(batch.record_count())) {
-        if (hdr_changed) {
-            hdr.crc = model::crc_record_batch(batch);
-            hdr.header_crc = model::internal_header_only_crc(hdr);
-        }
         return std::move(batch);
     }
 
@@ -358,12 +345,7 @@ bool tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
         break;
     }
     }
-    auto discard = batch_type == model::control_record_type::tx_commit
-                   || batch_type == model::control_record_type::tx_abort;
-    if (discard) {
-        _stats._tx_control_batches_discarded++;
-    }
-    return discard;
+    return false;
 }
 
 bool tx_reducer::handle_tx_data_batch(const model::record_batch& b) {
