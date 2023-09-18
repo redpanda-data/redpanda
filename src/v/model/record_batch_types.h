@@ -54,7 +54,8 @@ inline std::vector<model::record_batch_type> offset_translator_batch_types() {
       model::record_batch_type::raft_configuration,
       model::record_batch_type::archival_metadata,
       model::record_batch_type::version_fence,
-      model::record_batch_type::prefix_truncate};
+      model::record_batch_type::prefix_truncate,
+      model::record_batch_type::tx_fence};
 }
 
 } // namespace model
