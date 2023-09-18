@@ -20,13 +20,39 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/net/api.hh>
 
+namespace {
+ss::sstring to_string(ss::fs_type fs) {
+    return [fs]() {
+        switch (fs) {
+        case ss::fs_type::other:
+            return "other";
+        case ss::fs_type::xfs:
+            return "xfs";
+        case ss::fs_type::ext2:
+            return "ext2";
+        case ss::fs_type::ext3:
+            return "ext3";
+        case ss::fs_type::ext4:
+            return "ext4";
+        case ss::fs_type::btrfs:
+            return "btrfs";
+        case ss::fs_type::hfs:
+            return "hfs";
+        case ss::fs_type::tmpfs:
+            return "tmpfs";
+        };
+        return "bad_enum";
+    }();
+}
+} // namespace
+
 namespace syschecks {
 ss::logger checklog{"syschecks"};
 
 ss::future<> disk(const ss::sstring& path) {
     return ss::check_direct_io_support(path).then([path] {
         return ss::file_system_at(path).then([path](auto fs) {
-            if (fs == ss::fs_type::ext4) {
+            checklog.info0("Detected file system type is {}", to_string(fs));
                 checklog.warn(
                   "Path: `{}' is on ext4, not XFS. This will probably work, "
                   "but Redpanda is only tested on XFS and XFS is recommended "
@@ -34,10 +60,12 @@ ss::future<> disk(const ss::sstring& path) {
                   path);
             } else if (fs != ss::fs_type::xfs) {
                 checklog.error(
-                  "Path: `{}' is not on XFS or ext4. This is a non-supported "
+                  "Path: `{}' uses {} filesystem which is not XFS or ext4. "
+                  "This is a unsupported "
                   "configuration. You may experience poor performance or "
                   "instability.",
-                  path);
+                  path,
+                  to_string(fs));
             }
         });
     });
