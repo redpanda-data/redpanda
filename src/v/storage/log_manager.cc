@@ -35,7 +35,6 @@
 #include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
-#include "utils/gate_guard.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -530,7 +529,7 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
 
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
-    gate_guard g(_open_gate);
+    auto g = _open_gate.hold();
     auto handle = _logs.extract(ntp);
     _resources.update_partition_count(_logs.size());
     if (handle.empty()) {
