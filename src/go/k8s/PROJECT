@@ -37,4 +37,12 @@ resources:
   kind: Redpanda
   path: github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  group: cluster.redpanda.com
+  kind: Topic
+  path: github.com/redpanda-data/redpanda/src/go/k8s/apis/cluster.redpanda.com/v1alpha1
+  version: v1alpha1
 version: "3"

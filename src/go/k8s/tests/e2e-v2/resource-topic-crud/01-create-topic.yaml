@@ -1,0 +1,18 @@
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Topic
+metadata:
+  name: test-topic
+spec:
+  interval: 10s
+  partitions: 1
+  replicationFactor: 1
+  additionalConfig:
+    segment.bytes: "16777666"
+  kafkaApiSpec:
+    brokers:
+      - redpanda-0.redpanda.redpanda.svc.cluster.local.:9093
+    tls:
+      caCertSecretRef:
+        name: redpanda-default-cert
+        key: ca.crt
