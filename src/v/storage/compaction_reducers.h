@@ -232,7 +232,6 @@ public:
 
 private:
     bool handle_tx_control_batch(const model::record_batch&);
-    bool handle_tx_data_batch(const model::record_batch&);
     bool handle_non_tx_control_batch(const model::record_batch&);
     void consume_aborted_txs(model::offset);
 
