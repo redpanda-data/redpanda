@@ -97,6 +97,7 @@ static ss::future<read_result> read_from_partition(
       config.abort_source.has_value()
         ? config.abort_source.value().get().local()
         : storage::opt_abort_source_t{});
+    reader_config.isolation_level = config.isolation_level;
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     auto rdr = co_await part.make_reader(reader_config);
@@ -324,7 +325,6 @@ static ss::future<read_result> do_read_from_ntp(
                 // partition is still bootstrapping
                 co_return read_result(maybe_lso.error());
             }
-            ntp_config.cfg.max_offset = model::prev_offset(maybe_lso.value());
         }
     }
 
