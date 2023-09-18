@@ -12,7 +12,6 @@
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote_segment.h"
-#include "utils/gate_guard.h"
 
 namespace {
 constexpr auto cache_backoff_duration = 5s;
@@ -113,7 +112,7 @@ bool segment_chunks::downloads_in_progress() const {
 
 ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
   chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
-    gate_guard g{_gate};
+    auto g = _gate.hold();
     vassert(_started, "chunk API is not started");
 
     auto it = _chunks.find(chunk_start);
@@ -131,7 +130,7 @@ ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
 
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
   chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
-    gate_guard g{_gate};
+    auto g = _gate.hold();
     vassert(_started, "chunk API is not started");
 
     vassert(

@@ -375,7 +375,7 @@ ss::future<> scan_until_close(
   remote_partition& partition,
   const storage::log_reader_config& reader_config,
   ss::gate& g) {
-    gate_guard guard{g};
+    auto guard = g.hold();
     while (!g.is_closed()) {
         try {
             auto translating_reader = co_await partition.make_reader(

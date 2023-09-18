@@ -14,7 +14,6 @@
 #include "seastar/util/file.hh"
 #include "ssx/future-util.h"
 #include "storage/segment.h"
-#include "utils/gate_guard.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -143,7 +142,7 @@ void cache::update_max_bytes() {
 
 ss::future<bool>
 cache::delete_file_and_empty_parents(const std::string_view& key) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
 
     std::filesystem::path normal_path
       = std::filesystem::path(key).lexically_normal();
@@ -186,7 +185,7 @@ cache::delete_file_and_empty_parents(const std::string_view& key) {
 uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
 ss::future<> cache::clean_up_at_start() {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     auto [walked_size, filtered_out_files, candidates_for_deletion, empty_dirs]
       = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
 
@@ -294,7 +293,7 @@ ss::future<> cache::trim(
   std::optional<uint64_t> size_limit_override,
   std::optional<size_t> object_limit_override) {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
       = co_await _walker.walk(
         _cache_dir.native(), _access_time_tracker, [](std::string_view path) {
@@ -870,7 +869,7 @@ ss::future<> cache::stop() {
 }
 
 ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     probe.get();
     ss::file cache_file;
@@ -911,7 +910,7 @@ ss::future<> cache::put(
   ss::io_priority_class io_priority,
   size_t write_buffer_size,
   unsigned int write_behind) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
     probe.put();
 
@@ -1037,7 +1036,7 @@ ss::future<> cache::put(
 
 ss::future<cache_element_status>
 cache::is_cached(const std::filesystem::path& key) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     vlog(cst_log.debug, "Checking {} in archival cache.", key.native());
     if (_files_in_progress.contains(key)) {
         return seastar::make_ready_future<cache_element_status>(
@@ -1052,7 +1051,7 @@ cache::is_cached(const std::filesystem::path& key) {
 }
 
 ss::future<> cache::invalidate(const std::filesystem::path& key) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     vlog(
       cst_log.debug,
       "Trying to invalidate {} from archival cache.",

@@ -12,7 +12,6 @@
 #include "cloud_storage/segment_chunk_data_source.h"
 
 #include "cloud_storage/remote_segment.h"
-#include "utils/gate_guard.h"
 
 namespace cloud_storage {
 
@@ -50,7 +49,7 @@ chunk_data_source_impl::~chunk_data_source_impl() {
 }
 
 ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
-    gate_guard g{_gate};
+    auto g = _gate.hold();
 
     if (!_current_stream) {
         co_await load_stream_for_chunk(_current_chunk_start);

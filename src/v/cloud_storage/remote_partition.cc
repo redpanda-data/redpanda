@@ -23,7 +23,6 @@
 #include "storage/log_reader.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
-#include "utils/gate_guard.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 #include "vlog.h"
@@ -897,7 +896,7 @@ remote_partition::get_term_last_offset(model::term_id term) const {
 
 ss::future<std::vector<model::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
-    gate_guard guard(_gate);
+    auto guard = _gate.hold();
     const auto& stm_manifest = _manifest_view->stm_manifest();
     const auto so = stm_manifest.get_start_offset();
     std::vector<model::tx_range> result;

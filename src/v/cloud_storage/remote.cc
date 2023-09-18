@@ -240,7 +240,7 @@ ss::future<download_result> remote::do_download_manifest(
   base_manifest& manifest,
   retry_chain_node& parent,
   bool expect_missing) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(format_key.second().native());
@@ -340,7 +340,7 @@ ss::future<upload_result> remote::upload_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
   retry_chain_node& parent) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto key = manifest.get_manifest_path();
@@ -495,7 +495,7 @@ ss::future<upload_result> remote::upload_stream(
   FailedUploadMetricFn failed_upload_metric,
   SuccessfulUploadMetricFn successful_upload_metric,
   UploadBackoffMetricFn upload_backoff_metric) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
@@ -666,7 +666,7 @@ ss::future<download_result> remote::download_stream(
   FailedDownloadMetricFn failed_download_metric,
   DownloadBackoffMetricFn download_backoff_metric,
   std::optional<cloud_storage_clients::http_byte_range> byte_range) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
@@ -762,7 +762,7 @@ ss::future<download_result> remote::download_index(
   const remote_segment_path& index_path,
   offset_index& ix,
   retry_chain_node& parent) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(index_path());
@@ -1232,7 +1232,7 @@ ss::future<upload_result> remote::upload_object(
   iobuf payload,
   retry_chain_node& parent,
   const char* log_object_type) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
