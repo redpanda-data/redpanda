@@ -37,9 +37,9 @@ materialized_resources::materialized_resources()
   , _max_segment_readers_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_segment_readers_per_shard.bind())
-  , _max_partition_readers_per_shard(
+  , _max_concurrent_hydrations_per_shard(
       config::shard_local_cfg()
-        .cloud_storage_max_partition_readers_per_shard.bind())
+        .cloud_storage_max_concurrent_hydrations_per_shard.bind())
   , _storage_read_buffer_size(
       config::shard_local_cfg().storage_read_buffer_size.bind())
   , _storage_read_readahead_count(
@@ -60,7 +60,7 @@ materialized_resources::materialized_resources()
     _max_segment_readers_per_shard.watch(update_max_mem);
     _storage_read_buffer_size.watch(update_max_mem);
     _storage_read_readahead_count.watch(update_max_mem);
-    _max_partition_readers_per_shard.watch([this]() {
+    _max_concurrent_hydrations_per_shard.watch([this]() {
         // The 'max_connections' parameter can't be changed without restarting
         // redpanda.
         _hydration_units.set_capacity(max_parallel_hydrations());

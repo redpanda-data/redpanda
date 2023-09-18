@@ -1836,6 +1836,13 @@ configuration::configuration()
   , cloud_storage_max_partition_readers_per_shard(
       *this,
       "cloud_storage_max_partition_readers_per_shard",
+      "Maximum partition readers per shard (deprecated)",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
+      std::nullopt)
+  , cloud_storage_max_concurrent_hydrations_per_shard(
+      *this,
+      "cloud_storage_max_concurrent_hydrations_per_shard",
       "Maximum concurrent segment hydrations of remote data per CPU core.  If "
       "unset, value of `cloud_storage_max_connections / 2` is used, which "
       "means that half of available S3 bandwidth could be used to download "
