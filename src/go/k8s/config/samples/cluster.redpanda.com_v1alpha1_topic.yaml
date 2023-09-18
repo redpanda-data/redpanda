@@ -1,12 +1,12 @@
 apiVersion: cluster.redpanda.com/v1alpha1
-kind: Redpanda
+kind: Topic
 metadata:
   labels:
-    app.kubernetes.io/name: redpanda
-    app.kubernetes.io/instance: redpanda-sample
+    app.kubernetes.io/name: topic
+    app.kubernetes.io/instance: topic-sample
     app.kubernetes.io/part-of: redpanda-operator
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: redpanda-operator
-  name: redpanda-sample
+  name: topic-sample
 spec:
   # TODO(user): Add fields here
