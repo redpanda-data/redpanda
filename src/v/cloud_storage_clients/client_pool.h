@@ -13,7 +13,6 @@
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
-#include "utils/gate_guard.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/stop_signal.h"
 
