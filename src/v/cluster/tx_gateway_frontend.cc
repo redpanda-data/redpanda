@@ -33,7 +33,6 @@
 #include "model/record.h"
 #include "rpc/connection_cache.h"
 #include "types.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -3097,7 +3096,7 @@ tx_gateway_frontend::get_all_transactions_for_one_tx_partition(
                 return_all_txs_res{tx_errc::unknown_server_error});
           }
 
-          auto gate_lock = gate_guard(self._gate);
+          auto gate_lock = self._gate.hold();
           return stm->read_lock().then([stm](ss::basic_rwlock<>::holder unit) {
               return stm->get_all_transactions()
                 .then(

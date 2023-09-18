@@ -114,7 +114,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,
   raft::keep_snapshotted_log keep_snapshotted_log) {
-    gate_guard guard(_gate);
+    auto guard = _gate.hold();
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
     auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
       = dl_result;

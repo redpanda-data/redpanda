@@ -15,7 +15,6 @@
 #include "raft/consensus.h"
 #include "raft/types.h"
 #include "serde/serde.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sleep.hh>

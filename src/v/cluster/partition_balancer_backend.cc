@@ -22,7 +22,6 @@
 #include "config/configuration.h"
 #include "config/property.h"
 #include "random/generators.h"
-#include "utils/gate_guard.h"
 #include "utils/stable_iterator_adaptor.h"
 
 #include <seastar/core/coroutine.hh>
@@ -102,7 +101,7 @@ void partition_balancer_backend::start() {
 }
 
 ss::future<std::error_code> partition_balancer_backend::request_rebalance() {
-    auto g = gate_guard(_gate);
+    auto g = _gate.hold();
 
     if (!is_leader()) {
         co_return errc::not_leader;
