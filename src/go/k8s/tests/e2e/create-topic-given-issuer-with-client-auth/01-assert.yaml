@@ -61,7 +61,7 @@ metadata:
 spec:
   issuerRef:
     kind: ClusterIssuer
-    name: cluster-tls-root-issuer
+    name: cluster-tls-root-issuer-with-auth
 status:
   conditions:
     - reason: Ready
