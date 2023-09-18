@@ -2620,3 +2620,35 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_unsafe_segment_add) {
         BOOST_REQUIRE(!tmp.safe_segment_meta_to_add(compacted[1]));
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(test_last_partition_scrub_json_serde) {
+    /*
+     * Test that JSON ser/de works for last_partition_scrub
+     */
+    constexpr std::string_view manifest_v3 = R"json({
+    "version": 3,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 0,
+    "insync_offset": 0,
+    "last_offset": 0,
+    "last_partition_scrub": 100
+})json";
+
+    partition_manifest manifest;
+    manifest.update(manifest_format::json, make_manifest_stream(manifest_v3))
+      .get();
+
+    BOOST_REQUIRE_EQUAL(manifest.last_partition_scrub(), model::timestamp(100));
+
+    std::stringstream sstr;
+    manifest.serialize_json(sstr);
+
+    partition_manifest manifest_after_round_trip;
+    manifest_after_round_trip
+      .update(manifest_format::json, make_manifest_stream(sstr.str()))
+      .get();
+
+    BOOST_REQUIRE(manifest == manifest_after_round_trip);
+}

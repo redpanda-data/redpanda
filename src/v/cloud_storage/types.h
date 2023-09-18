@@ -23,6 +23,8 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <absl/container/node_hash_set.h>
+
 #include <chrono>
 #include <filesystem>
 
@@ -83,6 +85,7 @@ enum class upload_result : int32_t {
 enum class manifest_version : int32_t {
     v1 = 1,
     v2 = 2,
+    v3 = 3, // v23.3.x
 };
 
 enum class tx_range_manifest_version : int32_t {
@@ -201,6 +204,16 @@ struct segment_meta {
     }
 
     auto operator<=>(const segment_meta&) const = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const segment_meta& meta) {
+        return H::combine(
+          std::move(h),
+          meta.base_offset(),
+          meta.committed_offset(),
+          meta.delta_offset(),
+          meta.delta_offset_end());
+    }
 };
 std::ostream& operator<<(std::ostream& o, const segment_meta& r);
 
@@ -288,6 +301,68 @@ struct cache_usage_target {
         return lhs;
     }
 };
+
+struct spillover_manifest_path_components
+  : serde::envelope<
+      spillover_manifest_path_components,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::offset base;
+    model::offset last;
+    kafka::offset base_kafka;
+    kafka::offset next_kafka;
+    model::timestamp base_ts;
+    model::timestamp last_ts;
+
+    auto serde_fields() {
+        return std::tie(base, last, base_kafka, next_kafka, base_ts, last_ts);
+    }
+
+    template<typename H>
+    friend H AbslHashValue(H h, const spillover_manifest_path_components& c) {
+        return H::combine(
+          std::move(h),
+          c.base(),
+          c.last(),
+          c.base_kafka(),
+          c.next_kafka(),
+          c.base_ts(),
+          c.last_ts());
+    }
+};
+
+std::ostream&
+operator<<(std::ostream& o, const spillover_manifest_path_components& c);
+
+enum class scrub_status : uint8_t { full, partial, failed };
+
+std::ostream& operator<<(std::ostream& o, const scrub_status&);
+
+// TODO: Add more anomaly types: malformed objects, gaps, overlaps, bad deltas
+struct anomalies
+  : serde::envelope<anomalies, serde::version<0>, serde::compat_version<0>> {
+    // Missing partition manifests
+    bool missing_partition_manifest{false};
+    // Spillover manifests referenced by the manifest which were not
+    // found
+    absl::node_hash_set<spillover_manifest_path_components>
+      missing_spillover_manifests;
+    // Segments referenced by the manifests which were not found
+    absl::node_hash_set<segment_meta> missing_segments;
+
+    auto serde_fields() {
+        return std::tie(
+          missing_partition_manifest,
+          missing_spillover_manifests,
+          missing_segments);
+    }
+
+    bool has_value() const;
+
+    anomalies& operator+=(anomalies&&);
+};
+
+std::ostream& operator<<(std::ostream& o, const anomalies& a);
 
 } // namespace cloud_storage
 

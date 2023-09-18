@@ -8,29 +8,47 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#pragma once
+
+#include "archival/fwd.h"
+#include "archival/scrubber_scheduler.h"
 #include "archival/types.h"
+#include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
-#include "cloud_storage/lifecycle_marker.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
+#include "random/simple_time_jitter.h"
+#include "storage/fwd.h"
 
 #include <seastar/core/future.hh>
 
 namespace archival {
 
-/**
- * The scrubber is a global sharded service: it runs on all shards, and
- * decides internally which shard will scrub which ranges of objects
- * in object storage.
+/*
+ * Scrubber housekeeping job managed by the upload_housekeeping_service.
+ * Each cloud storage enabled partition gets its own scrubber which is owned
+ * by the ntp_archiver_service.
+ *
+ * The goal of the scrubber is to periodically analyse the uploaded cloud
+ * storage data and metadata, detect anomalies and report them to the cloud
+ * storage layer. Detection is handled by the cloud_storage::anomalies_detector
+ * class and anomalies are persisted on the partition's log and managed by the
+ * partition manifset and archival STM.
  */
 class scrubber : public housekeeping_job {
 public:
-    explicit scrubber(
-      cloud_storage::remote&,
-      cluster::topic_table&,
-      ss::sharded<cluster::topics_frontend>&,
-      ss::sharded<cluster::members_table>&);
+    scrubber(
+      ntp_archiver& archiver,
+      cloud_storage::remote& remote,
+      retry_chain_logger& logger,
+      features::feature_table& feature_table,
+      config::binding<bool> config_enabled,
+      config::binding<std::chrono::milliseconds> interval,
+      config::binding<std::chrono::milliseconds> jitter);
+
+    ss::future<> await_feature_enabled();
 
     ss::future<run_result>
     run(retry_chain_node& rtc, run_quota_t quota) override;
@@ -48,84 +66,33 @@ public:
 
     ss::sstring name() const override;
 
+    std::pair<bool, std::optional<ss::sstring>> should_skip() const;
+
+    model::timestamp next_scrub_at() const;
+
 private:
-    enum class purge_status : uint8_t {
-        success,
-
-        // Unavailability of backend, timeouts, etc.  We should drop out
-        // but the purge can be retried in a future housekeeping iteration.
-        retryable_failure,
-
-        // If we cannot possibly finish, for example because we got a 404
-        // reading manifest.
-        permanent_failure,
-    };
-
-    struct purge_result {
-        purge_status status;
-        size_t ops{0};
-    };
-
-    ss::future<purge_result> purge_partition(
-      const cluster::nt_lifecycle_marker&,
-      const cloud_storage_clients::bucket_name& bucket,
-      model::ntp,
-      model::initial_revision_id,
-      retry_chain_node& rtc);
-
-    struct collected_manifests {
-        using flat_t
-          = std::pair<std::vector<ss::sstring>, std::optional<ss::sstring>>;
-
-        std::optional<ss::sstring> current_serde;
-        std::optional<ss::sstring> current_json;
-        std::vector<ss::sstring> spillover;
-
-        bool empty() const;
-        [[nodiscard]] flat_t flatten();
-    };
-
-    ss::future<std::optional<collected_manifests>> collect_manifest_paths(
-      const cloud_storage_clients::bucket_name&,
-      model::ntp,
-      model::initial_revision_id,
-      retry_chain_node&);
-
-    ss::future<purge_result> purge_manifest(
-      const cloud_storage_clients::bucket_name&,
-      model::ntp,
-      model::initial_revision_id,
-      remote_manifest_path,
-      cloud_storage::manifest_format,
-      retry_chain_node&);
-
-    struct global_position {
-        uint32_t self;
-        uint32_t total;
-    };
-
-    ss::future<cloud_storage::upload_result> write_remote_lifecycle_marker(
-      const cluster::nt_revision&,
-      cloud_storage_clients::bucket_name& bucket,
-      cloud_storage::lifecycle_status status,
-      retry_chain_node& parent_rtc);
-
-    /// Find our index out of all shards in the cluster
-    global_position get_global_position();
-
     ss::abort_source _as;
     ss::gate _gate;
 
     // A gate holder we keep on behalf of the housekeeping service, when
     // it acquire()s us.
-    ss::gate::holder _holder;
+    std::optional<ss::gate::holder> _holder;
 
-    bool _enabled{true};
+    // Whether the scrubbing housekeeping job is enabled (e.g. will be disabled
+    // on non-leader nodes)
+    bool _job_enabled{true};
 
-    cloud_storage::remote& _api;
-    cluster::topic_table& _topic_table;
-    ss::sharded<cluster::topics_frontend>& _topics_frontend;
-    ss::sharded<cluster::members_table>& _members_table;
+    // Binding to cloud_storage_scrubbing_enabled cluster config
+    config::binding<bool> _config_enabled;
+
+    ntp_archiver& _archiver;
+    cloud_storage::remote& _remote;
+    retry_chain_logger& _logger;
+
+    features::feature_table& _feature_table;
+
+    cloud_storage::anomalies_detector _detector;
+    scrubber_scheduler<std::chrono::system_clock> _scheduler;
 };
 
 } // namespace archival

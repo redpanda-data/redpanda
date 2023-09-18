@@ -113,6 +113,69 @@ std::ostream& operator<<(std::ostream& o, const upload_result& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const spillover_manifest_path_components& c) {
+    fmt::print(
+      o,
+      "{{base: {}, last: {}, base_kafka: {}, next_kafka: {}, base_ts: {}, "
+      "last_ts: {}}}",
+      c.base,
+      c.last,
+      c.base_kafka,
+      c.next_kafka,
+      c.base_ts,
+      c.last_ts);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const scrub_status& s) {
+    switch (s) {
+    case scrub_status::full:
+        o << "{full}";
+        break;
+    case scrub_status::partial:
+        o << "{partial}";
+        break;
+    case scrub_status::failed:
+        o << "{failed}";
+        break;
+    }
+    return o;
+}
+
+bool anomalies::has_value() const {
+    return missing_partition_manifest || missing_spillover_manifests.size() > 0
+           || missing_segments.size() > 0;
+}
+
+anomalies& anomalies::operator+=(anomalies&& other) {
+    missing_partition_manifest |= other.missing_partition_manifest;
+    missing_spillover_manifests.insert(
+      std::make_move_iterator(other.missing_spillover_manifests.begin()),
+      std::make_move_iterator(other.missing_spillover_manifests.end()));
+    missing_segments.insert(
+      std::make_move_iterator(other.missing_segments.begin()),
+      std::make_move_iterator(other.missing_segments.end()));
+
+    return *this;
+}
+
+std::ostream& operator<<(std::ostream& o, const anomalies& a) {
+    if (!a.has_value()) {
+        return o << "{}";
+    }
+
+    fmt::print(
+      o,
+      "{{missing_partition_manifest: {}, missing_spillover_manifests: {}, "
+      "missing_segments:{}}}",
+      a.missing_partition_manifest,
+      a.missing_spillover_manifests.size(),
+      a.missing_segments.size());
+
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,

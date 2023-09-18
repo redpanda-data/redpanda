@@ -49,6 +49,7 @@ rp_test(
     delete_records_e2e_test.cc
     async_manifest_view_test.cc
     read_replica_test.cc
+    anomalies_detector_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     Boost::unit_test_framework
@@ -58,6 +59,7 @@ rp_test(
     v::cloud_roles
     v::application
     v::kafka_test_utils
+    v::http_test_utils
   ARGS "-- -c 1"
   LABELS cloud_storage
 )

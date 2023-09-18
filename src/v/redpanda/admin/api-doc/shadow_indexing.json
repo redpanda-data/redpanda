@@ -177,6 +177,47 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/cloud_storage/anomalies/{namespace}/{topic}/{partition}",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "Retrieve cloud storage anomalies for a given partition",
+          "operationId": "get_cloud_storage_anomalies",
+          "nickname": "get_cloud_storage_anomalies",
+          "type": "cloud_storage_partition_anomalies",
+          "parameters": [
+            {
+              "name": "namespace",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "partition",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            }
+          ],
+          "produces": [
+            "application/json"
+          ],
+          "responseMessages": [
+            {
+              "code": 200,
+              "message": "Success"
+            }
+          ]
+        }
+      ]
     }
   ],
   "models": {
@@ -345,6 +386,38 @@
         "markers": {
           "type": "array",
           "items": {"type":  "lifecycle_marker"}
+        }
+      }
+    },
+    "cloud_storage_partition_anomalies": {
+      "id": "cloud_storage_partition_anomalies",
+      "description": "Anomalies detected by the cloud storage scrubber",
+      "properties": {
+        "ns": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "partition": {
+          "type": "long"
+        },
+        "revision_id": {
+          "type": "long"
+        },
+        "missing_partition_manifest": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "missing_spillover_manifests": {
+          "type": "array",
+          "items": {"type": "string"},
+          "nullable": true
+        },
+        "missing_segments": {
+          "type": "array",
+          "items": {"type": "string"},
+          "nullable": true
         }
       }
     }

@@ -77,6 +77,8 @@ std::string_view to_string_view(feature f) {
         return "lightweight_heartbeats";
     case feature::raft_coordinated_recovery:
         return "raft_coordinated_recovery";
+    case feature::cloud_storage_scrubbing:
+        return "cloud_storage_scrubbing";
 
     /*
      * testing features

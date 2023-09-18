@@ -324,6 +324,8 @@ public:
 
     partition_cloud_storage_status get_cloud_storage_status() const;
 
+    std::optional<cloud_storage::anomalies> get_cloud_storage_anomalies() const;
+
     /// Return true if shadow indexing is enabled for the partition
     bool is_remote_fetch_enabled() const;
 

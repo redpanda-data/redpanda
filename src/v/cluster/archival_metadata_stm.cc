@@ -147,9 +147,20 @@ struct archival_metadata_stm::replace_manifest_cmd {
     using value = iobuf;
 };
 
+struct archival_metadata_stm::process_anomalies_cmd {
+    static constexpr cmd_key key{11};
+
+    struct value
+      : serde::envelope<value, serde::version<0>, serde::compat_version<0>> {
+        model::timestamp scrub_timestamp;
+        cloud_storage::scrub_status status;
+        cloud_storage::anomalies detected;
+    };
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<3>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<4>, serde::compat_version<0>> {
     /// List of segments
     fragmented_vector<segment> segments;
     /// List of replaced segments
@@ -184,6 +195,10 @@ struct archival_metadata_stm::snapshot
     kafka::offset start_kafka_offset;
     // List of spillover manifests
     fragmented_vector<segment> spillover_manifests;
+    // Timestamp of last completed scrub
+    model::timestamp last_partition_scrub;
+    // Anomalies detected by the scrubber
+    cloud_storage::anomalies detected_anomalies;
 };
 
 inline archival_metadata_stm::segment
@@ -246,6 +261,21 @@ command_batch_builder::replace_manifest(iobuf replacement) {
     iobuf key_buf = serde::to_iobuf(
       archival_metadata_stm::replace_manifest_cmd::key);
     _builder.add_raw_kv(std::move(key_buf), std::move(replacement));
+    return *this;
+}
+
+command_batch_builder& command_batch_builder::process_anomalies(
+  model::timestamp scrub_timestamp,
+  cloud_storage::scrub_status status,
+  cloud_storage::anomalies detected) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::process_anomalies_cmd::key);
+    auto record_val = archival_metadata_stm::process_anomalies_cmd::value{
+      .scrub_timestamp = scrub_timestamp,
+      .status = status,
+      .detected = std::move(detected)};
+    _builder.add_raw_kv(
+      std::move(key_buf), serde::to_iobuf(std::move(record_val)));
     return *this;
 }
 
@@ -579,6 +609,17 @@ ss::future<std::error_code> archival_metadata_stm::cleanup_metadata(
     co_return co_await builder.replicate();
 }
 
+ss::future<std::error_code> archival_metadata_stm::process_anomalies(
+  model::timestamp scrub_timestamp,
+  cloud_storage::scrub_status status,
+  cloud_storage::anomalies detected,
+  ss::lowres_clock::time_point deadline,
+  ss::abort_source& as) {
+    auto builder = batch_start(deadline, as);
+    builder.process_anomalies(scrub_timestamp, status, std::move(detected));
+    co_return co_await builder.replicate();
+}
+
 ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
   model::record_batch batch, ss::abort_source& as) {
     auto current_term = _insync_term;
@@ -789,6 +830,9 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
         case replace_manifest_cmd::key:
             apply_replace_manifest(r.release_value());
             break;
+        case process_anomalies_cmd::key:
+            apply_process_anomalies(r.release_value());
+            break;
         default:
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
@@ -897,7 +941,9 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       snap.archive_start_offset_delta,
       snap.archive_clean_offset,
       snap.archive_size_bytes,
-      snap.spillover_manifests);
+      snap.spillover_manifests,
+      snap.last_partition_scrub,
+      snap.detected_anomalies);
 
     vlog(
       _logger.info,
@@ -934,7 +980,9 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
       .archive_clean_offset = _manifest->get_archive_clean_offset(),
       .archive_size_bytes = _manifest->archive_size_bytes(),
       .start_kafka_offset = _manifest->get_start_kafka_offset_override(),
-      .spillover_manifests = std::move(spillover)});
+      .spillover_manifests = std::move(spillover),
+      .last_partition_scrub = _manifest->last_partition_scrub(),
+      .detected_anomalies = _manifest->detected_anomalies()});
 
     vlog(
       _logger.debug,
@@ -1136,6 +1184,21 @@ void archival_metadata_stm::apply_replace_manifest(iobuf val) {
       "Replace command applied, new start offset: {}, new last offset: {}",
       get_start_offset(),
       get_last_offset());
+}
+
+void archival_metadata_stm::apply_process_anomalies(iobuf buf) {
+    try {
+        auto cmd = serde::from_iobuf<process_anomalies_cmd::value>(
+          std::move(buf));
+        vlog(_logger.debug, "Processing anomalies: {}", cmd.detected);
+        _manifest->process_anomalies(
+          cmd.scrub_timestamp, cmd.status, std::move(cmd.detected));
+    } catch (...) {
+        vlog(
+          _logger.error,
+          "Failed to apply process anomalies command: {}",
+          std::current_exception());
+    }
 }
 
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>

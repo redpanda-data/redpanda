@@ -16,6 +16,7 @@ class upload_controller;
 class ntp_archiver;
 struct configuration;
 class upload_housekeeping_service;
+class purger;
 class scrubber;
 
 } // namespace archival

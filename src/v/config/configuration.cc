@@ -1485,6 +1485,25 @@ configuration::configuration()
       "performance",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_enable_scrubbing(
+      *this,
+      "cloud_storage_enable_scrubbing",
+      "Enable scrubbing of cloud storage partitions. The scrubber validates "
+      "the integrity of data and metadata uploaded to cloud storage",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
+  , cloud_storage_scrubbing_interval_ms(
+      *this,
+      "cloud_storage_scrubbing_interval_ms",
+      "Time interval between scrubs of the same partition",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1h)
+  , cloud_storage_scrubbing_interval_jitter_ms(
+      *this,
+      "cloud_storage_scrubbing_interval_jitter_ms",
+      "Jitter applied to the cloud storage scrubbing interval.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10min)
   , cloud_storage_disable_upload_loop_for_tests(
       *this,
       "cloud_storage_disable_upload_loop_for_tests",
@@ -1616,7 +1635,7 @@ configuration::configuration()
   , cloud_storage_topic_purge_grace_period_ms(
       *this,
       "cloud_storage_topic_purge_grace_period_ms",
-      "Grace period during which the scrubber will refuse to purge the topic.",
+      "Grace period during which the purger will refuse to purge the topic.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       30s)
   , cloud_storage_disable_upload_consistency_checks(
