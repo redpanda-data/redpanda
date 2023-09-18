@@ -16,7 +16,9 @@ import (
 )
 
 const (
-	debugEndpoint          = "/v1/debug/self_test"
+	debugEndpoint          = "/v1/debug"
+	selfTestEndpoint       = debugEndpoint + "/self_test"
+	cpuProfilerEndpoint    = debugEndpoint + "/cpu_profile"
 	DiskcheckTagIdentifier = "disk"
 	NetcheckTagIdentifier  = "network"
 )
@@ -100,6 +102,17 @@ type SelfTestRequest struct {
 	Nodes []int `json:"nodes,omitempty"`
 }
 
+type CPUProfile struct {
+	ShardID        int          `json:"shard_id"`
+	DroppedSamples int          `json:"dropped_samples"`
+	Samples        []CPUSamples `json:"samples,omitempty"`
+}
+
+type CPUSamples struct {
+	UserBacktrace string `json:"user_backtrace"`
+	Occurrences   int    `json:"occurrences"`
+}
+
 func (a *AdminAPI) StartSelfTest(ctx context.Context, nodeIds []int, params []any) (string, error) {
 	var testID string
 	body := SelfTestRequest{
@@ -108,7 +121,7 @@ func (a *AdminAPI) StartSelfTest(ctx context.Context, nodeIds []int, params []an
 	}
 	err := a.sendToLeader(ctx,
 		http.MethodPost,
-		fmt.Sprintf("%s/start", debugEndpoint),
+		fmt.Sprintf("%s/start", selfTestEndpoint),
 		body,
 		&testID)
 	return testID, err
@@ -118,7 +131,7 @@ func (a *AdminAPI) StopSelfTest(ctx context.Context) error {
 	return a.sendToLeader(
 		ctx,
 		http.MethodPost,
-		fmt.Sprintf("%s/stop", debugEndpoint),
+		fmt.Sprintf("%s/stop", selfTestEndpoint),
 		nil,
 		nil,
 	)
@@ -126,6 +139,11 @@ func (a *AdminAPI) StopSelfTest(ctx context.Context) error {
 
 func (a *AdminAPI) SelfTestStatus(ctx context.Context) ([]SelfTestNodeReport, error) {
 	var response []SelfTestNodeReport
-	err := a.sendAny(ctx, http.MethodGet, fmt.Sprintf("%s/status", debugEndpoint), nil, &response)
+	err := a.sendAny(ctx, http.MethodGet, fmt.Sprintf("%s/status", selfTestEndpoint), nil, &response)
 	return response, err
+}
+
+func (a *AdminAPI) CPUProfile(ctx context.Context) ([]CPUProfile, error) {
+	var response []CPUProfile
+	return response, a.sendAny(ctx, http.MethodGet, cpuProfilerEndpoint, nil, &response)
 }

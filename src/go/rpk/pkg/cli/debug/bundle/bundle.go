@@ -40,6 +40,7 @@ type bundleParams struct {
 	controllerLogLimitBytes int
 	timeout                 time.Duration
 	metricsInterval         time.Duration
+	cpuProfilerTimeout      time.Duration
 }
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -55,8 +56,9 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		controllerLogsSizeLimit string
 		namespace               string
 
-		timeout         time.Duration
-		metricsInterval time.Duration
+		timeout            time.Duration
+		metricsInterval    time.Duration
+		cpuProfilerTimeout time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "bundle",
@@ -103,6 +105,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				controllerLogLimitBytes: int(controllerLogsLimit),
 				timeout:                 timeout,
 				metricsInterval:         metricsInterval,
+				cpuProfilerTimeout:      cpuProfilerTimeout,
 			}
 
 			// to execute the appropriate bundle we look for
@@ -136,6 +139,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.StringVar(&controllerLogsSizeLimit, "controller-logs-size-limit", "20MB", "The size limit of the controller logs that can be stored in the bundle (e.g. 3MB, 1GiB)")
 	f.StringVar(&uploadURL, "upload-url", "", "If provided, where to upload the bundle in addition to creating a copy on disk")
 	f.StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
+	f.DurationVar(&cpuProfilerTimeout, "cpu-profiler-timeout", 10*time.Second, "For how long to collect samples for the cpu profiler (e.g. 30s, 1.5m)")
 
 	return cmd
 }

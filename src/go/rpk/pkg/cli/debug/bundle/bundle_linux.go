@@ -130,7 +130,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveResourceUsageData(ps, bp.y),
 		saveNTPDrift(ps),
 		saveSyslog(ps),
-		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval, bp.cpuProfilerTimeout),
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs),
 		saveDNSData(ctx, ps),
 		saveDiskUsage(ctx, ps, bp.y),

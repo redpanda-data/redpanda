@@ -78,7 +78,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	} else {
 		steps = append(steps, []step{
 			saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses),
-			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval),
+			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval, bp.cpuProfilerTimeout),
 		}...)
 	}
 	for _, s := range steps {
@@ -237,7 +237,8 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 //   - Node Config: /v1/node_config
 //   - Prometheus Metrics: /metrics and /public_metrics
 //   - Cluster View: v1/cluster_view
-func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval time.Duration) step {
+//   - CPU Profile: v1/debug/cpu_profile
+func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval, profTimeout time.Duration) step {
 	return func() error {
 		var rerrs *multierror.Error
 		var funcs []func() error
@@ -288,6 +289,37 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_public_metrics.txt", aName), cl.PublicMetrics)
 					case <-ctx.Done():
 						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_public_metrics.txt", aName), cl.PublicMetrics)
+					}
+				},
+				func() error {
+					profEnabled := map[string]interface{}{"cpu_profiler_enabled": true}
+					_, err = cl.PatchClusterConfig(ctx, profEnabled, []string{})
+					if err != nil {
+						return fmt.Errorf("failed to enable CPU profiler: %v", err)
+					}
+
+					profDisabled := map[string]interface{}{"cpu_profiler_enabled": false}
+					select {
+					case <-time.After(profTimeout):
+						err = requestAndSave(ctx, ps, fmt.Sprintf("cpuprofile/cpu_profile_%v.json", aName), cl.CPUProfile)
+						_, pErr := cl.PatchClusterConfig(ctx, profDisabled, []string{})
+						if err != nil {
+							errMsg := fmt.Errorf("unable to get CPU profile: %v", err)
+							if pErr != nil {
+								errMsg = fmt.Errorf("%w; unable to disable the CPU profiler: %v, please run 'rpk cluster config set cpu_profiler_enabled false'", errMsg, pErr)
+							}
+							return errMsg
+						}
+						if pErr != nil {
+							return fmt.Errorf("unable to disable the CPU profiler: %v, please run 'rpk cluster config set cpu_profiler_enabled false'", pErr)
+						}
+						return nil
+					case <-ctx.Done():
+						_, err = cl.PatchClusterConfig(ctx, profDisabled, []string{})
+						if err != nil {
+							return fmt.Errorf("unable to get CPU profile: %v; unable to disable the cpu profiler: %v, please run 'rpk cluster config set cpu_profiler_enabled false'", ctx.Err(), err)
+						}
+						return ctx.Err()
 					}
 				},
 			}
