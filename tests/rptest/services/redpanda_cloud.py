@@ -328,6 +328,10 @@ class CloudCluster():
         self.config.type = self.config.type.upper()
         self.config.provider = self.config.provider.upper()
         self.config.network = self.config.network.lower()
+        # Handle default value for tier
+        if self.config.config_profile_name == 'default':
+            self.config.config_profile_name = TIER_DEFAULTS[
+                self.config.provider]
         # Init API client
         self.cloudv2 = RpCloudApiClient(self.config, logger)
 
@@ -665,10 +669,6 @@ class CloudCluster():
 
         if not self.isPublicNetwork:
             self.current.connection_type = 'private'
-        # Handle default values
-        if self.config.config_profile_name == 'default':
-            self.config.config_profile_name = TIER_DEFAULTS[
-                self.config.provider]
 
         if self.config.id != '':
             # Cluster already exist
