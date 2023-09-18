@@ -136,6 +136,7 @@ spec:
                             type: array
                         required:
                         - enabled
+                        - users
                         type: object
                     required:
                     - sasl
