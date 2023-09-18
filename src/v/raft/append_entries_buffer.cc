@@ -2,7 +2,6 @@
 
 #include "raft/consensus.h"
 #include "raft/types.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
@@ -22,7 +21,7 @@ append_entries_buffer::append_entries_buffer(
 
 ss::future<append_entries_reply>
 append_entries_buffer::enqueue(append_entries_request&& r) {
-    gate_guard guard(_gate);
+    auto guard = _gate.hold();
 
     // we normally do not want to wait as it would cause requests
     // reordering. Reordering may only happend if we would wait on condition
