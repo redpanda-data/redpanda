@@ -1582,6 +1582,12 @@ configuration::configuration()
       "cloud_storage_segment_size_target/2",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , cloud_storage_max_download_throughput_per_shard(
+      *this,
+      "cloud_storage_max_download_throughput_per_shard",
+      "Max S3 download throughput per shard",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_GiB)
   , cloud_storage_graceful_transfer_timeout_ms(
       *this,
       "cloud_storage_graceful_transfer_timeout_ms",
