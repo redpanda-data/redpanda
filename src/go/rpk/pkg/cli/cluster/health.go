@@ -72,13 +72,25 @@ following conditions are met:
 func printHealthOverview(hov *adminapi.ClusterHealthOverview) {
 	types.Sort(hov)
 	out.Section("CLUSTER HEALTH OVERVIEW")
-	overviewFormat := `Healthy:                     %v
-Unhealthy reasons:           %v
-Controller ID:               %v
-All nodes:                   %v
-Nodes down:                  %v
-Leaderless partitions:       %v
-Under-replicated partitions: %v
-`
-	fmt.Printf(overviewFormat, hov.IsHealthy, hov.UnhealthyReasons, hov.ControllerID, hov.AllNodes, hov.NodesDown, hov.LeaderlessPartitions, hov.UnderReplicatedPartitions)
+
+	// leaderless partitions and under-replicated counts are available starting
+	// v23.3.
+	lp := "Leaderless partitions:"
+	urp := "Under-replicated partitions:"
+	if hov.LeaderlessCount != nil {
+		lp = fmt.Sprintf("Leaderless partitions (%v):", *hov.LeaderlessCount)
+	}
+	if hov.UnderReplicatedCount != nil {
+		urp = fmt.Sprintf("Under-replicated partitions (%v):", *hov.UnderReplicatedCount)
+	}
+
+	tw := out.NewTable()
+	defer tw.Flush()
+	tw.Print("Healthy:", hov.IsHealthy)
+	tw.Print("Unhealthy reasons:", hov.UnhealthyReasons)
+	tw.Print("Controller ID:", hov.ControllerID)
+	tw.Print("All nodes:", hov.AllNodes)
+	tw.Print("Nodes down:", hov.NodesDown)
+	tw.Print(lp, hov.LeaderlessPartitions)
+	tw.Print(urp, hov.UnderReplicatedPartitions)
 }
