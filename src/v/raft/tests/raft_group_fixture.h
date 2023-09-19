@@ -409,7 +409,8 @@ struct raft_group {
           broker,
           _id,
           get_raft_cfg(),
-          raft::timeout_jitter(heartbeat_interval * 10),
+          raft::timeout_jitter(config::mock_binding<std::chrono::milliseconds>(
+            heartbeat_interval * 10)),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
@@ -434,7 +435,8 @@ struct raft_group {
           _id,
           raft::group_configuration(
             std::vector<raft::vnode>{}, model::revision_id(0)),
-          raft::timeout_jitter(heartbeat_interval * 10),
+          raft::timeout_jitter(config::mock_binding<std::chrono::milliseconds>(
+            heartbeat_interval * 10)),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
