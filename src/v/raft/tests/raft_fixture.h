@@ -179,7 +179,8 @@ private:
     ss::sstring _base_directory;
     ss::shared_ptr<in_memory_test_protocol> _protocol;
     ss::sharded<storage::api> _storage;
-    std::chrono::milliseconds _election_timeout = 500ms;
+    config::binding<std::chrono::milliseconds> _election_timeout
+      = config::mock_binding(500ms);
     ss::sharded<features::feature_table> _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;

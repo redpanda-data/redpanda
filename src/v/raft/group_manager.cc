@@ -101,8 +101,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _self,
       id,
       std::move(raft_cfg),
-      raft::timeout_jitter(
-        config::shard_local_cfg().raft_election_timeout_ms()),
+      raft::timeout_jitter(_configuration.election_timeout_ms),
       log,
       scheduling_config(_raft_sg, raft_priority()),
       _configuration.raft_io_timeout_ms,

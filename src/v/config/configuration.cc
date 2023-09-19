@@ -759,7 +759,7 @@ configuration::configuration()
       *this,
       "election_timeout_ms",
       "Election timeout expressed in milliseconds",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1'500ms)
   , kafka_group_recovery_timeout_ms(
       *this,

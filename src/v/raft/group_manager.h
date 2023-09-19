@@ -45,6 +45,7 @@ public:
         config::binding<std::chrono::milliseconds> raft_io_timeout_ms;
         config::binding<bool> enable_lw_heartbeat;
         config::binding<size_t> recovery_concurrency_per_shard;
+        config::binding<std::chrono::milliseconds> election_timeout_ms;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 

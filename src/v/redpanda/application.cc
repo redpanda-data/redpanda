@@ -1116,6 +1116,8 @@ void application::wire_up_redpanda_services(
               .recovery_concurrency_per_shard
               = config::shard_local_cfg()
                   .raft_recovery_concurrency_per_shard.bind(),
+              .election_timeout_ms
+              = config::shard_local_cfg().raft_election_timeout_ms.bind(),
             };
         },
         [] {
