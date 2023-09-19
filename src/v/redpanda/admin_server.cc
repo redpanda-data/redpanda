@@ -4108,15 +4108,22 @@ void fill_raft_state(
     }
     replica.raft_state = std::move(raft_state);
 }
+ss::future<result<std::vector<cluster::partition_state>>>
+get_partition_state(model::ntp ntp, cluster::controller& controller) {
+    if (ntp == model::controller_ntp) {
+        return controller.get_controller_partition_state();
+    }
+    return controller.get_topics_frontend().local().get_partition_state(
+      std::move(ntp));
+}
+
 } // namespace
 
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_state_handler(
   std::unique_ptr<ss::http::request> req) {
     const model::ntp ntp = parse_ntp_from_request(req->param);
-    auto result
-      = co_await _controller->get_topics_frontend().local().get_partition_state(
-        ntp);
+    auto result = co_await get_partition_state(ntp, *_controller);
     if (result.has_error()) {
         throw ss::httpd::server_error_exception(fmt::format(
           "Error {} processing partition state for ntp: {}",
