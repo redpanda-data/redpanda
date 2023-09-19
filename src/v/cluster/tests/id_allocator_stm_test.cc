@@ -21,6 +21,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -39,20 +40,21 @@ ss::logger idstmlog{"idstm-test"};
 
 struct id_allocator_stm_fixture : simple_raft_fixture {
     void create_stm_and_start_raft() {
-        cfg.id_allocator_batch_size.set_value(int16_t(1));
-        cfg.id_allocator_log_capacity.set_value(int16_t(2));
+        // set configuration parameters
+        test_local_cfg.get("id_allocator_batch_size").set_value(int16_t(1));
+        test_local_cfg.get("id_allocator_log_capacity").set_value(int16_t(2));
         create_raft();
         raft::state_machine_manager_builder stm_m_builder;
 
         _stm = stm_m_builder.create_stm<cluster::id_allocator_stm>(
-          idstmlog, _raft.get(), cfg);
+          idstmlog, _raft.get(), config::shard_local_cfg());
 
         _raft->start(std::move(stm_m_builder)).get();
         _started = true;
     }
 
     ss::shared_ptr<cluster::id_allocator_stm> _stm;
-    config::configuration cfg;
+    scoped_config test_local_cfg;
 };
 
 FIXTURE_TEST(stm_monotonicity_test, id_allocator_stm_fixture) {
