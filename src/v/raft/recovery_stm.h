@@ -45,7 +45,7 @@ private:
     ss::future<> handle_install_snapshot_reply(result<install_snapshot_reply>);
     ss::future<> open_snapshot_reader();
     ss::future<> close_snapshot_reader();
-    bool state_changed();
+
     bool is_recovery_finished();
     flush_after_append should_flush(model::offset) const;
     consensus* _ptr;
