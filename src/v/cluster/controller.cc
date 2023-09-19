@@ -741,6 +741,85 @@ int16_t controller::internal_topic_replication() const {
     }
 }
 
+ss::future<result<std::vector<partition_state>>>
+controller::get_controller_partition_state() {
+    std::vector<model::node_id> nodes_to_query
+      = _members_table.local().node_ids();
+
+    std::vector<ss::future<result<partition_state_reply>>> futures;
+    futures.reserve(nodes_to_query.size());
+    for (const auto& node : nodes_to_query) {
+        futures.push_back(do_get_controller_partition_state(node));
+    }
+
+    auto finished_futures = co_await ss::when_all(
+      futures.begin(), futures.end());
+    std::vector<partition_state> results;
+    results.reserve(finished_futures.size());
+    for (auto& fut : finished_futures) {
+        if (fut.failed()) {
+            auto ex = fut.get_exception();
+            vlog(
+              clusterlog.info,
+              "Failed to get controller partition state, failure: {}",
+              ex);
+            continue;
+        }
+        auto result = fut.get();
+        if (result.has_error()) {
+            vlog(
+              clusterlog.info,
+              "Failed to get controller state, result: {}",
+              result.error());
+            continue;
+        }
+        auto res = std::move(result.value());
+        if (res.error_code != errc::success || !res.state) {
+            vlog(
+              clusterlog.debug,
+              "Error during controller partition state fetch, error: {}",
+              res.error_code);
+            continue;
+        }
+        results.push_back(std::move(*res.state));
+    }
+    co_return results;
+}
+
+ss::future<result<partition_state_reply>>
+controller::do_get_controller_partition_state(model::node_id target_node) {
+    if (target_node == _raft0->self().id()) {
+        partition_state_reply reply{};
+
+        return _partition_manager.invoke_on(
+          controller_stm_shard,
+          [reply = std::move(reply)](partition_manager& pm) mutable {
+              auto partition = pm.get(model::controller_ntp);
+              if (!partition) {
+                  reply.error_code = errc::partition_not_exists;
+                  return ss::make_ready_future<result<partition_state_reply>>(
+                    reply);
+              }
+              reply.state = ::cluster::get_partition_state(partition);
+              reply.error_code = errc::success;
+              return ss::make_ready_future<result<partition_state_reply>>(
+                reply);
+          });
+    }
+    auto timeout = model::timeout_clock::now() + 5s;
+    return _connections.local().with_node_client<controller_client_protocol>(
+      _raft0->self().id(),
+      ss::this_shard_id(),
+      target_node,
+      timeout,
+      [timeout](controller_client_protocol client) mutable {
+          return client
+            .get_partition_state(
+              partition_state_request{.ntp = model::controller_ntp},
+              rpc::client_opts(timeout))
+            .then(&rpc::get_ctx_data<partition_state_reply>);
+      });
+}
 /**
  * Validate that:
  * - node_id never changes

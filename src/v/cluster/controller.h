@@ -16,7 +16,9 @@
 #include "cluster/fwd.h"
 #include "cluster/node_status_table.h"
 #include "cluster/scheduling/leader_balancer.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "raft/fwd.h"
 #include "rpc/fwd.h"
 #include "security/fwd.h"
@@ -183,6 +185,11 @@ public:
     }
 
     model::offset get_dirty_offset() const { return _raft0->dirty_offset(); }
+
+    ss::future<result<std::vector<partition_state>>>
+    get_controller_partition_state();
+    ss::future<result<partition_state_reply>>
+    do_get_controller_partition_state(model::node_id id);
 
     static const bytes invariants_key;
 
