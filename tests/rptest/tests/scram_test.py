@@ -324,6 +324,7 @@ class ScramLiveUpdateTest(RedpandaTest):
 class ScramBootstrapUserTest(RedpandaTest):
     BOOTSTRAP_USERNAME = 'bob'
     BOOTSTRAP_PASSWORD = 'sekrit'
+    BOOTSTRAP_MECHANISM = 'SCRAM-SHA-512'
 
     def __init__(self, *args, **kwargs):
         # Configure the cluster as a user might configure it for secure
@@ -336,7 +337,7 @@ class ScramBootstrapUserTest(RedpandaTest):
             *args,
             environment={
                 'RP_BOOTSTRAP_USER':
-                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}'
+                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}:{self.BOOTSTRAP_MECHANISM}'
             },
             extra_rp_conf={
                 'enable_sasl': True,
@@ -346,7 +347,7 @@ class ScramBootstrapUserTest(RedpandaTest):
             security=security_config,
             superuser=SaslCredentials(self.BOOTSTRAP_USERNAME,
                                       self.BOOTSTRAP_PASSWORD,
-                                      "SCRAM-SHA-256"),
+                                      self.BOOTSTRAP_MECHANISM),
             **kwargs)
 
     def _check_http_status_everywhere(self, expect_status, callable):

@@ -32,8 +32,11 @@
 #include "rpc/types.h"
 #include "security/authorizer.h"
 #include "security/scram_algorithm.h"
+#include "security/scram_authenticator.h"
 
 #include <seastar/core/coroutine.hh>
+
+#include <boost/algorithm/string/split.hpp>
 
 #include <regex>
 
@@ -322,24 +325,35 @@ security_frontend::get_bootstrap_user_creds_from_env() {
         return {};
     }
 
-    ss::sstring creds_str = creds_str_ptr;
-    auto colon = creds_str.find(":");
-    if (colon == ss::sstring::npos || colon == creds_str.size() - 1) {
+    std::string_view creds = creds_str_ptr;
+    std::vector<std::string_view> parts;
+    parts.reserve(3);
+    boost::algorithm::split(parts, creds, [](char c) { return c == ':'; });
+    if (
+      !(parts.size() == 2 || parts.size() == 3) || parts[0].empty()
+      || parts[1].empty()) {
         // Malformed value.  Do not log the value, it may be malformed
         // but it is still a secret.
         vlog(
           clusterlog.warn,
-          "Invalid value of {} (expected \"username:password\")",
+          "Invalid value of {} (expected \"username:password:mechanism\")",
           bootstrap_user_env_key);
         return {};
     }
-
-    auto username = security::credential_user{creds_str.substr(0, colon)};
-    auto password = creds_str.substr(colon + 1);
-    auto credentials = security::scram_sha256::make_credentials(
-      password, security::scram_sha256::min_iterations);
+    std::variant<security::scram_sha256, security::scram_sha512> scram;
+    if (
+      parts.size() == 3
+      && parts[2] == security::scram_sha512_authenticator::name) {
+        scram = security::scram_sha512{};
+    }
     return std::optional<user_and_credential>(
-      std::in_place, std::move(username), std::move(credentials));
+      std::in_place,
+      security::credential_user{parts[0]},
+      ss::visit(scram, [&](auto const& scram) {
+          using scram_t = std::decay_t<decltype(scram)>;
+          return scram_t::make_credentials(
+            ss::sstring{parts[1]}, scram_t::min_iterations);
+      }));
 }
 
 ss::future<result<model::offset>> security_frontend::get_leader_committed(
