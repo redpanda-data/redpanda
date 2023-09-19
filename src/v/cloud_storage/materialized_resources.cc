@@ -19,7 +19,10 @@
 #include "ssx/future-util.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/temporary_buffer.hh>
 
 #include <absl/container/btree_map.h>
 
@@ -51,7 +54,16 @@ materialized_resources::materialized_resources()
   , _manifest_meta_size(
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
-      config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
+      config::shard_local_cfg().cloud_storage_manifest_cache_size()))
+  , _throughput_limit(
+      config::shard_local_cfg()
+        .cloud_storage_max_download_throughput_per_shard(),
+      "ts-segment-downloads",
+      config::shard_local_cfg()
+        .cloud_storage_max_download_throughput_per_shard())
+  , _throughput_limit_config(
+      config::shard_local_cfg()
+        .cloud_storage_max_download_throughput_per_shard.bind()) {
     auto update_max_mem = [this]() {
         // Update memory capacity to accomodate new max number of segment
         // readers
@@ -75,6 +87,14 @@ materialized_resources::materialized_resources()
             return _manifest_cache->set_capacity(_manifest_meta_size());
         });
     });
+    _throughput_limit_config.watch([this] {
+        _throughput_limit.update_capacity(
+          config::shard_local_cfg()
+            .cloud_storage_max_download_throughput_per_shard());
+        _throughput_limit.update_rate(
+          config::shard_local_cfg()
+            .cloud_storage_max_download_throughput_per_shard());
+    });
 }
 
 ts_read_path_probe& materialized_resources::get_read_path_probe() {
@@ -83,6 +103,8 @@ ts_read_path_probe& materialized_resources::get_read_path_probe() {
 
 ss::future<> materialized_resources::stop() {
     cst_log.debug("Stopping materialized_segments...");
+
+    _throughput_limit.shutdown();
 
     co_await _manifest_cache->stop();
 
@@ -454,6 +476,67 @@ void materialized_resources::maybe_trim_segment(
             st.readers.pop_front();
         }
     }
+}
+
+class throttled_dl_source : public ss::data_source_impl {
+public:
+    explicit throttled_dl_source(
+      ss::input_stream<char> st,
+      materialized_resources& parent,
+      ss::abort_source& as,
+      ss::gate::holder h)
+      : _src(std::move(st).detach())
+      , _parent(parent)
+      , _as(as)
+      , _holder(std::move(h)) {}
+
+    ss::future<ss::temporary_buffer<char>> get() override {
+        auto h = _gate.hold();
+        return _src.get().then(
+          [this, h = std::move(h)](ss::temporary_buffer<char> buf) mutable {
+              size_t buffer_size = buf.size();
+              return maybe_throttle(buffer_size)
+                .then([b = std::move(buf), h = std::move(h)]() mutable {
+                    return std::move(b);
+                });
+          });
+    }
+
+    ss::future<ss::temporary_buffer<char>> skip(uint64_t n) override {
+        auto holder = _gate.hold();
+        return _src.skip(n).finally(
+          [this, n, h = std::move(holder)] { return maybe_throttle(n); });
+    }
+
+    ss::future<> close() override {
+        _holder.release();
+        return _gate.close().then([this] { return _src.close(); });
+    }
+
+private:
+    ss::future<> maybe_throttle(size_t buffer_size) {
+        auto available = _parent._throughput_limit.available();
+        if (available < buffer_size) {
+            // The throttling will be applied. Register the amount.
+            _parent._read_path_probe.download_throttled(
+              buffer_size - available);
+        }
+        return _parent._throughput_limit.throttle(buffer_size, _as);
+    }
+    ss::data_source _src;
+    materialized_resources& _parent;
+    ss::gate _gate;
+    ss::abort_source& _as;
+    // Gate holder of the `_parent`
+    ss::gate::holder _holder;
+};
+
+ss::input_stream<char> materialized_resources::throttle_download(
+  ss::input_stream<char> underlying, ss::abort_source& as) {
+    auto src = std::make_unique<throttled_dl_source>(
+      std::move(underlying), *this, as, _gate.hold());
+    ss::data_source ds(std::move(src));
+    return ss::input_stream<char>(std::move(ds));
 }
 
 } // namespace cloud_storage

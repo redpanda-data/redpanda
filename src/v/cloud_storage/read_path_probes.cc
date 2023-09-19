@@ -139,6 +139,13 @@ ts_read_path_probe::ts_read_path_probe() {
           },
           sm::description("Chunk hydration latency histogram"))
           .aggregate(aggregate_labels),
+
+        sm::make_counter(
+          "downloads_throttled_sum",
+          [this] { return get_downloads_throttled_sum(); },
+          sm::description("Total amount of throttling applied to cloud storage "
+                          "downloads"))
+          .aggregate(aggregate_labels),
       });
 }
 

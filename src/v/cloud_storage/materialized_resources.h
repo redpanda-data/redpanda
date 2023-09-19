@@ -20,7 +20,9 @@
 #include "ssx/semaphore.h"
 #include "utils/adjustable_semaphore.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/token_bucket.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -50,6 +52,8 @@ class materialized_manifest_cache;
  * evicted objects, instead of each partition doing it independently.
  */
 class materialized_resources {
+    friend class throttled_dl_source;
+
 public:
     materialized_resources();
 
@@ -72,6 +76,8 @@ public:
     ///
     /// The undrlying semaphore limits number of parallel hydrations
     ss::future<ssx::semaphore_units> get_hydration_units(size_t n);
+    ss::input_stream<char>
+    throttle_download(ss::input_stream<char> underlying, ss::abort_source& as);
 
 private:
     /// Timer use to periodically evict stale segment readers
@@ -157,6 +163,8 @@ private:
     uint64_t _segments_delayed{0};
 
     ts_read_path_probe _read_path_probe;
+    token_bucket<> _throughput_limit;
+    config::binding<size_t> _throughput_limit_config;
 };
 
 } // namespace cloud_storage
