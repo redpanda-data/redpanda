@@ -22,27 +22,25 @@
 
 namespace {
 ss::sstring to_string(ss::fs_type fs) {
-    return [fs]() {
-        switch (fs) {
-        case ss::fs_type::other:
-            return "other";
-        case ss::fs_type::xfs:
-            return "xfs";
-        case ss::fs_type::ext2:
-            return "ext2";
-        case ss::fs_type::ext3:
-            return "ext3";
-        case ss::fs_type::ext4:
-            return "ext4";
-        case ss::fs_type::btrfs:
-            return "btrfs";
-        case ss::fs_type::hfs:
-            return "hfs";
-        case ss::fs_type::tmpfs:
-            return "tmpfs";
-        };
-        return "bad_enum";
-    }();
+    switch (fs) {
+    case ss::fs_type::other:
+        return "other";
+    case ss::fs_type::xfs:
+        return "xfs";
+    case ss::fs_type::ext2:
+        return "ext2";
+    case ss::fs_type::ext3:
+        return "ext3";
+    case ss::fs_type::ext4:
+        return "ext4";
+    case ss::fs_type::btrfs:
+        return "btrfs";
+    case ss::fs_type::hfs:
+        return "hfs";
+    case ss::fs_type::tmpfs:
+        return "tmpfs";
+    };
+    return "bad_enum";
 }
 } // namespace
 
