@@ -3543,7 +3543,7 @@ struct partition_raft_state
         model::offset last_dirty_log_index;
         model::offset match_index;
         model::offset next_index;
-        model::offset last_sent_offset;
+        model::offset expected_log_end_offset;
         size_t heartbeats_failed;
         bool is_learner;
         uint64_t ms_since_last_heartbeat;
@@ -3560,7 +3560,7 @@ struct partition_raft_state
               last_dirty_log_index,
               match_index,
               next_index,
-              last_sent_offset,
+              expected_log_end_offset,
               heartbeats_failed,
               is_learner,
               ms_since_last_heartbeat,

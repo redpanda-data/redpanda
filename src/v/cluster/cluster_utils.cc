@@ -455,7 +455,7 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
             state.last_flushed_log_index = md.last_flushed_log_index;
             state.match_index = md.match_index;
             state.next_index = md.next_index;
-            state.last_sent_offset = md.last_sent_offset;
+            state.expected_log_end_offset = md.expected_log_end_offset;
             state.heartbeats_failed = md.heartbeats_failed;
             state.is_learner = md.is_learner;
             state.is_recovering = md.is_recovering;
