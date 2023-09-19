@@ -149,7 +149,7 @@ configuration::configuration()
       "topic_memory_per_partition",
       "Required memory per partition when creating topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1_MiB,
+      4_MiB,
       {
         .min = 1,      // Must be nonzero, it's a divisor
         .max = 100_MiB // Rough 'sanity' limit: a machine with 1GB RAM must be
