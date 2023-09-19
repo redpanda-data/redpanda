@@ -159,16 +159,6 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     meta = get_follower_meta();
 }
 
-bool recovery_stm::state_changed() {
-    auto meta = get_follower_meta();
-    if (!meta) {
-        return true;
-    }
-    auto lstats = _ptr->_log.offsets();
-    return lstats.dirty_offset > meta.value()->last_dirty_log_index
-           || meta.value()->last_sent_offset == lstats.dirty_offset;
-}
-
 flush_after_append
 recovery_stm::should_flush(model::offset follower_committed_match_index) const {
     constexpr size_t checkpoint_flush_size = 1_MiB;
