@@ -286,7 +286,6 @@ class UpgradeWithWorkloadTest(EndToEndTest):
         self.start_consumer(num_nodes=1)
         self.await_startup(min_records=self.producer_msgs_per_sec)
 
-    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rolling_upgrade(self):
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
