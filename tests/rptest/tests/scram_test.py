@@ -12,6 +12,7 @@ import string
 import requests
 from requests.exceptions import HTTPError
 import time
+import re
 
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
@@ -325,18 +326,24 @@ class ScramBootstrapUserTest(RedpandaTest):
     BOOTSTRAP_USERNAME = 'bob'
     BOOTSTRAP_PASSWORD = 'sekrit'
 
-    def __init__(self, *args, **kwargs):
+    # BOOTSTRAP_MECHANISM = 'SCRAM-SHA-512'
+
+    def __init__(self, test_context, *args, **kwargs):
         # Configure the cluster as a user might configure it for secure
         # bootstrap: i.e. all auth turned on from moment of creation.
+
+        self.mechanism = test_context.injected_args["mechanism"]
+        self.expect_fail = test_context.injected_args.get("expect_fail", False)
 
         security_config = SecurityConfig()
         security_config.enable_sasl = True
 
         super().__init__(
+            test_context,
             *args,
             environment={
                 'RP_BOOTSTRAP_USER':
-                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}'
+                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}:{self.mechanism}'
             },
             extra_rp_conf={
                 'enable_sasl': True,
@@ -345,9 +352,13 @@ class ScramBootstrapUserTest(RedpandaTest):
             },
             security=security_config,
             superuser=SaslCredentials(self.BOOTSTRAP_USERNAME,
-                                      self.BOOTSTRAP_PASSWORD,
-                                      "SCRAM-SHA-256"),
+                                      self.BOOTSTRAP_PASSWORD, self.mechanism),
             **kwargs)
+
+    def setUp(self):
+        self.redpanda.start(expect_fail=self.expect_fail)
+        if not self.expect_fail:
+            self._create_initial_topics()
 
     def _check_http_status_everywhere(self, expect_status, callable):
         """
@@ -370,7 +381,9 @@ class ScramBootstrapUserTest(RedpandaTest):
         return True
 
     @cluster(num_nodes=3)
-    def test_bootstrap_user(self):
+    @parametrize(mechanism='SCRAM-SHA-512')
+    @parametrize(mechanism='SCRAM-SHA-256')
+    def test_bootstrap_user(self, mechanism):
         # Anonymous access should be refused
         admin = Admin(self.redpanda)
         with expect_http_error(403):
@@ -406,6 +419,16 @@ class ScramBootstrapUserTest(RedpandaTest):
         # by other means.
         self.redpanda.restart_nodes(self.redpanda.nodes)
         admin.list_users()
+
+    @cluster(num_nodes=1,
+             log_allow_list=[
+                 re.compile(r'std::invalid_argument.*Invalid SCRAM mechanism')
+             ])
+    @parametrize(mechanism='sCrAm-ShA-512', expect_fail=True)
+    def test_invalid_scram_mechanism(self, mechanism, expect_fail):
+        assert expect_fail
+        assert self.redpanda.count_log_node(self.redpanda.nodes[0],
+                                            "Invalid SCRAM mechanism")
 
 
 class InvalidNewUserStrings(BaseScramTest):
