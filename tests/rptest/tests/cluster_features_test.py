@@ -52,8 +52,8 @@ class FeaturesTestBase(RedpandaTest):
         assert (features['node_latest_version'] ==
                 features['original_cluster_version'])
         assert (features['node_latest_version'] == features['cluster_version'])
-        assert (features['node_earliest_version'] <=
-                features['node_latest_version'])
+        assert (features['node_earliest_version']
+                <= features['node_latest_version'])
 
         self.previous_version = self.installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)

@@ -398,7 +398,7 @@ func TestValidatePrometheus(t *testing.T) {
 		}, true},
 	}
 
-	for _, tt := range tests {
+	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			errs, err := redpanda.ValidatePrometheus(context.TODO(), ctl, &v1alpha1.Console{
 				ObjectMeta: metav1.ObjectMeta{
@@ -406,7 +406,7 @@ func TestValidatePrometheus(t *testing.T) {
 					Namespace: consoleNamespace,
 				},
 				Spec: v1alpha1.ConsoleSpec{
-					Cloud: &tt.cloudConfig,
+					Cloud: &tests[i].cloudConfig,
 				},
 			})
 			require.NoError(t, err)

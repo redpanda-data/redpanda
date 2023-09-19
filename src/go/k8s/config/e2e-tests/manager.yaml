@@ -20,6 +20,7 @@ spec:
         - "--allow-pvc-deletion=true"
         - "--superusers-prefix=__redpanda_system__"
         - "--log-level=trace"
+        - "--unsafe-decommission-failed-brokers=true"
         livenessProbe:
           timeoutSeconds: 10
         readinessProbe:

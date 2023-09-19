@@ -1,0 +1,442 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: topics.cluster.redpanda.com
+spec:
+  group: cluster.redpanda.com
+  names:
+    kind: Topic
+    listKind: TopicList
+    plural: topics
+    singular: topic
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Topic is the Schema for the topics API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: TopicSpec defines the desired state of Topic
+            properties:
+              additionalConfig:
+                additionalProperties:
+                  type: string
+                description: 'AdditionalConfig is free form map of any configuration
+                  option that topic can have. Examples: cleanup.policy=compact redpanda.remote.write=true
+                  redpanda.remote.read=true redpanda.remote.recovery=true redpanda.remote.delete=true'
+                type: object
+              interval:
+                default: 3s
+                description: SynchronizationInterval when the topic controller will
+                  schedule next reconciliation Default is 3 seconds
+                format: duration
+                type: string
+              kafkaApiSpec:
+                description: KafkaAPISpec is client configuration for connecting to
+                  Redpanda brokers
+                properties:
+                  brokers:
+                    items:
+                      type: string
+                    type: array
+                  sasl:
+                    description: KafkaSASL to connect to Kafka using SASL credentials
+                    properties:
+                      awsMskIam:
+                        description: 'KafkaSASLAWSMskIam is the config for AWS IAM
+                          SASL mechanism, see: https://docs.aws.amazon.com/msk/latest/developerguide/iam-access-control.html'
+                        properties:
+                          accessKey:
+                            type: string
+                          secretKeySecretRef:
+                            description: SecretKeyRef contains enough information
+                              to inspect or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          sessionTokenSecretRef:
+                            description: 'SessionToken, if non-empty, is a session
+                              / security token to use for authentication. See: https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html'
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          userAgent:
+                            description: "UserAgent is the user agent to for the client
+                              to use when connecting to Kafka, overriding the default
+                              \"franz-go/<runtime.Version()>/<hostname>\". \n Setting
+                              a UserAgent allows authorizing based on the aws:UserAgent
+                              condition key; see the following link for more details:
+                              https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-useragent"
+                            type: string
+                        required:
+                        - accessKey
+                        - secretKeySecretRef
+                        - sessionTokenSecretRef
+                        - userAgent
+                        type: object
+                      gssapi:
+                        description: KafkaSASLGSSAPI represents the Kafka Kerberos
+                          config.
+                        properties:
+                          authType:
+                            type: string
+                          enableFast:
+                            description: EnableFAST enables FAST, which is a pre-authentication
+                              framework for Kerberos. It includes a mechanism for
+                              tunneling pre-authentication exchanges using armored
+                              KDC messages. FAST provides increased resistance to
+                              passive password guessing attacks.
+                            type: boolean
+                          kerberosConfigPath:
+                            type: string
+                          keyTabPath:
+                            type: string
+                          passwordSecretRef:
+                            description: SecretKeyRef contains enough information
+                              to inspect or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          realm:
+                            type: string
+                          serviceName:
+                            type: string
+                          username:
+                            type: string
+                        required:
+                        - authType
+                        - enableFast
+                        - kerberosConfigPath
+                        - keyTabPath
+                        - passwordSecretRef
+                        - realm
+                        - serviceName
+                        - username
+                        type: object
+                      mechanism:
+                        type: string
+                      oauth:
+                        description: KafkaSASLOAuthBearer is the config struct for
+                          the SASL OAuthBearer mechanism
+                        properties:
+                          tokenSecretRef:
+                            description: SecretKeyRef contains enough information
+                              to inspect or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - tokenSecretRef
+                        type: object
+                      passwordSecretRef:
+                        description: SecretKeyRef contains enough information to inspect
+                          or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      username:
+                        type: string
+                    required:
+                    - mechanism
+                    type: object
+                  tls:
+                    description: KafkaTLS to connect to Kafka via TLS
+                    properties:
+                      caCertSecretRef:
+                        description: CaCert is the reference for certificate authority
+                          used to establish TLS connection to Redpanda
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      certSecretRef:
+                        description: Cert is the reference for client public certificate
+                          to establish mTLS connection to Redpanda
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      insecureSkipTlsVerify:
+                        description: InsecureSkipTLSVerify can skip verifying Redpanda
+                          self-signed certificate when establish TLS connection to
+                          Redpanda
+                        type: boolean
+                      keySecretRef:
+                        description: Key is the reference for client private certificate
+                          to establish mTLS connection to Redpanda
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                required:
+                - brokers
+                type: object
+              metricsNamespace:
+                description: MetricsNamespace can be used to overwrite fully-qualified
+                  name of the Metric. That should be easier to identify if multiple
+                  operator runs inside the same Kubernetes cluster. By default, it
+                  is set to `redpanda-operator`.
+                type: string
+              overwriteTopicName:
+                description: OverwriteTopicName will change the topic name from the
+                  `metadata.name` to `OverwriteTopicName`
+                type: string
+              partitions:
+                description: Partitions is the number topic shards that is distributed
+                  across the nodes in a cluster. This cannot be decreased after topic
+                  creation. It can be increased after topic creation, but it is important
+                  to understand the consequences that has, especially for topics with
+                  semantic partitioning. When absent this will default to the Redpanda
+                  cluster configuration `default_topic_partitions`. https://docs.redpanda.com/docs/reference/cluster-properties/#default_topic_partitions
+                  https://docs.redpanda.com/docs/get-started/architecture/#partitions
+                type: integer
+              replicationFactor:
+                description: ReplicationFactor is the number of replicas the topic
+                  should have. Must be odd value. When absent this will default to
+                  the Redpanda cluster configuration `default_topic_replications`.
+                  https://docs.redpanda.com/docs/reference/cluster-properties/#default_topic_replications
+                type: integer
+            type: object
+          status:
+            description: TopicStatus defines the observed state of Topic
+            properties:
+              conditions:
+                description: Conditions holds the conditions for the Topic.
+                items:
+                  description: "Condition contains details for one aspect of the current
+                    state of this API Resource. --- This struct is intended for direct
+                    use as an array at the field path .status.conditions.  For example,
+                    \n \ttype FooStatus struct{ \t    // Represents the observations
+                    of a foo's current state. \t    // Known .status.conditions.type
+                    are: \"Available\", \"Progressing\", and \"Degraded\" \t    //
+                    +patchMergeKey=type \t    // +patchStrategy=merge \t    // +listType=map
+                    \t    // +listMapKey=type \t    Conditions []metav1.Condition
+                    `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
+                    protobuf:\"bytes,1,rep,name=conditions\"` \n \t    // other fields
+                    \t}"
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition
+                        transitioned from one status to another. This should be when
+                        the underlying condition changed.  If that is not known, then
+                        using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating
+                        details about the transition. This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation
+                        that the condition was set based upon. For instance, if .metadata.generation
+                        is currently 12, but the .status.conditions[x].observedGeneration
+                        is 9, the condition is out of date with respect to the current
+                        state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating
+                        the reason for the condition's last transition. Producers
+                        of specific condition types may define expected values and
+                        meanings for this field, and whether the values are considered
+                        a guaranteed API. The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        --- Many .condition.type values are consistent across resources
+                        like Available, but because arbitrary conditions can be useful
+                        (see .node.status.conditions), the ability to deconflict is
+                        important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the Topic.
+                format: int64
+                type: integer
+              topicConfiguration:
+                description: TopicConfiguration is the last snapshot of the topic
+                  configuration during successful reconciliation.
+                items:
+                  description: Configuration was copied from https://github.com/twmb/franz-go/blob/01651affd204d4a3577a341e748c5d09b52587f8/pkg/kmsg/generated.go#L24593-L24634
+                  properties:
+                    configSynonyms:
+                      description: ConfigSynonyms contains fallback key/value pairs
+                        for this config entry, in order of preference. That is, if
+                        a config entry is both dynamically configured and has a default,
+                        the top level return will be the dynamic configuration, while
+                        its "synonym" will be the default.
+                      items:
+                        description: ConfigSynonyms was copied from https://github.com/twmb/franz-go/blob/01651affd204d4a3577a341e748c5d09b52587f8/pkg/kmsg/generated.go#L24569-L24578
+                        properties:
+                          name:
+                            type: string
+                          source:
+                            type: string
+                          unknownTags:
+                            additionalProperties:
+                              type: string
+                            description: UnknownTags are tags Kafka sent that we do
+                              not know the purpose of.
+                            type: object
+                          value:
+                            type: string
+                        required:
+                        - name
+                        - source
+                        type: object
+                      type: array
+                    configType:
+                      description: ConfigType specifies the configuration data type.
+                      type: string
+                    documentation:
+                      description: Documentation is optional documentation for the
+                        config entry.
+                      type: string
+                    isDefault:
+                      description: IsDefault is whether this is a default config option.
+                        This has been replaced in favor of Source.
+                      type: boolean
+                    isSensitive:
+                      description: IsSensitive signifies whether this is a sensitive
+                        config key, which is either a password or an unknown type.
+                      type: boolean
+                    name:
+                      description: Name is a key this entry corresponds to (e.g. segment.bytes).
+                      type: string
+                    readOnly:
+                      description: "ReadOnly signifies whether this is not a dynamic
+                        config option. \n Note that this field is not always correct,
+                        and you may need to check whether the Source is any dynamic
+                        enum. See franz-go#91 for more details."
+                      type: boolean
+                    source:
+                      description: "Source is where this config entry is from. \n
+                        This field has a default of -1."
+                      type: string
+                    unknownTags:
+                      additionalProperties:
+                        type: string
+                      description: UnknownTags are tags Kafka sent that we do not
+                        know the purpose of.
+                      type: object
+                    value:
+                      description: Value is the value for this config key. If the
+                        key is sensitive, the value will be null.
+                      type: string
+                  required:
+                  - configType
+                  - isDefault
+                  - isSensitive
+                  - name
+                  - readOnly
+                  - source
+                  - unknownTags
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

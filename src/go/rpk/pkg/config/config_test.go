@@ -357,6 +357,30 @@ tune_cpu: true`,
 			},
 		},
 		{
+			name:  "set kafka tls to a value",
+			key:   "rpk.kafka_api.tls",
+			value: "{cert_file: /etc/redpanda/certs/cert.pem, key_file: /etc/redpanda/certs/node.key, truststore_file: /etc/redpanda/certs/ca.crt}",
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, &TLS{
+					KeyFile:        "/etc/redpanda/certs/node.key",
+					CertFile:       "/etc/redpanda/certs/cert.pem",
+					TruststoreFile: "/etc/redpanda/certs/ca.crt",
+				}, y.Rpk.KafkaAPI.TLS)
+			},
+		},
+		{
+			name:  "set admin tls to a value",
+			key:   "rpk.admin_api.tls",
+			value: "{cert_file: /etc/redpanda/certs/cert.pem, key_file: /etc/redpanda/certs/node.key, truststore_file: /etc/redpanda/certs/ca.crt}",
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, &TLS{
+					KeyFile:        "/etc/redpanda/certs/node.key",
+					CertFile:       "/etc/redpanda/certs/cert.pem",
+					TruststoreFile: "/etc/redpanda/certs/ca.crt",
+				}, y.Rpk.AdminAPI.TLS)
+			},
+		},
+		{
 			name:  "set tls=null leaves tls null",
 			key:   "rpk.kafka_api.tls",
 			value: "null",

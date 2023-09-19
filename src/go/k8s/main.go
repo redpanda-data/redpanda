@@ -24,7 +24,6 @@ import (
 	"github.com/fluxcd/pkg/runtime/logger"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	flag "github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/getter"
 	corev1 "k8s.io/api/core/v1"
@@ -37,11 +36,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	clusterredpandacomv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/cluster.redpanda.com/v1alpha1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	clusterredpandacomcontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/cluster.redpanda.com"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
@@ -78,6 +80,7 @@ func init() {
 	utilruntime.Must(cmapiv1.AddToScheme(scheme))
 	utilruntime.Must(helmControllerAPIV2.AddToScheme(scheme))
 	utilruntime.Must(sourcev1.AddToScheme(scheme))
+	utilruntime.Must(clusterredpandacomv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -109,6 +112,7 @@ func main() {
 		// storage driver.
 		allowPVCDeletion bool
 		debug            bool
+		ghostbuster      bool
 	)
 
 	flag.StringVar(&eventsAddr, "events-addr", "", "The address of the events receiver.")
@@ -132,6 +136,8 @@ func main() {
 	flag.StringVar(&vectorizedv1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
 	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
 	flag.StringVar(&namespace, "namespace", "", "If namespace is set to not empty value, it changes scope of Redpanda operator to work in single namespace")
+	flag.BoolVar(&ghostbuster, "unsafe-decommission-failed-brokers", false, "Set to enable decommissioning a failed broker that is configured but does not exist in the StatefulSet (ghost broker). This may result in invalidating valid data")
+	_ = flag.CommandLine.MarkHidden("unsafe-decommission-failed-brokers")
 
 	logOptions.BindFlags(flag.CommandLine)
 	clientOptions.BindFlags(flag.CommandLine)
@@ -290,6 +296,7 @@ func main() {
 			DecommissionWaitInterval:  decommissionWaitInterval,
 			MetricsTimeout:            metricsTimeout,
 			RestrictToRedpandaVersion: restrictToRedpandaVersion,
+			GhostDecommissioning:      ghostbuster,
 		}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 			os.Exit(1)
@@ -338,6 +345,20 @@ func main() {
 		}
 	}
 
+	var topicEventRecorder *events.Recorder
+	if topicEventRecorder, err = events.NewRecorder(mgr, ctrl.Log, eventsAddr, "TopicReconciler"); err != nil {
+		setupLog.Error(err, "unable to create event recorder for: TopicReconciler")
+		os.Exit(1)
+	}
+
+	if err = (&clusterredpandacomcontrollers.TopicReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: topicEventRecorder,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Topic")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {

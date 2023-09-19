@@ -120,7 +120,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 			withSections := sections > 1
 
-			header("SUMMARY", summary, withSections, func() {
+			out.Header("SUMMARY", summary, withSections, func() {
 				tw := out.NewTabWriter()
 				defer tw.Flush()
 				tw.PrintColumn("NAME", topic)
@@ -141,7 +141,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				tw.PrintColumn("LAST-UPLOAD", humanReadable(lastUpload, human, humanTime))
 			})
 
-			header("OFFSETS", offset, withSections, func() {
+			out.Header("OFFSETS", offset, withSections, func() {
 				tw := out.NewTable("PARTITION", "CLOUD-START", "CLOUD-LAST", "LOCAL-START", "LOCAL-LAST")
 				defer tw.Flush()
 				for _, r := range report {
@@ -155,7 +155,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 			})
 
-			header("SIZE", size, withSections, func() {
+			out.Header("SIZE", size, withSections, func() {
 				tw := out.NewTable("PARTITION", "CLOUD-BYTES", "LOCAL-BYTES", "TOTAL-BYTES", "CLOUD-SEGMENTS", "LOCAL-SEGMENTS")
 				defer tw.Flush()
 				for _, r := range report {
@@ -170,7 +170,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 			})
 
-			header("SYNC", syncF, withSections, func() {
+			out.Header("SYNC", syncF, withSections, func() {
 				isRrr := report[0].CloudStatus.CloudStorageMode == "read_replica"
 				headers := []string{"PARTITION", "LAST-SEGMENT-UPLOAD", "LAST-MANIFEST-UPLOAD", "METADATA-UPDATE-PENDING"}
 				if isRrr {

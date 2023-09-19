@@ -44,6 +44,21 @@ func Confirm(msg string, args ...interface{}) (bool, error) {
 	}, &confirmation)
 }
 
+// Header prints a header section with a given name and executes a callback
+// function (fn).
+// If 'b' is false, nothing is printed.
+// If 'withSection' is true, the section name is printed before executing 'fn'.
+func Header(name string, b, withSection bool, fn func()) {
+	if !b {
+		return
+	}
+	if withSection {
+		Section(name)
+		defer fmt.Println()
+	}
+	fn()
+}
+
 // Pick prompts the user to pick one of many options, returning the selected
 // option or an error.
 func Pick(options []string, msg string, args ...interface{}) (string, error) {

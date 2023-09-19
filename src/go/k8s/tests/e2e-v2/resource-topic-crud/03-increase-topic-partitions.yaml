@@ -1,0 +1,7 @@
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Topic
+metadata:
+  name: test-topic
+spec:
+  partitions: 3

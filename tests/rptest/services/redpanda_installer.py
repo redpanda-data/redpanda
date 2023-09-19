@@ -364,6 +364,9 @@ class RedpandaInstaller:
                     page += 1
                     self._redpanda.logger.debug(f"Reading next page {page}")
 
+            assert releases, "no releases found, github issue?"
+
+            self._redpanda.logger.debug(f"fetched releases: {releases}")
             open(RELEASES_CACHE_FILE, 'w').write(json.dumps(releases))
 
         finally:
@@ -467,8 +470,8 @@ class RedpandaInstaller:
         # NOTE: the released versions are sorted highest first.
         result = None
         for v in self.released_versions:
-            if (v[0] == version[0]
-                    and v[1] < version[1]) or (v[0] < version[0]):
+            if (v[0] == version[0] and v[1] < version[1]) or (v[0]
+                                                              < version[0]):
 
                 # Before selecting version, validate that it is really downloadable: this avoids
                 # tests being upset by ongoing releases which might exist in github but not yet
