@@ -722,8 +722,11 @@ ss::future<download_result> remote::download_stream(
               resp.value()->get_headers().at(
                 boost::beast::http::field::content_length));
             try {
+                auto underlying_st = resp.value()->as_input_stream();
+                auto throttled_st = _materialized->throttle_download(
+                  std::move(underlying_st), _as);
                 uint64_t content_length = co_await cons_str(
-                  length, resp.value()->as_input_stream());
+                  length, std::move(throttled_st));
                 _probe.successful_download();
                 _probe.register_download_size(content_length);
                 co_return download_result::success;
