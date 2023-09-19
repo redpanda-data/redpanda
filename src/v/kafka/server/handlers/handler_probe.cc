@@ -12,9 +12,12 @@
 #include "kafka/server/handlers/handler_probe.h"
 
 #include "config/configuration.h"
+#include "kafka/protocol/schemata/fetch_request.h"
+#include "kafka/protocol/schemata/produce_request.h"
 #include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/logger.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics.hh>
@@ -34,6 +37,10 @@ handler_probe_manager::handler_probe_manager()
 
         if (handler_for_key(key) || i == unknown_handler_key) {
             _probes[i].setup_metrics(_metrics, key);
+
+            if (key == produce_api::key || key == fetch_api::key) {
+                _probes[i].setup_public_metrics(_public_metrics, key);
+            }
         }
     }
 }
@@ -108,6 +115,32 @@ void handler_probe::setup_metrics(
           labels,
           [this] { return _latency.internal_histogram_logform(); })
           .aggregate(aggregate_labels),
+      });
+}
+
+// For public metrics we only expose a small subset of the metrics for produce
+// and fetch requests to keep the count of metrics low
+void handler_probe::setup_public_metrics(
+  ss::metrics::metric_groups& metrics, api_key key) {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+
+    const char* handler_name = handler_for_key(key).value()->name();
+
+    std::vector<sm::label_instance> labels{sm::label("handler")(handler_name)};
+
+    metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka_handler"),
+      {
+        sm::make_histogram(
+          "latency_seconds",
+          sm::description("Latency histogram of kafka requests"),
+          labels,
+          [this] { return _latency.public_histogram_logform(); })
+          .aggregate({sm::shard_label}),
       });
 }
 
