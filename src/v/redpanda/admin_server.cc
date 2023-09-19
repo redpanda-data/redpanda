@@ -4085,7 +4085,8 @@ void fill_raft_state(
             follower_state.last_dirty_log_index = f.last_dirty_log_index();
             follower_state.match_index = f.match_index();
             follower_state.next_index = f.next_index();
-            follower_state.last_sent_offset = f.last_sent_offset();
+            follower_state.expected_log_end_offset
+              = f.expected_log_end_offset();
             follower_state.heartbeats_failed = f.heartbeats_failed;
             follower_state.is_learner = f.is_learner;
             follower_state.ms_since_last_heartbeat = f.ms_since_last_heartbeat;

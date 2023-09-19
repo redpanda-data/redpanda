@@ -139,7 +139,7 @@ replicate_stages::replicate_stages(raft::errc ec)
 void follower_index_metadata::reset() {
     last_dirty_log_index = model::offset{};
     last_flushed_log_index = model::offset{};
-    last_sent_offset = model::offset{};
+    expected_log_end_offset = model::offset{};
     match_index = model::offset{};
     next_index = model::offset{};
     heartbeats_failed = 0;

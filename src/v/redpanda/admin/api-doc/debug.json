@@ -857,9 +857,9 @@
                     "type": "long",
                     "description": "Next index"
                 },
-                "last_sent_offset": {
+                "expected_log_end_offset": {
                     "type": "long",
-                    "description": "Last sent offset"
+                    "description": "Follower log end offset expected by the leader"
                 },
                 "heartbeats_failed": {
                     "type": "long",
