@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/bootstrap_backend.h"
+#include "cluster/cloud_metadata/uploader.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
@@ -59,6 +60,7 @@
 #include "security/ephemeral_credential_store.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
@@ -95,6 +97,10 @@ controller::controller(
   , _cloud_storage_api(cloud_storage_api)
   , _node_status_table(node_status_table)
   , _probe(*this) {}
+
+// Explicit destructor in the .cc file just to avoid bloating the header with
+// includes for destructors of all its members (e.g. the metadata uploader).
+controller::~controller() = default;
 
 ss::future<> controller::wire_up() {
     return _as.start()
@@ -542,6 +548,25 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
           return _partition_balancer.invoke_on(
             partition_balancer_backend::shard,
             &partition_balancer_backend::start);
+      })
+      .then([this] {
+          auto& bucket_property
+            = cloud_storage::configuration::get_bucket_config();
+          if (
+            !bucket_property.is_overriden() || !bucket_property().has_value()
+            || !_cloud_storage_api.local_is_initialized()) {
+              return;
+          }
+          cloud_storage_clients::bucket_name bucket(bucket_property().value());
+          _metadata_uploader = std::make_unique<cloud_metadata::uploader>(
+            _raft_manager.local(),
+            _storage.local(),
+            bucket,
+            _cloud_storage_api.local(),
+            _raft0);
+          if (config::shard_local_cfg().enable_cluster_metadata_upload_loop()) {
+              _metadata_uploader->start();
+          }
       });
 }
 
@@ -581,6 +606,12 @@ ss::future<> controller::stop() {
                   }
                   return ss::now();
               });
+          })
+          .then([this] {
+              if (_metadata_uploader) {
+                  return _metadata_uploader->stop_and_wait();
+              }
+              return ss::make_ready_future();
           })
           .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })

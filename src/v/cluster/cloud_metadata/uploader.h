@@ -15,6 +15,7 @@
 #include "cluster/types.h"
 #include "config/property.h"
 #include "seastarx.h"
+#include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
@@ -22,6 +23,10 @@
 namespace cloud_storage {
 class remote;
 } // namespace cloud_storage
+
+namespace raft {
+class group_manager;
+} // namespace raft
 
 namespace cluster::cloud_metadata {
 
@@ -39,12 +44,19 @@ namespace cluster::cloud_metadata {
 class uploader {
 public:
     uploader(
-      model::cluster_uuid cluster_uuid,
+      raft::group_manager& group_manager,
+      storage::api& storage,
       cloud_storage_clients::bucket_name bucket,
       cloud_storage::remote& remote,
       consensus_ptr raft0);
 
+    // Begins the upload loop and listens for leadership changes.
+    void start();
+
+    // Stops the upload loop.
     ss::future<> stop_and_wait();
+
+    ss::future<> upload_until_abort();
 
     // Periodically uploads cluster metadata for as long as the local
     // controller replica is the leader.
@@ -99,7 +111,9 @@ private:
     // the input term.
     ss::future<bool> term_has_changed(model::term_id);
 
-    const model::cluster_uuid _cluster_uuid;
+    raft::group_manager& _group_manager;
+    storage::api& _storage;
+    model::cluster_uuid _cluster_uuid;
     cloud_storage::remote& _remote;
     consensus_ptr _raft0;
     const cloud_storage_clients::bucket_name _bucket;
@@ -108,6 +122,14 @@ private:
 
     ss::gate _gate;
     ss::abort_source _as;
+
+    cluster::notification_id_type _leader_cb_id{notification_id_type_invalid};
+
+    // Abort source to stop sleeping if there is a term change.
+    std::optional<std::reference_wrapper<ss::abort_source>> _term_as;
+
+    // Used to wait for leadership. It will be triggered by notify_leadership.
+    ss::condition_variable _leader_cond;
 };
 
 } // namespace cluster::cloud_metadata

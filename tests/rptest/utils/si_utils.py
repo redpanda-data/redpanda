@@ -110,6 +110,33 @@ class CloudLogSize:
             return self.stm.total + self.archive.total
 
 
+class ControllerSnapshotComponents(NamedTuple):
+    """
+    Keys that uniquely identify a controller snapshot.
+    """
+    cluster_uuid: str
+    offset: int
+
+
+class ClusterMetadataComponents(NamedTuple):
+    """
+    Keys that uniquely identify a cluster metadata manifest.
+    """
+    cluster_uuid: str
+    metadata_id: int
+
+
+class ClusterMetadata(NamedTuple):
+    """
+    Metadata associated with a single cluster.
+    """
+    # metadata_id => deserialized manifest
+    cluster_metadata_manifests: dict[int, dict]
+
+    # offset => snapshot size
+    controller_snapshot_sizes: dict[int, int]
+
+
 TopicManifestMetadata = namedtuple('TopicManifestMetadata',
                                    ['ntp', 'revision'])
 SegmentMetadata = namedtuple(
@@ -244,6 +271,35 @@ def parse_s3_manifest_path(path: str) -> NTPR:
     partition = int(part_rev[0])
     revision = int(part_rev[1])
     return NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
+
+
+def parse_cluster_metadata_manifest_path(
+        path: str) -> ClusterMetadataComponents:
+    """
+    Parse S3 cluster metadata manifest path. Return the cluster UUID and
+    metadata ID.
+    Sample name: cluster_metadata/6e94ccdc-443a-4807-b105-0bb86e8f97f7/manifests/0/cluster_manifest.json
+    """
+    items = path.split('/')
+    assert items[
+        0] == "cluster_metadata", f"Invalid cluster metadata manifest path: {path}"
+    cluster_uuid = items[1]
+    meta_id = int(items[3])
+    return ClusterMetadataComponents(cluster_uuid, meta_id)
+
+
+def parse_controller_snapshot_path(path: str) -> ClusterMetadataComponents:
+    """
+    Parse S3 cluster controller snapshot path. Return the cluster UUID and
+    metadata ID.
+    Sample name: cluster_metadata/6e94ccdc-443a-4807-b105-0bb86e8f97f7/0/controller.snapshot
+    """
+    items = path.split('/')
+    assert items[
+        0] == "cluster_metadata", f"Invalid cluster metadata manifest path: {path}"
+    cluster_uuid = items[1]
+    meta_id = int(items[2])
+    return ClusterMetadataComponents(cluster_uuid, meta_id)
 
 
 def parse_s3_segment_path(path) -> SegmentPathComponents:
@@ -524,6 +580,12 @@ class PathMatcher:
         else:
             return any(key.endswith(t) for t in self.topic_manifest_paths)
 
+    def is_cluster_metadata_manifest(self, o: ObjectMetadata) -> bool:
+        return o.key.endswith('/cluster_manifest.json')
+
+    def is_controller_snapshot(self, o: ObjectMetadata) -> bool:
+        return o.key.endswith('/controller.snapshot')
+
     def is_partition_manifest(self, o: ObjectMetadata) -> bool:
         return (o.key.endswith('/manifest.json')
                 or o.key.endswith("/manifest.bin")
@@ -701,6 +763,7 @@ class BucketViewState:
         # List of summaries for all segments. These summaries refer
         # to data in the bucket and not segments in the manifests.
         self.segment_summaries: dict[NTP, list[SegmentSummary]] = {}
+        self.cluster_metadata: dict[str, ClusterMetadata] = {}
 
 
 class ManifestFormat(Enum):
@@ -779,6 +842,11 @@ class BucketView:
     def ignored_objects(self) -> int:
         self._ensure_listing()
         return self._state.ignored_objects
+
+    @property
+    def cluster_metadata(self) -> dict[str, ClusterMetadata]:
+        self._ensure_listing()
+        return self._state.cluster_metadata
 
     @property
     def partition_manifests(self) -> dict[NTP, dict]:
@@ -870,6 +938,10 @@ class BucketView:
                 self._state.tx_manifests += 1
             elif self.path_matcher.is_segment_index(o):
                 self._state.segment_indexes += 1
+            elif self.path_matcher.is_cluster_metadata_manifest(o):
+                self._load_cluster_metadata_manifest(o.key)
+            elif self.path_matcher.is_controller_snapshot(o):
+                self._load_controller_snapshot_size(o.key)
             else:
                 self._state.ignored_objects += 1
         if self._scan_segments:
@@ -986,6 +1058,38 @@ class BucketView:
                 spill_metas.append(SpillMeta.make(ntpr, manifest_obj.key))
 
         return sorted(spill_metas)
+
+    def _load_cluster_metadata_manifest(self, path: str) -> dict:
+        try:
+            data = self.client.get_object_data(self.bucket, path)
+        except Exception as e:
+            self.logger.debug(f"Exception loading {path}: {e}")
+            raise KeyError(f"Cluster manifest at {path} failed to load")
+        manifest = json.loads(data)
+        self.logger.debug(
+            f"Loaded cluster manifest at {path}: {pprint.pformat(manifest)}")
+        cluster_uuid, meta_id = parse_cluster_metadata_manifest_path(path)
+        if cluster_uuid not in self._state.cluster_metadata:
+            self._state.cluster_metadata[cluster_uuid] = ClusterMetadata(
+                dict(), dict())
+        self._state.cluster_metadata[cluster_uuid].cluster_metadata_manifests[
+            meta_id] = manifest
+        return manifest
+
+    def _load_controller_snapshot_size(self, path: str) -> int:
+        try:
+            meta = self.client.get_object_meta(self.bucket, path)
+        except Exception as e:
+            self.logger.debug(f"Exception loading {path}: {e}")
+            raise KeyError(f"Cluster manifest at {path} failed to load")
+        self.logger.debug(f"Loaded controller snapshot at {path}: {meta}")
+        cluster_uuid, offset = parse_controller_snapshot_path(path)
+        if cluster_uuid not in self._state.cluster_metadata:
+            self._state.cluster_metadata[cluster_uuid] = ClusterMetadata(
+                dict(), dict())
+        self._state.cluster_metadata[cluster_uuid].controller_snapshot_sizes[
+            offset] = meta.content_length
+        return meta.content_length
 
     @staticmethod
     def gen_manifest_path(ntpr: NTPR, extension: str = "bin"):

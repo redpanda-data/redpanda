@@ -30,6 +30,10 @@
 
 namespace cluster {
 
+namespace cloud_metadata {
+class uploader;
+} // namespace cloud_metadata
+
 class cluster_discovery;
 
 class controller {
@@ -45,6 +49,8 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<node_status_table>&);
+
+    ~controller();
 
     model::node_id self() { return _raft0->self().id(); }
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }
@@ -123,6 +129,10 @@ public:
         return _members_backend;
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
+
+    cloud_metadata::uploader& metadata_uploader() {
+        return *_metadata_uploader;
+    }
 
     bool is_raft0_leader() const {
         vassert(
@@ -242,6 +252,8 @@ private:
     ss::sharded<features::feature_table>& _feature_table; // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
     ss::sharded<partition_balancer_backend> _partition_balancer;
+    std::unique_ptr<cloud_metadata::uploader> _metadata_uploader;
+
     ss::gate _gate;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;

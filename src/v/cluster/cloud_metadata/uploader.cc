@@ -18,11 +18,14 @@
 #include "cluster/logger.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
+#include "raft/group_manager.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
+#include "storage/api.h"
 #include "storage/snapshot.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/gate.hh>
@@ -34,11 +37,16 @@
 namespace cluster::cloud_metadata {
 
 uploader::uploader(
-  model::cluster_uuid cluster_uuid,
+  raft::group_manager& group_manager,
+  storage::api& storage,
   cloud_storage_clients::bucket_name bucket,
   cloud_storage::remote& remote,
   consensus_ptr raft0)
-  : _cluster_uuid(cluster_uuid)
+  : _group_manager(group_manager)
+  , _storage(storage)
+  , _cluster_uuid(
+      _storage.get_cluster_uuid() ? _storage.get_cluster_uuid().value()
+                                  : model::cluster_uuid{})
   , _remote(remote)
   , _raft0(std::move(raft0))
   , _bucket(bucket)
@@ -73,12 +81,31 @@ uploader::download_highest_manifest_or_create(retry_chain_node& retry_node) {
     }
     if (manifest_res.error() == error_outcome::no_matching_metadata) {
         cluster_metadata_manifest manifest{};
-        vlog(
-          clusterlog.debug,
-          "No manifest found for cluster {}, creating a new one",
-          _cluster_uuid);
         manifest.cluster_uuid = _cluster_uuid;
-        co_return manifest;
+        auto highest_manifest_res
+          = co_await download_highest_manifest_in_bucket(
+            _remote, _bucket, retry_node);
+        if (highest_manifest_res.has_value()) {
+            auto& highest_manifest = highest_manifest_res.value();
+            vlog(
+              clusterlog.debug,
+              "No manifest found for cluster {}, starting metadata ID at {} "
+              "following "
+              "latest manifest from cluster {}",
+              _cluster_uuid,
+              highest_manifest.metadata_id,
+              highest_manifest.cluster_uuid);
+            manifest.metadata_id = highest_manifest.metadata_id;
+            co_return manifest;
+        }
+        if (
+          highest_manifest_res.error() == error_outcome::no_matching_metadata) {
+            vlog(
+              clusterlog.debug,
+              "No manifest found for cluster {}, creating a new one",
+              _cluster_uuid);
+            co_return manifest;
+        }
     }
     // Pass through any other errors.
     co_return manifest_res;
@@ -241,12 +268,44 @@ ss::future<error_outcome> uploader::maybe_upload_controller_snapshot(
     co_return error_outcome::success;
 }
 
+ss::future<> uploader::upload_until_abort() {
+    // It's possible the cluster UUID wasn't available at construction time
+    // (e.g. this node was in the process of joining the cluster).
+    if (!co_await _storage.wait_for_cluster_uuid()) {
+        co_return;
+    }
+    _cluster_uuid = _storage.get_cluster_uuid().value();
+    vassert(
+      _cluster_uuid != model::cluster_uuid{},
+      "Expected cluster UUID after waiting");
+    while (!_as.abort_requested()) {
+        if (!_raft0->is_leader()) {
+            bool shutdown = false;
+            try {
+                co_await _leader_cond.wait();
+            } catch (ss::broken_condition_variable&) {
+                shutdown = true;
+            }
+            if (shutdown || _as.abort_requested()) {
+                break;
+            }
+            // We're leader! Start uploading.
+        }
+        co_await upload_until_term_change();
+    }
+}
+
 ss::future<> uploader::upload_until_term_change() {
     ss::gate::holder g(_gate);
     if (!_raft0->is_leader()) {
         vlog(clusterlog.trace, "Not the leader, exiting uploader");
         co_return;
     }
+    // Take care to ensure the optional<> is only set for as long as the
+    // reference is valid.
+    ss::abort_source term_as;
+    _term_as = term_as;
+    auto reset_term_as = ss::defer([this] { _term_as.reset(); });
     // Since this loop isn't driven by a Raft STM, the uploader doesn't have a
     // long-lived in-memory manifest that it keeps up-to-date: It's possible
     // that an uploader from a different node uploaded since last time this
@@ -285,14 +344,43 @@ ss::future<> uploader::upload_until_term_change() {
             co_return;
         }
         try {
-            co_await ssx::sleep_abortable(_upload_interval_ms(), _as);
+            co_await ssx::sleep_abortable(_upload_interval_ms(), _as, term_as);
         } catch (const ss::sleep_aborted&) {
             co_return;
         }
     }
 }
 
+void uploader::start() {
+    _leader_cb_id = _group_manager.register_leadership_notification(
+      [this](
+        raft::group_id group,
+        model::term_id,
+        std::optional<model::node_id> leader_id) {
+          _gate.check();
+          if (group != _raft0->group()) {
+              return;
+          }
+          // If there's an on-going uploader, abort it. Even if this node has
+          // been re-elected leader, the uploader needs to re-sync with
+          // the contents in remote storage in case in the new term.
+          if (_term_as.has_value()) {
+              _term_as.value().get().request_abort();
+          }
+          if (_raft0->self().id() != leader_id) {
+              return;
+          }
+          _leader_cond.signal();
+      });
+    ssx::spawn_with_gate(_gate, [this] { return upload_until_abort(); });
+}
+
 ss::future<> uploader::stop_and_wait() {
+    _group_manager.unregister_leadership_notification(_leader_cb_id);
+    _leader_cond.broken();
+    if (_term_as.has_value()) {
+        _term_as.value().get().request_abort();
+    }
     _as.request_abort();
     co_await _gate.close();
 }

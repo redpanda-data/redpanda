@@ -300,6 +300,7 @@ struct configuration final : public config_store {
       cloud_storage_scrubbing_interval_jitter_ms;
     property<bool> cloud_storage_disable_upload_loop_for_tests;
     property<bool> cloud_storage_disable_read_replica_loop_for_tests;
+    property<bool> enable_cluster_metadata_upload_loop;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
     property<size_t> cloud_storage_recovery_temporary_retention_bytes_default;

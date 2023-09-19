@@ -1024,7 +1024,7 @@ impl BucketReader {
                 debug!("No manifests for cluster {}", cluster_uuid);
                 continue;
             };
-            if !highest_manifest.controller_snapshot_path.is_empty() {
+            if highest_manifest.controller_snapshot_path.is_empty() {
                 continue;
             }
             if !meta
