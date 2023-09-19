@@ -3,7 +3,7 @@ module github.com/redpanda-data/redpanda/src/go/k8s
 go 1.20
 
 require (
-	github.com/Masterminds/semver/v3 v3.2.0
+	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/cert-manager/cert-manager v1.11.0
 	github.com/cisco-open/k8s-objectmatcher v1.9.0
