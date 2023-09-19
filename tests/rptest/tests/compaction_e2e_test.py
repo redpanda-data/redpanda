@@ -12,10 +12,13 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.utils.mode_checks import skip_debug_mode
+from time import sleep
+from rptest.services.redpanda import RedpandaService
 
 from rptest.services.compacted_verifier import CompactedVerifier, Workload
 
@@ -148,6 +151,91 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
                    backoff_sec=2)
 
         self.logger.info(f"enable consumer and validate consumed records")
+        rw_verifier.remote_start_consumer()
+        rw_verifier.remote_wait_consumer()
+        rw_verifier.stop()
+        rw_verifier.wait(timeout_sec=10)
+
+
+class CompactionE2ERebootTest(RedpandaTest):
+    def __init__(self, test_context):
+        self.segment_size = 5 * 1024 * 1024
+        super(CompactionE2ERebootTest,
+              self).__init__(test_context=test_context,
+                             extra_rp_conf={},
+                             log_level="trace")
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_write_reboot_read(self):
+        initial_cleanup_policy = TopicSpec.CLEANUP_COMPACT
+        workload = Workload.TX_UNIQUE_KEYS
+
+        # tx workloads are more heavy, less parallel and contains aborted
+        # cases which don't report progress so choosing a smaller target
+        expect_progress = 1000 if workload == Workload.IDEMPOTENCY else 100
+
+        # creating the topic manually instead of relying on topics
+        # because the topic depends on the test parameter
+        client = DefaultClient(self.redpanda)
+        self.topics = [
+            TopicSpec(partition_count=1,
+                      replication_factor=3,
+                      segment_bytes=self.segment_size,
+                      cleanup_policy=initial_cleanup_policy)
+        ]
+        client.create_topic(self.topics[0])
+
+        rw_verifier = CompactedVerifier(self.test_context, self.redpanda,
+                                        workload)
+        rw_verifier.start()
+
+        rw_verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
+                                          1)
+        self.logger.info(
+            f"Waiting for {expect_progress} writes to ensure progress")
+        rw_verifier.ensure_progress(expect_progress, 30)
+        self.logger.info(f"The test made progress, stopping producer")
+        rw_verifier.remote_stop_producer()
+        rw_verifier.remote_wait_producer()
+        self.logger.info(f"Producer is stopped")
+
+        self.logger.info(f"Rebooting redpanda cluster")
+        assert len(self.redpanda.started_nodes(
+        )) == 3, f"only {len(self.redpanda.started_nodes())} nodes are running"
+        nodes = []
+        for node in list(self.redpanda.started_nodes()):
+            nodes.append(node)
+            self.logger.info(f"Stoping {node.account.hostname}")
+            self.redpanda.stop_node(node)
+        for node in nodes:
+            self.logger.info(f"Starting {node.account.hostname}")
+            self.redpanda.start_node(node)
+
+        def compaction_is_triggered(node):
+            try:
+                for line in node.account.ssh_capture(
+                        f"grep 'rebuilt index:' {RedpandaService.STDOUT_STDERR_CAPTURE}",
+                        timeout_sec=5):
+                    self.logger.info(
+                        f"Compaction was triggered on {node.account.hostname}: {line}"
+                    )
+                    return True
+            except RemoteCommandError:
+                pass
+            return False
+
+        self.logger.info(f"Waiting until compaction is triggered")
+        for node in list(self.redpanda.started_nodes()):
+            wait_until(
+                lambda: compaction_is_triggered(node),
+                timeout_sec=60,
+                backoff_sec=2,
+                err_msg=
+                f"Compaction wasn't triggered on {node.account.hostname} in 60s"
+            )
+
+        self.logger.info(f"Start consumer and validate consumed records")
         rw_verifier.remote_start_consumer()
         rw_verifier.remote_wait_consumer()
         rw_verifier.stop()
