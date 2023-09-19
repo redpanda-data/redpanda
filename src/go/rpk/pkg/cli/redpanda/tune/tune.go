@@ -93,6 +93,11 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 			out.MaybeDie(err, "unable to load config: %v", err)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
+				isDir, err := afero.IsDir(fs, outTuneScriptFile)
+				out.MaybeDie(err, "unable to check if %q is a dir or a file: %v", outTuneScriptFile, err)
+				if isDir {
+					out.Die("please use a filename instead of a directory name in --output-script")
+				}
 				tunerFactory = factory.NewScriptRenderingTunersFactory(fs, y.Rpk.Tuners, outTuneScriptFile, timeout)
 			} else {
 				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, y.Rpk.Tuners, timeout)
