@@ -502,7 +502,8 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
 
     // Clearing compatibility should fallback to global
-    BOOST_REQUIRE(s.clear_compatibility(subject0).value() == true);
+    BOOST_REQUIRE(
+      s.clear_compatibility(dummy_marker, subject0).value() == true);
     BOOST_REQUIRE(
       s.get_compatibility(subject0, fallback).value() == global_expected);
 }
@@ -615,7 +616,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
       d_res.error().code(), pps::error_code::subject_soft_deleted);
 
     // Clearing the compatibility of a soft-deleted subject is allowed
-    BOOST_REQUIRE(s.clear_compatibility(subject0).has_value());
+    BOOST_REQUIRE(s.clear_compatibility(dummy_marker, subject0).has_value());
 
     v_res = s.get_versions(subject0, pps::include_deleted::yes);
     BOOST_REQUIRE(v_res.has_value());
@@ -653,7 +654,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
 
     // Clearing the compatibility of a hard-deleted subject should fail
     BOOST_REQUIRE(
-      s.clear_compatibility(subject0).error().code()
+      s.clear_compatibility(dummy_marker, subject0).error().code()
       == pps::error_code::subject_not_found);
 }
 
