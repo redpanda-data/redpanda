@@ -1170,8 +1170,21 @@ std::optional<model::node_id> rack_aware_replica_selector::select_replica(
         if (!replica.is_alive) {
             continue;
         }
+
+        auto const node_it = _md_cache.nodes().find(replica.id);
+        /**
+         * Skip nodes which are in maintenance mode or we do not have
+         * information about them
+         */
         if (
-          _md_cache.get_node_rack_id(replica.id) == c_info.rack_id
+          node_it == _md_cache.nodes().end()
+          || node_it->second.state.get_maintenance_state()
+               == model::maintenance_state::active) {
+            continue;
+        }
+
+        if (
+          node_it->second.broker.rack() == c_info.rack_id
           && replica.log_end_offset >= c_info.fetch_offset) {
             if (replica.high_watermark >= highest_hw) {
                 highest_hw = replica.high_watermark;
