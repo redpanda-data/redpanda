@@ -131,8 +131,13 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
         co_return;
     }
 
-    // wait for another round
-    if (meta.value()->last_sent_offset >= lstats.dirty_offset) {
+    /**
+     * If expected_log_end_offset is indicating that all the requests were
+     * already dispatched to the follower wait for append entries responses. The
+     * responses will trigger the follower state condition variable and
+     * recovery_stm will redo the check if follower still needs to be recovered.
+     */
+    if (meta.value()->expected_log_end_offset >= lstats.dirty_offset) {
         co_await meta.value()
           ->follower_state_change.wait()
           .handle_exception_type([this](const ss::broken_condition_variable&) {
@@ -157,16 +162,6 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     co_await replicate(std::move(*reader), flush, std::move(read_memory_units));
 
     meta = get_follower_meta();
-}
-
-bool recovery_stm::state_changed() {
-    auto meta = get_follower_meta();
-    if (!meta) {
-        return true;
-    }
-    auto lstats = _ptr->_log.offsets();
-    return lstats.dirty_offset > meta.value()->last_dirty_log_index
-           || meta.value()->last_sent_offset == lstats.dirty_offset;
 }
 
 flush_after_append
@@ -317,7 +312,15 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
             .done = (_sent_snapshot_bytes + chunk_size) == _snapshot_size};
 
           _sent_snapshot_bytes += chunk_size;
-
+          if (req.done) {
+              auto meta = get_follower_meta();
+              if (!meta) {
+                  // stop recovery when node was removed
+                  _stop_requested = true;
+                  return ss::make_ready_future<>();
+              }
+              (*meta)->expected_log_end_offset = _ptr->_last_snapshot_index;
+          }
           vlog(_ctxlog.trace, "sending install_snapshot request: {}", req);
           auto seq = _ptr->next_follower_sequence(_node_id);
           _ptr->update_suppress_heartbeats(
@@ -378,7 +381,6 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
     // snapshot received by the follower, continue with recovery
     (*meta)->match_index = _ptr->_last_snapshot_index;
     (*meta)->next_index = model::next_offset(_ptr->_last_snapshot_index);
-    (*meta)->last_sent_offset = _ptr->_last_snapshot_index;
     return close_snapshot_reader();
 }
 
@@ -443,7 +445,11 @@ ss::future<> recovery_stm::replicate(
         _stop_requested = true;
         return ss::now();
     }
-    meta.value()->last_sent_offset = _last_batch_offset;
+    /**
+     * Update follower expected log end. It is equal to the last batch in a set
+     * of batches read for this recovery round.
+     */
+    meta.value()->expected_log_end_offset = _last_batch_offset;
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
@@ -494,7 +500,7 @@ ss::future<> recovery_stm::replicate(
               }
               meta.value()->next_index = std::max(
                 model::offset(0), model::prev_offset(_base_batch_offset));
-              meta.value()->last_sent_offset = model::offset{};
+
               vlog(
                 _ctxlog.trace,
                 "Move next index {} backward",

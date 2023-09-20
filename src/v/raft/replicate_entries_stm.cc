@@ -238,7 +238,8 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
     if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
         const auto timeout = clock_type::now()
                              - _ptr->_replicate_append_timeout;
-        if (it->second.last_received_reply_timestamp < timeout) {
+        auto& f_meta = it->second;
+        if (f_meta.last_received_reply_timestamp < timeout) {
             vlog(
               _ctxlog.trace,
               "Skipping sending append request to {} - didn't receive "
@@ -246,13 +247,13 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
               id);
             return true;
         }
-        if (it->second.last_sent_offset != _meta.prev_log_index) {
+        if (f_meta.expected_log_end_offset != _meta.prev_log_index) {
             vlog(
               _ctxlog.trace,
-              "Skipping sending append request to {} - last sent offset: {}, "
-              "expected follower last offset: {}",
+              "Skipping sending append request to {} - expected follower log "
+              "end offset: {}, request expected last offset: {}",
               id,
-              it->second.last_sent_offset,
+              f_meta.expected_log_end_offset,
               _meta.prev_log_index);
             return true;
         }
@@ -293,7 +294,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
         if (rni != _ptr->self()) {
             auto it = _ptr->_fstats.find(rni);
             if (it != _ptr->_fstats.end()) {
-                it->second.last_sent_offset = _dirty_offset;
+                it->second.expected_log_end_offset = _dirty_offset;
             }
         }
         ++_requests_count;
