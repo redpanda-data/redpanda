@@ -17,7 +17,7 @@ namespace kafka {
 ss::future<ss::stop_iteration> kafka_batch_serializer::operator()(model::record_batch&& batch) {
     vlog(
       klog.trace,
-      "SVETA(1): tx?:{} control?: base:{} last:{} records:{}",
+      "SVETA(1): tx?:{} control?:{} base:{} last:{} records:{}",
       batch.header().attrs.is_transactional(),
       batch.header().attrs.is_control(),
       batch.base_offset(),
