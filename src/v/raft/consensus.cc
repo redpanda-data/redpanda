@@ -449,7 +449,7 @@ consensus::success_reply consensus::update_follower_index(
         successfull_append_entries_reply(idx, std::move(reply));
         return success_reply::yes;
     } else {
-        idx.last_sent_offset = idx.last_dirty_log_index;
+        idx.expected_log_end_offset = model::offset{};
     }
 
     if (idx.is_recovering) {
@@ -461,7 +461,6 @@ consensus::success_reply consensus::update_follower_index(
             idx.last_dirty_log_index = reply.last_dirty_log_index;
             idx.last_flushed_log_index = reply.last_flushed_log_index;
             idx.next_index = model::next_offset(idx.last_dirty_log_index);
-            idx.last_sent_offset = model::offset{};
         }
         return success_reply::no;
     }
@@ -554,6 +553,13 @@ void consensus::successfull_append_entries_reply(
     idx.match_index = idx.last_dirty_log_index;
     idx.next_index = model::next_offset(idx.last_dirty_log_index);
     idx.last_successful_received_seq = idx.last_received_seq;
+    /**
+     * Update expected log end offset only if it is smaller than current value,
+     * the check is needed here as there might be pending append entries
+     * requests that were not yet replied by the follower.
+     */
+    idx.expected_log_end_offset = std::max(
+      idx.last_dirty_log_index, idx.expected_log_end_offset);
     vlog(
       _ctxlog.trace,
       "Updated node {} match {} and next {} indices",
@@ -588,7 +594,7 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
           idx.next_index,
           log_max_offset);
         idx.next_index = log_max_offset;
-        idx.last_sent_offset = model::offset{};
+        idx.expected_log_end_offset = model::offset{};
     }
     idx.is_recovering = true;
     // background
@@ -1996,6 +2002,10 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (request_metadata.prev_log_index < last_log_offset) {
         if (unlikely(request_metadata.prev_log_index < _commit_index)) {
             reply.result = reply_result::success;
+            // clamp dirty offset to the current commit index not to allow
+            // leader reasoning about follower log beyond that point
+            reply.last_dirty_log_index = _commit_index;
+            reply.last_flushed_log_index = _commit_index;
             vlog(
               _ctxlog.info,
               "Stale append entries request processed, entry is already "

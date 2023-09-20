@@ -109,7 +109,10 @@ struct follower_index_metadata {
     }
     // next index to send to this follower
     model::offset next_index;
-    model::offset last_sent_offset;
+    // field indicating end offset of follower log after current pending
+    // append_entries_requests are successfully delivered and processed by the
+    // follower.
+    model::offset expected_log_end_offset;
     // timestamp of last append_entries_rpc call
     clock_type::time_point last_sent_append_entries_req_timestamp;
     clock_type::time_point last_received_reply_timestamp;
