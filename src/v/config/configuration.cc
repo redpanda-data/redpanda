@@ -78,6 +78,26 @@ configuration::configuration()
        .visibility = visibility::tunable},
       256_MiB,
       {.min = 1_MiB})
+  , compacted_log_segment_size_locked_min(
+      *this,
+      "compacted_log_segment_size_locked_min",
+      "Lower bound on compacted_log_segment_size; Reject topics with lower "
+      "values",
+      {.needs_restart = needs_restart::no,
+       .example = "268435456",
+       .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<uint64_t>)
+  , compacted_log_segment_size_locked_max(
+      *this,
+      "compacted_log_segment_size_locked_max",
+      "Upper bound on compacted_log_segment_size; Reject topics with lower "
+      "values",
+      {.needs_restart = needs_restart::no,
+       .example = "268435456",
+       .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<uint64_t>)
   , readers_cache_eviction_timeout_ms(
       *this,
       "readers_cache_eviction_timeout_ms",
@@ -498,6 +518,13 @@ configuration::configuration()
        .example = "compact,delete",
        .visibility = visibility::user},
       model::cleanup_policy_bitflags::deletion)
+  , log_cleanup_policy_locked(
+      *this,
+      "log_cleanup_policy_locked",
+      "if true, the default topic cleanup policy is unmodifiable; Reject "
+      "topics with different values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      log_cleanup_policy.bind())
   , log_message_timestamp_type(
       *this,
       "log_message_timestamp_type",
@@ -661,6 +688,20 @@ configuration::configuration()
        .visibility = visibility::user,
        .aliases = {"delete_retention_ms"}},
       7 * 24h)
+  , log_retention_ms_locked_min(
+      *this,
+      "delete_retention_ms_locked_min",
+      "Lower bound on delete_retention_ms; Reject topics with lower values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<std::chrono::milliseconds>)
+  , log_retention_ms_locked_max(
+      *this,
+      "delete_retention_ms_locked_max",
+      "Upper bound on delete_retention_ms; Reject topics with higher values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<std::chrono::milliseconds>)
   , log_compaction_interval_ms(
       *this,
       "log_compaction_interval_ms",
@@ -680,6 +721,20 @@ configuration::configuration()
       "Default max bytes per partition on disk before triggering a compaction",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
+  , retention_bytes_locked_min(
+      *this,
+      "retention_bytes_locked_min",
+      "Lower bound on retention_bytes; reject topics with lower values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<size_t>)
+  , retention_bytes_locked_max(
+      *this,
+      "retention_bytes_locked_max",
+      "Upper bound on retention_bytes; reject topics with higher values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<size_t>)
   , group_topic_partitions(
       *this,
       "group_topic_partitions",
@@ -1738,6 +1793,22 @@ configuration::configuration()
       "write enabled",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
+  , retention_local_target_bytes_default_locked_min(
+      *this,
+      "retention_local_target_bytes_default_locked_min",
+      "Lower bound on retention_local_target_bytes_default; Reject topics with "
+      "lower values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<size_t>)
+  , retention_local_target_bytes_default_locked_max(
+      *this,
+      "retention_local_target_bytes_default_locked_max",
+      "Upper bound on retention_local_target_bytes_default; Reject topics with "
+      "higher values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<size_t>)
   , retention_local_target_ms_default(
       *this,
       "retention_local_target_ms_default",
@@ -1745,6 +1816,22 @@ configuration::configuration()
       "write enabled",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       24h)
+  , retention_local_target_ms_default_locked_min(
+      *this,
+      "retention_local_target_ms_default_locked_min",
+      "Lower bound on retention_local_target_ms_default; Reject topics with "
+      "lower values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<std::chrono::milliseconds>)
+  , retention_local_target_ms_default_locked_max(
+      *this,
+      "retention_local_target_ms_default_locked_max",
+      "Upper bound on retention_local_target_ms_default; Reject topics with "
+      "higher values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<std::chrono::milliseconds>)
   , retention_local_strict(
       *this,
       "retention_local_strict",

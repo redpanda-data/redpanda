@@ -52,6 +52,8 @@ struct configuration final : public config_store {
     locked_range_property<uint64_t> log_segment_size_locked_max;
     bounded_property<uint16_t> log_segment_size_jitter_percent;
     bounded_property<uint64_t> compacted_log_segment_size;
+    locked_range_property<uint64_t> compacted_log_segment_size_locked_min;
+    locked_range_property<uint64_t> compacted_log_segment_size_locked_max;
     property<std::chrono::milliseconds> readers_cache_eviction_timeout_ms;
     bounded_property<std::optional<std::chrono::milliseconds>> log_segment_ms;
     deprecated_property log_segment_ms_min;
@@ -129,6 +131,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
     property<model::cleanup_policy_bitflags> log_cleanup_policy;
+    locked_equal_property<model::cleanup_policy_bitflags>
+      log_cleanup_policy_locked;
     enum_property<model::timestamp_type> log_message_timestamp_type;
     bounded_property<std::optional<std::chrono::milliseconds>>
       log_message_timestamp_alert_before_ms;
@@ -152,10 +156,16 @@ struct configuration final : public config_store {
     property<uint32_t> abort_index_segment_size;
     // same as log.retention.ms in kafka
     retention_duration_property log_retention_ms;
+    locked_range_property<std::chrono::milliseconds>
+      log_retention_ms_locked_min;
+    locked_range_property<std::chrono::milliseconds>
+      log_retention_ms_locked_max;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
     property<bool> log_disable_housekeeping_for_tests;
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
+    locked_range_property<size_t> retention_bytes_locked_min;
+    locked_range_property<size_t> retention_bytes_locked_max;
     property<int32_t> group_topic_partitions;
     bounded_property<int16_t> default_topic_replication;
     deprecated_property transaction_coordinator_replication;
@@ -342,7 +352,15 @@ struct configuration final : public config_store {
     // Defaults for local retention for partitions of topics with
     // cloud storage read and write enabled
     property<std::optional<size_t>> retention_local_target_bytes_default;
+    locked_range_property<size_t>
+      retention_local_target_bytes_default_locked_min;
+    locked_range_property<size_t>
+      retention_local_target_bytes_default_locked_max;
     property<std::chrono::milliseconds> retention_local_target_ms_default;
+    locked_range_property<std::chrono::milliseconds>
+      retention_local_target_ms_default_locked_min;
+    locked_range_property<std::chrono::milliseconds>
+      retention_local_target_ms_default_locked_max;
     property<bool> retention_local_strict;
     property<std::optional<uint64_t>> retention_local_target_capacity_bytes;
     bounded_property<std::optional<double>, numeric_bounds>
