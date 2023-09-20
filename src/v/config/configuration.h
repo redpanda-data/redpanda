@@ -171,6 +171,8 @@ struct configuration final : public config_store {
     locked_range_property<size_t> retention_bytes_locked_max;
     property<int32_t> group_topic_partitions;
     bounded_property<int16_t> default_topic_replication;
+    locked_range_property<int16_t> default_topic_replication_locked_min;
+    locked_range_property<int16_t> default_topic_replication_locked_max;
     deprecated_property transaction_coordinator_replication;
     deprecated_property id_allocator_replication;
     property<int32_t> transaction_coordinator_partitions;
@@ -185,6 +187,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> create_topic_timeout_ms;
     property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
     property<int32_t> default_topic_partitions;
+    locked_range_property<int32_t> default_topic_partitions_locked_min;
+    locked_range_property<int32_t> default_topic_partitions_locked_max;
     property<bool> disable_batch_cache;
     property<std::chrono::milliseconds> raft_election_timeout_ms;
     property<std::chrono::milliseconds> kafka_group_recovery_timeout_ms;
@@ -202,6 +206,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> reclaim_stable_window;
     property<size_t> reclaim_batch_cache_min_free;
     property<bool> auto_create_topics_enabled;
+    locked_equal_property<bool> auto_create_topics_enabled_locked;
     property<bool> enable_pid_file;
     property<std::chrono::milliseconds> kvstore_flush_interval;
     property<size_t> kvstore_max_segment_size;

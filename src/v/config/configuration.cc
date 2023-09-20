@@ -762,6 +762,22 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       1,
       {.min = 1, .oddeven = odd_even_constraint::odd})
+  , default_topic_replication_locked_min(
+      *this,
+      "default_topic_replications_locked_min",
+      "Lower bound on default replication factor; Reject topics with lower "
+      "values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<int16_t>)
+  , default_topic_replication_locked_max(
+      *this,
+      "default_topic_replications_locked_max",
+      "Upper bound on default replication factor; Reject topics with higher "
+      "values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<int16_t>)
   , transaction_coordinator_replication(
       *this, "transaction_coordinator_replication")
   , id_allocator_replication(*this, "id_allocator_replication")
@@ -822,6 +838,22 @@ configuration::configuration()
       "Default number of partitions per topic",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       1)
+  , default_topic_partitions_locked_min(
+      *this,
+      "default_topic_partitions_locked_min",
+      "Lower bound on default_topic_partitions; Reject topics with lower "
+      "values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<int32_t>)
+  , default_topic_partitions_locked_max(
+      *this,
+      "default_topic_partitions_locked_max",
+      "Upper bound on default_topic_partitions; Reject topics with lower "
+      "values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<int32_t>)
   , disable_batch_cache(
       *this,
       "disable_batch_cache",
@@ -921,6 +953,12 @@ configuration::configuration()
       "Allow topic auto creation",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , auto_create_topics_enabled_locked(
+      *this,
+      "auto_create_topics_enabled_locked",
+      "If set, reject changes to auto_create_topics_enabled",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      auto_create_topics_enabled.bind())
   , enable_pid_file(
       *this,
       "enable_pid_file",
