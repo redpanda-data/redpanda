@@ -117,6 +117,8 @@ static ss::future<read_result> read_from_partition(
               result.base_offset,
               result.last_offset,
               std::move(rdr.ot_state));
+            
+            vlog(klog.trace, "SVETA(5): {} {} => {}", result.base_offset, result.last_offset, aborted_transactions.size());
 
             // Check that the underlying data did not get truncated while
             // consuming. If so, it's possible the search for aborted

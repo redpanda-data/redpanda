@@ -1665,6 +1665,7 @@ model::offset rm_stm::last_stable_offset() {
         // To preserve the monotonicity of LSO from a client perspective,
         // we return this unknown offset marker that is translated to
         // an appropriate retry-able Kafka error code for clients.
+        vlog(_ctx_log.trace, "SVETA(3): invalid lso");
         return model::invalid_lso;
     }
 
@@ -1759,6 +1760,8 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
             filter_intersecting(result, opt->aborted, from, to);
         }
     }
+
+    vlog(_ctx_log.trace, "SVETA(2): from:{} to:{} => {}", from, to, result.size());
     co_return result;
 }
 
