@@ -9,6 +9,7 @@
 from collections import namedtuple
 import json
 import logging
+import os
 import pprint
 import random
 import re
@@ -1862,3 +1863,80 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self.redpanda.set_cluster_config({self.key: expected})
 
         self._check_value_everywhere(self.key, expected)
+
+
+class LockedConfigsTest(RedpandaTest):
+    SEGMENT_SIZE = 134217728
+    LOCKED_SEGMENT_SIZE_MIN = SEGMENT_SIZE // 2
+    LOCKED_SEGMENT_SIZE_MAX = SEGMENT_SIZE * 2
+    topics = [TopicSpec(segment_bytes=SEGMENT_SIZE)]
+
+    def __init__(self, *args, **kwargs):
+        super(LockedConfigsTest, self).__init__(extra_rp_conf={
+            "log_segment_size_locked_min":
+            self.LOCKED_SEGMENT_SIZE_MIN,
+            "log_cleanup_policy":
+            TopicSpec.CLEANUP_COMPACT,
+            "log_cleanup_policy_locked":
+            True,
+        },
+                                                *args,
+                                                **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_locked_configs_restart(self):
+        # Tests that locked configs persist between broker restart.
+
+        admin = Admin(self.redpanda)
+        target_broker = self.redpanda.nodes[0]
+
+        # After first boot, the preset locked properties should be returned by the Admin API.
+        # NOTE: By default, get_cluster_config returns config properties with default values.
+        res = admin.get_cluster_config(node=target_broker)
+        assert res[
+            'log_segment_size_locked_min'] == self.LOCKED_SEGMENT_SIZE_MIN
+        assert res['log_cleanup_policy'] == TopicSpec.CLEANUP_COMPACT
+        assert res['log_cleanup_policy_locked'] == True
+
+        # Log_segment_size_locked_max should be undefined since it was not set for cluster startup
+        assert res['log_segment_size_locked_max'] == None
+
+        self.redpanda.restart_nodes([target_broker])
+
+        # Admin API should still report Locked configs after restart
+        res = admin.get_cluster_config(node=target_broker)
+        assert res[
+            'log_segment_size_locked_min'] == self.LOCKED_SEGMENT_SIZE_MIN
+        assert res['log_cleanup_policy'] == TopicSpec.CLEANUP_COMPACT
+        assert res['log_cleanup_policy_locked'] == True
+        assert res['log_segment_size_locked_max'] == None
+
+        # Locked configs should also appear in the config cache file
+        cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
+        assert target_broker.account.exists(cache_path)
+
+        cached_cluster_config = {}
+        with tempfile.TemporaryDirectory() as d:
+            target_broker.account.copy_from(cache_path, d)
+            with open(os.path.join(d, "config_cache.yaml")) as f:
+                cached_cluster_config = yaml.full_load(f.read())
+
+        self.logger.debug(json.dumps(cached_cluster_config, indent=4))
+
+        assert cached_cluster_config[
+            'log_segment_size_locked_min'] == self.LOCKED_SEGMENT_SIZE_MIN
+        assert cached_cluster_config[
+            'log_cleanup_policy'] == f"\"{TopicSpec.CLEANUP_COMPACT}\""
+        assert cached_cluster_config['log_cleanup_policy_locked'] == True
+
+        # Config cache should not have log_segment_size_locked_max because the config manager
+        # does not import properties that are set to their default values.
+        try:
+            cached_cluster_config['log_segment_size_locked_max']
+            raise RuntimeError(
+                'Expected key error for log_segment_size_locked_max')
+        except KeyError as ex:
+            if str(ex) == '\'log_segment_size_locked_max\'':
+                pass
+            else:
+                raise
