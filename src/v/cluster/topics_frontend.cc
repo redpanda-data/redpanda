@@ -689,9 +689,34 @@ ss::future<std::vector<topic_result>> topics_frontend::autocreate_topics(
     }
     // current node is a leader controller
     if (leader == _self) {
+        // NOTE since we are skipping the preprocessing done in
+        // create_topics_handler::handle, it is partially replicated here
+        auto to_create = without_custom_assignments(std::move(topics));
+        auto& cfg = config::shard_local_cfg();
+        for (auto& tp : to_create) {
+            tp.cfg.properties.shadow_indexing = [&] {
+                auto read = cfg.cloud_storage_enable_remote_read();
+                auto write = cfg.cloud_storage_enable_remote_write();
+
+                if (read && write) {
+                    return model::shadow_indexing_mode::full;
+                }
+                if (read) {
+                    return model::shadow_indexing_mode::fetch;
+                }
+                if (write) {
+                    return model::shadow_indexing_mode::archival;
+                }
+                return model::shadow_indexing_mode::disabled;
+            }();
+            if (!tp.cfg.properties.cleanup_policy_bitflags.has_value()) {
+                tp.cfg.properties.cleanup_policy_bitflags
+                  = cfg.log_cleanup_policy();
+            }
+        }
+
         return create_topics(
-          without_custom_assignments(std::move(topics)),
-          model::timeout_clock::now() + timeout);
+          std::move(to_create), model::timeout_clock::now() + timeout);
     }
     // dispatch to leader
     return dispatch_create_to_leader(
