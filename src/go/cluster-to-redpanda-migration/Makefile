@@ -6,10 +6,10 @@ $(LOCALBIN):
 
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 
-ifeq (aarch64,$(uname -m))
-TARGETARCH = arm64
+ifeq (aarch64,$(shell uname -m))
+	TARGETARCH = arm64
 else
-TARGETARCH = amd64
+	TARGETARCH ?= $(shell uname -m)
 endif
 
 GOOS ?= linux
