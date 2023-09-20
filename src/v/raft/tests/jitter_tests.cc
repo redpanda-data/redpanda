@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/property.h"
 #include "raft/timeout_jitter.h"
 
 #include <seastar/core/thread.hh>
@@ -19,9 +20,10 @@
 using namespace std::chrono_literals; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(base_jitter_gurantees) {
-    raft::timeout_jitter jit(100ms, 75ms);
+    raft::timeout_jitter jit(
+      config::mock_binding<std::chrono::milliseconds>(100ms));
     auto const low = jit.base_duration();
-    auto const high = jit.base_duration() + 75ms;
+    auto const high = jit.base_duration() + 50ms;
     BOOST_CHECK_EQUAL(
       std::chrono::duration_cast<std::chrono::milliseconds>(low).count(),
       (100ms).count());

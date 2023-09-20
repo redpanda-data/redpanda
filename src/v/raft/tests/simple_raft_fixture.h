@@ -40,12 +40,6 @@ struct simple_raft_fixture {
       , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {}
 
     void create_raft(storage::ntp_config::default_overrides overrides = {}) {
-        ss::smp::invoke_on_all([]() {
-            // We want immediate elections, to avoid a sleep at the start of
-            // every instantiation of a test setup.
-            config::shard_local_cfg().raft_election_timeout_ms.set_value(10ms);
-        }).get();
-
         // configure and start kvstore
         storage::kvstore_config kv_conf(
           8192,
@@ -89,7 +83,7 @@ struct simple_raft_fixture {
                   .enable_lw_heartbeat = config::mock_binding<bool>(true),
                   .recovery_concurrency_per_shard
                   = config::mock_binding<size_t>(64),
-                };
+                  .election_timeout_ms = config::mock_binding(10ms)};
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

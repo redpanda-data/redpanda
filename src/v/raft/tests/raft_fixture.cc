@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf_parser.h"
 #include "config/property.h"
+#include "config/throughput_control_group.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -55,6 +56,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <optional>
