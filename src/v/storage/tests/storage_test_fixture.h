@@ -206,7 +206,7 @@ public:
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").set_value(true);
             config::shard_local_cfg()
-              .get("log_segment_size_min")
+              .get("log_segment_size_locked_min")
               .set_value(std::optional<uint64_t>{});
         }).get0();
         feature_table.start().get();
@@ -223,7 +223,9 @@ public:
         feature_table.stop().get();
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").reset();
-            config::shard_local_cfg().get("log_segment_size_min").reset();
+            config::shard_local_cfg()
+              .get("log_segment_size_locked_min")
+              .reset();
         }).get();
     }
 

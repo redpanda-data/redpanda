@@ -46,14 +46,18 @@ namespace config {
 struct configuration final : public config_store {
     // WAL
     bounded_property<uint64_t> log_segment_size;
-    property<std::optional<uint64_t>> log_segment_size_min;
-    property<std::optional<uint64_t>> log_segment_size_max;
+    deprecated_property log_segment_size_min;
+    deprecated_property log_segment_size_max;
+    locked_range_property<uint64_t> log_segment_size_locked_min;
+    locked_range_property<uint64_t> log_segment_size_locked_max;
     bounded_property<uint16_t> log_segment_size_jitter_percent;
     bounded_property<uint64_t> compacted_log_segment_size;
     property<std::chrono::milliseconds> readers_cache_eviction_timeout_ms;
     bounded_property<std::optional<std::chrono::milliseconds>> log_segment_ms;
-    property<std::chrono::milliseconds> log_segment_ms_min;
-    property<std::chrono::milliseconds> log_segment_ms_max;
+    deprecated_property log_segment_ms_min;
+    deprecated_property log_segment_ms_max;
+    locked_range_property<std::chrono::milliseconds> log_segment_ms_locked_min;
+    locked_range_property<std::chrono::milliseconds> log_segment_ms_locked_max;
 
     // Network
     bounded_property<std::optional<int>> rpc_server_listen_backlog;

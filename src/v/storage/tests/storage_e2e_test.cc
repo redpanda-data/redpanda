@@ -1298,9 +1298,9 @@ FIXTURE_TEST(check_max_segment_size_limits, storage_test_fixture) {
     // Apply limits to the effective segment size: we may configure
     // something different per-topic, but at runtime the effective
     // segment size will be clamped to this range.
-    config::shard_local_cfg().log_segment_size_min.set_value(
+    config::shard_local_cfg().log_segment_size_locked_min.set_value(
       std::make_optional(50_KiB));
-    config::shard_local_cfg().log_segment_size_max.set_value(
+    config::shard_local_cfg().log_segment_size_locked_max.set_value(
       std::make_optional(200_KiB));
 
     std::exception_ptr ex;
@@ -1351,8 +1351,8 @@ FIXTURE_TEST(check_max_segment_size_limits, storage_test_fixture) {
         ex = std::current_exception();
     }
 
-    config::shard_local_cfg().log_segment_size_min.reset();
-    config::shard_local_cfg().log_segment_size_max.reset();
+    config::shard_local_cfg().log_segment_size_locked_min.reset();
+    config::shard_local_cfg().log_segment_size_locked_max.reset();
 
     if (ex) {
         throw ex;

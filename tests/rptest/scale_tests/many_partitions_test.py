@@ -301,7 +301,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # cloud segments as possible. To that end, bounding the segment
                 # size isn't productive.
                 'cloud_storage_segment_size_min': 1,
-                'log_segment_size_min': 1024,
+                'log_segment_size_locked_min': 1024,
 
                 # Disable segment merging: when we create many small segments
                 # to pad out tiered storage metadata, we don't want them to

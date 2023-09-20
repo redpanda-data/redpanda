@@ -1163,13 +1163,15 @@ size_t disk_log_impl::max_segment_size() const {
     // Clamp to safety limits on segment sizes, in case the
     // property was set without proper validation (e.g. on
     // an older version or before limits were set)
-    auto min_limit = config::shard_local_cfg().log_segment_size_min();
-    auto max_limit = config::shard_local_cfg().log_segment_size_max();
-    if (min_limit) {
-        result = std::max(*min_limit, result);
+    auto min_locked_limit
+      = config::shard_local_cfg().log_segment_size_locked_min();
+    auto max_locked_limit
+      = config::shard_local_cfg().log_segment_size_locked_max();
+    if (min_locked_limit) {
+        result = std::max(*min_locked_limit, result);
     }
-    if (max_limit) {
-        result = std::min(*max_limit, result);
+    if (max_locked_limit) {
+        result = std::min(*max_locked_limit, result);
     }
 
     return result;
@@ -1278,14 +1280,19 @@ ss::future<> disk_log_impl::apply_segment_ms() {
     }
 
     auto& local_config = config::shard_local_cfg();
+    auto log_lifetime_min
+      = local_config.log_segment_ms_locked_min()
+          ? *local_config.log_segment_ms_locked_min()
+          : *local_config.log_segment_ms_locked_min.default_value();
+    auto log_lifetime_max
+      = local_config.log_segment_ms_locked_max()
+          ? *local_config.log_segment_ms_locked_max()
+          : *local_config.log_segment_ms_locked_max.default_value();
     // clamp user provided value with (hopefully sane) server min and max
     // values, this should protect against overflow UB
     if (
       first_write_ts.value()
-        + std::clamp(
-          seg_ms.value(),
-          local_config.log_segment_ms_min(),
-          local_config.log_segment_ms_max())
+        + std::clamp(seg_ms.value(), log_lifetime_min, log_lifetime_max)
       > ss::lowres_clock::now()) {
         // skip, time hasn't expired
         co_return;

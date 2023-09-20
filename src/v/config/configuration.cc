@@ -39,24 +39,26 @@ configuration::configuration()
      .visibility = visibility::tunable},
     128_MiB,
     {.min = 1_MiB})
-  , log_segment_size_min(
+  , log_segment_size_min(*this, "log_segment_size_min")
+  , log_segment_size_max(*this, "log_segment_size_max")
+  , log_segment_size_locked_min(
       *this,
-      "log_segment_size_min",
-      "Lower bound on topic segment.bytes: lower values will be clamped to "
-      "this limit",
+      "log_segment_size_locked_min",
+      "Lower bound on topic segment.bytes:  reject topics with lower values",
       {.needs_restart = needs_restart::no,
        .example = "16777216",
-       .visibility = visibility::tunable},
-      1_MiB)
-  , log_segment_size_max(
+       .visibility = visibility::user},
+      1_MiB,
+      validate_locked_min<uint64_t>)
+  , log_segment_size_locked_max(
       *this,
-      "log_segment_size_max",
-      "Upper bound on topic segment.bytes: higher values will be clamped to "
-      "this limit",
+      "log_segment_size_locked_max",
+      "Upper bound on topic segment.bytes: reject topics with higher values",
       {.needs_restart = needs_restart::no,
        .example = "268435456",
-       .visibility = visibility::tunable},
-      std::nullopt)
+       .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<uint64_t>)
   , log_segment_size_jitter_percent(
       *this,
       "log_segment_size_jitter_percent",
@@ -92,24 +94,26 @@ configuration::configuration()
        .visibility = visibility::user},
       std::chrono::weeks{2},
       {.min = 60s})
-  , log_segment_ms_min(
+  , log_segment_ms_min(*this, "log_segment_ms_min")
+  , log_segment_ms_max(*this, "log_segment_ms_max")
+  , log_segment_ms_locked_min(
       *this,
-      "log_segment_ms_min",
-      "Lower bound on topic segment.ms: lower values will be clamped to this "
-      "value",
+      "log_segment_ms_locked_min",
+      "Lower bound on topic segment.ms; Reject topics with lower values",
       {.needs_restart = needs_restart::no,
        .example = "60000",
-       .visibility = visibility::tunable},
-      60s)
-  , log_segment_ms_max(
+       .visibility = visibility::user},
+      60s,
+      validate_locked_min<std::chrono::milliseconds>)
+  , log_segment_ms_locked_max(
       *this,
-      "log_segment_ms_max",
-      "Upper bound on topic segment.ms: higher values will be clamped to this "
-      "value",
+      "log_segment_ms_locked_max",
+      "Upper bound on topic segment.ms; Reject topics with higher values",
       {.needs_restart = needs_restart::no,
        .example = "31536000000",
-       .visibility = visibility::tunable},
-      24h * 365)
+       .visibility = visibility::user},
+      24h * 365,
+      validate_locked_max<std::chrono::milliseconds>)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",

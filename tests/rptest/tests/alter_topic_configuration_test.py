@@ -142,7 +142,7 @@ class AlterTopicConfiguration(RedpandaTest):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
         initial_spec = kafka_tools.describe_topic(topic)
-        self.redpanda.set_cluster_config({"log_segment_size_min": 1024})
+        self.redpanda.set_cluster_config({"log_segment_size_locked_min": 1024})
         try:
             self.client().alter_topic_configs(
                 topic, {TopicSpec.PROPERTY_SEGMENT_SIZE: 16})
@@ -154,7 +154,8 @@ class AlterTopicConfiguration(RedpandaTest):
         ).segment_bytes, "segment.bytes shouldn't be changed to invalid value"
 
         # change min segment bytes redpanda property
-        self.redpanda.set_cluster_config({"log_segment_size_min": 1024 * 1024})
+        self.redpanda.set_cluster_config(
+            {"log_segment_size_locked_min": 1024 * 1024})
         # try setting value that is smaller than requested min
         try:
             self.client().alter_topic_configs(
@@ -172,7 +173,7 @@ class AlterTopicConfiguration(RedpandaTest):
             topic).segment_bytes == valid_segment_size
 
         self.redpanda.set_cluster_config(
-            {"log_segment_size_max": 10 * 1024 * 1024})
+            {"log_segment_size_locked_max": 10 * 1024 * 1024})
         # try to set value greater than max allowed segment size
         try:
             self.client().alter_topic_configs(

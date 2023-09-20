@@ -33,7 +33,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
     manual_deletion_fixture()
       : gr(
         raft::group_id(0), 3, model::cleanup_policy_bitflags::deletion, 1_KiB) {
-        config::shard_local_cfg().log_segment_size_min.set_value(
+        config::shard_local_cfg().log_segment_size_locked_min.set_value(
           std::optional<uint64_t>());
         gr.enable_all();
         auto& members = gr.get_members();
@@ -53,7 +53,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
                 gr.disable_node(id);
             }
         }
-        config::shard_local_cfg().log_segment_size_min.reset();
+        config::shard_local_cfg().log_segment_size_locked_min.reset();
     }
 
     void maybe_init_eviction_stm(model::node_id id) {

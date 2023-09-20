@@ -45,8 +45,10 @@ ss::future<> produce_to_fixture(
 } // namespace
 
 FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
-    test_local_cfg.get("log_segment_ms_min")
-      .set_value(std::chrono::duration_cast<std::chrono::milliseconds>(1ms));
+    auto segment_lifetime_min
+      = std::chrono::duration_cast<std::chrono::milliseconds>(1ms);
+    test_local_cfg.get("log_segment_ms_locked_min")
+      .set_value(std::make_optional(segment_lifetime_min));
     const auto topic_name = model::topic("tapioca");
     const auto ntp = model::ntp(model::kafka_namespace, topic_name, 0);
 

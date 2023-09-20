@@ -307,7 +307,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             # staying in one place.
             'enable_leader_balancer':
             False,
-            'log_segment_size_min':
+            'log_segment_size_locked_min':
             32 * 1024,
             'cloud_storage_cache_chunk_size':
             self.chunk_size

@@ -153,8 +153,8 @@ class SegmentMsTest(RedpandaTest):
             use_alter_cfg,
             num_messages,
             extra_cluster_cfg={
-                'log_segment_ms_min': TEST_LOG_SEGMENT_MIN,
-                'log_segment_ms_max': TEST_LOG_SEGMENT_MAX
+                'log_segment_ms_locked_min': TEST_LOG_SEGMENT_MIN,
+                'log_segment_ms_locked_max': TEST_LOG_SEGMENT_MAX
             })
         assert abs((stop_count - start_count) - TEST_NUM_SEGMENTS) <= ERROR_MARGIN, \
                                        f"{stop_count=}-{start_count=} != {TEST_NUM_SEGMENTS=} +-{ERROR_MARGIN=}"
@@ -204,7 +204,7 @@ class SegmentMsTest(RedpandaTest):
     def test_segment_rolling_with_retention(self):
         self.redpanda.set_cluster_config({
             "log_segment_ms": None,
-            "log_segment_ms_min": 10000
+            "log_segment_ms_locked_min": 10000
         })
         topic = TopicSpec(segment_bytes=(1024 * 1024),
                           replication_factor=1,
@@ -275,7 +275,7 @@ class SegmentMsTest(RedpandaTest):
     def test_segment_rolling_with_retention_consumer(self):
         self.redpanda.set_cluster_config({
             "log_segment_ms": None,
-            "log_segment_ms_min": 10000
+            "log_segment_ms_locked_min": 10000
         })
         topic = TopicSpec(segment_bytes=(1024 * 1024),
                           replication_factor=1,

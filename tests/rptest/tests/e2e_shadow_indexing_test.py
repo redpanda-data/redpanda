@@ -878,7 +878,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 # Avoid segment merging so we can generate many segments
                 # quickly.
                 "cloud_storage_enable_segment_merging": False,
-                'log_segment_size_min': 1024,
+                'log_segment_size_locked_min': 1024,
                 'cloud_storage_cache_chunk_size': self.chunk_size,
             },
             environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
