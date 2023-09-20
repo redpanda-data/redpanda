@@ -10,16 +10,18 @@
 package container
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand() *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "container",
 		Short: "Manage a local container cluster",
 	}
 
-	command.AddCommand(newStartCommand())
+	command.AddCommand(newStartCommand(fs, p))
 	command.AddCommand(newStopCommand())
 	command.AddCommand(newPurgeCommand())
 	command.AddCommand(newStatusCommand())

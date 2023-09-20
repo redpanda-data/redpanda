@@ -100,7 +100,7 @@ func Execute() {
 		acl.NewCommand(fs, p),
 		cloud.NewCommand(fs, p, osExec),
 		cluster.NewCommand(fs, p),
-		container.NewCommand(),
+		container.NewCommand(fs, p),
 		profile.NewCommand(fs, p),
 		debug.NewCommand(fs, p),
 		generate.NewCommand(fs, p),

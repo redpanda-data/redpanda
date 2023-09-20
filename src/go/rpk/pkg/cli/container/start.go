@@ -27,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -50,12 +51,13 @@ func collectFlags(args []string, flag string) []string {
 	return flags
 }
 
-func newStartCommand() *cobra.Command {
+func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		nodes   uint
-		retries uint
-		image   string
-		pull    bool
+		nodes     uint
+		retries   uint
+		image     string
+		pull      bool
+		noProfile bool
 	)
 	command := &cobra.Command{
 		Use:   "start",
@@ -66,7 +68,7 @@ func newStartCommand() *cobra.Command {
 			// (POSIX standard)
 			UnknownFlags: true,
 		},
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(*cobra.Command, []string) error {
 			if nodes < 1 {
 				return errors.New(
 					"--nodes should be 1 or greater",
@@ -80,46 +82,42 @@ func newStartCommand() *cobra.Command {
 
 			configKvs := collectFlags(os.Args, "--set")
 
-			return common.WrapIfConnErr(startCluster(
-				c,
-				nodes,
-				checkBrokers,
-				retries,
-				image,
-				pull,
-				configKvs,
-			))
+			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, pull, configKvs)
+			if err != nil {
+				return common.WrapIfConnErr(err)
+			}
+
+			if noProfile || isRestarted {
+				return nil
+			}
+
+			cfg, err := p.Load(fs)
+			if err != nil {
+				return fmt.Errorf("unable to load config: %v", err)
+			}
+			y, err := cfg.ActualRpkYamlOrEmpty()
+			if err != nil {
+				return fmt.Errorf("unable to load config: %v", err)
+			}
+
+			err = createContainerProfile(fs, c, y)
+			if err == nil {
+				return nil
+			}
+			if errors.Is(err, ErrContainerProfileExists) {
+				fmt.Printf("Unable to create a profile for the rpk container: %v; you may delete it and create a new one running 'rpk profile create --from-rpk-container'\n", err)
+				return nil
+			} else {
+				return fmt.Errorf("unable to create a profile for the rpk container: %v", err)
+			}
 		},
 	}
 
-	command.Flags().UintVarP(
-		&nodes,
-		"nodes",
-		"n",
-		1,
-		"The number of nodes to start",
-	)
-
-	command.Flags().UintVar(
-		&retries,
-		"retries",
-		10,
-		"The amount of times to check for the cluster before"+
-			" considering it unstable and exiting",
-	)
-	imageFlag := "image"
-	command.Flags().StringVar(
-		&image,
-		imageFlag,
-		common.DefaultImage(),
-		"An arbitrary container image to use",
-	)
-	command.Flags().BoolVar(
-		&pull,
-		"pull",
-		false,
-		"Force pull the container image used",
-	)
+	command.Flags().UintVarP(&nodes, "nodes", "n", 1, "The number of nodes to start")
+	command.Flags().UintVar(&retries, "retries", 10, "The amount of times to check for the cluster before considering it unstable and exiting")
+	command.Flags().StringVar(&image, "image", common.DefaultImage(), "An arbitrary container image to use")
+	command.Flags().BoolVar(&pull, "pull", false, "Force pull the container image used")
+	command.Flags().BoolVar(&noProfile, "no-profile", false, "If true, rpk will not create an rpk profile after creating a cluster")
 
 	return command
 }
@@ -132,11 +130,11 @@ func startCluster(
 	image string,
 	pull bool,
 	extraArgs []string,
-) error {
+) (isRestarted bool, rerr error) {
 	// Check if cluster exists and start it again.
 	restarted, err := restartCluster(c, check, retries)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// If a cluster was restarted, there's nothing else to do.
 	if len(restarted) != 0 {
@@ -145,14 +143,14 @@ func startCluster(
 		if len(restarted) != int(n) {
 			fmt.Print("\nTo change the number of nodes, first purge the existing cluster with\n'rpk container purge'.\n\n")
 		}
-		return nil
+		return true, nil
 	}
 
 	if pull {
 		fmt.Println("Force pulling image...")
 		err = common.PullImage(c, image)
 		if err != nil {
-			return err
+			return false, err
 		}
 	} else {
 		fmt.Println("Checking for a local image...")
@@ -165,7 +163,7 @@ func startCluster(
 			fmt.Printf("Version %q not found locally\n", image)
 			err = common.PullImage(c, image)
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
@@ -173,13 +171,13 @@ func startCluster(
 	// Create the docker network if it doesn't exist already
 	netID, err := common.CreateNetwork(c)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	reqPorts := n * 5 // we need 5 ports per node
 	ports, err := vnet.GetFreePortPool(int(reqPorts))
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Start a seed node.
@@ -205,7 +203,7 @@ func startCluster(
 		extraArgs...,
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	fmt.Println("Starting cluster...")
@@ -214,7 +212,7 @@ func startCluster(
 		seedState.ContainerID,
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	seedNode := node{
@@ -280,21 +278,21 @@ func startCluster(
 
 	err = grp.Wait()
 	if err != nil {
-		return fmt.Errorf("error restarting the cluster: %v", err)
+		return false, fmt.Errorf("error restarting the cluster: %v", err)
 	}
 	err = waitForCluster(check(nodes), retries)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	fmt.Println("Cluster started!")
 	dockerNodes, err := renderClusterInfo(c)
 	if err != nil {
-		return err
+		return false, err
 	}
 	renderClusterInteract(dockerNodes)
 
-	return nil
+	return false, nil
 }
 
 func restartCluster(
@@ -472,3 +470,45 @@ func nodeAddr(port uint) string {
 		port,
 	)
 }
+
+func createContainerProfile(fs afero.Fs, c common.Client, y *config.RpkYaml) error {
+	if p := y.Profile(containerProfileName); p != nil {
+		return ErrContainerProfileExists
+	}
+	var kaAddresses, aAddresses, srAddresses []string
+	existingNodes, err := common.GetExistingNodes(c)
+	if err != nil {
+		return fmt.Errorf("unable to get the existing nodes: %v", err)
+	}
+	for _, n := range existingNodes {
+		kaAddresses = append(kaAddresses, nodeAddr(n.HostKafkaPort))
+		aAddresses = append(aAddresses, nodeAddr(n.HostAdminPort))
+		srAddresses = append(srAddresses, nodeAddr(n.HostSchemaPort))
+	}
+
+	profile := config.RpkProfile{
+		Name:        containerProfileName,
+		Description: "Automatically generated profile from running 'rpk container start'",
+		KafkaAPI: config.RpkKafkaAPI{
+			Brokers: kaAddresses,
+		},
+		AdminAPI: config.RpkAdminAPI{
+			Addresses: aAddresses,
+		},
+		SR: config.RpkSchemaRegistryAPI{
+			Addresses: srAddresses,
+		},
+	}
+
+	y.CurrentProfile = y.PushProfile(profile)
+	err = y.Write(fs)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Created %q profile.\n", containerProfileName)
+	return nil
+}
+
+const containerProfileName = "rpk-container"
+
+var ErrContainerProfileExists = fmt.Errorf("%q profile already exists", containerProfileName)
