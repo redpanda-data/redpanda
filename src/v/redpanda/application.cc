@@ -1164,7 +1164,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       local_monitor,
       std::ref(raft_group_manager),
       std::ref(feature_table),
-      std::ref(cloud_storage_api));
+      std::ref(cloud_storage_api),
+      std::ref(metadata_cache));
     controller->wire_up().get0();
 
     construct_single_service_sharded(
