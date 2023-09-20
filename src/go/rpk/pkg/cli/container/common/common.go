@@ -42,16 +42,17 @@ const (
 )
 
 type NodeState struct {
-	Status        string
-	Running       bool
-	ConfigFile    string
-	HostRPCPort   uint
-	HostKafkaPort uint
-	HostAdminPort uint
-	HostProxyPort uint
-	ID            uint
-	ContainerIP   string
-	ContainerID   string
+	Status         string
+	Running        bool
+	ConfigFile     string
+	HostRPCPort    uint
+	HostKafkaPort  uint
+	HostAdminPort  uint
+	HostProxyPort  uint
+	HostSchemaPort uint
+	ID             uint
+	ContainerIP    string
+	ContainerID    string
 }
 
 func ListenAddresses(ip string, internalPort, externalPort uint) string {
@@ -167,16 +168,24 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostSchemaPort, err := getHostPort(
+		config.DefaultSchemaRegPort,
+		containerJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &NodeState{
-		Running:       containerJSON.State.Running,
-		Status:        containerJSON.State.Status,
-		ContainerID:   containerJSON.ID,
-		ContainerIP:   ipAddress,
-		HostKafkaPort: hostKafkaPort,
-		HostRPCPort:   hostRPCPort,
-		HostAdminPort: hostAdminPort,
-		HostProxyPort: hostProxyPort,
-		ID:            nodeID,
+		Running:        containerJSON.State.Running,
+		Status:         containerJSON.State.Status,
+		ContainerID:    containerJSON.ID,
+		ContainerIP:    ipAddress,
+		HostKafkaPort:  hostKafkaPort,
+		HostRPCPort:    hostRPCPort,
+		HostAdminPort:  hostAdminPort,
+		HostProxyPort:  hostProxyPort,
+		HostSchemaPort: hostSchemaPort,
+		ID:             nodeID,
 	}, nil
 }
 
