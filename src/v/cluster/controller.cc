@@ -79,7 +79,8 @@ controller::controller(
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<node_status_table>& node_status_table)
+  ss::sharded<node_status_table>& node_status_table,
+  ss::sharded<cluster::metadata_cache>& metadata_cache)
   : _config_preload(std::move(config_preload))
   , _connections(ccache)
   , _partition_manager(pm)
@@ -96,6 +97,7 @@ controller::controller(
   , _feature_table(feature_table)
   , _cloud_storage_api(cloud_storage_api)
   , _node_status_table(node_status_table)
+  , _metadata_cache(metadata_cache)
   , _probe(*this) {}
 
 // Explicit destructor in the .cc file just to avoid bloating the header with
@@ -289,6 +291,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_shard_table),
             ss::sharded_parameter(
               [this] { return std::ref(_plugin_table.local()); }),
+            ss::sharded_parameter(
+              [this] { return std::ref(_metadata_cache.local()); }),
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
                   .storage_space_alert_free_threshold_percent.bind();

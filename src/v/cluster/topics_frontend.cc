@@ -20,6 +20,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/scheduling/constraints.h"
@@ -69,6 +70,7 @@ topics_frontend::topics_frontend(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& shard_table,
   plugin_table& plugin_table,
+  metadata_cache& metadata_cache,
   config::binding<unsigned> hard_max_disk_usage_ratio)
   : _self(self)
   , _stm(s)
@@ -81,6 +83,7 @@ topics_frontend::topics_frontend(
   , _cloud_storage_api(cloud_storage_api)
   , _features(features)
   , _plugin_table(plugin_table)
+  , _metadata_cache(metadata_cache)
   , _members_table(members_table)
   , _pm(pm)
   , _shard_table(shard_table)
@@ -97,6 +100,30 @@ needs_linearizable_barrier(const std::vector<topic_result>& results) {
 ss::future<std::vector<topic_result>> topics_frontend::create_topics(
   std::vector<custom_assignable_topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
+    for (auto& tp : topics) {
+        /**
+         * Note that a manually created topic will have this assigned already by
+         * kafka/server/handlers/topics/types.cc::to_cluster_type, dependent on
+         * client-provided topic properties.
+         */
+        if (!tp.cfg.properties.shadow_indexing.has_value()) {
+            tp.cfg.properties.shadow_indexing
+              = _metadata_cache.get_default_shadow_indexing_mode();
+        }
+
+        /**
+         * We always override cleanup policy. i.e. topic cleanup policy will
+         * stay the same even if it was changed in defaults (broker
+         * configuration) and there was no override passed by client while
+         * creating a topic. The the same policy is applied in Kafka.
+         */
+
+        if (!tp.cfg.properties.cleanup_policy_bitflags.has_value()) {
+            tp.cfg.properties.cleanup_policy_bitflags
+              = _metadata_cache.get_default_cleanup_policy_bitflags();
+        }
+    }
+
     vlog(clusterlog.info, "Create topics {}", topics);
     // make sure that STM is up to date (i.e. we have the most recent state
     // available) before allocating topics

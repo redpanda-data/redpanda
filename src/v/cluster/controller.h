@@ -48,7 +48,8 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<node_status_table>&);
+      ss::sharded<node_status_table>&,
+      ss::sharded<cluster::metadata_cache>&);
 
     ~controller();
 
@@ -258,6 +259,7 @@ private:
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<node_status_table>& _node_status_table;
+    ss::sharded<cluster::metadata_cache>& _metadata_cache;
     controller_probe _probe;
     ss::sharded<bootstrap_backend> _bootstrap_backend; // single instance
 
