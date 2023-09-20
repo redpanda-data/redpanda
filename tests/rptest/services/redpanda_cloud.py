@@ -37,6 +37,20 @@ PROVIDER_GCP = 'GCP'
 TIER_DEFAULTS = {PROVIDER_AWS: "tier-1-aws", PROVIDER_GCP: "tier-1-gcp"}
 
 
+def get_tier_name(config):
+    """
+    Gets tier name befor cluster creation
+    """
+    if not config:
+        return CloudTierName("docker-local")
+    else:
+        _provider = config['provider'].upper()
+        if config['config_profile_name'] == "default":
+            return CloudTierName(TIER_DEFAULTS[_provider])
+        else:
+            return CloudTierName(_provider)
+
+
 class CloudTierName(Enum):
     DOCKER = 'docker-local'
     AWS_1 = 'tier-1-aws'
@@ -397,7 +411,7 @@ class CloudCluster():
     def get_ducktape_meta(self):
         """
         Returns instance metadata based on current provider
-        This is placed in separate function to be able 
+        This is placed in separate function to be able
         to add data processing if needed
         """
         return self.provider_cli.get_instance_meta()

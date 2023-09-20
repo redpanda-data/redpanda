@@ -30,7 +30,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName
+from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName, get_tier_name
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
                                       SISettings, RedpandaServiceCloud)
 from rptest.services.rpk_consumer import RpkConsumer
@@ -163,13 +163,13 @@ def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
         ) >= tier_cfg.egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate}"
 
 
-def get_globals_value(globals, key_name, default=None):
+def get_cloud_globals(globals):
     _config = {}
     if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
         # Load needed config values from cloud section
         # of globals prior to actual cluster creation
         _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
-    return _config.get(key_name, default)
+    return _config
 
 
 class HighThroughputTest(RedpandaTest):
@@ -179,11 +179,8 @@ class HighThroughputTest(RedpandaTest):
 
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
-        # Get tier value
-        cloud_tier_str = get_globals_value(self._ctx.globals,
-                                           "config_profile_name",
-                                           default="tier-1-aws")
-        cloud_tier = CloudTierName(cloud_tier_str)
+        # Get tier name
+        cloud_tier = get_tier_name(get_cloud_globals(self._ctx.globals))
         extra_rp_conf = None
         num_brokers = None
 
