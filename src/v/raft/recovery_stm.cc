@@ -155,14 +155,17 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
         co_return;
     }
 
+    if (is_recovery_finished()) {
+        _stop_requested = true;
+        co_return;
+    }
+
     auto flush = should_flush(follower_committed_match_index);
     if (flush == flush_after_append::yes) {
         _recovered_bytes_since_flush = 0;
     }
 
     co_await replicate(std::move(*reader), flush, std::move(read_memory_units));
-
-    meta = get_follower_meta();
 }
 
 flush_after_append
