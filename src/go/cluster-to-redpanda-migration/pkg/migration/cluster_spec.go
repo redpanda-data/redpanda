@@ -197,6 +197,7 @@ func MigrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpan
 	if pointer.BoolDeref(oldSpec.KafkaEnableAuthorization, false) || oldSpec.EnableSASL {
 		rpAuth.SASL = &v1alpha1.SASL{
 			Enabled: true,
+			Users:   make([]v1alpha1.UsersItems, 0),
 		}
 
 		// TODO: check to see what secret is being created with user information
@@ -212,8 +213,7 @@ func MigrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpan
 
 				users = append(users, userItem) //nolint:staticcheck // placeholder for now
 			}
-		} else {
-			rpAuth.SASL.Users = nil
+			rpAuth.SASL.Users = users
 		}
 	} else {
 		rpAuth = nil
