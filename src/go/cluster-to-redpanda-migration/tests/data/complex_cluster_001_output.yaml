@@ -12,6 +12,16 @@ spec:
     auth:
       sasl:
         enabled: true
+        users:
+          - mechanism: SCRAM-SHA-512
+            name: __redpanda_cloud__9SL1qGiJj4K0kTer
+            password: ""
+          - mechanism: SCRAM-SHA-512
+            name: __redpanda_cloud__connectors
+            password: ""
+          - mechanism: SCRAM-SHA-512
+            name: __redpanda_cloud__kminion
+            password: ""
     config:
       cluster:
         aggregate_metrics: true
