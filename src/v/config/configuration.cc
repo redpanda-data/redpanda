@@ -1353,12 +1353,26 @@ configuration::configuration()
       "Default remote read config value for new topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , cloud_storage_enable_remote_read_locked(
+      *this,
+      "cloud_storage_enable_remote_read_locked",
+      "If set, the remote read config value is unmodifiable; Reject topics "
+      "with a different value",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      cloud_storage_enable_remote_read.bind())
   , cloud_storage_enable_remote_write(
       *this,
       "cloud_storage_enable_remote_write",
       "Default remote write value for new topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , cloud_storage_enable_remote_write_locked(
+      *this,
+      "cloud_storage_enable_remote_write_locked",
+      "If set, the remote write config value is unmodifiable; Reject topics "
+      "with a different value",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      cloud_storage_enable_remote_write.bind())
   , cloud_storage_access_key(
       *this,
       "cloud_storage_access_key",

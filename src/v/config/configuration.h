@@ -270,7 +270,9 @@ struct configuration final : public config_store {
     // Archival storage
     property<bool> cloud_storage_enabled;
     property<bool> cloud_storage_enable_remote_read;
+    locked_equal_property<bool> cloud_storage_enable_remote_read_locked;
     property<bool> cloud_storage_enable_remote_write;
+    locked_equal_property<bool> cloud_storage_enable_remote_write_locked;
     property<std::optional<ss::sstring>> cloud_storage_access_key;
     property<std::optional<ss::sstring>> cloud_storage_secret_key;
     property<std::optional<ss::sstring>> cloud_storage_region;
