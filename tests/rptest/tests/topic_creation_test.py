@@ -121,10 +121,12 @@ class TopicAutocreateTest(RedpandaTest):
         super(TopicAutocreateTest, self).__init__(
             test_context=test_context,
             num_brokers=1,
-            extra_rp_conf={'auto_create_topics_enabled': False})
+            extra_rp_conf={'auto_create_topics_enabled': False},
+            si_settings=SISettings(test_context))
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=1)
     def topic_autocreate_test(self):
@@ -161,6 +163,35 @@ class TopicAutocreateTest(RedpandaTest):
         # Clear name and compare the rest of the attributes
         manual_topic_spec.name = auto_topic_spec.name = None
         assert manual_topic_spec == auto_topic_spec
+
+        # compare topic configs as retrieved by rpk.
+        # describe the topics and convert the resulting dict in a set, to compute the difference
+        auto_topic_rpk_cfg = set(
+            self.rpk.describe_topic_configs(auto_topic).items())
+        manual_topic_rpk_cfg = set(
+            self.rpk.describe_topic_configs(manual_topic).items())
+
+        # retrieve the cloud storage mode and append it as an extra config, to check it. see issue/13492
+        auto_topic_rpk_cfg.add(('cloud_storage_mode',
+                                self.admin.get_partition_cloud_storage_status(
+                                    auto_topic, 0)['cloud_storage_mode']))
+        manual_topic_rpk_cfg.add(
+            ('cloud_storage_mode',
+             self.admin.get_partition_cloud_storage_status(
+                 manual_topic, 0)['cloud_storage_mode']))
+
+        self.logger.debug(f"{auto_topic=} config={auto_topic_rpk_cfg}")
+        self.logger.debug(f"{manual_topic=}, config={manual_topic_rpk_cfg}")
+
+        # remove elements that are equal. for the test to be a success,
+        # auto and manual should be equal so at the end of the operations, the result should be empty
+        cfg_intersection = auto_topic_rpk_cfg & manual_topic_rpk_cfg
+        auto_topic_cfg_unique = auto_topic_rpk_cfg - cfg_intersection
+        manual_topic_cfg_unique = manual_topic_rpk_cfg - cfg_intersection
+
+        assert len(auto_topic_cfg_unique) == 0 and \
+            len(manual_topic_cfg_unique) == 0, \
+                  f"topics {auto_topic=} and {manual_topic=} have these different configs (should be empty) {auto_topic_cfg_unique=} {manual_topic_cfg_unique=}"
 
 
 def topic_name():
