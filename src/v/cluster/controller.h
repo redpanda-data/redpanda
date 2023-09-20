@@ -42,7 +42,10 @@ public:
       ss::sharded<node::local_monitor>& local_monitor,
       ss::sharded<raft::group_manager>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cloud_storage::remote>&);
+      ss::sharded<cloud_storage::remote>&,
+      ss::sharded<cluster::metadata_cache>&);
+
+    ~controller();
 
     model::node_id self() { return _raft0->self().id(); }
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }
@@ -222,6 +225,7 @@ private:
     ss::gate _gate;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<cluster::metadata_cache>& _metadata_cache;
     controller_probe _probe;
     ss::sharded<bootstrap_backend> _bootstrap_backend; // single instance
     bool _is_ready = false;
