@@ -41,4 +41,22 @@ validate_non_empty_string_vec(const std::vector<ss::sstring>&);
 std::optional<ss::sstring>
 validate_non_empty_string_opt(const std::optional<ss::sstring>&);
 
+template<typename T>
+bool validate_locked_min(const std::optional<T>& locked_min, const T& value) {
+    if (locked_min) {
+        return value > *locked_min;
+    } else {
+        return true;
+    }
+}
+
+template<typename T>
+bool validate_locked_max(const std::optional<T>& locked_max, const T& value) {
+    if (locked_max) {
+        return value < *locked_max;
+    } else {
+        return true;
+    }
+}
+
 }; // namespace config

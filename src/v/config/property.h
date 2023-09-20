@@ -911,4 +911,100 @@ private:
     }
 };
 
+template<typename T>
+bool always_true_locked_validator(const std::optional<T>&, const T&) {
+    return true;
+}
+
+template<typename T>
+class locked_range_property : public property<std::optional<T>> {
+public:
+    using lock_validator_t = typename ss::noncopyable_function<bool(
+      const std::optional<T>&, const T&)>;
+
+    locked_range_property(
+      config_store& conf,
+      std::string_view name,
+      std::string_view desc,
+      base_property::metadata meta = {},
+      std::optional<T> def = T{},
+      lock_validator_t lock_validator = always_true_locked_validator<T>)
+      : property<std::optional<T>>(
+        conf,
+        name,
+        desc,
+        meta,
+        std::move(def),
+        property<std::optional<T>>::noop_validator,
+        std::nullopt)
+      , _lock_validator(std::move(lock_validator)) {}
+
+    locked_range_property(locked_range_property<T>&& rhs)
+      : property<std::optional<T>>(rhs)
+      , _lock_validator(std::move(rhs._lock_validator)) {}
+
+    bool validate_lock(const T& v) {
+        return _lock_validator(property<std::optional<T>>::value(), v);
+    }
+
+private:
+    lock_validator_t _lock_validator;
+};
+
+template<typename T>
+class locked_equal_property : public property<bool> {
+public:
+    locked_equal_property(
+      config_store& conf,
+      std::string_view name,
+      std::string_view desc,
+      base_property::metadata meta,
+      binding<T> original_config)
+      : property<bool>(
+        conf,
+        name,
+        desc,
+        meta,
+        false, // lock is off by default
+        property<bool>::noop_validator,
+        std::nullopt)
+      , _original_config(std::move(original_config)) {}
+
+    locked_equal_property(locked_equal_property<T>&& rhs)
+      : property<bool>(rhs)
+      , _original_config(std::move(rhs._original_config)) {}
+
+    bool validate_lock(const T& v) {
+        if (property<bool>::value()) {
+            return v == _original_config();
+        } else {
+            return true;
+        }
+    }
+
+protected:
+    /**
+     * This constructor is only for tests that need to preset the lock
+     */
+    locked_equal_property(
+      config_store& conf,
+      std::string_view name,
+      std::string_view desc,
+      base_property::metadata meta,
+      binding<T> original_config,
+      bool def)
+      : property<bool>(
+        conf,
+        name,
+        desc,
+        meta,
+        std::move(def),
+        property<bool>::noop_validator,
+        std::nullopt)
+      , _original_config(std::move(original_config)) {}
+
+private:
+    binding<T> _original_config;
+};
+
 }; // namespace config
