@@ -134,11 +134,14 @@ struct configuration final : public config_store {
     locked_equal_property<model::cleanup_policy_bitflags>
       log_cleanup_policy_locked;
     enum_property<model::timestamp_type> log_message_timestamp_type;
+    locked_equal_property<model::timestamp_type>
+      log_message_timestamp_type_locked;
     bounded_property<std::optional<std::chrono::milliseconds>>
       log_message_timestamp_alert_before_ms;
     bounded_property<std::chrono::milliseconds>
       log_message_timestamp_alert_after_ms;
     enum_property<model::compression> log_compression_type;
+    locked_equal_property<model::compression> log_compression_type_locked;
     property<size_t> fetch_max_bytes;
     property<bool> use_fetch_scheduler_group;
     property<std::chrono::milliseconds> metadata_status_wait_timeout_ms;
@@ -243,6 +246,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;
     property<uint32_t> kafka_request_max_bytes;
     property<uint32_t> kafka_batch_max_bytes;
+    locked_range_property<uint32_t> kafka_batch_max_bytes_locked_min;
+    locked_range_property<uint32_t> kafka_batch_max_bytes_locked_max;
     property<std::vector<ss::sstring>> kafka_nodelete_topics;
     property<std::vector<ss::sstring>> kafka_noproduce_topics;
 

@@ -534,6 +534,13 @@ configuration::configuration()
        .visibility = visibility::user},
       model::timestamp_type::create_time,
       {model::timestamp_type::create_time, model::timestamp_type::append_time})
+  , log_message_timestamp_type_locked(
+      *this,
+      "log_message_timestamp_type_locked",
+      "If true, the default topic messages timestamp type is unmodifiable; "
+      "Reject topics with different values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      log_message_timestamp_type.bind())
   , log_message_timestamp_alert_before_ms(
       *this,
       "log_message_timestamp_alert_before_ms",
@@ -570,6 +577,13 @@ configuration::configuration()
        model::compression::lz4,
        model::compression::zstd,
        model::compression::producer})
+  , log_compression_type_locked(
+      *this,
+      "log_compression_type_locked",
+      "If set, the default topic compression type is unmodifiable; Reject "
+      "topics with a different value",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      log_compression_type.bind())
   , fetch_max_bytes(
       *this,
       "fetch_max_bytes",
@@ -1195,6 +1209,20 @@ configuration::configuration()
       "limit applies to compressed batch size",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_MiB)
+  , kafka_batch_max_bytes_locked_min(
+      *this,
+      "kafka_batch_max_bytes_locked_min",
+      "Lower bound on kafka_batch_max_bytes; Reject topics with lower values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_min<uint32_t>)
+  , kafka_batch_max_bytes_locked_max(
+      *this,
+      "kafka_batch_max_bytes_locked_max",
+      "Upper bound on kafka_batch_max_bytes; Reject topics with higher values",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_locked_max<uint32_t>)
   , kafka_nodelete_topics(
       *this,
       "kafka_nodelete_topics",
