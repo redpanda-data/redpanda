@@ -487,7 +487,7 @@ func CreateProfile(fs afero.Fs, c Client, y *config.RpkYaml) error {
 
 	profile := config.RpkProfile{
 		Name:        ContainerProfileName,
-		Description: "Automatically generated profile from running 'rpk container start'",
+		Description: "Automatically generated profile from 'rpk container start'",
 		KafkaAPI: config.RpkKafkaAPI{
 			Brokers: kaAddresses,
 		},
@@ -504,10 +504,11 @@ func CreateProfile(fs afero.Fs, c Client, y *config.RpkYaml) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Created %q profile.\n", ContainerProfileName)
 	return nil
 }
 
 const ContainerProfileName = "rpk-container"
 
+// ErrContainerProfileExists is returned when we attempt to create a container
+// profile but a profile named 'rpk-container' already exists.
 var ErrContainerProfileExists = fmt.Errorf("%q profile already exists", ContainerProfileName)

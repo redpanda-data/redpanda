@@ -166,7 +166,7 @@ func createProfile(
 		err = container.CreateProfile(fs, c, y) //nolint:contextcheck // No need to pass the context, the underlying functions use a context with timeout.
 
 		if err != nil {
-			return "", "", fmt.Errorf("unable to create profile from running rpk container: %v", err)
+			return "", "", fmt.Errorf("unable to create profile from rpk container: %v", err)
 		}
 		return container.ContainerProfileName, "", nil
 	case fromCloud != "":

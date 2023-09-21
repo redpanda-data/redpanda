@@ -84,6 +84,9 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				return
 			}
 
+			dockerNodes, err := renderClusterInfo(c)
+			out.MaybeDie(err, "unable to render cluster info: %v; you may run 'rpk container status' to retrieve the cluster info", err)
+
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -92,10 +95,15 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			err = common.CreateProfile(fs, c, y)
 			if err == nil {
+				fmt.Printf("\nCreated %q profile.\n", common.ContainerProfileName)
+				renderClusterInteract(dockerNodes, true)
 				return
 			}
 			if errors.Is(err, common.ErrContainerProfileExists) {
-				fmt.Printf("Unable to create a profile for the rpk container: %v; you may delete it and create a new one running 'rpk profile create --from-rpk-container'\n", err)
+				fmt.Printf(`Unable to create a profile for the rpk container: %v.
+
+You can retry profile creation by running:
+    rpk profile delete %s; rpk profile create --from-rpk-container`, err, common.ContainerProfileName)
 				return
 			} else {
 				out.Die("unable to create a profile for the rpk container: %v", err)
@@ -276,11 +284,6 @@ func startCluster(
 	}
 
 	fmt.Println("Cluster started!")
-	dockerNodes, err := renderClusterInfo(c)
-	if err != nil {
-		return false, err
-	}
-	renderClusterInteract(dockerNodes)
 
 	return false, nil
 }
@@ -419,7 +422,7 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 	return nodes, nil
 }
 
-func renderClusterInteract(nodes []*common.NodeState) {
+func renderClusterInteract(nodes []*common.NodeState, withProfile bool) {
 	var (
 		brokers    []string
 		adminAddrs []string
@@ -433,8 +436,16 @@ func renderClusterInteract(nodes []*common.NodeState) {
 	if len(brokers) == 0 || len(adminAddrs) == 0 {
 		return
 	}
+	if withProfile {
+		fmt.Printf(`
+You can use rpk to interact with this cluster. E.g:
 
-	m := `
+    rpk cluster info
+    rpk cluster health
+
+`)
+	} else {
+		msg := `
 You can use rpk to interact with this cluster. E.g:
 
     rpk cluster info -X brokers=%s
@@ -449,9 +460,10 @@ broker and admin API addresses:
     rpk cluster health
 
 `
-	b := strings.Join(brokers, ",")
-	a := strings.Join(adminAddrs, ",")
-	fmt.Printf(m, b, a, b, a)
+		b := strings.Join(brokers, ",")
+		a := strings.Join(adminAddrs, ",")
+		fmt.Printf(msg, b, a, b, a)
+	}
 }
 
 func nodeAddr(port uint) string {

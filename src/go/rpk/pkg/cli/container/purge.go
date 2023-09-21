@@ -53,7 +53,7 @@ func newPurgeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				fmt.Fprintf(os.Stderr, "unable to delete %q profile: %v; you may delete the profile manually running 'rpk profile delete %v'", common.ContainerProfileName, err, common.ContainerProfileName)
 				return
 			}
-			fmt.Printf("Deleted %q profile.\n", common.ContainerProfileName)
+			fmt.Printf("Deleted profile %q.\n", common.ContainerProfileName)
 			if cleared {
 				fmt.Println("This was the selected profile; rpk will use defaults until a new profile is selected or a new container is created.")
 			}
