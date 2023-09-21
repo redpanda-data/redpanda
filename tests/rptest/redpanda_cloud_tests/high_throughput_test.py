@@ -233,23 +233,33 @@ class HighThroughputTest(RedpandaTest):
         test_ctx.logger.info(f"Cloud tier {cloud_tier}: {self.tier_config}")
 
         self.rpk = RpkTool(self.redpanda)
-        self.topics = [
-            TopicSpec(partition_count=self.tier_config.partitions_upper_limit,
-                      replication_factor=3,
-                      retention_bytes=-1)
-        ]
+
+        # resources
+        self.resources = []
+
+    def _add_resource_tracking(self, type, resource):
+        self.resources.append({"type": type, "spec": resource})
+
+    def _create_default_topics(self):
+        _spec = TopicSpec(
+            partition_count=self.tier_config.partitions_upper_limit,
+            replication_factor=3,
+            retention_bytes=-1)
+        self.topics = [_spec]
+        self._create_initial_topics()
+        self._add_resource_tracking("topic", _spec)
+
+    def _clean_resources(self):
+        for item in self.resources:
+            if item['type'] == 'topic':
+                self.rpk.delete_topic(item['spec']['name'])
 
     def tearDown(self):
         # These tests may run on cloud ec2 instances where between each test
         # the same cluster is used. Therefore state between runs will still exist,
         # remove the topic after each test run to clean out old state.
         if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in self._ctx.globals:
-            try:
-                self.rpk.delete_topic(self.topic)
-            except:
-                # Not really important what type of error is
-                # Its either topic or cluster already deleted
-                pass
+            self._clean_resources()
 
     def load_many_segments(self):
         """
@@ -364,6 +374,8 @@ class HighThroughputTest(RedpandaTest):
         producer_kwargs[
             'messages_per_second_per_producer'] = messages_per_sec_per_producer
 
+        # create default topics
+        self._create_default_topics()
         # Initialize all 3 nodes with proper values
         swarm = []
         for idx in range(len(self.cluster.nodes), 0, -1):
@@ -465,6 +477,9 @@ class HighThroughputTest(RedpandaTest):
         - stop and start single node, various scenarios
         - isolate and restore a node
         """
+        # create default topics
+        self._create_default_topics()
+
         # Generate a realistic number of segments per partition.
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
@@ -544,6 +559,9 @@ class HighThroughputTest(RedpandaTest):
         Make segments replicate to the cloud, then disrupt S3 connectivity
         and restore it
         """
+        # create default topics
+        self._create_default_topics()
+
         segment_size = 16 * MiB  # Min segment size across all tiers
         self.adjust_topic_segment_properties(
             segment_bytes=segment_size, retention_local_bytes=segment_size)
@@ -602,6 +620,9 @@ class HighThroughputTest(RedpandaTest):
         this stage alone is too heavy and long-lasting, so it's put into a
         separate test.
         """
+        # create default topics
+        self._create_default_topics()
+
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
@@ -646,6 +667,9 @@ class HighThroughputTest(RedpandaTest):
             ])
             self.logger.debug(f"Partitions in the node-topic: {n}")
             return n
+
+        # create default topics
+        self._create_default_topics()
 
         nt_partitions_before = topic_partitions_on_node()
 
@@ -692,6 +716,9 @@ class HighThroughputTest(RedpandaTest):
         Try to exhaust cloud cache by reading at random offsets with many
         consumers
         """
+        # create default topics
+        self._create_default_topics()
+
         segment_size = 16 * MiB  # Min segment size across all tiers
         self.adjust_topic_segment_properties(
             segment_bytes=segment_size, retention_local_bytes=segment_size)
@@ -729,6 +756,10 @@ class HighThroughputTest(RedpandaTest):
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
+
+        # create default topics
+        self._create_default_topics()
+
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         producer = None
@@ -759,6 +790,9 @@ class HighThroughputTest(RedpandaTest):
     @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_ts_resource_utilization(self):
+        # create default topics
+        self._create_default_topics()
+
         self.stage_tiered_storage_consuming()
 
     def stage_lots_of_failed_consumers(self):
@@ -832,6 +866,9 @@ class HighThroughputTest(RedpandaTest):
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
+        # create default topics
+        self._create_default_topics()
+
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         producer = None
@@ -1202,9 +1239,6 @@ class HighThroughputTest(RedpandaTest):
             return list(
                 json.loads(bench.node.account.ssh_output(
                     bench.chart_cmd)).values())[0]
-
-        # Cleanup default topic
-        self.rpk.delete_topic(self.topic)
 
         # Get values for almost idle cluster load
         _min_idle_lat = 1000
