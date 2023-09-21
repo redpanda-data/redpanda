@@ -807,8 +807,11 @@ class PartitionBalancerTest(PartitionBalancerService):
                        timeout_sec=120,
                        backoff_sec=10)
 
-            # return back to normal
-            rpk.cluster_maintenance_disable(node)
+            # return back to normal.
+            # rpk will make 3 admin requests with 10 second timeout, so with 1 problematic node,
+            # worst case it will hang for 30 seconds, which also happens to be the default RpkTool
+            # timeout. Therefore we need a larger timeout than that.
+            rpk.cluster_maintenance_disable(node, timeout=35)
             # use raw admin interface to avoid waiting for the killed node
             admin.patch_cluster_config(
                 {"raft_learner_recovery_rate": 100_000_000})
