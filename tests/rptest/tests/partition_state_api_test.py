@@ -108,3 +108,24 @@ class PartitionStateAPItest(RedpandaTest):
         self._wait_for_no_leader()
         states = self._get_partition_state()
         self._validate_states(states, num_replicas - 2, has_leader=False)
+
+    @cluster(num_nodes=5)
+    def test_controller_partition_state(self):
+
+        admin = Admin(self.redpanda)
+        controller_state = [
+            admin.get_partition_state("redpanda", "controller", 0, n)
+            for n in self.redpanda.started_nodes()
+        ]
+
+        for s in controller_state:
+            assert len(s["replicas"]) == 5
+            self.logger.debug(f"validating controller_state")
+            leaders = list(
+                filter(lambda r: r["raft_state"]["is_elected_leader"],
+                       s["replicas"]))
+
+            assert len(leaders) == 1
+            leader_state = leaders[0]["raft_state"]
+            assert "followers" in leader_state.keys() and len(
+                leader_state["followers"]) == 4
