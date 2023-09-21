@@ -48,15 +48,15 @@ class RpkException(Exception):
 
     def __str__(self):
         if self.stderr:
-            err = f" error: {self.stderr}"
+            err = f"; stderr: {self.stderr}"
         else:
             err = ""
         if self.returncode:
-            retcode = f" returncode: {self.returncode}"
+            retcode = f"; returncode: {self.returncode}"
         else:
             retcode = ""
         if self.stdout:
-            stdout = f" stdout: {self.stdout}"
+            stdout = f"; stdout: {self.stdout}"
         else:
             stdout = ""
         return f"RpkException<{self.msg}{err}{stdout}{retcode}>"
@@ -920,9 +920,9 @@ class RpkTool:
         except subprocess.TimeoutExpired:
             p.kill()
             output, stderr = p.communicate()
-            raise RpkException(
-                f"command {' '.join(cmd)} timed out, output: {output} \n error: {stderr}",
-                stderr, None, output)
+            raise RpkException(f"command `{' '.join(cmd)}' timed out",
+                               stdout=output,
+                               stderr=stderr)
 
         self._redpanda.logger.debug(f'\n{output}')
 
