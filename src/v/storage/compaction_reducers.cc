@@ -318,8 +318,11 @@ ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
     return ss::do_with(std::move(b), [this](model::record_batch& b) {
         return model::for_each_record(
           b,
-          [this, bt = b.header().type, o = b.base_offset()](model::record& r) {
-              return _w->index(bt, r.key(), o, r.offset_delta());
+          [this,
+           bt = b.header().type,
+           ctrl = b.header().attrs.is_control(),
+           o = b.base_offset()](model::record& r) {
+              return _w->index(bt, ctrl, r.key(), o, r.offset_delta());
           });
     });
 }
