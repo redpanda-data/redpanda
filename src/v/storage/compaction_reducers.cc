@@ -137,7 +137,7 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // non transactional means that clients skip that extra check.
     auto& hdr = batch.header();
     bool hdr_changed = false;
-    if (hdr.attrs.is_transactional() && !hdr.attrs.is_control()) {
+    if (hdr.attrs.is_transactional()) {
         hdr.attrs.unset_transactional_type();
         // We do not recompute crc here as the batch records may
         // be filtered in step 4 in which case we need to recompute
@@ -335,7 +335,7 @@ void tx_reducer::consume_aborted_txs(model::offset upto) {
     }
 }
 
-bool tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
+void tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
     auto batch_type = _stm_mgr->parse_tx_control_batch(b);
     auto pid = model::producer_identity(
       b.header().producer_id, b.header().producer_epoch);
@@ -361,12 +361,6 @@ bool tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
         break;
     }
     }
-    auto discard = batch_type == model::control_record_type::tx_commit
-                   || batch_type == model::control_record_type::tx_abort;
-    if (discard) {
-        _stats._tx_control_batches_discarded++;
-    }
-    return discard;
 }
 
 bool tx_reducer::handle_tx_data_batch(const model::record_batch& b) {
@@ -414,7 +408,7 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
     if (is_tx) {
         if (is_control) {
             // tx_commit / tx_abort / unknown
-            discard_batch = handle_tx_control_batch(b);
+            handle_tx_control_batch(b);
         } else if (is_data) {
             // User produced data batches in tx scope..
             discard_batch = handle_tx_data_batch(b);
