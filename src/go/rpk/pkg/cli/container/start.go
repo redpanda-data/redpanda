@@ -68,47 +68,37 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			// (POSIX standard)
 			UnknownFlags: true,
 		},
-		RunE: func(*cobra.Command, []string) error {
+		Run: func(*cobra.Command, []string) {
 			if nodes < 1 {
-				return errors.New(
-					"--nodes should be 1 or greater",
-				)
+				out.Die("--nodes should be 1 or greater")
 			}
 			c, err := common.NewDockerClient()
-			if err != nil {
-				return err
-			}
+			out.MaybeDie(err, "unable to create docker client: %v", err)
 			defer c.Close()
 
 			configKvs := collectFlags(os.Args, "--set")
-
 			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, pull, configKvs)
-			if err != nil {
-				return common.WrapIfConnErr(err)
-			}
+			out.MaybeDieErr(common.WrapIfConnErr(err))
 
 			if noProfile || isRestarted {
-				return nil
+				return
 			}
 
 			cfg, err := p.Load(fs)
-			if err != nil {
-				return fmt.Errorf("unable to load config: %v", err)
-			}
+			out.MaybeDie(err, "unable to load config: %v", err)
+
 			y, err := cfg.ActualRpkYamlOrEmpty()
-			if err != nil {
-				return fmt.Errorf("unable to load config: %v", err)
-			}
+			out.MaybeDie(err, "unable to load config: %v", err)
 
 			err = createContainerProfile(fs, c, y)
 			if err == nil {
-				return nil
+				return
 			}
 			if errors.Is(err, ErrContainerProfileExists) {
 				fmt.Printf("Unable to create a profile for the rpk container: %v; you may delete it and create a new one running 'rpk profile create --from-rpk-container'\n", err)
-				return nil
+				return
 			} else {
-				return fmt.Errorf("unable to create a profile for the rpk container: %v", err)
+				out.Die("unable to create a profile for the rpk container: %v", err)
 			}
 		},
 	}

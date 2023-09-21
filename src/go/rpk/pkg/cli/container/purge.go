@@ -19,6 +19,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -28,37 +29,34 @@ func newPurgeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "purge",
 		Short: "Stop and remove an existing local container cluster's data",
-		RunE: func(*cobra.Command, []string) error {
+		Run: func(*cobra.Command, []string) {
 			c, err := common.NewDockerClient()
-			if err != nil {
-				return err
-			}
+			out.MaybeDie(err, "unable to create docker client: %v", err)
 			defer c.Close()
+
 			purged, err := purgeCluster(c)
-			if err != nil {
-				return common.WrapIfConnErr(err)
-			}
+			out.MaybeDieErr(common.WrapIfConnErr(err))
+
 			if !purged {
-				return nil
+				return
 			}
 			cfg, err := p.Load(fs)
-			if err != nil {
-				return fmt.Errorf("unable to load config: %v", err)
-			}
+			out.MaybeDie(err, "unable to load config: %v", err)
+
 			y, ok := cfg.ActualRpkYaml()
 			if !ok || y.Profile(containerProfileName) == nil {
 				// rpk.yaml file nor profile exist, we exit.
-				return nil
+				return
 			}
 			cleared, err := profile.DeleteProfile(fs, y, containerProfileName)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "unable to delete %q profile: %v; you may delete the profile manually running 'rpk profile delete %v'", containerProfileName, err, containerProfileName)
+				return
 			}
 			fmt.Printf("Deleted %q profile.\n", containerProfileName)
 			if cleared {
 				fmt.Println("This was the selected profile; rpk will use defaults until a new profile is selected or a new container is created.")
 			}
-			return nil
 		},
 	}
 
