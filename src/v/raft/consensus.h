@@ -422,6 +422,7 @@ public:
 
         suppress_heartbeats_guard(suppress_heartbeats_guard&& other) noexcept
           : _parent(other._parent)
+          , _term(other._term)
           , _target(other._target) {
             other._parent = nullptr;
         }
@@ -436,9 +437,11 @@ public:
 
     private:
         consensus* _parent = nullptr;
+        model::term_id _term;
         vnode _target;
     };
 
+    // precondition: is_elected_leader() must be true.
     suppress_heartbeats_guard suppress_heartbeats(vnode);
 
     void update_heartbeat_status(vnode, bool);

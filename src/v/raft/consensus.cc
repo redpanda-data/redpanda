@@ -3473,7 +3473,16 @@ void consensus::maybe_update_majority_replicated_index() {
 consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
   consensus& parent, vnode target) noexcept
   : _parent(&parent)
+  , _term(_parent->term())
   , _target(target) {
+    vassert(
+      _parent->is_elected_leader(),
+      "ntp {}: tried to suppress heartbeats to vnode {} while not being leader "
+      "in term {}",
+      _parent->ntp(),
+      _target,
+      _term);
+
     auto it = _parent->_fstats.find(_target);
     if (it == _parent->_fstats.end()) {
         // make unsuppress() a noop
@@ -3487,6 +3496,11 @@ void consensus::suppress_heartbeats_guard::unsuppress() {
     if (!_parent) {
         return;
     }
+    if (!_parent->is_elected_leader() || _term != _parent->term()) {
+        // lost leadership while the guard was alive.
+        // do nothing as suppress_heartbeats_count was reset.
+        return;
+    }
 
     auto it = _parent->_fstats.find(_target);
     if (it == _parent->_fstats.end()) {
@@ -3497,8 +3511,9 @@ void consensus::suppress_heartbeats_guard::unsuppress() {
 
     vassert(
       it->second.suppress_heartbeats_count > 0,
-      "ntp {}: suppress/unsuppress_heartbeats mismatch",
-      _parent->ntp());
+      "ntp {}: suppress/unsuppress_heartbeats mismatch for vnode {}",
+      _parent->ntp(),
+      _target);
     --it->second.suppress_heartbeats_count;
     _parent = nullptr;
 }
