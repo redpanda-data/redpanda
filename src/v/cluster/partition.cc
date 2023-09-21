@@ -242,9 +242,6 @@ cluster::cloud_storage_mode partition::get_cloud_storage_mode() const {
     if (cfg.is_tiered_storage()) {
         return cluster::cloud_storage_mode::full;
     }
-    if (cfg.is_tiered_storage()) {
-        return cluster::cloud_storage_mode::full;
-    }
     if (cfg.is_archival_enabled()) {
         return cluster::cloud_storage_mode::write_only;
     }
