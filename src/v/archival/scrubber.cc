@@ -67,7 +67,7 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
           .remaining = quota};
     }
 
-    vlog(_logger.debug, "Starting scrub ...");
+    vlog(_logger.info, "Starting scrub ...");
 
     // TODO: make the timeout dynamic
     retry_chain_node anomaly_detection_rtc(1min, 100ms, &rtc_node);
@@ -95,7 +95,7 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
 
     if (detect_result.status == cloud_storage::scrub_status::failed) {
         vlog(
-          _logger.debug,
+          _logger.info,
           "Scrub failed after {} operations. Will retry ...",
           detect_result.ops);
         co_return run_result{
@@ -112,10 +112,11 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
     }
 
     vlog(
-      _logger.debug,
+      _logger.info,
       "Scrub finished with status {} and detected {}",
       detect_result.status,
       detect_result.detected);
+
     auto replicate_result = co_await _archiver.process_anomalies(
       model::timestamp::now(),
       detect_result.status,
