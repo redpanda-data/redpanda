@@ -2574,11 +2574,20 @@ void partition_manifest::process_anomalies(
                == _spillover_manifests.end();
     });
 
+    // TODO: check if the offset range is covered by some other segment
     auto first_kafka_offset = full_log_start_kafka_offset();
     auto& missing_segs = _detected_anomalies.missing_segments;
     erase_if(missing_segs, [&first_kafka_offset](const auto& meta) {
         return meta.next_kafka_offset() <= first_kafka_offset;
     });
+
+    // TODO: check if the segment still exists
+    auto& segment_meta_anomalies
+      = _detected_anomalies.segment_metadata_anomalies;
+    erase_if(
+      segment_meta_anomalies, [&first_kafka_offset](const auto& anomaly_meta) {
+          return anomaly_meta.at.next_kafka_offset() <= first_kafka_offset;
+      });
 
     _last_partition_scrub = scrub_timestamp;
 }
