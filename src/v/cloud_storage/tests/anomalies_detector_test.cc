@@ -34,7 +34,7 @@ constexpr std::string_view stm_manifest = R"json(
   "topic": "panda-topic",
   "partition": 0,
   "revision": 1,
-  "start_offset": 0,
+  "start_offset": 40,
   "last_offset": 59,
   "insync_offset": 100,
   "segments": {
@@ -499,6 +499,177 @@ FIXTURE_TEST(test_missing_stm_manifest, bucket_view_fixture) {
 
     BOOST_REQUIRE(result.detected.has_value());
     BOOST_REQUIRE_EQUAL(result.detected.missing_partition_manifest, true);
+}
+
+FIXTURE_TEST(test_metadata_anomalies, bucket_view_fixture) {
+    /*
+     * Test the detection of offset anomalies when the issues span manifest
+     * boundaries. In this case the last spillover manifest overlaps with the
+     * stm manifest, there's a gap between the two spillover manifests and the
+     * delta offsets are non monotonical in the stm manifest.
+     */
+
+    constexpr std::string_view stm_man = R"json(
+{
+  "version": 3,
+  "namespace": "kafka",
+  "topic": "panda-topic",
+  "partition": 0,
+  "revision": 1,
+  "start_offset": 21,
+  "last_offset": 40,
+  "insync_offset": 100,
+  "segments": {
+      "21-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 21,
+          "committed_offset": 30,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 8,
+          "delta_offset_end": 10,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      },
+      "31-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 31,
+          "committed_offset": 40,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 7,
+          "delta_offset_end": 10,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      }
+  },
+  "spillover": [
+      {
+          "size_bytes": 2048,
+          "base_offset": 0,
+          "committed_offset": 8,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 0,
+          "delta_offset_end": 4,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 3,
+          "metadata_size_hint": 0
+      },
+      {
+          "size_bytes": 2048,
+          "base_offset": 11,
+          "committed_offset": 23,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 4,
+          "delta_offset_end": 8,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 3,
+          "metadata_size_hint": 0
+      }
+  ]
+}
+)json";
+
+    constexpr std::string_view first_spill_man = R"json(
+{
+  "version": 3,
+  "namespace": "kafka",
+  "topic": "panda-topic",
+  "partition": 0,
+  "revision": 1,
+  "start_offset": 0,
+  "last_offset": 8,
+  "insync_offset": 10,
+  "segments": {
+      "0-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 0,
+          "committed_offset": 8,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 0,
+          "delta_offset_end": 4,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      }
+  }
+}
+)json";
+
+    constexpr std::string_view last_spill_man = R"json(
+{
+  "version": 3,
+  "namespace": "kafka",
+  "topic": "panda-topic",
+  "partition": 0,
+  "revision": 1,
+  "start_offset": 11,
+  "last_offset": 23,
+  "insync_offset": 20,
+  "segments": {
+      "11-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 11,
+          "committed_offset": 23,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 4,
+          "delta_offset_end": 8,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      }
+  }
+}
+)json";
+
+    init_view(stm_man, {first_spill_man, last_spill_man});
+
+    const auto result = run_detector();
+    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+
+    BOOST_REQUIRE(result.detected.has_value());
+
+    const auto& offset_anomalies = result.detected.segment_metadata_anomalies;
+    for (const auto& a : offset_anomalies) {
+        vlog(test_logger.info, "Offset anomaly detected: {}", a);
+    }
+
+    BOOST_REQUIRE_EQUAL(offset_anomalies.size(), 3);
+
+    cloud_storage::anomalies expected;
+    // Bad deltas in STM manifest
+    expected.segment_metadata_anomalies.insert(cloud_storage::anomaly_meta{
+      .type = cloud_storage::anomaly_type::non_monotonical_delta,
+      .at = *get_stm_manifest().last_segment(),
+      .previous = *get_stm_manifest().begin()});
+
+    // Overlap between spillover and STM manifest
+    expected.segment_metadata_anomalies.insert(cloud_storage::anomaly_meta{
+      .type = cloud_storage::anomaly_type::offset_overlap,
+      .at = *get_stm_manifest().begin(),
+      .previous = get_spillover_manifests().at(1).last_segment()});
+
+    // Gap between spillover manifests
+    expected.segment_metadata_anomalies.insert(cloud_storage::anomaly_meta{
+      .type = cloud_storage::anomaly_type::offset_gap,
+      .at = *get_spillover_manifests().at(1).begin(),
+      .previous = get_spillover_manifests().at(0).last_segment()});
+
+    BOOST_REQUIRE(result.detected == expected);
 }
 
 BOOST_AUTO_TEST_CASE(test_offset_anomaly_detection) {
