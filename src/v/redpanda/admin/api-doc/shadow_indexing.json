@@ -389,6 +389,66 @@
         }
       }
     },
+    "segment_meta": {
+      "id": "segment_meta",
+      "description": "Metadata for an uploaded segment",
+      "properties": {
+        "base_offset": {
+          "type": "long"
+        },
+        "committed_offset": {
+          "type": "long"
+        },
+        "delta_offset": {
+          "type": "long",
+          "nullable": true
+        },
+        "delta_offset_end": {
+          "type": "long",
+          "nullable": true
+        },
+        "base_timestamp": {
+          "type": "long"
+        },
+        "max_timestamp": {
+          "type": "long"
+        },
+        "size_bytes": {
+          "type": "long"
+        },
+        "is_compacted": {
+          "type": "boolean"
+        },
+        "archiver_term": {
+          "type": "long"
+        },
+        "segment_term": {
+          "type": "long"
+        },
+        "ntp_revision": {
+          "type": "long"
+        }
+      }
+    },
+    "metadata_anomaly": {
+      "id": "metadata_anomaly",
+      "description": "Description of a metadata anomaly",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "at_segment": {
+          "type": "segment_meta"
+        },
+        "previous_segment": {
+          "type": "segment_meta",
+          "nullable": true
+        }
+      }
+    },
     "cloud_storage_partition_anomalies": {
       "id": "cloud_storage_partition_anomalies",
       "description": "Anomalies detected by the cloud storage scrubber",
@@ -417,6 +477,11 @@
         "missing_segments": {
           "type": "array",
           "items": {"type": "string"},
+          "nullable": true
+        },
+        "segment_metadata_anomalies": {
+          "type": "array",
+          "items": {"type": "metadata_anomaly"},
           "nullable": true
         }
       }
