@@ -350,6 +350,16 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
         raft_state.followers = std::move(followers);
     }
     raft_state.stms = get_partition_stm_state(ptr);
+
+    const auto& frs = ptr->get_follower_recovery_state();
+    if (frs) {
+        raft_state.recovery_state
+          = partition_raft_state::follower_recovery_state{
+            .is_active = frs->is_active(),
+            .pending_offset_count = frs->pending_offset_count(),
+          };
+    }
+
     return raft_state;
 }
 

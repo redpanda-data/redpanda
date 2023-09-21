@@ -913,6 +913,20 @@
                 }
             }
         },
+        "follower_recovery_state": {
+            "id": "follower_recovery_state",
+            "description": "Follower-side Raft recovery state",
+            "properties": {
+                "is_active": {
+                    "type": "boolean",
+                    "description": "True if recovery is currently allowed by the scheduler"
+                },
+                "pending_offset_count": {
+                    "type": "long",
+                    "description": "Difference between leader and our last offsets"
+                }
+            }
+        },
         "raft_replica_state": {
             "id": "raft_replica_state",
             "description": "Raft level state for a single replica of a partition",
@@ -998,6 +1012,10 @@
                         "type": "stm_state"
                     },
                     "description": "All snapshottable stms attached to this replica"
+                },
+                "follower_recovery_state": {
+                    "type": "follower_recovery_state",
+                    "description": "Raft recovery state if this replica is a follower in recovery"
                 }
             }
         },

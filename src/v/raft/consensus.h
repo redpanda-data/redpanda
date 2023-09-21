@@ -496,6 +496,11 @@ public:
 
     void reset_last_sent_protocol_meta(const vnode&);
 
+    const std::optional<follower_recovery_state>&
+    get_follower_recovery_state() const {
+        return _follower_recovery_state;
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
