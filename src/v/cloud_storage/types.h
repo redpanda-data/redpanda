@@ -365,6 +365,13 @@ struct anomaly_meta
 
 std::ostream& operator<<(std::ostream& o, const anomaly_meta&);
 
+using segment_meta_anomalies = absl::node_hash_set<anomaly_meta>;
+
+void scrub_segment_meta(
+  const segment_meta& current,
+  const std::optional<segment_meta>& previous,
+  segment_meta_anomalies& detected);
+
 struct anomalies
   : serde::envelope<anomalies, serde::version<0>, serde::compat_version<0>> {
     // Missing partition manifests
@@ -376,7 +383,7 @@ struct anomalies
     // Segments referenced by the manifests which were not found
     absl::node_hash_set<segment_meta> missing_segments;
     // Segments that have metadata anomalies (e.g. gaps or overlaps)
-    absl::node_hash_set<anomaly_meta> segment_metadata_anomalies;
+    segment_meta_anomalies segment_metadata_anomalies;
 
     auto serde_fields() {
         return std::tie(

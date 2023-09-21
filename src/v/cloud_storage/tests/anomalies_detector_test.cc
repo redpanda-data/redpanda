@@ -500,3 +500,123 @@ FIXTURE_TEST(test_missing_stm_manifest, bucket_view_fixture) {
     BOOST_REQUIRE(result.detected.has_value());
     BOOST_REQUIRE_EQUAL(result.detected.missing_partition_manifest, true);
 }
+
+BOOST_AUTO_TEST_CASE(test_offset_anomaly_detection) {
+    using namespace cloud_storage;
+
+    {
+        segment_meta_anomalies anomalies;
+
+        segment_meta prev{
+          .base_offset = model::offset{0},
+          .committed_offset = model::offset{10}};
+
+        segment_meta crnt{
+          .base_offset = model::offset{11},
+          .committed_offset = model::offset{15}};
+
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE(anomalies.empty());
+
+        prev.delta_offset = model::offset_delta{5};
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE_EQUAL(anomalies.size(), 1);
+
+        const anomaly_meta expected = anomaly_meta{
+          .type = anomaly_type::missing_delta, .at = crnt, .previous = prev};
+        BOOST_REQUIRE_EQUAL(*anomalies.begin(), expected);
+    }
+
+    {
+        segment_meta_anomalies anomalies;
+
+        segment_meta prev{
+          .base_offset = model::offset{0},
+          .committed_offset = model::offset{10}};
+
+        segment_meta crnt{
+          .base_offset = model::offset{11},
+          .committed_offset = model::offset{15},
+          .delta_offset = model::offset_delta{2}};
+
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE(anomalies.empty());
+
+        prev.delta_offset = model::offset_delta{4};
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE_EQUAL(anomalies.size(), 1);
+
+        const anomaly_meta expected = anomaly_meta{
+          .type = anomaly_type::non_monotonical_delta,
+          .at = crnt,
+          .previous = prev};
+        BOOST_REQUIRE_EQUAL(*anomalies.begin(), expected);
+    }
+
+    {
+        segment_meta_anomalies anomalies;
+
+        segment_meta crnt{
+          .base_offset = model::offset{11},
+          .committed_offset = model::offset{15},
+          .delta_offset = model::offset_delta{2},
+          .delta_offset_end = model::offset_delta{4}};
+
+        scrub_segment_meta(crnt, std::nullopt, anomalies);
+        BOOST_REQUIRE(anomalies.empty());
+
+        crnt.delta_offset = model::offset_delta{5};
+        scrub_segment_meta(crnt, std::nullopt, anomalies);
+        BOOST_REQUIRE_EQUAL(anomalies.size(), 1);
+
+        const anomaly_meta expected = anomaly_meta{
+          .type = anomaly_type::end_delta_smaller, .at = crnt};
+        BOOST_REQUIRE_EQUAL(*anomalies.begin(), expected);
+    }
+
+    {
+        segment_meta_anomalies anomalies;
+
+        segment_meta prev{
+          .base_offset = model::offset{0},
+          .committed_offset = model::offset{10}};
+
+        segment_meta crnt{
+          .base_offset = model::offset{11},
+          .committed_offset = model::offset{15}};
+
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE(anomalies.empty());
+
+        prev.committed_offset = model::offset{8};
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE_EQUAL(anomalies.size(), 1);
+
+        const anomaly_meta expected = anomaly_meta{
+          .type = anomaly_type::offset_gap, .at = crnt, .previous = prev};
+        BOOST_REQUIRE_EQUAL(*anomalies.begin(), expected);
+    }
+
+    {
+        segment_meta_anomalies anomalies;
+
+        segment_meta prev{
+          .base_offset = model::offset{0},
+          .committed_offset = model::offset{10}};
+
+        segment_meta crnt{
+          .base_offset = model::offset{11},
+          .committed_offset = model::offset{15}};
+
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE(anomalies.empty());
+
+        prev.committed_offset = model::offset{13};
+        scrub_segment_meta(crnt, prev, anomalies);
+        BOOST_REQUIRE_EQUAL(anomalies.size(), 1);
+
+        const anomaly_meta expected = anomaly_meta{
+          .type = anomaly_type::offset_overlap, .at = crnt, .previous = prev};
+        BOOST_REQUIRE_EQUAL(*anomalies.begin(), expected);
+    }
+}
