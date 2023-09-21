@@ -43,6 +43,7 @@ rp_test(
     constexpr_string_switch.cc
     filtered_lower_bound_test.cc
     fragmented_vector_test.cc
+    gate_guard_test.cc
     human_test.cc
     move_canary_test.cc
     moving_average_test.cc

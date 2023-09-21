@@ -37,11 +37,11 @@ struct gate_guard final {
         o._g = nullptr;
     }
     gate_guard& operator=(gate_guard&& o) noexcept {
-        if (this == &o) {
-            return *this;
+        if (this != &o) {
+            this->~gate_guard();
+            _g = o._g;
+            o._g = nullptr;
         }
-        _g = o._g;
-        o._g = nullptr;
         return *this;
     }
     gate_guard(const gate_guard&) = delete;
