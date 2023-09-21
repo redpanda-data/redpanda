@@ -27,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	koauth "github.com/twmb/franz-go/pkg/sasl/oauth"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kzap"
 )
@@ -129,8 +130,13 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 				opts = append(opts, kgo.SASL(a.AsSha256Mechanism()))
 			case "SCRAM-SHA-512":
 				opts = append(opts, kgo.SASL(a.AsSha512Mechanism()))
+			case "PLAIN":
+				opts = append(opts, kgo.SASL((&plain.Auth{
+					User: k.SASL.User,
+					Pass: k.SASL.Password,
+				}).AsMechanism()))
 			default:
-				return nil, fmt.Errorf("unknown SASL mechanism %q, supported: [SCRAM-SHA-256, SCRAM-SHA-512]", name)
+				return nil, fmt.Errorf("unknown SASL mechanism %q, supported: [SCRAM-SHA-256, SCRAM-SHA-512, PLAIN]", name)
 			}
 		}
 	}
