@@ -23,8 +23,8 @@ func newStopCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop an existing local container cluster",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := common.NewDockerClient()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := common.NewDockerClient(cmd.Context())
 			if err != nil {
 				return err
 			}

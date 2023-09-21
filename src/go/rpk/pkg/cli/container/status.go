@@ -18,8 +18,8 @@ func newStatusCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "status",
 		Short: "Get status",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := common.NewDockerClient()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := common.NewDockerClient(cmd.Context())
 			if err != nil {
 				return err
 			}

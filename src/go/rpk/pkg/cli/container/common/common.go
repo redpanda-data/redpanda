@@ -26,6 +26,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 	"go.uber.org/zap"
 )
 
@@ -468,3 +469,45 @@ This can happen for a couple of reasons:
 	}
 	return err
 }
+
+func CreateProfile(fs afero.Fs, c Client, y *config.RpkYaml) error {
+	if p := y.Profile(ContainerProfileName); p != nil {
+		return ErrContainerProfileExists
+	}
+	var kaAddresses, aAddresses, srAddresses []string
+	existingNodes, err := GetExistingNodes(c)
+	if err != nil {
+		return fmt.Errorf("unable to get the existing nodes: %v", err)
+	}
+	for _, n := range existingNodes {
+		kaAddresses = append(kaAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostKafkaPort))
+		aAddresses = append(aAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostAdminPort))
+		srAddresses = append(srAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostSchemaPort))
+	}
+
+	profile := config.RpkProfile{
+		Name:        ContainerProfileName,
+		Description: "Automatically generated profile from running 'rpk container start'",
+		KafkaAPI: config.RpkKafkaAPI{
+			Brokers: kaAddresses,
+		},
+		AdminAPI: config.RpkAdminAPI{
+			Addresses: aAddresses,
+		},
+		SR: config.RpkSchemaRegistryAPI{
+			Addresses: srAddresses,
+		},
+	}
+
+	y.CurrentProfile = y.PushProfile(profile)
+	err = y.Write(fs)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Created %q profile.\n", ContainerProfileName)
+	return nil
+}
+
+const ContainerProfileName = "rpk-container"
+
+var ErrContainerProfileExists = fmt.Errorf("%q profile already exists", ContainerProfileName)

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
+	container "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -32,11 +33,14 @@ import (
 
 func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		set          []string
-		fromRedpanda string
-		fromProfile  string
-		fromCloud    string
-		description  string
+		set               []string
+		fromRedpanda      string
+		fromProfile       string
+		fromCloud         string
+		fromContainer     bool
+		description       string
+		fromCloudFlag     = "from-cloud"
+		fromContainerFlag = "from-rpk-container"
 	)
 
 	cmd := &cobra.Command{
@@ -45,7 +49,7 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Long: `Create an rpk profile.
 
 There are multiple ways to create a profile. A name must be provided if not
-using --from-cloud.
+using --from-cloud or --from-rpk-container.
 
 * You can use --from-redpanda to generate a new profile from an existing
   redpanda.yaml file. The special values "current" create a profile from the
@@ -59,6 +63,10 @@ using --from-cloud.
 * You can use --from-cloud to generate a profile from an existing cloud cluster
   id. Note that you must be logged in with 'rpk cloud login' first. The special
   value "prompt" will prompt to select a cloud cluster to create a profile for.
+
+* You can use --from-rpk-container to generate a profile from an existing
+  cluster created using 'rpk container start' command. The name is not needed
+  when using this flag.
 
 * You can use --set key=value to directly set fields. The key can either be
   the name of a -X flag or the path to the field in the profile's YAML format.
@@ -89,13 +97,16 @@ rpk always switches to the newly created profile.
 			if len(args) > 0 {
 				name = args[0]
 			}
-			if name == "" && fromCloud == "" {
-				out.Die("profile name cannot be empty unless using --from-cloud")
+
+			cloudFlag := cmd.Flags().Changed(fromCloudFlag)
+			containerFlag := cmd.Flags().Changed(fromContainerFlag)
+			if name == "" && !containerFlag && !cloudFlag {
+				out.Die("profile name cannot be empty unless using %v or %v", fromCloudFlag, fromContainerFlag)
 			}
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
-			name, msg, err := createProfile(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
+			name, msg, err := createProfile(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, fromContainer, set, name, description)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Created and switched to new profile %q.\n", name)
@@ -108,7 +119,8 @@ rpk always switches to the newly created profile.
 	cmd.Flags().StringArrayVarP(&set, "set", "s", nil, "Create and switch to a new profile, setting profile fields with key=value pairs")
 	cmd.Flags().StringVar(&fromRedpanda, "from-redpanda", "", "Create and switch to a new profile from a redpanda.yaml file")
 	cmd.Flags().StringVar(&fromProfile, "from-profile", "", "Create and switch to a new profile from an existing profile or from a profile in a yaml file")
-	cmd.Flags().StringVar(&fromCloud, "from-cloud", "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
+	cmd.Flags().StringVar(&fromCloud, fromCloudFlag, "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
+	cmd.Flags().BoolVar(&fromContainer, fromContainerFlag, false, "Create and switch to a new profile generated from a running cluster created with rpk container")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the profile")
 
 	cmd.Flags().Lookup("from-cloud").NoOptDefVal = "prompt"
@@ -129,6 +141,7 @@ func createProfile(
 	fromRedpanda string,
 	fromProfile string,
 	fromCloud string,
+	fromContainer bool,
 	set []string,
 	name string,
 	description string,
@@ -142,6 +155,20 @@ func createProfile(
 		o CloudClusterOutputs
 	)
 	switch {
+	case fromContainer:
+		if name != "" {
+			return "", "", errors.New("unable to create profile: name is not allowed when using --from-rpk-container flag")
+		}
+		c, err := container.NewDockerClient(ctx)
+		if err != nil {
+			return "", "", fmt.Errorf("unable to create docker client: %v", err)
+		}
+		err = container.CreateProfile(fs, c, y) //nolint:contextcheck // No need to pass the context, the underlying functions use a context with timeout.
+
+		if err != nil {
+			return "", "", fmt.Errorf("unable to create profile from running rpk container: %v", err)
+		}
+		return container.ContainerProfileName, "", nil
 	case fromCloud != "":
 		var err error
 		o, err = createCloudProfile(ctx, y, cfg, fromCloud)

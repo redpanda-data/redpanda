@@ -68,11 +68,11 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			// (POSIX standard)
 			UnknownFlags: true,
 		},
-		Run: func(*cobra.Command, []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			if nodes < 1 {
 				out.Die("--nodes should be 1 or greater")
 			}
-			c, err := common.NewDockerClient()
+			c, err := common.NewDockerClient(cmd.Context())
 			out.MaybeDie(err, "unable to create docker client: %v", err)
 			defer c.Close()
 
@@ -90,11 +90,11 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			err = createContainerProfile(fs, c, y)
+			err = common.CreateProfile(fs, c, y)
 			if err == nil {
 				return
 			}
-			if errors.Is(err, ErrContainerProfileExists) {
+			if errors.Is(err, common.ErrContainerProfileExists) {
 				fmt.Printf("Unable to create a profile for the rpk container: %v; you may delete it and create a new one running 'rpk profile create --from-rpk-container'\n", err)
 				return
 			} else {
@@ -460,45 +460,3 @@ func nodeAddr(port uint) string {
 		port,
 	)
 }
-
-func createContainerProfile(fs afero.Fs, c common.Client, y *config.RpkYaml) error {
-	if p := y.Profile(containerProfileName); p != nil {
-		return ErrContainerProfileExists
-	}
-	var kaAddresses, aAddresses, srAddresses []string
-	existingNodes, err := common.GetExistingNodes(c)
-	if err != nil {
-		return fmt.Errorf("unable to get the existing nodes: %v", err)
-	}
-	for _, n := range existingNodes {
-		kaAddresses = append(kaAddresses, nodeAddr(n.HostKafkaPort))
-		aAddresses = append(aAddresses, nodeAddr(n.HostAdminPort))
-		srAddresses = append(srAddresses, nodeAddr(n.HostSchemaPort))
-	}
-
-	profile := config.RpkProfile{
-		Name:        containerProfileName,
-		Description: "Automatically generated profile from running 'rpk container start'",
-		KafkaAPI: config.RpkKafkaAPI{
-			Brokers: kaAddresses,
-		},
-		AdminAPI: config.RpkAdminAPI{
-			Addresses: aAddresses,
-		},
-		SR: config.RpkSchemaRegistryAPI{
-			Addresses: srAddresses,
-		},
-	}
-
-	y.CurrentProfile = y.PushProfile(profile)
-	err = y.Write(fs)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Created %q profile.\n", containerProfileName)
-	return nil
-}
-
-const containerProfileName = "rpk-container"
-
-var ErrContainerProfileExists = fmt.Errorf("%q profile already exists", containerProfileName)

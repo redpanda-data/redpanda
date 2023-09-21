@@ -29,8 +29,8 @@ func newPurgeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "purge",
 		Short: "Stop and remove an existing local container cluster's data",
-		Run: func(*cobra.Command, []string) {
-			c, err := common.NewDockerClient()
+		Run: func(cmd *cobra.Command, _ []string) {
+			c, err := common.NewDockerClient(cmd.Context())
 			out.MaybeDie(err, "unable to create docker client: %v", err)
 			defer c.Close()
 
@@ -44,16 +44,16 @@ func newPurgeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			y, ok := cfg.ActualRpkYaml()
-			if !ok || y.Profile(containerProfileName) == nil {
+			if !ok || y.Profile(common.ContainerProfileName) == nil {
 				// rpk.yaml file nor profile exist, we exit.
 				return
 			}
-			cleared, err := profile.DeleteProfile(fs, y, containerProfileName)
+			cleared, err := profile.DeleteProfile(fs, y, common.ContainerProfileName)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "unable to delete %q profile: %v; you may delete the profile manually running 'rpk profile delete %v'", containerProfileName, err, containerProfileName)
+				fmt.Fprintf(os.Stderr, "unable to delete %q profile: %v; you may delete the profile manually running 'rpk profile delete %v'", common.ContainerProfileName, err, common.ContainerProfileName)
 				return
 			}
-			fmt.Printf("Deleted %q profile.\n", containerProfileName)
+			fmt.Printf("Deleted %q profile.\n", common.ContainerProfileName)
 			if cleared {
 				fmt.Println("This was the selected profile; rpk will use defaults until a new profile is selected or a new container is created.")
 			}
