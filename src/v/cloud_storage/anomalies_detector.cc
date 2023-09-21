@@ -13,7 +13,6 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
-#include "cloud_storage/spillover_manifest.h"
 
 namespace cloud_storage {
 
@@ -96,27 +95,28 @@ anomalies_detector::run(retry_chain_node& rtc_node) {
     auto stm_manifest_check_res = co_await check_manifest(manifest, rtc_node);
     final_res += std::move(stm_manifest_check_res);
 
-    for (auto iter = spill_manifest_paths.begin();
-         iter != spill_manifest_paths.end();
-         ++iter) {
+    for (const auto& spill_manifest_path : spill_manifest_paths) {
         if (_as.abort_requested()) {
             final_res.status = scrub_status::partial;
             co_return final_res;
         }
 
-        auto manifest_res = co_await download_and_check_spill_manifest(
-          *iter, rtc_node);
-        final_res += std::move(manifest_res);
+        ++final_res.ops;
+        const auto spill = co_await download_spill_manifest(
+          spill_manifest_path, rtc_node);
+        if (spill) {
+            final_res += co_await check_manifest(*spill, rtc_node);
+        } else {
+            final_res.status = scrub_status::partial;
+        }
     }
 
     co_return final_res;
 }
 
-ss::future<anomalies_detector::result>
-anomalies_detector::download_and_check_spill_manifest(
+ss::future<std::optional<spillover_manifest>>
+anomalies_detector::download_spill_manifest(
   const ss::sstring& path, retry_chain_node& rtc_node) {
-    result res{};
-
     vlog(_logger.debug, "Downloading spillover manifest {}", path);
 
     spillover_manifest spill{_ntp, _initial_rev};
@@ -125,18 +125,14 @@ anomalies_detector::download_and_check_spill_manifest(
       {manifest_format::serde, remote_manifest_path{path}},
       spill,
       rtc_node);
-    res.ops += 1;
 
     if (manifest_get_result != download_result::success) {
         vlog(_logger.debug, "Failed downloading spillover manifest {}", path);
 
-        res.status = scrub_status::partial;
-        co_return res;
+        co_return std::nullopt;
     }
 
-    res += co_await check_manifest(spill, rtc_node);
-
-    co_return res;
+    co_return spill;
 }
 
 ss::future<anomalies_detector::result> anomalies_detector::check_manifest(

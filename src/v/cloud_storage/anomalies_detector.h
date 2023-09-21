@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -52,13 +53,13 @@ public:
 
     ss::future<result> run(retry_chain_node&);
 
-    ss::future<anomalies_detector::result> download_and_check_spill_manifest(
+private:
+    ss::future<std::optional<spillover_manifest>> download_spill_manifest(
       const ss::sstring& path, retry_chain_node& rtc_node);
 
     ss::future<anomalies_detector::result> check_manifest(
       const partition_manifest& manifest, retry_chain_node& rtc_node);
 
-private:
     cloud_storage_clients::bucket_name _bucket;
     model::ntp _ntp;
     model::initial_revision_id _initial_rev;
