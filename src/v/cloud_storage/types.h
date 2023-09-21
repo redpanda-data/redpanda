@@ -338,7 +338,33 @@ enum class scrub_status : uint8_t { full, partial, failed };
 
 std::ostream& operator<<(std::ostream& o, const scrub_status&);
 
-// TODO: Add more anomaly types: malformed objects, gaps, overlaps, bad deltas
+enum class anomaly_type : int8_t {
+    missing_delta,
+    non_monotonical_delta,
+    end_delta_smaller,
+    committed_smaller,
+    offset_gap,
+    offset_overlap
+};
+
+std::ostream& operator<<(std::ostream& o, const anomaly_type&);
+
+struct anomaly_meta
+  : serde::envelope<anomaly_meta, serde::version<0>, serde::compat_version<0>> {
+    anomaly_type type;
+    segment_meta at;
+    std::optional<segment_meta> previous;
+
+    auto serde_fields() { return std::tie(type, at, previous); }
+
+    template<typename H>
+    friend H AbslHashValue(H h, const anomaly_meta& am) {
+        return H::combine(std::move(h), am.type, am.at);
+    }
+};
+
+std::ostream& operator<<(std::ostream& o, const anomaly_meta&);
+
 struct anomalies
   : serde::envelope<anomalies, serde::version<0>, serde::compat_version<0>> {
     // Missing partition manifests
@@ -349,12 +375,15 @@ struct anomalies
       missing_spillover_manifests;
     // Segments referenced by the manifests which were not found
     absl::node_hash_set<segment_meta> missing_segments;
+    // Segments that have metadata anomalies (e.g. gaps or overlaps)
+    absl::node_hash_set<anomaly_meta> segment_metadata_anomalies;
 
     auto serde_fields() {
         return std::tie(
           missing_partition_manifest,
           missing_spillover_manifests,
-          missing_segments);
+          missing_segments,
+          segment_metadata_anomalies);
     }
 
     bool has_value() const;
