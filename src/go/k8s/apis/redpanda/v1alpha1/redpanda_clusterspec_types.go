@@ -494,7 +494,7 @@ type SetTieredStorageCacheDirOwnership struct {
 type Monitoring struct {
 	Enabled        bool              `json:"enabled"`
 	Labels         map[string]string `json:"commonLabels,omitempty"`
-	ScrapeInterval string            `json:"scrapeInterval"`
+	ScrapeInterval *string           `json:"scrapeInterval,omitempty"`
 }
 
 type ExternalDNS struct {

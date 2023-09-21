@@ -475,7 +475,6 @@ spec:
                         type: string
                     required:
                     - enabled
-                    - scrapeInterval
                     type: object
                   nameOverride:
                     description: NameOverride is the override to give your redpanda
