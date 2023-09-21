@@ -396,6 +396,15 @@ var xflags = map[string]xflag{
 		},
 	},
 
+	"globals.command_timeout": {
+		"globals.command_timeout",
+		"30s",
+		xkindGlobal,
+		func(v string, y *RpkYaml) error {
+			return y.Globals.CommandTimeout.UnmarshalText([]byte(v))
+		},
+	},
+
 	"globals.dial_timeout": {
 		"globals.dial_timeout",
 		"3s",
@@ -654,6 +663,10 @@ globals.no_default_cluster=false
   A boolean that disables rpk from talking to localhost:9092 if no other
   cluster is specified.
 
+globals.command_timeout=30s
+  A duration that rpk will wait for a command to complete before timing out,
+  for certain commands.
+
 globals.dial_timeout=3s
   A duration that rpk will wait for a connection to be established before
   timing out.
@@ -710,6 +723,7 @@ cloud.client_id=somestring
 cloud.client_secret=somelongerstring
 globals.prompt="%n"
 globals.no_default_cluster=boolean
+globals.command_timeout=(30s,1m)
 globals.dial_timeout=duration(3s,1m,2h)
 globals.request_timeout_overhead=duration(10s,1m,2h)
 globals.retry_timeout=duration(30s,1m,2h)
