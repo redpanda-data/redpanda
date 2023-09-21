@@ -384,6 +384,10 @@ ss::future<ResultT> parse_head_error_response(
         if (hdr.result() == boost::beast::http::status::not_found) {
             code = "NoSuchKey";
             msg = "Not found";
+        } else if (
+          hdr.result() == boost::beast::http::status::service_unavailable) {
+            code = "SlowDown";
+            msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
         } else {
             code = "Unknown";
             msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
