@@ -84,13 +84,86 @@ using namespace std::chrono_literals;
            != labels.cend();
 }
 
+double get_class_metric(
+  std::string_view class_name, std::string_view metric_family_name) {
+    auto all_metrics = *ss::metrics::impl::get_values();
+    auto metric_values_v = all_metrics.values;
+    auto metadata_v = all_metrics.metadata;
+
+    auto values_it = metric_values_v.cbegin();
+
+    for (auto it = metadata_v->cbegin();
+         it != metadata_v->cend() && values_it != metric_values_v.cend();
+         ++it, ++values_it) {
+        if (it->mf.name != metric_family_name) {
+            continue;
+        }
+
+        auto values = values_it->begin();
+        for (const auto& metric_info : it->metrics) {
+            const auto& labels = metric_info.id.labels();
+            if (
+              has_label(labels, "mountpoint", "/var/lib/redpanda/data")
+              && has_label(labels, "class", class_name)) {
+                return values->d();
+            }
+            values++;
+        }
+    }
+
+    vlog(
+      cst_log.warn,
+      "get_class_metric: failed to find value for family {} and class {}",
+      metric_family_name,
+      class_name);
+    return 0;
+}
+
+struct rate_of_metric_change {
+    rate_of_metric_change(
+      std::string_view metric_name, std::string_view class_name)
+      : _metric_name{metric_name}
+      , _class_name{class_name}
+      , _current_value(get_class_metric(_class_name, _metric_name))
+      , _updated_at{ss::lowres_clock::now()} {}
+
+    double rate_of_change_per_second() {
+        auto new_value = get_class_metric(_class_name, _metric_name);
+        auto now = ss::lowres_clock::now();
+        auto delta = new_value - _current_value;
+        auto s_elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                           now - _updated_at)
+                           .count();
+        vlog(
+          cst_log.info,
+          "RATE: current v: {}, new v: {} delta: {}, seconds elapsed: {}",
+          _current_value,
+          new_value,
+          delta,
+          s_elapsed);
+        _updated_at = now;
+        _current_value = new_value;
+        return s_elapsed > 0 ? delta / static_cast<double>(s_elapsed) : 0;
+    }
+
+    double current_value() const { return _current_value; }
+
+private:
+    ss::sstring _metric_name;
+    ss::sstring _class_name;
+    double _current_value;
+    ss::lowres_clock::time_point _updated_at;
+};
+
 struct cache_control {
-    static constexpr ss::lowres_clock::duration limit = 30s;
+    static constexpr ss::lowres_clock::duration limit = 15s;
+    static constexpr double rate_of_change_threshold = 5.0;
 
 public:
     explicit cache_control()
       : _updated(ss::lowres_clock::now())
-      , _duration(limit) {}
+      , _duration(limit)
+      , _rate("io_queue_total_delay_sec", "raft") {}
 
     bool should_skip_cache() {
         const auto now = ss::lowres_clock::now();
@@ -98,12 +171,14 @@ public:
 
         if (delta > _duration) {
             _updated = now;
-            auto curr_delta = current_consumption_delta();
-            _throttled = curr_delta <= 0.0;
+            auto rate_of_change = _rate.rate_of_change_per_second();
+            _throttled = rate_of_change >= rate_of_change_threshold;
             vlog(
               cst_log.info,
-              "calculated consumption delta: {}, throttling: {}",
-              curr_delta,
+              "rate of change of raft queue delay in seconds: {}, current "
+              "value: {}, throttled: {}",
+              rate_of_change,
+              _rate.current_value(),
               _throttled);
         }
 
@@ -112,32 +187,11 @@ public:
 
 private:
     double queue_adjusted_consumption(std::string_view class_name) {
-        auto all_metrics = *ss::metrics::impl::get_values();
-        auto metric_values_v = all_metrics.values;
-        auto metadata_v = all_metrics.metadata;
+        return get_class_metric(class_name, "io_queue_adjusted_consumption");
+    }
 
-        auto values_it = metric_values_v.cbegin();
-
-        for (auto it = metadata_v->cbegin();
-             it != metadata_v->cend() && values_it != metric_values_v.cend();
-             ++it, ++values_it) {
-            if (it->mf.name != "io_queue_adjusted_consumption") {
-                continue;
-            }
-
-            auto values = values_it->begin();
-            for (const auto& metric_info : it->metrics) {
-                const auto& labels = metric_info.id.labels();
-                if (
-                  has_label(labels, "mountpoint", "/var/lib/redpanda/data")
-                  && has_label(labels, "class", class_name)) {
-                    return values->d();
-                }
-                values++;
-            }
-        }
-
-        return 0;
+    double total_delay_sec(std::string_view class_name) {
+        return get_class_metric(class_name, "io_queue_total_delay_sec");
     }
 
     double current_consumption_delta() {
@@ -197,6 +251,7 @@ private:
     uint64_t _current_p95_latency{0};
     ss::lowres_clock::duration _duration;
     bool _throttled{false};
+    rate_of_metric_change _rate;
 };
 
 static thread_local std::unique_ptr<cache_control> cache_controller;
