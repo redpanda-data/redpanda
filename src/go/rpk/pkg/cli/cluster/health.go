@@ -79,9 +79,15 @@ func printHealthOverview(hov *adminapi.ClusterHealthOverview) {
 	urp := "Under-replicated partitions:"
 	if hov.LeaderlessCount != nil {
 		lp = fmt.Sprintf("Leaderless partitions (%v):", *hov.LeaderlessCount)
+		if *hov.LeaderlessCount > len(hov.LeaderlessPartitions) {
+			hov.LeaderlessPartitions = append(hov.LeaderlessPartitions, "...truncated")
+		}
 	}
 	if hov.UnderReplicatedCount != nil {
 		urp = fmt.Sprintf("Under-replicated partitions (%v):", *hov.UnderReplicatedCount)
+		if *hov.UnderReplicatedCount > len(hov.UnderReplicatedPartitions) {
+			hov.UnderReplicatedPartitions = append(hov.UnderReplicatedPartitions, "...truncated")
+		}
 	}
 
 	tw := out.NewTable()
