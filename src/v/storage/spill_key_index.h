@@ -66,10 +66,18 @@ public:
 
     // public
     ss::future<> index(
-      model::record_batch_type, const iobuf& key, model::offset, int32_t) final;
+      model::record_batch_type,
+      bool is_control_batch,
+      const iobuf& key,
+      model::offset,
+      int32_t) final;
     ss::future<> index(const compaction_key& b, model::offset, int32_t) final;
-    ss::future<>
-    index(model::record_batch_type, bytes&&, model::offset, int32_t) final;
+    ss::future<> index(
+      model::record_batch_type,
+      bool is_control_batch,
+      bytes&&,
+      model::offset,
+      int32_t) final;
     ss::future<> truncate(model::offset) final;
     ss::future<> append(compacted_index::entry) final;
     ss::future<> close() final;
