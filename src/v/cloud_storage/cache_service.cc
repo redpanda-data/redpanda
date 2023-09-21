@@ -85,7 +85,7 @@ using namespace std::chrono_literals;
 }
 
 struct cache_control {
-    static constexpr ss::lowres_clock::duration limit = 10s;
+    static constexpr ss::lowres_clock::duration limit = 30s;
 
 public:
     explicit cache_control()
@@ -98,23 +98,13 @@ public:
 
         if (delta > _duration) {
             _updated = now;
-            if (_throttled) {
-                _duration = 3s;
-                vlog(
-                  cst_log.info,
-                  "un-throttling cache access for {}ms",
-                  _duration);
-                _throttled = false;
-            } else {
-                auto curr_delta = current_consumption_delta();
-                _throttled = curr_delta <= 0.0;
-                _duration = limit;
-                vlog(
-                  cst_log.info,
-                  "calculated consumption delta: {}, throttling: {}",
-                  curr_delta,
-                  _throttled);
-            }
+            auto curr_delta = current_consumption_delta();
+            _throttled = curr_delta <= 0.0;
+            vlog(
+              cst_log.info,
+              "calculated consumption delta: {}, throttling: {}",
+              curr_delta,
+              _throttled);
         }
 
         return _throttled;

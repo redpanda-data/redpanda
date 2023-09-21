@@ -311,9 +311,6 @@ remote_segment::offset_data_stream(
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
 
-    // skip_cache = random_generators::get_int(100)
-    //              >= config::shard_local_cfg().skip_cache_chance();
-
     auto skip_cache = _cache.should_skip_cache();
 
     bool is_materialized = is_state_materialized();
