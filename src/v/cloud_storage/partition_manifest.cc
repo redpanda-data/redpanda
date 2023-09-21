@@ -201,7 +201,10 @@ partition_manifest::lw_segment_meta::convert(const segment_meta& m) {
       .segment_term = m.segment_term,
       .size_bytes = m.sname_format == segment_name_format::v1 ? 0
                                                               : m.size_bytes,
-      .sname_format = m.sname_format};
+      .sname_format = m.sname_format,
+      .may_have_tx_index = m.sname_format == segment_name_format::v3
+                           && m.metadata_size_hint != 0,
+    };
 }
 
 segment_meta partition_manifest::lw_segment_meta::convert(
@@ -2245,6 +2248,9 @@ void partition_manifest::serialize_removed_segment_meta(
     w.Key("sname_format");
     using name_format_type = std::underlying_type<segment_name_format>::type;
     w.Int64(static_cast<name_format_type>(meta.sname_format));
+
+    w.Key("has_tx_index");
+    w.Bool(meta.may_have_tx_index);
 
     w.EndObject();
 }

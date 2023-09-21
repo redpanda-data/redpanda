@@ -88,7 +88,7 @@ public:
     struct lw_segment_meta
       : serde::envelope<
           lw_segment_meta,
-          serde::version<0>,
+          serde::version<1>,
           serde::compat_version<0>> {
         model::initial_revision_id ntp_revision;
         model::offset base_offset;
@@ -102,6 +102,10 @@ public:
         size_t size_bytes;
 
         segment_name_format sname_format{segment_name_format::v1};
+
+        /// True if segment may contain aborted txs index. If set to false we
+        /// can avoid an extra DELETE request to the object store.
+        bool may_have_tx_index = true;
 
         auto operator<=>(const lw_segment_meta&) const = default;
 
