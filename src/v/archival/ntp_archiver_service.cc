@@ -2566,11 +2566,11 @@ ss::future<> ntp_archiver::garbage_collect() {
         co_return;
     }
 
-    const auto to_remove
+    const auto segments_to_remove
       = _parent.archival_meta_stm()->get_segments_to_cleanup();
 
     // Avoid replicating 'cleanup_metadata_cmd' if there's nothing to remove.
-    if (to_remove.size() == 0) {
+    if (segments_to_remove.size() == 0) {
         co_return;
     }
 
@@ -2595,33 +2595,12 @@ ss::future<> ntp_archiver::garbage_collect() {
         }
     }
 
-    size_t successful_deletes{0};
-    co_await ss::max_concurrent_for_each(
-      to_remove,
-      _concurrency,
-      [this, &successful_deletes](
-        const cloud_storage::partition_manifest::lw_segment_meta& meta) {
-          auto path = manifest().generate_segment_path(meta);
-          return ss::do_with(
-            std::move(path), [this, &successful_deletes](auto& path) {
-                return delete_segment(path).then(
-                  [this, &successful_deletes, &path](
-                    cloud_storage::upload_result res) {
-                      if (res == cloud_storage::upload_result::success) {
-                          ++successful_deletes;
+    const auto segments_deleted = co_await delete_segments(segments_to_remove);
 
-                          vlog(
-                            _rtclog.info,
-                            "Deleted segment from cloud storage: {}",
-                            path);
-                      }
-                  });
-            });
-      });
-
-    const auto backlog_size_exceeded = to_remove.size()
+    const auto backlog_size_exceeded = segments_to_remove.size()
                                        > _max_segments_pending_deletion();
-    const auto all_deletes_succeeded = successful_deletes == to_remove.size();
+    const auto all_deletes_succeeded = segments_deleted
+                                       == segments_to_remove.size();
     if (!all_deletes_succeeded && backlog_size_exceeded) {
         vlog(
           _rtclog.warn,
@@ -2629,7 +2608,7 @@ ss::future<> ntp_archiver::garbage_collect() {
           "configurable limit ({} > {}) and deletion of some segments failed. "
           "Metadata for all remaining segments pending deletion will be "
           "removed and these segments will have to be removed manually.",
-          to_remove.size(),
+          segments_to_remove.size(),
           _max_segments_pending_deletion());
     }
 
@@ -2653,52 +2632,8 @@ ss::future<> ntp_archiver::garbage_collect() {
           "retry on the next housekeeping run.");
     }
 
-    _probe->segments_deleted(static_cast<int64_t>(successful_deletes));
-    vlog(
-      _rtclog.debug, "Deleted {} segments from the cloud", successful_deletes);
-}
-
-ss::future<cloud_storage::upload_result>
-ntp_archiver::delete_segment(const remote_segment_path& path) {
-    _as.check();
-
-    size_t entities_deleted = 3;
-    retry_chain_node fib(
-      _conf->manifest_upload_timeout * entities_deleted,
-      _conf->cloud_storage_initial_backoff,
-      &_rtcnode);
-
-    auto res = co_await _remote.delete_object(
-      get_bucket_name(), cloud_storage_clients::object_key{path}, fib);
-
-    if (res == cloud_storage::upload_result::success) {
-        if (auto delete_tx_res = co_await _remote.delete_object(
-              _conf->bucket_name,
-              cloud_storage_clients::object_key{
-                cloud_storage::generate_remote_tx_path(path)},
-              fib);
-            delete_tx_res != cloud_storage::upload_result::success) {
-            vlog(
-              _rtclog.warn,
-              "failed to delete transaction manifest: {}, result: {}",
-              cloud_storage::generate_remote_tx_path(path),
-              delete_tx_res);
-        }
-
-        if (auto delete_index_res = co_await _remote.delete_object(
-              _conf->bucket_name,
-              cloud_storage_clients::object_key{make_index_path(path)},
-              fib);
-            delete_index_res != cloud_storage::upload_result::success) {
-            vlog(
-              _rtclog.warn,
-              "failed to delete index file: {}, result: {}",
-              make_index_path(path),
-              delete_index_res);
-        }
-    }
-
-    co_return res;
+    _probe->segments_deleted(static_cast<int64_t>(segments_deleted));
+    vlog(_rtclog.debug, "Deleted {} segments from the cloud", segments_deleted);
 }
 
 ss::future<size_t>

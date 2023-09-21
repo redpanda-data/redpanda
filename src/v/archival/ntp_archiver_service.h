@@ -534,14 +534,6 @@ private:
     /// abort source fires.
     ss::future<> sync_manifest_until_abort();
 
-    /// Delete a segment and its transaction metadata from S3.
-    /// The transaction metadata is only deleted if the segment
-    /// deletion was successful.
-    ///
-    /// Throws if an abort was requested.
-    ss::future<cloud_storage::upload_result>
-    delete_segment(const remote_segment_path& path);
-
     using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
     /// Delete segment data and metadata from object storage and return the
     /// number of successfully delted segments.
