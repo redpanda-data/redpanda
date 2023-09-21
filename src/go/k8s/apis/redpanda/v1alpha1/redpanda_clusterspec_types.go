@@ -99,7 +99,7 @@ type RedpandaConsole struct {
 	Deployment *ConsoleCreateObj `json:"deployment,omitempty"`
 
 	// +kubebuilder:pruning:PreserveUnknownFields
-	Config *runtime.RawExtension `json:"config,omitempty"`
+	Console *runtime.RawExtension `json:"console,omitempty"`
 }
 
 type ConsoleCreateObj struct {
