@@ -228,6 +228,18 @@ bool storage_resources::stm_take_bytes(
     return filter_checkpoints(_stm_dirty_bytes.take(bytes), units);
 }
 
+bool storage_resources::raft_take_bytes(
+  size_t bytes, ssx::semaphore_units& units) {
+    vlog(
+      stlog.trace,
+      "raft_take_bytes {} += {} (current {})",
+      units.count(),
+      bytes,
+      _raft_not_flushed_bytes.available_units());
+
+    return filter_checkpoints(_raft_not_flushed_bytes.take(bytes), units);
+}
+
 bool storage_resources::filter_checkpoints(
   adjustable_semaphore::take_result&& tr, ssx::semaphore_units& units) {
     // Adopt units from the take_result into the caller's unit store

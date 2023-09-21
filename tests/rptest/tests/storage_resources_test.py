@@ -16,7 +16,7 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.clients.rpk import RpkTool
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 from ducktape.cluster.cluster_spec import ClusterSpec
 
 
@@ -146,13 +146,13 @@ class StorageResourceRestartTest(RedpandaTest):
 
         wait_until(ready, timeout_sec=30, backoff_sec=5)
 
-    def _write(self, msg_size, msg_count):
+    def _write(self, msg_size, msg_count, acks):
         producer = RpkProducer(self.test_context,
                                self.redpanda,
                                self.topic,
                                msg_size,
                                msg_count=msg_count,
-                               acks=-1)
+                               acks=acks)
         producer.start()
         producer.wait()
         producer.free()
@@ -200,9 +200,8 @@ class StorageResourceRestartTest(RedpandaTest):
         return segments
 
     @cluster(num_nodes=2)
-    @parametrize(clean_shutdown=False)
-    @parametrize(clean_shutdown=True)
-    def test_recovery_reads(self, clean_shutdown):
+    @matrix(acks=[1, -1], clean_shutdown=[True, False])
+    def test_recovery_reads(self, clean_shutdown, acks):
         """
         Verify the amount of disk IO that occurs on both clean and
         unclean restarts.
@@ -237,7 +236,7 @@ class StorageResourceRestartTest(RedpandaTest):
         assert (msg_count * msg_size /
                 self.PARTITION_COUNT) < per_partition_checkpoint_threshold
 
-        self._write(msg_size, msg_count)
+        self._write(msg_size, msg_count, acks)
         total_bytes = msg_size * msg_count
 
         # Use low level seastar metrics, because storage log metrics do
@@ -296,4 +295,6 @@ class StorageResourceRestartTest(RedpandaTest):
             # the byte count: we have already read >= the total size of data
             # on disk.
             self._read_tips()
-            self._read_all(msg_count)
+            # do not read all messages for acks=1 as they may be lost
+            if acks == -1:
+                self._read_all(msg_count)

@@ -66,6 +66,8 @@ public:
 
     bool stm_take_bytes(size_t bytes, ssx::semaphore_units& units);
 
+    bool raft_take_bytes(size_t bytes, ssx::semaphore_units& units);
+
     adjustable_semaphore::take_result compaction_index_take_bytes(size_t bytes);
     bool compaction_index_bytes_available() {
         return _compaction_index_bytes.current() > 0;
@@ -156,6 +158,10 @@ private:
     // memory footprint compared with the batch's original size, we must
     // limit how many of these we do in parallel.
     adjustable_semaphore _inflight_compaction_compression{1};
+
+    // How many logs may be flushed during segment close concurrently?
+    // (e.g. when we shut down and ask everyone to flush)
+    adjustable_semaphore _raft_not_flushed_bytes{0};
 };
 
 } // namespace storage

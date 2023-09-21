@@ -2598,11 +2598,11 @@ append_entries_reply consensus::make_append_entries_reply(
 }
 
 ss::future<> consensus::flush_log() {
-    if (!_has_pending_flushes) {
+    if (!has_pending_flushes()) {
         return ss::now();
     }
     _probe->log_flushed();
-    _has_pending_flushes = false;
+    _not_flushed_bytes_units.return_all();
     auto flushed_up_to = _log->offsets().dirty_offset;
     return _log->flush().then([this, flushed_up_to] {
         auto lstats = _log->offsets();
@@ -2678,7 +2678,13 @@ ss::future<storage::append_result> consensus::disk_append(
                */
               _last_quorum_replicated_index = ret.last_offset;
           }
-          _has_pending_flushes = true;
+          /**
+           * Here we will flush if amount of dirty bytes exceeds what is allowed
+           * in storage resources
+           */
+          auto flush_needed = _storage.resources().raft_take_bytes(
+            ret.byte_size, _not_flushed_bytes_units);
+          auto f = flush_needed ? flush_log() : ss::now();
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
@@ -2687,7 +2693,7 @@ ss::future<storage::append_result> consensus::disk_append(
           // for quorum_ack it flush in parallel to dispatching RPCs
           // to followers for other consistency flushes are done
           // separately.
-          auto f = ss::now();
+
           if (!configurations.empty()) {
               // we can use latest configuration to update follower stats
               update_follower_stats(configurations.back().cfg);
@@ -2783,7 +2789,7 @@ ss::future<> consensus::refresh_commit_index() {
     return _op_lock.get_units()
       .then([this](ssx::semaphore_units u) mutable {
           auto f = ss::now();
-          if (_has_pending_flushes) {
+          if (has_pending_flushes()) {
               f = flush_log();
           }
 

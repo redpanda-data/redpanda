@@ -136,3 +136,37 @@ TEST_F_CORO(raft_fixture, validate_adding_nodes_to_cluster) {
 
     co_await assert_logs_equal();
 }
+
+TEST_F_CORO(
+  raft_fixture, validate_committed_offset_advancement_after_log_flush) {
+    co_await create_simple_group(3);
+    // wait for leader
+    auto leader = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader);
+
+    // replicate batches with acks=1 and validate that committed offset did not
+    // advance
+    auto committed_offset_before = leader_node.raft()->committed_offset();
+    auto result = co_await leader_node.raft()->replicate(
+      make_batches(10, 10, 128),
+      replicate_options(consistency_level::leader_ack));
+
+    ASSERT_TRUE_CORO(result.has_value());
+    // wait for batches to be replicated on all of the nodes
+    co_await tests::cooperative_spin_wait_with_timeout(
+      10s, [this, expected = result.value().last_offset] {
+          return std::all_of(
+            nodes().begin(), nodes().end(), [expected](const auto& p) {
+                return p.second->raft()->last_visible_index() == expected;
+            });
+      });
+    ASSERT_EQ_CORO(
+      committed_offset_before, leader_node.raft()->committed_offset());
+
+    co_await assert_logs_equal();
+
+    // flush log on all of the nodes
+    co_await parallel_for_each_node(
+      [](auto& n) { return n.raft()->refresh_commit_index(); });
+    co_await wait_for_committed_offset(result.value().last_offset, 10s);
+}
