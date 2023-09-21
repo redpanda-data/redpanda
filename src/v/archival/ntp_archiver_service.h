@@ -542,6 +542,12 @@ private:
     ss::future<cloud_storage::upload_result>
     delete_segment(const remote_segment_path& path);
 
+    using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
+    /// Delete segment data and metadata from object storage and return the
+    /// number of successfully delted segments.
+    ss::future<size_t>
+    delete_segments(const std::vector<lw_segment_meta>& lw_metas);
+
     /// If true, we are holding up trimming of local storage
     bool local_storage_pressure() const;
 
