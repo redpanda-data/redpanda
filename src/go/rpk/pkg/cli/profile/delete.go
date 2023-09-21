@@ -40,7 +40,7 @@ is selected.
 			}
 
 			name := args[0]
-			cleared, err := deleteProfile(fs, y, name)
+			cleared, err := DeleteProfile(fs, y, name)
 			out.MaybeDieErr(err)
 			fmt.Printf("Deleted profile %q.\n", name)
 			if cleared {
@@ -50,7 +50,7 @@ is selected.
 	}
 }
 
-func deleteProfile(
+func DeleteProfile(
 	fs afero.Fs,
 	y *config.RpkYaml,
 	name string,

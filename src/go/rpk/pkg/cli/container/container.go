@@ -23,7 +23,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 	command.AddCommand(newStartCommand(fs, p))
 	command.AddCommand(newStopCommand())
-	command.AddCommand(newPurgeCommand())
+	command.AddCommand(newPurgeCommand(fs, p))
 	command.AddCommand(newStatusCommand())
 
 	return command
