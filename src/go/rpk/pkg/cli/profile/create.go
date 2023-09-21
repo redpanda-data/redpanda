@@ -93,10 +93,6 @@ rpk always switches to the newly created profile.
 				out.Die("profile name cannot be empty unless using --from-cloud")
 			}
 
-			if (fromCloud != "" && fromRedpanda != "") || (fromCloud != "" && fromProfile != "") || (fromRedpanda != "" && fromProfile != "") {
-				out.Die("can only use one of --from-cloud, --from-redpanda, or --from-profile")
-			}
-
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
 			name, msg, err := createProfile(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
@@ -118,6 +114,8 @@ rpk always switches to the newly created profile.
 	cmd.Flags().Lookup("from-cloud").NoOptDefVal = "prompt"
 
 	cmd.RegisterFlagCompletionFunc("set", validSetArgs)
+
+	cmd.MarkFlagsMutuallyExclusive("from-redpanda", "from-cloud", "from-profile")
 
 	return cmd
 }
