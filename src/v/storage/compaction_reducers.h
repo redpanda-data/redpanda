@@ -205,7 +205,6 @@ public:
 
     struct stats {
         size_t _tx_data_batches_discarded{0};
-        size_t _tx_control_batches_discarded{0};
         size_t _non_tx_control_batches_discarded{0};
         size_t _all_batches_discarded{0};
         size_t _num_aborted_txes{0};
@@ -216,13 +215,12 @@ public:
               os,
               "{{ all_batches: {}, aborted_txs: {}, all "
               "discarded batches: {}, tx data batches discarded: {}, tx "
-              "control batches discarded {}, non tx control batches discarded: "
+              "non tx control batches discarded: "
               "{}}}",
               s._all_batches,
               s._num_aborted_txes,
               s._all_batches_discarded,
               s._tx_data_batches_discarded,
-              s._tx_control_batches_discarded,
               s._non_tx_control_batches_discarded);
             return os;
         }
@@ -231,7 +229,7 @@ public:
     stats end_of_stream() { return _stats; }
 
 private:
-    bool handle_tx_control_batch(const model::record_batch&);
+    void handle_tx_control_batch(const model::record_batch&);
     bool handle_tx_data_batch(const model::record_batch&);
     bool handle_non_tx_control_batch(const model::record_batch&);
     void consume_aborted_txs(model::offset);
