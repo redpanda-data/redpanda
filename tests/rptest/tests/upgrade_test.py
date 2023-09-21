@@ -286,7 +286,6 @@ class UpgradeWithWorkloadTest(EndToEndTest):
         self.start_consumer(num_nodes=1)
         self.await_startup(min_records=self.producer_msgs_per_sec)
 
-    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rolling_upgrade(self):
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -470,7 +469,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         # Verify all data readable
         verify()
 
-        # Pick some arbitrary partition to write data to via a new-verison node
+        # Pick some arbitrary partition to write data to via a new-version node
         newdata_p = 0
 
         # There might not be any partitions with leadership on new version
@@ -534,6 +533,11 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                 target_bytes=local_retention_bytes + segment_bytes,
                 timeout_sec=60)
 
+        # capture the cloud storage state to run a progress check later
+        bucket_view = BucketView(self.redpanda)
+        manifest_mid_upgrade = bucket_view.manifest_for_ntp(
+            topic=topic, partition=newdata_p)
+
         # Move leadership to the old version node and check the partition is readable
         # from there.
         admin.transfer_leadership_to(namespace="kafka",
@@ -545,10 +549,6 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
 
         # Verify all data readable
         verify()
-
-        bucket_view = BucketView(self.redpanda)
-        manifest_mid_upgrade = bucket_view.manifest_for_ntp(
-            topic=topic, partition=newdata_p)
 
         # Finish the upgrade
         self.redpanda.rolling_restart_nodes([self.redpanda.nodes[-1]],
