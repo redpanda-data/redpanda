@@ -732,7 +732,7 @@ std::ostream& operator<<(std::ostream& o, const log_config& c) {
     }
     return o
            << ", compaction_interval_ms:" << c.compaction_interval().count()
-           << ", delete_retention_ms:"
+           << ", log_retention_ms:"
            << c.log_retention().value_or(std::chrono::milliseconds(-1)).count()
            << ", with_cache:" << c.cache << ", reclaim_opts:" << c.reclaim_opts
            << "}";
