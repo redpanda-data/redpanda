@@ -892,7 +892,7 @@ class RpkTool:
             cmd.append("--wait")
         return self._execute(cmd)
 
-    def cluster_maintenance_disable(self, node):
+    def cluster_maintenance_disable(self, node, timeout=None):
         node_id = self._redpanda.idx(node) if isinstance(node,
                                                          ClusterNode) else node
         cmd = [
@@ -900,7 +900,7 @@ class RpkTool:
             self._admin_host(), "cluster", "maintenance", "disable",
             str(node_id)
         ]
-        return self._execute(cmd)
+        return self._execute(cmd, timeout=timeout)
 
     def cluster_maintenance_status(self):
         """
