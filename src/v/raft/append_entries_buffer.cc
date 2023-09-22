@@ -109,7 +109,7 @@ ss::future<> append_entries_buffer::do_flush(
             }
         }
         if (needs_flush) {
-            f = _consensus.flush_log();
+            f = _consensus.flush_log().discard_result();
         }
     }
 
