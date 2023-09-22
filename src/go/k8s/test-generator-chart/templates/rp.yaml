@@ -1,0 +1,15 @@
+{{- $root := . }}
+{{- range $path, $_ :=  .Files.Glob  "**.yaml" }}
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  name: redpanda-{{ substr 0 2 (base $path) }}
+spec:
+  chartRef:
+    chartVersion: "5.4.10"
+  {{- with $root }}
+  clusterSpec:
+  {{- .Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}

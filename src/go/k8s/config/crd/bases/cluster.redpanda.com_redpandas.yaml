@@ -136,7 +136,6 @@ spec:
                             type: array
                         required:
                         - enabled
-                        - users
                         type: object
                     required:
                     - sasl
@@ -895,7 +894,6 @@ spec:
                         type: string
                     required:
                     - enabled
-                    - nodeAnnotation
                     type: object
                   rbac:
                     properties:
@@ -974,7 +972,6 @@ spec:
                         type: string
                     required:
                     - create
-                    - name
                     type: object
                   statefulset:
                     description: Statefulset is a top level field of the values file
@@ -2734,8 +2731,6 @@ spec:
                             type: string
                           storageClass:
                             type: string
-                        required:
-                        - enabled
                         type: object
                       tiered:
                         properties:

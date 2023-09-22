@@ -4,11 +4,11 @@ startKIND: true
 kindContainers:
   - localhost/redpanda-operator:dev
 testDirs:
-  - ./tests/e2e-v2
+  - ./tests/e2e-v2-helm
 kindConfig: ./kind-for-v2.yaml
 kindNodeCache: false
 commands:
-  - command: mkdir -p tests/_e2e_artifacts_v2
+  - command: mkdir -p tests/_e2e_helm_artifacts_v2
   - command: kubectl taint nodes -l node-role.kubernetes.io/master= node-role.kubernetes.io/master:NoSchedule-
     ignoreFailure: true
   - command: ./hack/install-cert-manager.sh tests/_e2e_artifacts_v2
@@ -16,9 +16,10 @@ commands:
   - command: helm repo add redpanda https://charts.redpanda.com
   - command: helm repo update
   - command: helm install --set logLevel=trace --set image.tag=dev
-      --set image.repository=localhost/redpanda-operator --namespace redpanda --create-namespace redpanda-operator
+      --set image.repository=localhost/redpanda-operator --namespace redpanda --create-namespace redpanda-operator 
        redpanda/operator --set rbac.createAdditionalControllerCRs=true --set additionalCmdFlags="{--additional-controllers=all}"
       --set rbac.createRPKBundleCRs=true
+  - command: ./hack/annotate_kind_nodes.sh "kind"
 artifactsDir: tests/_e2e_artifacts_v2
 timeout: 720
 reportFormat: xml

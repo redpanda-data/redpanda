@@ -90,8 +90,8 @@ type LicenseSecretRef struct {
 
 // RackAwareness is a top-level field of the values file
 type RackAwareness struct {
-	Enabled        bool   `json:"enabled"`
-	NodeAnnotation string `json:"nodeAnnotation"`
+	Enabled        bool    `json:"enabled"`
+	NodeAnnotation *string `json:"nodeAnnotation,omitempty"`
 }
 
 type RedpandaConsole struct {
@@ -170,7 +170,7 @@ type SASL struct {
 	Enabled   bool         `json:"enabled"`
 	Mechanism *string      `json:"mechanism,omitempty"`
 	SecretRef *string      `json:"secretRef,omitempty"`
-	Users     []UsersItems `json:"users"`
+	Users     []UsersItems `json:"users,omitempty"`
 }
 
 // UsersItems is a top-level field of the values file
@@ -527,7 +527,7 @@ type RBAC struct {
 type ServiceAccount struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 	Create      bool              `json:"create"`
-	Name        string            `json:"name"`
+	Name        *string           `json:"name,omitempty"`
 }
 
 type SetDataDirOwnership struct {
