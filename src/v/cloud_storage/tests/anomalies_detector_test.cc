@@ -281,6 +281,10 @@ public:
         return _stm_manifest;
     }
 
+    cloud_storage::partition_manifest& get_stm_manifest_mut() {
+        return _stm_manifest;
+    }
+
     const std::vector<cloud_storage::spillover_manifest>&
     get_spillover_manifests() {
         return _spillover_manifests;
@@ -670,6 +674,122 @@ FIXTURE_TEST(test_metadata_anomalies, bucket_view_fixture) {
       .previous = get_spillover_manifests().at(0).last_segment()});
 
     BOOST_REQUIRE(result.detected == expected);
+}
+
+FIXTURE_TEST(test_filtering_of_segment_merge, bucket_view_fixture) {
+    /*
+     * Test for perfect storm edge case:
+     * 1. Scrubber downloads stm manifest
+     * 2. Adjacent segment merger runs and finds a candidate
+     * 3. Manifest is re-uploaded
+     * 4. Housekeeping garbage collection runs and deletes replaced segments
+     *
+     * While unlikely, this sequence of events is valid and the anomaly
+     * filtering should be smart enough to detect it.
+     */
+    constexpr std::string_view stm_man = R"json(
+{
+  "version": 3,
+  "namespace": "kafka",
+  "topic": "panda-topic",
+  "partition": 0,
+  "revision": 1,
+  "start_offset": 0,
+  "last_offset": 39,
+  "insync_offset": 100,
+  "segments": {
+      "0-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 0,
+          "committed_offset": 9,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 0,
+          "delta_offset_end": 2,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      },
+      "10-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 10,
+          "committed_offset": 19,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 2,
+          "delta_offset_end": 4,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      },
+      "20-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 10,
+          "committed_offset": 29,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 4,
+          "delta_offset_end": 3,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      },
+      "30-1-v1.log": {
+          "size_bytes": 1024,
+          "base_offset": 30,
+          "committed_offset": 39,
+          "base_timestamp": 1000,
+          "max_timestamp":  1000,
+          "delta_offset": 6,
+          "delta_offset_end": 8,
+          "ntp_revision": 1,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "sname_format": 2
+      }
+  }
+}
+)json";
+
+    init_view(stm_man, {});
+
+    const auto first_seg = *std::next(get_stm_manifest().begin());
+    const auto last_seg = *std::next(get_stm_manifest().begin(), 2);
+
+    remove_segment(get_stm_manifest(), first_seg);
+    remove_segment(get_stm_manifest(), last_seg);
+
+    const auto result = run_detector();
+    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+    BOOST_REQUIRE(result.detected.has_value());
+    BOOST_REQUIRE_EQUAL(result.detected.missing_segments.size(), 2);
+    BOOST_REQUIRE_EQUAL(result.detected.segment_metadata_anomalies.size(), 1);
+
+    cloud_storage::segment_meta merged_seg{
+      .is_compacted = false,
+      .size_bytes = first_seg.size_bytes + last_seg.size_bytes,
+      .base_offset = first_seg.base_offset,
+      .committed_offset = last_seg.committed_offset,
+      .base_timestamp = first_seg.base_timestamp,
+      .max_timestamp = last_seg.max_timestamp,
+      .delta_offset = first_seg.delta_offset,
+      .ntp_revision = first_seg.ntp_revision,
+      .segment_term = first_seg.segment_term,
+      .delta_offset_end = last_seg.delta_offset_end};
+
+    BOOST_REQUIRE(get_stm_manifest_mut().safe_segment_meta_to_add(merged_seg));
+    BOOST_REQUIRE(get_stm_manifest_mut().add(merged_seg));
+
+    get_stm_manifest_mut().process_anomalies(
+      model::timestamp::now(), result.status, result.detected);
+
+    const auto& filtered_anomalies = get_stm_manifest().detected_anomalies();
+
+    BOOST_REQUIRE_EQUAL(filtered_anomalies.missing_segments.size(), 0);
+    BOOST_REQUIRE(!filtered_anomalies.has_value());
 }
 
 BOOST_AUTO_TEST_CASE(test_offset_anomaly_detection) {

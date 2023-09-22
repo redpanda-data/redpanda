@@ -591,6 +591,20 @@ bool partition_manifest::contains(const segment_name& name) const {
     return _segments.contains(maybe_key->base_offset);
 }
 
+bool partition_manifest::segment_with_offset_range_exists(
+  model::offset base, model::offset committed) const {
+    if (auto iter = find(base); iter != end()) {
+        const auto expected_committed
+          = _segments.get_committed_offset_column().at_index(iter.index());
+
+        // false when committed offset doesn't match
+        return committed == *expected_committed;
+    } else {
+        // base offset doesn't match any segment
+        return false;
+    }
+}
+
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
 model::offset partition_manifest::get_archive_start_offset() const {
@@ -2652,19 +2666,33 @@ void partition_manifest::process_anomalies(
                == _spillover_manifests.end();
     });
 
-    // TODO: check if the offset range is covered by some other segment
     auto first_kafka_offset = full_log_start_kafka_offset();
     auto& missing_segs = _detected_anomalies.missing_segments;
-    erase_if(missing_segs, [&first_kafka_offset](const auto& meta) {
-        return meta.next_kafka_offset() <= first_kafka_offset;
+    erase_if(missing_segs, [this, &first_kafka_offset](const auto& meta) {
+        if (meta.next_kafka_offset() <= first_kafka_offset) {
+            return true;
+        }
+
+        // The segment might have been missing because it was merged with
+        // something else. If the offset range doesn't match a segment exactly,
+        // discard the anomaly.
+        return !segment_with_offset_range_exists(
+          meta.base_offset, meta.committed_offset);
     });
 
-    // TODO: check if the segment still exists
     auto& segment_meta_anomalies
       = _detected_anomalies.segment_metadata_anomalies;
     erase_if(
-      segment_meta_anomalies, [&first_kafka_offset](const auto& anomaly_meta) {
-          return anomaly_meta.at.next_kafka_offset() <= first_kafka_offset;
+      segment_meta_anomalies,
+      [this, &first_kafka_offset](const auto& anomaly_meta) {
+          if (anomaly_meta.at.next_kafka_offset() <= first_kafka_offset) {
+              return true;
+          }
+
+          // Similarly to the missing segment case, if the boundaries of the
+          // segment where the anomaly was detected changed, drop it.
+          return !segment_with_offset_range_exists(
+            anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
       });
 
     _last_partition_scrub = scrub_timestamp;

@@ -327,6 +327,11 @@ public:
     bool contains(const key& key) const;
     bool contains(const segment_name& name) const;
 
+    /// Check if the provided offset range matches any segment in the manifest
+    /// exactly.
+    bool segment_with_offset_range_exists(
+      model::offset base, model::offset committed) const;
+
     /// Add new segment to the manifest
     bool add(segment_meta meta);
     bool add(const segment_name& name, const segment_meta& meta);
