@@ -23,7 +23,8 @@ setup(
         'grpcio==1.57.0', 'grpcio-tools==1.57', 'grpcio-status==1.57.0',
         'cachetools==5.3.1', 'google-api-core==2.11.1', 'google-auth==2.22.0',
         'googleapis-common-protos==1.60.0', 'google.cloud.compute==1.14.0',
-        'proto-plus==1.22.3', 'rsa==4.9'
+        'proto-plus==1.22.3', 'rsa==4.9',
+        'python-keycloak@git+https://github.com/redpanda-data/python-keycloak.git@10b822cb0320c54dbf5bf4fd00435afb1487415d'
     ],
     scripts=[],
 )

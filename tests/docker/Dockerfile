@@ -189,6 +189,13 @@ RUN /byoc-mock && rm /byoc-mock
 
 #################################
 
+FROM base as keycloak
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/keycloak /
+RUN /keycloak && rm /keycloak
+
+#################################
+
 FROM librdkafka as final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/teleport /
@@ -263,6 +270,7 @@ COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
 COPY --from=kcl /usr/local/bin/kcl /usr/local/bin/
 COPY --from=kgo-verifier /opt/kgo-verifier /opt/kgo-verifier
 COPY --from=byoc-mock /opt/redpanda-tests/go/byoc-mock/.rpk.managed-byoc /root/.local/bin/.rpk.managed-byoc
+COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
 
 RUN ldconfig
 
