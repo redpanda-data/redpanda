@@ -2487,34 +2487,34 @@ append_entries_reply consensus::make_append_entries_reply(
 
 ss::future<> consensus::flush_log() {
     if (!_has_pending_flushes) {
-        return ss::now();
+        co_return;
     }
+
+    auto flushed_up_to = _log->offsets().dirty_offset;
     _probe->log_flushed();
     _has_pending_flushes = false;
-    auto flushed_up_to = _log->offsets().dirty_offset;
-    return _log->flush().then([this, flushed_up_to] {
-        auto lstats = _log->offsets();
-        /**
-         * log flush may be interleaved with trucation, hence we need to check
-         * if log was truncated, if so we do nothing, flushed offset will be
-         * updated in the truncation path.
-         */
-        if (flushed_up_to > lstats.dirty_offset) {
-            return;
-        }
+    co_await _log->flush();
+    const auto lstats = _log->offsets();
+    /**
+     * log flush may be interleaved with trucation, hence we need to check
+     * if log was truncated, if so we do nothing, flushed offset will be
+     * updated in the truncation path.
+     */
+    if (flushed_up_to > lstats.dirty_offset) {
+        co_return;
+    }
 
-        _flushed_offset = std::max(flushed_up_to, _flushed_offset);
-        vlog(_ctxlog.trace, "flushed offset updated: {}", _flushed_offset);
-        // TODO: remove this assertion when we will remove committed_offset
-        // from storage.
-        vassert(
-          lstats.committed_offset >= _flushed_offset,
-          "Raft incorrectly tracking flushed log offset. Expected offset: {}, "
-          " current log offsets: {}, log: {}",
-          _flushed_offset,
-          lstats,
-          _log);
-    });
+    _flushed_offset = std::max(flushed_up_to, _flushed_offset);
+    vlog(_ctxlog.trace, "flushed offset updated: {}", _flushed_offset);
+    // TODO: remove this assertion when we will remove committed_offset
+    // from storage.
+    vassert(
+      lstats.committed_offset >= _flushed_offset,
+      "Raft incorrectly tracking flushed log offset. Expected offset: {}, "
+      " current log offsets: {}, log: {}",
+      _flushed_offset,
+      lstats,
+      _log);
 }
 
 ss::future<storage::append_result> consensus::disk_append(
