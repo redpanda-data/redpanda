@@ -460,6 +460,15 @@ struct hash<std::vector<T>> {
     }
 };
 
+template<typename T>
+struct hash<ss::bool_class<T>> {
+    size_t operator()(const ss::bool_class<T>& val) const {
+        size_t h = 0;
+        boost::hash_combine(h, std::hash<bool>()(bool(val)));
+        return h;
+    }
+};
+
 template<sa::has_equality_fields T>
 struct hash<T> {
     size_t operator()(const T& val) const {
