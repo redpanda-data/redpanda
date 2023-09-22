@@ -3557,7 +3557,7 @@ struct partition_stm_state
 struct partition_raft_state
   : serde::envelope<
       partition_raft_state,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -3619,10 +3619,32 @@ struct partition_raft_state
               suppress_heartbeats,
               is_recovering);
         }
+
+        friend bool operator==(const follower_state&, const follower_state&)
+          = default;
+    };
+
+    struct follower_recovery_state
+      : serde::envelope<
+          follower_recovery_state,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        bool is_active = false;
+        int64_t pending_offset_count = 0;
+
+        auto serde_fields() {
+            return std::tie(is_active, pending_offset_count);
+        }
+
+        friend bool operator==(
+          const follower_recovery_state&, const follower_recovery_state&)
+          = default;
     };
 
     // Set only on leaders.
     std::optional<std::vector<follower_state>> followers;
+    // Set only on recovering followers.
+    std::optional<follower_recovery_state> recovery_state;
 
     auto serde_fields() {
         return std::tie(
@@ -3644,7 +3666,8 @@ struct partition_raft_state
           is_leader,
           is_elected_leader,
           followers,
-          stms);
+          stms,
+          recovery_state);
     }
 
     friend bool

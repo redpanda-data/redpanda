@@ -4107,6 +4107,12 @@ void fill_raft_state(
         state.max_collectible_offset = stm.last_applied_offset;
         raft_state.stms.push(std::move(state));
     }
+    if (src.recovery_state) {
+        ss::httpd::debug_json::follower_recovery_state frs;
+        frs.is_active = src.recovery_state->is_active;
+        frs.pending_offset_count = src.recovery_state->pending_offset_count;
+        raft_state.follower_recovery_state = std::move(frs);
+    }
     replica.raft_state = std::move(raft_state);
 }
 ss::future<result<std::vector<cluster::partition_state>>>
