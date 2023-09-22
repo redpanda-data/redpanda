@@ -160,7 +160,8 @@ class OpenMessagingBenchmark(Service):
                  workload="SIMPLE_WORKLOAD",
                  node=None,
                  worker_nodes=None,
-                 topology="swarm"):
+                 topology="swarm",
+                 num_workers=NUM_WORKERS):
         """
         Creates a utility that can run OpenMessagingBenchmark (OMB) tests in ducktape. See OMB
         documentation for definitions of driver/workload files.
@@ -180,6 +181,7 @@ class OpenMessagingBenchmark(Service):
         self.topology = topology
         self.redpanda = redpanda
         self.worker_nodes = worker_nodes
+        self.num_workers = num_workers
         self.workers = None
         if isinstance(driver, str):
             self.driver = OMBSampleConfigurations.DRIVERS[driver]
@@ -219,9 +221,7 @@ class OpenMessagingBenchmark(Service):
 
     def _create_workers(self):
         self.workers = OpenMessagingBenchmarkWorkers(
-            self._ctx,
-            num_workers=OpenMessagingBenchmark.NUM_WORKERS,
-            nodes=self.worker_nodes)
+            self._ctx, num_workers=self.num_workers, nodes=self.worker_nodes)
         self.workers.start()
 
     def start_node(self, node, timeout_sec=60, **kwargs):
