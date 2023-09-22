@@ -937,6 +937,12 @@ partition_balancer_planner::reassignable_partition::move_replica(
         auto from_it = _ctx.node_disk_reports.find(replica);
         if (from_it != _ctx.node_disk_reports.end()) {
             from_it->second.released += _size_bytes;
+
+            vlog(
+              clusterlog.debug,
+              "moving from: {}, updated disk: {}",
+              replica,
+              from_it->second);
         }
 
         auto to_it = _ctx.node_disk_reports.find(new_node);
@@ -946,6 +952,12 @@ partition_balancer_planner::reassignable_partition::move_replica(
             } else {
                 to_it->second.assigned += _size_bytes;
             }
+
+            vlog(
+              clusterlog.debug,
+              "moving to: {}, updated disk: {}",
+              new_node,
+              to_it->second);
         }
     }
 
@@ -1532,6 +1544,17 @@ partition_balancer_planner::plan_actions(
     }
 
     co_await init_ntp_sizes_from_health_report(health_report, ctx);
+
+    for (model::node_id id : ctx.all_nodes) {
+        auto disk_it = ctx.node_disk_reports.find(id);
+        if (disk_it == ctx.node_disk_reports.end()) {
+            vlog(clusterlog.info, "node {}: no disk report", id);
+            continue;
+        }
+
+        const auto& disk = disk_it->second;
+        vlog(clusterlog.debug, "node {} disk: {}", id, disk);
+    }
 
     co_await get_node_drain_actions(
       ctx, ctx.decommissioning_nodes, change_reason::node_decommissioning);

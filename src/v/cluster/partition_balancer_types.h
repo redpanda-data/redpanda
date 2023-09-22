@@ -16,6 +16,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
+#include "utils/human.h"
 #include "utils/to_string.h"
 
 #include <absl/container/btree_set.h>
@@ -44,6 +45,20 @@ struct node_disk_space {
 
     double final_used_ratio() const {
         return double(used + assigned - released) / total;
+    }
+
+    friend std::ostream& operator<<(std::ostream& o, const node_disk_space& d) {
+        fmt::print(
+          o,
+          "{{bu: {}, ba: {}, br: {}, orig ur: {:.4}, peak ur: {:.4}, final ur: "
+          "{:.4}}}",
+          human::bytes(d.used),
+          human::bytes(d.assigned),
+          human::bytes(d.released),
+          d.original_used_ratio(),
+          d.peak_used_ratio(),
+          d.final_used_ratio());
+        return o;
     }
 };
 

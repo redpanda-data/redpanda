@@ -712,6 +712,14 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
     } else {
         for (const auto& [ntp, partition] : pm.partitions()) {
             if (filters.matches(ntp)) {
+                vlog(
+                  clusterlog.info,
+                  "SIZE ntp:{} s:{} nls:{} tot:{}",
+                  ntp,
+                  partition->size_bytes(),
+                  partition->non_log_disk_size_bytes(),
+                  partition->size_bytes(),
+                  partition->non_log_disk_size_bytes());
                 reports.push_back(ntp_report{
                 .ntp = ntp,
                 .leader = ntp_leader{
