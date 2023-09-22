@@ -83,7 +83,12 @@ struct simple_raft_fixture {
                   .enable_lw_heartbeat = config::mock_binding<bool>(true),
                   .recovery_concurrency_per_shard
                   = config::mock_binding<size_t>(64),
-                  .election_timeout_ms = config::mock_binding(10ms)};
+                  .election_timeout_ms = config::mock_binding(10ms),
+                  .replica_max_not_flushed_bytes
+                  = config::mock_binding<std::optional<size_t>>(std::nullopt),
+                  .flush_timer_interval_ms = config::mock_binding(100ms),
+
+                };
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

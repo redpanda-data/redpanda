@@ -1118,6 +1118,11 @@ void application::wire_up_redpanda_services(
                   .raft_recovery_concurrency_per_shard.bind(),
               .election_timeout_ms
               = config::shard_local_cfg().raft_election_timeout_ms.bind(),
+              .replica_max_not_flushed_bytes
+              = config::shard_local_cfg()
+                  .raft_replica_max_pending_flush_bytes.bind(),
+              .flush_timer_interval_ms
+              = config::shard_local_cfg().raft_flush_timer_interval_ms.bind(),
             };
         },
         [] {
