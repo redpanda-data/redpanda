@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/json-iterator/go v1.1.12
 	github.com/r3labs/diff/v3 v3.0.1
-	github.com/redpanda-data/redpanda/src/go/k8s v0.0.0-20230711000139-412f31a082ac
+	github.com/redpanda-data/redpanda/src/go/k8s v0.0.0-20230920233823-0b32bc8b6e41
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.4
 	k8s.io/api v0.26.2
@@ -18,7 +18,7 @@ require (
 require (
 	emperror.dev/errors v0.8.1 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
-	github.com/Masterminds/semver/v3 v3.2.0 // indirect
+	github.com/Masterminds/semver/v3 v3.2.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cert-manager/cert-manager v1.11.0 // indirect
@@ -29,6 +29,8 @@ require (
 	github.com/emicklei/go-restful/v3 v3.10.1 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
+	github.com/fluxcd/helm-controller/api v0.30.0 // indirect
+	github.com/fluxcd/pkg/apis/kustomize v0.8.0 // indirect
 	github.com/fluxcd/pkg/apis/meta v0.19.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
@@ -64,6 +66,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
+	go.uber.org/goleak v1.2.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.12.0 // indirect
 	golang.org/x/net v0.14.0 // indirect
