@@ -9,18 +9,6 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - configmaps
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - apps
-  resources:
   - deployments
   verbs:
   - create
@@ -130,6 +118,17 @@ rules:
   - delete
   - get
   - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -329,6 +328,13 @@ rules:
   - patch
   - update
 - apiGroups:
+  - apps
+  resources:
+  - statefulsets/status
+  verbs:
+  - patch
+  - update
+- apiGroups:
   - batch
   resources:
   - jobs
@@ -441,6 +447,25 @@ rules:
   verbs:
   - create
   - patch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ""
   resources:

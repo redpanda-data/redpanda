@@ -1,0 +1,6 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: kubectl -n redpanda get pod redpanda-2 -o jsonpath='{.spec.nodeName}' | xargs kubectl delete node
+assert:
+  - 02-assert-delete-node-again.yaml

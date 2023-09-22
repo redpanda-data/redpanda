@@ -7,7 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package redpanda_test
+// nolint:testpackage // this name is ok
+package test
 
 import (
 	"context"
@@ -40,7 +41,7 @@ const (
 	versionWithoutCentralizedConfiguration = "v21.11.1-dev" // no centralized config, shadow index enabled
 )
 
-var _ = Describe("RedPandaCluster configuration controller", func() {
+var _ = Describe("RedpandaCluster configuration controller", func() {
 	const (
 		timeout  = time.Second * 30
 		interval = time.Millisecond * 100

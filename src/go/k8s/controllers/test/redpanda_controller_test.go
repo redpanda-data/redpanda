@@ -7,23 +7,20 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package redpanda_test
+// nolint:testpackage // this name is ok
+package test
 
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/fluxcd/helm-controller/api/v2beta1"
 	"github.com/fluxcd/source-controller/api/v1beta2"
-	"github.com/moby/moby/pkg/namesgenerator"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -95,17 +92,3 @@ var _ = Describe("Redpanda Controller", func() {
 		})
 	})
 })
-
-func getRandomizedNamespacedName(name string) (types.NamespacedName, *corev1.Namespace) {
-	ns := strings.Replace(namesgenerator.GetRandomName(0), "_", "-", 1)
-	key := types.NamespacedName{
-		Name:      name,
-		Namespace: ns,
-	}
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ns,
-		},
-	}
-	return key, namespace
-}
