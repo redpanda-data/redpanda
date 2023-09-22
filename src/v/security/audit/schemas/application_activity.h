@@ -117,4 +117,53 @@ private:
         w.EndObject();
     }
 };
+
+class application_lifecycle final : public ocsf_base_event {
+public:
+    enum class activity_id : uint8_t {
+        unknown = 0,
+        install = 1,
+        remove = 2,
+        start = 3,
+        stop = 4,
+        other = 99
+    };
+
+    application_lifecycle(
+      activity_id activity_id,
+      product app,
+      severity_id severity_id,
+      timestamp_t time)
+      : ocsf_base_event(
+        category_uid::application_activity,
+        class_uid::application_lifecycle,
+        severity_id,
+        time,
+        activity_id)
+      , _activity_id(activity_id)
+      , _app(std::move(app)) {}
+
+    auto equality_fields() const { return std::tie(_activity_id, _app); }
+
+private:
+    activity_id _activity_id;
+    product _app;
+
+    size_t hash() const final {
+        return std::hash<application_lifecycle>()(*this);
+    }
+
+    friend inline void rjson_serialize(
+      ::json::Writer<::json::StringBuffer>& w, const application_lifecycle& a) {
+        w.StartObject();
+        a.rjson_serialize(w);
+
+        w.Key("activity_id");
+        ::json::rjson_serialize(w, a._activity_id);
+        w.Key("app");
+        ::json::rjson_serialize(w, a._app);
+
+        w.EndObject();
+    }
+};
 } // namespace security::audit
