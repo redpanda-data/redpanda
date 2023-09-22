@@ -242,15 +242,15 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         co_await current_log.handle.apply_segment_ms();
     }
 
-    while ((_logs_list.front().flags & bflags::compacted) == bflags::none) {
+    while (!_logs_list.empty()
+           && is_not_set(_logs_list.front().flags, bflags::compacted)) {
         if (_abort_source.abort_requested()) {
             co_return;
         }
 
         auto& current_log = _logs_list.front();
 
-        _logs_list.pop_front();
-        _logs_list.push_back(current_log);
+        _logs_list.shift_forward();
 
         current_log.flags |= bflags::compacted;
         current_log.last_compaction = ss::lowres_clock::now();
@@ -260,10 +260,6 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           current_log.handle.stm_manager()->max_collectible_offset(),
           _config.compaction_priority,
           _abort_source));
-
-        if (_logs_list.empty()) {
-            co_return;
-        }
     }
 }
 
