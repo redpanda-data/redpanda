@@ -236,15 +236,15 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         co_await current_log.handle->apply_segment_ms();
     }
 
-    while ((_logs_list.front().flags & bflags::compacted) == bflags::none) {
+    while (!_logs_list.empty()
+           && is_not_set(_logs_list.front().flags, bflags::compacted)) {
         if (_abort_source.abort_requested()) {
             co_return;
         }
 
         auto& current_log = _logs_list.front();
 
-        _logs_list.pop_front();
-        _logs_list.push_back(current_log);
+        _logs_list.shift_forward();
 
         current_log.flags |= bflags::compacted;
         current_log.last_compaction = ss::lowres_clock::now();
@@ -258,10 +258,6 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           _config.compaction_priority,
           _abort_source,
           std::move(ntp_sanitizer_cfg)));
-
-        if (_logs_list.empty()) {
-            co_return;
-        }
 
         // bail out of compaction early in order to get back to gc
         if (_gc_triggered) {
