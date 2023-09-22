@@ -22,7 +22,9 @@ type ClusterHealthOverview struct {
 	AllNodes                  []int    `json:"all_nodes"`
 	NodesDown                 []int    `json:"nodes_down"`
 	LeaderlessPartitions      []string `json:"leaderless_partitions"`
+	LeaderlessCount           *int     `json:"leaderless_count,omitempty"`
 	UnderReplicatedPartitions []string `json:"under_replicated_partitions"`
+	UnderReplicatedCount      *int     `json:"under_replicated_count,omitempty"`
 }
 
 // PartitionBalancerStatus is the status of the partition auto balancer.

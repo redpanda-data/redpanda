@@ -201,7 +201,9 @@ func NewTableTo(w io.Writer, headers ...string) *TabWriter {
 		iheaders = append(iheaders, strings.ToUpper(header))
 	}
 	t := NewTabWriterTo(w)
-	t.Print(iheaders...)
+	if len(iheaders) > 0 {
+		t.Print(iheaders...)
+	}
 	return t
 }
 
