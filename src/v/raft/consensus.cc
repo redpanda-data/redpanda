@@ -3832,4 +3832,27 @@ void consensus::upsert_recovery_state(
     }
 }
 
+ss::future<> consensus::maybe_flush_log(size_t threshold_bytes) {
+    // if there is nothing to do exit without grabbing an op_lock, this check is
+    // sloppy as we data can be in flight but it is ok since next check will
+    // detect it and flush log.
+    if (_not_flushed_bytes < threshold_bytes) {
+        co_return;
+    }
+    try {
+        auto holder = _bg.hold();
+        auto u = co_await _op_lock.get_units();
+        auto flushed = co_await flush_log();
+        if (flushed && is_leader()) {
+            for (auto& [id, idx] : _fstats) {
+                // force full heartbeat to move the committed index forward
+                idx.last_sent_protocol_meta.reset();
+            }
+        }
+    } catch (const ss::gate_closed_exception&) {
+    } catch (const ss::broken_semaphore&) {
+        // ignore exception, group is shutting down.
+    }
+}
+
 } // namespace raft

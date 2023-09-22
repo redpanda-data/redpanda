@@ -503,6 +503,11 @@ public:
     get_follower_recovery_state() const {
         return _follower_recovery_state;
     }
+    /**
+     * Flushes underlying log only if there are more not flushed bytes than the
+     * requested threshold.
+     */
+    ss::future<> maybe_flush_log(size_t threshold_bytes);
 
 private:
     friend replicate_entries_stm;
