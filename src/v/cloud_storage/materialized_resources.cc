@@ -15,6 +15,7 @@
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
 #include "config/configuration.h"
+#include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_groups.h"
 #include "ssx/future-util.h"
 #include "vlog.h"
@@ -22,11 +23,13 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <absl/container/btree_map.h>
 
 #include <chrono>
+#include <exception>
 
 namespace cloud_storage {
 
@@ -88,6 +91,10 @@ materialized_resources::materialized_resources()
         });
     });
     _throughput_limit_config.watch([this] {
+        if (ss::this_shard_id() == 0) {
+            ssx::spawn_with_gate(
+              _gate, [this] { return set_disk_max_bandwidth(); });
+        }
         _throughput_limit.update_capacity(
           config::shard_local_cfg()
             .cloud_storage_max_download_throughput_per_shard());
@@ -95,6 +102,31 @@ materialized_resources::materialized_resources()
           config::shard_local_cfg()
             .cloud_storage_max_download_throughput_per_shard());
     });
+    if (ss::this_shard_id() == 0) {
+        // Need to do this only once for all shards
+        ssx::spawn_with_gate(
+          _gate, [this] { return set_disk_max_bandwidth(); });
+    }
+}
+
+ss::future<> materialized_resources::set_disk_max_bandwidth() {
+    try {
+        auto tput = _throughput_limit_config() * ss::smp::count;
+        vlog(
+          cst_log.info,
+          "Setting scheduling group {} bandwidth to {}",
+          priority_manager::local().shadow_indexing_priority().get_name(),
+          tput);
+
+        co_await priority_manager::local()
+          .shadow_indexing_priority()
+          .update_bandwidth(tput);
+    } catch (...) {
+        vlog(
+          cst_log.error,
+          "Failed to set tiered-storage disk throughput: {}",
+          std::current_exception());
+    }
 }
 
 ts_read_path_probe& materialized_resources::get_read_path_probe() {

@@ -119,6 +119,9 @@ private:
     /// Consume from _eviction_list
     ss::future<> run_eviction_loop();
 
+    /// Set bandwidth for tiered-storage scheduling_group
+    ss::future<> set_disk_max_bandwidth();
+
     /// Try to evict segment readers until `target_free` units are available in
     /// _reader_units, i.e. available for new readers to be created.
     void trim_segment_readers(size_t target_free);
