@@ -10,7 +10,7 @@
 import os
 import json
 import collections
-from typing import Optional
+from typing import Optional, Any
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -156,7 +156,7 @@ class OpenMessagingBenchmark(Service):
     def __init__(self,
                  ctx,
                  redpanda,
-                 driver="SIMPLE_DRIVER",
+                 driver: str | dict[str, Any] = "SIMPLE_DRIVER",
                  workload="SIMPLE_WORKLOAD",
                  node=None,
                  worker_nodes=None,
@@ -181,7 +181,10 @@ class OpenMessagingBenchmark(Service):
         self.redpanda = redpanda
         self.worker_nodes = worker_nodes
         self.workers = None
-        self.driver = OMBSampleConfigurations.DRIVERS[driver]
+        if isinstance(driver, str):
+            self.driver = OMBSampleConfigurations.DRIVERS[driver]
+        else:
+            self.driver = driver
         if isinstance(workload, str):
             self.workload = OMBSampleConfigurations.WORKLOADS[workload][0]
             self.validator = OMBSampleConfigurations.WORKLOADS[workload][1]
