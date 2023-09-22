@@ -110,84 +110,108 @@ class OMBSampleConfigurations:
         "name": "simple-driver",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "false",
-        "acks": "1",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "false",
+            "acks": "1",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_1MS = {
         "name": "ack-all-group-linger-1-ms-no-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "false",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "false",
+            "acks": "all",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE = {
         "name": "ack-all-group-linger-1-ms-enable-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "true",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "true",
+            "acks": "all",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT = {
         "name": "ack-all-group-linger-1-ms-enable-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "true",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 5,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "true",
+            "acks": "all",
+            "liner.ms": 1,
+            "max.in.flight.requests.per.connection": 5,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_10MS = {
         "name": "ack-all-group-linger-10-ms-no-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "false",
-        "acks": "all",
-        "linger_ms": 10,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "false",
+            "acks": "all",
+            "linger.ms": 10,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_10MS_WITH_IDEMPOTENCE = {
         "name": "ack-all-group-linger-10-ms-enable-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "true",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "true",
+            "acks": "all",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     # ------ Driver configurations end--------
