@@ -1899,7 +1899,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         }
         auto f = ss::now();
         if (r.is_flush_required() && lstats.dirty_offset > _flushed_offset) {
-            f = flush_log();
+            f = flush_log().discard_result();
         }
         auto last_visible = std::min(
           lstats.dirty_offset, request_metadata.last_visible_index);
@@ -2485,9 +2485,9 @@ append_entries_reply consensus::make_append_entries_reply(
     return reply;
 }
 
-ss::future<> consensus::flush_log() {
+ss::future<consensus::flushed> consensus::flush_log() {
     if (!has_pending_flushes()) {
-        co_return;
+        co_return flushed::no;
     }
     auto flushed_up_to = _log->offsets().dirty_offset;
     _probe->log_flushed();
@@ -2500,7 +2500,7 @@ ss::future<> consensus::flush_log() {
      * updated in the truncation path.
      */
     if (flushed_up_to > lstats.dirty_offset) {
-        co_return;
+        co_return flushed::yes;
     }
 
     _flushed_offset = std::max(flushed_up_to, _flushed_offset);
@@ -2514,6 +2514,7 @@ ss::future<> consensus::flush_log() {
       _flushed_offset,
       lstats,
       _log);
+    co_return flushed::yes;
 }
 
 ss::future<storage::append_result> consensus::disk_append(
@@ -2672,8 +2673,8 @@ ss::future<> consensus::refresh_commit_index() {
     return _op_lock.get_units()
       .then([this](ssx::semaphore_units u) mutable {
           auto f = ss::now();
-          if (_has_pending_flushes) {
-              f = flush_log();
+          if (has_pending_flushes()) {
+              f = flush_log().discard_result();
           }
 
           if (!is_elected_leader()) {

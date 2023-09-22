@@ -547,7 +547,8 @@ private:
     void trigger_leadership_notification();
 
     /// \brief _does not_ hold the lock.
-    ss::future<> flush_log();
+    using flushed = ss::bool_class<struct flushed_executed_tag>;
+    ss::future<flushed> flush_log();
 
     void maybe_step_down();
 

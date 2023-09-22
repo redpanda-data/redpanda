@@ -54,7 +54,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
     using ret_t = result<append_entries_reply>;
     auto flush_f = ss::now();
     if (_is_flush_required) {
-        flush_f = _ptr->flush_log();
+        flush_f = _ptr->flush_log().discard_result();
     }
 
     auto f = flush_f
