@@ -2486,13 +2486,12 @@ append_entries_reply consensus::make_append_entries_reply(
 }
 
 ss::future<> consensus::flush_log() {
-    if (!_has_pending_flushes) {
+    if (!has_pending_flushes()) {
         co_return;
     }
-
     auto flushed_up_to = _log->offsets().dirty_offset;
     _probe->log_flushed();
-    _has_pending_flushes = false;
+    _not_flushed_bytes = 0;
     co_await _log->flush();
     const auto lstats = _log->offsets();
     /**
@@ -2566,7 +2565,7 @@ ss::future<storage::append_result> consensus::disk_append(
                */
               _last_quorum_replicated_index = ret.last_offset;
           }
-          _has_pending_flushes = true;
+          _not_flushed_bytes += ret.byte_size;
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
