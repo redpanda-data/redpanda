@@ -179,7 +179,7 @@ def omb_runner(context, redpanda, driver, workload, omb_config):
         bench.stop()
 
 
-def get_cloud_globals(globals, key_name, default=None):
+def get_cloud_globals(globals):
     _config = {}
     if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
         # Load needed config values from cloud section
@@ -1209,14 +1209,14 @@ class HighThroughputTest(RedpandaTest):
         consumer.free()
 
     def _prepare_omb_workload(self, ramp_time, duration, partitions, rate,
-                              msg_size):
+                              msg_size, producers, consumers):
         return {
             "name": "HT004-MINPARTOMB",
             "topics": 1,
             "partitions_per_topic": partitions,
-            "subscriptions_per_topic": 1,
-            "consumer_per_subscription": 3,
-            "producers_per_topic": 1,
+            "subscriptions_per_topic": consumers,
+            "consumer_per_subscription": 1,
+            "producers_per_topic": producers,
             "producer_rate": rate,
             "message_size": msg_size,
             "consumer_backlog_size_GB": 0,
@@ -1231,9 +1231,8 @@ class HighThroughputTest(RedpandaTest):
     @parametrize(partitions="min")
     @parametrize(partitions="max")
     def test_htt_partitions_omb(self, partitions):
-        def _format_metrics(idle, tier):
-            keys = idle.keys()
-            return "\n".join([f"{k} = {idle[k]} / {tier[k]} " for k in keys])
+        def _format_metrics(tier):
+            return "\n".join([f"{k} = {v} " for k, v in tier.items()])
 
         def _get_metrics(bench):
             return list(
@@ -1241,46 +1240,19 @@ class HighThroughputTest(RedpandaTest):
                     bench.chart_cmd)).values())[0]
 
         # Get values for almost idle cluster load
-        _min_idle_lat = 1000
         rampup_time = 1
-        idle_runtime = 2
-        main_runtime = 30
-        idle_rate = 1 * MiB
-        main_rate = self.tier_config.ingress_rate
+        runtime = 30
+        rate = self.tier_config.ingress_rate
         msg_size = 16 * KiB
-        # Assume we have 1 partition per shard,
-        # then number of CPU should be equal to min number of partitions
-        # to get idle-like activity
-        _num_partitions = 4
+        producers = 1 * (self.tier_config.num_brokers // 3) + 1
+        consumers = producers * 2
 
         if partitions not in ["min", "max"]:
             raise RuntimeError("Test parameter for partitions invalid")
 
-        idle_validators = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(_min_idle_lat)],
-            OMBSampleConfigurations.E2E_LATENCY_AVG:
-            [OMBSampleConfigurations.lte(_min_idle_lat * 3)],
-        }
-        idle_workload = self._prepare_omb_workload(rampup_time, idle_runtime,
-                                                   _num_partitions, idle_rate,
-                                                   msg_size)
-        with omb_runner(
-                self._ctx, self.redpanda, "SIMPLE_DRIVER", idle_workload,
-                OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
-                | idle_validators) as omb:
-            idle_metrics = _get_metrics(omb)
-
-        # Get values for idle workload
-        # These values will serve as a base point for current latency while
-        # partition count is not huge
-        # Target partition count should not diviate by 51/145 ms from these
-        k_e2e_50pct = idle_metrics[OMBSampleConfigurations.E2E_LATENCY_50PCT]
-        k_e2e_avg = idle_metrics[OMBSampleConfigurations.E2E_LATENCY_AVG]
-
         # Calculate target throughput latencies
-        target_e2e_50pct = k_e2e_50pct + 51
-        target_e2e_avg = k_e2e_avg + 145
+        target_e2e_50pct = 51
+        target_e2e_avg = 145
 
         # Measure with target load
         validator_overrides = {
@@ -1295,9 +1267,9 @@ class HighThroughputTest(RedpandaTest):
         elif partitions == "max":
             _num_partitions = self.tier_config.partitions_upper_limit
 
-        workload = self._prepare_omb_workload(rampup_time, main_runtime,
-                                              _num_partitions, main_rate,
-                                              msg_size)
+        workload = self._prepare_omb_workload(rampup_time, runtime,
+                                              _num_partitions, rate, msg_size,
+                                              producers, consumers)
         with omb_runner(
                 self._ctx, self.redpanda, "SIMPLE_DRIVER", workload,
                 OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
@@ -1305,8 +1277,6 @@ class HighThroughputTest(RedpandaTest):
             metrics = _get_metrics(omb)
             # Tier metrics should not diviate from idle
             # metrics more than 145 ms on the average
-            self.logger.info('Workload metrics (idle/tier): '
-                             '"{}"'.format(
-                                 _format_metrics(idle_metrics, metrics)))
+            self.logger.info(f"Workload metrics: {_format_metrics(metrics)}")
             # Assert test results
             omb.check_succeed()
