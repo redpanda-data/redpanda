@@ -1,0 +1,29 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestSuite
+startKIND: true
+kindContainers:
+  - localhost/redpanda-operator:dev
+  - docker.redpanda.com/redpandadata/redpanda:v23.2.8
+  - docker.redpanda.com/redpandadata/console:v2.3.2
+testDirs:
+  - ./tests/e2e-v2-ci/tests
+kindConfig: ./kind.yaml
+kindNodeCache: false
+commands:
+  - command: mkdir -p tests/_e2e_artifacts_v2
+  - command: kubectl taint nodes -l node-role.kubernetes.io/master= node-role.kubernetes.io/master:NoSchedule-
+    ignoreFailure: true
+  - command: ./hack/install-cert-manager.sh tests/_e2e_artifacts_v2
+  - script: kubectl kustomize ./config/crd | kubectl apply -f -
+  - command: helm repo add redpanda https://charts.redpanda.com
+  - command: helm repo update
+  - command: helm install --set logLevel=trace --set image.tag=dev
+      --set image.repository=localhost/redpanda-operator --namespace redpanda --create-namespace redpanda-operator
+       redpanda/operator --set rbac.createAdditionalControllerCRs=true --set additionalCmdFlags="{--additional-controllers=all}"
+artifactsDir: tests/_e2e_artifacts_v2
+timeout: 720
+reportFormat: xml
+parallel: 1
+namespace: redpanda
+suppress:
+  - events

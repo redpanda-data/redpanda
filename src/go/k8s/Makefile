@@ -122,6 +122,12 @@ e2e-tests-v2: kuttl
 	echo "~~~ Running kuttl tests :k8s:redpanda"
 	$(KUTTL) test $(TEST_ONLY_FLAG) --config kuttl-v2-test.yaml $(KUTTL_TEST_FLAGS)
 
+# Execute end to end tests v2
+e2e-tests-v2-ci: kuttl
+	echo "~~~ Running kuttl tests :k8s:redpanda"
+	$(KUTTL) test $(TEST_ONLY_FLAG) --config kuttl-v2-ci-test.yaml $(KUTTL_TEST_FLAGS)
+
+
 # Execute end to end unstable tests
 e2e-unstable-tests: kuttl test docker-build docker-build-configurator
 	echo "~~~ Running kuttl unstable tests :k8s:"
