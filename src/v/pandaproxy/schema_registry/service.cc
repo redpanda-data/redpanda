@@ -15,6 +15,7 @@
 #include "cluster/security_frontend.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/client_fetch_batch_reader.h"
+#include "kafka/client/config_utils.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
@@ -23,7 +24,6 @@
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/auth_utils.h"
-#include "pandaproxy/config_utils.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
@@ -227,12 +227,12 @@ ss::future<> create_acls(cluster::security_frontend& security_fe) {
 }
 
 ss::future<> service::configure() {
-    auto config = co_await pandaproxy::create_client_credentials(
+    auto config = co_await kafka::client::create_client_credentials(
       *_controller,
       config::shard_local_cfg(),
       _client.local().config(),
       principal);
-    co_await set_client_credentials(*config, _client);
+    co_await kafka::client::set_client_credentials(*config, _client);
 
     auto const& store = _controller->get_ephemeral_credential_store().local();
     bool has_ephemeral_credentials = store.has(store.find(principal));

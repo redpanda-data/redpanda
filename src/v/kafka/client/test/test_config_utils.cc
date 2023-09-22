@@ -14,9 +14,9 @@
 #include "json/ostreamwrapper.h"
 #include "json/writer.h"
 #include "kafka/client/client.h"
+#include "kafka/client/config_utils.h"
 #include "kafka/client/configuration.h"
 #include "model/namespace.h"
-#include "pandaproxy/config_utils.h"
 #include "redpanda/tests/fixture.h"
 #include "security/acl.h"
 #include "security/ephemeral_credential_store.h"
@@ -30,8 +30,6 @@
 #include <yaml-cpp/emitter.h>
 
 #include <chrono>
-
-namespace pp = pandaproxy;
 
 namespace kafka::client {
 // BOOST_REQURE_EQUAL fails to find this if it's in the global namespace
@@ -81,7 +79,7 @@ FIXTURE_TEST(test_config_utils, redpanda_thread_fixture) {
       security::principal_type::ephemeral_user, "ephemeral_user"};
 
     const auto create_credentials = [&, this]() {
-        return pp::create_client_credentials(
+        return kafka::client::create_client_credentials(
           *app.controller, cluster_cfg, client_cfg, principal);
     };
 

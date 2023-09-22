@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "pandaproxy/config_utils.h"
+#include "kafka/client/config_utils.h"
 
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
@@ -24,7 +24,7 @@
 
 #include <exception>
 
-namespace pandaproxy {
+namespace kafka::client {
 
 ss::future<std::unique_ptr<kafka::client::configuration>>
 create_client_credentials(
@@ -76,4 +76,4 @@ ss::future<> set_client_credentials(
     });
 }
 
-} // namespace pandaproxy
+} // namespace kafka::client

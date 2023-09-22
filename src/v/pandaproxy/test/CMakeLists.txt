@@ -19,13 +19,3 @@ rp_test(
   ARGS "-- -c 1"
   LABELS pandaproxy
 )
-
-rp_test(
-  FIXTURE_TEST
-  BINARY_NAME pandaproxy
-  SOURCES
-    test_config_utils.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main v::application
-  LABELS pandaproxy
-)

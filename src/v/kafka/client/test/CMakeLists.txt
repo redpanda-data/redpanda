@@ -31,6 +31,7 @@ rp_test(
     produce.cc
     reconnect.cc
     retry.cc
+    test_config_utils.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     v::seastar_testing_main

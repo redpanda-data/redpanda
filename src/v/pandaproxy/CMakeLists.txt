@@ -6,7 +6,6 @@ v_cc_library(
     probe.cc
     server.cc
     kafka_client_cache.cc
-    config_utils.cc
   DEPS
     v::pandaproxy_parsing
     v::pandaproxy_json
