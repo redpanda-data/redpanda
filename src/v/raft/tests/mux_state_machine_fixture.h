@@ -80,7 +80,11 @@ struct mux_state_machine_fixture {
                   = config::mock_binding<std::chrono::milliseconds>(2000ms),
                   .raft_io_timeout_ms
                   = config::mock_binding<std::chrono::milliseconds>(30s),
-                  .election_timeout_ms = config::mock_binding(10ms)};
+                  .election_timeout_ms = config::mock_binding(10ms),
+                  .replica_max_not_flushed_bytes
+                  = config::mock_binding<std::optional<size_t>>(std::nullopt),
+                  .flush_timer_interval_ms = config::mock_binding(100ms),
+                };
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

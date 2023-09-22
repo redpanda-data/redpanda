@@ -46,14 +46,31 @@ group_manager::group_manager(
   , _recovery_throttle(recovery_throttle.local())
   , _recovery_mem_quota(std::move(recovery_mem_cfg))
   , _feature_table(feature_table.local())
+  , _flush_timer_jitter(_configuration.flush_timer_interval_ms)
   , _is_ready(false) {
+    _flush_timer.set_callback([this] {
+        ssx::spawn_with_gate(_gate, [this] {
+            return flush_groups().finally([this] {
+                if (_gate.is_closed()) {
+                    return;
+                }
+                _flush_timer.arm(_flush_timer_jitter());
+            });
+        });
+    });
     setup_metrics();
 }
 
-ss::future<> group_manager::start() { return _heartbeats.start(); }
+ss::future<> group_manager::start() {
+    co_await _heartbeats.start();
+
+    _flush_timer.arm(_flush_timer_jitter());
+}
 
 ss::future<> group_manager::stop() {
     auto f = _gate.close();
+    _flush_timer.cancel();
+
     if (!_heartbeats.is_stopped()) {
         // In normal redpanda process shutdown, heartbeats would
         // have been stopped earlier.  Do it here if that didn't happen,
@@ -67,6 +84,7 @@ ss::future<> group_manager::stop() {
           [](ss::lw_shared_ptr<consensus> raft) { return raft->stop(); });
     });
 }
+
 void group_manager::set_ready() {
     _is_ready = true;
     std::for_each(
@@ -107,11 +125,12 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _feature_table,
       _is_ready ? std::nullopt : std::make_optional(min_voter_priority),
       keep_snapshotted_log);
-
-    return ss::with_gate(_gate, [this, raft] {
-        return _heartbeats.register_group(raft).then([this, raft] {
-            _groups.push_back(raft);
-            return raft;
+    return _groups_mutex.with([this, raft = std::move(raft)] {
+        return ss::with_gate(_gate, [this, raft] {
+            return _heartbeats.register_group(raft).then([this, raft] {
+                _groups.push_back(raft);
+                return raft;
+            });
         });
     });
 }
@@ -146,24 +165,30 @@ raft::group_configuration group_manager::create_initial_configuration(
 }
 
 ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
-    return c->stop()
-      .then([c] { return c->remove_persistent_state(); })
-      .then(
-        [this, id = c->group()] { return _heartbeats.deregister_group(id); })
-      .finally([this, c] {
-          _groups.erase(
-            std::remove(_groups.begin(), _groups.end(), c), _groups.end());
-      });
+    return _groups_mutex.with([this, c = std::move(c)] {
+        return c->stop()
+          .then([c] { return c->remove_persistent_state(); })
+          .then([this, id = c->group()] {
+              return _heartbeats.deregister_group(id);
+          })
+          .finally([this, c] {
+              _groups.erase(
+                std::remove(_groups.begin(), _groups.end(), c), _groups.end());
+          });
+    });
 }
 
 ss::future<> group_manager::shutdown(ss::lw_shared_ptr<raft::consensus> c) {
-    return c->stop()
-      .then(
-        [this, id = c->group()] { return _heartbeats.deregister_group(id); })
-      .finally([this, c] {
-          _groups.erase(
-            std::remove(_groups.begin(), _groups.end(), c), _groups.end());
-      });
+    return _groups_mutex.with([this, c = std::move(c)] {
+        return c->stop()
+          .then([this, id = c->group()] {
+              return _heartbeats.deregister_group(id);
+          })
+          .finally([this, c] {
+              _groups.erase(
+                std::remove(_groups.begin(), _groups.end(), c), _groups.end());
+          });
+    });
 }
 
 void group_manager::trigger_leadership_notification(
@@ -191,4 +216,22 @@ void group_manager::setup_metrics() {
         sm::description("Number of raft groups"))});
 }
 
+ss::future<> group_manager::flush_groups() {
+    /**
+     * Assumes that gate is already held
+     */
+    auto u = co_await _groups_mutex.get_units();
+
+    co_await ss::max_concurrent_for_each(
+      _groups.begin(),
+      _groups.end(),
+      32,
+      [this](const ss::lw_shared_ptr<consensus>& raft) {
+          if (_configuration.replica_max_not_flushed_bytes()) {
+              return raft->maybe_flush_log(
+                _configuration.replica_max_not_flushed_bytes().value());
+          }
+          return ss::now();
+      });
+}
 } // namespace raft
