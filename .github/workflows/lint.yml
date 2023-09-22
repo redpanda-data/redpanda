@@ -52,6 +52,24 @@ jobs:
         find src/go -type f -not -name 'zz*' -name '*.go' | xargs -n1 "$HOME/.local/bin/gofumpt" -w -lang=1.20
         git diff --exit-code
 
+    - name: go mod tidy (cluster-to-redpanda-migration)
+      working-directory: src/go/cluster-to-redpanda-migration
+      run: |
+        go mod tidy
+        git diff --exit-code -- go.mod go.sum
+
+    - name: go mod tidy (k8s)
+      working-directory: src/go/k8s
+      run: |
+        go mod tidy
+        git diff --exit-code -- go.mod go.sum
+
+    - name: go mod tidy (rpk)
+      working-directory: src/go/rpk
+      run: |
+        go mod tidy
+        git diff --exit-code -- go.mod go.sum
+
   py:
     name: Lint python files
     runs-on: ubuntu-latest
