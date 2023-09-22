@@ -118,6 +118,7 @@ v_cc_library(
     security_frontend.cc
     cluster_discovery.cc
     cluster_recovery_table.cc
+    cluster_recovery_reconciler.cc
     controller_api.cc
     members_frontend.cc
     members_backend.cc
