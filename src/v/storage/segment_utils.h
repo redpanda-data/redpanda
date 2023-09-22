@@ -199,6 +199,13 @@ struct clean_segment_value
 
 inline bool is_compactible(const model::record_batch& b) {
     static const auto filtered_types = model::offset_translator_batch_types();
+    
+    if (b.header().type == model::record_batch_type::raft_data) {
+        if (b.header().attrs.is_control()) {
+            return false;
+        }
+    }
+    
     auto n = std::count(
       filtered_types.begin(), filtered_types.end(), b.header().type);
     return n == 0;

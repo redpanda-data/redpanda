@@ -51,31 +51,9 @@ public:
       : _buf(std::move(o._buf))
       , _wr(_buf) {}
 
-    ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
-        if (unlikely(record_count_ == 0)) {
-            _base_offset = batch.base_offset();
-        }
-        if (unlikely(
-              !_first_tx_batch_offset
-              && batch.header().attrs.is_transactional())) {
-            _first_tx_batch_offset = batch.base_offset();
-        }
-        _last_offset = batch.last_offset();
-        record_count_ += batch.record_count();
-        write_batch(std::move(batch));
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    }
+    ss::future<ss::stop_iteration> operator()(model::record_batch&& batch);
 
-    result end_of_stream() {
-        return result{
-          .data = std::move(_buf),
-          .record_count = record_count_,
-          .base_offset = _base_offset,
-          .last_offset = _last_offset,
-          .first_tx_batch_offset = _first_tx_batch_offset,
-        };
-    }
+    result end_of_stream();
 
 private:
     void write_batch(model::record_batch&& batch) {

@@ -97,6 +97,7 @@ static ss::future<read_result> read_from_partition(
       config.abort_source.has_value()
         ? config.abort_source.value().get().local()
         : storage::opt_abort_source_t{});
+    reader_config.isolation_level = config.isolation_level;
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     auto rdr = co_await part.make_reader(reader_config);
@@ -109,13 +110,15 @@ static ss::future<read_result> read_from_partition(
         data = std::make_unique<iobuf>(std::move(result.data));
         part.probe().add_records_fetched(result.record_count);
         part.probe().add_bytes_fetched(data->size_bytes());
-        if (result.first_tx_batch_offset && result.record_count > 0) {
+        if (result.record_count > 0) {
             // Reader should live at least until this point to hold on to the
             // segment locks so that prefix truncation doesn't happen.
             aborted_transactions = co_await part.aborted_transactions(
-              result.first_tx_batch_offset.value(),
+              result.base_offset,
               result.last_offset,
               std::move(rdr.ot_state));
+            
+            vlog(klog.trace, "SVETA(5): {} {} => {}", result.base_offset, result.last_offset, aborted_transactions.size());
 
             // Check that the underlying data did not get truncated while
             // consuming. If so, it's possible the search for aborted
@@ -324,7 +327,11 @@ static ss::future<read_result> do_read_from_ntp(
                 // partition is still bootstrapping
                 co_return read_result(maybe_lso.error());
             }
-            ntp_config.cfg.max_offset = model::prev_offset(maybe_lso.value());
+            //auto lso = maybe_lso.value();
+            //auto max = model::prev_offset(maybe_lso.value());
+            //vlog(klog.trace, "ALLA(1): lso:{} max_offset:{}", lso, max);
+            //ntp_config.cfg.max_offset = model::prev_offset(maybe_lso.value());
+            //model::model_limits<model::offset>::max()
         }
     }
 

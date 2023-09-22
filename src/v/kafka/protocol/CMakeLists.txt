@@ -37,6 +37,7 @@ v_cc_library(
     ${msg_src}
     types.cc
     batch_reader.cc
+    batch_consumer.cc
     kafka_batch_adapter.cc
   DEPS
     Seastar::seastar
