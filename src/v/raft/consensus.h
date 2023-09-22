@@ -452,6 +452,12 @@ public:
 
     bool stopped() const { return _bg.is_closed(); }
 
+    /**
+     * Flushes underlying log only if there are more not flushed bytes than the
+     * requested threshold.
+     */
+    ss::future<> maybe_flush_log(size_t threshold_bytes);
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;

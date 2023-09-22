@@ -3544,4 +3544,21 @@ std::optional<uint8_t> consensus::get_under_replicated() const {
     return count;
 }
 
+ss::future<> consensus::maybe_flush_log(size_t threshold_bytes) {
+    // if there is nothing to do exit without grabbing an op_lock, this check is
+    // sloppy as we data can be in flight but it is ok since next check will
+    // detect it and flush log.
+    if (_not_flushed_bytes < threshold_bytes) {
+        co_return;
+    }
+    try {
+        auto holder = _bg.hold();
+        auto u = co_await _op_lock.get_units();
+        co_await flush_log();
+    } catch (const ss::gate_closed_exception&) {
+    } catch (const ss::broken_semaphore&) {
+        // ignore exception, group is shutting down.
+    }
+}
+
 } // namespace raft
