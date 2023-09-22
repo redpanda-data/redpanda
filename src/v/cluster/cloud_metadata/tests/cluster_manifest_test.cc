@@ -44,7 +44,8 @@ static constexpr std::string_view simple_manifest_json = R"json({
     "cluster_uuid": "01234567-89ab-cdef-0123-456789abcdef",
     "metadata_id": 7,
     "controller_snapshot_offset": 42,
-    "controller_snapshot_path": "cluster_metadata/01234567-89ab-cdef-0123-456789abcdef/0/controller.snapshot"
+    "controller_snapshot_path": "cluster_metadata/01234567-89ab-cdef-0123-456789abcdef/0/controller.snapshot",
+    "offsets_snapshots_by_partition": [["path0"], ["path1"], [], ["path2", "path3"]]
 })json";
 
 SEASTAR_THREAD_TEST_CASE(test_basic_serialization) {
@@ -59,6 +60,14 @@ SEASTAR_THREAD_TEST_CASE(test_basic_serialization) {
       "cluster_metadata/01234567-89ab-cdef-0123-456789abcdef/0/"
       "controller.snapshot",
       manifest.controller_snapshot_path);
+    std::vector<std::vector<ss::sstring>> expected_offset_paths{
+      {"path0"},
+      {"path1"},
+      {},
+      {"path2", "path3"},
+    };
+    BOOST_CHECK_EQUAL(
+      expected_offset_paths, manifest.offsets_snapshots_by_partition);
 
     auto [is, size] = manifest.serialize().get();
     iobuf buf;
@@ -84,6 +93,7 @@ static constexpr std::string_view simple_manifest_json_with_extra = R"json({
     "metadata_id": 7,
     "controller_snapshot_offset": 42,
     "controller_snapshot_path": "cluster_metadata/01234567-89ab-cdef-0123-456789abcdef/0/controller.snapshot",
+    "offsets_snapshots_by_partition": [["path0"], ["path1"], [], ["path2", "path3"]],
     "foo": "bar"
 })json";
 
