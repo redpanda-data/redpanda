@@ -627,7 +627,7 @@ func watchClusterHealth(ctx context.Context, adminAPI *admin.AdminAPI) (*admin.C
 		if err == nil && len(health.NodesDown) > 0 {
 			return &health, err
 		}
-		time.Sleep(2) // nolint:staticcheck // this is ok, we do not want hit the api too hard
+		time.Sleep(2 * time.Second)
 	}
 
 	return &health, err
