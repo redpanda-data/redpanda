@@ -159,7 +159,8 @@ class OpenMessagingBenchmark(Service):
                  driver="SIMPLE_DRIVER",
                  workload="SIMPLE_WORKLOAD",
                  node=None,
-                 worker_nodes=None):
+                 worker_nodes=None,
+                 topology="swarm"):
         """
         Creates a utility that can run OpenMessagingBenchmark (OMB) tests in ducktape. See OMB
         documentation for definitions of driver/workload files.
@@ -176,6 +177,7 @@ class OpenMessagingBenchmark(Service):
             self.nodes = [node]
 
         self._ctx = ctx
+        self.topology = topology
         self.redpanda = redpanda
         self.worker_nodes = worker_nodes
         self.workers = None
@@ -252,7 +254,7 @@ class OpenMessagingBenchmark(Service):
                     --workers {worker_nodes} \
                     --output {OpenMessagingBenchmark.RESULT_FILE} \
                     --service-version {rp_version} \
-                    -t swarm \
+                    -t {self.topology} \
                     {OpenMessagingBenchmark.WORKLOAD_FILE} >> {OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE} 2>&1 \
                     & disown"
 
