@@ -82,6 +82,8 @@ public:
 
     bool does_raft0_have_leader();
 
+    bool contains_node_health_report(model::node_id) const;
+
 private:
     /**
      * Struct used to track pending refresh request, it gives ability
