@@ -204,6 +204,14 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         co_return;
     }
 
+    // reset flags for the next two loops, segment_ms and compaction.
+    // since there are suspension points during the traversal of _logs_list, the
+    // algorithm is: mark the logs visited, rotate _logs_list, op, and loop
+    // until empty or reaching a marked log
+    for (auto& log_meta : _logs_list) {
+        log_meta.flags &= ~(bflags::compacted | bflags::lifetime_checked);
+    }
+
     /*
      * Apply segment ms will roll the active segment if it is old enough. This
      * is best done prior to running gc or compaction because it ensures that
@@ -215,12 +223,17 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
      *   compaction is already sequential when this will be unified with
      *   compaction, the whole task could be made concurrent
      */
-    for (auto& log_meta : _logs_list) {
-        co_await log_meta.handle->apply_segment_ms();
-    }
+    while (!_logs_list.empty()
+           && is_not_set(_logs_list.front().flags, bflags::lifetime_checked)) {
+        if (_abort_source.abort_requested()) {
+            co_return;
+        }
 
-    for (auto& log_meta : _logs_list) {
-        log_meta.flags &= ~bflags::compacted;
+        auto& current_log = _logs_list.front();
+        _logs_list.shift_forward();
+
+        current_log.flags |= bflags::lifetime_checked;
+        co_await current_log.handle->apply_segment_ms();
     }
 
     while ((_logs_list.front().flags & bflags::compacted) == bflags::none) {
