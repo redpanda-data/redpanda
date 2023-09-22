@@ -60,7 +60,7 @@ public:
 
     ss::future<segment_reader_units> get_segment_reader_units();
 
-    ss::future<ssx::semaphore_units> get_partition_reader_units(size_t);
+    ss::future<ssx::semaphore_units> get_partition_reader_units();
 
     ss::future<segment_units> get_segment_units();
 
@@ -68,25 +68,30 @@ public:
 
     ts_read_path_probe& get_read_path_probe();
 
+    /// Acquire hydration units
+    ///
+    /// The undrlying semaphore limits number of parallel hydrations
+    ss::future<ssx::semaphore_units> get_hydration_units(size_t n);
+
 private:
     /// Timer use to periodically evict stale segment readers
     ss::timer<ss::lowres_clock> _stm_timer;
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
 
-    config::binding<uint32_t> _max_partitions_per_shard;
     config::binding<std::optional<uint32_t>> _max_segment_readers_per_shard;
-    config::binding<std::optional<uint32_t>> _max_partition_readers_per_shard;
-    config::binding<std::optional<uint32_t>> _max_segments_per_shard;
+    config::binding<std::optional<uint32_t>>
+      _max_concurrent_hydrations_per_shard;
+    config::binding<size_t> _storage_read_buffer_size;
+    config::binding<int16_t> _storage_read_readahead_count;
 
-    size_t max_segment_readers() const;
-    size_t max_partition_readers() const;
-    size_t max_segments() const;
+    size_t max_memory_utilization() const;
+    size_t max_parallel_hydrations() const;
 
     /// How many remote_segment_batch_reader instances exist
     size_t current_segment_readers() const;
 
     /// How many partition_record_batch_reader_impl instances exist
-    size_t current_partition_readers() const;
+    size_t current_ongoing_hydrations() const;
 
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;
@@ -137,23 +142,8 @@ private:
     /// Gate for background eviction
     ss::gate _gate;
 
-    /// Size limit on the cache of remote_segment_batch_reader instances,
-    /// per shard.  These are limited because they consume a lot of memory
-    /// with their read buffer.
-    adjustable_semaphore _segment_reader_units;
-
-    /// Concurrency limit on how many partition_record_batch_reader_impl may be
-    /// instantiated at once on one shard.  This is a de-facto limit on how many
-    /// concurrent reads may be done.  We need this in addition to
-    /// segment_reader_units, because that is a soft limit (guides trimming),
-    /// whereas this is a hard limit (readers will not be created unless units
-    /// are available), and can be enforced very early in the lifetime of a
-    /// kafka fetch/timequery request.
-    adjustable_semaphore _partition_reader_units;
-
-    /// Concurrency limit on how many segments may be materialized at
-    /// once: this will trigger faster trimming under pressure.
-    adjustable_semaphore _segment_units;
+    adjustable_semaphore _mem_units;
+    adjustable_semaphore _hydration_units;
 
     /// Size of the materialized_manifest_cache
     config::binding<size_t> _manifest_meta_size;

@@ -66,6 +66,8 @@ struct materialized_segment_state {
     ss::lowres_clock::time_point atime;
     /// List hook for the list of all materalized segments
     intrusive_list_hook _hook;
+    /// Set to true if the memory allocation overshot the threshold
+    bool overcommit{false};
 
     /// Removes object from list that it is part of. Used to isolate the object
     /// before stopping it, so that the stop method is only called from one

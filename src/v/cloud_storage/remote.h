@@ -497,6 +497,7 @@ private:
       const try_consume_stream& cons_str,
       retry_chain_node& parent,
       const std::string_view stream_label,
+      bool acquire_hydration_units,
       DownloadLatencyMeasurementFn download_latency_measurement,
       FailedDownloadMetricFn failed_download_metric,
       DownloadBackoffMetricFn download_backoff_metric,

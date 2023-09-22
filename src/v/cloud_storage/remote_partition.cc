@@ -1059,6 +1059,11 @@ void remote_partition::return_segment_reader(
     }
 }
 
+size_t remote_partition::reader_mem_use_estimate() noexcept {
+    return sizeof(storage::translating_reader)
+           + sizeof(partition_record_batch_reader_impl);
+}
+
 ss::future<storage::translating_reader> remote_partition::make_reader(
   storage::log_reader_config config,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -1069,7 +1074,7 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       config,
       _segments.size());
 
-    auto units = co_await _api.materialized().get_partition_reader_units(1);
+    auto units = co_await _api.materialized().get_partition_reader_units();
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
       get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(

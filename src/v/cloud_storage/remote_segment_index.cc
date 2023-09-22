@@ -39,6 +39,11 @@ offset_index::offset_index(
   , _time_index(initial_time.value())
   , _min_file_pos_step(file_pos_step) {}
 
+size_t offset_index::estimate_memory_use() const {
+    return _file_index.mem_use() + _rp_index.mem_use() + _kaf_index.mem_use()
+           + _time_index.mem_use();
+}
+
 void offset_index::add(
   model::offset rp_offset,
   kafka::offset kaf_offset,

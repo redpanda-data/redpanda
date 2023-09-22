@@ -209,7 +209,7 @@ remote_probe::remote_probe(
               .aggregate({sm::shard_label}),
             sm::make_gauge(
               "partition_readers",
-              [&ms] { return ms.current_partition_readers(); },
+              [&ms] { return ms.current_ongoing_hydrations(); },
               sm::description(
                 "Number of partition reader instances (number of current "
                 "fetch/timequery requests reading from tiered storage)"))

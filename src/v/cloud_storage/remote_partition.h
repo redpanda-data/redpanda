@@ -91,6 +91,8 @@ public:
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
+    static size_t reader_mem_use_estimate() noexcept;
+
     /// Look up offset from timestamp
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
