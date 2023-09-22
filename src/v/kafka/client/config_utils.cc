@@ -66,6 +66,14 @@ create_client_credentials(
     co_return new_cfg;
 }
 
+void set_client_credentials(
+  kafka::client::configuration const& client_cfg,
+  kafka::client::client& client) {
+    client.config().sasl_mechanism.set_value(client_cfg.sasl_mechanism());
+    client.config().scram_username.set_value(client_cfg.scram_username());
+    client.config().scram_password.set_value(client_cfg.scram_password());
+}
+
 ss::future<> set_client_credentials(
   kafka::client::configuration const& client_cfg,
   ss::sharded<kafka::client::client>& client) {

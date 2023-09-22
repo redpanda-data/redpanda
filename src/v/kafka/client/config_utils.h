@@ -31,6 +31,10 @@ create_client_credentials(
   kafka::client::configuration const& client_cfg,
   security::acl_principal principal);
 
+void set_client_credentials(
+  kafka::client::configuration const& client_cfg,
+  kafka::client::client& client);
+
 ss::future<> set_client_credentials(
   kafka::client::configuration const& client_cfg,
   ss::sharded<kafka::client::client>& client);
