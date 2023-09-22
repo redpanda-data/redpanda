@@ -200,10 +200,6 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         return (var & flag) != flag;
     };
 
-    if (_logs_list.empty()) {
-        co_return;
-    }
-
     // reset flags for the next two loops, segment_ms and compaction.
     // since there are suspension points during the traversal of _logs_list, the
     // algorithm is: mark the logs visited, rotate _logs_list, op, and loop
