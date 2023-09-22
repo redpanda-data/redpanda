@@ -196,6 +196,10 @@ ss::future<>
 log_manager::housekeeping_scan(model::timestamp collection_threshold) {
     using bflags = log_housekeeping_meta::bitflags;
 
+    static constexpr auto is_not_set = [](bflags var, auto flag) {
+        return (var & flag) != flag;
+    };
+
     if (_logs_list.empty()) {
         co_return;
     }
