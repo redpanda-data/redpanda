@@ -1,0 +1,10 @@
+{{- $root := . }}
+{{- range $path, $_ :=  .Files.Glob  "**.yaml" }}
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: redpanda-{{ substr 0 2 (base $path) }}
+commands:
+  - script: helm test redpanda-{{ substr 0 2 (base $path) }} -n redpanda
+{{- end }}

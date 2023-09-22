@@ -1,0 +1,25 @@
+{{- $root := . }}
+{{- range $path, $_ :=  .Files.Glob  "**.yaml" }}
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  finalizers:
+    - operator.redpanda.com/finalizer
+  name: redpanda-{{ substr 0 2 (base $path) }}
+status:
+  conditions:
+    - message: Redpanda reconciliation succeeded
+      reason: RedpandaClusterDeployed
+      status: "True"
+      type: Ready
+  helmRelease: redpanda-{{ substr 0 2 (base $path) }}
+  helmReleaseReady: true
+  helmRepository: redpanda-repository
+  helmRepositoryReady: true
+#---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: ../../../hack/get-redpanda-info.sh redpanda ../../_e2e_artifacts_v2
+{{- end }}
