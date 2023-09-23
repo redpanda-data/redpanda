@@ -9,6 +9,8 @@
 
 #include "kafka/server/group_manager.h"
 
+#include "cluster/cloud_metadata/error_outcome.h"
+#include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/partition_manager.h"
@@ -35,8 +37,14 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
 #include <system_error>
+
+using cluster::cloud_metadata::group_offsets;
+using cluster::cloud_metadata::group_offsets_snapshot;
+using cluster::cloud_metadata::group_offsets_snapshot_result;
 
 namespace kafka {
 
@@ -613,6 +621,62 @@ ss::future<> group_manager::reload_groups() {
         futures.push_back(std::move(f));
     }
     co_await ss::when_all_succeed(futures.begin(), futures.end());
+}
+
+ss::future<group_offsets_snapshot_result>
+group_manager::snapshot_groups(const model::ntp& ntp) {
+    auto attached_partition = _partitions.find(ntp);
+    if (attached_partition == _partitions.end()) {
+        co_return cluster::cloud_metadata::error_outcome::ntp_not_found;
+    }
+    // Avoid overlapping with concurrent reloads of the partition.
+    auto units = co_await ss::get_units(
+      attached_partition->second->sem, 1, attached_partition->second->as);
+    auto& catchup = attached_partition->second->catchup_lock;
+    co_await catchup->read_lock();
+    auto unlock = ss::defer([&catchup] { catchup->read_unlock(); });
+    if (!attached_partition->second->partition->is_leader()) {
+        co_return cluster::cloud_metadata::error_outcome::not_ready;
+    }
+    if (attached_partition->second->loading) {
+        co_return cluster::cloud_metadata::error_outcome::not_ready;
+    }
+    group_offsets_snapshot snap;
+    snap.offsets_topic_pid = ntp.tp.partition;
+
+    // Make a copy of the groups that we're about to snapshot, to avoid racing
+    // with removals during iteration.
+    fragmented_vector<std::pair<group_id, group_ptr>> groups;
+    for (const auto& [group_id, group] : _groups) {
+        if (group->partition()->ntp().tp.partition != ntp.tp.partition) {
+            continue;
+        }
+        groups.emplace_back(std::make_pair(group_id, group));
+    }
+    vlog(klog.debug, "Snapshotting {} groups from {}", groups.size(), ntp);
+    for (const auto& [group_id, group] : groups) {
+        group_offsets go;
+        go.group_id = group_id();
+        absl::btree_map<
+          model::topic,
+          fragmented_vector<group_offsets::partition_offset>>
+          offsets;
+        for (const auto& [tp, o] : group->offsets()) {
+            offsets[tp.topic].emplace_back(
+              tp.partition, model::offset_cast(o->metadata.offset));
+        }
+        for (auto& [t, ps] : offsets) {
+            go.offsets.emplace_back(t, std::move(ps));
+        }
+        vlog(
+          klog.debug,
+          "Snapshotting offsets for {} topics from group {}",
+          go.offsets.size(),
+          go.group_id);
+        snap.groups.emplace_back(std::move(go));
+        co_await ss::maybe_yield();
+    }
+    co_return snap;
 }
 
 ss::future<> group_manager::handle_partition_leader_change(

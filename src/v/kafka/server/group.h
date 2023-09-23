@@ -521,6 +521,8 @@ public:
         return std::nullopt;
     }
 
+    const auto& offsets() const { return _offsets; }
+
     void complete_offset_commit(
       const model::topic_partition& tp, const offset_metadata& md);
 

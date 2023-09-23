@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/fwd.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
@@ -177,6 +178,12 @@ public:
       delete_groups(std::vector<std::pair<model::ntp, group_id>>);
 
     ss::future<> reload_groups();
+
+    // Returns the groups being managed by the attached partition of the given
+    // NTP, returning an error if the partition is not serving groups on this
+    // shard (e.g. not leader, still loading groups, etc).
+    ss::future<cluster::cloud_metadata::group_offsets_snapshot_result>
+    snapshot_groups(const model::ntp&);
 
 public:
     error_code validate_group_status(
