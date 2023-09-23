@@ -1499,6 +1499,12 @@ void application::wire_up_redpanda_services(
       std::ref(metadata_cache),
       model::kafka_consumer_offsets_nt)
       .get();
+
+    offsets_recovery_manager
+      = ss::make_shared<cluster::cloud_metadata::offsets_recovery_manager>(
+        std::ref(offsets_recovery_router),
+        std::ref(coordinator_ntp_mapper),
+        std::ref(controller->get_topics_frontend()));
     syschecks::systemd_message("Creating kafka group router").get();
     construct_service(
       group_router,

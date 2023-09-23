@@ -16,6 +16,8 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/cloud_metadata/offsets_lookup.h"
 #include "cluster/cloud_metadata/offsets_recoverer.h"
+#include "cluster/cloud_metadata/offsets_recovery_manager.h"
+#include "cluster/cloud_metadata/offsets_recovery_router.h"
 #include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/cloud_metadata/offsets_uploader.h"
 #include "cluster/cloud_metadata/offsets_recovery_router.h"
@@ -137,6 +139,10 @@ public:
     ss::sharded<cluster::cloud_metadata::offsets_recovery_router>
       offsets_recovery_router;
 
+    ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_manager>
+      offsets_recovery_manager;
+
+    // Services required for consumer offsets snapshotting.
     ss::sharded<cluster::cloud_metadata::offsets_uploader> offsets_uploader;
     ss::sharded<cluster::cloud_metadata::offsets_upload_router>
       offsets_upload_router;
