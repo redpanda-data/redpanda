@@ -27,4 +27,5 @@ apt-get install -qq \
   llvm \
   python3-pip \
   libzstd-dev \
-  pkg-config
+  pkg-config \
+  faketime
