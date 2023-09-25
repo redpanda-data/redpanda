@@ -745,12 +745,23 @@ make_concatenated_segment(
     if (co_await ss::file_exists(index_name.string())) {
         co_await ss::remove_file(index_name.string());
     }
+    // start the new index with the newest of the broker_timestamps from the
+    // segments
+    auto new_broker_timestamp = [&] {
+        // invariants: segments is not empty;
+        auto seg_it = *std::ranges::max_element(
+          segments, std::less<>{}, [](auto& seg) {
+              return seg->index().broker_timestamp();
+          });
+        return seg_it->index().broker_timestamp();
+    }();
     segment_index index(
       index_name,
       offsets.base_offset,
       segment_index::default_data_buffer_step,
       feature_table,
-      cfg.sanitizer_config);
+      cfg.sanitizer_config,
+      new_broker_timestamp);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(
