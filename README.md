@@ -14,6 +14,7 @@ Redpanda is a streaming data platform for developers. Kafka® API-compatible. Zo
 
 # Community
 
+
 [Slack](https://redpanda.com/slack) is the main way the community interacts with one another in real time :)
 
 [Github Discussion](https://github.com/redpanda-data/redpanda/discussions) is preferred for longer, async, thoughtful discussions
