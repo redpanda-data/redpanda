@@ -11,6 +11,8 @@
 
 #include "cluster/cloud_metadata/offsets_lookup.h"
 #include "cluster/cloud_metadata/offsets_lookup_rpc_types.h"
+#include "cluster/cloud_metadata/offsets_recovery_router.h"
+#include "cluster/cloud_metadata/offsets_recovery_rpc_types.h"
 #include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/offsets_recovery_rpc_service.h"
 #include "config/configuration.h"
@@ -23,9 +25,11 @@ public:
       ss::scheduling_group sg,
       ss::smp_service_group ssg,
       ss::sharded<cluster::cloud_metadata::offsets_lookup>& ol,
+      ss::sharded<cluster::cloud_metadata::offsets_recovery_router>& orr,
       ss::sharded<cluster::cloud_metadata::offsets_upload_router>& our)
       : offsets_recovery_service(sg, ssg)
       , _offsets_lookup(ol)
+      , _offsets_recovery_router(orr)
       , _offsets_upload_router(our)
       , _metadata_timeout_ms(
           config::shard_local_cfg()
@@ -43,8 +47,17 @@ public:
           std::move(req), std::move(ntp), _metadata_timeout_ms());
     }
 
+    ss::future<offsets_recovery_reply> offsets_recovery(
+      offsets_recovery_request&& req, rpc::streaming_context& ctx) override {
+        auto ntp = req.offsets_ntp;
+        co_return co_await _offsets_recovery_router.local().process_or_dispatch(
+          std::move(req), std::move(ntp), 30s);
+    }
+
 private:
     ss::sharded<cluster::cloud_metadata::offsets_lookup>& _offsets_lookup;
+    ss::sharded<cluster::cloud_metadata::offsets_recovery_router>&
+      _offsets_recovery_router;
     ss::sharded<cluster::cloud_metadata::offsets_upload_router>&
       _offsets_upload_router;
 

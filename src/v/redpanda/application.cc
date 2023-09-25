@@ -1473,6 +1473,26 @@ void application::wire_up_redpanda_services(
       &kafka::make_consumer_offsets_serializer,
       kafka::enable_group_metrics::yes)
       .get();
+    construct_service(
+      offsets_recoverer,
+      node_id,
+      std::ref(cloud_storage_api),
+      std::ref(shadow_index_cache),
+      std::ref(offsets_lookup),
+      std::ref(controller->get_partition_leaders()),
+      std::ref(_connection_cache),
+      std::ref(_group_manager))
+      .get();
+    construct_service(
+      offsets_recovery_router,
+      std::ref(offsets_recoverer),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      node_id)
+      .get();
+
     syschecks::systemd_message("Creating kafka group shard mapper").get();
     construct_service(
       coordinator_ntp_mapper,
@@ -2236,6 +2256,7 @@ void application::start_runtime_services(
               sched_groups.archival_upload(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(offsets_lookup),
+              std::ref(offsets_recovery_router),
               std::ref(offsets_upload_router)));
           runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             sched_groups.raft_sg(),
