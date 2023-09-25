@@ -19,6 +19,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/bootstrap_service.h"
+#include "cluster/cloud_metadata/offsets_recovery_service.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/cluster_uuid.h"
@@ -1200,6 +1201,13 @@ void application::wire_up_redpanda_services(
         _archival_upload_housekeeping
           .invoke_on_all(&archival::upload_housekeeping_service::start)
           .get();
+
+        construct_service(
+          offsets_uploader,
+          cloud_configs.local().bucket_name,
+          std::ref(_group_manager),
+          std::ref(cloud_storage_api))
+          .get();
     }
 
     syschecks::systemd_message("Creating tm_stm_cache_manager").get();
@@ -1258,6 +1266,16 @@ void application::wire_up_redpanda_services(
     controller->wire_up().get0();
 
     if (archival_storage_enabled()) {
+        construct_service(
+          offsets_upload_router,
+          std::ref(offsets_uploader),
+          std::ref(shard_table),
+          std::ref(metadata_cache),
+          std::ref(_connection_cache),
+          std::ref(controller->get_partition_leaders()),
+          node_id)
+          .get();
+
         construct_service(
           _archival_purger,
           ss::sharded_parameter(
@@ -2206,6 +2224,12 @@ void application::start_runtime_services(
     _rpc
       .invoke_on_all([this, start_raft_rpc_early](rpc::rpc_server& s) {
           std::vector<std::unique_ptr<rpc::service>> runtime_services;
+          runtime_services.push_back(
+            std::make_unique<
+              cluster::cloud_metadata::offsets_recovery_rpc_service>(
+              sched_groups.archival_upload(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(offsets_upload_router)));
           runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             sched_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
