@@ -2258,11 +2258,10 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     }
 
     // Drop out if we have no work to do, avoid doing things like the following
-    // manifest flushing unnecessarily. This is potentially problematic since,
-    // we've already checked that the clean offset is greater than the start
-    // offset.
+    // manifest flushing unnecessarily. This is problematic since, we've already
+    // checked that the clean offset is greater than the start offset.
     if (objects_to_remove.empty() && manifests_to_remove.empty()) {
-        vlog(_rtclog.warn, "Nothing to remove in archive GC");
+        vlog(_rtclog.error, "Nothing to remove in archive GC");
         co_return;
     }
 
