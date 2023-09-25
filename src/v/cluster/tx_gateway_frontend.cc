@@ -1057,20 +1057,25 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
 
         // similar to double-checked locking pattern
         // it protects concurrent access to oldest_tx
-        if (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
+        while (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
             auto old_tx_opt = stm->oldest_tx();
             if (!old_tx_opt) {
                 vlog(
                   txlog.warn,
-                  "oldest_tx shouldn't return empty when tx cache is at "
-                  "capacity");
+                  "oldest_tx should return oldest tx when the tx cache size "
+                  "({}) is beyond capacity ({})",
+                  stm->tx_cache_size(),
+                  _max_transactions_per_coordinator());
                 co_return init_tm_tx_reply{tx_errc::not_coordinator};
             }
 
             auto old_tx = old_tx_opt.value();
             vlog(
               txlog.info,
-              "tx cache is at capacity; expiring oldest tx with id:{}",
+              "tx cache size ({}) is beyond capacity ({}); expiring oldest tx "
+              "(tx.id={})",
+              stm->tx_cache_size(),
+              _max_transactions_per_coordinator(),
               old_tx.id);
             auto tx_units = co_await stm->lock_tx(old_tx.id, "init_tm_tx");
 
@@ -1098,7 +1103,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
             }
             tx_units.return_all();
         }
-
+        vlog(txlog.info, "tx cache size is reduced");
         init_units.return_all();
     }
 
