@@ -8,11 +8,15 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_storage/remote_file.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/error_outcome.h"
+#include "cluster/cloud_metadata/offsets_snapshot.h"
+#include "cluster/cloud_metadata/offsets_uploader.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
@@ -99,16 +103,25 @@ public:
     // Sends out requests creating the given groups, each with one member,
     // returning the member IDs for each.
     ss::future<absl::flat_hash_map<kafka::group_id, kafka::member_id>>
-    create_groups(kc::client& client, std::vector<kafka::group_id> groups) {
+    create_groups(
+      kc::client& client,
+      std::vector<kafka::group_id> groups,
+      redpanda_thread_fixture* second_fixture = nullptr) {
         std::vector<ss::future<kafka::member_id>> ms;
         ms.reserve(groups.size());
         for (const auto& g : groups) {
             ms.emplace_back(client.create_consumer(g));
         }
         auto res = co_await ss::when_all_succeed(ms.begin(), ms.end());
-        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
-            return app._group_manager.local().list_groups().second.size()
-                   == groups.size();
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&, second_fixture] {
+            size_t listed_groups
+              = app._group_manager.local().list_groups().second.size();
+            if (second_fixture) {
+                listed_groups += second_fixture->app._group_manager.local()
+                                   .list_groups()
+                                   .second.size();
+            }
+            return listed_groups == groups.size();
         });
         absl::flat_hash_map<kafka::group_id, kafka::member_id> ret;
         for (int i = 0; i < groups.size(); i++) {
@@ -209,6 +222,58 @@ public:
       const absl::flat_hash_map<model::ntp, size_t>& groups_per_ntp) {
         RPTEST_REQUIRE_EVENTUALLY_CORO(
           5s, [&] { return validate_group_counts_exactly(groups_per_ntp); });
+    }
+
+    // Uploads the offsets from each offsets topic partition, returning the
+    // resulting remote paths.
+    ss::future<std::vector<cloud_storage::remote_segment_path>>
+    upload_offsets() {
+        retry_chain_node retry_node(
+          never_abort, ss::lowres_clock::time_point::max(), 10ms);
+        offsets_uploader uploader(
+          bucket, app._group_manager, app.cloud_storage_api);
+        std::vector<cloud_storage::remote_segment_path> remote_paths;
+        for (const auto& ntp : offset_ntps) {
+            auto res = co_await uploader.upload(
+              cluster_uuid, ntp, cluster_metadata_id{0}, retry_node);
+            BOOST_REQUIRE(!res.has_error());
+            for (auto& p : res.value().paths) {
+                remote_paths.emplace_back(std::move(p));
+            }
+        }
+        co_return remote_paths;
+    }
+
+    ss::future<> validate_downloaded_offsets(
+      redpanda_thread_fixture& fixture,
+      const absl::flat_hash_map<kafka::group_id, int>& committed_offsets,
+      const std::vector<cloud_storage::remote_segment_path>& remote_paths) {
+        retry_chain_node retry_node(
+          never_abort, ss::lowres_clock::time_point::max(), 10ms);
+        absl::flat_hash_map<kafka::group_id, int> downloaded_offsets;
+        for (const auto& p : remote_paths) {
+            cloud_storage::remote_file rf(
+              fixture.app.cloud_storage_api.local(),
+              fixture.app.shadow_index_cache.local(),
+              bucket,
+              p,
+              retry_node,
+              "offsets file");
+            auto f = co_await rf.hydrate_readable_file();
+            auto f_size = co_await f.size();
+            ss::file_input_stream_options options;
+            auto input = ss::make_file_input_stream(f, options);
+            auto snap_buf_parser = iobuf_parser{
+              co_await read_iobuf_exactly(input, f_size)};
+            auto snapshot = serde::read<group_offsets_snapshot>(
+              snap_buf_parser);
+            for (const auto& g : snapshot.groups) {
+                const auto gid = kafka::group_id{g.group_id};
+                BOOST_REQUIRE_EQUAL(1, g.offsets.size());
+                downloaded_offsets[gid] = g.offsets[0].partitions[0].offset();
+            }
+        }
+        BOOST_REQUIRE_EQUAL(committed_offsets, downloaded_offsets);
     }
 
 protected:
@@ -337,4 +402,70 @@ FIXTURE_TEST(test_snapshot_group_removal, offsets_recovery_fixture) {
     }
     // Assert that we eventually get to the newly subtracted counts.
     validate_group_counts_eventually(groups_per_ntp).get();
+}
+
+FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+
+    // Commit a bunch of offsets.
+    auto committed_offsets = commit_random_offsets(client, members).get();
+
+    // Upload the offsets.
+    auto remote_paths = upload_offsets().get();
+
+    // Download each snapshot and collect their committed offsets, ensuring
+    // they are equivalent to what we started with.
+    validate_downloaded_offsets(*this, committed_offsets, remote_paths).get();
+}
+
+FIXTURE_TEST(test_upload_dispatch_to_leaders, offsets_recovery_fixture) {
+    make_partitions(1).get();
+
+    // Start a second fixture. Note it's unimportant for the partitions to be
+    // hosted by particular nodes; they just need to exist so we can commit
+    // offsets referencing them.
+    auto other_fx = start_second_fixture();
+    RPTEST_REQUIRE_EVENTUALLY(3s, [this] {
+        return app.controller->get_members_table().local().node_ids().size()
+               == 2;
+    });
+
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups, other_fx.get()).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+
+    auto committed_offsets = commit_random_offsets(client, members).get();
+
+    // Dispatch upload requests from both fixtures. THe resulting uploaded
+    // snapshots should be identical to what was committed.
+    int meta_id = 0;
+    for (auto* fx :
+         std::vector<redpanda_thread_fixture*>{this, other_fx.get()}) {
+        std::vector<cloud_storage::remote_segment_path> remote_paths;
+        for (const auto& ntp : offset_ntps) {
+            offsets_upload_request upload_req;
+            upload_req.offsets_ntp = ntp;
+            upload_req.meta_id = cluster::cloud_metadata::cluster_metadata_id{
+              meta_id++};
+            auto upload_resp = fx->app.offsets_upload_router.local()
+                                 .process_or_dispatch(upload_req, ntp, 5s)
+                                 .get();
+            BOOST_REQUIRE_EQUAL(cluster::errc::success, upload_resp.ec);
+            BOOST_REQUIRE(!upload_resp.uploaded_paths.empty());
+            for (const auto& p : upload_resp.uploaded_paths) {
+                remote_paths.emplace_back(p);
+            }
+        }
+        validate_downloaded_offsets(*fx, committed_offsets, remote_paths).get();
+    }
 }
