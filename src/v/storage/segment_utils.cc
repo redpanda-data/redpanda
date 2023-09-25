@@ -385,6 +385,9 @@ ss::future<storage::index_state> do_copy_segment_data(
   ss::rwlock::holder rw_lock_holder,
   storage_resources& resources,
   offset_delta_time apply_offset) {
+    // preserve broker_timestamp from the segment's index
+    auto old_broker_timestamp = seg->index().broker_timestamp();
+
     // find out which offsets will survive compaction
     auto idx_path = seg->reader().path().to_compacted_index();
     auto compacted_reader = make_file_backed_compacted_reader(
@@ -424,17 +427,24 @@ ss::future<storage::index_state> do_copy_segment_data(
           apply_offset);
     };
 
-    // create the segment, return the in-memory index for the new segment
-    co_return co_await create_segment_full_reader(
-      seg, cfg, pb, std::move(rw_lock_holder))
-      .consume(copy_reducer(), model::no_timeout)
-      .finally([appender = std::move(appender)]() mutable {
-          return appender->close()
-            .handle_exception([](std::exception_ptr e) {
-                vlog(gclog.error, "Error copying index to new segment:{}", e);
-            })
-            .finally([_ = std::move(appender)] {});
-      });
+    // create the segment, get the in-memory index for the new segment
+    auto new_index = co_await create_segment_full_reader(
+                       seg, cfg, pb, std::move(rw_lock_holder))
+                       .consume(copy_reducer(), model::no_timeout)
+                       .finally([appender = std::move(appender)]() mutable {
+                           return appender->close()
+                             .handle_exception([](std::exception_ptr e) {
+                                 vlog(
+                                   gclog.error,
+                                   "Error copying index to new segment:{}",
+                                   e);
+                             })
+                             .finally([_ = std::move(appender)] {});
+                       });
+
+    // restore broker timestamp
+    new_index.broker_timestamp = old_broker_timestamp;
+    co_return new_index;
 }
 
 model::record_batch_reader create_segment_full_reader(
