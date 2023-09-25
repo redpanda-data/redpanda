@@ -1228,8 +1228,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
         // similar to double-checked locking pattern
         // it protects concurrent access to oldest_tx
         if (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
-            auto tx_opt = stm->oldest_tx();
-            if (!tx_opt) {
+            auto old_tx_opt = stm->oldest_tx();
+            if (!old_tx_opt) {
                 vlog(
                   txlog.warn,
                   "oldest_tx shouldn't return empty when tx cache is at "
@@ -1237,23 +1237,23 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
                 co_return init_tm_tx_reply{tx_errc::not_coordinator};
             }
 
-            auto tx = tx_opt.value();
+            auto old_tx = old_tx_opt.value();
             vlog(
               txlog.info,
               "tx cache is at capacity; expiring oldest tx with id:{}",
-              tx.id);
-            auto tx_units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+              old_tx.id);
+            auto tx_units = co_await stm->lock_tx(old_tx.id, "init_tm_tx");
             auto ec = co_await do_expire_old_tx(
               stm,
               term,
-              tx.id,
+              old_tx.id,
               config::shard_local_cfg().create_topic_timeout_ms(),
               true);
             if (ec != tx_errc::none) {
                 vlog(
                   txlog.trace,
-                  "do_expire_old_tx with tx_id={} returned ec={}",
-                  tx.id,
+                  "expiring old tx (tx.id={}) failed with ec={}",
+                  old_tx.id,
                   ec);
                 co_return init_tm_tx_reply{tx_errc::not_coordinator};
             }
