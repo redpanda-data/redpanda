@@ -220,6 +220,7 @@ v_cc_library(
   SRCS
     cloud_metadata/offsets_lookup.cc
     cloud_metadata/offsets_lookup_batcher.cc
+    cloud_metadata/offsets_recoverer.cc
     cloud_metadata/offsets_uploader.cc
   DEPS
     v::model
