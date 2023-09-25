@@ -213,3 +213,15 @@ v_cc_library(
 add_subdirectory(tests)
 add_subdirectory(cloud_metadata/tests)
 add_subdirectory(self_test/tests)
+
+# Separate library for recovery bits that may depend on Kafka subsystems.
+v_cc_library(
+  NAME kafka_recovery
+  SRCS
+    cloud_metadata/offsets_uploader.cc
+  DEPS
+    v::model
+    v::cluster
+    v::cloud_storage
+    v::kafka
+  )
