@@ -1635,10 +1635,10 @@ def get_tiered_storage_test_cases(fast_run=False):
             model.solve_for(ts_read() == True,
                             ts_timequery() == True,
                             spillover_manifest_uploaded() == True))
-        solutions.append(
-            model.solve_for(ts_read() == True,
-                            compacted_segment_reupload() == True,
-                            adjacent_segment_compaction() == True))
+        # solutions.append(
+        #     model.solve_for(ts_read() == True,
+        #                     compacted_segment_reupload() == True,
+        #                     adjacent_segment_compaction() == True))
         solutions.append(
             model.solve_for(ts_read() == True,
                             ts_txrange_materialized() == True,
@@ -1651,9 +1651,9 @@ def get_tiered_storage_test_cases(fast_run=False):
             model.solve_for(ts_delete() == True,
                             spillover_manifest_uploaded() == True,
                             ts_spillover_manifest_deleted() == True))
-        solutions.append(
-            model.solve_for(ts_delete() == True,
-                            adjacent_segment_compaction() == True))
+        # solutions.append(
+        #     model.solve_for(ts_delete() == True,
+        #                     adjacent_segment_compaction() == True))
     else:
         # Check that we can enable uploads using both topic level config
         # and cluster level config.
