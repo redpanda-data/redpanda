@@ -48,7 +48,7 @@ def get_tier_name(config):
         if config['config_profile_name'] == "default":
             return CloudTierName(TIER_DEFAULTS[_provider])
         else:
-            return CloudTierName(_provider)
+            return CloudTierName(config['config_profile_name'])
 
 
 class CloudTierName(Enum):

@@ -14,7 +14,7 @@ import re
 import time
 import json
 
-from ducktape.mark import ignore, ok_to_fail
+from ducktape.mark import ignore, ok_to_fail, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
@@ -163,6 +163,22 @@ def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
         ) >= tier_cfg.egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate}"
 
 
+@contextmanager
+def omb_runner(context, redpanda, driver, workload, omb_config):
+    bench = OpenMessagingBenchmark(context, redpanda, driver,
+                                   (workload, omb_config))
+    bench.start()
+    try:
+        benchmark_time_min = bench.benchmark_time() + 1
+        bench.wait(timeout_sec=benchmark_time_min * 60)
+        yield bench
+    except:
+        redpanda.logger.exception("Exception within OMB")
+        raise
+    finally:
+        bench.stop()
+
+
 def get_cloud_globals(globals):
     _config = {}
     if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
@@ -217,18 +233,33 @@ class HighThroughputTest(RedpandaTest):
         test_ctx.logger.info(f"Cloud tier {cloud_tier}: {self.tier_config}")
 
         self.rpk = RpkTool(self.redpanda)
-        self.topics = [
-            TopicSpec(partition_count=self.tier_config.partitions_upper_limit,
-                      replication_factor=3,
-                      retention_bytes=-1)
-        ]
+
+        # resources
+        self.resources = []
+
+    def _add_resource_tracking(self, type, resource):
+        self.resources.append({"type": type, "spec": resource})
+
+    def _create_default_topics(self):
+        _spec = TopicSpec(
+            partition_count=self.tier_config.partitions_upper_limit,
+            replication_factor=3,
+            retention_bytes=-1)
+        self.topics = [_spec]
+        self._create_initial_topics()
+        self._add_resource_tracking("topic", _spec)
+
+    def _clean_resources(self):
+        for item in self.resources:
+            if item['type'] == 'topic':
+                self.rpk.delete_topic(item['spec']['name'])
 
     def tearDown(self):
         # These tests may run on cloud ec2 instances where between each test
         # the same cluster is used. Therefore state between runs will still exist,
         # remove the topic after each test run to clean out old state.
         if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in self._ctx.globals:
-            self.rpk.delete_topic(self.topic)
+            self._clean_resources()
 
     def load_many_segments(self):
         """
@@ -343,6 +374,8 @@ class HighThroughputTest(RedpandaTest):
         producer_kwargs[
             'messages_per_second_per_producer'] = messages_per_sec_per_producer
 
+        # create default topics
+        self._create_default_topics()
         # Initialize all 3 nodes with proper values
         swarm = []
         for idx in range(len(self.cluster.nodes), 0, -1):
@@ -444,6 +477,9 @@ class HighThroughputTest(RedpandaTest):
         - stop and start single node, various scenarios
         - isolate and restore a node
         """
+        # create default topics
+        self._create_default_topics()
+
         # Generate a realistic number of segments per partition.
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
@@ -523,6 +559,9 @@ class HighThroughputTest(RedpandaTest):
         Make segments replicate to the cloud, then disrupt S3 connectivity
         and restore it
         """
+        # create default topics
+        self._create_default_topics()
+
         segment_size = 16 * MiB  # Min segment size across all tiers
         self.adjust_topic_segment_properties(
             segment_bytes=segment_size, retention_local_bytes=segment_size)
@@ -581,6 +620,9 @@ class HighThroughputTest(RedpandaTest):
         this stage alone is too heavy and long-lasting, so it's put into a
         separate test.
         """
+        # create default topics
+        self._create_default_topics()
+
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
@@ -625,6 +667,9 @@ class HighThroughputTest(RedpandaTest):
             ])
             self.logger.debug(f"Partitions in the node-topic: {n}")
             return n
+
+        # create default topics
+        self._create_default_topics()
 
         nt_partitions_before = topic_partitions_on_node()
 
@@ -671,6 +716,9 @@ class HighThroughputTest(RedpandaTest):
         Try to exhaust cloud cache by reading at random offsets with many
         consumers
         """
+        # create default topics
+        self._create_default_topics()
+
         segment_size = 16 * MiB  # Min segment size across all tiers
         self.adjust_topic_segment_properties(
             segment_bytes=segment_size, retention_local_bytes=segment_size)
@@ -708,6 +756,10 @@ class HighThroughputTest(RedpandaTest):
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
+
+        # create default topics
+        self._create_default_topics()
+
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         producer = None
@@ -738,6 +790,9 @@ class HighThroughputTest(RedpandaTest):
     @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_ts_resource_utilization(self):
+        # create default topics
+        self._create_default_topics()
+
         self.stage_tiered_storage_consuming()
 
     def stage_lots_of_failed_consumers(self):
@@ -811,6 +866,9 @@ class HighThroughputTest(RedpandaTest):
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
+        # create default topics
+        self._create_default_topics()
+
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         producer = None
@@ -1149,3 +1207,76 @@ class HighThroughputTest(RedpandaTest):
 
         consumer.stop()
         consumer.free()
+
+    def _prepare_omb_workload(self, ramp_time, duration, partitions, rate,
+                              msg_size, producers, consumers):
+        return {
+            "name": "HT004-MINPARTOMB",
+            "topics": 1,
+            "partitions_per_topic": partitions,
+            "subscriptions_per_topic": consumers,
+            "consumer_per_subscription": 1,
+            "producers_per_topic": producers,
+            "producer_rate": rate,
+            "message_size": msg_size,
+            "consumer_backlog_size_GB": 0,
+            "test_duration_minutes": duration,
+            "warmup_duration_minutes": ramp_time,
+            "use_randomized_payloads": True,
+            "random_bytes_ratio": 0.5,
+            "randomized_payload_pool_size": 100,
+        }
+
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @parametrize(partitions="min")
+    @parametrize(partitions="max")
+    def test_htt_partitions_omb(self, partitions):
+        def _format_metrics(tier):
+            return "\n".join([f"{k} = {v} " for k, v in tier.items()])
+
+        def _get_metrics(bench):
+            return list(
+                json.loads(bench.node.account.ssh_output(
+                    bench.chart_cmd)).values())[0]
+
+        # Get values for almost idle cluster load
+        rampup_time = 1
+        runtime = 30
+        rate = self.tier_config.ingress_rate
+        msg_size = 16 * KiB
+        producers = 1 * (self.tier_config.num_brokers // 3) + 1
+        consumers = producers * 2
+
+        if partitions not in ["min", "max"]:
+            raise RuntimeError("Test parameter for partitions invalid")
+
+        # Calculate target throughput latencies
+        target_e2e_50pct = 51
+        target_e2e_avg = 145
+
+        # Measure with target load
+        validator_overrides = {
+            OMBSampleConfigurations.E2E_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(target_e2e_50pct)],
+            OMBSampleConfigurations.E2E_LATENCY_AVG:
+            [OMBSampleConfigurations.lte(target_e2e_avg)],
+        }
+        # Select number of partitions
+        if partitions == "min":
+            _num_partitions = self.tier_config.partitions_min
+        elif partitions == "max":
+            _num_partitions = self.tier_config.partitions_upper_limit
+
+        workload = self._prepare_omb_workload(rampup_time, runtime,
+                                              _num_partitions, rate, msg_size,
+                                              producers, consumers)
+        with omb_runner(
+                self._ctx, self.redpanda, "SIMPLE_DRIVER", workload,
+                OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
+                | validator_overrides) as omb:
+            metrics = _get_metrics(omb)
+            # Tier metrics should not diviate from idle
+            # metrics more than 145 ms on the average
+            self.logger.info(f"Workload metrics: {_format_metrics(metrics)}")
+            # Assert test results
+            omb.check_succeed()
