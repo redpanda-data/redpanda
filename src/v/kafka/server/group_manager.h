@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/cloud_metadata/offsets_recovery_rpc_types.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/fwd.h"
 #include "kafka/protocol/delete_groups.h"
@@ -184,6 +185,9 @@ public:
     // shard (e.g. not leader, still loading groups, etc).
     ss::future<cluster::cloud_metadata::group_offsets_snapshot_result>
     snapshot_groups(const model::ntp&);
+
+    ss::future<kafka::error_code>
+      recover_offsets(cluster::cloud_metadata::group_offsets_snapshot);
 
 public:
     error_code validate_group_status(
