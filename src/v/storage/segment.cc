@@ -454,9 +454,12 @@ ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
     auto& w = compaction_index();
     return model::for_each_record(
       b,
-      [o = b.base_offset(), batch_type = b.header().type, &w](
-        const model::record& r) {
-          return w.index(batch_type, r.key(), o, r.offset_delta());
+      [o = b.base_offset(),
+       batch_type = b.header().type,
+       is_control_batch = b.header().attrs.is_control(),
+       &w](const model::record& r) {
+          return w.index(
+            batch_type, is_control_batch, r.key(), o, r.offset_delta());
       });
 }
 ss::future<> segment::compaction_index_batch(const model::record_batch& b) {

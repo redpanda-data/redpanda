@@ -41,10 +41,10 @@ struct compacted_topic_fixture {
 };
 
 bytes extract_record_key(bytes prefixed_key) {
-    size_t sz = prefixed_key.size() - 1;
+    size_t sz = prefixed_key.size() - 2;
     auto read_key = ss::uninitialized_string<bytes>(sz);
 
-    std::copy_n(prefixed_key.begin() + 1, sz, read_key.begin());
+    std::copy_n(prefixed_key.begin() + 2, sz, read_key.begin());
     return read_key;
 }
 
@@ -53,12 +53,13 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     auto idx = make_dummy_compacted_index(index_data, 1_KiB, resources);
     const auto key = random_generators::get_bytes(1024);
     auto bt = tests::random_batch_type();
-    idx.index(bt, bytes(key), model::offset(42), 66).get();
+    auto is_control_type = tests::random_bool();
+    idx.index(bt, is_control_type, bytes(key), model::offset(42), 66).get();
     idx.close().get();
     info("{}", idx);
 
     iobuf data = std::move(index_data).release_iobuf();
-    BOOST_REQUIRE_EQUAL(data.size_bytes(), 1064);
+    BOOST_REQUIRE_EQUAL(data.size_bytes(), 1065);
     iobuf_parser p(data.share(0, data.size_bytes()));
     (void)p.consume_type<uint16_t>(); // SIZE
     (void)p.consume_type<uint8_t>();  // TYPE
@@ -66,7 +67,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     BOOST_REQUIRE_EQUAL(model::offset(offset), model::offset(42));
     auto [delta, _2] = p.read_varlong();
     BOOST_REQUIRE_EQUAL(delta, 66);
-    const auto key_result = p.read_bytes(1025);
+    const auto key_result = p.read_bytes(1026);
 
     auto read_key = extract_record_key(key_result);
     BOOST_REQUIRE_EQUAL(key, read_key);
@@ -76,7 +77,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     BOOST_REQUIRE_EQUAL(
       footer.size,
       sizeof(uint16_t) + 1 /*type*/ + 1 /*offset*/ + 2 /*delta*/
-        + 1 /*batch_type*/ + 1024 /*key*/);
+        + 1 /*batch_type*/ + 1 /* control bit */ + 1024 /*key*/);
     BOOST_REQUIRE_EQUAL(
       footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
@@ -86,7 +87,8 @@ FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
     auto idx = make_dummy_compacted_index(index_data, 1_MiB, resources);
     const auto key = random_generators::get_bytes(1_MiB);
     auto bt = tests::random_batch_type();
-    idx.index(bt, bytes(key), model::offset(42), 66).get();
+    auto is_control = tests::random_bool();
+    idx.index(bt, is_control, bytes(key), model::offset(42), 66).get();
     idx.close().get();
     info("{}", idx);
 
@@ -118,7 +120,8 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
     auto idx = make_dummy_compacted_index(index_data, 1_MiB, resources);
     const auto key = random_generators::get_bytes(20);
     auto bt = tests::random_batch_type();
-    idx.index(bt, bytes(key), model::offset(42), 66).get();
+    auto is_control = tests::random_bool();
+    idx.index(bt, is_control, bytes(key), model::offset(42), 66).get();
     idx.close().get();
     info("{}", idx);
 
@@ -144,7 +147,8 @@ FIXTURE_TEST(
     auto idx = make_dummy_compacted_index(index_data, 1_MiB, resources);
     const auto key = random_generators::get_bytes(1_MiB);
     auto bt = tests::random_batch_type();
-    idx.index(bt, bytes(key), model::offset(42), 66).get();
+    auto is_control = tests::random_bool();
+    idx.index(bt, is_control, bytes(key), model::offset(42), 66).get();
     idx.close().get();
     info("{}", idx);
 
@@ -165,7 +169,7 @@ FIXTURE_TEST(
     auto max_sz = storage::internal::spill_key_index::max_key_size;
     BOOST_REQUIRE_EQUAL(vec[0].key.size(), max_sz);
     BOOST_REQUIRE_EQUAL(
-      extract_record_key(vec[0].key), bytes_view(key.data(), max_sz - 1));
+      extract_record_key(vec[0].key), bytes_view(key.data(), max_sz - 2));
 }
 
 FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
@@ -176,6 +180,7 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
     const auto key1 = random_generators::get_bytes(1_KiB);
     const auto key2 = random_generators::get_bytes(1_KiB);
     auto bt = tests::random_batch_type();
+    auto is_control = tests::random_bool();
     for (auto i = 0; i < 100; ++i) {
         bytes_view put_key;
         if (i % 2) {
@@ -183,7 +188,7 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
         } else {
             put_key = key2;
         }
-        idx.index(bt, bytes(put_key), model::offset(i), 0).get();
+        idx.index(bt, is_control, bytes(put_key), model::offset(i), 0).get();
     }
     idx.close().get();
     info("{}", idx);
@@ -217,6 +222,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
     const auto key1 = random_generators::get_bytes(1_KiB);
     const auto key2 = random_generators::get_bytes(1_KiB);
     auto bt = tests::random_batch_type();
+    auto is_control = tests::random_bool();
     for (auto i = 0; i < 100; ++i) {
         bytes_view put_key;
         if (i % 2) {
@@ -224,7 +230,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
         } else {
             put_key = key2;
         }
-        idx.index(bt, bytes(put_key), model::offset(i), 0).get();
+        idx.index(bt, is_control, bytes(put_key), model::offset(i), 0).get();
     }
     idx.close().get();
     info("{}", idx);
@@ -283,6 +289,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     const auto key1 = random_generators::get_bytes(128_KiB);
     const auto key2 = random_generators::get_bytes(1_KiB);
     auto bt = tests::random_batch_type();
+    auto is_control = tests::random_bool();
     for (auto i = 0; i < 100; ++i) {
         bytes_view put_key;
         if (i % 2) {
@@ -290,7 +297,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
         } else {
             put_key = key2;
         }
-        idx.index(bt, bytes(put_key), model::offset(i), 0).get();
+        idx.index(bt, is_control, bytes(put_key), model::offset(i), 0).get();
     }
     idx.close().get();
     info("{}", idx);
@@ -370,7 +377,8 @@ FIXTURE_TEST(footer_v1_compatibility, compacted_topic_fixture) {
     auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
     const auto key = random_generators::get_bytes(1024);
     auto bt = tests::random_batch_type();
-    idx.index(bt, bytes(key), model::offset(42), 66).get();
+    auto is_control = tests::random_bool();
+    idx.index(bt, is_control, bytes(key), model::offset(42), 66).get();
     idx.close().get();
 
     iobuf data = std::move(store).release_iobuf();
@@ -466,7 +474,8 @@ FIXTURE_TEST(v1_footers_compatibility, compacted_topic_fixture) {
         auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
         const auto key = random_generators::get_bytes(1024);
         auto bt = tests::random_batch_type();
-        idx.index(bt, bytes(key), model::offset(42), 66).get();
+        auto is_control = tests::random_bool();
+        idx.index(bt, is_control, bytes(key), model::offset(42), 66).get();
         idx.close().get();
         auto idx_data = std::move(store).release_iobuf();
         auto footer_before = verify_index_integrity(idx_data);
@@ -502,7 +511,8 @@ FIXTURE_TEST(v0_footers_compatibility, compacted_topic_fixture) {
         auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
         const auto key = random_generators::get_bytes(1024);
         auto bt = tests::random_batch_type();
-        idx.index(bt, bytes(key), model::offset(42), 66).get();
+        auto is_control = tests::random_bool();
+        idx.index(bt, is_control, bytes(key), model::offset(42), 66).get();
         idx.close().get();
         auto idx_data = std::move(store).release_iobuf();
         auto idx_data_v0 = substitute_index_for_older_ver(
