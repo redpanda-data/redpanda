@@ -401,6 +401,11 @@ void health_monitor_backend::abort_current_refresh() {
     }
 }
 
+bool health_monitor_backend::contains_node_health_report(
+  model::node_id id) const {
+    return _reports.contains(id);
+}
+
 void health_monitor_backend::on_leadership_changed(
   raft::group_id group, model::term_id, std::optional<model::node_id>) {
     // we are only interested in raft0 leadership notifications
