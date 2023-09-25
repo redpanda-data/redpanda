@@ -3,7 +3,7 @@ FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.21.0 as bu
 ARG TARGETARCH
 ARG TARGETOS
 
-# Copy the rpk as a close depedency
+# Copy the rpk as a close dependency
 WORKDIR /workspace
 COPY rpk/ rpk/
 

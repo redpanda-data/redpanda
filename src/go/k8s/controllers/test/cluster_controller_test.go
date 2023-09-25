@@ -7,7 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package redpanda_test
+// nolint:testpackage // this name is ok
+package test
 
 import (
 	"context"
@@ -17,6 +18,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	types2 "github.com/onsi/gomega/types"
+	"github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/rbac/v1"
@@ -30,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 

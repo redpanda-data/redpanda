@@ -15,24 +15,35 @@ status:
   helmReleaseReady: true
   helmRepository: redpanda-repository
   helmRepositoryReady: true
+  observedGeneration: 2
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: redpanda
 status:
-  availableReplicas: 1
+  availableReplicas: 4
   collisionCount: 0
-  currentReplicas: 1
-  readyReplicas: 1
-  replicas: 1
-  updatedReplicas: 1
+  currentReplicas: 4
+  observedGeneration: 2
+  readyReplicas: 4
+  replicas: 4
+  updatedReplicas: 4
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2beta1
 kind: HelmRelease
 metadata:
   name: redpanda
 status:
+  conditions:
+    - message: Release reconciliation succeeded
+      reason: ReconciliationSucceeded
+      status: "True"
+      type: Ready
+    - message: Helm upgrade succeeded
+      reason: UpgradeSucceeded
+      status: "True"
+      type: Released
   helmChart: redpanda/redpanda-redpanda
   lastAppliedRevision: 5.3.2
   lastAttemptedRevision: 5.3.2

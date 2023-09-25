@@ -5,10 +5,7 @@ metadata:
   name: redpanda
 spec:
   chartRef:
-    timeout: 2m
     chartVersion: "5.3.2"
   clusterSpec:
-    image:
-      tag: v23.2.3
     statefulset:
-      replicas: 1
+      replicas: 3

@@ -45,8 +45,8 @@ status:
       status: "True"
       type: Released
   helmChart: redpanda/redpanda-redpanda
-  lastAppliedRevision: 5.0.9
-  lastAttemptedRevision: 5.0.9
+  lastAppliedRevision: 5.3.2
+  lastAttemptedRevision: 5.3.2
   lastAttemptedValuesChecksum: 9a164b2eba37330d0bb90cd1dff1e40779cab130
   lastReleaseRevision: 1
   observedGeneration: 1
