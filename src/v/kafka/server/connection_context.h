@@ -136,7 +136,7 @@ public:
               = conn->wait_for_input_shutdown()
                   .finally([this]() {
                       vlog(
-                        klog.info,
+                        klog.debug,
                         "Connection input_shutdown; aborting operations");
                       return _as.request_abort_ex(std::system_error(
                         std::make_error_code(std::errc::connection_aborted)));
