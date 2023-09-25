@@ -377,66 +377,63 @@ ss::future<> do_compact_segment_index(
           return write_clean_compacted_index(reader, cfg, resources);
       });
 }
+
 ss::future<storage::index_state> do_copy_segment_data(
-  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<segment> seg,
   compaction_config cfg,
   storage::probe& pb,
-  ss::rwlock::holder h,
+  ss::rwlock::holder rw_lock_holder,
   storage_resources& resources,
   offset_delta_time apply_offset) {
-    auto idx_path = s->reader().path().to_compacted_index();
-    return make_reader_handle(idx_path, cfg.sanitizer_config)
-      .then([s, cfg, idx_path](ss::file f) {
-          auto reader = make_file_backed_compacted_reader(
-            idx_path, std::move(f), cfg.iopc, 64_KiB);
-          return generate_compacted_list(s->offsets().base_offset, reader)
-            .finally([reader]() mutable {
-                return reader.close().then_wrapped([](ss::future<>) {});
-            });
-      })
-      .then([cfg, s, &pb, h = std::move(h), &resources, apply_offset](
-              compacted_offset_list list) mutable {
-          const auto tmpname = s->reader().path().to_staging();
-          return make_segment_appender(
-                   tmpname,
-                   segment_appender::write_behind_memory
-                     / internal::chunks().chunk_size(),
-                   std::nullopt,
-                   cfg.iopc,
-                   resources,
-                   cfg.sanitizer_config)
-            .then([l = std::move(list),
-                   &pb,
-                   h = std::move(h),
-                   cfg,
-                   s,
-                   tmpname,
-                   apply_offset](segment_appender_ptr w) mutable {
-                auto raw = w.get();
-                auto red = copy_data_segment_reducer(
-                  std::move(l),
-                  raw,
-                  s->path().is_internal_topic(),
-                  apply_offset);
-                auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
-                vlog(
-                  gclog.trace,
-                  "copying compacted segment data from {} to {}",
-                  s->reader().filename(),
-                  tmpname);
-                return std::move(r)
-                  .consume(std::move(red), model::no_timeout)
-                  .finally([raw, w = std::move(w)]() mutable {
-                      return raw->close()
-                        .handle_exception([](std::exception_ptr e) {
-                            vlog(
-                              gclog.error,
-                              "Error copying index to new segment:{}",
-                              e);
-                        })
-                        .finally([w = std::move(w)] {});
-                  });
-            });
+    // find out which offsets will survive compaction
+    auto idx_path = seg->reader().path().to_compacted_index();
+    auto compacted_reader = make_file_backed_compacted_reader(
+      idx_path,
+      co_await make_reader_handle(idx_path, cfg.sanitizer_config),
+      cfg.iopc,
+      64_KiB);
+    auto compacted_offsets
+      = co_await generate_compacted_list(
+          seg->offsets().base_offset, compacted_reader)
+          .finally([compacted_reader = std::move(compacted_reader)]() mutable {
+              return compacted_reader.close().then_wrapped([](ss::future<>) {});
+          });
+
+    // prepare a new segment with only the compacted_offsets
+    auto tmpname = seg->reader().path().to_staging();
+
+    auto appender = co_await make_segment_appender(
+      tmpname,
+      segment_appender::write_behind_memory / internal::chunks().chunk_size(),
+      std::nullopt,
+      cfg.iopc,
+      resources,
+      cfg.sanitizer_config);
+
+    vlog(
+      gclog.trace,
+      "copying compacted segment data from {} to {}",
+      seg->reader().filename(),
+      tmpname);
+
+    auto copy_reducer = [&] {
+        return copy_data_segment_reducer(
+          std::move(compacted_offsets),
+          appender.get(),
+          seg->path().is_internal_topic(),
+          apply_offset);
+    };
+
+    // create the segment, return the in-memory index for the new segment
+    co_return co_await create_segment_full_reader(
+      seg, cfg, pb, std::move(rw_lock_holder))
+      .consume(copy_reducer(), model::no_timeout)
+      .finally([appender = std::move(appender)]() mutable {
+          return appender->close()
+            .handle_exception([](std::exception_ptr e) {
+                vlog(gclog.error, "Error copying index to new segment:{}", e);
+            })
+            .finally([_ = std::move(appender)] {});
       });
 }
 
