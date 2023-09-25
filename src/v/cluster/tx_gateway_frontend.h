@@ -277,7 +277,7 @@ private:
     ss::future<tx_errc> do_expire_old_tx(
       ss::shared_ptr<tm_stm>,
       model::term_id term,
-      kafka::transactional_id,
+      tm_transaction,
       model::timeout_clock::duration,
       bool ignore_update_ts);
 
