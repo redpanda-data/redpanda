@@ -535,8 +535,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // lightweight copy of segments in range. once a scheduling event occurs in
     // this method we can't rely on the iterators in the range remaining valid.
     // for example, a concurrent truncate may erase an element from the range.
-    std::vector<ss::lw_shared_ptr<segment>> segments;
-    std::copy(range.first, range.second, std::back_inserter(segments));
+    auto segments = std::vector<ss::lw_shared_ptr<segment>>(
+      range.first, range.second);
 
     if (gclog.is_enabled(ss::log_level::debug)) {
         std::stringstream segments_str;
