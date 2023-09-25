@@ -43,14 +43,17 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.await_num_produced(min_records=10000)
 
     def _wait_until_no_leader(self):
-        ntp = f"kafka/{self.topic}/0"
-
+        """Scrapes the debug endpoints of all replicas and checks if any of the replicas think they are the leader"""
         def no_leader():
-            hov = self.redpanda._admin.get_cluster_health_overview()
-            leaderless_parts = hov['leaderless_partitions']
-            self.redpanda.logger.debug(
-                f"Leaderless partitions: {leaderless_parts}")
-            return ntp in leaderless_parts
+            state = self.redpanda._admin.get_partition_state(
+                "kafka", self.topic, 0)
+            if "replicas" not in state.keys() or len(state["replicas"]) == 0:
+                return True
+            for r in state["replicas"]:
+                assert "raft_state" in r.keys()
+                if r["raft_state"]["is_leader"]:
+                    return False
+            return True
 
         wait_until(no_leader,
                    timeout_sec=30,
