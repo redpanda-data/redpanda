@@ -244,6 +244,11 @@ class EffectValidator(ABC):
 ExpressionType = Enum("ExpressionType", ["Bool", "Int", "Offset"])
 
 
+def clamp(value, inclusive_lower_bound, inclusive_upper_bound):
+    assert (inclusive_lower_bound < inclusive_upper_bound)
+    return max(min(value, inclusive_upper_bound), inclusive_lower_bound)
+
+
 class Expression:
     """Base class for both inputs and effects"""
     def __init__(self,
@@ -388,8 +393,8 @@ class LogBasedValidator(EffectValidator):
             f"Validator {self.__name} got matching log line {line} on node {node_name}"
         )
         self.__num_matches += 1
-        self.__confidence = max(
-            min(self.__num_matches / self.__confidence_threshold, 0.0), 1.0)
+        self.__confidence = clamp(
+            self.__num_matches / self.__confidence_threshold, 0.0, 1.0)
 
     def name(self) -> str:
         """Get name of the validator"""
@@ -458,8 +463,8 @@ class LogUniquenessValidator(EffectValidator):
                     return
                 self.__matches[node_name].add(line)
                 total_matches = sum([len(v) for v in self.__matches.values()])
-                self.__confidence = max(
-                    min(total_matches / self.__confidence_threshold, 0.0), 1.0)
+                self.__confidence = clamp(
+                    total_matches / self.__confidence_threshold, 0.0, 1.0)
                 return
 
             self.__logger.error(
@@ -548,8 +553,8 @@ class MetricBasedValidator(EffectValidator):
         # Require at least one upload for the positive result
         self.__result = delta > 0
         # Recompute confidence level based on new observation
-        self.__confidence = max(min(delta / self.__confidence_threshold, 0.0),
-                                1.0)
+        self.__confidence = clamp(delta / self.__confidence_threshold, 0.0,
+                                  1.0)
 
     def get_result(self) -> Optional[bool]:
         """Return True if the effect is validated to be present or False if it's
@@ -915,8 +920,8 @@ class TopicCompactionEnabled(Expression):
             TopicConfigInput("TopicCompactionEnabled_topic_config",
                              "cleanup.policy", "compact,delete"),
             ProducerInput("TopicCompactionEnable_producer_config", {
-                "key_set_cardinality": 500,
-                "msg_count": 100000
+                "key_set_cardinality": 250,
+                "msg_count": 200000
             }),
             ClusterConfigInput(
                 "TopicCompactionEnabled_rp_config",
@@ -1138,7 +1143,7 @@ class EnableChunkedRead(Expression):
     def make_inputs(self):
         return [
             ClusterConfigInput("EnableChunkedRead",
-                               {"cloud_storage_disable_chunk_reads": "true"})
+                               {"cloud_storage_disable_chunk_reads": "false"})
         ]
 
 
@@ -1260,17 +1265,16 @@ class TS_STM_GarbageCollect(Expression):
         ]
 
 
-class TS_STM_SizeBasedRetentionApplied(Expression):
-    """Size based retention is triggered in tiered-storage in the STM region of the log"""
+class TS_STM_RetentionApplied(Expression):
+    """Retention is triggered in tiered-storage in the STM region of the log"""
     def __init__(self, model: Model = Model.default()):
-        super().__init__(
-            model, "TS_STM_SizeBasedRetentionApplied", ExpressionType.Bool,
-            "Size based retention is triggered in tiered-storage")
+        super().__init__(model, "TS_STM_RetentionApplied", ExpressionType.Bool,
+                         "Retention is triggered in tiered-storage")
 
     def make_validators(self):
         return [
             LogBasedValidator(
-                "TS_STM_SizeBasedRetention_log",
+                "TS_STM_Retention_log",
                 "ntp_archiver_service.*size_based_retention.*Advancing start offset to .* satisfy retention policy",
                 confidence_threshold=LOW_THRESHOLD,
                 execution_stage=TestRunStage.Intermediate),
@@ -1470,7 +1474,7 @@ def get_tiered_storage_test_cases(fast_run=False):
     spillover_manifest_uploaded = SpilloverManifestUploaded()
     ts_apply_spillover = ApplySpilloverTriggered()
     # Retention in the STM region
-    ts_stm_size_based_retention_applied = TS_STM_SizeBasedRetentionApplied()
+    ts_stm_size_based_retention_applied = TS_STM_RetentionApplied()
     ts_stm_garbage_collect = TS_STM_GarbageCollect()
     ts_stm_delete_by_gc = TS_STM_DeleteByGC()
     # Retention in the spillover region
