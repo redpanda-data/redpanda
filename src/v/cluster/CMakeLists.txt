@@ -218,6 +218,7 @@ add_subdirectory(self_test/tests)
 v_cc_library(
   NAME kafka_recovery
   SRCS
+    cloud_metadata/offsets_lookup.cc
     cloud_metadata/offsets_uploader.cc
   DEPS
     v::model
