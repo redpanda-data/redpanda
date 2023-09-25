@@ -1137,12 +1137,12 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
 
     co_return info;
 }
-
-partition_constraints topics_frontend::get_partition_constraints(
+namespace {
+partition_constraints get_partition_constraints(
   model::partition_id id,
   cluster::replication_factor new_replication_factor,
   double max_disk_usage_ratio,
-  const capacity_info& info) const {
+  const topics_frontend::capacity_info& info) {
     allocation_constraints allocation_constraints;
 
     // Add constraint on least disk usage
@@ -1160,6 +1160,7 @@ partition_constraints topics_frontend::get_partition_constraints(
 
     return {id, new_replication_factor, std::move(allocation_constraints)};
 }
+} // namespace
 
 ss::future<std::error_code> topics_frontend::increase_replication_factor(
   model::topic_namespace topic,
@@ -1193,16 +1194,10 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
     std::optional<std::error_code> error;
 
-    auto healt_report = co_await get_health_info(topic, partition_count);
+    auto health_report = co_await get_health_info(topic, partition_count);
 
     auto hard_max_disk_usage_ratio = (100 - _hard_max_disk_usage_ratio())
                                      / 100.0;
-
-    auto partition_constraints = get_partition_constraints(
-      model::partition_id(0),
-      new_replication_factor,
-      hard_max_disk_usage_ratio,
-      healt_report);
 
     co_await ss::max_concurrent_for_each(
       tp_metadata->get_assignments(),
@@ -1211,9 +1206,10 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
        &units,
        &new_assignments,
        &error,
-       &partition_constraints,
        topic,
-       new_replication_factor](partition_assignment& assignment) {
+       new_replication_factor,
+       h_report = std::move(health_report),
+       hard_max_disk_usage_ratio](partition_assignment& assignment) {
           if (error) {
               return ss::now();
           }
@@ -1231,16 +1227,19 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
               return ss::now();
           }
 
-          partition_constraints.partition_id = p_id;
-
-          auto ntp = model::ntp(topic.ns, topic.tp, p_id);
-
           return _allocator
             .invoke_on(
               partition_allocator::shard,
-              [partition_constraints,
+              [new_rf = new_replication_factor,
+               topic,
+               disk_max_usage = hard_max_disk_usage_ratio,
                assignment = std::move(assignment),
-               ntp = std::move(ntp)](partition_allocator& al) {
+               p_id,
+               h_report](partition_allocator& al) {
+                  model::ntp ntp(topic.ns, topic.tp, p_id);
+                  auto partition_constraints = get_partition_constraints(
+                    p_id, new_rf, disk_max_usage, h_report);
+
                   return al.reallocate_partition(
                     partition_constraints,
                     assignment,
