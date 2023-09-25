@@ -1,0 +1,340 @@
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#include "cloud_storage/remote_segment.h"
+#include "cloud_storage/tests/manual_fixture.h"
+#include "cloud_storage/tests/produce_utils.h"
+#include "cloud_storage/tests/s3_imposter.h"
+#include "cluster/cloud_metadata/error_outcome.h"
+#include "kafka/client/client.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/consumer.h"
+#include "kafka/protocol/types.h"
+#include "kafka/server/group.h"
+#include "kafka/server/group_manager.h"
+#include "model/fundamental.h"
+#include "model/namespace.h"
+#include "redpanda/tests/fixture.h"
+#include "test_utils/async.h"
+
+#include <seastar/util/later.hh>
+
+#include <absl/container/flat_hash_map.h>
+
+namespace {
+ss::logger logger("offsets_recovery_test");
+static ss::abort_source never_abort;
+const model::topic topic_name{"oreo"};
+const std::vector<model::ntp> offset_ntps = [] {
+    std::vector<model::ntp> ntps;
+    for (int i = 0; i < 16; i++) {
+        ntps.emplace_back(
+          model::kafka_namespace,
+          model::kafka_consumer_offsets_topic,
+          model::partition_id(i));
+    }
+    return ntps;
+}();
+} // anonymous namespace
+
+namespace kc = kafka::client;
+using namespace cluster::cloud_metadata;
+
+class offsets_recovery_fixture
+  : public cloud_storage_manual_multinode_test_base {
+public:
+    offsets_recovery_fixture()
+      : bucket(cloud_storage_clients::bucket_name("test-bucket")) {
+        RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+            return app.storage.local().get_cluster_uuid().has_value();
+        });
+        cluster_uuid = app.storage.local().get_cluster_uuid().value();
+    }
+    ss::future<std::vector<cluster::partition*>> make_partitions(int n) {
+        cluster::topic_properties props;
+        props.shadow_indexing = model::shadow_indexing_mode::full;
+        props.retention_local_target_bytes = tristate<size_t>(1);
+        props.cleanup_policy_bitflags
+          = model::cleanup_policy_bitflags::deletion;
+        co_await add_topic({model::kafka_namespace, topic_name}, n, props);
+        std::vector<cluster::partition*> ps;
+        for (int i = 0; i < n; i++) {
+            auto ntp = model::ntp(
+              model::kafka_namespace, topic_name, model::partition_id{i});
+            co_await wait_for_leader(ntp);
+            ps.emplace_back(app.partition_manager.local().get(ntp).get());
+        }
+        co_return ps;
+    }
+
+    kc::client make_client() { return kc::client{proxy_client_config()}; }
+
+    kc::client make_connected_client() {
+        auto client = make_client();
+        client.config().retry_base_backoff.set_value(10ms);
+        client.config().retries.set_value(size_t(10));
+        client.connect().get();
+        return client;
+    }
+
+    // Construct group ids with the given prefix.
+    static std::vector<kafka::group_id>
+    group_ids(ss::sstring prefix, int num_groups) {
+        std::vector<kafka::group_id> groups;
+        groups.reserve(num_groups);
+        for (int i = 0; i < num_groups; i++) {
+            groups.emplace_back(
+              kafka::group_id{fmt::format("{}_{}", prefix, i)});
+        }
+        return groups;
+    }
+
+    // Sends out requests creating the given groups, each with one member,
+    // returning the member IDs for each.
+    ss::future<absl::flat_hash_map<kafka::group_id, kafka::member_id>>
+    create_groups(kc::client& client, std::vector<kafka::group_id> groups) {
+        std::vector<ss::future<kafka::member_id>> ms;
+        ms.reserve(groups.size());
+        for (const auto& g : groups) {
+            ms.emplace_back(client.create_consumer(g));
+        }
+        auto res = co_await ss::when_all_succeed(ms.begin(), ms.end());
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
+            return app._group_manager.local().list_groups().second.size()
+                   == groups.size();
+        });
+        absl::flat_hash_map<kafka::group_id, kafka::member_id> ret;
+        for (int i = 0; i < groups.size(); i++) {
+            ret[groups[i]] = res[i];
+        }
+        co_return ret;
+    }
+
+    // Commits a random offset per member in each group.
+    ss::future<absl::flat_hash_map<kafka::group_id, int>> commit_random_offsets(
+      kc::client& client,
+      const absl::flat_hash_map<kafka::group_id, kafka::member_id>& members) {
+        absl::flat_hash_map<kafka::group_id, int> committed_offsets;
+        for (const auto& [gid, mid] : members) {
+            // Commit an offset for each group.
+            auto o = random_generators::get_int(0, 100);
+            committed_offsets[gid] = o;
+            auto t = kafka::offset_commit_request_topic{
+              .name = topic_name,
+              .partitions = {
+                {.partition_index = model::partition_id{0},
+                 .committed_offset = model::offset{o},
+                 .committed_metadata{mid()}}}};
+            auto res = co_await client.consumer_offset_commit(
+              gid, mid, {std::move(t)});
+
+            // Sanity checks the result: only one partition committed per
+            // group, no errors.
+            BOOST_REQUIRE_EQUAL(res.data.topics.size(), 1);
+            auto topic_res = res.data.topics[0];
+            BOOST_REQUIRE_EQUAL(topic_res.partitions.size(), 1);
+            auto& p = topic_res.partitions[0];
+            BOOST_REQUIRE_EQUAL(p.partition_index, 0);
+            BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+        }
+        co_return committed_offsets;
+    }
+
+    // Returns the number of groups managed by each offsets ntp. Expects that
+    // the group manager for each NTP has already loaded the partition, and
+    // that the shard-local partition is leader.
+    absl::flat_hash_map<model::ntp, size_t> snap_num_group_per_offsets_ntp() {
+        auto& gm = app._group_manager.local();
+        absl::flat_hash_map<model::ntp, size_t> groups_per_ntp;
+        for (const auto& ntp : offset_ntps) {
+            auto res = gm.snapshot_groups(ntp).get();
+            BOOST_REQUIRE(res.has_value());
+            groups_per_ntp[ntp] = res.value().groups.size();
+        }
+        return groups_per_ntp;
+    }
+
+    // Repeatedly checks that each offsets NTP manages the exact count of
+    // groups as in `groups_per_ntp`, verifying that all reported errors are in
+    // `allowed_errors`.
+    ss::future<> validate_group_counts_in_loop(
+      absl::flat_hash_map<model::ntp, size_t> groups_per_ntp,
+      absl::flat_hash_set<cluster::cloud_metadata::error_outcome>
+        allowed_errors,
+      ss::gate& gate) {
+        auto& gm = app._group_manager.local();
+        auto holder = gate.hold();
+        while (!gate.is_closed()) {
+            for (const auto& ntp : offset_ntps) {
+                auto res = co_await gm.snapshot_groups(ntp);
+                if (res.has_value()) {
+                    BOOST_REQUIRE_EQUAL(
+                      groups_per_ntp[ntp], res.value().groups.size());
+                } else {
+                    BOOST_REQUIRE(allowed_errors.contains(res.error()));
+                }
+                co_await ss::maybe_yield();
+            }
+            co_await ss::maybe_yield();
+        }
+    }
+
+    // Returns true if the number of groups of the group manager partitions
+    // match those in `groups_per_ntp` exactly.
+    ss::future<bool> validate_group_counts_exactly(
+      absl::flat_hash_map<model::ntp, size_t> groups_per_ntp) {
+        for (const auto& ntp : offset_ntps) {
+            auto snap = co_await app._group_manager.local().snapshot_groups(
+              ntp);
+            if (!snap.has_value()) {
+                co_return false;
+            }
+            if (snap.value().groups.size() != groups_per_ntp.at(ntp)) {
+                co_return false;
+            }
+        }
+        co_return true;
+    }
+
+    // Asserts that the group counts per offsets NTP eventually match those
+    // given by `groups_per_ntp`.
+    ss::future<> validate_group_counts_eventually(
+      const absl::flat_hash_map<model::ntp, size_t>& groups_per_ntp) {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(
+          5s, [&] { return validate_group_counts_exactly(groups_per_ntp); });
+    }
+
+protected:
+    const cloud_storage_clients::bucket_name bucket;
+    model::cluster_uuid cluster_uuid;
+};
+
+FIXTURE_TEST(test_snapshot_basic, offsets_recovery_fixture) {
+    make_partitions(1).get();
+
+    // Create a client and a bunch of groups.
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+
+    // Sanity check that snapshotting with no offsets results in expectedly
+    // empty snapshots.
+    size_t snapped_groups = 0;
+    for (const auto& ntp : offset_ntps) {
+        auto snap = app._group_manager.local().snapshot_groups(ntp).get();
+        BOOST_REQUIRE(snap.has_value());
+        snapped_groups += snap.value().groups.size();
+
+        // All groups are empty since we haven't committed anything.
+        for (const auto& g : snap.value().groups) {
+            BOOST_REQUIRE_EQUAL(0, g.offsets.size());
+        }
+    }
+    BOOST_REQUIRE_EQUAL(snapped_groups, num_groups);
+    auto committed_offsets = commit_random_offsets(client, members).get();
+
+    // Now snapshot again and ensure that the correct offsets were snapshotted.
+    snapped_groups = 0;
+    for (const auto& ntp : offset_ntps) {
+        auto snap = app._group_manager.local().snapshot_groups(ntp).get();
+        BOOST_REQUIRE(snap.has_value());
+        snapped_groups += snap.value().groups.size();
+
+        // All groups should have committed one offset.
+        for (const auto& g : snap.value().groups) {
+            BOOST_REQUIRE_EQUAL(1, g.offsets.size());
+            BOOST_REQUIRE_EQUAL(
+              g.offsets[0].partitions[0].offset(),
+              committed_offsets[kafka::group_id{g.group_id}]);
+        }
+    }
+    BOOST_REQUIRE_EQUAL(snapped_groups, num_groups);
+}
+
+FIXTURE_TEST(test_snapshot_leadership_change, offsets_recovery_fixture) {
+    make_partitions(1).get();
+
+    // Create a client and a bunch of groups.
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+    auto committed_offsets = commit_random_offsets(client, members).get();
+
+    // Repeatedly snapshot while we undergo some leadership changes.
+    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
+
+    ss::gate g;
+    auto validate_fut = validate_group_counts_in_loop(
+      groups_per_ntp, {cluster::cloud_metadata::error_outcome::not_ready}, g);
+    auto finish = ss::defer([&] {
+        g.close().get();
+        validate_fut.get();
+    });
+
+    // Step down from each partition while validation is running.
+    for (const auto& ntp : offset_ntps) {
+        auto p = app.partition_manager.local().get(ntp);
+        p->raft()->step_down("test").get();
+    }
+    validate_group_counts_eventually(groups_per_ntp).get();
+}
+
+FIXTURE_TEST(test_snapshot_group_removal, offsets_recovery_fixture) {
+    make_partitions(1).get();
+
+    // Create a client and a bunch of groups.
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+
+    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto& gm = app._group_manager.local();
+    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
+    std::vector<std::pair<model::ntp, kafka::group_id>> to_delete;
+    for (const auto& ntp : offset_ntps) {
+        auto snap = gm.snapshot_groups(ntp).get();
+        BOOST_REQUIRE(snap.has_value());
+        auto& groups = snap.value().groups;
+        if (groups.empty()) {
+            // NTP manages no groups.
+            continue;
+        }
+        if (groups[0].offsets.empty()) {
+            // Group contains no offsets.
+            continue;
+        }
+
+        auto group_to_delete = kafka::group_id{groups[0].group_id};
+
+        // Have the member leave the group so the group can be deleted.
+        client.remove_consumer(group_to_delete, members[group_to_delete]).get();
+        to_delete.emplace_back(std::make_pair(ntp, group_to_delete));
+        groups_per_ntp[ntp]--;
+    }
+    // Send the deletion request.
+    BOOST_REQUIRE(!to_delete.empty());
+    auto num_deleted = to_delete.size();
+    auto results = gm.delete_groups(std::move(to_delete)).get();
+    BOOST_REQUIRE_EQUAL(results.size(), num_deleted);
+    for (const auto& res : results) {
+        BOOST_REQUIRE_MESSAGE(!res.errored(), res);
+    }
+    // Assert that we eventually get to the newly subtracted counts.
+    validate_group_counts_eventually(groups_per_ntp).get();
+}

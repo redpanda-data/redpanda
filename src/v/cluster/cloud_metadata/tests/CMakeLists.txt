@@ -18,6 +18,7 @@ rp_test(
   BINARY_NAME cluster_cloud_metadata
   SOURCES
     manifest_downloads_test.cc
+    offsets_recovery_test.cc
     uploader_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
