@@ -257,7 +257,12 @@ class NodePoolMigrationTest(PreallocNodesTest):
         def all_nodes_present():
             for n in self.redpanda.nodes:
                 brokers = self.admin.get_brokers(node=n)
-                return len(brokers) == len(initial_pool) + len(new_pool)
+                if len(brokers) != len(initial_pool) + len(new_pool):
+                    self.logger.info(
+                        f"Node: {n.account.hostname}(node_id: {self.redpanda.node_id(n)}) contains {len(brokers)} while we expect it to have {len(initial_pool) + len(new_pool)} brokers"
+                    )
+                    return False
+            return True
 
         wait_until(
             all_nodes_present,
