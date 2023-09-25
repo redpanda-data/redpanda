@@ -69,6 +69,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET offsets_recovery_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/offsets_recovery_rpc.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/offsets_recovery_rpc_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -192,6 +199,7 @@ v_cc_library(
     partition_balancer_rpc
     node_status_rpc
     ephemeral_credential_rpc
+    offsets_recovery_rpc
     self_test_rpc
     topic_recovery_status_rpc
     v::raft
