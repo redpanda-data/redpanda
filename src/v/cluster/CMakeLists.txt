@@ -221,6 +221,7 @@ v_cc_library(
     cloud_metadata/offsets_lookup.cc
     cloud_metadata/offsets_lookup_batcher.cc
     cloud_metadata/offsets_recoverer.cc
+    cloud_metadata/offsets_recovery_manager.cc
     cloud_metadata/offsets_uploader.cc
   DEPS
     v::model
