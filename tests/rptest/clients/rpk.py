@@ -35,21 +35,26 @@ class ClusterAuthorizationError(Exception):
 
 
 class RpkException(Exception):
-    def __init__(self, msg, stderr="", returncode=None):
+    def __init__(self, msg, stderr="", returncode=None, stdout=""):
         self.msg = msg
+        self.stdout = stdout
         self.stderr = stderr
         self.returncode = returncode
 
     def __str__(self):
         if self.stderr:
-            err = f" error: {self.stderr}"
+            err = f"; stderr: {self.stderr}"
         else:
             err = ""
         if self.returncode:
-            retcode = f" returncode: {self.returncode}"
+            retcode = f"; returncode: {self.returncode}"
         else:
             retcode = ""
-        return f"RpkException<{self.msg}{err}{retcode}>"
+        if self.stdout:
+            stdout = f"; stdout: {self.stdout}"
+        else:
+            stdout = ""
+        return f"RpkException<{self.msg}{err}{stdout}{retcode}>"
 
 
 class RpkPartition:
@@ -852,7 +857,10 @@ class RpkTool:
             output, error = p.communicate(input=stdin, timeout=timeout)
         except subprocess.TimeoutExpired:
             p.kill()
-            raise RpkException(f"command {' '.join(cmd)} timed out")
+            output, stderr = p.communicate()
+            raise RpkException(f"command `{' '.join(cmd)}' timed out",
+                               stdout=output,
+                               stderr=stderr)
 
         self._redpanda.logger.debug(f'\n{output}')
 
@@ -884,7 +892,7 @@ class RpkTool:
             cmd.append("--wait")
         return self._execute(cmd)
 
-    def cluster_maintenance_disable(self, node):
+    def cluster_maintenance_disable(self, node, timeout=None):
         node_id = self._redpanda.idx(node) if isinstance(node,
                                                          ClusterNode) else node
         cmd = [
@@ -892,7 +900,7 @@ class RpkTool:
             self._admin_host(), "cluster", "maintenance", "disable",
             str(node_id)
         ]
-        return self._execute(cmd)
+        return self._execute(cmd, timeout=timeout)
 
     def cluster_maintenance_status(self):
         """
