@@ -45,7 +45,8 @@ segment_index::segment_index(
   model::offset base,
   size_t step,
   ss::sharded<features::feature_table>& feature_table,
-  std::optional<ntp_sanitizer_config> sanitizer_config)
+  std::optional<ntp_sanitizer_config> sanitizer_config,
+  std::optional<model::timestamp> broker_timestamp)
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
@@ -53,6 +54,7 @@ segment_index::segment_index(
       storage::internal::should_apply_delta_time_offset(_feature_table)))
   , _sanitizer_config(std::move(sanitizer_config)) {
     _state.base_offset = base;
+    _state.broker_timestamp = broker_timestamp;
 }
 
 segment_index::segment_index(

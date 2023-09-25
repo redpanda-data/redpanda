@@ -128,7 +128,8 @@ public:
       model::offset base,
       size_t step,
       ss::sharded<features::feature_table>& feature_table,
-      std::optional<ntp_sanitizer_config> sanitizer_config);
+      std::optional<ntp_sanitizer_config> sanitizer_config,
+      std::optional<model::timestamp> broker_timestamp = std::nullopt);
 
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
