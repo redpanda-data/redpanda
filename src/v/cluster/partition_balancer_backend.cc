@@ -186,9 +186,19 @@ void partition_balancer_backend::on_members_update(
 
         maybe_rearm_timer(/*now = */ true);
     }
-    // Don't schedule tick on node addition, because the node health report
-    // won't be ready so we won't be able to do anything. Wait instead for a
-    // health monitor notification.
+    // Only schedule tick on node addition if health report is already
+    // available
+    if (
+      state == model::membership_state::active
+      && _health_monitor.contains_node_health_report(id)) {
+        vlog(
+          clusterlog.debug,
+          "node {} state notification: {}, scheduling tick as health report "
+          "for node is already present",
+          id,
+          state);
+        maybe_rearm_timer(/*now = */ true);
+    }
 }
 
 void partition_balancer_backend::on_topic_table_update() {
