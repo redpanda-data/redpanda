@@ -328,11 +328,19 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
         for (const auto& tp_ns : node_report.topics) {
             for (const auto& partition : tp_ns.partitions) {
                 model::ntp ntp{tp_ns.tp_ns.ns, tp_ns.tp_ns.tp, partition.id};
+                size_t reclaimable = partition.reclaimable_size_bytes.value_or(
+                  0);
+                vlog(
+                  clusterlog.trace,
+                  "ntp {} on node {}: size {}, reclaimable: {}",
+                  ntp,
+                  node_report.id,
+                  human::bytes(partition.size_bytes),
+                  human::bytes(reclaimable));
+
                 auto& sizes = ctx._ntp2sizes[ntp];
                 sizes.current[node_report.id] = partition.size_bytes;
 
-                size_t reclaimable = partition.reclaimable_size_bytes.value_or(
-                  0);
                 size_t non_reclaimable = 0;
                 if (reclaimable < partition.size_bytes) {
                     non_reclaimable = partition.size_bytes - reclaimable;
@@ -397,6 +405,14 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
             }
             break;
         }
+    }
+
+    for (const auto& [id, disk] : ctx.node_disk_reports) {
+        vlog(
+          clusterlog.trace,
+          "after processing in-progress updates, node id {} disk: {}",
+          id,
+          disk);
     }
 }
 
@@ -539,6 +555,11 @@ public:
                     if (node_it != _ctx.node_disk_reports.end()) {
                         node_it->second.released += sizes.get_current(
                           bs.node_id);
+                        vlog(
+                          clusterlog.trace,
+                          "after cancelling, node id {} disk: {}",
+                          node_it->first,
+                          node_it->second);
                     }
                 }
             }
@@ -950,6 +971,12 @@ partition_balancer_planner::reassignable_partition::move_replica(
         auto from_it = _ctx.node_disk_reports.find(replica);
         if (from_it != _ctx.node_disk_reports.end()) {
             from_it->second.released += _sizes.get_current(replica);
+
+            vlog(
+              clusterlog.trace,
+              "after scheduling move, node id {} disk: {}",
+              from_it->first,
+              from_it->second);
         }
 
         auto to_it = _ctx.node_disk_reports.find(new_node);
@@ -959,6 +986,12 @@ partition_balancer_planner::reassignable_partition::move_replica(
             } else {
                 to_it->second.assigned += _sizes.non_reclaimable;
             }
+
+            vlog(
+              clusterlog.trace,
+              "after scheduling move, node id {} disk: {}",
+              to_it->first,
+              to_it->second);
         }
     }
 
@@ -986,6 +1019,12 @@ void partition_balancer_planner::reassignable_partition::revert(
     if (from_it != _ctx.node_disk_reports.end()) {
         from_it->second.released -= _sizes.get_current(
           move.previous()->node_id);
+
+        vlog(
+          clusterlog.trace,
+          "after reverting move, node id {} disk: {}",
+          from_it->first,
+          from_it->second);
     }
 
     auto to_it = _ctx.node_disk_reports.find(move.current().node_id);
@@ -996,6 +1035,12 @@ void partition_balancer_planner::reassignable_partition::revert(
         } else {
             to_it->second.assigned -= _sizes.non_reclaimable;
         }
+
+        vlog(
+          clusterlog.trace,
+          "after reverting move, node id {} disk: {}",
+          to_it->first,
+          to_it->second);
     }
 }
 
