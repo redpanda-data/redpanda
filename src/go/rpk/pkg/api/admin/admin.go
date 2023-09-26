@@ -546,7 +546,8 @@ func (a *AdminAPI) sendAndReceive(
 	// Issue request to the appropriate client, depending on retry behaviour
 	var res *http.Response
 	if retryable {
-		res, err = a.retryClient.Do(req) //nolint:contextcheck // False positive in v1.0.9, will be fixed in next release.
+		//nolint:contextcheck // False positive in v1.0.9, will be fixed in next release.
+		res, err = a.retryClient.Do(req)
 	} else {
 		res, err = a.oneshotClient.Do(req)
 	}
