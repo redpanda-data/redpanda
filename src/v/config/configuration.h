@@ -292,6 +292,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> cloud_storage_idle_timeout_ms;
     property<std::chrono::milliseconds>
       cloud_storage_cluster_metadata_upload_interval_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_cluster_metadata_upload_timeout_ms;
     property<double> cloud_storage_idle_threshold_rps;
     property<bool> cloud_storage_enable_segment_merging;
     property<bool> cloud_storage_enable_scrubbing;
