@@ -61,33 +61,36 @@ bool acl_matches::empty() const {
       });
 }
 
-bool acl_matches::contains(
+std::optional<acl_matches::acl_match> acl_matches::find(
   acl_operation operation,
   const acl_principal& principal,
   const acl_host& host,
   acl_permission perm) const {
     for (const auto& entries : prefixes) {
-        if (entries.acl_entry_set.get().contains(
-              operation, principal, host, perm)) {
-            return true;
+        if (auto entry = entries.acl_entry_set.get().find(
+              operation, principal, host, perm);
+            entry.has_value()) {
+            return {{entries.resource, *entry}};
         }
     }
 
     if (wildcards) {
-        if (wildcards->acl_entry_set.get().contains(
-              operation, principal, host, perm)) {
-            return true;
+        if (auto entry = wildcards->acl_entry_set.get().find(
+              operation, principal, host, perm);
+            entry.has_value()) {
+            return {{wildcards->resource, *entry}};
         }
     }
 
     if (literals) {
-        if (literals->acl_entry_set.get().contains(
-              operation, principal, host, perm)) {
-            return true;
+        if (auto entry = literals->acl_entry_set.get().find(
+              operation, principal, host, perm);
+            entry.has_value()) {
+            return {{literals->resource, *entry}};
         }
     }
 
-    return false;
+    return std::nullopt;
 }
 
 acl_matches

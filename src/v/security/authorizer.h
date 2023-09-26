@@ -204,7 +204,7 @@ public:
      * the type `T` of the name of the resouce (e.g. `model::topic`).
      */
     template<typename T>
-    bool authorized(
+    auth_result authorized(
       const T& resource_name,
       acl_operation operation,
       const acl_principal& principal,
@@ -213,20 +213,29 @@ public:
         auto acls = _store.find(type, resource_name());
 
         if (_superusers.contains(principal)) {
-            return true;
+            return auth_result::superuser_authorized(
+              principal, host, resource_name);
         }
 
         if (acls.empty()) {
-            return bool(_allow_empty_matches);
+            return auth_result::empty_match_result(
+              principal, host, resource_name, bool(_allow_empty_matches));
         }
 
         // check for deny
-        if (acls.contains(operation, principal, host, acl_permission::deny)) {
-            return false;
+        if (auto entry = acls.find(
+              operation, principal, host, acl_permission::deny);
+            entry.has_value()) {
+            return auth_result::acl_match(
+              principal, host, resource_name, false, *entry);
         }
 
         // check for allow
-        return acl_any_implied_ops_allowed(acls, principal, host, operation);
+        return auth_result::opt_acl_match(
+          principal,
+          host,
+          resource_name,
+          acl_any_implied_ops_allowed(acls, principal, host, operation));
     }
 
     ss::future<fragmented_vector<acl_binding>> all_bindings() const {
@@ -243,14 +252,23 @@ private:
      * Compute whether the specified operation is allowed based on the implied
      * operations.
      */
-    bool acl_any_implied_ops_allowed(
+    std::optional<acl_matches::acl_match> acl_any_implied_ops_allowed(
       const acl_matches& acls,
       const acl_principal& principal,
       const acl_host& host,
       const acl_operation operation) const {
-        auto check_op = [&acls, &principal, &host](acl_operation operation) {
-            return acls.contains(
-              operation, principal, host, acl_permission::allow);
+        auto check_op = [&acls, &principal, &host](
+                          auto begin,
+                          auto end) -> std::optional<acl_matches::acl_match> {
+            for (; begin != end; ++begin) {
+                if (auto entry = acls.find(
+                      *begin, principal, host, acl_permission::allow);
+                    entry.has_value()) {
+                    return entry;
+                }
+            }
+
+            return {};
         };
 
         switch (operation) {
@@ -262,17 +280,17 @@ private:
               acl_operation::remove,
               acl_operation::alter,
             };
-            return std::any_of(ops.begin(), ops.end(), check_op);
+            return check_op(ops.begin(), ops.end());
         }
         case acl_operation::describe_configs: {
             static constexpr std::array ops = {
               acl_operation::describe_configs,
               acl_operation::alter_configs,
             };
-            return std::any_of(ops.begin(), ops.end(), check_op);
+            return check_op(ops.begin(), ops.end());
         }
         default:
-            return check_op(operation);
+            return acls.find(operation, principal, host, acl_permission::allow);
         }
     }
     acl_store _store;

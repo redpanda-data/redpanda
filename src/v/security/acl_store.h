@@ -101,11 +101,19 @@ public:
 
     bool empty() const;
 
-    bool contains(
+    std::optional<acl_match> find(
       acl_operation operation,
       const acl_principal& principal,
       const acl_host& host,
       acl_permission perm) const;
+
+    bool contains(
+      acl_operation operation,
+      const acl_principal& principal,
+      const acl_host& host,
+      acl_permission perm) const {
+        return find(operation, principal, host, perm).has_value();
+    }
 
 private:
     std::optional<entry_set_ref> wildcards;
