@@ -50,6 +50,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v::cluster
+    v::kafka_recovery
     v::finjector
     v::kafka
     v::kafka_recovery
