@@ -248,13 +248,17 @@ ss::future<> ntp_archiver::start() {
 
 void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
     bool is_leader = leader_id && *leader_id == _parent.raft()->self().id();
+    vlog(
+      _rtclog.debug,
+      "notify_leadership: is_leader={}, leader_id={}, raft group id={}",
+      is_leader,
+      leader_id ? *leader_id : model::node_id{},
+      _parent.raft()->self().id());
     if (is_leader) {
         _leader_cond.signal();
     }
     if (_local_segment_merger) {
-        _local_segment_merger->set_enabled(
-          is_leader
-          && config::shard_local_cfg().cloud_storage_enable_segment_merging());
+        _local_segment_merger->set_enabled(is_leader);
     }
 
     if (_scrubber) {

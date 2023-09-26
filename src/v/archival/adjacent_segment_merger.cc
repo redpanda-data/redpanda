@@ -57,6 +57,7 @@ adjacent_segment_merger::adjacent_segment_merger(
 ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 
 void adjacent_segment_merger::set_enabled(bool enabled) {
+    vlog(_ctxlog.trace, "Setting adjacent segment merger enabled: {}", enabled);
     _job_enabled = enabled;
 }
 
@@ -78,7 +79,9 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
     model::offset so = _last;
     if (so == model::offset{} && _is_local) {
         // Local lookup, start from local start offset
-        so = local_start_offset;
+        so = std::max(
+          manifest.get_start_offset().value_or(local_start_offset),
+          local_start_offset);
     } else {
         // Remote lookup, start from start offset in the manifest (or 0)
         so = _archiver.manifest().get_start_offset().value_or(model::offset{0});
@@ -94,6 +97,7 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
       max_segment_size);
 
     adjacent_segment_run run(_archiver.get_ntp());
+
     for (auto it = manifest.segment_containing(so); it != manifest.end();
          ++it) {
         if (!_is_local && it->committed_offset >= local_start_offset) {
@@ -150,6 +154,11 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
     };
 
     if (!enabled()) {
+        vlog(
+          _ctxlog.trace,
+          "Adjacent segment merging is disabled, config: {}, job: {}",
+          _config_enabled(),
+          _job_enabled);
         co_return result;
     }
 

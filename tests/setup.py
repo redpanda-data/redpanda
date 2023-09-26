@@ -24,7 +24,8 @@ setup(
         'cachetools==5.3.1', 'google-api-core==2.11.1', 'google-auth==2.22.0',
         'googleapis-common-protos==1.60.0', 'google.cloud.compute==1.14.0',
         'proto-plus==1.22.3', 'rsa==4.9',
-        'python-keycloak@git+https://github.com/redpanda-data/python-keycloak.git@10b822cb0320c54dbf5bf4fd00435afb1487415d'
+        'python-keycloak@git+https://github.com/redpanda-data/python-keycloak.git@10b822cb0320c54dbf5bf4fd00435afb1487415d',
+        'z3-solver==4.12.2', 'hypothesis==6.82'
     ],
     scripts=[],
 )
