@@ -38,6 +38,10 @@ namespace cluster {
 // on every core
 class topics_frontend {
 public:
+    struct capacity_info {
+        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
+        absl::flat_hash_map<model::partition_id, int64_t> ntp_sizes;
+    };
     topics_frontend(
       model::node_id,
       ss::sharded<controller_stm>&,
@@ -207,17 +211,6 @@ private:
     ss::future<std::vector<move_cancellation_result>>
       do_cancel_moving_partition_replicas(
         std::vector<model::ntp>, model::timeout_clock::time_point);
-
-    struct capacity_info {
-        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
-        absl::flat_hash_map<model::partition_id, int64_t> ntp_sizes;
-    };
-
-    partition_constraints get_partition_constraints(
-      model::partition_id id,
-      cluster::replication_factor new_replication_factor,
-      double max_disk_usage_ratio,
-      const capacity_info& info) const;
 
     ss::future<capacity_info> get_health_info(
       model::topic_namespace topic, int32_t partition_count) const;
