@@ -39,7 +39,8 @@ adjacent_segment_merger::adjacent_segment_merger(
   ntp_archiver& parent,
   retry_chain_logger& ctxlog,
   bool is_local,
-  config::binding<bool> config_enabled)
+  config::binding<bool> config_enabled,
+  bool is_compacted)
   : _is_local(is_local)
   , _config_enabled(std::move(config_enabled))
   , _archiver(parent)
@@ -47,7 +48,8 @@ adjacent_segment_merger::adjacent_segment_merger(
   , _target_segment_size(
       config::shard_local_cfg().cloud_storage_segment_size_target.bind())
   , _min_segment_size(
-      config::shard_local_cfg().cloud_storage_segment_size_min.bind()) {
+      config::shard_local_cfg().cloud_storage_segment_size_min.bind())
+  , _is_compacted(is_compacted) {
     vassert(
       !_archiver.ntp_config().is_read_replica_mode_enabled(),
       "Constructed adjacent segment merger on read replica {}",
@@ -93,7 +95,7 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
       min_segment_size,
       max_segment_size);
 
-    adjacent_segment_run run(_archiver.get_ntp());
+    adjacent_segment_run run(_archiver.get_ntp(), _is_compacted);
     for (auto it = manifest.segment_containing(so); it != manifest.end();
          ++it) {
         if (!_is_local && it->committed_offset >= local_start_offset) {
