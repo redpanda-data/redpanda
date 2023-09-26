@@ -591,6 +591,20 @@ bool partition_manifest::contains(const segment_name& name) const {
     return _segments.contains(maybe_key->base_offset);
 }
 
+bool partition_manifest::segment_with_offset_range_exists(
+  model::offset base, model::offset committed) const {
+    if (auto iter = find(base); iter != end()) {
+        const auto expected_committed
+          = _segments.get_committed_offset_column().at_index(iter.index());
+
+        // false when committed offset doesn't match
+        return committed == *expected_committed;
+    } else {
+        // base offset doesn't match any segment
+        return false;
+    }
+}
+
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
 model::offset partition_manifest::get_archive_start_offset() const {
@@ -923,38 +937,116 @@ bool partition_manifest::safe_segment_meta_to_add(const segment_meta& m) {
         // The empty manifest can be started from any offset. If we deleted all
         // segments due to retention we should start from last uploaded offset.
         // The reuploads are not possible if the manifest is empty.
-        return _last_offset == model::offset{0}
-               || model::next_offset(_last_offset) == m.base_offset;
+        const bool is_safe = _last_offset == model::offset{0}
+                             || model::next_offset(_last_offset)
+                                  == m.base_offset;
+
+        if (!is_safe) {
+            vlog(
+              cst_log.error,
+              "[{}] New segment does not line up with last offset of empty "
+              "log: "
+              "last_offset: {}, new_segment: {}",
+              _ntp,
+              _last_offset,
+              m);
+        }
+
+        return is_safe;
     }
-    auto last = _segments.last_segment().value();
-    auto next = model::next_offset(last.committed_offset);
-    if (m.base_offset == next) {
-        return last.delta_offset_end == m.delta_offset;
-    }
-    if (m.base_offset > next) {
-        // Base offset of the uploaded segment overshoots the expected value
-        return false;
-    }
-    // Check reupload correctness
-    // The segment should be aligned with existing segments in the manifest but
-    // there should be more than one segment covered by 'm'.
+
+    auto format_seg_meta_anomalies = [](const segment_meta_anomalies& smas) {
+        if (smas.empty()) {
+            return ss::sstring{};
+        }
+
+        std::vector<anomaly_type> types;
+        for (const auto& a : smas) {
+            types.push_back(a.type);
+        }
+
+        return ssx::sformat(
+          "{{anomaly_types: {}, new_segment: {}, previous_segment: {}}}",
+          types,
+          smas.begin()->at,
+          smas.begin()->previous);
+    };
+
     auto it = _segments.find(m.base_offset);
     if (it == _segments.end()) {
-        return false;
-    }
-    if (it->committed_offset == m.committed_offset) {
-        // 'm' is a reupload of an individual segment, the segment should have
-        // different size
-        return it->size_bytes != m.size_bytes;
-    }
-    ++it;
-    while (it != _segments.end()) {
+        // Segment added to tip of the log
+        const auto last_seg = last_segment();
+        vassert(last_seg.has_value(), "Empty manifest");
+
+        segment_meta_anomalies anomalies;
+        scrub_segment_meta(m, last_seg, anomalies);
+        if (!anomalies.empty()) {
+            vlog(
+              cst_log.error,
+              "[{}] New segment does not line up with previous segment: {}",
+              _ntp,
+              format_seg_meta_anomalies(anomalies));
+            return false;
+        }
+        return true;
+    } else {
+        // Segment reupload case:
+        // The segment should be aligned with existing segments in the manifest
+        // but there should be at least one segment covered by 'm'.
+        if (it != _segments.begin()) {
+            // Firstly, check that the replacement lines up with the segment
+            // preceeding it if one exists.
+            const auto prev_segment_it = _segments.prev(it);
+            segment_meta_anomalies anomalies;
+            scrub_segment_meta(m, *prev_segment_it, anomalies);
+            if (!anomalies.empty()) {
+                vlog(
+                  cst_log.error,
+                  "[{}] New replacement segment does not line up with "
+                  "previous "
+                  "segment: {}",
+                  _ntp,
+                  format_seg_meta_anomalies(anomalies));
+                return false;
+            }
+        }
+
         if (it->committed_offset == m.committed_offset) {
+            // 'm' is a reupload of an individual segment, the segment should
+            // have different size
+            if (it->size_bytes == m.size_bytes) {
+                vlog(
+                  cst_log.error,
+                  "[{}] New replacement segment has the same size as replaced "
+                  "segment: new_segment: {}, replaced_segment: {}",
+                  _ntp,
+                  m,
+                  *it);
+                return false;
+            }
+
             return true;
         }
+
+        // 'm' is a reupload which merges multiple segments. The committed
+        // offset of 'm' should match an existing segment. Otherwise, the
+        // re-upload changes segment boundaries and is *not valid*.
         ++it;
+        while (it != _segments.end()) {
+            if (it->committed_offset == m.committed_offset) {
+                return true;
+            }
+            ++it;
+        }
+
+        vlog(
+          cst_log.error,
+          "[{}] New replacement segment does not match the committed offset of "
+          "any previous segment: new_segment: {}",
+          _ntp,
+          m);
+        return false;
     }
-    return false;
 }
 
 partition_manifest
@@ -2576,9 +2668,32 @@ void partition_manifest::process_anomalies(
 
     auto first_kafka_offset = full_log_start_kafka_offset();
     auto& missing_segs = _detected_anomalies.missing_segments;
-    erase_if(missing_segs, [&first_kafka_offset](const auto& meta) {
-        return meta.next_kafka_offset() <= first_kafka_offset;
+    erase_if(missing_segs, [this, &first_kafka_offset](const auto& meta) {
+        if (meta.next_kafka_offset() <= first_kafka_offset) {
+            return true;
+        }
+
+        // The segment might have been missing because it was merged with
+        // something else. If the offset range doesn't match a segment exactly,
+        // discard the anomaly.
+        return !segment_with_offset_range_exists(
+          meta.base_offset, meta.committed_offset);
     });
+
+    auto& segment_meta_anomalies
+      = _detected_anomalies.segment_metadata_anomalies;
+    erase_if(
+      segment_meta_anomalies,
+      [this, &first_kafka_offset](const auto& anomaly_meta) {
+          if (anomaly_meta.at.next_kafka_offset() <= first_kafka_offset) {
+              return true;
+          }
+
+          // Similarly to the missing segment case, if the boundaries of the
+          // segment where the anomaly was detected changed, drop it.
+          return !segment_with_offset_range_exists(
+            anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
+      });
 
     _last_partition_scrub = scrub_timestamp;
 }

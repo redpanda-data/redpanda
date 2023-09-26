@@ -18,10 +18,12 @@ from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, Bucket
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
+import json
 import random
+import time
 
-# Attempts to compute the retention point for the cloud log will fail
-# after a spillover manifest is manually removed.
+#Attempts to compute the retention point for the cloud log will fail
+#after a spillover manifest is manually removed.
 SCRUBBER_LOG_ALLOW_LIST = [
     r"cloud_storage - .* failed to download manifest {key_not_found}",
     r"cloud_storage - .* failed to download manifest.*cloud_storage::error_outcome:2",
@@ -49,8 +51,6 @@ class CloudStorageScrubberTest(RedpandaTest):
             cloud_storage_housekeeping_interval_ms=1000 * 30,
             fast_uploads=True)
 
-        self.bucket_name = self.si_settings.cloud_storage_bucket
-
         super().__init__(test_context=test_context,
                          extra_rp_conf={
                              "cloud_storage_enable_scrubbing":
@@ -61,6 +61,9 @@ class CloudStorageScrubberTest(RedpandaTest):
                              5 * 1000,
                          },
                          si_settings=self.si_settings)
+
+        self.bucket_name = self.si_settings.cloud_storage_bucket
+        self.rpk = RpkTool(self.redpanda)
 
     def _produce(self):
         msg_count = self.to_produce * self.partition_count // self.message_size
@@ -107,7 +110,8 @@ class CloudStorageScrubberTest(RedpandaTest):
 
             if ("missing_partition_manifest" not in anomalies
                     and "missing_spillover_manifests" not in anomalies
-                    and "missing_segments" not in anomalies):
+                    and "missing_segments" not in anomalies
+                    and "segment_metadata_anomalies" not in anomalies):
                 anomalies = None
 
             anomalies_per_ntpr[ntpr] = anomalies
@@ -164,7 +168,7 @@ class CloudStorageScrubberTest(RedpandaTest):
         wait_until(ntpr_missing_segment,
                    timeout_sec=self.scrub_timeout,
                    backoff_sec=2,
-                   err_msg="Missing spillover manifest anomaly not reported")
+                   err_msg="Missing segment anomaly not reported")
 
     def _delete_spillover_manifest_and_await_anomaly(self):
         pid = random.randint(0, 2)
@@ -259,6 +263,77 @@ class CloudStorageScrubberTest(RedpandaTest):
                    backoff_sec=2,
                    err_msg="Reported anomalies changed after full restart")
 
+    def _assert_segment_metadata_anomalies(self):
+        self.logger.info(
+            "Fudging manifest and waiting on segment metadata anomalies")
+
+        view = BucketView(self.redpanda)
+        manifest = view.manifest_for_ntp(topic=self.topic, partition=0)
+
+        sorted_segments = sorted(manifest['segments'].items(),
+                                 key=lambda entry: entry[1]['base_offset'])
+        assert len(
+            sorted_segments
+        ) > 2, f"Not enough segments in manifest: {json.dumps(manifest)}"
+
+        # Remove the metadata for the penultimate segment, thus creating an offset gap
+        # for the scrubber to detect
+        seg_to_remove_name, seg_to_remove_meta = sorted_segments[-2]
+        manifest['segments'].pop(seg_to_remove_name)
+        self.logger.info(f"Removing segment with meta {seg_to_remove_meta}")
+
+        detect_at_seg_meta = sorted_segments[-1][1]
+        self.logger.info(f"Anomaly should be detected at {detect_at_seg_meta}")
+
+        # Forcefully reset the manifest. Remote writes are disabled first
+        # to make this operation safe.
+        json_man = json.dumps(manifest)
+        self.logger.info(f"Re-setting manifest to:{json_man}")
+
+        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
+                                    'false')
+        time.sleep(1)
+
+        admin = Admin(self.redpanda)
+        admin.unsafe_reset_cloud_metadata(self.topic, 0, manifest)
+
+        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
+                                    'true')
+
+        ntpr = NTPR(ns="kafka",
+                    topic=self.topic,
+                    partition=0,
+                    revision=seg_to_remove_meta["ntp_revision"])
+
+        def gap_reported():
+            anomalies_per_ntpr = self._collect_anomalies()
+            self.logger.debug(f"Reported anomalies {anomalies_per_ntpr}")
+
+            if ntpr not in anomalies_per_ntpr:
+                return False
+
+            if anomalies_per_ntpr[ntpr] is None:
+                return False
+
+            if "segment_metadata_anomalies" not in anomalies_per_ntpr[ntpr]:
+                return False
+
+            seg_meta_anomalies = anomalies_per_ntpr[ntpr][
+                "segment_metadata_anomalies"]
+
+            for meta in seg_meta_anomalies:
+                if (meta["type"] == "offset_gap"
+                        and meta["at_segment"]["base_offset"]
+                        == detect_at_seg_meta["base_offset"]):
+                    return True
+
+        wait_until(
+            gap_reported,
+            # A new manifest needs to be uploaded, so the timeout is more generous
+            timeout_sec=self.scrub_timeout + 10,
+            backoff_sec=2,
+            err_msg="Gap not reported")
+
     @cluster(num_nodes=4, log_allow_list=SCRUBBER_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_scrubber(self, cloud_storage_type):
@@ -267,9 +342,13 @@ class CloudStorageScrubberTest(RedpandaTest):
         self._delete_spillover_manifest_and_await_anomaly()
         self._delete_segment_and_await_anomaly()
 
+        self._assert_segment_metadata_anomalies()
+
         self._assert_anomalies_stable_after_leader_shuffle()
         self._assert_anomalies_stable_after_restart()
 
-        # The test deletes segments, so rp-storage-tool will also
-        # pick up on it.
-        self.redpanda.si_settings.set_expected_damage({"missing_segments"})
+        # This test deletes segments, spillover manifests
+        # and fudges the manifest. rp-storage-tool also picks
+        # up on some of these things.
+        self.redpanda.si_settings.set_expected_damage(
+            {"missing_segments", "metadata_offset_gaps"})

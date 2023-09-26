@@ -143,9 +143,111 @@ std::ostream& operator<<(std::ostream& o, const scrub_status& s) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const anomaly_type& t) {
+    switch (t) {
+    case anomaly_type::missing_delta:
+        o << "{missing_delta}";
+        break;
+    case anomaly_type::non_monotonical_delta:
+        o << "{non_monotonical_delta}";
+        break;
+    case anomaly_type::end_delta_smaller:
+        o << "{end_delta_smaller}";
+        break;
+    case anomaly_type::committed_smaller:
+        o << "{committed_smaller}";
+        break;
+    case anomaly_type::offset_gap:
+        o << "{offset_gap}";
+        break;
+    case anomaly_type::offset_overlap:
+        o << "{offset_overlap}";
+        break;
+    }
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const anomaly_meta& meta) {
+    fmt::print(
+      o,
+      "{{type: {}, at: {}, previous: {}}}",
+      meta.type,
+      meta.at,
+      meta.previous);
+    return o;
+}
+
+void scrub_segment_meta(
+  const segment_meta& current,
+  const std::optional<segment_meta>& previous,
+  segment_meta_anomalies& detected) {
+    // After one segment has a delta offset, all subsequent segments
+    // should have a delta offset too.
+    if (
+      previous && previous->delta_offset != model::offset_delta{}
+      && current.delta_offset == model::offset_delta{}) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::missing_delta, .previous = previous});
+    }
+
+    // The delta offset field of a segment should always be greater or
+    // equal to that of the previous one.
+    if (
+      previous && previous->delta_offset != model::offset_delta{}
+      && current.delta_offset != model::offset_delta{}
+      && previous->delta_offset > current.delta_offset) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::non_monotonical_delta,
+          .at = current,
+          .previous = previous});
+    }
+
+    // The committed offset of a segment should always be greater or equal
+    // to the base offset.
+    if (current.committed_offset < current.base_offset) {
+        detected.insert(
+          anomaly_meta{.type = anomaly_type::committed_smaller, .at = current});
+    }
+
+    // The end delta offset of a segment should always be greater or equal
+    // to the base delta offset.
+    if (
+      current.delta_offset != model::offset_delta{}
+      && current.delta_offset_end != model::offset_delta{}
+      && current.delta_offset_end < current.delta_offset) {
+        detected.insert(
+          anomaly_meta{.type = anomaly_type::end_delta_smaller, .at = current});
+    }
+
+    // The base offset of a given segment should be equal to the committed
+    // offset of the previous segment plus one. Otherwise, if the base offset is
+    // greater, we have a gap in the log.
+    if (
+      previous
+      && model::next_offset(previous->committed_offset) < current.base_offset) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::offset_gap,
+          .at = current,
+          .previous = previous});
+    }
+
+    // The base offset of a given segment should be equal to the committed
+    // offset of the previous segment plus one. Otherwise, if the base offset is
+    // lower, we have overlapping segments in the log.
+    if (
+      previous
+      && model::next_offset(previous->committed_offset) > current.base_offset) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::offset_overlap,
+          .at = current,
+          .previous = previous});
+    }
+}
+
 bool anomalies::has_value() const {
     return missing_partition_manifest || missing_spillover_manifests.size() > 0
-           || missing_segments.size() > 0;
+           || missing_segments.size() > 0
+           || segment_metadata_anomalies.size() > 0;
 }
 
 anomalies& anomalies::operator+=(anomalies&& other) {
@@ -156,6 +258,9 @@ anomalies& anomalies::operator+=(anomalies&& other) {
     missing_segments.insert(
       std::make_move_iterator(other.missing_segments.begin()),
       std::make_move_iterator(other.missing_segments.end()));
+    segment_metadata_anomalies.insert(
+      std::make_move_iterator(other.segment_metadata_anomalies.begin()),
+      std::make_move_iterator(other.segment_metadata_anomalies.end()));
 
     return *this;
 }
@@ -168,10 +273,11 @@ std::ostream& operator<<(std::ostream& o, const anomalies& a) {
     fmt::print(
       o,
       "{{missing_partition_manifest: {}, missing_spillover_manifests: {}, "
-      "missing_segments:{}}}",
+      "missing_segments: {}, segment_metadata_anomalies: {}}}",
       a.missing_partition_manifest,
       a.missing_spillover_manifests.size(),
-      a.missing_segments.size());
+      a.missing_segments.size(),
+      a.segment_metadata_anomalies.size());
 
     return o;
 }

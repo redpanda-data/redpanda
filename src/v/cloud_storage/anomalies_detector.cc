@@ -13,7 +13,6 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
-#include "cloud_storage/spillover_manifest.h"
 
 namespace cloud_storage {
 
@@ -96,27 +95,53 @@ anomalies_detector::run(retry_chain_node& rtc_node) {
     auto stm_manifest_check_res = co_await check_manifest(manifest, rtc_node);
     final_res += std::move(stm_manifest_check_res);
 
-    for (auto iter = spill_manifest_paths.begin();
-         iter != spill_manifest_paths.end();
-         ++iter) {
+    std::optional<segment_meta> first_seg_previous_manifest;
+    if (!manifest.empty()) {
+        first_seg_previous_manifest = *manifest.begin();
+    }
+
+    for (const auto& spill_manifest_path : spill_manifest_paths) {
         if (_as.abort_requested()) {
             final_res.status = scrub_status::partial;
             co_return final_res;
         }
 
-        auto manifest_res = co_await download_and_check_spill_manifest(
-          *iter, rtc_node);
-        final_res += std::move(manifest_res);
+        ++final_res.ops;
+        const auto spill = co_await download_spill_manifest(
+          spill_manifest_path, rtc_node);
+        if (spill) {
+            // Check adjacent segments which have a manifest
+            // boundary between them.
+            if (auto last_in_spill = spill->last_segment();
+                last_in_spill && first_seg_previous_manifest) {
+                scrub_segment_meta(
+                  *first_seg_previous_manifest,
+                  last_in_spill,
+                  final_res.detected.segment_metadata_anomalies);
+            }
+
+            final_res += co_await check_manifest(*spill, rtc_node);
+
+            if (!spill->empty()) {
+                first_seg_previous_manifest = *spill->begin();
+            } else {
+                vlog(
+                  _logger.warn,
+                  "Empty spillover manifest at {}",
+                  spill_manifest_path);
+            }
+        } else {
+            final_res.status = scrub_status::partial;
+            first_seg_previous_manifest = std::nullopt;
+        }
     }
 
     co_return final_res;
 }
 
-ss::future<anomalies_detector::result>
-anomalies_detector::download_and_check_spill_manifest(
+ss::future<std::optional<spillover_manifest>>
+anomalies_detector::download_spill_manifest(
   const ss::sstring& path, retry_chain_node& rtc_node) {
-    result res{};
-
     vlog(_logger.debug, "Downloading spillover manifest {}", path);
 
     spillover_manifest spill{_ntp, _initial_rev};
@@ -125,18 +150,14 @@ anomalies_detector::download_and_check_spill_manifest(
       {manifest_format::serde, remote_manifest_path{path}},
       spill,
       rtc_node);
-    res.ops += 1;
 
     if (manifest_get_result != download_result::success) {
         vlog(_logger.debug, "Failed downloading spillover manifest {}", path);
 
-        res.status = scrub_status::partial;
-        co_return res;
+        co_return std::nullopt;
     }
 
-    res += co_await check_manifest(spill, rtc_node);
-
-    co_return res;
+    co_return spill;
 }
 
 ss::future<anomalies_detector::result> anomalies_detector::check_manifest(
@@ -145,6 +166,7 @@ ss::future<anomalies_detector::result> anomalies_detector::check_manifest(
 
     vlog(_logger.debug, "Checking manifest {}", manifest.get_manifest_path());
 
+    std::optional<segment_meta> previous_seg_meta;
     for (auto seg_iter = manifest.begin(); seg_iter != manifest.end();
          ++seg_iter) {
         if (_as.abort_requested()) {
@@ -152,13 +174,15 @@ ss::future<anomalies_detector::result> anomalies_detector::check_manifest(
             co_return res;
         }
 
-        auto segment_path = manifest.generate_segment_path(*seg_iter);
-        auto exists_result = co_await _remote.segment_exists(
+        const auto seg_meta = *seg_iter;
+
+        const auto segment_path = manifest.generate_segment_path(seg_meta);
+        const auto exists_result = co_await _remote.segment_exists(
           _bucket, segment_path, rtc_node);
         res.ops += 1;
 
         if (exists_result == download_result::notfound) {
-            res.detected.missing_segments.emplace(*seg_iter);
+            res.detected.missing_segments.emplace(seg_meta);
         } else if (exists_result != download_result::success) {
             vlog(
               _logger.debug,
@@ -167,6 +191,10 @@ ss::future<anomalies_detector::result> anomalies_detector::check_manifest(
 
             res.status = scrub_status::partial;
         }
+
+        scrub_segment_meta(
+          seg_meta, previous_seg_meta, res.detected.segment_metadata_anomalies);
+        previous_seg_meta = seg_meta;
     }
 
     vlog(

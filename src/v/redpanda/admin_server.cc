@@ -5161,6 +5161,132 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
 
     return json;
 }
+
+ss::httpd::shadow_indexing_json::segment_meta
+map_segment_meta_to_json(const cloud_storage::segment_meta& meta) {
+    ss::httpd::shadow_indexing_json::segment_meta json;
+    json.base_offset = meta.base_offset();
+    json.committed_offset = meta.committed_offset();
+
+    if (meta.delta_offset != model::offset_delta{}) {
+        json.delta_offset = meta.delta_offset;
+    }
+    if (meta.delta_offset_end != model::offset_delta{}) {
+        json.delta_offset_end = meta.delta_offset_end;
+    }
+
+    json.base_timestamp = meta.base_timestamp();
+    json.max_timestamp = meta.max_timestamp();
+
+    json.size_bytes = meta.size_bytes;
+    json.is_compacted = meta.is_compacted;
+
+    json.archiver_term = meta.archiver_term();
+    json.segment_term = meta.segment_term();
+    json.ntp_revision = meta.ntp_revision();
+
+    return json;
+}
+
+ss::httpd::shadow_indexing_json::metadata_anomaly
+map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
+    ss::httpd::shadow_indexing_json::metadata_anomaly json;
+    switch (meta.type) {
+    case cloud_storage::anomaly_type::missing_delta: {
+        json.type = "missing_delta";
+        json.explanation = "Segment is missing delta offset";
+        json.at_segment = map_segment_meta_to_json(meta.at);
+        if (meta.previous) {
+            json.previous_segment = map_segment_meta_to_json(*meta.previous);
+        }
+
+        break;
+    }
+    case cloud_storage::anomaly_type::non_monotonical_delta: {
+        if (!meta.previous) {
+            vlog(
+              logger.error,
+              "Invalid anomaly metadata of type {} at {}",
+              meta.type,
+              meta.at);
+            return json;
+        }
+
+        json.type = "non_monotonical_delta";
+        json.explanation = ssx::sformat(
+          "Segment has lower delta than previous: {} < {}",
+          meta.at.delta_offset,
+          meta.previous->delta_offset);
+        json.at_segment = map_segment_meta_to_json(meta.at);
+        json.previous_segment = map_segment_meta_to_json(*meta.previous);
+
+        break;
+    }
+    case cloud_storage::anomaly_type::end_delta_smaller: {
+        json.type = "end_delta_smaller";
+        json.explanation = ssx::sformat(
+          "Segment has end delta offset lower than start delta offset: {} < {}",
+          meta.at.delta_offset_end,
+          meta.at.delta_offset);
+        json.at_segment = map_segment_meta_to_json(meta.at);
+
+        break;
+    }
+    case cloud_storage::anomaly_type::committed_smaller: {
+        json.type = "committed_smaller";
+        json.explanation = ssx::sformat(
+          "Segment has committed offset lower start offset: {} < {}",
+          meta.at.committed_offset,
+          meta.at.base_offset);
+        json.at_segment = map_segment_meta_to_json(meta.at);
+
+        break;
+    }
+    case cloud_storage::anomaly_type::offset_gap: {
+        if (!meta.previous) {
+            vlog(
+              logger.error,
+              "Invalid anomaly metadata of type {} at {}",
+              meta.type,
+              meta.at);
+            return json;
+        }
+
+        json.type = "offset_gap";
+        json.explanation = ssx::sformat(
+          "Gap between offsets in interval ({}, {})",
+          meta.previous->committed_offset(),
+          meta.at.base_offset());
+        json.at_segment = map_segment_meta_to_json(meta.at);
+        json.previous_segment = map_segment_meta_to_json(*meta.previous);
+
+        break;
+    }
+    case cloud_storage::anomaly_type::offset_overlap: {
+        if (!meta.previous) {
+            vlog(
+              logger.error,
+              "Invalid anomaly metadata of type {} at {}",
+              meta.type,
+              meta.at);
+            return json;
+        }
+
+        json.type = "offest_overlap";
+        json.explanation = ssx::sformat(
+          "Overlapping offset in interval [{}, {}]",
+          meta.at.base_offset(),
+          meta.previous->committed_offset());
+        json.at_segment = map_segment_meta_to_json(meta.at);
+        json.previous_segment = map_segment_meta_to_json(*meta.previous);
+
+        break;
+    }
+    }
+
+    return json;
+}
+
 ss::httpd::shadow_indexing_json::cloud_storage_partition_anomalies
 map_anomalies_to_json(
   const model::ntp& ntp,
@@ -5194,6 +5320,15 @@ map_anomalies_to_json(
              ++iter) {
             json.missing_segments.push(
               tmp.generate_segment_path(*iter)().string());
+        }
+    }
+
+    if (detected.segment_metadata_anomalies.size() > 0) {
+        const auto& segment_meta_anomalies
+          = detected.segment_metadata_anomalies;
+        for (const auto& a : segment_meta_anomalies) {
+            json.segment_metadata_anomalies.push(
+              map_metadata_anomaly_to_json(a));
         }
     }
 
