@@ -14,13 +14,6 @@
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage_clients/client_pool.h"
-#include "cluster/cloud_metadata/offsets_lookup.h"
-#include "cluster/cloud_metadata/offsets_recoverer.h"
-#include "cluster/cloud_metadata/offsets_recovery_manager.h"
-#include "cluster/cloud_metadata/offsets_recovery_router.h"
-#include "cluster/cloud_metadata/offsets_upload_router.h"
-#include "cluster/cloud_metadata/offsets_uploader.h"
-#include "cluster/cloud_metadata/offsets_recovery_router.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/node/local_monitor.h"
@@ -71,6 +64,15 @@ namespace po = boost::program_options; // NOLINT
 namespace cluster {
 class cluster_discovery;
 } // namespace cluster
+
+namespace cluster::cloud_metadata {
+class offsets_lookup;
+class offsets_recoverer;
+class offsets_recovery_manager;
+class offsets_recovery_router;
+class offsets_upload_router;
+class offsets_uploader;
+} // namespace cluster::cloud_metadata
 
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(

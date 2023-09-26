@@ -15,6 +15,7 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/error_outcome.h"
+#include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/cloud_metadata/offsets_uploader.h"
 #include "kafka/client/client.h"
