@@ -43,6 +43,7 @@
 #include <seastar/util/log.hh>
 
 #include <boost/test/tools/old/interface.hpp>
+#include <fmt/chrono.h>
 
 #include <algorithm>
 #include <iterator>
@@ -498,77 +499,84 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
     info("Configuration: {}", mgr.config());
+    BOOST_REQUIRE(feature_table.local().is_active(
+      features::feature::broker_time_based_retention));
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = model::ntp("default", "test", 0);
 
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
-    auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = log;
+    auto disk_log = mgr.manage(std::move(ntp_cfg)).get0();
+
+    // keep track of broker timestamp, to predict expected evictions
+    auto broker_t0 = model::timestamp_clock::now();
+    constexpr static auto broker_ts_sep = 5s;
 
     // 1. segment timestamps from 100 to 110
+    // broker timestamp: broker_t0
     append_custom_timestamp_batches(
-      log, 10, model::term_id(0), model::timestamp(100));
+      disk_log, 10, model::term_id(0), model::timestamp(100));
     disk_log->force_roll(ss::default_priority_class()).get0();
 
     // 2. segment timestamps from 200 to 230
+    // b ts: broker_t0 + broker_ts_sep
+    ss::sleep(broker_ts_sep).get();
     append_custom_timestamp_batches(
-      log, 30, model::term_id(0), model::timestamp(200));
-
+      disk_log, 30, model::term_id(0), model::timestamp(200));
     disk_log->force_roll(ss::default_priority_class()).get0();
+
     // 3. segment timestamps from 231 to 250
+    // b_ts: broker_t0 + broker_ts_sep + broker_ts_sep
+    ss::sleep(broker_ts_sep).get();
     append_custom_timestamp_batches(
-      log, 20, model::term_id(0), model::timestamp(231));
+      disk_log, 20, model::term_id(0), model::timestamp(231));
 
     /**
      *  Log contains 3 segments with following timestamps:
-     *
+     * t0         t0+sep    t0+2*sep
      * [100..110][200..230][231..261]
      */
 
     storage::housekeeping_config ccfg_no_compact(
-      model::timestamp(200),
+      model::to_timestamp(broker_t0 - 10s),
       std::nullopt,
       model::offset::min(), // should prevent compaction
       ss::default_priority_class(),
       as);
-    auto before = log->offsets();
-    log->housekeeping(ccfg_no_compact).get0();
-    auto after = log->offsets();
+    auto before = disk_log->offsets();
+    disk_log->housekeeping(ccfg_no_compact).get0();
+    auto after = disk_log->offsets();
     BOOST_REQUIRE_EQUAL(after.start_offset, before.start_offset);
 
-    auto make_compaction_cfg = [&as](int timestamp) {
-        return storage::housekeeping_config(
-          model::timestamp(timestamp),
-          std::nullopt,
-          model::offset::max(),
-          ss::default_priority_class(),
-          as);
-    };
+    auto make_compaction_cfg =
+      [&as](model::timestamp_clock::time_point timestamp) {
+          BOOST_TEST_INFO(fmt::format("compacting up to {}", timestamp));
+          return storage::housekeeping_config(
+            model::to_timestamp(timestamp),
+            std::nullopt,
+            model::offset::max(),
+            ss::default_priority_class(),
+            as);
+      };
 
-    // gc with timestamp 50, no segments should be evicted
-    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(50));
+    // gc with timestamp -1s, no segments should be evicted
+    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(broker_t0 - 2s));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().front()->offsets().base_offset, model::offset(0));
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
 
-    // gc with timestamp 102, no segments should be evicted
-    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(102));
-    BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
-    BOOST_REQUIRE_EQUAL(
-      disk_log->segments().front()->offsets().base_offset, model::offset(0));
-    BOOST_REQUIRE_EQUAL(
-      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
-    // gc with timestamp 201, should evict first segment
-    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(201));
+    // gc with timestamp +sep/2, should evict first segment
+    compact_and_prefix_truncate(
+      *disk_log, make_compaction_cfg(broker_t0 + (broker_ts_sep / 2)));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 2);
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().front()->offsets().base_offset, model::offset(10));
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
-    // gc with timestamp 240, should evict first segment
-    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(240));
+    // gc with timestamp +sep3/2, should evict another segment
+    compact_and_prefix_truncate(
+      *disk_log, make_compaction_cfg(broker_t0 + (3 * broker_ts_sep / 2)));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 1);
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().front()->offsets().base_offset, model::offset(40));
@@ -691,16 +699,19 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
           last_evicted_offset.set_value(o);
       });
 
-    auto headers = append_random_batches(
+    append_random_batches(
       log,
       10,
       model::term_id(0),
       custom_ts_batch_generator(model::timestamp::now()));
     log->flush().get0();
-    model::timestamp gc_ts = headers.back().max_timestamp;
+    ss::sleep(1s).get(); // ensure time separation for broker timestamp
+    model::timestamp gc_ts
+      = model::timestamp::now(); // this ts is after the above batch
     auto lstats_before = log->offsets();
     info("Offsets to be evicted {}", lstats_before);
-    headers = append_random_batches(
+    ss::sleep(1s).get(); // ensure time separation between gc_ts and next batch
+    append_random_batches(
       log,
       10,
       model::term_id(0),
@@ -727,7 +738,7 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
       .get();
     auto compacted_lstats = log->offsets();
     info("Compacted offsets {}", compacted_lstats);
-    // check if compaction happend
+    // check if compaction happened
     BOOST_REQUIRE_EQUAL(
       compacted_lstats.start_offset,
       lstats_before.dirty_offset + model::offset(1));
@@ -1504,17 +1515,27 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
                  .get0();
 
     // build some segments
-    auto disk_log = log;
     append_single_record_batch(log, 20, model::term_id(1));
-    disk_log->force_roll(ss::default_priority_class()).get();
+    log->force_roll(ss::default_priority_class()).get();
     append_single_record_batch(log, 30, model::term_id(1));
-    disk_log->force_roll(ss::default_priority_class()).get();
+    log->force_roll(ss::default_priority_class()).get();
     append_single_record_batch(log, 40, model::term_id(1));
-    disk_log->force_roll(ss::default_priority_class()).get();
+    log->force_roll(ss::default_priority_class()).get();
     append_single_record_batch(log, 50, model::term_id(1));
     log->flush().get0();
 
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+    BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
+
+    auto all_have_broker_timestamp = [&] {
+        auto segments = std::vector<ss::lw_shared_ptr<storage::segment>>(
+          log->segments().begin(), log->segments().end());
+        BOOST_REQUIRE(std::ranges::all_of(
+          segments,
+          [](auto bt) { return bt.has_value(); },
+          [](auto& seg) { return seg->index().broker_timestamp(); }));
+    };
+
+    all_have_broker_timestamp();
 
     storage::housekeeping_config c_cfg(
       model::timestamp::min(),
@@ -1527,27 +1548,28 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
     log->housekeeping(c_cfg).get0();
     log->housekeeping(c_cfg).get0();
     // Self compactions complete.
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+    BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
 
     // Check if it honors max_compactible offset by resetting it to the base
     // offset of first segment. Nothing should be compacted.
-    const auto first_segment_offsets = disk_log->segments().front()->offsets();
+    const auto first_segment_offsets = log->segments().front()->offsets();
     c_cfg.compact.max_collectible_offset = first_segment_offsets.base_offset;
     log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+    BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
 
     // reset
     c_cfg.compact.max_collectible_offset = model::offset::max();
 
     log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
+    BOOST_REQUIRE_EQUAL(log->segment_count(), 3);
 
     log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
+    BOOST_REQUIRE_EQUAL(log->segment_count(), 2);
 
     // no change since we can't combine with appender segment
     log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
+    BOOST_REQUIRE_EQUAL(log->segment_count(), 2);
+    all_have_broker_timestamp();
 }
 
 FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
