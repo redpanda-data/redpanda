@@ -1377,7 +1377,7 @@ class TS_SmallSizeBasedRetentionTopicConfig(Expression):
                 # This has to be larger than local target size to allow
                 # reads from the cloud storage. Otherwise the reads will
                 # be served by the local storage only.
-                str(2 * LOCAL_TARGET_SIZE),
+                str(LOCAL_TARGET_SIZE),
                 stage=TestRunStage.Intermediate)
         ]
 
