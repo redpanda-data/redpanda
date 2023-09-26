@@ -80,6 +80,11 @@ public:
 
     using entry_set_ref = acl_entry_set_match;
 
+    struct acl_match {
+        std::reference_wrapper<const resource_pattern> resource;
+        acl_entry_set::const_reference acl;
+    };
+
     acl_matches(
       std::optional<entry_set_ref> wildcards,
       std::optional<entry_set_ref> literals,
