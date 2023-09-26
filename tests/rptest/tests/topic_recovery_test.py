@@ -786,14 +786,18 @@ class TimeBasedRetention(BaseCase):
     We generate 20MB of data (per partition). The first 10MB has timestamp far
     in the past, the second 10MB has current timestamps.
     Then we're running the topic recovery with time-based retention policy and
-    expect that only last 10MB will be downloaded.
+    expect to restore at least the most recent 10MB.
+    Local retention implementation changed for v23.3 and computes retention 
+    based on broker timestamp at write time, this means that locally all 20mb 
+    will be retained. On cloud storage, retention works on data's max_timestamp 
+    as before, so the oldest 10MB might be removed depending on test timing  
     """
     def __init__(self, redpanda: RedpandaService, s3_client, kafka_tools,
                  rpk_client, s3_bucket, logger, rpk_producer_maker, topics):
         assert isinstance(redpanda, RedpandaService)
         self.topics = topics
         self.max_size_bytes = 1024 * 1024 * 20
-        self.restored_size_bytes = 1024 * 1024 * 10
+        self.min_restored_size_bytes = 1024 * 1024 * 10
         super(TimeBasedRetention,
               self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
                              s3_bucket, logger, rpk_producer_maker)
@@ -866,8 +870,8 @@ class TimeBasedRetention(BaseCase):
             self.logger.info(
                 f"Partition {ntp} had size {size_bytes} on disk after recovery"
             )
-            assert is_close_size(size_bytes, self.restored_size_bytes), \
-                f"Too much or not enough data restored, expected {self.restored_size_bytes} got {size_bytes}"
+            assert size_bytes >= self.min_restored_size_bytes, \
+                f"Not enough data restored, expected {self.min_restored_size_bytes} got {size_bytes}"
 
         for topic in self.topics:
             self._produce_and_verify(topic)
