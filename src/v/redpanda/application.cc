@@ -1246,6 +1246,12 @@ void application::wire_up_redpanda_services(
       }))
       .get();
     vlog(_log.info, "Partition manager started");
+    construct_service(
+      offsets_lookup,
+      node_id,
+      std::ref(partition_manager),
+      std::ref(shard_table))
+      .get();
 
     construct_service(node_status_table, node_id).get();
     // controller
@@ -2229,6 +2235,7 @@ void application::start_runtime_services(
               cluster::cloud_metadata::offsets_recovery_rpc_service>(
               sched_groups.archival_upload(),
               smp_service_groups.cluster_smp_sg(),
+              std::ref(offsets_lookup),
               std::ref(offsets_upload_router)));
           runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             sched_groups.raft_sg(),

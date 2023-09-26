@@ -9,6 +9,8 @@
  */
 #pragma once
 
+#include "cluster/cloud_metadata/offsets_lookup.h"
+#include "cluster/cloud_metadata/offsets_lookup_rpc_types.h"
 #include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/offsets_recovery_rpc_service.h"
 #include "config/configuration.h"
@@ -20,12 +22,19 @@ public:
     offsets_recovery_rpc_service(
       ss::scheduling_group sg,
       ss::smp_service_group ssg,
+      ss::sharded<cluster::cloud_metadata::offsets_lookup>& ol,
       ss::sharded<cluster::cloud_metadata::offsets_upload_router>& our)
       : offsets_recovery_service(sg, ssg)
+      , _offsets_lookup(ol)
       , _offsets_upload_router(our)
       , _metadata_timeout_ms(
           config::shard_local_cfg()
             .cloud_storage_cluster_metadata_upload_timeout_ms.bind()) {}
+
+    ss::future<offsets_lookup_reply> offsets_lookup(
+      offsets_lookup_request&& req, rpc::streaming_context&) override {
+        co_return co_await _offsets_lookup.local().lookup(std::move(req));
+    }
 
     ss::future<offsets_upload_reply> offsets_upload(
       offsets_upload_request&& req, rpc::streaming_context& ctx) override {
@@ -35,6 +44,7 @@ public:
     }
 
 private:
+    ss::sharded<cluster::cloud_metadata::offsets_lookup>& _offsets_lookup;
     ss::sharded<cluster::cloud_metadata::offsets_upload_router>&
       _offsets_upload_router;
 
