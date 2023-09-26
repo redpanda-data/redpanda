@@ -120,7 +120,13 @@ private:
     ss::future<> run_eviction_loop();
 
     /// Set bandwidth for tiered-storage scheduling_group
-    ss::future<> set_disk_max_bandwidth();
+    ss::future<> set_disk_max_bandwidth(size_t tput);
+
+    /// Set download bandwidth for cloud storage API
+    void set_net_max_bandwidth(size_t tput);
+
+    /// Recalculate and reset throughput limits
+    ss::future<> update_throughput();
 
     /// Try to evict segment readers until `target_free` units are available in
     /// _reader_units, i.e. available for new readers to be created.
@@ -167,7 +173,9 @@ private:
 
     ts_read_path_probe _read_path_probe;
     token_bucket<> _throughput_limit;
-    config::binding<size_t> _throughput_limit_config;
+    config::binding<size_t> _throughput_shard_limit_config;
+    config::binding<size_t> _relative_throughput;
+    bool _throttling_disabled{false};
 };
 
 } // namespace cloud_storage

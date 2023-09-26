@@ -1585,9 +1585,31 @@ configuration::configuration()
   , cloud_storage_max_download_throughput_per_shard(
       *this,
       "cloud_storage_max_download_throughput_per_shard",
-      "Max S3 download throughput per shard",
+      "Max throughput used by tiered-storage per shard in bytes per second. "
+      "This value is an upper bound of the throughput available to the "
+      "tiered-storage subsystem. This parameter is intended to be used as a "
+      "safeguard and in tests when "
+      "we need to set precise throughput value independent of actual storage "
+      "media. "
+      "Please use 'cloud_storage_throughput_limit_percent' instead of this "
+      "parameter in the production environment.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB)
+  , cloud_storage_throughput_limit_percent(
+      *this,
+      "cloud_storage_throughput_limit_percent",
+      "Max throughput used by tiered-storage per node expressed as a "
+      "percentage of the disk bandwidth. If the server has several disks "
+      "Redpanda will take into account only the one which is used to store "
+      "tiered-storage cache. Note that even if the tiered-storage is allowed "
+      "to use full bandwidth of the disk (100%) it won't necessary use it in "
+      "full. The actual usage depend on your workload and the state of the "
+      "tiered-storage cache. This parameter is a safeguard that prevents "
+      "tiered-storage from using too many system resources and not a "
+      "performance tuning knob.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      50,
+      {.min = 0, .max = 100})
   , cloud_storage_graceful_transfer_timeout_ms(
       *this,
       "cloud_storage_graceful_transfer_timeout_ms",
