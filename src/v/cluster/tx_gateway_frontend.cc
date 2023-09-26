@@ -1045,6 +1045,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
     }
     auto term = term_opt.value();
 
+    auto units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+    if ((co_await stm->get_tx(tx_id)).has_value()) {
+        co_return co_await do_init_tm_tx(
+          stm, term, tx_id, transaction_timeout_ms, timeout, expected_pid);
+    }
+    units.return_all();
+
     if (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
         // lock is sloppy and doesn't guarantee that tx_cache_size
         // never exceeds _max_transactions_per_coordinator. init_tm_tx
@@ -1107,7 +1114,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
         init_units.return_all();
     }
 
-    auto units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+    units = co_await stm->lock_tx(tx_id, "init_tm_tx");
 
     co_return co_await do_init_tm_tx(
       stm, term, tx_id, transaction_timeout_ms, timeout, expected_pid);
