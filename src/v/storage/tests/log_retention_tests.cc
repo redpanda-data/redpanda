@@ -16,6 +16,8 @@
 
 #include <optional>
 
+using namespace std::literals;
+
 struct gc_fixture {
     storage::disk_log_builder builder;
 };
@@ -28,31 +30,38 @@ FIXTURE_TEST(empty_log_garbage_collect, gc_fixture) {
 }
 
 FIXTURE_TEST(retention_test_time, gc_fixture) {
-    auto base_ts = model::timestamp{123000};
+    auto base_ts = model::timestamp::now();
+    ss::sleep(5s).get();
     builder.set_time(base_ts);
     builder | storage::start() | storage::add_segment(0)
       | storage::add_random_batch(0, 100, storage::maybe_compress_batches::yes)
-      | storage::add_random_batch(100, 2, storage::maybe_compress_batches::yes)
-      | storage::add_segment(102)
-      | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes)
-      | storage::add_segment(104) | storage::add_random_batches(104, 3);
+      | storage::add_random_batch(100, 2, storage::maybe_compress_batches::yes);
+
+    ss::sleep(5s).get();
+
+    builder | storage::add_segment(102)
+      | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes);
+
+    ss::sleep(5s).get();
+    builder | storage::add_segment(104) | storage::add_random_batches(104, 3);
     BOOST_TEST_MESSAGE(
       "Should not collect segments with timestamp older than 1");
     BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 3);
-    builder | storage::garbage_collect(model::timestamp(1), std::nullopt);
+
+    builder | storage::garbage_collect(base_ts, std::nullopt);
     BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 3);
 
     BOOST_TEST_MESSAGE("Should not collect segments because size is infinity");
     builder
       | storage::garbage_collect(
-        model::timestamp(1),
+        base_ts,
         std::make_optional<size_t>(std::numeric_limits<size_t>::max()));
     BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 3);
 
     BOOST_TEST_MESSAGE("Should leave one active segment");
     builder
       | storage::garbage_collect(
-        model::timestamp{base_ts() + 1000}, std::nullopt)
+        model::timestamp{base_ts() + 15'000}, std::nullopt)
       | storage::stop();
 
     BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 1);
@@ -101,9 +110,6 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
 FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     const auto last_week = model::to_timestamp(
       model::timestamp_clock::now() - std::chrono::days(7));
-
-    const auto yesterday = model::to_timestamp(
-      model::timestamp_clock::now() - std::chrono::days(1));
 
     const size_t num_records = 10;
     const auto part_size = [this] {
@@ -214,7 +220,7 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
        - 5_MiB),
       20_KiB);
 
-    builder | storage::garbage_collect(yesterday, 4_MiB);
+    builder | storage::garbage_collect(model::timestamp::now(), 4_MiB);
 
     // right after gc runs there shouldn't be anything reclaimable
     BOOST_CHECK_EQUAL(
