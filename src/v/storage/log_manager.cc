@@ -235,6 +235,9 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         _logs_list.shift_forward();
 
         current_log.flags |= bflags::lifetime_checked;
+        // NOTE: apply_segment_ms holds _compaction_housekeeping_gate, that
+        // prevents the removal of the parent object. this makes awaiting
+        // apply_segment_ms safe against removal of segments from _logs_list
         co_await current_log.handle.apply_segment_ms();
     }
 
@@ -250,6 +253,9 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 
         current_log.flags |= bflags::compacted;
         current_log.last_compaction = ss::lowres_clock::now();
+        // NOTE: compact holds _compaction_housekeeping_gate, that prevents
+        // the removal of the parent object. this makes awaiting housekeeping
+        // safe against removal of segments from _logs_list
         co_await current_log.handle.compact(compaction_config(
           collection_threshold,
           _config.retention_bytes(),
