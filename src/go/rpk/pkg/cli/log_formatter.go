@@ -24,6 +24,7 @@ func (*noopFormatter) Format(e *logrus.Entry) ([]byte, error) {
 	return []byte(e.Message), nil
 }
 
+
 func NewNoopFormatter() logrus.Formatter {
 	return &noopFormatter{}
 }
