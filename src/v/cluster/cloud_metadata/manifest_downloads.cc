@@ -10,6 +10,7 @@
 #include "cluster/cloud_metadata/manifest_downloads.h"
 
 #include "cloud_storage/remote.h"
+#include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cloud_metadata/key_utils.h"
 #include "cluster/logger.h"
@@ -120,6 +121,20 @@ ss::future<cluster_manifest_result> download_highest_manifest_for_cluster(
     co_return manifest;
 }
 
+namespace {
+bool is_offsets_snapshot_path(
+  const ss::sstring& object, const cluster_metadata_manifest& m) {
+    for (const auto& paths : m.offsets_snapshots_by_partition) {
+        for (const auto& p : paths) {
+            if (p == object) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+} // anonymous namespace
+
 ss::future<std::list<ss::sstring>> list_orphaned_by_manifest(
   cloud_storage::remote& remote,
   const model::cluster_uuid& cluster_uuid,
@@ -142,7 +157,8 @@ ss::future<std::list<ss::sstring>> list_orphaned_by_manifest(
     for (auto& item : list_res.value().contents) {
         if (
           item.key == ss::sstring{manifest.get_manifest_path()()}
-          || item.key == manifest.controller_snapshot_path) {
+          || item.key == manifest.controller_snapshot_path
+          || is_offsets_snapshot_path(item.key, manifest)) {
             vlog(clusterlog.trace, "Ignoring expected object: {}", item.key);
             continue;
         }
