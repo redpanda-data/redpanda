@@ -73,7 +73,12 @@ private:
  */
 class acl_matches {
 public:
-    using entry_set_ref = std::reference_wrapper<const acl_entry_set>;
+    struct acl_entry_set_match {
+        std::reference_wrapper<const resource_pattern> resource;
+        std::reference_wrapper<const acl_entry_set> acl_entry_set;
+    };
+
+    using entry_set_ref = acl_entry_set_match;
 
     acl_matches(
       std::optional<entry_set_ref> wildcards,

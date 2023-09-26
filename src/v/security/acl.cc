@@ -49,15 +49,15 @@ std::optional<std::reference_wrapper<const acl_entry>> acl_entry_set::find(
 }
 
 bool acl_matches::empty() const {
-    if (wildcards && !wildcards->get().empty()) {
+    if (wildcards && !wildcards->acl_entry_set.get().empty()) {
         return false;
     }
-    if (literals && !literals->get().empty()) {
+    if (literals && !literals->acl_entry_set.get().empty()) {
         return false;
     }
     return std::all_of(
       prefixes.cbegin(), prefixes.cend(), [](const entry_set_ref& e) {
-          return e.get().empty();
+          return e.acl_entry_set.get().empty();
       });
 }
 
@@ -67,19 +67,22 @@ bool acl_matches::contains(
   const acl_host& host,
   acl_permission perm) const {
     for (const auto& entries : prefixes) {
-        if (entries.get().contains(operation, principal, host, perm)) {
+        if (entries.acl_entry_set.get().contains(
+              operation, principal, host, perm)) {
             return true;
         }
     }
 
     if (wildcards) {
-        if (wildcards->get().contains(operation, principal, host, perm)) {
+        if (wildcards->acl_entry_set.get().contains(
+              operation, principal, host, perm)) {
             return true;
         }
     }
 
     if (literals) {
-        if (literals->get().contains(operation, principal, host, perm)) {
+        if (literals->acl_entry_set.get().contains(
+              operation, principal, host, perm)) {
             return true;
         }
     }
@@ -96,7 +99,7 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
 
     opt_entry_set wildcards;
     if (const auto it = _acls.find(wildcard_pattern); it != _acls.end()) {
-        wildcards = it->second;
+        wildcards = {it->first, it->second};
     }
 
     const resource_pattern literal_pattern(
@@ -104,7 +107,7 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
 
     opt_entry_set literals;
     if (const auto it = _acls.find(literal_pattern); it != _acls.end()) {
-        literals = it->second;
+        literals = {it->first, it->second};
     }
 
     /*
@@ -121,7 +124,7 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
 
         for (; it != end; ++it) {
             if (std::string_view(name).starts_with(it->first.name())) {
-                prefixes.emplace_back(it->second);
+                prefixes.emplace_back(it->first, it->second);
             }
         }
     }
