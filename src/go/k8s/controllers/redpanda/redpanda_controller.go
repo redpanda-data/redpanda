@@ -19,7 +19,6 @@ import (
 
 	helmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 	"github.com/fluxcd/pkg/apis/meta"
-	"github.com/fluxcd/pkg/runtime/predicates"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,12 +29,8 @@ import (
 	kuberecorder "k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 	v2 "sigs.k8s.io/controller-runtime/pkg/webhook/conversion/testdata/api/v2"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -98,14 +93,8 @@ type RedpandaReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *RedpandaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.Redpanda{}, builder.WithPredicates(
-			predicate.Or(predicate.GenerationChangedPredicate{},
-				predicates.ReconcileRequestedPredicate{}),
-		)).
-		Watches(
-			&source.Kind{Type: &helmv2beta1.HelmRelease{}},
-			&handler.EnqueueRequestForObject{},
-		).
+		For(&v1alpha1.Redpanda{}).
+		Owns(&helmv2beta1.HelmRelease{}).
 		Complete(r)
 }
 
@@ -123,6 +112,23 @@ func (r *RedpandaReconciler) Reconcile(c context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Examine if the object is under deletion
+	if !rp.ObjectMeta.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, rp)
+	}
+
+	if !isRedpandaManaged(ctx, rp) {
+		if controllerutil.ContainsFinalizer(rp, FinalizerKey) {
+			// if no longer managed by us, attempt to remove the finalizer
+			controllerutil.RemoveFinalizer(rp, FinalizerKey)
+			if err := r.Client.Update(ctx, rp); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		return ctrl.Result{}, nil
+	}
+
 	// add finalizer if not exist
 	if !controllerutil.ContainsFinalizer(rp, FinalizerKey) {
 		patch := client.MergeFrom(rp.DeepCopy())
@@ -131,15 +137,6 @@ func (r *RedpandaReconciler) Reconcile(c context.Context, req ctrl.Request) (ctr
 			log.Error(err, "unable to register finalizer")
 			return ctrl.Result{}, err
 		}
-	}
-
-	// Examine if the object is under deletion
-	if !rp.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, rp)
-	}
-
-	if !isRedpandaManaged(ctx, rp) {
-		return ctrl.Result{}, nil
 	}
 
 	rp, result, err := r.reconcile(ctx, rp)
@@ -322,12 +319,12 @@ func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, rp *v1alpha1.R
 	if err := r.deleteHelmRelease(ctx, rp); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	controllerutil.RemoveFinalizer(rp, FinalizerKey)
-	if err := r.Client.Update(ctx, rp); err != nil {
-		return ctrl.Result{}, err
+	if controllerutil.ContainsFinalizer(rp, FinalizerKey) {
+		controllerutil.RemoveFinalizer(rp, FinalizerKey)
+		if err := r.Client.Update(ctx, rp); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -425,8 +422,9 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 
 	return &helmv2beta1.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      rp.GetHelmReleaseName(),
-			Namespace: rp.Namespace,
+			Name:            rp.GetHelmReleaseName(),
+			Namespace:       rp.Namespace,
+			OwnerReferences: []metav1.OwnerReference{rp.OwnerShipRefObj()},
 		},
 		Spec: helmv2beta1.HelmReleaseSpec{
 			Chart: helmv2beta1.HelmChartTemplate{
