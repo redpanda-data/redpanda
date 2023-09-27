@@ -5,7 +5,7 @@ kindContainers:
   - localhost/redpanda-operator:dev
 testDirs:
   - ./tests/e2e-v2
-kindConfig: ./kind.yaml
+kindConfig: ./kind-for-v2.yaml
 kindNodeCache: false
 commands:
   - command: mkdir -p tests/_e2e_artifacts_v2

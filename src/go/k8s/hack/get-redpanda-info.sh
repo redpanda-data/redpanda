@@ -44,7 +44,7 @@ for cl in $(kubectl -n $script_namespace get cluster --output=jsonpath='{.items.
   done
 done
 
-kubectl get events --sort-by metadata.creationTimestamp >$ARTIFACTS_PATH/events.txt
+kubectl get events -n $script_namespace --sort-by metadata.creationTimestamp >$ARTIFACTS_PATH/events.txt
 kubectl get events --sort-by metadata.creationTimestamp -A >$ARTIFACTS_PATH/all-events.txt
 kubectl describe node >$ARTIFACTS_PATH/described-nodes.txt
 kubectl get pod -A -o yaml >$ARTIFACTS_PATH/all-pods.yaml
