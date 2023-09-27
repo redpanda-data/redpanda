@@ -570,7 +570,7 @@ func (r *TopicReconciler) createKafkaClient(ctx context.Context, topic *v1alpha1
 func (r *TopicReconciler) recordErrorEvent(err error, topic *v1alpha1.Topic, eventType, message string, args ...any) error {
 	if r.EventRecorder != nil {
 		var eventArgs []any
-		copy(args, eventArgs)
+		copy(eventArgs, args)
 		eventArgs = append(eventArgs, err.Error())
 		r.EventRecorder.AnnotatedEventf(topic,
 			map[string]string{v2.GroupVersion.Group + "/revision": topic.ResourceVersion},
