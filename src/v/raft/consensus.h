@@ -146,10 +146,15 @@ public:
      * New simplified configuration change API, accepting only vnode instead of
      * full broker object
      */
-    ss::future<std::error_code> add_group_member(vnode, model::revision_id);
+    ss::future<std::error_code> add_group_member(
+      vnode node_to_add,
+      model::revision_id new_configuration_revision,
+      std::optional<model::offset> learner_start_offset = std::nullopt);
     ss::future<std::error_code> remove_member(vnode, model::revision_id);
-    ss::future<std::error_code>
-      replace_configuration(std::vector<vnode>, model::revision_id);
+    ss::future<std::error_code> replace_configuration(
+      std::vector<vnode> new_nodes,
+      model::revision_id new_configuration_revision,
+      std::optional<model::offset> learner_start_offset = std::nullopt);
 
     /**
      * Force appends a new configuration to the local log with provided

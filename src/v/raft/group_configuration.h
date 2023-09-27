@@ -17,6 +17,8 @@
 
 #include <boost/range/join.hpp>
 
+#include <optional>
+
 namespace raft {
 
 struct broker_revision {
@@ -212,9 +214,10 @@ public:
      */
     void update(model::broker);
 
-    void add(vnode, model::revision_id);
+    void add(vnode, model::revision_id, std::optional<model::offset>);
     void remove(vnode, model::revision_id);
-    void replace(std::vector<vnode>, model::revision_id);
+    void replace(
+      std::vector<vnode>, model::revision_id, std::optional<model::offset>);
 
     /**
      * Discards the old configuration, after this operation joint configuration
@@ -350,9 +353,13 @@ public:
           = 0;
         virtual void remove_broker(model::node_id) = 0;
 
-        virtual void add(vnode, model::revision_id) = 0;
+        virtual void
+          add(vnode, model::revision_id, std::optional<model::offset>)
+          = 0;
         virtual void remove(vnode, model::revision_id) = 0;
-        virtual void replace(std::vector<vnode>, model::revision_id) = 0;
+        virtual void replace(
+          std::vector<vnode>, model::revision_id, std::optional<model::offset>)
+          = 0;
 
         /**
          * Discards the old configuration, after this operation joint

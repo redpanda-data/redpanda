@@ -52,6 +52,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iterator>
+#include <optional>
 #include <system_error>
 
 template<>
@@ -1116,20 +1117,22 @@ ss::future<std::error_code> consensus::replace_configuration(
       });
 }
 
-ss::future<std::error_code>
-consensus::add_group_member(vnode node, model::revision_id new_revision) {
+ss::future<std::error_code> consensus::add_group_member(
+  vnode node,
+  model::revision_id new_revision,
+  std::optional<model::offset> learner_start_offset) {
     vlog(_ctxlog.trace, "Adding member: {}", node);
-    return change_configuration(
-      [node, new_revision](group_configuration current) mutable {
-          using ret_t = result<group_configuration>;
-          if (current.contains(node)) {
-              return ret_t{errc::node_already_exists};
-          }
-          current.set_version(raft::group_configuration::v_5);
-          current.add(node, new_revision);
+    return change_configuration([node, new_revision, learner_start_offset](
+                                  group_configuration current) mutable {
+        using ret_t = result<group_configuration>;
+        if (current.contains(node)) {
+            return ret_t{errc::node_already_exists};
+        }
+        current.set_version(raft::group_configuration::v_5);
+        current.add(node, new_revision, learner_start_offset);
 
-          return ret_t{std::move(current)};
-      });
+        return ret_t{std::move(current)};
+    });
 }
 
 ss::future<std::error_code>
@@ -1152,14 +1155,17 @@ consensus::remove_member(vnode node, model::revision_id new_revision) {
 }
 
 ss::future<std::error_code> consensus::replace_configuration(
-  std::vector<vnode> nodes, model::revision_id new_revision) {
-    return change_configuration([nodes = std::move(nodes), new_revision](
-                                  group_configuration current) mutable {
-        current.set_version(raft::group_configuration::v_5);
-        current.replace(nodes, new_revision);
+  std::vector<vnode> nodes,
+  model::revision_id new_revision,
+  std::optional<model::offset> learner_start_offset) {
+    return change_configuration(
+      [nodes = std::move(nodes), new_revision, learner_start_offset](
+        group_configuration current) mutable {
+          current.set_version(raft::group_configuration::v_5);
+          current.replace(nodes, new_revision, learner_start_offset);
 
-        return result<group_configuration>{std::move(current)};
-    });
+          return result<group_configuration>{std::move(current)};
+      });
 }
 
 template<typename Func>
