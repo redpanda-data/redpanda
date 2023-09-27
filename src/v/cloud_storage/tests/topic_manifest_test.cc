@@ -112,6 +112,22 @@ static constexpr std::string_view wrong_compaction_strategy = R"json({
     "retention_duration": 36000000000
 })json";
 
+static constexpr std::string_view negative_properties_manifest = R"json({
+    "version": 1,
+    "namespace": "negative-test-namespace",
+    "topic": "full-test-topic",
+    "partition_count": 64,
+    "replication_factor": 6,
+    "revision_id": 1,
+    "compression": "snappy",
+    "cleanup_policy_bitflags": "compact,delete",
+    "compaction_strategy": "offset",
+    "timestamp_type": "LogAppendTime",
+    "segment_size": -1234,
+    "retention_bytes": -42342,
+    "retention_duration": -36000000000
+})json";
+
 inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
     iobuf i;
     i.append(json.data(), json.size());
@@ -293,4 +309,17 @@ SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
     restored.update(std::move(rstr)).get();
 
     BOOST_REQUIRE(m == restored);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
+    topic_manifest m(cfg, model::initial_revision_id(0));
+    m.update(make_manifest_stream(negative_properties_manifest)).get();
+    auto tp_cfg = m.get_topic_config();
+    BOOST_REQUIRE(tp_cfg.has_value());
+    BOOST_REQUIRE_EQUAL(64, tp_cfg->partition_count);
+    BOOST_REQUIRE_EQUAL(6, tp_cfg->replication_factor);
+    auto tp_props = tp_cfg->properties;
+    BOOST_REQUIRE(tp_props.retention_duration.is_disabled());
+    BOOST_REQUIRE(tp_props.retention_bytes.is_disabled());
+    BOOST_REQUIRE(!tp_props.segment_size.has_value());
 }

@@ -94,6 +94,44 @@ struct topic_manifest_handler
         }
     }
 
+    bool Int(int u) { return Int64(u); }
+
+    bool Int64(int64_t u) {
+        if (u >= 0) {
+            // Should only be called when negative, but doesn't hurt to just
+            // defer to the unsigned variant.
+            return Uint64(u);
+        }
+        // The casting to int64 below results in negative values finding their
+        // way into certain properties. Treat them as empty.
+        switch (_state) {
+        case state::expect_value:
+            if (_key == "version") {
+                _version = std::nullopt;
+            } else if (_key == "partition_count") {
+                _partition_count = std::nullopt;
+            } else if (_key == "replication_factor") {
+                _replication_factor = std::nullopt;
+            } else if (_key == "revision_id") {
+                _revision_id = std::nullopt;
+            } else if (_key == "segment_size") {
+                _properties.segment_size = std::nullopt;
+            } else if (_key == "retention_bytes") {
+                _properties.retention_bytes = tristate<size_t>{};
+            } else if (_key == "retention_duration") {
+                _properties.retention_duration
+                  = tristate<std::chrono::milliseconds>{};
+            } else {
+                return false;
+            }
+            _state = state::expect_key;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_key:
+            return false;
+        }
+    }
+
     bool Uint(unsigned u) { return Uint64(u); }
 
     bool Uint64(uint64_t u) {
