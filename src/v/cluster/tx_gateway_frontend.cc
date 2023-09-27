@@ -1247,6 +1247,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
             auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
             auto tx_maybe = co_await get_tx(term, stm, old_tx.id, timeout);
             if (!tx_maybe.has_value()) {
+                vlog(
+                  txlog.warn,
+                  "can't look up a tx (tx.id={}): ec={}",
+                  old_tx.id,
+                  tx_maybe.error());
                 co_return init_tm_tx_reply{tx_errc::not_coordinator};
             }
             old_tx = tx_maybe.value();
@@ -1255,7 +1260,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
               stm, term, old_tx, timeout, true);
             if (ec != tx_errc::none) {
                 vlog(
-                  txlog.trace,
+                  txlog.warn,
                   "expiring old tx (tx.id={}) failed with ec={}",
                   old_tx.id,
                   ec);
