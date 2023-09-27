@@ -2698,49 +2698,6 @@ ss::future<> ntp_archiver::garbage_collect() {
       all_deletes_succeeded ? to_remove.size() : 0);
 }
 
-ss::future<cloud_storage::upload_result>
-ntp_archiver::delete_segment(const remote_segment_path& path) {
-    _as.check();
-
-    size_t entities_deleted = 3;
-    retry_chain_node fib(
-      _conf->manifest_upload_timeout * entities_deleted,
-      _conf->cloud_storage_initial_backoff,
-      &_rtcnode);
-
-    auto res = co_await _remote.delete_object(
-      get_bucket_name(), cloud_storage_clients::object_key{path}, fib);
-
-    if (res == cloud_storage::upload_result::success) {
-        if (auto delete_tx_res = co_await _remote.delete_object(
-              _conf->bucket_name,
-              cloud_storage_clients::object_key{
-                cloud_storage::generate_remote_tx_path(path)},
-              fib);
-            delete_tx_res != cloud_storage::upload_result::success) {
-            vlog(
-              _rtclog.warn,
-              "failed to delete transaction manifest: {}, result: {}",
-              cloud_storage::generate_remote_tx_path(path),
-              delete_tx_res);
-        }
-
-        if (auto delete_index_res = co_await _remote.delete_object(
-              _conf->bucket_name,
-              cloud_storage_clients::object_key{make_index_path(path)},
-              fib);
-            delete_index_res != cloud_storage::upload_result::success) {
-            vlog(
-              _rtclog.warn,
-              "failed to delete index file: {}, result: {}",
-              make_index_path(path),
-              delete_index_res);
-        }
-    }
-
-    co_return res;
-}
-
 const cloud_storage_clients::bucket_name&
 ntp_archiver::get_bucket_name() const {
     if (_bucket_override) {
