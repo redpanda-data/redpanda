@@ -3639,7 +3639,7 @@ class RedpandaService(RedpandaServiceBase):
 
     def _get_object_storage_report(self,
                                    tolerate_empty_object_storage=False,
-                                   timeout=60) -> dict[str, str | list[str]]:
+                                   timeout=300) -> dict[str, str | list[str]]:
         """
         Uses rp-storage-tool to get the object storage report.
         If the cluster is running the tool could see some inconsistencies and report anomalies,
@@ -3694,12 +3694,17 @@ class RedpandaService(RedpandaServiceBase):
 
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
+        bucket_arity = len(list(self.get_objects_from_si()))
+        effective_timeout = min(bucket_arity * 3, timeout)
+        self.logger.info(
+            f"num objects in the {bucket=}: {bucket_arity}, will apply {effective_timeout=}"
+        )
         output, stderr = ssh_output_stderr(
             self,
             node,
             f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             allow_fail=True,
-            timeout_sec=timeout)
+            timeout_sec=effective_timeout)
 
         # if stderr contains a WARN logline, log it as DEBUG, since this is mostly related to debugging rp-storage-tool itself
         if re.search(b'\[\S+ WARN', stderr) is not None:
@@ -3720,7 +3725,7 @@ class RedpandaService(RedpandaServiceBase):
 
     def raise_on_cloud_storage_inconsistencies(self,
                                                inconsistencies: list[str],
-                                               run_timeout=60):
+                                               run_timeout=300):
         """
         like stop_and_scrub_object_storage, use rp-storage-tool to explicitly check for inconsistencies,
         but without stopping the cluster.
@@ -3737,7 +3742,7 @@ class RedpandaService(RedpandaServiceBase):
                 f"Object storage reports fatal anomalies of type {fatal_anomalies}"
             )
 
-    def stop_and_scrub_object_storage(self, run_timeout=60):
+    def stop_and_scrub_object_storage(self, run_timeout=300):
         # Before stopping, ensure that all tiered storage partitions
         # have uploaded at least a manifest: we do not require that they
         # have uploaded until the head of their log, just that they have
