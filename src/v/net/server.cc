@@ -20,8 +20,10 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
@@ -102,7 +104,8 @@ void server::start() {
           std::make_unique<listener>(endpoint.name, std::move(ss)));
         listener& ref = *b;
         // background
-        ssx::spawn_with_gate(_conn_gate, [this, &ref] { return accept(ref); });
+        ssx::spawn_with_gate(
+          _accept_gate, [this, &ref] { return accept(ref); });
     }
 }
 
@@ -264,10 +267,8 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
       this->name(),
       ar.remote_address,
       name);
-    if (_conn_gate.is_closed()) {
-        co_await conn->shutdown();
-        throw ss::gate_closed_exception();
-    }
+
+    _as.check();
     ssx::spawn_with_gate(
       _conn_gate, [this, conn, cq_units = std::move(cq_units)]() mutable {
           return apply_proto(conn, std::move(cq_units));
@@ -275,34 +276,37 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
     co_return ss::stop_iteration::no;
 }
 
-void server::shutdown_input() {
+ss::future<> server::shutdown_input() {
     vlog(_log.info, "{} - Stopping {} listeners", name(), _listeners.size());
     for (auto& l : _listeners) {
         l->socket.abort_accept();
     }
     vlog(_log.debug, "{} - Service probes {}", name(), _probe);
-    vlog(
-      _log.info,
-      "{} - Shutting down {} connections",
-      name(),
-      _connections.size());
     _as.request_abort_ex(ssx::shutdown_requested_exception{});
-    // close the connections and wait for all dispatches to finish
-    for (auto& c : _connections) {
-        c.shutdown_input();
-    }
+
+    return _accept_gate.close().then([this] {
+        vlog(
+          _log.info,
+          "{} - Shutting down {} connections",
+          name(),
+          _connections.size());
+        // close the connections and wait for all dispatches to finish
+        for (auto& c : _connections) {
+            c.shutdown_input();
+        }
+    });
 }
 
 ss::future<> server::wait_for_shutdown() {
     if (!_as.abort_requested()) {
-        shutdown_input();
+        co_await shutdown_input();
     }
 
     if (_connection_rates.has_value()) {
         _connection_rates->stop();
     }
 
-    return _conn_gate.close().then([this] {
+    co_return co_await _conn_gate.close().then([this] {
         return seastar::do_for_each(
           _connections, [](net::connection& c) { return c.shutdown(); });
     });

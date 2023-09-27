@@ -125,7 +125,7 @@ public:
      * stopping the server without waiting for downstream services to stop
      * requests processing
      */
-    void shutdown_input();
+    ss::future<> shutdown_input();
     ss::future<> wait_for_shutdown();
     /**
      * Stop function is a nop when `shutdown_input` was previously called. Left
@@ -171,6 +171,7 @@ private:
     std::vector<std::unique_ptr<listener>> _listeners;
     boost::intrusive::list<net::connection> _connections;
     ss::abort_source _as;
+    ss::gate _accept_gate;
     ss::gate _conn_gate;
     hist_t _hist;
     std::unique_ptr<server_probe> _probe;
