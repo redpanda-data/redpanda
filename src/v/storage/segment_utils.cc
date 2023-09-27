@@ -747,8 +747,12 @@ make_concatenated_segment(
     }
     // start the new index with the newest of the broker_timestamps from the
     // segments
-    auto new_broker_timestamp = [&] {
-        // invariants: segments is not empty;
+    auto new_broker_timestamp = [&]() -> std::optional<model::timestamp> {
+        // invariants: segments is not empty, but for completeness handle the
+        // empty case
+        if (unlikely(segments.empty())) {
+            return std::nullopt;
+        }
         auto seg_it = *std::ranges::max_element(
           segments, std::less<>{}, [](auto& seg) {
               return seg->index().broker_timestamp();
