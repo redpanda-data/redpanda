@@ -46,13 +46,14 @@ ss::future<> drain_manager::drain() {
             return ss::now();
         }
 
-        if (self._draining) {
+        if (self._draining_requested || self._drained) {
             vlog(clusterlog.info, "Node draining is already active");
             return ss::now();
         }
 
         vlog(clusterlog.info, "Node draining is starting");
-        self._draining = true;
+        self._draining_requested = true;
+        self._restore_requested = false;
         self._status = drain_status{};
         self._sem.signal();
         return ss::now();
@@ -65,13 +66,14 @@ ss::future<> drain_manager::restore() {
             return ss::now();
         }
 
-        if (!self._draining) {
+        if (!self._draining_requested && !self._drained) {
             vlog(clusterlog.info, "Node draining is not active");
             return ss::now();
         }
 
         vlog(clusterlog.info, "Node draining is stopping");
-        self._draining = false;
+        self._draining_requested = false;
+        self._restore_requested = true;
         self._sem.signal();
         return ss::now();
     });
@@ -84,7 +86,7 @@ ss::future<std::optional<drain_manager::drain_status>> drain_manager::status() {
 
     co_return co_await container().map_reduce0(
       [](drain_manager& dm) -> std::optional<drain_status> {
-          if (dm._draining) {
+          if (dm._draining_requested || dm._drained) {
               return dm._status;
           }
           return std::nullopt;
@@ -130,12 +132,17 @@ ss::future<> drain_manager::task() {
             break;
         }
 
-        if (_draining) {
+        if (_draining_requested) {
             co_await do_drain();
-        } else {
-            co_await do_restore();
+            _draining_requested = false;
+            _status.finished = true;
         }
-        _status.finished = true;
+
+        if (_restore_requested) {
+            _drained = false;
+            co_await do_restore();
+            _restore_requested = false;
+        }
     }
 }
 
@@ -150,7 +157,7 @@ ss::future<> drain_manager::do_drain() {
      */
     _partition_manager.local().block_new_leadership();
 
-    while (_draining && !_abort.abort_requested()) {
+    while (!_restore_requested && !_abort.abort_requested()) {
         /*
          * build a set of eligible partitions. ignore any raft groups that
          * will fail when transferring leadership and which shouldn't be
@@ -174,6 +181,7 @@ ss::future<> drain_manager::do_drain() {
               clusterlog.info,
               "Node draining has completed on shard {}",
               ss::this_shard_id());
+            _drained = true;
             co_return;
         }
 
@@ -249,7 +257,7 @@ ss::future<> drain_manager::do_drain() {
          * to avoid spinning, cool off if we failed fast
          */
         auto dur = ss::lowres_clock::now() - started;
-        if (failed > 0 && dur < transfer_throttle && _draining) {
+        if (failed > 0 && dur < transfer_throttle && !_restore_requested) {
             try {
                 co_await ss::sleep_abortable(transfer_throttle - dur, _abort);
             } catch (ss::sleep_aborted&) {
