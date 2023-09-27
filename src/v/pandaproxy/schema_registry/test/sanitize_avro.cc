@@ -16,7 +16,6 @@
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
-namespace ppj = pp::json;
 
 pps::unparsed_schema_definition not_minimal{
   R"({
@@ -186,7 +185,7 @@ pps::unparsed_schema_definition namespace_nested_same_unsanitized{
   pps::schema_type::avro};
 
 pps::canonical_schema_definition namespace_nested_same_sanitized{
-  ppj::minify(
+  ::json::minify(
     R"({
   "type": "record",
   "name": "Example",
