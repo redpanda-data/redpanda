@@ -34,6 +34,7 @@ public:
     handler_probe& operator=(handler_probe&&) = delete;
     ~handler_probe() = default;
     void setup_metrics(ssx::metrics::metric_groups&, api_key);
+    void setup_public_metrics(ssx::metrics::metric_groups&, api_key);
 
     void sample_in_progress();
     void request_completed() {
@@ -94,6 +95,8 @@ public:
 private:
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
     std::vector<handler_probe> _probes;
 };
 
