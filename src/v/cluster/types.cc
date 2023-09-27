@@ -34,6 +34,50 @@
 
 namespace cluster {
 
+std::ostream& operator<<(std::ostream& o, const recovery_stage& s) {
+    switch (s) {
+    case recovery_stage::initialized:
+        o << "recovery_stage::initialized";
+        break;
+    case recovery_stage::starting:
+        o << "recovery_stage::starting";
+        break;
+    case recovery_stage::recovered_license:
+        o << "recovery_stage::recovered_license";
+        break;
+    case recovery_stage::recovered_cluster_config:
+        o << "recovery_stage::recovered_cluster_config";
+        break;
+    case recovery_stage::recovered_users:
+        o << "recovery_stage::recovered_users";
+        break;
+    case recovery_stage::recovered_acls:
+        o << "recovery_stage::recovered_acls";
+        break;
+    case recovery_stage::recovered_remote_topic_data:
+        o << "recovery_stage::recovered_remote_topic_data";
+        break;
+    case recovery_stage::recovered_topic_data:
+        o << "recovery_stage::recovered_topic_data";
+        break;
+    case recovery_stage::recovered_controller_snapshot:
+        o << "recovery_stage::recovered_controller_snapshot";
+        break;
+    case recovery_stage::recovered_offsets_topic:
+        o << "recovery_stage::recovered_offsets_topic";
+        break;
+    case recovery_stage::recovered_tx_coordinator:
+        o << "recovery_stage::recovered_tx_coordinator";
+        break;
+    case recovery_stage::complete:
+        o << "recovery_stage::complete";
+        break;
+    case recovery_stage::failed:
+        o << "recovery_stage::failed";
+        break;
+    }
+    return o;
+}
 std::ostream& operator<<(std::ostream& o, const tx_errc& err) {
     switch (err) {
     case tx_errc::none:
