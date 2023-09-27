@@ -721,6 +721,11 @@ void application::check_environment() {
 /// tracker file. This is to prevent on disk state from piling up in
 /// each unclean run and creating more state to recover for the next run.
 void application::check_for_crash_loop() {
+    if (config::node().developer_mode()) {
+        // crash loop tracking has value only in long running clusters
+        // that can potentially accumulate state across restarts.
+        return;
+    }
     auto file_path = config::node().data_directory().path
                      / crash_loop_tracker_file;
     std::optional<crash_tracker_metadata> maybe_crash_md;
@@ -809,11 +814,15 @@ void application::schedule_crash_tracker_file_cleanup() {
     // next run.
     // We emplace it in the front to make it the last task to run.
     _deferred.emplace_front([&] {
-        auto file = config::node().data_directory().path
-                    / crash_loop_tracker_file;
-        ss::remove_file(file.string()).get();
-        ss::sync_directory(config::node().data_directory().as_sstring()).get();
-        vlog(_log.debug, "Deleted crash loop tracker file: {}", file);
+        auto file = (config::node().data_directory().path
+                     / crash_loop_tracker_file)
+                      .string();
+        if (ss::file_exists(file).get()) {
+            ss::remove_file(file).get();
+            ss::sync_directory(config::node().data_directory().as_sstring())
+              .get();
+            vlog(_log.debug, "Deleted crash loop tracker file: {}", file);
+        }
     });
 }
 

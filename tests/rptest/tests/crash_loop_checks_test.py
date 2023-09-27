@@ -37,7 +37,8 @@ class CrashLoopChecksTest(RedpandaTest):
                              num_brokers=1,
                              extra_node_conf={
                                  "crash_loop_limit":
-                                 CrashLoopChecksTest.CRASH_LOOP_LIMIT
+                                 CrashLoopChecksTest.CRASH_LOOP_LIMIT,
+                                 "developer_mode": False
                              })
 
     def remove_crash_loop_tracker_file(self, broker):

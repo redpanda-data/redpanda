@@ -139,9 +139,10 @@ node_config::node_config() noexcept
       *this,
       "crash_loop_limit",
       "Maximum consecutive crashes (unclean shutdowns) allowed after which "
-      "operator intervention is needed to startup the broker.",
+      "operator intervention is needed to startup the broker. Limit is not "
+      "enforced in developer mode.",
       {.visibility = visibility::user},
-      std::nullopt)
+      5)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
