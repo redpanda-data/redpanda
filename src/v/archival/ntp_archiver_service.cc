@@ -2286,7 +2286,10 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     for (const auto& path : objects_to_remove) {
         std::string_view path_view{path.c_str()};
         if (!path_view.ends_with("index") && !path_view.ends_with("tx")) {
-            vlog(_rtclog.info, "Deleting segment from cloud storage: {}", path);
+            vlog(
+              _rtclog.info,
+              "Deleting spillover segment from cloud storage: {}",
+              path);
             ++segments_in_batch;
         }
         rem_batch.emplace_back(path);
@@ -2599,9 +2602,6 @@ ss::future<> ntp_archiver::apply_retention() {
     }
 }
 
-// Garbage collection can be improved as follows:
-// * issue #6843: delete via DeleteObjects S3 api instead of deleting individual
-// segments
 ss::future<> ntp_archiver::garbage_collect() {
     if (!may_begin_uploads()) {
         co_return;
@@ -2636,33 +2636,29 @@ ss::future<> ntp_archiver::garbage_collect() {
         }
     }
 
-    size_t successful_deletes{0};
-    co_await ss::max_concurrent_for_each(
-      to_remove,
-      _concurrency,
-      [this, &successful_deletes](
-        const cloud_storage::partition_manifest::lw_segment_meta& meta) {
-          auto path = manifest().generate_segment_path(meta);
-          return ss::do_with(
-            std::move(path), [this, &successful_deletes](auto& path) {
-                return delete_segment(path).then(
-                  [this, &successful_deletes, &path](
-                    cloud_storage::upload_result res) {
-                      if (res == cloud_storage::upload_result::success) {
-                          ++successful_deletes;
+    std::deque<cloud_storage_clients::object_key> objects_to_remove;
+    for (const auto& meta : to_remove) {
+        const auto path = manifest().generate_segment_path(meta);
+        vlog(_rtclog.info, "Deleting segment from cloud storage: {}", path);
 
-                          vlog(
-                            _rtclog.info,
-                            "Deleted segment from cloud storage: {}",
-                            path);
-                      }
-                  });
-            });
-      });
+        objects_to_remove.emplace_back(path);
+        objects_to_remove.emplace_back(
+          cloud_storage::generate_remote_tx_path(path));
+        objects_to_remove.emplace_back(
+          cloud_storage::generate_index_path(path));
+    }
+
+    retry_chain_node fib(
+      _conf->manifest_upload_timeout * objects_to_remove.size(),
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
+    const auto delete_result = co_await _remote.delete_objects(
+      get_bucket_name(), objects_to_remove, fib);
 
     const auto backlog_size_exceeded = to_remove.size()
                                        > _max_segments_pending_deletion();
-    const auto all_deletes_succeeded = successful_deletes == to_remove.size();
+    const auto all_deletes_succeeded = delete_result
+                                       == cloud_storage::upload_result::success;
     if (!all_deletes_succeeded && backlog_size_exceeded) {
         vlog(
           _rtclog.warn,
@@ -2694,9 +2690,12 @@ ss::future<> ntp_archiver::garbage_collect() {
           "retry on the next housekeeping run.");
     }
 
-    _probe->segments_deleted(static_cast<int64_t>(successful_deletes));
+    _probe->segments_deleted(
+      static_cast<int64_t>(all_deletes_succeeded ? to_remove.size() : 0));
     vlog(
-      _rtclog.debug, "Deleted {} segments from the cloud", successful_deletes);
+      _rtclog.debug,
+      "Deleted {} segments from the cloud",
+      all_deletes_succeeded ? to_remove.size() : 0);
 }
 
 ss::future<cloud_storage::upload_result>

@@ -1012,7 +1012,7 @@ ss::future<upload_result> remote::delete_objects(
         co_return upload_result::success;
     }
 
-    vlog(ctxlog.debug, "Delete objects count {}", keys.size());
+    vlog(ctxlog.debug, "Deleting objects count {}", keys.size());
 
     if (!is_batch_delete_supported()) {
         co_return co_await delete_objects_sequentially(

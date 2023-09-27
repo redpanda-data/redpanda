@@ -502,15 +502,10 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
         auto urlstr = url().string();
         auto expected_delete_paths = {
           urlstr, urlstr + ".index", urlstr + ".tx"};
+        auto [req_begin, req_end] = get_targets().equal_range("/?delete");
+        BOOST_REQUIRE_EQUAL(std::distance(req_begin, req_end), 1);
         for (const auto& p : expected_delete_paths) {
-            auto [req_begin, req_end] = get_targets().equal_range("/" + p);
-            auto entity_deleted = std::find_if(
-                                    req_begin,
-                                    req_end,
-                                    [](auto entry) {
-                                        return entry.second.method == "DELETE";
-                                    })
-                                  != req_end;
+            const bool entity_deleted = req_begin->second.content.contains(p);
             BOOST_REQUIRE(entity_deleted == deletion_expected);
         }
     }
