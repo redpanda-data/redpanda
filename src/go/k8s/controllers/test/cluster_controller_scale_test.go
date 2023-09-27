@@ -132,6 +132,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Scaling down only when decommissioning is done")
 			Expect(testAdminAPI.RemoveBroker(2)).To(BeTrue())
+			testAdminAPI.AddGhostBroker(admin.Broker{NodeID: 2, MembershipStatus: admin.MembershipStatusDraining})
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(2)))
@@ -142,6 +143,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Removing the other node as well when done")
 			Expect(testAdminAPI.RemoveBroker(1)).To(BeTrue())
+			testAdminAPI.AddGhostBroker(admin.Broker{NodeID: 1, MembershipStatus: admin.MembershipStatusDraining})
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(1)))
