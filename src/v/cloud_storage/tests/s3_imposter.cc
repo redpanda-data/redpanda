@@ -28,6 +28,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/property_tree/json_parser.hpp>
+#include <boost/property_tree/xml_parser.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -364,4 +365,21 @@ cloud_storage_clients::http_byte_range parse_byte_header(std::string_view s) {
     return std::make_pair(
       string_view_to_ul(bytes_value.substr(0, split_at)),
       string_view_to_ul(bytes_value.substr(split_at + 1)));
+}
+
+std::vector<cloud_storage_clients::object_key>
+keys_from_delete_objects_request(const http_test_utils::request_info& req) {
+    std::vector<cloud_storage_clients::object_key> keys;
+
+    auto buffer_stream = std::istringstream{std::string{req.content}};
+    boost::property_tree::ptree tree;
+    boost::property_tree::read_xml(buffer_stream, tree);
+
+    for (const auto& v : tree.get_child("Delete")) {
+        if (v.first == "Object") {
+            keys.emplace_back(v.second.get<std::string>("Key"));
+        }
+    }
+
+    return keys;
 }

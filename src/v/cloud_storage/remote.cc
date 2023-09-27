@@ -16,6 +16,7 @@
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/types.h"
 #include "cloud_storage_clients/util.h"
 #include "model/metadata.h"
 #include "ssx/semaphore.h"
@@ -32,9 +33,11 @@
 
 #include <boost/beast/http/error.hpp>
 #include <boost/beast/http/field.hpp>
+#include <boost/range/irange.hpp>
 #include <fmt/chrono.h>
 
 #include <exception>
+#include <iterator>
 #include <utility>
 #include <variant>
 
@@ -46,6 +49,18 @@ struct key_and_node {
     cloud_storage_clients::object_key key;
     std::unique_ptr<retry_chain_node> node;
 };
+
+template<typename R>
+requires std::ranges::range<R>
+size_t num_chunks(const R& r, size_t max_batch_size) {
+    const auto range_size = std::distance(r.begin(), r.end());
+
+    if (range_size % max_batch_size == 0) {
+        return range_size / max_batch_size;
+    } else {
+        return range_size / max_batch_size + 1;
+    }
+}
 } // namespace
 
 namespace cloud_storage {
@@ -159,18 +174,23 @@ model::cloud_storage_backend remote::backend() const {
 }
 
 bool remote::is_batch_delete_supported() const {
+    return delete_objects_max_keys() > 1;
+}
+
+int remote::delete_objects_max_keys() const {
     switch (_cloud_storage_backend) {
     case model::cloud_storage_backend::aws:
         [[fallthrough]];
     case model::cloud_storage_backend::minio:
-        return true;
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+        return 1000;
     case model::cloud_storage_backend::google_s3_compat:
         [[fallthrough]];
     case model::cloud_storage_backend::azure:
         // Will be supported once azurite supports batch blob delete
         [[fallthrough]];
     case model::cloud_storage_backend::unknown:
-        return false;
+        return 1;
     }
 }
 
@@ -975,27 +995,95 @@ ss::future<upload_result> remote::delete_object(
     co_return *result;
 }
 
+template<typename R>
+requires std::ranges::range<R>
+         && std::same_as<
+           std::ranges::range_value_t<R>,
+           cloud_storage_clients::object_key>
 ss::future<upload_result> remote::delete_objects(
+  const cloud_storage_clients::bucket_name& bucket,
+  R keys,
+  retry_chain_node& parent) {
+    ss::gate::holder gh{_gate};
+    retry_chain_logger ctxlog(cst_log, parent);
+
+    if (keys.empty()) {
+        vlog(ctxlog.info, "No keys to delete, returning");
+        co_return upload_result::success;
+    }
+
+    vlog(ctxlog.debug, "Delete objects count {}", keys.size());
+
+    if (!is_batch_delete_supported()) {
+        co_return co_await delete_objects_sequentially(
+          bucket, std::forward<R>(keys), parent);
+    }
+
+    const auto batches_to_delete = num_chunks(keys, delete_objects_max_keys());
+    std::vector<upload_result> results;
+    results.reserve(batches_to_delete);
+
+    co_await ss::max_concurrent_for_each(
+      boost::irange(batches_to_delete),
+      concurrency(),
+      [this, bucket, &keys, &parent, &results](auto chunk_ix) -> ss::future<> {
+          auto chunk_start_offset = (chunk_ix * delete_objects_max_keys());
+
+          auto chunk_begin = keys.begin();
+          std::advance(chunk_begin, chunk_start_offset);
+
+          auto chunk_end = chunk_begin;
+          if (
+            delete_objects_max_keys()
+            < std::distance(chunk_begin, keys.end())) {
+              std::advance(chunk_end, delete_objects_max_keys());
+          } else {
+              chunk_end = keys.end();
+          }
+
+          std::vector<cloud_storage_clients::object_key> key_batch;
+          key_batch.insert(
+            key_batch.end(),
+            std::make_move_iterator(chunk_begin),
+            std::make_move_iterator(chunk_end));
+
+          vassert(
+            key_batch.size() > 0,
+            "The chunking logic must always produce non-empty batches.");
+
+          return delete_object_batch(bucket, std::move(key_batch), parent)
+            .then([&results](auto result) { results.push_back(result); });
+      });
+
+    if (results.empty()) {
+        vlog(ctxlog.error, "No keys were deleted");
+        co_return upload_result::failed;
+    }
+
+    co_return std::reduce(
+      results.begin(),
+      results.end(),
+      upload_result::success,
+      [](auto res_a, auto res_b) {
+          if (res_a != upload_result::success) {
+              return res_a;
+          }
+
+          return res_b;
+      });
+}
+
+ss::future<upload_result> remote::delete_object_batch(
   const cloud_storage_clients::bucket_name& bucket,
   std::vector<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent) {
     ss::gate::holder gh{_gate};
 
-    if (keys.empty()) {
-        vlog(cst_log.info, "No keys to delete, returning");
-        co_return upload_result::success;
-    }
-
-    if (!is_batch_delete_supported()) {
-        co_return co_await delete_objects_sequentially(
-          bucket, std::move(keys), parent);
-    }
-
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
-    vlog(ctxlog.debug, "Delete objects count {}", keys.size());
+    vlog(ctxlog.debug, "Deleting a batch of size {}", keys.size());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
@@ -1048,14 +1136,17 @@ ss::future<upload_result> remote::delete_objects(
     if (!result) {
         vlog(
           ctxlog.warn,
-          "DeleteObjects {}, {}, backoff quota exceded, objects not deleted",
+          "DeleteObjects (batch size={}, bucket={}), backoff quota exceded, "
+          "objects "
+          "not deleted",
           keys.size(),
           bucket);
         result = upload_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
-          "DeleteObjects {}, {}, objects not deleted, error: {}",
+          "DeleteObjects (batch size={}, bucket={}), objects not deleted, "
+          "error: {}",
           keys.size(),
           bucket,
           *result);
@@ -1063,9 +1154,26 @@ ss::future<upload_result> remote::delete_objects(
     co_return *result;
 }
 
-ss::future<upload_result> remote::delete_objects_sequentially(
+template ss::future<upload_result>
+remote::delete_objects<std::vector<cloud_storage_clients::object_key>>(
   const cloud_storage_clients::bucket_name& bucket,
   std::vector<cloud_storage_clients::object_key> keys,
+  retry_chain_node& parent);
+
+template ss::future<upload_result>
+remote::delete_objects<std::deque<cloud_storage_clients::object_key>>(
+  const cloud_storage_clients::bucket_name& bucket,
+  std::deque<cloud_storage_clients::object_key> keys,
+  retry_chain_node& parent);
+
+template<typename R>
+requires std::ranges::range<R>
+         && std::same_as<
+           std::ranges::range_value_t<R>,
+           cloud_storage_clients::object_key>
+ss::future<upload_result> remote::delete_objects_sequentially(
+  const cloud_storage_clients::bucket_name& bucket,
+  R keys,
   retry_chain_node& parent) {
     retry_chain_logger ctxlog(cst_log, parent);
 

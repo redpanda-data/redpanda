@@ -41,8 +41,10 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
+#include <iterator>
 
 using namespace std::chrono_literals;
 using namespace cloud_storage;
@@ -71,7 +73,7 @@ static constexpr std::string_view manifest_payload = R"json({
 static constexpr std::string_view plural_delete_error = R"json(
 <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
     <Error>
-        <Key>a</Key>
+        <Key>0</Key>
         <Code>TestFailure</Code>
     </Error>
 </DeleteResult>)json";
@@ -730,6 +732,90 @@ FIXTURE_TEST(test_delete_objects, remote_fixture) {
     BOOST_REQUIRE(request.has_q_delete);
 }
 
+FIXTURE_TEST(test_delete_objects_multiple_batches, remote_fixture) {
+    set_expectations_and_listen({});
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 500ms, 20ms);
+
+    std::deque<cloud_storage_clients::object_key> to_delete;
+    for (auto k :
+         boost::irange(remote.local().delete_objects_max_keys() * 2.6)) {
+        to_delete.emplace_back(fmt::format("{}", k));
+    }
+
+    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+    auto requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests.size(), 3);
+
+    std::vector<cloud_storage_clients::object_key> deleted_keys;
+
+    for (const auto& request : requests) {
+        BOOST_REQUIRE_EQUAL(request.method, "POST");
+        BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+        BOOST_REQUIRE(request.has_q_delete);
+
+        auto request_keys = keys_from_delete_objects_request(request);
+        deleted_keys.insert(
+          deleted_keys.begin(),
+          std::make_move_iterator(request_keys.begin()),
+          std::make_move_iterator(request_keys.end()));
+    }
+
+    std::sort(to_delete.begin(), to_delete.end());
+    std::sort(deleted_keys.begin(), deleted_keys.end());
+
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      to_delete.begin(),
+      to_delete.end(),
+      deleted_keys.begin(),
+      deleted_keys.end());
+}
+
+FIXTURE_TEST(
+  test_delete_objects_multiple_batches_single_failure, remote_fixture) {
+    set_expectations_and_listen({expectation{
+      .url = "/?delete", .body = ss::sstring(plural_delete_error)}});
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 500ms, 20ms);
+
+    std::vector<cloud_storage_clients::object_key> to_delete;
+    for (auto k :
+         boost::irange(remote.local().delete_objects_max_keys() * 2.6)) {
+        to_delete.emplace_back(fmt::format("{}", k));
+    }
+
+    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::failed, result);
+    auto requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests.size(), 3);
+
+    std::vector<cloud_storage_clients::object_key> deleted_keys;
+
+    for (const auto& request : requests) {
+        BOOST_REQUIRE_EQUAL(request.method, "POST");
+        BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+        BOOST_REQUIRE(request.has_q_delete);
+
+        auto request_keys = keys_from_delete_objects_request(request);
+        deleted_keys.insert(
+          deleted_keys.begin(),
+          std::make_move_iterator(request_keys.begin()),
+          std::make_move_iterator(request_keys.end()));
+    }
+
+    std::sort(to_delete.begin(), to_delete.end());
+    std::sort(deleted_keys.begin(), deleted_keys.end());
+
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      to_delete.begin(),
+      to_delete.end(),
+      deleted_keys.begin(),
+      deleted_keys.end());
+}
+
 FIXTURE_TEST(test_delete_objects_failure_handling, remote_fixture) {
     // Test that the failure to delete one key via the plural form
     // fails the entire operation.
@@ -740,8 +826,8 @@ FIXTURE_TEST(test_delete_objects_failure_handling, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete{
-      cloud_storage_clients::object_key{"a"},
-      cloud_storage_clients::object_key{"b"}};
+      cloud_storage_clients::object_key{"0"},
+      cloud_storage_clients::object_key{"1"}};
     auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::failed, result);
 
