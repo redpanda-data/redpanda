@@ -338,7 +338,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 			// if the pod is not being deleted, set the finalizer
 			if err = r.setPodFinalizer(ctx, pod, log); err != nil {
 				//nolint:goerr113 // not going to use wrapped static error here this time
-				return fmt.Errorf(`unable to set the finalizer on pod "%s": %d`, pod.Name, err)
+				return fmt.Errorf(`unable to set the finalizer on pod "%s": %w`, pod.Name, err)
 			}
 			continue
 		}
