@@ -26,6 +26,9 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <limits>
+#include <ratio>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -238,6 +241,46 @@ SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
     BOOST_REQUIRE_EQUAL(
       topic_config.properties.retention_duration.value(),
       std::chrono::milliseconds(36000000000));
+}
+
+SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
+    manifest_topic_configuration min_cfg{cfg};
+    min_cfg.properties.retention_bytes = tristate<size_t>(
+      std::numeric_limits<size_t>::min());
+    min_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
+      std::chrono::milliseconds::min());
+    min_cfg.properties.segment_size = std::make_optional(
+      std::numeric_limits<size_t>::min());
+    topic_manifest m(min_cfg, model::initial_revision_id{0});
+    auto [is, size] = m.serialize().get();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    topic_manifest restored;
+    restored.update(std::move(rstr)).get();
+    BOOST_REQUIRE(m == restored);
+}
+
+SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
+    manifest_topic_configuration max_cfg{cfg};
+    max_cfg.properties.retention_bytes = tristate<size_t>(
+      std::numeric_limits<size_t>::max());
+    max_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
+      std::chrono::milliseconds::max());
+    max_cfg.properties.segment_size = std::make_optional(
+      std::numeric_limits<size_t>::max());
+    topic_manifest m(max_cfg, model::initial_revision_id{0});
+    auto [is, size] = m.serialize().get();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    topic_manifest restored;
+    restored.update(std::move(rstr)).get();
+    BOOST_REQUIRE(m == restored);
 }
 
 SEASTAR_THREAD_TEST_CASE(missing_required_fields_throws) {
