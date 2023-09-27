@@ -1759,6 +1759,12 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
             filter_intersecting(result, opt->aborted, from, to);
         }
     }
+    vlog(
+      _ctx_log.trace,
+      "aborted transactions from: {}, to: {}, result size: {}",
+      from,
+      to,
+      result.size());
     co_return result;
 }
 
