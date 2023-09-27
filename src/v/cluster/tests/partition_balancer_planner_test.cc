@@ -743,11 +743,13 @@ FIXTURE_TEST(
     auto plan_data = planner.plan_actions(hr, as).get();
 
     check_violations(plan_data, unavailable_nodes, {});
-    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
-    BOOST_REQUIRE(
-      plan_data.status
-      == cluster::partition_balancer_planner::status::
-        waiting_for_maintenance_end);
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
+
+    std::unordered_set<model::node_id> expected_nodes(
+      {model::node_id(1), model::node_id(2), model::node_id(3)});
+
+    auto new_replicas = plan_data.reassignments.front().allocated.replicas();
+    check_expected_assignments(new_replicas, expected_nodes);
 }
 
 /*
