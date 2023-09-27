@@ -14,7 +14,6 @@
 #include "cluster/logger.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
-#include "utils/gate_guard.h"
 #include "utils/uuid.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -80,7 +79,7 @@ ss::future<std::vector<self_test_result>> diskcheck::run(diskcheck_opts opts) {
         vlog(clusterlog.debug, "diskcheck - gate already closed");
         co_return std::vector<self_test_result>();
     }
-    gate_guard g{_gate};
+    auto g = _gate.hold();
     co_await ss::futurize_invoke(validate_options, opts);
     co_await verify_remaining_space(opts.data_size);
     vlog(

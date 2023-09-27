@@ -33,7 +33,6 @@
 #include "security/acl.h"
 #include "security/ephemeral_credential_store.h"
 #include "ssx/semaphore.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
@@ -65,7 +64,7 @@ public:
           rq.authn_method, rq.service().authenticator(), *rq.req);
 
         auto units = co_await _os();
-        auto guard = gate_guard(_g);
+        auto guard = _g.hold();
         try {
             co_return co_await _h(std::move(rq), std::move(rp));
         } catch (kafka::client::partition_error const& ex) {
@@ -180,7 +179,7 @@ ss::future<> service::do_start() {
     if (_is_started) {
         co_return;
     }
-    auto guard = gate_guard(_gate);
+    auto guard = _gate.hold();
     try {
         co_await create_internal_topic();
         vlog(plog.info, "Schema registry successfully initialized");

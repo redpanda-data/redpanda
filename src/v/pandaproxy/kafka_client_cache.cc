@@ -14,7 +14,6 @@
 #include "pandaproxy/logger.h"
 #include "random/generators.h"
 #include "ssx/future-util.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/loop.hh>
 
@@ -164,7 +163,7 @@ ss::future<> kafka_client_cache::clean_stale_clients() {
         co_return;
     }
 
-    gate_guard guard{_gc_gate};
+    auto guard = _gc_gate.hold();
 
     auto& inner_list = _cache.get<underlying_list>();
     co_await remove_client_if(inner_list, is_expired(_keep_alive));

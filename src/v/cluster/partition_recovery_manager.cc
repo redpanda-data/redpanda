@@ -24,7 +24,6 @@
 #include "storage/ntp_config.h"
 #include "storage/offset_translator_state.h"
 #include "storage/parser.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file-types.hh>
@@ -425,7 +424,7 @@ partition_downloader::download_log_with_capped_size(
   const std::filesystem::path& prefix,
   size_t max_size) {
     vlog(_ctxlog.info, "Starting log download with size limit at {}", max_size);
-    gate_guard guard(_gate);
+    auto guard = _gate.hold();
 
     std::deque<segment_meta> staged_downloads;
     model::offset start_offset{0};
@@ -509,7 +508,7 @@ partition_downloader::download_log_with_capped_time(
       std::chrono::duration_cast<std::chrono::milliseconds>(retention_time)
           .count()
         / 1000);
-    gate_guard guard(_gate);
+    auto guard = _gate.hold();
     auto time_threshold = model::to_timestamp(
       model::timestamp_clock::now() - retention_time);
 

@@ -13,7 +13,6 @@
 
 #include "seastarx.h"
 #include "ssx/semaphore.h"
-#include "utils/gate_guard.h"
 #include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
@@ -120,7 +119,7 @@ public:
     /// \param index is an index of the consumer
     /// \return buffer
     ss::future<ss::temporary_buffer<Ch>> get(unsigned index) {
-        gate_guard g(_gate);
+        auto g = _gate.hold();
         while (!_gate.is_closed()) {
             auto gen = _cnt;
             if (_producer_error) {
@@ -183,7 +182,7 @@ private:
     /// Constantly pull data from input stream and produce
     /// the resulting buffers to clients
     ss::future<> produce() {
-        gate_guard g(_gate);
+        auto g = _gate.hold();
         try {
             while (!_in.eof() && !_gate.is_closed()) {
                 auto units = co_await ss::get_units(_sem, 1);

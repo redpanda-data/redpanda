@@ -12,7 +12,6 @@
 
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
-#include "utils/gate_guard.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -93,7 +92,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
   ss::sstring start_dir,
   const access_time_tracker& tracker,
   std::optional<filter_type> collect_filter) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
 
     // Object to accumulate data as we walk directories
     walk_accumulator state(start_dir, tracker, std::move(collect_filter));

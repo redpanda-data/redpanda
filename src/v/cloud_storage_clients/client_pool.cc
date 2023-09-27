@@ -237,7 +237,7 @@ std::tuple<unsigned int, unsigned int> pick_two_random_shards() {
 ///         are in use)
 ss::future<client_pool::client_lease>
 client_pool::acquire(ss::abort_source& as) {
-    gate_guard guard(_gate);
+    auto guard = _gate.hold();
     std::optional<unsigned int> source_sid;
     try {
         // If credentials have not yet been acquired, wait for them. It is

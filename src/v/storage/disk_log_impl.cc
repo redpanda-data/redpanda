@@ -29,7 +29,6 @@
 #include "storage/segment_utils.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "utils/gate_guard.h"
 #include "utils/human.h"
 #include "vassert.h"
 #include "vlog.h"

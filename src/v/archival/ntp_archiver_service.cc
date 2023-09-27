@@ -830,7 +830,7 @@ ntp_archiver::get_last_sync_time() const {
 ss::future<
   std::pair<cloud_storage::partition_manifest, cloud_storage::download_result>>
 ntp_archiver::download_manifest() {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     retry_chain_node fib(
       _conf->manifest_upload_timeout,
       _conf->cloud_storage_initial_backoff,
@@ -983,7 +983,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
         co_return cloud_storage::upload_result::cancelled;
     }
 
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
       _conf->manifest_upload_timeout,
@@ -1270,7 +1270,7 @@ ntp_archiver::get_aborted_transactions(upload_candidate candidate) {
     vassert(
       candidate.remote_sources.empty(),
       "This method can only work with local segments");
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     co_return co_await _parent.aborted_transactions(
       candidate.starting_offset, candidate.final_offset);
 }
@@ -1280,7 +1280,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
   upload_candidate candidate,
   fragmented_vector<model::tx_range> tx_range,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
       _conf->segment_upload_timeout,

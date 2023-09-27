@@ -889,7 +889,7 @@ ss::future<> remote_segment::hydrate() {
           fmt::format("Hydration loop is not running for segment: {}", _path)));
     }
 
-    gate_guard g{_gate};
+    auto g = _gate.hold();
     vlog(_ctxlog.debug, "segment {} hydration requested", _path);
     ss::promise<ss::file> p;
     auto fut = p.get_future();

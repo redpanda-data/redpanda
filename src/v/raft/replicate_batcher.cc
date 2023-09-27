@@ -13,7 +13,6 @@
 #include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

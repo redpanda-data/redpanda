@@ -17,7 +17,6 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "net/tls.h"
-#include "utils/gate_guard.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -169,7 +168,7 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
     // 2. sleep until we are close to expiry of credentials
     // 3. sleep in case of retryable failure for a short duration
 
-    gate_guard g{_gate};
+    auto g = _gate.hold();
 
     co_await sleep_until_expiry();
 

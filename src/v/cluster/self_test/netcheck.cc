@@ -12,7 +12,6 @@
 #include "cluster/self_test/netcheck.h"
 
 #include "cluster/logger.h"
-#include "utils/gate_guard.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -85,7 +84,7 @@ ss::future<std::vector<self_test_result>> netcheck::run(netcheck_opts opts) {
     _cancelled = false;
     _opts = opts;
     try {
-        gate_guard g{_gate};
+        auto g = _gate.hold();
         co_await ss::futurize_invoke(validate_options, opts);
         vlog(
           clusterlog.info,

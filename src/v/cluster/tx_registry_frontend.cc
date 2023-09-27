@@ -25,7 +25,6 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "rpc/connection_cache.h"
-#include "utils/gate_guard.h"
 #include "vformat.h"
 
 #include <seastar/core/coroutine.hh>
@@ -470,7 +469,7 @@ tx_registry_frontend::do_route_locally(T&& request) {
         co_return typename T::reply(tx_errc::shard_not_found);
     }
 
-    gate_guard guard{_gate};
+    auto guard = _gate.hold();
 
     co_return co_await container().invoke_on(
       *shard,
