@@ -252,7 +252,7 @@ class HighThroughputTest(RedpandaTest):
     def _clean_resources(self):
         for item in self.resources:
             if item['type'] == 'topic':
-                self.rpk.delete_topic(item['spec']['name'])
+                self.rpk.delete_topic(item['spec'].name)
 
     def tearDown(self):
         # These tests may run on cloud ec2 instances where between each test
@@ -320,6 +320,9 @@ class HighThroughputTest(RedpandaTest):
 
     @cluster(num_nodes=2)
     def test_throughput_simple(self):
+        # create default topics
+        self._create_default_topics()
+        # Generate traffic
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
                                self.msg_size) as _:
