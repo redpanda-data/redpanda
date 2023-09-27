@@ -1679,7 +1679,13 @@ class RedpandaService(RedpandaServiceBase):
                     f"Error cleaning node {node.account.hostname}:")
                 raise
 
-        self.for_nodes(to_start, clean_one)
+        if first_start:
+            # Clean all nodes on the first start because the test can choose to initialize
+            # the cluster with a smaller node subset and start other nodes later with
+            # redpanda.start_node() (which doesn't invoke clean_node)
+            self.for_nodes(self.nodes, clean_one)
+        else:
+            self.for_nodes(to_start, clean_one)
 
         if first_start:
             self.write_tls_certs()
