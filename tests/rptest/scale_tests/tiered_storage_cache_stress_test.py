@@ -19,6 +19,8 @@ from ducktape.mark import matrix
 import time
 from enum import Enum
 
+S3_ERROR_LOGS = ['unexpected REST API error "Internal Server Error" detected']
+
 
 class LimitMode(str, Enum):
     bytes = 'bytes'
@@ -153,7 +155,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
             self.redpanda, [topic_name],
             self.manifest_upload_interval + self.segment_upload_interval + 30)
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=S3_ERROR_LOGS)
     @matrix(limit_mode=[LimitMode.bytes, LimitMode.objects, LimitMode.both],
             log_segment_size=[1024 * 1024, 128 * 1024 * 1024])
     def streaming_cache_test(self, limit_mode, log_segment_size):
@@ -283,7 +285,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
         # At least one node should have _something_ in its cache, or something is wrong with our test
         assert any(nodes_cache_used) is True
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=S3_ERROR_LOGS)
     def tiny_cache_test(self):
         """
         Verify stability and eventual progress when running with an absurdly small cache.
@@ -424,7 +426,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
         assert usage[
             'cloud_storage_cache_objects'] <= cache_object_limit, f"Node {leader_node.name} has unexpectedly many objects {usage['cloud_storage_cache_objects']} > {cache_object_limit}"
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=S3_ERROR_LOGS)
     def garbage_objects_test(self):
         """
         Verify that if there are a large number of small files which do not pair
@@ -442,7 +444,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
             f"dd if=/dev/urandom bs=1k count=4 of={self.redpanda.cache_dir}/garbage_$n.bin ; done"
         )
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=S3_ERROR_LOGS)
     def test_indices_dominate_cache(self):
         """
         Ensures that if the cache is filled with index and tx objects alone,
