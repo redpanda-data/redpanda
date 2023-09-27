@@ -82,6 +82,7 @@
 #include "raft/group_manager.h"
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
+#include "redpanda/management_endpoint.h"
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/rpc_utils.h"
@@ -853,11 +854,29 @@ void application::schedule_crash_tracker_file_cleanup() {
     });
 }
 
+static mgmt_endpoint_cfg
+mgmt_endpoint_cfg_from_global_cfg(scheduling_groups& sgs) {
+    return {
+      .endpoints = config::node().admin(),
+      .endpoints_tls = config::node().admin_api_tls(),
+      .sg = sgs.admin_sg()};
+}
+
+void application::configure_management_endpoint() {
+    if (config::node().admin().empty()) {
+        return;
+    }
+
+    syschecks::systemd_message("constructing management endpoint").get();
+
+    construct_service(
+      _mgmt_endpoint, mgmt_endpoint_cfg_from_global_cfg(sched_groups))
+      .get();
+}
+
 static admin_server_cfg
 admin_server_cfg_from_global_cfg(scheduling_groups& sgs) {
     return admin_server_cfg{
-      .endpoints = config::node().admin(),
-      .endpoints_tls = config::node().admin_api_tls(),
       .admin_api_docs_dir = config::node().admin_api_doc_dir(),
       .sg = sgs.admin_sg()};
 }
@@ -870,6 +889,7 @@ void application::configure_admin_server() {
     syschecks::systemd_message("constructing http server").get();
     construct_service(
       _admin,
+      std::ref(_mgmt_endpoint),
       admin_server_cfg_from_global_cfg(sched_groups),
       std::ref(stress_fiber_manager),
       std::ref(partition_manager),
@@ -1743,6 +1763,7 @@ void application::trigger_abort_source() {
 }
 
 void application::wire_up_bootstrap_services() {
+    configure_management_endpoint();
     // Wire up local storage.
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
@@ -1850,6 +1871,10 @@ void application::wire_up_bootstrap_services() {
 }
 
 void application::start_bootstrap_services() {
+    if (!config::node().admin().empty()) {
+        _mgmt_endpoint.invoke_on_all(&management_endpoint::start).get0();
+    }
+
     syschecks::systemd_message("Starting storage services").get();
 
     // single instance

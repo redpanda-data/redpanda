@@ -38,6 +38,7 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
+#include "redpanda/management_endpoint.h"
 #include "redpanda/monitor_unsafe_log_flag.h"
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -167,6 +168,7 @@ private:
 
     // Constructs services across shards required to get bootstrap metadata.
     void wire_up_bootstrap_services();
+    void configure_management_endpoint();
 
     // Starts services across shards required to get bootstrap metadata.
     void start_bootstrap_services();
@@ -259,6 +261,7 @@ private:
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::rpc_server> _rpc;
+    ss::sharded<management_endpoint> _mgmt_endpoint;
     ss::sharded<admin_server> _admin;
     ss::sharded<net::conn_quota> _kafka_conn_quotas;
     std::unique_ptr<pandaproxy::rest::api> _proxy;

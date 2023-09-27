@@ -41,6 +41,7 @@ v_cc_library(
   SRCS
     ${swag_files}
     cluster_config_schema_util.cc
+    management_endpoint.cc
     admin_server.cc
     cli_parser.cc
     application.cc
@@ -55,7 +56,7 @@ v_cc_library(
     v::pandaproxy_schema_registry
     v::migrations
     v::storage_resource_mgmt
-    v::version 
+    v::version
   )
 
 add_subdirectory(tests)

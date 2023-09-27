@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "redpanda/management_endpoint.h"
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
@@ -41,8 +42,6 @@
 #include <absl/container/flat_hash_map.h>
 
 struct admin_server_cfg {
-    std::vector<model::broker_endpoint> endpoints;
-    std::vector<config::endpoint_tls_config> endpoints_tls;
     ss::sstring admin_api_docs_dir;
     ss::scheduling_group sg;
 };
@@ -65,7 +64,8 @@ struct topic_recovery_service;
 class admin_server {
 public:
     explicit admin_server(
-      admin_server_cfg,
+      ss::sharded<management_endpoint>& server,
+      admin_server_cfg cfg,
       ss::sharded<stress_fiber_manager>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<raft::group_manager>&,
@@ -151,7 +151,7 @@ private:
     template<auth_level required_auth, bool peek_auth = false, typename F>
     void register_route(ss::httpd::path_description const& path, F handler) {
         path.set(
-          _server._routes,
+          _server.local().server()._routes,
           [this, handler](std::unique_ptr<ss::http::request> req)
             -> ss::future<ss::json::json_return_type> {
               auto auth_state = apply_auth<required_auth>(*req);
@@ -193,7 +193,7 @@ private:
     void
     register_route_sync(ss::httpd::path_description const& path, F handler) {
         path.set(
-          _server._routes,
+          _server.local().server()._routes,
           [this,
            handler](ss::httpd::const_req req) -> ss::json::json_return_type {
               const auto auth_state = apply_auth<required_auth>(req);
@@ -256,7 +256,7 @@ private:
         auto handler_f = new ss::httpd::function_handler{
           std::move(wrapped_handler), "json"};
 
-        path.set(_server._routes, handler_f);
+        path.set(_server.local().server()._routes, handler_f);
     }
 
     template<auth_level required_auth>
@@ -280,7 +280,7 @@ private:
           },
           "json"};
 
-        path.set(_server._routes, handler_f);
+        path.set(_server.local().server()._routes, handler_f);
     }
 
     using request_handler_fn
@@ -322,7 +322,7 @@ private:
     void register_route(
       ss::httpd::path_description const& path, request_handler_fn handler) {
         path.set(
-          _server._routes,
+          _server.local().server()._routes,
           new handler_impl<required_auth>{*this, std::move(handler)});
     }
 
@@ -530,7 +530,7 @@ private:
 
     ss::future<> restart_redpanda_service(service_kind service);
 
-    ss::httpd::http_server _server;
+    ss::sharded<management_endpoint>& _server;
     admin_server_cfg _cfg;
     ss::sharded<stress_fiber_manager>& _stress_fiber_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;
