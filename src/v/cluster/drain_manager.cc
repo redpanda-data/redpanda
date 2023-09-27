@@ -40,35 +40,41 @@ ss::future<> drain_manager::stop() {
 }
 
 ss::future<> drain_manager::drain() {
-    if (_abort.abort_requested()) {
-        // handle http requests racing with shutdown
-        co_return;
-    }
+    return container().invoke_on_all([](cluster::drain_manager& self) {
+        if (self._abort.abort_requested()) {
+            // handle http requests racing with shutdown
+            return ss::now();
+        }
 
-    if (_draining) {
-        vlog(clusterlog.info, "Node draining is already active");
-        co_return;
-    }
+        if (self._draining) {
+            vlog(clusterlog.info, "Node draining is already active");
+            return ss::now();
+        }
 
-    vlog(clusterlog.info, "Node draining is starting");
-    _draining = true;
-    _status = drain_status{};
-    _sem.signal();
+        vlog(clusterlog.info, "Node draining is starting");
+        self._draining = true;
+        self._status = drain_status{};
+        self._sem.signal();
+        return ss::now();
+    });
 }
 
 ss::future<> drain_manager::restore() {
-    if (_abort.abort_requested()) {
-        co_return;
-    }
+    return container().invoke_on_all([](cluster::drain_manager& self) {
+        if (self._abort.abort_requested()) {
+            return ss::now();
+        }
 
-    if (!_draining) {
-        vlog(clusterlog.info, "Node draining is not active");
-        co_return;
-    }
+        if (!self._draining) {
+            vlog(clusterlog.info, "Node draining is not active");
+            return ss::now();
+        }
 
-    vlog(clusterlog.info, "Node draining is stopping");
-    _draining = false;
-    _sem.signal();
+        vlog(clusterlog.info, "Node draining is stopping");
+        self._draining = false;
+        self._sem.signal();
+        return ss::now();
+    });
 }
 
 ss::future<std::optional<drain_manager::drain_status>> drain_manager::status() {

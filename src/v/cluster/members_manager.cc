@@ -412,14 +412,11 @@ members_manager::apply_update(model::record_batch b) {
             .then([this, cmd](std::error_code error) {
                 auto f = ss::now();
                 if (!error && cmd.key == _self.id()) {
-                    f = _drain_manager.invoke_on_all(
-                      [enabled = cmd.value](cluster::drain_manager& dm) {
-                          if (enabled) {
-                              return dm.drain();
-                          } else {
-                              return dm.restore();
-                          }
-                      });
+                    if (cmd.value) {
+                        f = _drain_manager.local().drain();
+                    } else {
+                        f = _drain_manager.local().restore();
+                    }
                 }
                 return f.then([error] { return error; });
             });
@@ -777,15 +774,10 @@ ss::future<> members_manager::apply_snapshot(
                             == model::maintenance_state::active;
         bool should_restore = old_self_maintenance_state
                               == model::maintenance_state::active;
-        if (should_drain || should_restore) {
-            co_await _drain_manager.invoke_on_all(
-              [should_drain](cluster::drain_manager& dm) {
-                  if (should_drain) {
-                      return dm.drain();
-                  } else {
-                      return dm.restore();
-                  }
-              });
+        if (should_drain) {
+            co_return co_await _drain_manager.local().drain();
+        } else if (should_restore) {
+            co_return co_await _drain_manager.local().restore();
         }
     }
 
