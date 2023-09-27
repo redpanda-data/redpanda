@@ -416,7 +416,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     }
     w.Key("segment_size");
     if (_topic_config->properties.segment_size.has_value()) {
-        w.Int64(*_topic_config->properties.segment_size);
+        w.Uint64(*_topic_config->properties.segment_size);
     } else {
         w.Null();
     }
@@ -429,7 +429,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     if (!_topic_config->properties.retention_bytes.is_disabled()) {
         w.Key("retention_bytes");
         if (_topic_config->properties.retention_bytes.has_optional_value()) {
-            w.Int64(_topic_config->properties.retention_bytes.value());
+            w.Uint64(_topic_config->properties.retention_bytes.value());
         } else {
             w.Null();
         }
