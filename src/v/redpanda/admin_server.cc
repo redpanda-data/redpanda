@@ -667,27 +667,35 @@ map_partition_results(std::vector<cluster::move_cancellation_result> results) {
 }
 
 ss::httpd::broker_json::maintenance_status fill_maintenance_status(
-  const std::optional<cluster::drain_manager::drain_status>& status) {
+  const cluster::broker_state& b_state,
+  const cluster::drain_manager::drain_status& s) {
     ss::httpd::broker_json::maintenance_status ret;
-    if (status) {
-        const auto& s = status.value();
-        ret.draining = true;
-        ret.finished = s.finished;
-        ret.errors = s.errors;
-        ret.partitions = s.partitions.value_or(0);
-        ret.transferring = s.transferring.value_or(0);
-        ret.eligible = s.eligible.value_or(0);
-        ret.failed = s.failed.value_or(0);
-    } else {
-        ret.draining = false;
-        // ensure that the output json has all fields
-        ret.finished = false;
-        ret.errors = false;
-        ret.partitions = 0;
-        ret.transferring = 0;
-        ret.eligible = 0;
-        ret.failed = 0;
-    }
+    ret.draining = b_state.get_maintenance_state()
+                   == model::maintenance_state::active;
+
+    ret.finished = s.finished;
+    ret.errors = s.errors;
+    ret.partitions = s.partitions.value_or(0);
+    ret.transferring = s.transferring.value_or(0);
+    ret.eligible = s.eligible.value_or(0);
+    ret.failed = s.failed.value_or(0);
+
+    return ret;
+}
+ss::httpd::broker_json::maintenance_status
+fill_maintenance_status(const cluster::broker_state& b_state) {
+    ss::httpd::broker_json::maintenance_status ret;
+
+    ret.draining = b_state.get_maintenance_state()
+                   == model::maintenance_state::active;
+    // ensure that the output json has all fields
+    ret.finished = false;
+    ret.errors = false;
+    ret.partitions = 0;
+    ret.transferring = 0;
+    ret.eligible = 0;
+    ret.failed = 0;
+
     return ret;
 }
 
@@ -731,8 +739,7 @@ get_brokers(cluster::controller* const controller) {
               // These fields are defaults that will be overwritten with
               // data from the health report.
               b.is_alive = true;
-              b.maintenance_status = fill_maintenance_status(std::nullopt);
-
+              b.maintenance_status = fill_maintenance_status(nm.state);
               b.internal_rpc_address = nm.broker.rpc_address().host();
               b.internal_rpc_port = nm.broker.rpc_address().port();
 
@@ -757,8 +764,11 @@ get_brokers(cluster::controller* const controller) {
 
               if (r_it != h_report.value().node_reports.end()) {
                   it->second.version = r_it->local_state.redpanda_version;
-                  it->second.maintenance_status = fill_maintenance_status(
-                    r_it->drain_status);
+                  auto nm = members_table.get_node_metadata_ref(r_it->id);
+                  if (nm && r_it->drain_status) {
+                      it->second.maintenance_status = fill_maintenance_status(
+                        nm.value().get().state, r_it->drain_status.value());
+                  }
 
                   for (auto& ds : r_it->local_state.disks) {
                       ss::httpd::broker_json::disk_space_info dsi;
@@ -2190,12 +2200,6 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
                                 .local()
                                 .get_node_drain_status(
                                   id, model::time_from_now(5s));
-    if (maybe_drain_status.has_error()) {
-        throw ss::httpd::base_exception(
-          fmt::format(
-            "Unexpected error: {}", maybe_drain_status.error().message()),
-          ss::httpd::reply::status_type::service_unavailable);
-    }
 
     ss::httpd::broker_json::broker ret;
     ret.node_id = node_meta->broker.id();
@@ -2207,8 +2211,13 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
     }
     ret.membership_status = fmt::format(
       "{}", node_meta->state.get_membership_state());
-    ret.maintenance_status = fill_maintenance_status(
-      maybe_drain_status.value());
+    ret.maintenance_status = fill_maintenance_status(node_meta->state);
+    if (
+      !maybe_drain_status.has_error()
+      && maybe_drain_status.value().has_value()) {
+        ret.maintenance_status = fill_maintenance_status(
+          node_meta->state, *maybe_drain_status.value());
+    }
 
     co_return ret;
 }
