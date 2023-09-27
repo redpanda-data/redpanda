@@ -176,6 +176,7 @@ private:
     config::binding<size_t> _throughput_shard_limit_config;
     config::binding<size_t> _relative_throughput;
     bool _throttling_disabled{false};
+    std::optional<size_t> _device_throughput;
 };
 
 } // namespace cloud_storage

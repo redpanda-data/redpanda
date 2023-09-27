@@ -59,7 +59,8 @@ inline size_t muldiv(size_t val, size_t mul, size_t div) {
 }
 
 // Get device throughput for the mountpoint
-inline ss::future<device_throughput> get_storage_device_throughput() {
+inline ss::future<std::optional<device_throughput>>
+get_storage_device_throughput() {
     try {
         auto cache_path = config::node().cloud_storage_cache_path().native();
         auto fs = co_await ss::file_stat(cache_path);
@@ -71,8 +72,8 @@ inline ss::future<device_throughput> get_storage_device_throughput() {
             // percent == 0 indicates that the throttling is disabled
             // intentionally
             co_return device_throughput{
-              .read = muldiv(cfg.read_bytes_rate, 100, percent),
-              .write = muldiv(cfg.write_bytes_rate, 100, percent),
+              .read = muldiv(cfg.read_bytes_rate, percent, 100),
+              .write = muldiv(cfg.write_bytes_rate, percent, 100),
             };
         }
     } catch (...) {
@@ -81,7 +82,7 @@ inline ss::future<device_throughput> get_storage_device_throughput() {
           "Can't get device throughput: {}",
           std::current_exception());
     }
-    co_return device_throughput{};
+    co_return std::nullopt;
 }
 
 // Compute device limit based on configuration. The value is a total throughput
@@ -105,7 +106,8 @@ inline throughput_limit get_hard_throughput_limit() {
 
 // Compute device limit based on configuration. The value is a total throughput
 // for the node. This function takes hardware into account.
-inline ss::future<throughput_limit> get_throughput_limit() {
+inline throughput_limit
+get_throughput_limit(std::optional<size_t> device_throughput) {
     auto hard_limit = config::shard_local_cfg()
                         .cloud_storage_max_download_throughput_per_shard()
                       * ss::smp::count;
@@ -116,24 +118,22 @@ inline ss::future<throughput_limit> get_throughput_limit() {
         // Run tiered-storage without throttling by setting
         // 'cloud_storage_throughput_limit_percent' to 0 or
         // 'cloud_storage_max_download_throughput_per_shard' to 0
-        co_return throughput_limit{};
+        return throughput_limit{};
     }
 
-    auto node_device_limit = co_await get_storage_device_throughput();
-
-    if (node_device_limit.write == std::numeric_limits<size_t>::max()) {
+    if (!device_throughput.has_value()) {
         // The 'cloud_storage_throughput_limit_percent' is set
         // but but we couldn't read the actual device throughput. No need
         // to limit the disk bandwidth in this case. But since hard limit
         // is set we still need to limit network bandwidth even though
         // the limit is overly high.
-        co_return throughput_limit{
+        return throughput_limit{
           .download_shard_throughput_limit = hard_limit / ss::smp::count,
         };
     }
 
-    auto tp = std::min(hard_limit, node_device_limit.write);
-    co_return throughput_limit{
+    auto tp = std::min(hard_limit, device_throughput.value());
+    return {
       .disk_node_throughput_limit = tp,
       .download_shard_throughput_limit = tp / ss::smp::count,
     };
@@ -204,7 +204,7 @@ materialized_resources::materialized_resources()
 }
 
 ss::future<> materialized_resources::update_throughput() {
-    auto tp = co_await get_throughput_limit();
+    auto tp = get_throughput_limit(_device_throughput);
     if (ss::this_shard_id() == 0) {
         co_await set_disk_max_bandwidth(tp.disk_node_throughput_limit);
     }
@@ -276,6 +276,7 @@ ss::future<> materialized_resources::stop() {
     co_await _gate.close();
     cst_log.debug("Stopped materialized_segments...");
 }
+
 ss::future<> materialized_resources::start() {
     // Timer to invoke TTL eviction of segments
     _stm_timer.set_callback([this] {
@@ -285,6 +286,12 @@ ss::future<> materialized_resources::start() {
     _stm_timer.rearm(_stm_jitter());
 
     co_await _manifest_cache->start();
+
+    auto tput = co_await get_storage_device_throughput();
+    if (tput.has_value()) {
+        _device_throughput = tput->write;
+    }
+    co_await update_throughput();
 
     co_return;
 }
