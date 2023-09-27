@@ -72,15 +72,11 @@ public:
 
     /*
      * Start draining this broker.
-     *
-     * Invoke this on each core.
      */
     ss::future<> drain();
 
     /*
      * Restore broker to a non-drain[ing] state.
-     *
-     * Invoke this on each core.
      */
     ss::future<> restore();
 
