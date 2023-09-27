@@ -1229,7 +1229,8 @@ controller_backend::process_partition_reconfiguration(
      * created with cancel/abort type of deltas.
      */
     vassert(
-      type == topic_table_delta::op_type::update,
+      type == topic_table_delta::op_type::update
+        || type == topic_table_delta::op_type::force_update,
       "Invalid reconciliation loop state. Partition replicas should not be "
       "removed before finishing update, ntp: {}, current operation: {}, "
       "target_assignment: {}",
