@@ -537,7 +537,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
      */
 
     storage::housekeeping_config ccfg_no_compact(
-      model::to_timestamp(broker_t0 - 10s),
+      model::to_timestamp(broker_t0 - (2 * broker_ts_sep)),
       std::nullopt,
       model::offset::min(), // should prevent compaction
       ss::default_priority_class(),
