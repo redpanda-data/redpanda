@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_hash_ranges.h"
@@ -2795,6 +2796,27 @@ struct bootstrap_cluster_cmd_data
     std::vector<model::broker> initial_nodes;
 };
 
+struct cluster_recovery_init_cmd_data
+  : serde::envelope<
+      cluster_recovery_init_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    friend bool operator==(
+      const cluster_recovery_init_cmd_data&,
+      const cluster_recovery_init_cmd_data&)
+      = default;
+
+    auto serde_fields() { return std::tie(manifest, bucket); }
+
+    // Cluster metadata manifest used to define the desired end state of the
+    // recovery.
+    cluster::cloud_metadata::cluster_metadata_manifest manifest;
+
+    // Bucket from which to download the cluster recovery state.
+    cloud_storage_clients::bucket_name bucket;
+};
+
 enum class recovery_stage : int8_t {
     // A recovery has been initialized. We've already downloaded and serialized
     // the manifest. While in this state, a recovery manager may validate that
@@ -2829,6 +2851,26 @@ enum class recovery_stage : int8_t {
     failed = 101,
 };
 std::ostream& operator<<(std::ostream& o, const recovery_stage& s);
+
+struct cluster_recovery_update_cmd_data
+  : serde::envelope<
+      cluster_recovery_update_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    friend bool operator==(
+      const cluster_recovery_update_cmd_data&,
+      const cluster_recovery_update_cmd_data&)
+      = default;
+
+    auto serde_fields() { return std::tie(stage, error_msg); }
+
+    // The stage of the cluster recovery to be updated to.
+    recovery_stage stage;
+
+    // If set, the recovery is failed. Otherwise, it was a success.
+    std::optional<ss::sstring> error_msg;
+};
 
 enum class reconciliation_status : int8_t {
     done,
