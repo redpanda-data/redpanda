@@ -102,10 +102,15 @@ struct group_nodes {
 struct configuration_update
   : serde::envelope<
       configuration_update,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     std::vector<vnode> replicas_to_add;
     std::vector<vnode> replicas_to_remove;
+    /**
+     * If set, this field will instruct raft to initialize learner log with an
+     * offset that may be greater than the leader start offset.
+     */
+    std::optional<model::offset> learner_start_offset;
 
     bool is_to_add(const vnode&) const;
     bool is_to_remove(const vnode&) const;
@@ -115,7 +120,8 @@ struct configuration_update
       = default;
 
     auto serde_fields() {
-        return std::tie(replicas_to_add, replicas_to_remove);
+        return std::tie(
+          replicas_to_add, replicas_to_remove, learner_start_offset);
     }
 
     friend std::ostream& operator<<(std::ostream&, const configuration_update&);
