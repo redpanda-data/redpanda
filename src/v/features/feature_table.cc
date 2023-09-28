@@ -81,6 +81,8 @@ std::string_view to_string_view(feature f) {
         return "cloud_storage_scrubbing";
     case feature::enhanced_force_reconfiguration:
         return "enhanced_force_reconfiguration";
+    case feature::broker_time_based_retention:
+        return "broker_time_based_retention";
 
     /*
      * testing features
@@ -564,7 +566,10 @@ const std::optional<security::license>& feature_table::get_license() const {
 
 void feature_table::testing_activate_all() {
     for (auto& s : _feature_state) {
-        if (s.spec.available_rule == feature_spec::available_policy::always) {
+        if (
+          s.spec.available_rule == feature_spec::available_policy::always
+          || s.spec.available_rule
+               == feature_spec::available_policy::new_clusters_only) {
             s.transition_active();
         }
     }

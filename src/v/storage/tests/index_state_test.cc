@@ -18,6 +18,14 @@ static storage::index_state make_random_index_state(
     st.batch_timestamps_are_monotonic = apply_offset
                                         == storage::offset_delta_time::yes;
 
+    if (apply_offset == storage::offset_delta_time::yes) {
+        // set new field if the request is for a current-version index
+        if (random_generators::get_int(0, 1) == 1) {
+            st.broker_timestamp = model::timestamp(
+              random_generators::get_int<int64_t>());
+        }
+    }
+
     const auto n = random_generators::get_int(1, 10000);
     for (auto i = 0; i < n; ++i) {
         st.add_entry(

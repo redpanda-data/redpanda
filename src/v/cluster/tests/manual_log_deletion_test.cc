@@ -90,10 +90,15 @@ struct manual_deletion_fixture : public raft_test_fixture {
         // append some entries
         [[maybe_unused]] bool res
           = replicate_compactible_batches(gr, first_ts).get0();
+        // make it so that above batch will be collected by time based
+        // retention, by setting the threshold to 2 seconds after it
+        retention_timestamp = model::to_timestamp(
+          model::timestamp_clock::now() + 2s);
+        ss::sleep(5s).get(); // wait to ensure broker_timestamp is different for
+                             // the next batch
         auto second_ts = model::timestamp(first_ts() + 200000);
         // append some more entries
         res = replicate_compactible_batches(gr, second_ts).get0();
-        retention_timestamp = first_ts;
         validate_logs_replication(gr);
     }
 

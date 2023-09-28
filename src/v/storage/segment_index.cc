@@ -45,7 +45,8 @@ segment_index::segment_index(
   model::offset base,
   size_t step,
   ss::sharded<features::feature_table>& feature_table,
-  std::optional<ntp_sanitizer_config> sanitizer_config)
+  std::optional<ntp_sanitizer_config> sanitizer_config,
+  std::optional<model::timestamp> broker_timestamp)
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
@@ -53,6 +54,7 @@ segment_index::segment_index(
       storage::internal::should_apply_delta_time_offset(_feature_table)))
   , _sanitizer_config(std::move(sanitizer_config)) {
     _state.base_offset = base;
+    _state.broker_timestamp = broker_timestamp;
 }
 
 segment_index::segment_index(
@@ -98,8 +100,23 @@ void segment_index::swap_index_state(index_state&& o) {
     std::swap(_state, o);
 }
 
+// helper for segment_index::maybe_track, converts betwen optional-wrapped
+// broker_timestamp_t and model::timestamp
+constexpr auto to_optional_model_timestamp(std::optional<broker_timestamp_t> in)
+  -> std::optional<model::timestamp> {
+    if (unlikely(!in.has_value())) {
+        return std::nullopt;
+    }
+    // conversion from broker_timestamp_t to system_clock in this way it's
+    // possible because they share the same epoch
+    return model::to_timestamp(
+      std::chrono::system_clock::time_point{in->time_since_epoch()});
+}
+
 void segment_index::maybe_track(
-  const model::record_batch_header& hdr, size_t filepos) {
+  const model::record_batch_header& hdr,
+  std::optional<broker_timestamp_t> new_broker_ts,
+  size_t filepos) {
     _acc += hdr.size_bytes;
 
     _state.update_batch_timestamps_are_monotonic(
@@ -115,6 +132,7 @@ void segment_index::maybe_track(
           hdr.last_offset(),
           hdr.first_timestamp,
           hdr.max_timestamp,
+          to_optional_model_timestamp(new_broker_ts),
           path().is_internal_topic()
             || hdr.type == model::record_batch_type::raft_data)) {
         _acc = 0;

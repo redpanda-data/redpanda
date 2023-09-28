@@ -377,67 +377,73 @@ ss::future<> do_compact_segment_index(
           return write_clean_compacted_index(reader, cfg, resources);
       });
 }
+
 ss::future<storage::index_state> do_copy_segment_data(
-  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<segment> seg,
   compaction_config cfg,
   storage::probe& pb,
-  ss::rwlock::holder h,
+  ss::rwlock::holder rw_lock_holder,
   storage_resources& resources,
   offset_delta_time apply_offset) {
-    auto idx_path = s->reader().path().to_compacted_index();
-    return make_reader_handle(idx_path, cfg.sanitizer_config)
-      .then([s, cfg, idx_path](ss::file f) {
-          auto reader = make_file_backed_compacted_reader(
-            idx_path, std::move(f), cfg.iopc, 64_KiB);
-          return generate_compacted_list(s->offsets().base_offset, reader)
-            .finally([reader]() mutable {
-                return reader.close().then_wrapped([](ss::future<>) {});
-            });
-      })
-      .then([cfg, s, &pb, h = std::move(h), &resources, apply_offset](
-              compacted_offset_list list) mutable {
-          const auto tmpname = s->reader().path().to_staging();
-          return make_segment_appender(
-                   tmpname,
-                   segment_appender::write_behind_memory
-                     / internal::chunks().chunk_size(),
-                   std::nullopt,
-                   cfg.iopc,
-                   resources,
-                   cfg.sanitizer_config)
-            .then([l = std::move(list),
-                   &pb,
-                   h = std::move(h),
-                   cfg,
-                   s,
-                   tmpname,
-                   apply_offset](segment_appender_ptr w) mutable {
-                auto raw = w.get();
-                auto red = copy_data_segment_reducer(
-                  std::move(l),
-                  raw,
-                  s->path().is_internal_topic(),
-                  apply_offset);
-                auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
-                vlog(
-                  gclog.trace,
-                  "copying compacted segment data from {} to {}",
-                  s->reader().filename(),
-                  tmpname);
-                return std::move(r)
-                  .consume(std::move(red), model::no_timeout)
-                  .finally([raw, w = std::move(w)]() mutable {
-                      return raw->close()
-                        .handle_exception([](std::exception_ptr e) {
-                            vlog(
-                              gclog.error,
-                              "Error copying index to new segment:{}",
-                              e);
-                        })
-                        .finally([w = std::move(w)] {});
-                  });
-            });
-      });
+    // preserve broker_timestamp from the segment's index
+    auto old_broker_timestamp = seg->index().broker_timestamp();
+
+    // find out which offsets will survive compaction
+    auto idx_path = seg->reader().path().to_compacted_index();
+    auto compacted_reader = make_file_backed_compacted_reader(
+      idx_path,
+      co_await make_reader_handle(idx_path, cfg.sanitizer_config),
+      cfg.iopc,
+      64_KiB);
+    auto compacted_offsets = co_await generate_compacted_list(
+                               seg->offsets().base_offset, compacted_reader)
+                               .finally([&] {
+                                   return compacted_reader.close().then_wrapped(
+                                     [](ss::future<>) {});
+                               });
+
+    // prepare a new segment with only the compacted_offsets
+    auto tmpname = seg->reader().path().to_staging();
+
+    auto appender = co_await make_segment_appender(
+      tmpname,
+      segment_appender::write_behind_memory / internal::chunks().chunk_size(),
+      std::nullopt,
+      cfg.iopc,
+      resources,
+      cfg.sanitizer_config);
+
+    vlog(
+      gclog.trace,
+      "copying compacted segment data from {} to {}",
+      seg->reader().filename(),
+      tmpname);
+
+    auto copy_reducer = [&] {
+        return copy_data_segment_reducer(
+          std::move(compacted_offsets),
+          appender.get(),
+          seg->path().is_internal_topic(),
+          apply_offset);
+    };
+
+    // create the segment, get the in-memory index for the new segment
+    auto new_index = co_await create_segment_full_reader(
+                       seg, cfg, pb, std::move(rw_lock_holder))
+                       .consume(copy_reducer(), model::no_timeout)
+                       .finally([&] {
+                           return appender->close().handle_exception(
+                             [](std::exception_ptr e) {
+                                 vlog(
+                                   gclog.error,
+                                   "Error copying index to new segment:{}",
+                                   e);
+                             });
+                       });
+
+    // restore broker timestamp
+    new_index.broker_timestamp = old_broker_timestamp;
+    co_return new_index;
 }
 
 model::record_batch_reader create_segment_full_reader(
@@ -508,6 +514,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
         throw segment_closed_exception();
     }
 
+    // broker_timestamp is used for retention.ms, but it's only in the index,
+    // not it in the segment itself. save it to restore it later
     co_await do_compact_segment_index(s, cfg, resources);
     // copy the bytes after segment is good - note that we
     // need to do it with the READ-lock, not the write lock
@@ -737,12 +745,27 @@ make_concatenated_segment(
     if (co_await ss::file_exists(index_name.string())) {
         co_await ss::remove_file(index_name.string());
     }
+    // start the new index with the newest of the broker_timestamps from the
+    // segments
+    auto new_broker_timestamp = [&]() -> std::optional<model::timestamp> {
+        // invariants: segments is not empty, but for completeness handle the
+        // empty case
+        if (unlikely(segments.empty())) {
+            return std::nullopt;
+        }
+        auto seg_it = *std::ranges::max_element(
+          segments, std::less<>{}, [](auto& seg) {
+              return seg->index().broker_timestamp();
+          });
+        return seg_it->index().broker_timestamp();
+    }();
     segment_index index(
       index_name,
       offsets.base_offset,
       segment_index::default_data_buffer_step,
       feature_table,
-      cfg.sanitizer_config);
+      cfg.sanitizer_config,
+      new_broker_timestamp);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(
