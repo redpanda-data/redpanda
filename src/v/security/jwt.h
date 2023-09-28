@@ -36,6 +36,7 @@ enum errc {
     jwks_invalid,
     jwk_invalid,
     jws_invalid,
+    jwt_invalid,
 };
 
 struct errc_category final : public std::error_category {
@@ -53,6 +54,8 @@ struct errc_category final : public std::error_category {
             return "Invalid jwk";
         case errc::jws_invalid:
             return "Invalid jws";
+        case errc::jwt_invalid:
+            return "Invalid jwt";
         }
     }
 };
@@ -107,6 +110,17 @@ string_view(json::Value const& doc, std::string_view field) {
         return std::nullopt;
     }
     return as_string_view<CharT>(it->value);
+}
+
+template<typename Clock>
+std::optional<typename Clock::time_point>
+time_point(json::Value const& doc, std::string_view field) {
+    auto it = doc.FindMember(field.data());
+    if (it == doc.MemberEnd() || !it->value.IsInt64()) {
+        return std::nullopt;
+    }
+    return
+      typename Clock::time_point(std::chrono::seconds(it->value.GetInt64()));
 }
 
 template<string_viewable StringT = cryptopp_bytes>
@@ -226,6 +240,113 @@ private:
       : _encoded{std::move(encoded)} {}
 
     ss::sstring _encoded;
+};
+
+// A JSON Web Token as defined by
+// https://www.rfc-editor.org/rfc/rfc7519
+class jwt {
+public:
+    static result<jwt> make(json::Document header, json::Document payload) {
+        if (header.HasParseError() || !header.IsObject()) {
+            return errc::jwt_invalid;
+        }
+
+        if (payload.HasParseError() || !payload.IsObject()) {
+            return errc::jwt_invalid;
+        }
+
+        if (detail::string_view(header, "typ") != "JWT") {
+            return errc::jwt_invalid;
+        }
+
+        for (auto const& field : {"alg", "kid"}) {
+            auto f = detail::string_view(header, field);
+            if (!f || f->empty()) {
+                return jwt_invalid;
+            }
+        }
+
+        return jwt(std::move(header), std::move(payload));
+    }
+
+    // Retrieve the Claim named claim.
+    auto claim(std::string_view claim) const {
+        return detail::string_view(_payload, claim);
+    }
+
+    // Retrieve the Algorithm Header Parameter
+    // https://www.rfc-editor.org/rfc/rfc7515.html#section-4.1.1
+    auto alg() const { return detail::string_view(_header, "alg"); }
+
+    // Retrieve the Key ID Header Parameter
+    // https://www.rfc-editor.org/rfc/rfc7515.html#section-4.1.4
+    auto kid() const { return detail::string_view(_header, "kid"); }
+
+    // Retrieve the Type Header Parameter
+    // https://www.rfc-editor.org/rfc/rfc7519#section-5.1
+    auto typ() const { return detail::string_view(_header, "typ"); }
+
+    // Retrieve the Issuer Claim
+    // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.1
+    auto iss() const { return claim("iss"); }
+
+    // Retrieve the Subject Claim
+    // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.2
+    auto sub() const { return claim("sub"); }
+
+    // Check for aud in the "aud" Claim
+    // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.3
+    bool has_aud(std::string_view aud) const {
+        const auto is_aud = [aud](auto const& v) {
+            return v.IsString()
+                   && std::string_view{v.GetString(), v.GetStringLength()}
+                        == aud;
+        };
+
+        auto it = _payload.FindMember("aud");
+        if (it == _payload.MemberEnd()) {
+            return false;
+        }
+        if (is_aud(it->value)) {
+            return true;
+        }
+        if (!it->value.IsArray()) {
+            return false;
+        }
+        return absl::c_any_of(it->value.GetArray(), is_aud);
+    }
+
+    // Retrieve the Expiration Time Claim as a Clock::time_point
+    // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.4
+    template<typename Clock>
+    auto exp() const {
+        return detail::time_point<Clock>(_payload, "exp");
+    }
+
+    // Retrieve the Not Before Claim as a Clock::time_point
+    // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.5
+    template<typename Clock>
+    auto nbf() const {
+        return detail::time_point<Clock>(_payload, "nbf");
+    }
+
+    // Retrieve the Issued At Claim as a Clock::time_point
+    // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.6
+    template<typename Clock>
+    auto iat() const {
+        return detail::time_point<Clock>(_payload, "iat");
+    }
+
+    // Retrieve JWT ID Claim
+    // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.7
+    auto jti() const { return claim("jti"); }
+
+private:
+    jwt(json::Document header, json::Document payload)
+      : _header{std::move(header)}
+      , _payload{std::move(payload)} {}
+    json::Document _header;
+    json::Document _payload;
 };
 
 namespace detail {
