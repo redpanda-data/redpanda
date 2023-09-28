@@ -12,12 +12,15 @@
 #include "json/document.h"
 #include "oncore.h"
 #include "outcome.h"
+#include "utils/string_switch.h"
 #include "utils/utf8.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <absl/algorithm/container.h>
+#include <absl/container/flat_hash_map.h>
+#include <boost/algorithm/string/split.hpp>
 #include <cryptopp/base64.h>
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/integer.h>
@@ -37,6 +40,7 @@ enum errc {
     jwk_invalid,
     jws_invalid,
     jwt_invalid,
+    kid_not_found,
 };
 
 struct errc_category final : public std::error_category {
@@ -56,6 +60,8 @@ struct errc_category final : public std::error_category {
             return "Invalid jws";
         case errc::jwt_invalid:
             return "Invalid jwt";
+        case errc::kid_not_found:
+            return "kid not found";
         }
     }
 };
@@ -90,6 +96,26 @@ template<typename CharT>
 struct is_string_viewable<std::basic_string_view<CharT>> : std::true_type {};
 template<typename T>
 concept string_viewable = detail::is_string_viewable<T>::value;
+
+template<typename ToCharT = char>
+std::basic_string_view<ToCharT> char_view_cast(string_viewable auto const& sv) {
+    return {reinterpret_cast<ToCharT const*>(sv.data()), sv.length()};
+}
+
+struct string_viewable_compare {
+    using is_transparent = void;
+    bool operator()(
+      string_viewable auto const& lhs, string_viewable auto const& rhs) const {
+        return char_view_cast(lhs) == char_view_cast(rhs);
+    }
+};
+
+struct string_viewable_hasher {
+    using is_transparent = void;
+    size_t operator()(string_viewable auto const& sv) const {
+        return std::hash<std::string_view>{}(char_view_cast(sv));
+    }
+};
 
 using cryptopp_bytes = ss::basic_sstring<CryptoPP::byte, uint32_t, 31, false>;
 using cryptopp_byte_view = std::basic_string_view<cryptopp_bytes::value_type>;
@@ -236,6 +262,7 @@ public:
     }
 
 private:
+    friend class verifier;
     explicit jws(ss::sstring encoded)
       : _encoded{std::move(encoded)} {}
 
@@ -438,6 +465,136 @@ inline result<verifier> make_rs256_verifier(
     return verifier{rs256_verifier{key}};
 }
 
+using verifiers = absl::flat_hash_map<
+  ss::sstring,
+  detail::verifier,
+  detail::string_viewable_hasher,
+  detail::string_viewable_compare>;
+
+inline result<verifiers>
+make_verifiers(jwks const& jwks, CryptoPP::AutoSeededRandomPool& rng) {
+    auto keys = jwks.keys();
+    verifiers vs;
+    for (auto const& key : keys) {
+        // Alg is required
+        auto alg = detail::string_view(key, "alg");
+        if (!alg) {
+            return errc::jwk_invalid;
+        }
+
+        // Use is optional, but must be sig if it exists
+        auto use = detail::string_view(key, "use");
+        if (use.value_or("sig") != "sig") {
+            continue;
+        }
+
+        using factory = result<verifier> (*)(
+          json::Value const&, CryptoPP::AutoSeededRandomPool&);
+        auto v = string_switch<std::optional<factory>>(*alg)
+                   .match(rs256_str, &make_rs256_verifier)
+                   .default_match(std::optional<factory>{});
+        if (!v) {
+            continue;
+        }
+
+        auto r = v.value()(key, rng);
+        if (!r) {
+            continue;
+        }
+
+        vs.insert_or_assign(
+          detail::string_view(key, "kid").value_or(""),
+          std::move(r).assume_value());
+    }
+    if (vs.empty()) {
+        return errc::jwks_invalid;
+    }
+    return vs;
+}
+
 } // namespace detail
+
+class verifier {
+public:
+    explicit verifier() = default;
+
+    // Verify the JWS signature and return the JWT
+    result<jwt> verify(jws const& jws) const {
+        std::string_view sv(jws._encoded);
+        std::vector<detail::cryptopp_byte_view> jose_enc;
+        jose_enc.reserve(3);
+        boost::algorithm::split(
+          jose_enc, detail::char_view_cast<CryptoPP::byte>(sv), [](char c) {
+              return c == '.';
+          });
+
+        if (jose_enc.size() != 3) {
+            return errc::jws_invalid;
+        }
+
+        constexpr auto make_dom =
+          [](detail::cryptopp_byte_view bv) -> result<json::Document> {
+            try {
+                auto bytes = detail::base64_url_decode(bv);
+                auto str = detail::char_view_cast<char>(bytes);
+                json::Document dom;
+                dom.Parse(str.data(), str.length());
+                return dom;
+            } catch (CryptoPP::Exception const& ex) {
+                return errc::jws_invalid;
+            }
+        };
+
+        auto header_dom = make_dom(jose_enc[0]);
+        if (header_dom.has_error()) {
+            return header_dom.error();
+        }
+
+        auto payload_dom = make_dom(jose_enc[1]);
+        if (payload_dom.has_error()) {
+            return payload_dom.error();
+        }
+
+        auto signature = detail::base64_url_decode(jose_enc[2]);
+
+        auto jwt = jwt::make(
+          std::move(header_dom).assume_value(),
+          std::move(payload_dom).assume_value());
+        if (jwt.has_error()) {
+            return jwt.error();
+        }
+
+        auto verifier = _verifiers.find(jwt.assume_value().kid().value());
+        if (verifier == _verifiers.end()) {
+            if (_verifiers.size() != 1) {
+                return errc::kid_not_found;
+            }
+            verifier = _verifiers.begin();
+        }
+
+        auto second_dot = jose_enc[0].length() + 1 + jose_enc[1].length();
+        auto msg = sv.substr(0, second_dot);
+        if (!verifier->second.verify(
+              detail::char_view_cast<CryptoPP::byte>(msg), signature)) {
+            return errc::jws_invalid;
+        }
+
+        return jwt;
+    }
+
+    // Update the verification keys
+    result<void> update_keys(jwks const& keys) {
+        auto verifiers = detail::make_verifiers(keys, _rng);
+        if (verifiers.has_error()) {
+            return verifiers.error();
+        }
+        _verifiers = std::move(verifiers).assume_value();
+        return outcome::success();
+    }
+
+private:
+    CryptoPP::AutoSeededRandomPool _rng;
+    detail::verifiers _verifiers;
+};
 
 } // namespace security::oidc
