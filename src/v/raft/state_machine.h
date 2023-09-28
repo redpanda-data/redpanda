@@ -21,7 +21,6 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/shared_future.hh>
 #include <seastar/util/log.hh>
 
 namespace raft {
@@ -145,13 +144,6 @@ private:
     model::offset _next;
     ss::abort_source _as;
     model::offset _bootstrap_last_applied;
-    /**
-     * Shared promise used to propagate barrier result to all the waiters. The
-     * shared promise allow us to share the result of ongoing linearizable
-     * barrier request with multiple callers.
-     */
-    using barrier_promise_t = ss::shared_promise<result<model::offset>>;
-    std::optional<barrier_promise_t> _barrier_promise;
 };
 
 } // namespace raft
