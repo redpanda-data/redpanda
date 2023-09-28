@@ -1341,14 +1341,19 @@ remote_segment_batch_reader::read_some(
         if (
           _bytes_consumed != 0 && _bytes_consumed == new_bytes_consumed.value()
           && !_config.over_budget) {
-            vlog(
-              _ctxlog.error,
-              "segment_reader is stuck, segment ntp: {}, _cur_rp_offset: {}, "
-              "_bytes_consumed: "
-              "{}",
+            const auto msg = fmt::format(
+              "segment_reader is stuck, segment ntp: {}, _cur_rp_offset: "
+              "{}, "
+              "_bytes_consumed: {}, parser error state: {}",
               _seg->get_ntp(),
               _cur_rp_offset,
-              _bytes_consumed);
+              _bytes_consumed,
+              _parser->error());
+            if (_parser->error() == storage::parser_errc::end_of_stream) {
+                vlog(_ctxlog.info, "{}", msg);
+            } else {
+                vlog(_ctxlog.error, "{}", msg);
+            }
             _is_unexpected_eof = true;
             co_return ss::circular_buffer<model::record_batch>{};
         }
