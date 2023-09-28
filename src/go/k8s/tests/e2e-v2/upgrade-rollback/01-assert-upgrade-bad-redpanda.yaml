@@ -7,12 +7,12 @@ metadata:
   name: redpanda
 status:
   conditions:
-    - message: Redpanda reconciliation succeeded
-      reason: RedpandaClusterDeployed
-      status: "True"
+    - message: HelmRelease 'redpanda/redpanda' is not ready
+      reason: ArtifactFailed
+      status: "False"
       type: Ready
   helmRelease: redpanda
-  helmReleaseReady: true
+  helmReleaseReady: false
   helmRepository: redpanda-repository
   helmRepositoryReady: true
 ---
