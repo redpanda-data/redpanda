@@ -3010,8 +3010,12 @@ admin_server::force_set_partition_replicas_handler(
               replicas);
             co_return ss::json::json_void();
         }
-
-        if (!cluster::is_proper_subset(replicas, current_replicas)) {
+        auto relax_restrictions
+          = _controller->get_feature_table().local().is_active(
+            features::feature::enhanced_force_reconfiguration);
+        if (
+          !relax_restrictions
+          && !cluster::is_proper_subset(replicas, current_replicas)) {
             throw ss::httpd::bad_request_exception(fmt::format(
               "Target assignment {} is not a proper subset of current {}, "
               "choose a proper subset of existing replicas.",

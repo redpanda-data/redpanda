@@ -16,6 +16,8 @@ from ducktape.utils.util import wait_until
 from random import shuffle
 import time
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.services.admin import Replica
+from rptest.clients.kcl import KCL
 
 
 class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
@@ -43,14 +45,17 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.await_num_produced(min_records=10000)
 
     def _wait_until_no_leader(self):
-        ntp = f"kafka/{self.topic}/0"
-
+        """Scrapes the debug endpoints of all replicas and checks if any of the replicas think they are the leader"""
         def no_leader():
-            hov = self.redpanda._admin.get_cluster_health_overview()
-            leaderless_parts = hov['leaderless_partitions']
-            self.redpanda.logger.debug(
-                f"Leaderless partitions: {leaderless_parts}")
-            return ntp in leaderless_parts
+            state = self.redpanda._admin.get_partition_state(
+                "kafka", self.topic, 0)
+            if "replicas" not in state.keys() or len(state["replicas"]) == 0:
+                return True
+            for r in state["replicas"]:
+                assert "raft_state" in r.keys()
+                if r["raft_state"]["is_leader"]:
+                    return False
+            return True
 
         wait_until(no_leader,
                    timeout_sec=30,
@@ -204,3 +209,73 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.redpanda._admin.await_stable_leader(topic=self.topic,
                                                  replication=len(alive) + 1,
                                                  hosts=self._alive_nodes())
+
+    @cluster(num_nodes=7)
+    @matrix(target_replica_set_size=[1, 3])
+    def test_reconfiguring_all_replicas_lost(self, target_replica_set_size):
+        self.start_redpanda(num_nodes=4)
+        assert self.redpanda
+
+        # create a topic with rf = 1
+        self.topic = "topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=1))
+
+        kcl = KCL(self.redpanda)
+
+        # produce some data.
+        self.start_producer(acks=1)
+        self.await_num_produced(min_records=10000)
+        self.producer.stop()
+
+        def get_stable_lso():
+            def get_lso():
+                try:
+                    partitions = kcl.list_offsets([self.topic])
+                    if len(partitions) == 0:
+                        return -1
+                    return partitions[0].end_offset
+                except:
+                    return -1
+
+            wait_until(
+                lambda: get_lso() != -1,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=
+                f"Partition {self.topic}/0 couldn't achieve a stable lso")
+
+            return get_lso()
+
+        lso = get_stable_lso()
+        assert lso >= 10001, f"Partition {self.topic}/0 has incorrect lso {lso}"
+
+        # kill the broker hosting the replica
+        (killed, alive) = self._stop_majority_nodes(replication=1)
+        assert len(killed) == 1
+        assert len(alive) == 0
+
+        self._wait_until_no_leader()
+
+        # force reconfigure to target replica set size
+        assert target_replica_set_size <= len(self._alive_nodes())
+        new_replicas = [
+            Replica(dict(node_id=self.redpanda.node_id(replica), core=0)) for
+            replica in self.redpanda.started_nodes()[:target_replica_set_size]
+        ]
+        self._force_reconfiguration(new_replicas=new_replicas)
+
+        self.redpanda._admin.await_stable_leader(
+            topic=self.topic,
+            replication=target_replica_set_size,
+            hosts=self._alive_nodes())
+
+        # Ensure it is empty
+        lso = get_stable_lso()
+        assert lso == 0, f"Partition {self.topic}/0 has incorrect lso {lso}"
+
+        # check if we can produce/consume with new replicas from a client perspective
+        self.start_producer()
+        self.await_num_produced(min_records=10000)
+        self.start_consumer()
+        self.run_validation()

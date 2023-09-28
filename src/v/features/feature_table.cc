@@ -79,6 +79,8 @@ std::string_view to_string_view(feature f) {
         return "raft_coordinated_recovery";
     case feature::cloud_storage_scrubbing:
         return "cloud_storage_scrubbing";
+    case feature::enhanced_force_reconfiguration:
+        return "enhanced_force_reconfiguration";
 
     /*
      * testing features
