@@ -32,6 +32,15 @@ kind: HelmRelease
 metadata:
   name: redpanda
 status:
+  conditions:
+    - message: Release reconciliation succeeded
+      reason: ReconciliationSucceeded
+      status: "True"
+      type: Ready
+    - message: Helm upgrade succeeded
+      reason: UpgradeSucceeded
+      status: "True"
+      type: Released
   helmChart: redpanda/redpanda-redpanda
   lastAppliedRevision: 5.3.2
   lastAttemptedRevision: 5.3.2
