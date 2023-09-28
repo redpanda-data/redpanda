@@ -32,6 +32,7 @@ v_cc_library(
   NAME kafka
   SRCS
     ${handlers_srcs}
+    server/audit_log_manager.cc
     server/requests.cc
     server/member.cc
     server/group_stm.cc
@@ -59,6 +60,7 @@ v_cc_library(
     v::kafka_protocol
     v::security
     v::pandaproxy_schema_registry
+    v::kafka_client
     absl::flat_hash_map
     absl::flat_hash_set
 )

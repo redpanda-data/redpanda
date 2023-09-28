@@ -146,7 +146,8 @@ enum class audit_event_type : std::uint8_t {
     describe,
     heartbeat,
     authenticate,
-    unknown
+    unknown,
+    num_elements
 };
 
 inline audit_event_type string_to_audit_event_type(const std::string_view s) {
