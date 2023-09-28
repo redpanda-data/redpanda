@@ -628,6 +628,9 @@ class CreateTopicUpgradeTest(RedpandaTest):
                                                       'DEFAULT_CONFIG')
         assert described['redpanda.remote.read'] == ('false', 'DEFAULT_CONFIG')
 
+        # Nothing in this test guarantees that partition manifests will be uploaded.
+        self.redpanda.si_settings.set_expected_damage({"ntpr_no_manifest"})
+
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
