@@ -141,6 +141,7 @@ public:
             std::ref(app.snc_quota_mgr),
             std::ref(app.group_router),
             std::ref(app.usage_manager),
+            std::ref(app.audit_mgr),
             std::ref(app.shard_table),
             std::ref(app.partition_manager),
             std::ref(app.id_allocator_frontend),
