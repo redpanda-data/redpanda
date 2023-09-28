@@ -722,6 +722,12 @@ class PartitionBalancerTest(PartitionBalancerService):
             nonlocal ready_appeared_at
             if s["status"] == "ready":
                 if ready_appeared_at is None:
+                    # Disable leader balancer after partition balancer has finished its work,
+                    # because leadership transfers will create new segments that can cause disk
+                    # usage to go over limit again even after we've verified that everything
+                    # is stable.
+                    self.redpanda.set_cluster_config(
+                        {"enable_leader_balancer": False})
                     ready_appeared_at = time.time()
                 else:
                     # ready status is stable for 11 seconds, should be enough for 3 ticks to pass
