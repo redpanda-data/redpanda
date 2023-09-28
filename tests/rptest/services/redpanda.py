@@ -3694,8 +3694,8 @@ class RedpandaService(RedpandaServiceBase):
 
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
-        bucket_arity = len(list(self.get_objects_from_si()))
-        effective_timeout = min(bucket_arity * 3, timeout)
+        bucket_arity = sum(1 for _ in self.get_objects_from_si())
+        effective_timeout = min(max(bucket_arity * 5, 20), timeout)
         self.logger.info(
             f"num objects in the {bucket=}: {bucket_arity}, will apply {effective_timeout=}"
         )
