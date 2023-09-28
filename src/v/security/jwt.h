@@ -23,6 +23,7 @@ namespace security::oidc {
 enum errc {
     success = 0,
     metadata_invalid,
+    jwks_invalid,
 };
 
 struct errc_category final : public std::error_category {
@@ -34,6 +35,8 @@ struct errc_category final : public std::error_category {
             return "Success";
         case errc::metadata_invalid:
             return "Invalid metadata";
+        case errc::jwks_invalid:
+            return "Invalid jwks";
         }
     }
 };
@@ -112,6 +115,37 @@ private:
     explicit metadata(json::Document metadata)
       : _metadata{std::move(metadata)} {}
     json::Document _metadata;
+};
+
+// A JSON Web Key Set as defined in
+// https://www.rfc-editor.org/rfc/rfc7517.html#section-5
+class jwks {
+public:
+    static result<jwks> make(std::string_view sv) {
+        json::Document doc;
+        doc.Parse(sv.data(), sv.length());
+        return make(std::move(doc));
+    }
+
+    static result<jwks> make(json::Document doc) {
+        if (doc.HasParseError() || !doc.IsObject()) {
+            return errc::jwks_invalid;
+        }
+        auto keys = doc.FindMember("keys");
+        if (keys == doc.MemberEnd() || !keys->value.IsArray()) {
+            return errc::jwks_invalid;
+        }
+
+        return jwks(std::move(doc));
+    }
+
+    auto keys() const { return _impl.FindMember("keys")->value.GetArray(); }
+
+private:
+    explicit jwks(json::Document doc)
+      : _impl{std::move(doc)} {}
+
+    json::Document _impl;
 };
 
 } // namespace security::oidc
