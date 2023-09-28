@@ -17,6 +17,7 @@ rp_test(
   FIXTURE_TEST
   BINARY_NAME cluster_cloud_metadata
   SOURCES
+    cluster_recovery_backend_test.cc
     controller_snapshot_reconciliation_test.cc
     manifest_downloads_test.cc
     uploader_test.cc
