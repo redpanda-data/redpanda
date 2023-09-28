@@ -249,6 +249,11 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
         self.start_producer()
         self.start_consumer()
+        # clean new nodes to make sure they aren't using old data directory
+        self.redpanda.for_nodes(
+            new_pool,
+            lambda n: self.redpanda.clean_node(n,
+                                               preserve_current_install=True))
         # add new nodes to the cluster
         self.redpanda.for_nodes(
             new_pool,
