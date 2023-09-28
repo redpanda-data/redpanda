@@ -130,20 +130,10 @@ ss::future<> drain_manager::task() {
             break;
         }
 
-        const auto draining = _draining;
-        try {
-            if (draining) {
-                co_await do_drain();
-            } else {
-                co_await do_restore();
-            }
-        } catch (...) {
-            vlog(
-              clusterlog.warn,
-              "Draining task {{{}}} experienced error: {}",
-              draining ? "drain" : "restore",
-              std::current_exception());
-            _status.errors = true;
+        if (_draining) {
+            co_await do_drain();
+        } else {
+            co_await do_restore();
         }
         _status.finished = true;
     }
