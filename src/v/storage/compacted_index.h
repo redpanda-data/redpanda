@@ -29,17 +29,19 @@ struct compaction_key : bytes {
       : bytes(std::move(b)) {}
 };
 
-inline compaction_key
-prefix_with_batch_type(model::record_batch_type type, bytes_view key) {
+inline compaction_key enhance_key(
+  model::record_batch_type type, bool is_control_batch, bytes_view key) {
     auto bt_le = ss::cpu_to_le(
       static_cast<std::underlying_type<model::record_batch_type>::type>(type));
-    auto enriched_key = ss::uninitialized_string<bytes>(
-      sizeof(bt_le) + key.size());
+    auto ctrl_le = ss::cpu_to_le(static_cast<int8_t>(is_control_batch));
+    auto total_size = sizeof(bt_le) + key.size() + sizeof(ctrl_le);
+    auto enriched_key = ss::uninitialized_string<bytes>(total_size);
     auto out = enriched_key.begin();
     out = std::copy_n(
       reinterpret_cast<const char*>(&bt_le), sizeof(bt_le), out);
+    out = std::copy_n(
+      reinterpret_cast<const char*>(&ctrl_le), sizeof(ctrl_le), out);
     std::copy_n(key.begin(), key.size(), out);
-
     return compaction_key(std::move(enriched_key));
 }
 
@@ -70,7 +72,10 @@ struct compacted_index {
         // 1 - introduced a key being a tuple of batch_type and the key content
         //  of footer
         // 2 - 64-bit size and keys fields
-        static constexpr int8_t current_version = 2;
+        // 3 - add control bit to the key prefix so control batches cannot
+        // compact
+        //  data batches with same key
+        static constexpr int8_t current_version = 3;
 
         uint64_t size{0};
         uint64_t keys{0};

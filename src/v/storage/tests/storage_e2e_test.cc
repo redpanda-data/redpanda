@@ -2300,8 +2300,12 @@ void write_batch(
   storage::log log,
   ss::sstring key,
   int value,
-  model::record_batch_type batch_type) {
+  model::record_batch_type batch_type,
+  bool is_control) {
     storage::record_batch_builder builder(batch_type, model::offset(0));
+    if (is_control) {
+        builder.set_control_type();
+    }
 
     builder.add_raw_kv(serde::to_iobuf(std::move(key)), serde::to_iobuf(value));
 
@@ -2317,8 +2321,9 @@ void write_batch(
     std::move(reader).for_each_ref(log.make_appender(cfg), cfg.timeout).get0();
 }
 
-absl::flat_hash_map<std::pair<model::record_batch_type, ss::sstring>, int>
-compact_in_memory(storage::log log) {
+absl::
+  flat_hash_map<std::tuple<model::record_batch_type, bool, ss::sstring>, int>
+  compact_in_memory(storage::log log) {
     auto rdr = log
                  .make_reader(storage::log_reader_config(
                    model::offset(0),
@@ -2326,18 +2331,22 @@ compact_in_memory(storage::log log) {
                    ss::default_priority_class()))
                  .get();
 
-    absl::flat_hash_map<std::pair<model::record_batch_type, ss::sstring>, int>
+    absl::flat_hash_map<
+      std::tuple<model::record_batch_type, bool, ss::sstring>,
+      int>
       ret;
     auto batches = model::consume_reader_to_memory(
                      std::move(rdr), model::no_timeout)
                      .get();
 
     for (auto& b : batches) {
-        b.for_each_record([&ret, bt = b.header().type](model::record r) {
-            auto k = std::make_pair(
-              bt, serde::from_iobuf<ss::sstring>(r.key().copy()));
-            ret.insert_or_assign(k, serde::from_iobuf<int>(r.value().copy()));
-        });
+        b.for_each_record(
+          [&ret, bt = b.header().type, ctrl = b.header().attrs.is_control()](
+            model::record r) {
+              auto k = std::make_tuple(
+                bt, ctrl, serde::from_iobuf<ss::sstring>(r.key().copy()));
+              ret.insert_or_assign(k, serde::from_iobuf<int>(r.value().copy()));
+          });
     }
 
     return ret;
@@ -2367,21 +2376,23 @@ FIXTURE_TEST(test_compacting_batches_of_different_types, storage_test_fixture) {
     auto disk_log = get_disk_log(log);
 
     // the same key but three different batch types
-    write_batch(log, "key_1", 1, model::record_batch_type::raft_data);
-    write_batch(log, "key_1", 10, model::record_batch_type::tm_update);
-    write_batch(log, "key_1", 100, model::record_batch_type::tx_fence);
+    write_batch(log, "key_1", 1, model::record_batch_type::raft_data, false);
+    write_batch(log, "key_1", 1, model::record_batch_type::raft_data, true);
+    write_batch(log, "key_1", 10, model::record_batch_type::tm_update, false);
+    write_batch(log, "key_1", 100, model::record_batch_type::tx_fence, false);
 
-    write_batch(log, "key_1", 2, model::record_batch_type::raft_data);
-    write_batch(log, "key_1", 3, model::record_batch_type::raft_data);
-    write_batch(log, "key_1", 4, model::record_batch_type::raft_data);
+    write_batch(log, "key_1", 2, model::record_batch_type::raft_data, false);
+    write_batch(log, "key_1", 3, model::record_batch_type::raft_data, false);
+    write_batch(log, "key_1", 4, model::record_batch_type::raft_data, false);
+    write_batch(log, "key_1", 4, model::record_batch_type::raft_data, true);
 
-    write_batch(log, "key_1", 20, model::record_batch_type::tm_update);
-    write_batch(log, "key_1", 30, model::record_batch_type::tm_update);
-    write_batch(log, "key_1", 40, model::record_batch_type::tm_update);
+    write_batch(log, "key_1", 20, model::record_batch_type::tm_update, false);
+    write_batch(log, "key_1", 30, model::record_batch_type::tm_update, false);
+    write_batch(log, "key_1", 40, model::record_batch_type::tm_update, false);
 
-    write_batch(log, "key_1", 200, model::record_batch_type::tm_update);
-    write_batch(log, "key_1", 300, model::record_batch_type::tm_update);
-    write_batch(log, "key_1", 400, model::record_batch_type::tm_update);
+    write_batch(log, "key_1", 200, model::record_batch_type::tm_update, false);
+    write_batch(log, "key_1", 300, model::record_batch_type::tm_update, false);
+    write_batch(log, "key_1", 400, model::record_batch_type::tm_update, false);
 
     disk_log->force_roll(ss::default_priority_class()).get();
 
@@ -2397,7 +2408,7 @@ FIXTURE_TEST(test_compacting_batches_of_different_types, storage_test_fixture) {
       as);
     auto before_compaction = compact_in_memory(log);
 
-    BOOST_REQUIRE_EQUAL(before_compaction.size(), 3);
+    BOOST_REQUIRE_EQUAL(before_compaction.size(), 4);
     // compact
     log.compact(c_cfg).get0();
     auto after_compaction = compact_in_memory(log);

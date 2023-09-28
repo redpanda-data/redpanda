@@ -130,14 +130,25 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // All the data batches retained until this point are committed.
     // From this point on, these batches are treated like non transaction
     // batches by subsequent compactions.
-    // Client implementations treat transactional batches differently
-    // from non transactional batches. For transactional batches an
-    // additional filter is applied to check if they fall in the
-    // aborted list of transactions. Marking these batches here as
-    // non transactional means that clients skip that extra check.
+    //
+    // We also do this so client does not apply aborted transactions for
+    // this batch. Broker passes a list of aborted transaction ranges to
+    // the client in the fetch response and the client collates that list
+    // with the list of fetched data batches. If any of the data batches
+    // with matching PIDs fall in the aborted transaction ranges, they are
+    // filtered out. Since compaction effectively removes all aborted data
+    // batches, there is no use of sending aborted ranges for compacted
+    // segments. Marking the batch as non transactional lets the fetch logic
+    // know the boundary between compacted and non compacted segments.
+
+    // An ideal way to do this is by invalidating aborted transaction metadata
+    // after compaction but currently we have no atomic way of doing it.
+    // Aborted transaction metadata lifecyle is completely decoupled from
+    // segment lifecycle and once that is fixed, we can undo unsetting the
+    // transactional bit.
     auto& hdr = batch.header();
     bool hdr_changed = false;
-    if (hdr.attrs.is_transactional() && !hdr.attrs.is_control()) {
+    if (hdr.attrs.is_transactional()) {
         hdr.attrs.unset_transactional_type();
         // We do not recompute crc here as the batch records may
         // be filtered in step 4 in which case we need to recompute
@@ -318,8 +329,11 @@ ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
     return ss::do_with(std::move(b), [this](model::record_batch& b) {
         return model::for_each_record(
           b,
-          [this, bt = b.header().type, o = b.base_offset()](model::record& r) {
-              return _w->index(bt, r.key(), o, r.offset_delta());
+          [this,
+           bt = b.header().type,
+           ctrl = b.header().attrs.is_control(),
+           o = b.base_offset()](model::record& r) {
+              return _w->index(bt, ctrl, r.key(), o, r.offset_delta());
           });
     });
 }
@@ -332,7 +346,7 @@ void tx_reducer::consume_aborted_txs(model::offset upto) {
     }
 }
 
-bool tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
+void tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
     auto batch_type = _stm_mgr->parse_tx_control_batch(b);
     auto pid = model::producer_identity(
       b.header().producer_id, b.header().producer_epoch);
@@ -358,12 +372,6 @@ bool tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
         break;
     }
     }
-    auto discard = batch_type == model::control_record_type::tx_commit
-                   || batch_type == model::control_record_type::tx_abort;
-    if (discard) {
-        _stats._tx_control_batches_discarded++;
-    }
-    return discard;
 }
 
 bool tx_reducer::handle_tx_data_batch(const model::record_batch& b) {
@@ -411,7 +419,21 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
     if (is_tx) {
         if (is_control) {
             // tx_commit / tx_abort / unknown
-            discard_batch = handle_tx_control_batch(b);
+
+            // Control batches are not discarded but are compacted in the same
+            // manner as other data batches. This approach prevents the
+            // elimination of the last batch within a segment when it happens to
+            // be a control batch. If the final batch in a segment is discarded,
+            // and there are no subsequent data batches, it could lead to
+            // clients being unable to advance their consumable offset until the
+            // Last Stable Offset (LSO) is reached, creating the perception of a
+            // stuck consumer unable to make progress.
+
+            // However, this situation is not problematic when the last batch is
+            // an aborted data batch. This is because we can guarantee the
+            // presence of user consumable batches following it, specifically
+            // the abort control batch, ensuring continuous consumer progress.
+            handle_tx_control_batch(b);
         } else if (is_data) {
             // User produced data batches in tx scope..
             discard_batch = handle_tx_data_batch(b);

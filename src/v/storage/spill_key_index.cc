@@ -151,12 +151,19 @@ ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
 
 ss::future<> spill_key_index::index(
   model::record_batch_type batch_type,
+  bool is_control_batch,
   bytes&& b,
   model::offset base_offset,
   int32_t delta) {
     return ss::try_with_gate(
-      _gate, [this, batch_type, b = std::move(b), base_offset, delta]() {
-          auto key = prefix_with_batch_type(batch_type, b);
+      _gate,
+      [this,
+       batch_type,
+       is_control_batch,
+       b = std::move(b),
+       base_offset,
+       delta]() {
+          auto key = enhance_key(batch_type, is_control_batch, b);
           if (auto it = _midx.find(key); it != _midx.end()) {
               auto& pair = it->second;
               // must use both base+delta, since we only want to keep the latest
@@ -175,11 +182,13 @@ ss::future<> spill_key_index::index(
 }
 ss::future<> spill_key_index::index(
   model::record_batch_type batch_type,
+  bool is_control_batch,
   const iobuf& key,
   model::offset base_offset,
   int32_t delta) {
     return index(
       batch_type,
+      is_control_batch,
       iobuf_to_bytes(key), // makes a copy, but we need deterministic keys
       base_offset,
       delta);
