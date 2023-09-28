@@ -753,14 +753,12 @@ class PartitionBalancerTest(PartitionBalancerService):
     @matrix(kill_same_node=[True, False])
     def test_maintenance_mode(self, kill_same_node):
         """
-        Test interaction with maintenance mode: the balancer should not schedule
-        any movements as long as there is a node in maintenance mode.
+        Test interaction with maintenance mode: the mode should not interfere
+        with partition balancer.
         Test scenario is as follows:
         * enable maintenance mode on some node
         * kill a node (the same or some other)
-        * check that we don't move any partitions and node switched to maintenance
-          mode smoothly
-        * turn maintenance mode off, check that partition balancing resumes
+        * check that balancing works
         """
         self.start_redpanda(num_nodes=5)
 
@@ -804,7 +802,6 @@ class PartitionBalancerTest(PartitionBalancerService):
                 ])
 
             ns.make_unavailable(to_kill)
-            self.wait_until_status(lambda s: s["status"] == "stalled")
 
             if kill_same_node:
                 ns.make_available()
@@ -813,11 +810,6 @@ class PartitionBalancerTest(PartitionBalancerService):
                        timeout_sec=120,
                        backoff_sec=10)
 
-            # return back to normal.
-            # rpk will make 3 admin requests with 10 second timeout, so with 1 problematic node,
-            # worst case it will hang for 30 seconds, which also happens to be the default RpkTool
-            # timeout. Therefore we need a larger timeout than that.
-            rpk.cluster_maintenance_disable(node, timeout=35)
             # use raw admin interface to avoid waiting for the killed node
             admin.patch_cluster_config(
                 {"raft_learner_recovery_rate": 100_000_000})
