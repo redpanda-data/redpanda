@@ -32,6 +32,7 @@ from rptest.utils.si_utils import BucketView, NTP
 
 TEST_TOPIC_NAME = "test-topic-1"
 TEST_COMPACTED_TOPIC_NAME = "test-topic-2-compact"
+TEST_DELETE_POLICY_CHANGE_TOPIC_NAME = "test-topic-3-compact-then-delete"
 
 
 class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
@@ -49,6 +50,11 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
                   retention_bytes=-1,
                   cleanup_policy=TopicSpec.CLEANUP_DELETE),
         TopicSpec(name=TEST_COMPACTED_TOPIC_NAME,
+                  partition_count=1,
+                  replication_factor=3,
+                  retention_bytes=-1,
+                  cleanup_policy=TopicSpec.CLEANUP_COMPACT),
+        TopicSpec(name=TEST_DELETE_POLICY_CHANGE_TOPIC_NAME,
                   partition_count=1,
                   replication_factor=3,
                   retention_bytes=-1,
@@ -524,6 +530,47 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
                 str(e),
         ):
             self.rpk.trim_prefix(TEST_COMPACTED_TOPIC_NAME, 0, [0])
+
+    @cluster(num_nodes=3)
+    @parametrize(cloud_storage_enabled=True)
+    @parametrize(cloud_storage_enabled=False)
+    def test_delete_records_topic_policy_change(self, cloud_storage_enabled):
+        """
+        Tests that it is allowed to delete records from a topic that was created
+        initially with the `cleanup.policy=compact` and then updated to
+        `cleanup.policy=compact,delete`.
+        """
+        num_records = 10240
+        records_size = 512
+        truncate_offset = 100
+        topic = TEST_DELETE_POLICY_CHANGE_TOPIC_NAME
+
+        self._start(cloud_storage_enabled, start_with_data=False)
+
+        self.rpk.alter_topic_config(topic, TopicSpec.PROPERTY_CLEANUP_POLICY,
+                                    TopicSpec.CLEANUP_COMPACT_DELETE)
+
+        # Produce some data, wait for it all to arrive
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.produce(topic, num_records, records_size)
+        self.wait_until_records(topic,
+                                num_records,
+                                timeout_sec=10,
+                                backoff_sec=1)
+
+        # Perform truncation
+        low_watermark = self.delete_records(topic, 0, truncate_offset)
+        assert low_watermark == truncate_offset, f"Expected low watermark: {truncate_offset} observed: {low_watermark}"
+
+        # Assert correctness of start and end offsets in topic metadata
+        topic_info = self.get_topic_info(topic)
+        assert topic_info.id == 0, f"Partition id: {topic_info.id}"
+        assert topic_info.start_offset == truncate_offset, f"Start offset: {topic_info.start_offset}"
+        assert topic_info.high_watermark == num_records, f"High watermark: {topic_info.high_watermark}"
+
+        # ... and in actual fetch requests
+        self.assert_new_partition_boundaries(topic, truncate_offset,
+                                             topic_info.high_watermark)
 
     @cluster(num_nodes=3)
     @parametrize(cloud_storage_enabled=True)

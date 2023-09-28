@@ -20,6 +20,7 @@ class TopicSpec:
     """
     CLEANUP_COMPACT = "compact"
     CLEANUP_DELETE = "delete"
+    CLEANUP_COMPACT_DELETE = "compact,delete"
 
     PROPERTY_COMPRESSSION = "compression.type"
     PROPERTY_CLEANUP_POLICY = "cleanup.policy"
