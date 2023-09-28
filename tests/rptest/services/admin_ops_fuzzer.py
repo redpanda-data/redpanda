@@ -700,7 +700,6 @@ class AdminOperationsFuzzer():
 
     def execute_one(self):
         op_type, op = self.make_random_operation()
-        self.append_to_history(op)
 
         def validate_result():
             try:
@@ -732,6 +731,8 @@ class AdminOperationsFuzzer():
             self.redpanda.logger.error(f"Operation: {op.describe()} failed",
                                        exc_info=True)
             raise e
+        finally:
+            self.append_to_history(op)
 
     def execute_with_retries(self, op_type, op):
         self.redpanda.logger.info(
