@@ -229,6 +229,8 @@ struct configuration final : public config_store {
     property<ss::sstring> sasl_kerberos_keytab;
     property<ss::sstring> sasl_kerberos_principal;
     property<std::vector<ss::sstring>> sasl_kerberos_principal_mapping;
+    bounded_property<std::optional<std::chrono::milliseconds>>
+      kafka_sasl_max_reauth_ms;
     property<std::optional<bool>> kafka_enable_authorization;
     property<std::optional<std::vector<ss::sstring>>>
       kafka_mtls_principal_mapping_rules;
