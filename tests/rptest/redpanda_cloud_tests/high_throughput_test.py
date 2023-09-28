@@ -252,7 +252,7 @@ class HighThroughputTest(RedpandaTest):
     def _clean_resources(self):
         for item in self.resources:
             if item['type'] == 'topic':
-                self.rpk.delete_topic(item['spec']['name'])
+                self.rpk.delete_topic(item['spec'].name)
 
     def tearDown(self):
         # These tests may run on cloud ec2 instances where between each test
@@ -338,7 +338,7 @@ class HighThroughputTest(RedpandaTest):
                 _list.append(_current)
         return _list
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=6)
     def test_max_connections(self):
         # Consts
         PRODUCER_TIMEOUT_MS = 5000
@@ -359,15 +359,15 @@ class HighThroughputTest(RedpandaTest):
         _target_per_node = int(tier_config.connections_limit //
                                len(self.cluster.nodes))
         _conn_per_node = int(_target_per_node * 1.1)
-        # calculate message rate based on 10 MB/s per node
-        # 10 MiB = 3 messages per producer per sec
-        msg_rate = int((0.1 * MiB) // effective_msg_size)
-        messages_per_sec_per_producer = msg_rate // _conn_per_node
+        # No need to calculate message rate
+        # Just use 1 msg per sec
+        messages_per_sec_per_producer = 1
         # single producer runtime
-        # Roughly every 500 connection needs 30 seconds to ramp up
-        _tier_coefficient = (_target_per_node // 500) + (
-            (_target_per_node % 500) > 0)
-        target_runtime_s = 30 * _tier_coefficient
+        # Roughly every 500 connection needs 30 seconds to ramp up on 3 cluster nodes
+        # 1000 -> on 6 cluster nodes
+        _tier_coefficient = (_target_per_node // 1000) + (
+            (_target_per_node % 1000) > 0)
+        target_runtime_s = 30 * _tier_coefficient + 30
         # for 50 MiB total messag30e count is 3060
         records_per_producer = messages_per_sec_per_producer * target_runtime_s
 
@@ -454,12 +454,14 @@ class HighThroughputTest(RedpandaTest):
         # Check that all messages make it through
         self.logger.warn(f"Expected more than {reasonably_expected} messages "
                          f"out of {expected_msg_count}, actual {_hwm}")
-        assert _hwm >= reasonably_expected
+        assert _hwm >= reasonably_expected, \
+            f"Expected >{reasonably_expected} messages, actual {_hwm}"
 
         # Assert that target connection count is reached
         self.logger.warn(
             f"Reached {connectMax} of {tier_config.connections_limit} needed")
-        assert connectMax >= tier_config.connections_limit
+        assert connectMax >= tier_config.connections_limit, \
+            f"Expected >{tier_config.connections_limit} connections, actual {connectMax}"
 
         return
 
