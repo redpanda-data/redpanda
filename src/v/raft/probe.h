@@ -56,6 +56,11 @@ public:
     void replicate_request_error() { ++_replicate_request_error; };
     void recovery_request_error() { ++_recovery_request_error; };
 
+    void clear() {
+        _metrics.clear();
+        _public_metrics.clear();
+    }
+
 private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;
