@@ -17,6 +17,7 @@
 #include "seastarx.h"
 #include "utils/fragmented_vector.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
@@ -316,6 +317,9 @@ record_batch_reader
 
 record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
   fragmented_vector<model::record_batch>);
+
+record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
+  ss::chunked_fifo<model::record_batch>);
 
 record_batch_reader make_generating_record_batch_reader(
   ss::noncopyable_function<ss::future<record_batch_reader::data_t>()>);

@@ -288,6 +288,10 @@ replicated_partition::timequery(storage::timequery_config cfg) {
 ss::future<result<model::offset>> replicated_partition::replicate(
   model::record_batch_reader rdr, raft::replicate_options opts) {
     using ret_t = result<model::offset>;
+    if (_partition->is_read_replica_mode_enabled()) {
+        return ss::make_ready_future<ret_t>(
+          kafka::error_code::invalid_topic_exception);
+    }
     return _partition->replicate(std::move(rdr), opts)
       .then([](result<cluster::kafka_result> r) {
           if (!r) {
@@ -302,6 +306,13 @@ raft::replicate_stages replicated_partition::replicate(
   model::record_batch_reader&& rdr,
   raft::replicate_options opts) {
     using ret_t = result<raft::replicate_result>;
+    if (_partition->is_read_replica_mode_enabled()) {
+        return {
+          ss::now(),
+          ss::make_ready_future<result<raft::replicate_result>>(
+            make_error_code(kafka::error_code::invalid_topic_exception))};
+    }
+
     auto res = _partition->replicate_in_stages(batch_id, std::move(rdr), opts);
 
     raft::replicate_stages out(raft::errc::success);

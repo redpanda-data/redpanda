@@ -173,6 +173,10 @@ static error_code map_produce_error_code(std::error_code ec) {
         }
     }
 
+    if (ec.category() == kafka::error_category()) {
+        return static_cast<error_code>(ec.value());
+    }
+
     return error_code::request_timed_out;
 }
 
@@ -408,13 +412,6 @@ static partition_produce_stages produce_topic_partition(
                 if (unlikely(!partition->is_leader())) {
                     return finalize_request_with_error_code(
                       error_code::not_leader_for_partition,
-                      std::move(dispatch),
-                      ntp,
-                      source_shard);
-                }
-                if (partition->is_read_replica_mode_enabled()) {
-                    return finalize_request_with_error_code(
-                      error_code::invalid_topic_exception,
                       std::move(dispatch),
                       ntp,
                       source_shard);

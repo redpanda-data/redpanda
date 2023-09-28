@@ -29,5 +29,13 @@ std::optional<partition_proxy> make_partition_proxy(
     }
     return std::nullopt;
 }
+std::optional<partition_proxy> make_partition_proxy(
+  const model::ntp& ntp, cluster::partition_manager& cluster_pm) {
+    auto partition = cluster_pm.get(ntp);
+    if (partition) {
+        return make_with_impl<replicated_partition>(partition);
+    }
+    return std::nullopt;
+}
 
 } // namespace kafka

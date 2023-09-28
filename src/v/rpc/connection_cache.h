@@ -98,6 +98,8 @@ public:
     transport_ptr get(model::node_id n) const { return _cache.get(n); }
 
     /// \brief for unit testing
+    ///
+    /// Force the connection cache to have an entry for the node on this shard.
     ss::future<>
     emplace(model::node_id n, rpc::transport_configuration c, backoff_policy);
 
