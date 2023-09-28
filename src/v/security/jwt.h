@@ -17,6 +17,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/algorithm/container.h>
 #include <cryptopp/base64.h>
 #include <cryptopp/cryptlib.h>
 #include <cryptopp/integer.h>
@@ -34,6 +35,7 @@ enum errc {
     metadata_invalid,
     jwks_invalid,
     jwk_invalid,
+    jws_invalid,
 };
 
 struct errc_category final : public std::error_category {
@@ -49,6 +51,8 @@ struct errc_category final : public std::error_category {
             return "Invalid jwks";
         case errc::jwk_invalid:
             return "Invalid jwk";
+        case errc::jws_invalid:
+            return "Invalid jws";
         }
     }
 };
@@ -198,6 +202,30 @@ private:
       : _impl{std::move(doc)} {}
 
     json::Document _impl;
+};
+
+// A JSON Web Signature as defined by
+// https://www.rfc-editor.org/rfc/rfc7515.html
+//
+// This is the encoded form; operations are intentially limited until it has
+// been validated and a JWT extracted.
+class jws {
+public:
+    static result<jws> make(ss::sstring encoded) {
+        // Perform a quick check that this could be a valid JWS.
+        // I.e., it's not an unsecured JWT (2 dots, empty signature) or a JWE (4
+        // dots)
+        if (encoded.ends_with('.') || absl::c_count(encoded, '.') != 2) {
+            return errc::jws_invalid;
+        }
+        return jws{std::move(encoded)};
+    }
+
+private:
+    explicit jws(ss::sstring encoded)
+      : _encoded{std::move(encoded)} {}
+
+    ss::sstring _encoded;
 };
 
 namespace detail {

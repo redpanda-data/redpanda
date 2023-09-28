@@ -109,4 +109,50 @@ BOOST_DATA_TEST_CASE(test_jwk_RS256, bdata::make(jwk_data), d) {
     }
 }
 
+const auto jws_data = std::to_array<parse_test_data>(
+  {// Example from https://jwt.io/
+   {"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ"
+    ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+    oidc::errc::success},
+   // Auth0 example
+   {"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRNUXphaWxTQWRhVzRub2pYeEVTOS"
+    "J9."
+    "eyJpc3MiOiJodHRwczovL2Rldi1sdHhjaGNsczRpZ3pobzc4LnVzLmF1dGgwLmNvbS8iLCJzdW"
+    "IiOiIzSkplSTR0bU1DNnY4bUNWQ1NEbkFHVmYydnJuSjBCVEBjbGllbnRzIiwiYXVkIjoibG9j"
+    "YWxob3N0IiwiaWF0IjoxNjk1ODg3OTQyLCJleHAiOjE2OTU5NzQzNDIsImF6cCI6IjNKSmVJNH"
+    "RtTUM2djhtQ1ZDU0RuQUdWZjJ2cm5KMEJUIiwic2NvcGUiOiJlbWFpbDIiLCJndHkiOiJjbGll"
+    "bnQtY3JlZGVudGlhbHMifQ.W6rhgOjWcTPmpeLHiGSd668HHnZJvHgP0QSKU0F1vnin_"
+    "UMIpei9IONfN28YSHlAabdUs2JAV70AvVeXB9IqUcEi_"
+    "Cfubf3JRpmRcvfyApnmfcRktg1Rq0DVGVl6uBPlqX12SAQ4GPYe4BysUuMb8X-"
+    "FU99wF6waCAQw8XLu_Texqy8QOQhW9vZtm5HC54-APn9PV6ZAtG989ihePOsauXUHNe2sqF_"
+    "iJ1_7-nkqRbgb_Je-8UjahAkC54y5LPTMVFQvTB5lntf-"
+    "sUyHl5oPH7P58M8eNUocOOGADUmrfKMYeSLacM_9mPvZR_"
+    "uMbVX0iNt18KO6hKkIvAPrb4U8SA",
+    oidc::errc::success},
+   // JWS Example: https://www.rfc-editor.org/rfc/rfc7515.html#appendix-A.1.1
+   {"eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9."
+    "eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS"
+    "9pc19yb290Ijp0cnVlfQ.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+    oidc::errc::success},
+   // JWE Example: https://www.rfc-editor.org/rfc/rfc7516#appendix-A.3.7
+   {"eyJhbGciOiJBMTI4S1ciLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0."
+    "6KB707dM9YTIgHtLvtgWQ8mKwboJW3of9locizkDTHzBC2IlrT1oOQ."
+    "AxY8DCtDaGlsbGljb3RoZQ.KDlTtXchhZTGufMYmOYGS4HffxPSUrfmqCHXaI9wOGY.U0m_"
+    "YmjN04DJvceFICbCVQ",
+    oidc::errc::jws_invalid},
+   // Unsecured JWT Example: https://www.rfc-editor.org/rfc/rfc7519#section-6.1
+   {"eyJhbGciOiJub25lIn0."
+    "eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS"
+    "9pc19yb290Ijp0cnVlfQ.",
+    oidc::errc::jws_invalid}});
+BOOST_DATA_TEST_CASE(test_jws, bdata::make(jws_data), d) {
+    auto jws = oidc::jws::make(ss::sstring{d.data});
+    if (d.err == oidc::errc::success) {
+        BOOST_REQUIRE(jws.has_value());
+    } else {
+        BOOST_REQUIRE_EQUAL(d.err, jws.error());
+    }
+}
+
 // BOOST_AUTO_TEST_CASE(test_)
