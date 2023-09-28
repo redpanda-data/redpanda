@@ -320,6 +320,9 @@ class HighThroughputTest(RedpandaTest):
 
     @cluster(num_nodes=2)
     def test_throughput_simple(self):
+        # create default topics
+        self._create_default_topics()
+        # Generate traffic
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
                                self.msg_size) as _:
