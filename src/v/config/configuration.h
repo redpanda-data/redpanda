@@ -253,6 +253,15 @@ struct configuration final : public config_store {
     bounded_property<std::optional<size_t>> kafka_rpc_server_stream_recv_buf;
     property<bool> kafka_enable_describe_log_dirs_remote_storage;
 
+    // Audit logging
+    property<bool> audit_enabled;
+    property<int32_t> audit_log_num_partitions;
+    property<int16_t> audit_log_replication_factor;
+    property<size_t> audit_client_max_buffer_size;
+    property<std::chrono::milliseconds> audit_queue_drain_interval_ms;
+    property<size_t> audit_max_queue_elements_per_shard;
+    property<std::vector<ss::sstring>> audit_enabled_event_types;
+
     // Archival storage
     property<bool> cloud_storage_enabled;
     property<bool> cloud_storage_enable_remote_read;

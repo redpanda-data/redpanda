@@ -145,4 +145,23 @@ validate_non_empty_string_opt(const std::optional<ss::sstring>& os) {
         return std::nullopt;
     }
 }
+
+std::optional<ss::sstring>
+validate_audit_event_types(const std::vector<ss::sstring>& vs) {
+    /// TODO: Should match stringified enums in kafka/types.h
+    static const absl::flat_hash_set<ss::sstring> audit_event_types{
+      "management",
+      "produce",
+      "consume",
+      "describe",
+      "heartbeat",
+      "authenticate"};
+
+    for (const auto& e : vs) {
+        if (!audit_event_types.contains(e)) {
+            return ss::format("Unsupported audit event type passed: {}", e);
+        }
+    }
+    return std::nullopt;
+}
 }; // namespace config

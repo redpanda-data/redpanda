@@ -41,4 +41,7 @@ validate_non_empty_string_vec(const std::vector<ss::sstring>&);
 std::optional<ss::sstring>
 validate_non_empty_string_opt(const std::optional<ss::sstring>&);
 
+std::optional<ss::sstring>
+validate_audit_event_types(const std::vector<ss::sstring>& vs);
+
 }; // namespace config
