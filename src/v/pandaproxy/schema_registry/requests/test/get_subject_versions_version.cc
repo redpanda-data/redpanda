@@ -50,5 +50,5 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_version_response) {
 
     auto result{ppj::rjson_serialize(response)};
 
-    BOOST_REQUIRE_EQUAL(ppj::minify(expected), result);
+    BOOST_REQUIRE_EQUAL(::json::minify(expected), result);
 }

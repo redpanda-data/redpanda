@@ -60,7 +60,7 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
     result.def = {
       std::move(result.def).sub(),
       pps::unparsed_schema_definition{
-        ppj::minify(result.def.def().raw()()),
+        ::json::minify(result.def.def().raw()()),
         pps::schema_type::avro,
         std::move(result.def).def().refs()}};
     // NOLINTEND(bugprone-use-after-move)

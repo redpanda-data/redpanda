@@ -122,7 +122,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
         BOOST_CHECK_EQUAL(avro_schema_key, key);
 
         auto str = ppj::rjson_serialize(avro_schema_key);
-        BOOST_CHECK_EQUAL(str, ppj::minify(avro_schema_key_sv));
+        BOOST_CHECK_EQUAL(str, ::json::minify(avro_schema_key_sv));
     }
 
     {
@@ -131,7 +131,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
         BOOST_CHECK_EQUAL(avro_schema_value, val);
 
         auto str = ppj::rjson_serialize(avro_schema_value);
-        BOOST_CHECK_EQUAL(str, ppj::minify(avro_schema_value_sv));
+        BOOST_CHECK_EQUAL(str, ::json::minify(avro_schema_value_sv));
     }
 
     {
@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
         BOOST_CHECK_EQUAL(config_key, val);
 
         auto str = ppj::rjson_serialize(config_key);
-        BOOST_CHECK_EQUAL(str, ppj::minify(config_key_sv));
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_key_sv));
     }
 
     {
@@ -149,7 +149,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
         BOOST_CHECK_EQUAL(config_key_sub, val);
 
         auto str = ppj::rjson_serialize(config_key_sub);
-        BOOST_CHECK_EQUAL(str, ppj::minify(config_key_sub_sv));
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_key_sub_sv));
     }
 
     {
@@ -158,7 +158,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
         BOOST_CHECK_EQUAL(config_value, val);
 
         auto str = ppj::rjson_serialize(config_value);
-        BOOST_CHECK_EQUAL(str, ppj::minify(config_value_sv));
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_value_sv));
     }
 
     {
@@ -167,7 +167,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
         BOOST_CHECK_EQUAL(delete_subject_key, val);
 
         auto str = ppj::rjson_serialize(delete_subject_key);
-        BOOST_CHECK_EQUAL(str, ppj::minify(delete_subject_key_sv));
+        BOOST_CHECK_EQUAL(str, ::json::minify(delete_subject_key_sv));
     }
 
     {
@@ -177,6 +177,6 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
         BOOST_CHECK_EQUAL(delete_subject_value, val);
 
         auto str = ppj::rjson_serialize(delete_subject_value);
-        BOOST_CHECK_EQUAL(str, ppj::minify(delete_subject_value_sv));
+        BOOST_CHECK_EQUAL(str, ::json::minify(delete_subject_value_sv));
     }
 }

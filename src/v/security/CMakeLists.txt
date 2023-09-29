@@ -23,4 +23,5 @@ v_cc_library(
     krb5
  )
 
+add_subdirectory(audit)
 add_subdirectory(tests)

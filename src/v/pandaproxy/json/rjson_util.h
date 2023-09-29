@@ -73,22 +73,4 @@ rjson_parse(const char* const s, Handler&& handler) {
     return std::move(handler.result);
 }
 
-inline ss::sstring minify(std::string_view json) {
-    ::json::Reader r;
-    ::json::StringStream in(json.data());
-    ::json::StringBuffer out;
-    ::json::Writer<::json::StringBuffer> w{out};
-    r.Parse(in, w);
-    return ss::sstring(out.GetString(), out.GetSize());
-}
-
-inline ss::sstring prettify(std::string_view json) {
-    ::json::Reader r;
-    ::json::StringStream in(json.data());
-    ::json::StringBuffer out;
-    ::json::PrettyWriter<::json::StringBuffer> w{out};
-    r.Parse(in, w);
-    return ss::sstring(out.GetString(), out.GetSize());
-}
-
 } // namespace pandaproxy::json
