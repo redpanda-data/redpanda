@@ -887,6 +887,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
             vlog(_ctxlog.debug, "Hydration loop shut down");
             set_waiter_errors(std::current_exception());
             break;
+        } catch (const ss::broken_semaphore&) {
+            vlog(_ctxlog.debug, "Hydration loop shut down");
+            set_waiter_errors(std::current_exception());
+            break;
         } catch (...) {
             const auto err = std::current_exception();
             vlog(_ctxlog.error, "Error in hydration loop: {}", err);
