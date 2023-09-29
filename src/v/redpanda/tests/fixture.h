@@ -264,6 +264,7 @@ public:
         aconf.cloud_storage_initial_backoff = 100ms;
         aconf.segment_upload_timeout = 1s;
         aconf.manifest_upload_timeout = 1s;
+        aconf.garbage_collect_timeout = 1s;
         aconf.time_limit = std::nullopt;
         return aconf;
     }
@@ -363,6 +364,10 @@ public:
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
                       archival_cfg->segment_upload_timeout));
+                config.get("cloud_storage_garbage_collect_timeout_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->garbage_collect_timeout));
             }
             if (cloud_cfg) {
                 config.get("cloud_storage_enable_remote_read").set_value(true);

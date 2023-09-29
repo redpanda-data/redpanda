@@ -98,6 +98,9 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
       .manifest_upload_timeout
       = config::shard_local_cfg()
           .cloud_storage_manifest_upload_timeout_ms.value(),
+      .garbage_collect_timeout
+      = config::shard_local_cfg()
+          .cloud_storage_garbage_collect_timeout_ms.value(),
       .upload_loop_initial_backoff
       = config::shard_local_cfg()
           .cloud_storage_upload_loop_initial_backoff_ms.value(),

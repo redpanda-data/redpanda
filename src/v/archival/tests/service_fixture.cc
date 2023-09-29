@@ -189,6 +189,7 @@ archiver_fixture::get_configurations() {
     aconf.cloud_storage_initial_backoff = 100ms;
     aconf.segment_upload_timeout = 1s;
     aconf.manifest_upload_timeout = 1s;
+    aconf.garbage_collect_timeout = 1s;
     aconf.upload_loop_initial_backoff = 100ms;
     aconf.upload_loop_max_backoff = 5s;
     aconf.time_limit = std::nullopt;

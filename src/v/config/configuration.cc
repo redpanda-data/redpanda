@@ -1414,6 +1414,12 @@ configuration::configuration()
       "Manifest upload timeout (ms)",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , cloud_storage_garbage_collect_timeout_ms(
+      *this,
+      "cloud_storage_garbage_collect_timeout_ms",
+      "Timeout for running the cloud storage garbage collection (ms)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30s)
   , cloud_storage_max_connection_idle_time_ms(
       *this,
       "cloud_storage_max_connection_idle_time_ms",

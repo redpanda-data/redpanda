@@ -2649,7 +2649,7 @@ ss::future<> ntp_archiver::garbage_collect() {
     }
 
     retry_chain_node fib(
-      _conf->manifest_upload_timeout * objects_to_remove.size(),
+      _conf->garbage_collect_timeout,
       _conf->cloud_storage_initial_backoff,
       &_rtcnode);
     const auto delete_result = co_await _remote.delete_objects(

@@ -490,9 +490,13 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
 
     config::shard_local_cfg().log_retention_ms.set_value(
       std::chrono::milliseconds{1min});
+    config::shard_local_cfg()
+      .cloud_storage_garbage_collect_timeout_ms.set_value(
+        std::chrono::milliseconds{1min});
     archiver.apply_retention().get();
     archiver.garbage_collect().get();
     config::shard_local_cfg().log_retention_ms.reset();
+    config::shard_local_cfg().cloud_storage_garbage_collect_timeout_ms.reset();
 
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req.method, req.url);

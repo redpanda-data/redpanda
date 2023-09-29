@@ -280,6 +280,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       cloud_storage_manifest_upload_timeout_ms;
     property<std::chrono::milliseconds>
+      cloud_storage_garbage_collect_timeout_ms;
+    property<std::chrono::milliseconds>
       cloud_storage_max_connection_idle_time_ms;
     property<std::optional<std::chrono::seconds>>
       cloud_storage_segment_max_upload_interval_sec;
