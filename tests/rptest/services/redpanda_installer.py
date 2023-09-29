@@ -17,6 +17,8 @@ import threading
 from datetime import datetime, timezone, timedelta
 
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from ducktape.utils.util import wait_until
 
@@ -189,6 +191,21 @@ class RedpandaInstaller:
         # memoize result of self.arch()
         self._arch = None
 
+        # aws s3 may return 503 for backoff signal, but also seems to
+        # occasionally mysterious 500. it's s3, so just retry. this retry
+        # configuration is also used for github api requests when 403 is
+        # returned indicating a throttling situation.
+        retries = Retry(status=6,
+                        connect=0,
+                        read=0,
+                        backoff_factor=1,
+                        status_forcelist=[500, 503, 403],
+                        method_whitelist=None,
+                        remove_headers_on_redirect=[])
+
+        self._session = requests.Session()
+        self._session.mount("https://", HTTPAdapter(max_retries=retries))
+
     @property
     def installed_version(self):
         return self._installed_version
@@ -350,7 +367,7 @@ class RedpandaInstaller:
                 url = f"https://api.github.com/repos/redpanda-data/redpanda/releases?per_page={per_page}&page={page}"
                 self._redpanda.logger.debug(
                     f"Fetching releases page {page}: {url}")
-                releases_resp = requests.get(url)
+                releases_resp = self._session.request("GET", url)
                 releases_resp.raise_for_status()
                 try:
                     releases_json = releases_resp.json()
@@ -432,7 +449,7 @@ class RedpandaInstaller:
         validate that it is really downloadable: this avoids tests being upset by ongoing releases
         which might exist in github but not yet fave all their artifacts
         """
-        r = requests.head(self._version_package_url(version))
+        r = self._session.request("HEAD", self._version_package_url(version))
         # allow 403 ClientError, it usually indicates Unauthorized get and can happen on S3 while dealing with old releases
         if r.status_code not in (200, 403, 404):
             r.raise_for_status()
