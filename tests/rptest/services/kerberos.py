@@ -66,6 +66,36 @@ sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required \
     useTicketCache=false;
 """
 
+PRODUCER_SCRIPT = """
+from confluent_kafka import Producer
+import time
+from ducktape.utils.util import wait_until
+
+if __name__ == '__main__':
+    producer_conf = dict([
+        ('bootstrap.servers','{bootstrap_servers}'),
+        ('sasl.mechanism','GSSAPI'),
+        ('security.protocol','SASL_PLAINTEXT'),
+        ('sasl.kerberos.service.name','{broker_principal}'),
+        ('sasl.kerberos.principal','{user_principal}'),
+        ('sasl.kerberos.keytab','{user_secret}'),
+    ])
+    producer = Producer(producer_conf)
+    producer.poll(1.0)
+
+    expected_topics = set(['{topic}'])
+    wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
+               == expected_topics,
+               timeout_sec=5)
+
+    for i in range(0, {n}):
+        producer.poll(0.0)
+        producer.produce(topic='{topic}', value='foo')
+        time.sleep({interval})
+    producer.flush(timeout=2)
+    print('DONE')
+"""
+
 
 class AuthenticationError(Exception):
     def __init__(self, message):
@@ -404,6 +434,36 @@ class KrbClient(Service):
                 combine_stderr=False)
             self.logger.debug(f"Metadata request: {res}")
             return json.loads(res)
+        except RemoteCommandError as err:
+            if b'No Kerberos credentials available' in err.msg:
+                raise AuthenticationError(err.msg) from err
+            raise
+
+    # produce num junk records to the given topic at a given interval
+    def produce(self,
+                principal: str,
+                topic: str,
+                num: int = 100,
+                interval_s: float = 0.1):
+        self.logger.debug(f"Produce for {num * interval_s}s")
+        producer = PRODUCER_SCRIPT.format(
+            bootstrap_servers=self.redpanda.brokers(
+                listener='kerberoslistener'),
+            broker_principal='redpanda',
+            user_principal=principal,
+            user_secret=self.keytab_file,
+            n=num,
+            interval=interval_s,
+            topic=topic)
+        self.nodes[0].account.ssh(cmd=f'echo "{producer}" > /tmp/produce.py ',
+                                  allow_fail=False)
+        try:
+            res = self.nodes[0].account.ssh_output(
+                cmd=f'python3 /tmp/produce.py',
+                allow_fail=False,
+                combine_stderr=False)
+            self.logger.debug(f"Produce request: {res}")
+            return res
         except RemoteCommandError as err:
             if b'No Kerberos credentials available' in err.msg:
                 raise AuthenticationError(err.msg) from err

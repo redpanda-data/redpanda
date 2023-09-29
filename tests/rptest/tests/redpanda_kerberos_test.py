@@ -22,6 +22,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError, KRB5_CONF_PATH, render_krb5_config, ActiveDirectoryKdc
 from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
+from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
 from rptest.utils.rpenv import IsCIOrNotEmpty
 
 LOG_CONFIG = LoggingConfig('info',
@@ -47,6 +48,7 @@ class RedpandaKerberosTestBase(Test):
             krb5_conf_path=KRB5_CONF_PATH,
             kdc=None,
             realm=REALM,
+            conn_max_reauth_ms=None,
             **kwargs):
         super(RedpandaKerberosTestBase, self).__init__(test_context, **kwargs)
 
@@ -60,15 +62,17 @@ class RedpandaKerberosTestBase(Test):
         security.enable_sasl = True
         security.sasl_mechanisms = sasl_mechanisms
 
-        self.redpanda = RedpandaKerberosNode(test_context,
-                                             kdc=self.kdc,
-                                             realm=realm,
-                                             keytab_file=keytab_file,
-                                             krb5_conf_path=krb5_conf_path,
-                                             num_brokers=num_brokers,
-                                             log_config=LOG_CONFIG,
-                                             security=security,
-                                             **kwargs)
+        self.redpanda = RedpandaKerberosNode(
+            test_context,
+            kdc=self.kdc,
+            realm=realm,
+            keytab_file=keytab_file,
+            krb5_conf_path=krb5_conf_path,
+            num_brokers=num_brokers,
+            log_config=LOG_CONFIG,
+            security=security,
+            extra_rp_conf={'kafka_sasl_max_reauth_ms': conn_max_reauth_ms},
+            **kwargs)
 
         self.client = KrbClient(test_context, self.kdc, self.redpanda)
 
@@ -373,3 +377,57 @@ class RedpandaKerberosExternalActiveDirectoryTest(RedpandaKerberosTestBase):
         metadata = self.client.metadata(principal)
         self.logger.info(f"metadata: {metadata}")
         assert len(metadata['brokers']) == 1
+
+
+class GSSAPIReauthTest(RedpandaKerberosTestBase):
+    MAX_REAUTH_MS = 2000
+    PRODUCE_DURATION_S = MAX_REAUTH_MS * 2 / 1000
+    PRODUCE_INTERVAL_S = 0.1
+    PRODUCE_ITER = int(PRODUCE_DURATION_S / PRODUCE_INTERVAL_S)
+
+    EXAMPLE_TOPIC = "needs_acl"
+
+    def __init__(self, test_context, **kwargs):
+        super().__init__(test_context,
+                         conn_max_reauth_ms=self.MAX_REAUTH_MS,
+                         **kwargs)
+
+    @cluster(num_nodes=5)
+    def test_gssapi_reauth(self):
+        req_principal = "client"
+        fail = False
+        self.client.add_primary(primary="client")
+        username, password, mechanism = self.redpanda.SUPERUSER_CREDENTIALS
+        super_rpk = RpkTool(self.redpanda,
+                            username=username,
+                            password=password,
+                            sasl_mechanism=mechanism)
+
+        client_user_principal = f"User:client"
+
+        # Create a topic that's visible to "client" iff acl = True
+        super_rpk.create_topic(self.EXAMPLE_TOPIC)
+        super_rpk.sasl_allow_principal(client_user_principal,
+                                       ["write", "read", "describe"], "topic",
+                                       self.EXAMPLE_TOPIC, username, password,
+                                       mechanism)
+
+        try:
+            self.client.produce(req_principal,
+                                self.EXAMPLE_TOPIC,
+                                num=self.PRODUCE_ITER,
+                                interval_s=self.PRODUCE_INTERVAL_S)
+            pass
+        except AuthenticationError:
+            assert fail
+        except TimeoutError:
+            assert fail
+
+        metrics = get_sasl_metrics(self.redpanda)
+        self.redpanda.logger.debug(f"SASL metrics: {metrics}")
+        assert (EXPIRATION_METRIC in metrics.keys())
+        assert (metrics[EXPIRATION_METRIC] == 0
+                ), "Client should reauth before session expiry"
+        assert (REAUTH_METRIC in metrics.keys())
+        assert (metrics[REAUTH_METRIC]
+                > 0), "Expected client reauth on some broker..."

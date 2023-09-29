@@ -13,10 +13,12 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.redpanda import LoggingConfig, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
-from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
+from rptest.services.keycloak import DEFAULT_REALM, DEFAULT_AT_LIFESPAN_S, KeycloakService
 from rptest.services.cluster import cluster
+from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
 
 import requests
+import time
 from keycloak import KeycloakOpenID
 from urllib.parse import urlparse
 
@@ -29,7 +31,8 @@ log_config = LoggingConfig('info',
                                'security': 'trace',
                                'pandaproxy': 'trace',
                                'kafka/client': 'trace',
-                               'http': 'trace'
+                               'kafka': 'debug',
+                               'http': 'trace',
                            })
 
 
@@ -42,6 +45,8 @@ class RedpandaOIDCTestBase(Test):
                  num_nodes=4,
                  sasl_mechanisms=['SCRAM', 'OAUTHBEARER'],
                  http_authentication=["BASIC", "OIDC"],
+                 sasl_max_reauth_ms=None,
+                 access_token_lifespan=DEFAULT_AT_LIFESPAN_S,
                  **kwargs):
         super(RedpandaOIDCTestBase, self).__init__(test_context, **kwargs)
         self.produce_messages = []
@@ -50,7 +55,8 @@ class RedpandaOIDCTestBase(Test):
         self.keycloak = KeycloakService(test_context)
         kc_node = self.keycloak.nodes[0]
         try:
-            self.keycloak.start_node(kc_node)
+            self.keycloak.start_node(
+                kc_node, access_token_lifespan_s=access_token_lifespan)
         except Exception as e:
             self.logger.error(f"{e}")
             self.keycloak.clean_node(kc_node)
@@ -73,6 +79,7 @@ class RedpandaOIDCTestBase(Test):
             extra_rp_conf={
                 "oidc_discovery_url": self.keycloak.get_discovery_url(kc_node),
                 "oidc_token_audience": TOKEN_AUDIENCE,
+                "kafka_sasl_max_reauth_ms": sasl_max_reauth_ms,
             },
             security=security,
             pandaproxy_config=pandaproxy_config,
@@ -176,3 +183,73 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
         wait_until(check_pp_topics, timeout_sec=5)
 
         wait_until(check_sr_subjects, timeout_sec=5)
+
+
+class OIDCReauthTest(RedpandaOIDCTestBase):
+    MAX_REAUTH_MS = 8000
+    PRODUCE_DURATION_S = MAX_REAUTH_MS * 2 / 1000
+    PRODUCE_INTERVAL_S = 0.1
+    PRODUCE_ITER = int(PRODUCE_DURATION_S / PRODUCE_INTERVAL_S)
+
+    TOKEN_LIFESPAN_S = int(PRODUCE_DURATION_S)
+
+    def __init__(self, test_context, **kwargs):
+        super().__init__(test_context,
+                         sasl_max_reauth_ms=self.MAX_REAUTH_MS,
+                         access_token_lifespan=self.TOKEN_LIFESPAN_S,
+                         **kwargs)
+
+    @cluster(num_nodes=4)
+    def test_oidc_reauth(self):
+        kc_node = self.keycloak.nodes[0]
+
+        self.keycloak.admin.create_user('norma',
+                                        'desmond',
+                                        realm_admin=True,
+                                        email='10086@sunset.blvd')
+        self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
+        self.keycloak.admin.create_client(CLIENT_ID)
+
+        # add an email address to myapp client's service user. this should
+        # appear alongside the access token.
+        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
+                                        email='myapp@customer.com')
+
+        self.rpk.create_topic(EXAMPLE_TOPIC)
+        service_user_id = self.keycloak.admin_ll.get_user_id(
+            f'service-account-{CLIENT_ID}')
+        self.rpk.sasl_allow_principal(f'User:{service_user_id}', ['all'],
+                                      'topic', EXAMPLE_TOPIC, self.su_username,
+                                      self.su_password, self.su_algorithm)
+
+        cfg = self.keycloak.generate_oauth_config(kc_node, CLIENT_ID)
+        assert cfg.client_secret is not None
+        assert cfg.token_endpoint is not None
+        k_client = PythonLibrdkafka(self.redpanda,
+                                    algorithm='OAUTHBEARER',
+                                    oauth_config=cfg)
+        producer = k_client.get_producer()
+        producer.poll(1.0)
+
+        expected_topics = set([EXAMPLE_TOPIC])
+        wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
+                   == expected_topics,
+                   timeout_sec=5)
+
+        for _ in range(0, self.PRODUCE_ITER):
+            producer.poll(0.0)
+            producer.produce(topic=EXAMPLE_TOPIC, key='bar', value='23')
+            time.sleep(self.PRODUCE_INTERVAL_S)
+
+        producer.flush(timeout=5)
+
+        metrics = get_sasl_metrics(self.redpanda)
+        self.redpanda.logger.debug(f"SASL metrics: {metrics}")
+        assert (EXPIRATION_METRIC in metrics.keys())
+        assert (metrics[EXPIRATION_METRIC] == 0
+                ), "Client should reauth before session expiry"
+        assert (REAUTH_METRIC in metrics.keys())
+        assert (metrics[REAUTH_METRIC]
+                > 0), "Expected client reauth on some broker..."
+
+        assert k_client.oauth_count == 2, f"Expected 2 OAUTH challenges, got {k_client.oauth_count}"

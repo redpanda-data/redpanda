@@ -20,9 +20,11 @@ from ducktape.utils.util import wait_until
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.clients.rpk import RpkTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.admin import Admin
 from rptest.services.redpanda import SecurityConfig, SaslCredentials, SecurityConfig
+from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
 from rptest.util import expect_http_error
 from rptest.utils.utf8 import CONTROL_CHARS, CONTROL_CHARS_MAP
 
@@ -496,3 +498,56 @@ class InvalidNewUserStrings(BaseScramTest):
             password=password,
             expected_status_code=400,
             err_msg='Parameter contained invalid control characters: PASSWORD')
+
+
+class SCRAMReauthTest(BaseScramTest):
+    EXAMPLE_TOPIC = 'foo'
+
+    MAX_REAUTH_MS = 2000
+    PRODUCE_DURATION_S = MAX_REAUTH_MS * 2 / 1000
+    PRODUCE_INTERVAL_S = 0.1
+    PRODUCE_ITER = int(PRODUCE_DURATION_S / PRODUCE_INTERVAL_S)
+
+    def __init__(self, test_context, **kwargs):
+        security = SecurityConfig()
+        security.enable_sasl = True
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            security=security,
+            extra_rp_conf={'kafka_sasl_max_reauth_ms': self.MAX_REAUTH_MS},
+            **kwargs)
+
+        username, password, algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        self.rpk = RpkTool(self.redpanda,
+                           username=username,
+                           password=password,
+                           sasl_mechanism=algorithm)
+
+    @cluster(num_nodes=3)
+    def test_scram_reauth(self):
+        self.rpk.create_topic(self.EXAMPLE_TOPIC)
+        su_client = self.make_superuser_client()
+        producer = su_client.get_producer()
+        producer.poll(1.0)
+
+        expected_topics = set([self.EXAMPLE_TOPIC])
+        wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
+                   == expected_topics,
+                   timeout_sec=5)
+
+        for i in range(0, self.PRODUCE_ITER):
+            producer.poll(0.0)
+            producer.produce(topic=self.EXAMPLE_TOPIC, key='bar', value=str(i))
+            time.sleep(self.PRODUCE_INTERVAL_S)
+
+        producer.flush(timeout=2)
+
+        metrics = get_sasl_metrics(self.redpanda)
+        self.redpanda.logger.debug(f"SASL metrics: {metrics}")
+        assert (EXPIRATION_METRIC in metrics.keys())
+        assert (metrics[EXPIRATION_METRIC] == 0
+                ), "Client should reauth before session expiry"
+        assert (REAUTH_METRIC in metrics.keys())
+        assert (metrics[REAUTH_METRIC]
+                > 0), "Expected client reauth on some broker..."
