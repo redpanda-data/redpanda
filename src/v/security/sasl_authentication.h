@@ -12,7 +12,10 @@
 #include "security/acl.h"
 #include "vassert.h"
 
+
+#include <chrono>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 namespace security {
@@ -27,6 +30,10 @@ public:
     virtual bool failed() const = 0;
     virtual const acl_principal& principal() const = 0;
     virtual ss::future<result<bytes>> authenticate(bytes) = 0;
+    virtual std::optional<std::chrono::milliseconds>
+    credential_expires_in_ms() const {
+        return std::nullopt;
+    }
 };
 
 /*
