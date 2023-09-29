@@ -25,15 +25,18 @@ ss::future<> drain_manager::start() {
 
 ss::future<> drain_manager::stop() {
     if (!_drain.has_value()) {
-        vlog(clusterlog.info, "Drain manager stopping (was not started)");
+        vlog(clusterlog.info, "Drain manager stopped (was not started)");
         return ss::now();
     }
     vlog(clusterlog.info, "Drain manager stopping");
     _abort.request_abort();
     _sem.signal();
-    return _drain.value().handle_exception([](std::exception_ptr e) {
-        vlog(clusterlog.warn, "Draining manager task experience error: {}", e);
-    });
+    return _drain.value()
+      .then([] { vlog(clusterlog.info, "Drain manager stopped"); })
+      .handle_exception([](std::exception_ptr e) {
+          vlog(
+            clusterlog.warn, "Draining manager task experience error: {}", e);
+      });
 }
 
 ss::future<> drain_manager::drain() {
@@ -171,7 +174,11 @@ ss::future<> drain_manager::do_drain() {
         _status.partitions = _partition_manager.local().partitions().size();
 
         if (eligible.empty()) {
-            break;
+            vlog(
+              clusterlog.info,
+              "Node draining has completed on shard {}",
+              ss::this_shard_id());
+            co_return;
         }
 
         /*
@@ -207,7 +214,7 @@ ss::future<> drain_manager::do_drain() {
 
         vlog(
           clusterlog.info,
-          "Draining leadership from {} groups",
+          "Draining leadership from {} partitions",
           transfers.size());
 
         auto started = ss::lowres_clock::now();
@@ -256,7 +263,7 @@ ss::future<> drain_manager::do_drain() {
 
     vlog(
       clusterlog.info,
-      "Node draining has completed on shard {}",
+      "Node draining fiber has stopped on shard {}",
       ss::this_shard_id());
 }
 
