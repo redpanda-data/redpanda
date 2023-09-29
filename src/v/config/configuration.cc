@@ -423,7 +423,7 @@ configuration::configuration()
   , metadata_dissemination_interval_ms(
       *this,
       "metadata_dissemination_interval_ms",
-      "Interaval for metadata dissemination batching",
+      "Interval for metadata dissemination batching",
       {.example = "5000", .visibility = visibility::tunable},
       3'000ms)
   , metadata_dissemination_retry_delay_ms(
@@ -483,7 +483,7 @@ configuration::configuration()
       *this,
       "alter_topic_cfg_timeout_ms",
       "Time to wait for entries replication in controller log when executing "
-      "alter configuration requst",
+      "alter configuration request",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5s)
   , log_cleanup_policy(
@@ -579,7 +579,7 @@ configuration::configuration()
   , kafka_tcp_keepalive_probes(
       *this,
       "kafka_tcp_keepalive_probes",
-      "TCP keepalive unacknowledge probes until the connection is considered "
+      "TCP keepalive unacknowledged probes until the connection is considered "
       "dead for kafka connections. Refers to the TCP_KEEPCNT socket option. "
       "When "
       "changed applies to new connections only.",
@@ -1016,7 +1016,7 @@ configuration::configuration()
       *this,
       "storage_reserve_min_segments",
       "The number of segments per partition that the system will attempt to "
-      "reserve disk capcity for. For example, if the maximum segment size is "
+      "reserve disk capacity for. For example, if the maximum segment size is "
       "configured to be 100 MB, and the value of this option is 2, then in a "
       "system with 10 partitions Redpanda will attempt to reserve at least 2 "
       "GB "
@@ -1808,7 +1808,7 @@ configuration::configuration()
   , disk_reservation_percent(
       *this,
       "disk_reservation_percent",
-      "The percenage of total disk capacity that Redpanda will avoid using. "
+      "The percentage of total disk capacity that Redpanda will avoid using. "
       "This applies both when cloud cache and log data share a disk, as well "
       "as when cloud cache uses a dedicated disk. It is recommended to not run "
       "disks near capacity to avoid blocking I/O due to low disk space, as "
@@ -2195,7 +2195,7 @@ configuration::configuration()
   , storage_space_alert_free_threshold_percent(
       *this,
       "storage_space_alert_free_threshold_percent",
-      "Threshold of minimim percent free space before setting storage space "
+      "Threshold of minimum percent free space before setting storage space "
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5,
@@ -2203,7 +2203,7 @@ configuration::configuration()
   , storage_space_alert_free_threshold_bytes(
       *this,
       "storage_space_alert_free_threshold_bytes",
-      "Threshold of minimim bytes free space before setting storage space "
+      "Threshold of minimum bytes free space before setting storage space "
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0,
@@ -2226,7 +2226,7 @@ configuration::configuration()
       *this,
       "memory_abort_on_alloc_failure",
       "If true, the redpanda process will terminate immediately when an "
-      "allocation cannot be satisfied due to memory exhasution. If false, an "
+      "allocation cannot be satisfied due to memory exhaustion. If false, an "
       "exception is thrown instead.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
