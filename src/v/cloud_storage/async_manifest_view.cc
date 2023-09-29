@@ -46,6 +46,15 @@
 #include <system_error>
 #include <variant>
 
+namespace {
+ss::log_level log_level_for_error(cloud_storage::error_outcome err) {
+    if (err == cloud_storage::error_outcome::shutting_down) {
+        return ss::log_level::debug;
+    }
+    return ss::log_level::error;
+}
+} // namespace
+
 namespace cloud_storage {
 
 static ss::sstring to_string(const async_view_search_query_t& t) {
@@ -392,6 +401,8 @@ ss::future<> async_manifest_view::stop() {
 
 ss::future<> async_manifest_view::run_bg_loop() {
     std::exception_ptr exc_ptr;
+    bool shutting_down{false};
+
     try {
         while (!_as.abort_requested()) {
             co_await _cvar.when(
@@ -443,15 +454,28 @@ ss::future<> async_manifest_view::run_bg_loop() {
                     // spillover manifest.
                     auto m_res = co_await materialize_manifest(path);
                     if (m_res.has_failure()) {
-                        vlog(
-                          _ctxlog.error,
-                          "Failed to materialize manifest {}, vec: {}, "
-                          "error: "
-                          "{}",
-                          path,
-                          front.search_vec,
-                          m_res.error());
-                        front.promise.set_value(m_res.as_failure());
+                        if (m_res.error() == error_outcome::shutting_down) {
+                            vlog(
+                              _ctxlog.info,
+                              "Stopping manifest hydration background loop due "
+                              "to shutdown");
+
+                            front.promise.set_value(
+                              error_outcome::shutting_down);
+
+                            shutting_down = true;
+                            break;
+                        } else {
+                            vlog(
+                              _ctxlog.error,
+                              "Failed to materialize manifest {}, vec: {}, "
+                              "error: "
+                              "{}",
+                              path,
+                              front.search_vec,
+                              m_res.error());
+                            front.promise.set_value(m_res.as_failure());
+                        }
                         continue;
                     }
                     // Put newly materialized manifest into the cache
@@ -509,24 +533,25 @@ ss::future<> async_manifest_view::run_bg_loop() {
                 front.promise.set_to_current_exception();
             }
         }
-    } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.debug, "Broken condition variable exception");
-        exc_ptr = std::current_exception();
-    } catch (const ss::abort_requested_exception&) {
-        vlog(_ctxlog.debug, "Abort requested exception");
-        exc_ptr = std::current_exception();
-    } catch (const ss::gate_closed_exception&) {
-        vlog(_ctxlog.debug, "Gate closed exception");
-        exc_ptr = std::current_exception();
     } catch (...) {
-        vlog(
-          _ctxlog.debug, "Unexpected exception: {}", std::current_exception());
         exc_ptr = std::current_exception();
+        if (ssx::is_shutdown_exception(exc_ptr)) {
+            vlog(
+              _ctxlog.debug,
+              "Shut down exception caught in manifest materialization loop: {}",
+              exc_ptr);
+        } else {
+            vlog(_ctxlog.error, "Unexpected exception: {}", exc_ptr);
+        }
     }
     if (exc_ptr) {
         // Unblock all readers in case of error
         for (auto& req : _requests) {
             req.promise.set_exception(exc_ptr);
+        }
+    } else if (shutting_down) {
+        for (auto& req : _requests) {
+            req.promise.set_value(error_outcome::shutting_down);
         }
     }
     co_return;
@@ -593,8 +618,9 @@ async_manifest_view::get_cursor(
                       "failed to seek to {}, out-of-range",
                       query);
                 } else {
-                    vlog(
-                      _ctxlog.error,
+                    vlogl(
+                      _ctxlog,
+                      log_level_for_error(result.error()),
                       "failed to seek to {}, error: {}",
                       query,
                       result.error());
@@ -641,8 +667,10 @@ async_manifest_view::get_retention_backlog() noexcept {
                     vlog(_ctxlog.debug, "seek to {} need to be retried", q);
                     continue;
                 }
-                vlog(
-                  _ctxlog.error,
+
+                vlogl(
+                  _ctxlog,
+                  log_level_for_error(result.error()),
                   "failed to seek to {} in the retention backlog, "
                   "error: {}",
                   q,
@@ -726,34 +754,71 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
 
         auto res = co_await get_cursor(cursor_start);
         if (res.has_error()) {
-            vlog(_ctxlog.error, "Failed to scan metadata: {}", res.error());
+            vlogl(
+              _ctxlog,
+              log_level_for_error(res.error()),
+              "Failed to scan metadata: {}",
+              res.error());
             co_return res.as_failure();
         }
-        std::optional<kafka::offset> res_offset;
-        co_await ss::repeat(
-          [this, &res_offset, term, cursor = std::move(res.value())] {
-              const auto& manifest = *cursor->manifest();
-              vlog(
-                _ctxlog.debug,
-                "Scanning manifest {} for term {}",
-                manifest.get_manifest_path(),
-                term);
-              for (auto meta : manifest) {
-                  if (meta.segment_term > term) {
-                      res_offset = meta.base_kafka_offset() - kafka::offset(1);
-                      vlog(
-                        _ctxlog.debug,
-                        "Scan found offset {} at term {}",
-                        res_offset.value(),
-                        meta.segment_term);
-                      return ss::make_ready_future<ss::stop_iteration>(
-                        ss::stop_iteration::yes);
-                  }
-              }
-              return cursor->next_iter();
-          });
 
-        co_return res_offset;
+        try {
+            std::optional<kafka::offset> res_offset;
+            co_await ss::repeat(
+              [this, &res_offset, term, cursor = std::move(res.value())] {
+                  const auto& manifest = *cursor->manifest();
+                  vlog(
+                    _ctxlog.debug,
+                    "Scanning manifest {} for term {}",
+                    manifest.get_manifest_path(),
+                    term);
+                  for (auto meta : manifest) {
+                      if (meta.segment_term > term) {
+                          res_offset = meta.base_kafka_offset()
+                                       - kafka::offset(1);
+                          vlog(
+                            _ctxlog.debug,
+                            "Scan found offset {} at term {}",
+                            res_offset.value(),
+                            meta.segment_term);
+                          return ss::make_ready_future<ss::stop_iteration>(
+                            ss::stop_iteration::yes);
+                      }
+                  }
+                  return cursor->next_iter();
+              });
+
+            co_return res_offset;
+        } catch (const std::system_error& e) {
+            // thrown by `async_manifest_view::next_iter`
+            if (e.code().category() != error_category()) {
+                vlog(
+                  _ctxlog.error,
+                  "Exception with unexpected error category caught: {}",
+                  e);
+
+                co_return error_outcome::failure;
+            }
+
+            const auto err_outcome = static_cast<error_outcome>(
+              e.code().value());
+
+            vlogl(
+              _ctxlog,
+              log_level_for_error(err_outcome),
+              "Failed to get last offset from term {}: {}",
+              term,
+              err_outcome);
+
+            co_return err_outcome;
+        } catch (...) {
+            vlog(
+              _ctxlog.error,
+              "Failed to get last offest for term {}: {}",
+              term,
+              std::current_exception());
+            co_return error_outcome::failure;
+        }
     }
     co_return std::nullopt;
 }
@@ -833,10 +898,13 @@ async_manifest_view::compute_retention(
         if (res.has_value()) {
             time_result = res.value();
         } else {
-            vlog(
-              _ctxlog.error,
-              "Failed to compute time-based retention",
+            vlogl(
+              _ctxlog,
+              log_level_for_error(res.error()),
+              "Failed to compute time-based retention: {}",
               res.error());
+
+            co_return res;
         }
     }
     if (size_limit.has_value()) {
@@ -844,10 +912,13 @@ async_manifest_view::compute_retention(
         if (res.has_value()) {
             size_result = res.value();
         } else {
-            vlog(
-              _ctxlog.error,
-              "Failed to compute size-based retention",
+            vlogl(
+              _ctxlog,
+              log_level_for_error(res.error()),
+              "Failed to compute size-based retention: {}",
               res.error());
+
+            co_return res;
         }
     }
     archive_start_offset_advance result;
@@ -870,10 +941,7 @@ async_manifest_view::compute_retention(
           result.offset);
         auto r = co_await offset_based_retention();
         if (r.has_error()) {
-            vlog(
-              _ctxlog.error,
-              "Failed to compute offset-based retention",
-              r.error());
+            co_return r;
         }
         result = r.value();
         vlog(
@@ -891,28 +959,27 @@ async_manifest_view::offset_based_retention() noexcept {
     try {
         auto boundary = _stm_manifest.get_start_kafka_offset_override();
         auto res = co_await get_cursor(boundary);
-        if (res.has_failure() && res.error() != error_outcome::out_of_range) {
-            vlog(
-              _ctxlog.error,
-              "Failed to compute offset-based retention {}",
-              res.error());
-            co_return res.as_failure();
+        if (res.has_failure()) {
+            if (res.error() == error_outcome::out_of_range) {
+                vlog(
+                  _ctxlog.debug,
+                  "There is no segment old enough to be removed by retention");
+                co_return result;
+            } else {
+                vlogl(
+                  _ctxlog,
+                  log_level_for_error(res.error()),
+                  "Failed to compute offset-based retention {}",
+                  res.error());
+                co_return res.as_failure();
+            }
         }
-        if (res.has_failure() && res.error() == error_outcome::out_of_range) {
-            // The cutoff point is outside of the offset range, no need to
-            // do anything
-            vlog(
-              _ctxlog.debug,
-              "There is no segment old enough to be removed by retention");
-        } else {
-            const auto& manifest = *res.value()->manifest();
-            vassert(
-              !manifest.empty(),
-              "{} Spillover manifest can't be empty",
-              get_ntp());
-            result.offset = manifest.begin()->base_offset;
-            result.delta = manifest.begin()->delta_offset;
-        }
+
+        const auto& manifest = *res.value()->manifest();
+        vassert(
+          !manifest.empty(), "{} Spillover manifest can't be empty", get_ntp());
+        result.offset = manifest.begin()->base_offset;
+        result.delta = manifest.begin()->delta_offset;
     } catch (...) {
         vlog(
           _ctxlog.error,
@@ -956,78 +1023,89 @@ async_manifest_view::time_based_retention(
         auto res = co_await get_cursor(
           _stm_manifest.get_archive_start_offset(),
           model::prev_offset(_stm_manifest.get_start_offset().value()));
-        if (res.has_failure() && res.error() != error_outcome::out_of_range) {
-            vlog(
-              _ctxlog.error,
-              "Failed to compute time-based retention {}",
-              res.error());
-            co_return res.as_failure();
+        if (res.has_failure()) {
+            if (res.error() == error_outcome::out_of_range) {
+                // The cutoff point is outside of the offset range, no need to
+                // do anything
+                vlog(
+                  _ctxlog.debug,
+                  "There is no segment old enough to be removed by retention");
+                co_return result;
+            } else {
+                vlogl(
+                  _ctxlog,
+                  log_level_for_error(res.error()),
+                  "Failed to compute time-based retention {}",
+                  res.error());
+                co_return res.as_failure();
+            }
         }
-        if (res.has_failure() && res.error() == error_outcome::out_of_range) {
-            // The cutoff point is outside of the offset range, no need to
-            // do anything
+        auto cursor = std::move(res.value());
+        while (cursor->get_status()
+               == async_manifest_view_cursor_status::materialized_spillover) {
+            auto eof = co_await cursor->with_manifest(
+              [boundary, &result](const partition_manifest& manifest) {
+                  for (const auto& meta : manifest) {
+                      if (meta.max_timestamp > boundary) {
+                          return true;
+                      }
+                      result.offset = model::next_offset(meta.committed_offset);
+                      result.delta = meta.delta_offset;
+                  }
+                  return false;
+              });
             vlog(
               _ctxlog.debug,
-              "There is no segment old enough to be removed by retention");
-        } else {
-            auto cursor = std::move(res.value());
-            while (
-              cursor->get_status()
-              == async_manifest_view_cursor_status::materialized_spillover) {
-                auto eof = co_await cursor->with_manifest(
-                  [boundary, &result](const partition_manifest& manifest) {
-                      for (const auto& meta : manifest) {
-                          if (meta.max_timestamp > boundary) {
-                              return true;
-                          }
-                          result.offset = model::next_offset(
-                            meta.committed_offset);
-                          result.delta = meta.delta_offset;
-                      }
-                      return false;
-                  });
+              "Updated last offset to {}, delta {}",
+              result.offset,
+              result.delta);
+
+            if (!eof) {
+                auto r = co_await cursor->next();
+                if (
+                  r.has_value()
+                  && r.value() == async_manifest_view_cursor::eof::yes) {
+                    vlog(
+                      _ctxlog.info,
+                      "Entire archive is removed by the time-based "
+                      "retention");
+                    break;
+                } else if (r.has_failure()) {
+                    vlogl(
+                      _ctxlog,
+                      log_level_for_error(r.error()),
+                      "Failed to scan manifest while computing retention "
+                      "{}",
+                      r.error());
+                    co_return r.as_failure();
+                }
+            } else {
                 vlog(
                   _ctxlog.debug,
-                  "Updated last offset to {}, delta {}",
+                  "Retention found offset {} with delta {}",
                   result.offset,
                   result.delta);
-
-                if (!eof) {
-                    auto r = co_await cursor->next();
-                    if (
-                      r.has_value()
-                      && r.value() == async_manifest_view_cursor::eof::yes) {
-                        vlog(
-                          _ctxlog.info,
-                          "Entire archive is removed by the time-based "
-                          "retention");
-                        break;
-                    } else if (r.has_failure()) {
-                        vlog(
-                          _ctxlog.error,
-                          "Failed to scan manifest while computing retention "
-                          "{}",
-                          r.error());
-                        co_return r.as_failure();
-                    }
-                } else {
-                    vlog(
-                      _ctxlog.debug,
-                      "Retention found offset {} with delta {}",
-                      result.offset,
-                      result.delta);
-                    break;
-                }
-            }
-            if (result.offset == model::offset{}) {
-                vlog(
-                  _ctxlog.debug,
-                  "Failed to find the retention boundary, the manifest {} "
-                  "doesn't "
-                  "have any matching segment",
-                  cursor->manifest()->get_manifest_path());
+                break;
             }
         }
+        if (result.offset == model::offset{}) {
+            vlog(
+              _ctxlog.debug,
+              "Failed to find the retention boundary, the manifest {} "
+              "doesn't "
+              "have any matching segment",
+              cursor->manifest()->get_manifest_path());
+        }
+    } catch (const std::system_error& err) {
+        // Thrown by `async_manifest_view::maybe_sync_manifest`
+        const auto shutdown_errc = make_error_code(
+          error_outcome::shutting_down);
+        if (err.code() == shutdown_errc) {
+            co_return error_outcome::shutting_down;
+        }
+
+        vlog(_ctxlog.error, "Failed to compute retention err: {}", err.code());
+        co_return error_outcome::failure;
     } catch (...) {
         vlog(
           _ctxlog.error,
@@ -1072,12 +1150,14 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
               _stm_manifest.get_archive_clean_offset(),
               model::prev_offset(_stm_manifest.get_start_offset().value()));
             if (res.has_failure()) {
-                vlog(
-                  _ctxlog.error,
+                vlogl(
+                  _ctxlog,
+                  log_level_for_error(res.error()),
                   "Failed to compute size-based retention {}",
                   res.error());
                 co_return res.as_failure();
             }
+
             auto cursor = std::move(res.value());
             while (to_remove != 0
                    && cursor->get_status()
@@ -1162,9 +1242,11 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                           "retention");
                         break;
                     } else if (r.has_failure()) {
-                        vlog(
-                          _ctxlog.error,
-                          "Failed to scan manifest while computing retention "
+                        vlogl(
+                          _ctxlog,
+                          log_level_for_error(r.error()),
+                          "Failed to scan manifest while computing "
+                          "retention "
                           "{}",
                           r.error());
                         co_return r.as_failure();
@@ -1185,6 +1267,16 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
               cloud_log_size,
               size_limit);
         }
+    } catch (const std::system_error& err) {
+        // Thrown by `async_manifest_view::maybe_sync_manifest`
+        const auto shutdown_errc = make_error_code(
+          error_outcome::shutting_down);
+        if (err.code() == shutdown_errc) {
+            co_return error_outcome::shutting_down;
+        }
+
+        vlog(_ctxlog.error, "Failed to compute retention err: {}", err.code());
+        co_return error_outcome::failure;
     } catch (...) {
         vlog(
           _ctxlog.error,
@@ -1232,8 +1324,9 @@ async_manifest_view::get_materialized_manifest(
         _cvar.signal();
         auto m = co_await std::move(fut);
         if (m.has_failure()) {
-            vlog(
-              _ctxlog.error,
+            vlogl(
+              _ctxlog,
+              log_level_for_error(m.error()),
               "Failed to materialize spillover manifest: {}",
               m.error());
             co_return m.as_failure();
@@ -1281,15 +1374,21 @@ async_manifest_view::hydrate_manifest(
           path,
           manifest.size());
         co_return std::move(manifest);
-    } catch (const ss::gate_closed_exception&) {
-        vlog(_ctxlog.debug, "gate closed while hydrating manifest: {}", path);
     } catch (...) {
-        vlog(
-          _ctxlog.error,
-          "Failed to materialize segment: {}",
-          std::current_exception());
+        auto ex = std::current_exception();
+        if (ssx::is_shutdown_exception(ex)) {
+            vlog(
+              _ctxlog.debug,
+              "Shut down prevented manifest {} materialization: {}",
+              path,
+              ex);
+            co_return error_outcome::shutting_down;
+        } else {
+            vlog(
+              _ctxlog.error, "Failed to materialize manifest {}: {}", path, ex);
+            co_return error_outcome::failure;
+        }
     }
-    co_return error_outcome::failure;
 }
 
 std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
@@ -1444,6 +1543,10 @@ async_manifest_view::materialize_manifest(
         case cache_element_status::not_available: {
             auto res = co_await hydrate_manifest(path);
             if (res.has_failure()) {
+                if (res.error() == error_outcome::shutting_down) {
+                    co_return res;
+                }
+
                 vlog(
                   _ctxlog.error,
                   "failed to download manifest, object key: {}, error: {}",

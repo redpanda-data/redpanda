@@ -233,6 +233,7 @@ enum class error_outcome {
     repeat,
     timed_out,
     out_of_range,
+    shutting_down
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -264,6 +265,8 @@ struct error_outcome_category final : public std::error_category {
             return "cloud storage operation timed out";
         case error_outcome::out_of_range:
             return "cloud storage out of range";
+        case error_outcome::shutting_down:
+            return "shutting down";
         default:
             return "unknown";
         }
