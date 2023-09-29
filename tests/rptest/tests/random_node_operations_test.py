@@ -188,6 +188,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 self.topic.name,
                 self.msg_size,
                 readers=self.consumer_count,
+                debug_logs=True,
+                trace_logs=True,
                 nodes=self.nodes)
 
             self.consumer.start(clean=False)
