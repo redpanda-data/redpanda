@@ -10,6 +10,7 @@ testDirs:
 kindConfig: ./kind.yaml
 kindNodeCache: false
 commands:
+  - command: kubectl taint node kind-control-plane node-role.kubernetes.io/master- node-role.kubernetes.io/control-plane-
   - command: "mkdir -p tests/_e2e_artifacts"
   - command: "./hack/install-cert-manager.sh tests/_e2e_artifacts"
     background: true
