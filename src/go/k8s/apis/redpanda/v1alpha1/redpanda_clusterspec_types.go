@@ -1,10 +1,9 @@
 package v1alpha1
 
 import (
-	"time"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -32,6 +31,7 @@ type RedpandaClusterSpec struct {
 	LicenseKey *string `json:"license_key,omitempty"`
 	// Deprecated: Use `Enterprise.LicenseSecretRef` instead.
 	LicenseSecretRef *LicenseSecretRef `json:"license_secret_ref,omitempty"`
+	Enterprise       *Enterprise       `json:"enterprise,omitempty"`
 
 	RackAwareness *RackAwareness `json:"rackAwareness,omitempty"`
 
@@ -40,8 +40,6 @@ type RedpandaClusterSpec struct {
 	Auth *Auth `json:"auth,omitempty"`
 
 	TLS *TLS `json:"tls,omitempty"`
-
-	Enterprise *Enterprise `json:"enterprise,omitempty"`
 
 	External *External `json:"external,omitempty"`
 
@@ -97,7 +95,59 @@ type RackAwareness struct {
 }
 
 type RedpandaConsole struct {
-	Enabled    *bool             `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
+
+	ReplicaCount      *int    `json:"replicaCount,omitempty"`
+	NameOverride      *string `json:"nameOverride,omitempty"`
+	FullNameOverride  *string `json:"fullnameOverride,omitempty"`
+	PriorityClassName *string `json:"priorityClassName,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Image *runtime.RawExtension `json:"image,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ImagePullSecrets *runtime.RawExtension `json:"imagePullSecrets,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ServiceAccount *runtime.RawExtension `json:"serviceAccount,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Annotations *runtime.RawExtension `json:"annotations,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	PodAnnotations *runtime.RawExtension `json:"podAnnotations,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	PodLabels *runtime.RawExtension `json:"podLabels,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	PodSecurityContext *runtime.RawExtension `json:"podSecurityContext,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	SecurityContext *runtime.RawExtension `json:"securityContext,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Service *runtime.RawExtension `json:"service,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Ingress *runtime.RawExtension `json:"ingress,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Resources *runtime.RawExtension `json:"resources,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Autoscaling *runtime.RawExtension `json:"autoscaling,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	NodeSelector *runtime.RawExtension `json:"nodeSelector,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Tolerations *runtime.RawExtension `json:"tolerations,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Affinity *runtime.RawExtension `json:"affinity,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	TopologySpreadConstraints *runtime.RawExtension `json:"topologySpreadConstraints,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraEnv *runtime.RawExtension `json:"extraEnv,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraEnvFrom *runtime.RawExtension `json:"extraEnvFrom,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraVolumes *runtime.RawExtension `json:"extraVolumes,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraVolumeMounts *runtime.RawExtension `json:"extraVolumeMounts,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraContainers *runtime.RawExtension `json:"extraContainers,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	InitContainers *runtime.RawExtension `json:"initContainers,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	SecretMounts *runtime.RawExtension `json:"secretMounts,omitempty"`
+
 	ConfigMap  *ConsoleCreateObj `json:"configMap,omitempty"`
 	Secret     *ConsoleCreateObj `json:"secret,omitempty"`
 	Deployment *ConsoleCreateObj `json:"deployment,omitempty"`
@@ -137,10 +187,10 @@ type TLS struct {
 }
 
 type Certificate struct {
-	IssuerRef *IssuerRef     `json:"issuerRef,omitempty"`
-	SecretRef *SecretRef     `json:"secretRef,omitempty"`
-	Duration  *time.Duration `json:"duration,omitempty"`
-	CAEnabled bool           `json:"caEnabled"`
+	IssuerRef *IssuerRef       `json:"issuerRef,omitempty"`
+	SecretRef *SecretRef       `json:"secretRef,omitempty"`
+	Duration  *metav1.Duration `json:"duration,omitempty"`
+	CAEnabled bool             `json:"caEnabled"`
 }
 
 type IssuerRef struct {
@@ -207,47 +257,52 @@ type Requests struct {
 
 // Storage is a top level field of the values file
 type Storage struct {
+	HostPath         *string           `json:"hostPath,omitempty"`
+	PersistentVolume *PersistentVolume `json:"persistentVolume,omitempty"`
+	Tiered           *Tiered           `json:"tiered,omitempty"`
+}
+
+type Tiered struct {
+	MountType                     *string                        `json:"mountType,omitempty"`
 	HostPath                      *string                        `json:"hostPath,omitempty"`
-	PersistentVolume              *PersistentVolume              `json:"persistentVolume,omitempty"`
-	TieredConfig                  *TieredConfig                  `json:"tieredConfig,omitempty"`
-	TieredStorageHostPath         *string                        `json:"tieredStorageHostPath,omitempty"`
-	TieredStoragePersistentVolume *TieredStoragePersistentVolume `json:"tieredStoragePersistentVolume,omitempty"`
+	TieredStoragePersistentVolume *TieredStoragePersistentVolume `json:"persistentVolume,omitempty"`
+	Config                        *TieredConfig                  `json:"config,omitempty"`
 }
 
 // TieredConfig is a top level field of the values file
 type TieredConfig struct {
-	CloudStorageAPIEndpoint                 string `json:"cloud_storage_api_endpoint,omitempty"`
-	CloudStorageAPIEndpointPort             int    `json:"cloud_storage_api_endpoint_port,omitempty"`
-	CloudStorageBucket                      string `json:"cloud_storage_bucket"`
-	CloudStorageCacheCheckInterval          int    `json:"cloud_storage_cache_check_interval,omitempty"`
-	CloudStorageCacheDirectory              string `json:"cloud_storage_cache_directory,omitempty"`
-	CloudStorageCacheSize                   int    `json:"cloud_storage_cache_size,omitempty"`
-	CloudStorageCredentialsSource           string `json:"cloud_storage_credentials_source,omitempty"`
-	CloudStorageDisableTLS                  bool   `json:"cloud_storage_disable_tls,omitempty"`
-	CloudStorageEnableRemoteRead            bool   `json:"cloud_storage_enable_remote_read,omitempty"`
-	CloudStorageEnableRemoteWrite           bool   `json:"cloud_storage_enable_remote_write,omitempty"`
-	CloudStorageInitialBackoffMs            int    `json:"cloud_storage_initial_backoff_ms,omitempty"`
-	CloudStorageManifestUploadTimeoutMs     int    `json:"cloud_storage_manifest_upload_timeout_ms,omitempty"`
-	CloudStorageMaxConnectionIdleTimeMs     int    `json:"cloud_storage_max_connection_idle_time_ms,omitempty"`
-	CloudStorageMaxConnections              int    `json:"cloud_storage_max_connections,omitempty"`
-	CloudStorageReconciliationIntervalMs    int    `json:"cloud_storage_reconciliation_interval_ms,omitempty"`
-	CloudStorageRegion                      string `json:"cloud_storage_region"`
-	CloudStorageSegmentMaxUploadIntervalSec int    `json:"cloud_storage_segment_max_upload_interval_sec,omitempty"`
-	CloudStorageSegmentUploadTimeoutMs      int    `json:"cloud_storage_segment_upload_timeout_ms,omitempty"`
-	CloudStorageTrustFile                   string `json:"cloud_storage_trust_file,omitempty"`
-	CloudStorageUploadCtrlDCoeff            int    `json:"cloud_storage_upload_ctrl_d_coeff,omitempty"`
-	CloudStorageUploadCtrlMaxShares         int    `json:"cloud_storage_upload_ctrl_max_shares,omitempty"`
-	CloudStorageUploadCtrlMinShares         int    `json:"cloud_storage_upload_ctrl_min_shares,omitempty"`
-	CloudStorageUploadCtrlPCoeff            int    `json:"cloud_storage_upload_ctrl_p_coeff,omitempty"`
-	CloudStorageUploadCtrlUpdateIntervalMs  int    `json:"cloud_storage_upload_ctrl_update_interval_ms,omitempty"`
+	CloudStorageEnabled                     *string `json:"cloud_storage_enabled,omitempty"`
+	CloudStorageAPIEndpoint                 *string `json:"cloud_storage_api_endpoint,omitempty"`
+	CloudStorageAPIEndpointPort             *int    `json:"cloud_storage_api_endpoint_port,omitempty"`
+	CloudStorageBucket                      *string `json:"cloud_storage_bucket"`
+	CloudStorageCacheCheckInterval          *int    `json:"cloud_storage_cache_check_interval,omitempty"`
+	CloudStorageCacheDirectory              *string `json:"cloud_storage_cache_directory,omitempty"`
+	CloudStorageCacheSize                   *string `json:"cloud_storage_cache_size,omitempty"`
+	CloudStorageCredentialsSource           *string `json:"cloud_storage_credentials_source,omitempty"`
+	CloudStorageDisableTLS                  *bool   `json:"cloud_storage_disable_tls,omitempty"`
+	CloudStorageEnableRemoteRead            *bool   `json:"cloud_storage_enable_remote_read,omitempty"`
+	CloudStorageEnableRemoteWrite           *bool   `json:"cloud_storage_enable_remote_write,omitempty"`
+	CloudStorageInitialBackoffMs            *int    `json:"cloud_storage_initial_backoff_ms,omitempty"`
+	CloudStorageManifestUploadTimeoutMs     *int    `json:"cloud_storage_manifest_upload_timeout_ms,omitempty"`
+	CloudStorageMaxConnectionIdleTimeMs     *int    `json:"cloud_storage_max_connection_idle_time_ms,omitempty"`
+	CloudStorageMaxConnections              *int    `json:"cloud_storage_max_connections,omitempty"`
+	CloudStorageReconciliationIntervalMs    *int    `json:"cloud_storage_reconciliation_interval_ms,omitempty"`
+	CloudStorageRegion                      *string `json:"cloud_storage_region"`
+	CloudStorageSegmentMaxUploadIntervalSec *int    `json:"cloud_storage_segment_max_upload_interval_sec,omitempty"`
+	CloudStorageSegmentUploadTimeoutMs      *int    `json:"cloud_storage_segment_upload_timeout_ms,omitempty"`
+	CloudStorageTrustFile                   *string `json:"cloud_storage_trust_file,omitempty"`
+	CloudStorageUploadCtrlDCoeff            *int    `json:"cloud_storage_upload_ctrl_d_coeff,omitempty"`
+	CloudStorageUploadCtrlMaxShares         *int    `json:"cloud_storage_upload_ctrl_max_shares,omitempty"`
+	CloudStorageUploadCtrlMinShares         *int    `json:"cloud_storage_upload_ctrl_min_shares,omitempty"`
+	CloudStorageUploadCtrlPCoeff            *int    `json:"cloud_storage_upload_ctrl_p_coeff,omitempty"`
+	CloudStorageUploadCtrlUpdateIntervalMs  *int    `json:"cloud_storage_upload_ctrl_update_interval_ms,omitempty"`
 }
 
 // TieredStoragePersistentVolume is a top level field of the values file
 type TieredStoragePersistentVolume struct {
 	Annotations  map[string]string `json:"annotations,omitempty"`
-	Enabled      bool              `json:"enabled"`
-	Labels       map[string]string `json:"labels"`
-	StorageClass string            `json:"storageClass"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	StorageClass *string           `json:"storageClass,omitempty"`
 }
 
 // PersistentVolume is a top level field of the values file
@@ -374,9 +429,10 @@ type Listeners struct {
 }
 
 type ExternalListener struct {
-	Port            *int         `json:"port,omitempty"`
-	TLS             *ListenerTLS `json:"tls,omitempty"`
-	AdvertisedPorts []int        `json:"advertisedPorts,omitempty"`
+	AuthenticationMethod *string      `json:"authenticationMethod,omitempty"`
+	Port                 *int         `json:"port,omitempty"`
+	TLS                  *ListenerTLS `json:"tls,omitempty"`
+	AdvertisedPorts      []int        `json:"advertisedPorts,omitempty"`
 }
 
 // Admin is a top level field of the values file

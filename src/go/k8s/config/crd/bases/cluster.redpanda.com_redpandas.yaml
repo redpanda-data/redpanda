@@ -166,6 +166,15 @@ spec:
                     type: object
                   console:
                     properties:
+                      affinity:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      annotations:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      autoscaling:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                       configMap:
                         properties:
                           create:
@@ -185,6 +194,56 @@ spec:
                         type: object
                       enabled:
                         type: boolean
+                      extraContainers:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      extraEnv:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      extraEnvFrom:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      extraVolumeMounts:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      extraVolumes:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      fullnameOverride:
+                        type: string
+                      image:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      imagePullSecrets:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      ingress:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      initContainers:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      nameOverride:
+                        type: string
+                      nodeSelector:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      podAnnotations:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      podLabels:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      podSecurityContext:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      priorityClassName:
+                        type: string
+                      replicaCount:
+                        type: integer
+                      resources:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                       secret:
                         properties:
                           create:
@@ -192,6 +251,24 @@ spec:
                         required:
                         - create
                         type: object
+                      secretMounts:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      securityContext:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      service:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      serviceAccount:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      tolerations:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      topologySpreadConstraints:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                     type: object
                   enterprise:
                     description: Enterprise represents license data
@@ -294,6 +371,8 @@ spec:
                                   items:
                                     type: integer
                                   type: array
+                                authenticationMethod:
+                                  type: string
                                 port:
                                   type: integer
                                 tls:
@@ -337,6 +416,8 @@ spec:
                                   items:
                                     type: integer
                                   type: array
+                                authenticationMethod:
+                                  type: string
                                 port:
                                   type: integer
                                 tls:
@@ -380,6 +461,8 @@ spec:
                                   items:
                                     type: integer
                                   type: array
+                                authenticationMethod:
+                                  type: string
                                 port:
                                   type: integer
                                 tls:
@@ -441,6 +524,8 @@ spec:
                                   items:
                                     type: integer
                                   type: array
+                                authenticationMethod:
+                                  type: string
                                 port:
                                   type: integer
                                 tls:
@@ -2652,84 +2737,85 @@ spec:
                         required:
                         - enabled
                         type: object
-                      tieredConfig:
-                        description: TieredConfig is a top level field of the values
-                          file
+                      tiered:
                         properties:
-                          cloud_storage_api_endpoint:
-                            type: string
-                          cloud_storage_api_endpoint_port:
-                            type: integer
-                          cloud_storage_bucket:
-                            type: string
-                          cloud_storage_cache_check_interval:
-                            type: integer
-                          cloud_storage_cache_directory:
-                            type: string
-                          cloud_storage_cache_size:
-                            type: integer
-                          cloud_storage_credentials_source:
-                            type: string
-                          cloud_storage_disable_tls:
-                            type: boolean
-                          cloud_storage_enable_remote_read:
-                            type: boolean
-                          cloud_storage_enable_remote_write:
-                            type: boolean
-                          cloud_storage_initial_backoff_ms:
-                            type: integer
-                          cloud_storage_manifest_upload_timeout_ms:
-                            type: integer
-                          cloud_storage_max_connection_idle_time_ms:
-                            type: integer
-                          cloud_storage_max_connections:
-                            type: integer
-                          cloud_storage_reconciliation_interval_ms:
-                            type: integer
-                          cloud_storage_region:
-                            type: string
-                          cloud_storage_segment_max_upload_interval_sec:
-                            type: integer
-                          cloud_storage_segment_upload_timeout_ms:
-                            type: integer
-                          cloud_storage_trust_file:
-                            type: string
-                          cloud_storage_upload_ctrl_d_coeff:
-                            type: integer
-                          cloud_storage_upload_ctrl_max_shares:
-                            type: integer
-                          cloud_storage_upload_ctrl_min_shares:
-                            type: integer
-                          cloud_storage_upload_ctrl_p_coeff:
-                            type: integer
-                          cloud_storage_upload_ctrl_update_interval_ms:
-                            type: integer
-                        required:
-                        - cloud_storage_bucket
-                        - cloud_storage_region
-                        type: object
-                      tieredStorageHostPath:
-                        type: string
-                      tieredStoragePersistentVolume:
-                        description: TieredStoragePersistentVolume is a top level
-                          field of the values file
-                        properties:
-                          annotations:
-                            additionalProperties:
-                              type: string
+                          config:
+                            description: TieredConfig is a top level field of the
+                              values file
+                            properties:
+                              cloud_storage_api_endpoint:
+                                type: string
+                              cloud_storage_api_endpoint_port:
+                                type: integer
+                              cloud_storage_bucket:
+                                type: string
+                              cloud_storage_cache_check_interval:
+                                type: integer
+                              cloud_storage_cache_directory:
+                                type: string
+                              cloud_storage_cache_size:
+                                type: string
+                              cloud_storage_credentials_source:
+                                type: string
+                              cloud_storage_disable_tls:
+                                type: boolean
+                              cloud_storage_enable_remote_read:
+                                type: boolean
+                              cloud_storage_enable_remote_write:
+                                type: boolean
+                              cloud_storage_enabled:
+                                type: string
+                              cloud_storage_initial_backoff_ms:
+                                type: integer
+                              cloud_storage_manifest_upload_timeout_ms:
+                                type: integer
+                              cloud_storage_max_connection_idle_time_ms:
+                                type: integer
+                              cloud_storage_max_connections:
+                                type: integer
+                              cloud_storage_reconciliation_interval_ms:
+                                type: integer
+                              cloud_storage_region:
+                                type: string
+                              cloud_storage_segment_max_upload_interval_sec:
+                                type: integer
+                              cloud_storage_segment_upload_timeout_ms:
+                                type: integer
+                              cloud_storage_trust_file:
+                                type: string
+                              cloud_storage_upload_ctrl_d_coeff:
+                                type: integer
+                              cloud_storage_upload_ctrl_max_shares:
+                                type: integer
+                              cloud_storage_upload_ctrl_min_shares:
+                                type: integer
+                              cloud_storage_upload_ctrl_p_coeff:
+                                type: integer
+                              cloud_storage_upload_ctrl_update_interval_ms:
+                                type: integer
+                            required:
+                            - cloud_storage_bucket
+                            - cloud_storage_region
                             type: object
-                          enabled:
-                            type: boolean
-                          labels:
-                            additionalProperties:
-                              type: string
-                            type: object
-                          storageClass:
+                          hostPath:
                             type: string
-                        required:
-                        - enabled
-                        - labels
-                        - storageClass
+                          mountType:
+                            type: string
+                          persistentVolume:
+                            description: TieredStoragePersistentVolume is a top level
+                              field of the values file
+                            properties:
+                              annotations:
+                                additionalProperties:
+                                  type: string
+                                type: object
+                              labels:
+                                additionalProperties:
+                                  type: string
+                                type: object
+                              storageClass:
+                                type: string
+                            type: object
                         type: object
                     type: object
                   tls:
@@ -2741,12 +2827,7 @@ spec:
                             caEnabled:
                               type: boolean
                             duration:
-                              description: A Duration represents the elapsed time
-                                between two instants as an int64 nanosecond count.
-                                The representation limits the largest representable
-                                duration to approximately 290 years.
-                              format: int64
-                              type: integer
+                              type: string
                             issuerRef:
                               properties:
                                 kind:
