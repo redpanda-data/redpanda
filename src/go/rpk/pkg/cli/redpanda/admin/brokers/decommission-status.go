@@ -91,7 +91,7 @@ using 'rpk cluster config get partition_autobalancing_mode'.
 
 			if dbs.Finished {
 				if dbs.ReplicasLeft == 0 {
-					out.Exit("Note %d is decommissioned successfully.", broker)
+					out.Exit("Node %d is decommissioned successfully.", broker)
 				} else {
 					out.Exit("Node %d is decommissioned but there are %d replicas left, which may be an issue inside Redpanda. Please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md", broker, dbs.ReplicasLeft)
 				}
