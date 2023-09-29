@@ -3869,4 +3869,13 @@ ss::future<> consensus::maybe_flush_log(size_t threshold_bytes) {
     }
 }
 
+std::optional<model::offset> consensus::get_learner_start_offset() const {
+    const auto& latest_cfg = _configuration_manager.get_latest();
+
+    if (latest_cfg.get_configuration_update()) {
+        return latest_cfg.get_configuration_update()->learner_start_offset;
+    }
+    return std::nullopt;
+}
+
 } // namespace raft

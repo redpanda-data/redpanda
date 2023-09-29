@@ -758,6 +758,8 @@ private:
       model::offset leader_last_offset,
       bool already_recovering);
 
+    std::optional<model::offset> get_learner_start_offset() const;
+
     bool use_serde_configuration() const {
         return _features.is_active(features::feature::raft_config_serde);
     }
