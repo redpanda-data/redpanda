@@ -148,7 +148,7 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
             actual_size = bucket_view.cloud_log_size_for_ntp(
                 ntp.topic, ntp.partition).accessible(no_archive=True)
 
-            assert ntp_remote_size == actual_size
+            assert ntp_remote_size == actual_size, f"{ntp_remote_size=} != {actual_size=}"
 
     @cluster(num_nodes=5)
     def test_cloud_storage_usage_reporting(self):
