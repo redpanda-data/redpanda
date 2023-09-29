@@ -9,6 +9,7 @@
 from collections import namedtuple
 import json
 import logging
+import os
 import pprint
 import random
 import re
@@ -1862,3 +1863,74 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self.redpanda.set_cluster_config({self.key: expected})
 
         self._check_value_everywhere(self.key, expected)
+
+
+class ConfigConstraintsTest(RedpandaTest):
+    RETENTION_MS = 86400000  # 1 day
+    RETENTION_MS_MIN = RETENTION_MS // 2
+    RETENTION_MS_MAX = RETENTION_MS * 2
+    topics = [TopicSpec(retention_ms=RETENTION_MS)]
+
+    LOG_LIFETIME_CONSTRAINT = {
+        'name': 'log_retention_ms',
+        'type': 'restrict',
+        'min': RETENTION_MS_MIN
+    }
+    LOG_CLEANUP_CONSTRAINT = {
+        'name': 'log_cleanup_policy',
+        'type': 'restrict',
+        'enabled': True
+    }
+
+    def __init__(self, *args, **kwargs):
+        super(ConfigConstraintsTest, self).__init__(extra_rp_conf={
+            "constraints":
+            [self.LOG_LIFETIME_CONSTRAINT, self.LOG_CLEANUP_CONSTRAINT]
+        },
+                                                    *args,
+                                                    **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_config_constraints(self):
+        def get_constraint(constraints: list, name: str):
+            assert type(constraints) == list
+            assert type(name) == str
+
+            for constraint in constraints:
+                if constraint['name'] == name:
+                    return constraint
+            return None
+
+        admin = Admin(self.redpanda)
+        target_broker = self.redpanda.nodes[0]
+
+        # Set a low retention_ms, expect 409 HTTP status since the topic already has retention_ms 1 day
+        try:
+            admin.patch_cluster_config(upsert={
+                'constraints': [{
+                    'name': 'log_retention_ms',
+                    'type': 'restrict',
+                    'min': 20000
+                }]
+            },
+                                       node=target_broker)
+        except requests.exceptions.HTTPError as ex:
+            if ex.response.status_code != requests.codes.conflict:
+                raise
+
+        # Constraint should still be their previous values
+        res = admin.get_cluster_config(node=target_broker)
+        cons = get_constraint(res['constraints'], 'log_retention_ms')
+        self.logger.debug(cons)
+        assert cons == self.LOG_LIFETIME_CONSTRAINT
+        cons = get_constraint(res['constraints'], 'log_cleanup_policy')
+        self.logger.debug(cons)
+        assert cons == self.LOG_CLEANUP_CONSTRAINT
+
+        # Set a max for the lifetime constraint
+        self.LOG_LIFETIME_CONSTRAINT.update({'max': self.RETENTION_MS_MAX})
+        patch_result = admin.patch_cluster_config(
+            upsert={'constraints': [self.LOG_LIFETIME_CONSTRAINT]},
+            node=target_broker)
+        wait_for_version_sync(admin, self.redpanda,
+                              patch_result['config_version'])
