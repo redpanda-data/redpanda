@@ -3,8 +3,6 @@ kind: TestSuite
 startKIND: true
 kindContainers:
   - localhost/redpanda-operator:dev
-#  - docker.redpanda.com/redpandadata/redpanda:v23.2.8
-#  - docker.redpanda.com/redpandadata/console:v2.3.2
 testDirs:
   - ./tests/e2e-v2
 kindConfig: ./kind.yaml
