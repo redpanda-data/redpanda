@@ -118,7 +118,7 @@ class RpkClusterInfoNode:
 
 class RpkMaintenanceStatus(typing.NamedTuple):
     node_id: int
-    draining: bool
+    enabled: bool
     finished: bool
     errors: bool
     partitions: int
@@ -980,7 +980,7 @@ class RpkTool:
                 return None
 
             # jerry@garcia:~/src/redpanda$ rpk cluster maintenance status
-            # NODE-ID  DRAINING  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED
+            # NODE-ID  ENABLED  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED
             # 1        false     false     false   0           0         0             0
             line = line.split()
 
@@ -990,14 +990,21 @@ class RpkTool:
             line = [x.strip() for x in line]
             if line[0] == "NODE-ID":
                 return None
+
+            def bool_or_none(value: str):
+                return None if value == "-" else value == "true"
+
+            def int_or_none(value: str):
+                return None if value == "-" else int(value)
+
             return RpkMaintenanceStatus(node_id=int(line[0]),
-                                        draining=line[1] == "true",
-                                        finished=line[2] == "true",
-                                        errors=line[3] == "true",
-                                        partitions=int(line[4]),
-                                        eligible=int(line[5]),
-                                        transferring=int(line[6]),
-                                        failed=int(line[7]))
+                                        enabled=line[1] == "true",
+                                        finished=bool_or_none(line[2]),
+                                        errors=bool_or_none(line[3]),
+                                        partitions=int_or_none(line[4]),
+                                        eligible=int_or_none(line[5]),
+                                        transferring=int_or_none(line[6]),
+                                        failed=int_or_none(line[7]))
 
         cmd = [
             self._rpk_binary(),
