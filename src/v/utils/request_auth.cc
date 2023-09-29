@@ -12,6 +12,7 @@
 #include "utils/request_auth.h"
 
 #include "cluster/controller.h"
+#include "config/configuration.h"
 #include "seastar/http/exception.hh"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
@@ -78,8 +79,14 @@ request_auth_result request_authenticator::do_authenticate(
   bool require_auth) {
     security::credential_user username;
 
+    constexpr auto supports = [](std::string_view m) {
+        return absl::c_any_of(
+          config::shard_local_cfg().http_authentication(),
+          [m](auto const& mech) { return m == mech; });
+    };
+
     auto auth_hdr = req.get_header("authorization");
-    if (auth_hdr.substr(0, 5) == "Basic") {
+    if (supports("BASIC") && auth_hdr.substr(0, 5) == "Basic") {
         // Minimal length: Basic, a space, 1 or more bytes
         if (auth_hdr.size() < 7) {
             throw ss::httpd::bad_request_exception(

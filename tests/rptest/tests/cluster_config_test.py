@@ -559,6 +559,9 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # Don't enable schema id validation: the interdepedencies are too complex and are tested elsewhere.
         exclude_settings.add('enable_schema_id_validation')
 
+        # Don't modify oidc_discovery_url, if it's invalid, logging will break the test.
+        exclude_settings.add('oidc_discovery_url')
+
         initial_config = self.admin.get_cluster_config()
 
         for name, p in schema_properties.items():
@@ -598,6 +601,12 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # The default value is ['SCRAM'], but the array cannot contain
                 # arbitrary strings because the config system validates them.
                 valid_value = ['SCRAM', 'GSSAPI']
+
+            if name == 'http_authentication':
+                # The default value is ['BASIC'], but the array cannot contain
+                # arbitrary strings because the config system validates them.
+                # Removing BASIC breaks tests that use the admin API.
+                valid_value = ['BASIC']
 
             if name == 'sasl_kerberos_principal_mapping':
                 # The default value is ['DEFAULT'], but the array must contain
