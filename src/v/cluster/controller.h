@@ -137,6 +137,10 @@ public:
         return *_metadata_uploader;
     }
 
+    ss::sharded<cluster_recovery_table>& get_cluster_recovery_table() {
+        return _recovery_table;
+    }
+
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
@@ -261,6 +265,7 @@ private:
     std::unique_ptr<leader_balancer> _leader_balancer;
     ss::sharded<partition_balancer_backend> _partition_balancer;
     std::unique_ptr<cloud_metadata::uploader> _metadata_uploader;
+    ss::sharded<cluster_recovery_table> _recovery_table; // instance per core
 
     ss::gate _gate;
     consensus_ptr _raft0;
