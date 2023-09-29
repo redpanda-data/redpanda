@@ -14,6 +14,7 @@
 #include "security/errc.h"
 #include "security/jwt.h"
 #include "security/logger.h"
+#include "security/oidc_service.h"
 #include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -89,6 +90,51 @@ result<acl_principal> authenticate(
         return a_res.assume_error();
     }
     return std::move(a_res).assume_value();
+}
+
+class authenticator::impl {
+public:
+    explicit impl(oidc::service& service)
+      : _service{service} {};
+
+    result<acl_principal> authenticate(std::string_view bearer_token) const {
+        auto jws = oidc::jws::make(ss::sstring{bearer_token});
+        if (jws.has_error()) {
+            vlog(
+              seclog.warn, "Invalid token: {}", jws.assume_error().message());
+            return jws.assume_error();
+        }
+
+        auto issuer = _service.issuer();
+        if (issuer.has_error()) {
+            vlog(
+              seclog.warn,
+              "Identity Provider has no issuer: {}",
+              issuer.assume_error().message());
+            return issuer.assume_error();
+        }
+
+        return oidc::authenticate(
+          jws.assume_value(),
+          _service.get_verifier(),
+          issuer.assume_value(),
+          _service.audience(),
+          _service.clock_skew_tolerance(),
+          ss::lowres_system_clock::now());
+    }
+
+private:
+    service& _service;
+};
+
+authenticator::authenticator(service& service)
+  : _impl{std::make_unique<impl>(service)} {}
+
+authenticator::~authenticator() = default;
+
+result<acl_principal>
+authenticator::authenticate(std::string_view bearer_token) {
+    return _impl->authenticate(bearer_token);
 }
 
 } // namespace security::oidc

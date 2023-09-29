@@ -11,6 +11,7 @@
 #include "outcome.h"
 #include "security/acl.h"
 #include "security/fwd.h"
+#include "security/sasl_authentication.h"
 
 #include <seastar/core/lowres_clock.hh>
 
@@ -32,5 +33,21 @@ result<acl_principal> authenticate(
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
   ss::lowres_system_clock::time_point now);
+
+class authenticator {
+public:
+    explicit authenticator(service& service);
+    authenticator(authenticator&&) = default;
+    authenticator(authenticator const&) = delete;
+    authenticator& operator=(authenticator&&) = delete;
+    authenticator& operator=(authenticator const&) = delete;
+    ~authenticator();
+
+    result<acl_principal> authenticate(std::string_view bearer_token);
+
+private:
+    class impl;
+    std::unique_ptr<impl> _impl;
+};
 
 } // namespace security::oidc
