@@ -17,6 +17,7 @@ v_cc_library(
     scram_authenticator.cc
     gssapi_authenticator.cc
     oidc_authenticator.cc
+    oidc_service.cc
     credential.cc
     acl.cc
     mtls.cc
@@ -26,6 +27,7 @@ v_cc_library(
     gssapi_principal_mapper.cc
     audit/schemas/utils.cc
   DEPS
+    v::http
     v::security_config
     v::config
     v::bytes
