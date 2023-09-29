@@ -18,6 +18,7 @@
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/property.h"
+#include "config/property_constraints.h"
 #include "config/throughput_control_group.h"
 #include "config/tls_config.h"
 #include "model/compression.h"
@@ -484,6 +485,7 @@ struct configuration final : public config_store {
     // debug controls
     property<bool> cpu_profiler_enabled;
     bounded_property<std::chrono::milliseconds> cpu_profiler_sample_period_ms;
+    one_or_many_property<constraint_t> constraints;
 
     configuration();
 
