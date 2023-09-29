@@ -175,6 +175,18 @@ s3_imposter_fixture::get_requests() const {
     return _requests;
 }
 
+std::vector<http_test_utils::request_info> s3_imposter_fixture::get_requests(
+  s3_imposter_fixture::req_pred_t predicate) const {
+    std::vector<http_test_utils::request_info> matching_requests;
+    matching_requests.reserve(_requests.size());
+    std::copy_if(
+      _requests.cbegin(),
+      _requests.cend(),
+      std::back_inserter(matching_requests),
+      std::move(predicate));
+    return matching_requests;
+}
+
 const std::multimap<ss::sstring, http_test_utils::request_info>&
 s3_imposter_fixture::get_targets() const {
     return _targets;

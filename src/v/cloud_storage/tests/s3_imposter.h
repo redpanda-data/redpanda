@@ -72,6 +72,13 @@ public:
     /// Access all http requests ordered by time
     const std::vector<http_test_utils::request_info>& get_requests() const;
 
+    using req_pred_t
+      = std::function<bool(const http_test_utils::request_info&)>;
+
+    /// Access http requests matching the given predicate
+    std::vector<http_test_utils::request_info>
+    get_requests(req_pred_t predicate) const;
+
     /// Access all http requests ordered by target url
     const std::multimap<ss::sstring, http_test_utils::request_info>&
     get_targets() const;
