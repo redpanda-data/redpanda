@@ -117,6 +117,7 @@ public:
           proxy_client_config(kafka_port),
           schema_reg_config(schema_reg_port),
           proxy_client_config(kafka_port),
+          audit_log_client_config(kafka_port),
           sch_groups);
         app.check_environment();
         app.wire_up_and_start(*app_signal, true);
@@ -407,6 +408,16 @@ public:
               .address = net::unresolved_address("127.0.0.1", listen_port)}});
         cfg.get("schema_registry_replication_factor")
           .set_value(std::make_optional<int16_t>(1));
+        return to_yaml(cfg, config::redact_secrets::no);
+    }
+
+    YAML::Node audit_log_client_config(
+      uint16_t kafka_api_port = config::node().kafka_api()[0].address.port()) {
+        kafka::client::configuration cfg;
+        net::unresolved_address kafka_api{
+          config::node().kafka_api()[0].address.host(), kafka_api_port};
+        cfg.brokers.set_value(
+          std::vector<net::unresolved_address>({kafka_api}));
         return to_yaml(cfg, config::redact_secrets::no);
     }
 
