@@ -1,4 +1,5 @@
 import boto3
+import json
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -38,6 +39,7 @@ class EC2Client:
         self._endpoint = endpoint
         self._disable_ssl = disable_ssl
         self._cli = self._make_client()
+        self._s3cli = self._make_s3_client()
         self._log = logger
 
         self._log.debug(f"Created EC2 Client: {self._region}, {endpoint},"
@@ -50,6 +52,19 @@ class EC2Client:
                          'mode': 'adaptive'
                      })
         return boto3.client('ec2',
+                            config=cfg,
+                            aws_access_key_id=self._access_key,
+                            aws_secret_access_key=self._secret_key,
+                            endpoint_url=self._endpoint,
+                            use_ssl=not self._disable_ssl)
+
+    def _make_s3_client(self):
+        cfg = Config(region_name=self._region,
+                     retries={
+                         'max_attempts': 10,
+                         'mode': 'adaptive'
+                     })
+        return boto3.client('s3',
                             config=cfg,
                             aws_access_key_id=self._access_key,
                             aws_secret_access_key=self._secret_key,
@@ -266,3 +281,30 @@ class EC2Client:
                 _id = _meta[_head + _mac + "-device-number"]
                 _new_meta[_head + _id + _tail] = v
         return _new_meta
+
+    def block_bucket_from_vpc(self, bucket_name, vpc_id):
+
+        bucket_policy = {
+            'Version':
+            '2012-10-17',
+            'Statement': [{
+                'Sid': 'DenyPutFromRPNetwork',
+                'Effect': 'Deny',
+                'Principal': '*',
+                'Action': ['s3:PutObject'],
+                'Resource': f'arn:aws:s3:::{bucket_name}/*',
+                'Condition': {
+                    'ForAllValues:StringEquals': {
+                        'aws:Ec2InstanceSourceVpc': vpc_id
+                    }
+                }
+            }]
+        }
+
+        bucket_policy = json.dumps(bucket_policy)
+
+        self._log.debug(bucket_policy)
+        self._s3cli.put_bucket_policy(Bucket=bucket_name, Policy=bucket_policy)
+
+    def unblock_bucket_from_vpc(self, bucket_name):
+        self._s3cli.delete_bucket_policy(Bucket=bucket_name)
