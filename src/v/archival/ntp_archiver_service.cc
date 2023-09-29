@@ -2045,6 +2045,12 @@ ss::future<> ntp_archiver::apply_archive_retention() {
       retention_bytes, retention_ms);
 
     if (res.has_error()) {
+        if (res.error() == cloud_storage::error_outcome::shutting_down) {
+            vlog(
+              _rtclog.debug,
+              "Search for archive retention point failed as Redpanda is "
+              "shutting down");
+        }
         vlog(
           _rtclog.error,
           "Failed to compute archive retention: {}",
@@ -2088,6 +2094,13 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     }
     auto backlog = co_await _manifest_view->get_retention_backlog();
     if (backlog.has_failure()) {
+        if (backlog.error() == cloud_storage::error_outcome::shutting_down) {
+            vlog(
+              _rtclog.debug,
+              "Skipping archive GC as Redpanda is shutting down");
+            co_return;
+        }
+
         vlog(
           _rtclog.error,
           "Failed to create GC backlog for the archive: {}",
@@ -2181,6 +2194,13 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         manifests_to_remove.push_back(path());
         auto res = co_await cursor->next();
         if (res.has_failure()) {
+            if (res.error() == cloud_storage::error_outcome::shutting_down) {
+                vlog(
+                  _rtclog.debug,
+                  "Stopping archive GC as Redpanda is shutting down");
+                co_return;
+            }
+
             vlog(
               _rtclog.error,
               "Failed to load next spillover manifest: {}",

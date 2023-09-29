@@ -500,6 +500,10 @@ private:
         // Find manifest that contains requested offset or timestamp
         auto cur = co_await _partition->_manifest_view->get_cursor(query);
         if (cur.has_failure()) {
+            if (cur.error() == error_outcome::shutting_down) {
+                co_return;
+            }
+
             if (
               cur.error() == error_outcome::out_of_range
               && std::holds_alternative<kafka::offset>(query)) {
@@ -901,11 +905,6 @@ ss::future<std::optional<kafka::offset>>
 remote_partition::get_term_last_offset(model::term_id term) const {
     const auto res = co_await _manifest_view->get_term_last_offset(term);
     if (res.has_error()) {
-        vlog(
-          _ctxlog.error,
-          "Failed to get last offset from term {}: {}",
-          term,
-          res.error());
         throw std::system_error(res.error());
     } else {
         co_return res.value();
@@ -954,6 +953,10 @@ remote_partition::aborted_transactions(offset_range offsets) {
         meta_to_materialize.clear();
         auto cur_res = co_await _manifest_view->get_cursor(offsets.begin);
         if (cur_res.has_failure()) {
+            if (cur_res.error() == error_outcome::shutting_down) {
+                throw std::runtime_error("Async manifest view shutting down");
+            }
+
             vlog(
               _ctxlog.error,
               "Failed to traverse archive part of the log: {}",
