@@ -10,6 +10,7 @@
 #include "archival/ntp_archiver_service.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/tests/cluster_metadata_utils.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/cluster_recovery_reconciler.h"
@@ -208,4 +209,113 @@ FIXTURE_TEST(test_recover_controller_state, cluster_recovery_backend_test) {
                     == cluster::recovery_stage::complete;
     });
     validate_post_recovery();
+}
+
+FIXTURE_TEST(test_recover_failed_action, cluster_recovery_backend_test) {
+    // Create a remote topic, but don't upload any of its manifests or anything.
+    scoped_config task_local_cfg;
+    task_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+    model::topic_namespace remote_tp_ns{
+      model::kafka_namespace, model::topic{"remote_foo"}};
+    add_topic(remote_tp_ns, 1, uploadable_topic_properties()).get();
+
+    // Upload the controller snapshot to set up a failure to create the table.
+    RPTEST_REQUIRE_EVENTUALLY(
+      5s, [this] { return controller_stm.maybe_write_snapshot(); });
+    auto& uploader = app.controller->metadata_uploader();
+    retry_chain_node retry_node(never_abort, 30s, 1s);
+    cluster_metadata_manifest manifest;
+    manifest.cluster_uuid = cluster_uuid;
+    uploader.upload_next_metadata(raft0->confirmed_term(), manifest, retry_node)
+      .get();
+    BOOST_REQUIRE_EQUAL(manifest.metadata_id, cluster_metadata_id(0));
+    BOOST_REQUIRE(!manifest.controller_snapshot_path.empty());
+
+    // Create a new cluster.
+    raft0 = nullptr;
+    restart(should_wipe::yes);
+    RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+        return app.storage.local().get_cluster_uuid().has_value();
+    });
+
+    // Attempt a recovery.
+    auto recover_err = app.controller->get_cluster_recovery_manager()
+                         .local()
+                         .initialize_recovery(bucket)
+                         .get();
+    BOOST_REQUIRE(recover_err.has_value());
+    BOOST_REQUIRE_EQUAL(recover_err.value(), cluster::errc::success);
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        return !app.controller->get_cluster_recovery_table()
+                  .local()
+                  .is_recovery_active();
+    });
+    auto& latest_recovery = app.controller->get_cluster_recovery_table()
+                              .local()
+                              .current_recovery()
+                              .value()
+                              .get();
+    BOOST_REQUIRE_EQUAL(latest_recovery.stage, cluster::recovery_stage::failed);
+    BOOST_REQUIRE(latest_recovery.error_msg.has_value());
+    BOOST_REQUIRE(latest_recovery.error_msg.value().contains(
+      "Failed to apply action for "
+      "recovery_stage::recovered_remote_topic_data"));
+}
+
+FIXTURE_TEST(test_recover_failed_download, cluster_recovery_backend_test) {
+    // Create a some topic to be able to upload a snapshot.
+    model::topic_namespace remote_tp_ns{
+      model::kafka_namespace, model::topic{"remote_foo"}};
+    add_topic(remote_tp_ns, 1, uploadable_topic_properties()).get();
+
+    // Upload the controller snapshot to set up a failure to create the table.
+    RPTEST_REQUIRE_EVENTUALLY(
+      5s, [this] { return controller_stm.maybe_write_snapshot(); });
+    auto& uploader = app.controller->metadata_uploader();
+    retry_chain_node retry_node(never_abort, 60s, 1s);
+    cluster_metadata_manifest manifest;
+    manifest.cluster_uuid = cluster_uuid;
+    uploader.upload_next_metadata(raft0->confirmed_term(), manifest, retry_node)
+      .get();
+    BOOST_REQUIRE_EQUAL(manifest.metadata_id, cluster_metadata_id(0));
+    BOOST_REQUIRE(!manifest.controller_snapshot_path.empty());
+
+    // Create a new cluster.
+    raft0 = nullptr;
+    restart(should_wipe::yes);
+    RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+        return app.storage.local().get_cluster_uuid().has_value();
+    });
+
+    auto res = app.cloud_storage_api.local()
+                 .delete_object(
+                   bucket,
+                   cloud_storage_clients::object_key{
+                     manifest.controller_snapshot_path},
+                   retry_node)
+                 .get();
+    BOOST_REQUIRE_EQUAL(res, cloud_storage::upload_result::success);
+
+    // Attempt a recovery.
+    auto recover_err = app.controller->get_cluster_recovery_manager()
+                         .local()
+                         .initialize_recovery(bucket)
+                         .get();
+    BOOST_REQUIRE(recover_err.has_value());
+    BOOST_REQUIRE_EQUAL(recover_err.value(), cluster::errc::success);
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        return !app.controller->get_cluster_recovery_table()
+                  .local()
+                  .is_recovery_active();
+    });
+    auto& latest_recovery = app.controller->get_cluster_recovery_table()
+                              .local()
+                              .current_recovery()
+                              .value()
+                              .get();
+    BOOST_REQUIRE_EQUAL(latest_recovery.stage, cluster::recovery_stage::failed);
+    BOOST_REQUIRE(latest_recovery.error_msg.has_value());
+    BOOST_REQUIRE(latest_recovery.error_msg.value().contains(
+      "Failed to download controller snapshot"));
 }

@@ -123,7 +123,11 @@ cluster_recovery_backend::apply_controller_actions_in_term(
     for (const auto next_stage : actions.stages) {
         auto errc = co_await do_action(next_stage, actions);
         if (errc != cluster::errc::success) {
-            co_return errc;
+            co_return co_await _recovery_manager.replicate_update(
+              term,
+              recovery_stage::failed,
+              ssx::sformat(
+                "Failed to apply action for {}: {}", next_stage, errc));
         }
         errc = co_await _recovery_manager.replicate_update(term, next_stage);
         if (errc != cluster::errc::success) {
@@ -382,6 +386,13 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
               clusterlog.error,
               "Failed to download controller snapshot from bucket: {}",
               recovery_state.bucket);
+            co_await _recovery_manager.replicate_update(
+              synced_term,
+              recovery_stage::failed,
+              ssx::sformat(
+                "Failed to download controller snapshot {} in bucket {}",
+                recovery_state.manifest.controller_snapshot_path,
+                recovery_state.bucket));
             co_return;
         }
         vlog(
@@ -417,11 +428,8 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
         co_return;
     }
     // All done! Record success.
-    auto errc = co_await _recovery_manager.replicate_update(
+    co_await _recovery_manager.replicate_update(
       synced_term, recovery_stage::complete);
-    if (errc != cluster::errc::success) {
-        co_return;
-    }
 }
 
 } // namespace cluster::cloud_metadata
