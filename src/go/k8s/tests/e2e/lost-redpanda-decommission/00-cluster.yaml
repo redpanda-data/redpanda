@@ -4,7 +4,7 @@ metadata:
   name: lost-rp-decommission
 spec:
   image: "redpandadata/redpanda"
-  version: "v23.2.3"
+  version: "v23.2.10"
   replicas: 3
   resources:
     requests:
