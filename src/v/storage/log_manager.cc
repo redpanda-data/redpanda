@@ -195,8 +195,16 @@ ss::future<>
 log_manager::housekeeping_scan(model::timestamp collection_threshold) {
     using bflags = log_housekeeping_meta::bitflags;
 
-    if (_logs_list.empty()) {
-        co_return;
+    static constexpr auto is_not_set = [](bflags var, auto flag) {
+        return (var & flag) != flag;
+    };
+
+    // reset flags for the next two loops, segment_ms and compaction.
+    // since there are suspension points during the traversal of _logs_list, the
+    // algorithm is: mark the logs visited, rotate _logs_list, op, and loop
+    // until empty or reaching a marked log
+    for (auto& log_meta : _logs_list) {
+        log_meta.flags &= ~(bflags::compacted | bflags::lifetime_checked);
     }
 
     /*
@@ -210,29 +218,40 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
      *   compaction is already sequential when this will be unified with
      *   compaction, the whole task could be made concurrent
      */
-    for (auto& log_meta : _logs_list) {
-        co_await log_meta.handle->apply_segment_ms();
+    while (!_logs_list.empty()
+           && is_not_set(_logs_list.front().flags, bflags::lifetime_checked)) {
+        if (_abort_source.abort_requested()) {
+            co_return;
+        }
+
+        auto& current_log = _logs_list.front();
+        _logs_list.shift_forward();
+
+        current_log.flags |= bflags::lifetime_checked;
+        // NOTE: apply_segment_ms holds _compaction_housekeeping_gate, that
+        // prevents the removal of the parent object. this makes awaiting
+        // apply_segment_ms safe against removal of segments from _logs_list
+        co_await current_log.handle->apply_segment_ms();
     }
 
-    for (auto& log_meta : _logs_list) {
-        log_meta.flags &= ~bflags::compacted;
-    }
-
-    while ((_logs_list.front().flags & bflags::compacted) == bflags::none) {
+    while (!_logs_list.empty()
+           && is_not_set(_logs_list.front().flags, bflags::compacted)) {
         if (_abort_source.abort_requested()) {
             co_return;
         }
 
         auto& current_log = _logs_list.front();
 
-        _logs_list.pop_front();
-        _logs_list.push_back(current_log);
+        _logs_list.shift_forward();
 
         current_log.flags |= bflags::compacted;
         current_log.last_compaction = ss::lowres_clock::now();
 
         auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(
           current_log.handle->config().ntp());
+        // NOTE: housekeeping holds _compaction_housekeeping_gate, that prevents
+        // the removal of the parent object. this makes awaiting housekeeping
+        // safe against removal of segments from _logs_list
         co_await current_log.handle->housekeeping(housekeeping_config(
           collection_threshold,
           _config.retention_bytes(),
@@ -240,10 +259,6 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           _config.compaction_priority,
           _abort_source,
           std::move(ntp_sanitizer_cfg)));
-
-        if (_logs_list.empty()) {
-            co_return;
-        }
 
         // bail out of compaction early in order to get back to gc
         if (_gc_triggered) {
