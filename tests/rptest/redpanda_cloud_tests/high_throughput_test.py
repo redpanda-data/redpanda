@@ -38,6 +38,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import firewall_blocked
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
+from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import cloudv2_object_store_blocked
 
 KiB = 1024
 MiB = KiB * KiB
@@ -600,13 +601,25 @@ class HighThroughputTest(RedpandaTest):
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
-        with firewall_blocked(self.redpanda.nodes, self.s3_port):
-            # wait for the first cloud related failure + one minute
-            wait_until(lambda: not self._cloud_storage_no_new_errors(
-                self.redpanda, self.logger),
-                       timeout_sec=600,
-                       backoff_sec=10)
-            time.sleep(60)
+        cloud_tier = get_tier_name(get_cloud_globals(self._ctx.globals))
+
+        if cloud_tier == CloudTierName.DOCKER:
+            with firewall_blocked(self.redpanda.nodes, self.s3_port):
+                # wait for the first cloud related failure + one minute
+                wait_until(lambda: not self._cloud_storage_no_new_errors(
+                    self.redpanda, self.logger),
+                           timeout_sec=600,
+                           backoff_sec=10)
+                time.sleep(60)
+        else:
+            with cloudv2_object_store_blocked(self.redpanda, self.logger):
+                # wait for the first cloud related failure + one minute
+                wait_until(lambda: not self._cloud_storage_no_new_errors(
+                    self.redpanda, self.logger),
+                           timeout_sec=600,
+                           backoff_sec=10)
+                time.sleep(60)
+
         # make sure nothing is crashed
         wait_until(self.redpanda.healthy, timeout_sec=60, backoff_sec=1)
         self.logger.info(f"Waiting for S3 errors to cease")
