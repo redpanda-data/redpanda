@@ -758,6 +758,10 @@ private:
       model::offset leader_last_offset,
       bool already_recovering);
 
+    bool use_serde_configuration() const {
+        return _features.is_active(features::feature::raft_config_serde);
+    }
+
     // args
     vnode _self;
     raft::group_id _group;

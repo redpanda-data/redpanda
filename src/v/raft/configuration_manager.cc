@@ -10,10 +10,12 @@
 #include "raft/configuration_manager.h"
 
 #include "bytes/iobuf_parser.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "raft/consensus_utils.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
+#include "serde/rw/rw.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "vlog.h"
@@ -249,7 +251,12 @@ serialize_configurations(const configuration_manager::underlying_t& cfgs) {
                  cfgs.cbegin(),
                  cfgs.cend(),
                  [&ret](const auto& p) mutable {
-                     reflection::serialize(ret, p.first, p.second.cfg);
+                     reflection::serialize(ret, p.first);
+                     if (p.second.cfg.version() >= group_configuration::v_6) {
+                         serde::write(ret, p.second.cfg);
+                     } else {
+                         reflection::serialize(ret, p.second.cfg);
+                     }
                  })
           .then([&ret] { return std::move(ret); });
     });
@@ -272,8 +279,10 @@ ss::future<configuration_manager::underlying_t> deserialize_configurations(
                          [&parser, &configs, initial](uint64_t i) mutable {
                              auto key = reflection::adl<model::offset>{}.from(
                                parser);
-                             auto value = reflection::adl<group_configuration>{}
-                                            .from(parser);
+
+                             auto value
+                               = details::deserialize_nested_configuration(
+                                 parser);
                              auto [_, success] = configs.try_emplace(
                                key,
                                configuration_manager::indexed_configuration(

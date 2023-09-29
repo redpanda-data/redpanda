@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/iobuf_parser.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
@@ -82,7 +83,6 @@ raft::group_configuration random_configuration() {
           });
     }
     return {
-      std::move(brokers),
       std::move(current),
       tests::random_named_int<model::revision_id>(),
       std::move(update),
@@ -90,14 +90,20 @@ raft::group_configuration random_configuration() {
 }
 
 SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
-    auto cfg = random_configuration();
-    // serialize to entry
-    auto batches = raft::details::serialize_configuration_as_batches(cfg);
-    // extract from entry
-    auto new_cfg = reflection::from_iobuf<raft::group_configuration>(
-      batches.begin()->copy_records().begin()->release_value());
+    for (auto v :
+         {raft::group_configuration::v_5, raft::group_configuration::v_6}) {
+        auto cfg = random_configuration();
+        cfg.set_version(v);
 
-    BOOST_REQUIRE_EQUAL(new_cfg, cfg);
+        // serialize to entry
+        auto batches = raft::details::serialize_configuration_as_batches(cfg);
+        // extract from entry
+        iobuf_parser parser(
+          batches.begin()->copy_records().begin()->release_value());
+        auto new_cfg = raft::details::deserialize_configuration(parser);
+
+        BOOST_REQUIRE_EQUAL(new_cfg, cfg);
+    }
 }
 
 struct test_consumer {
@@ -129,7 +135,11 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
     ss::circular_buffer<model::record_batch> all_batches;
 
     // serialize to batches
+    // use adl
+    cfg_1.set_version(raft::group_configuration::v_5);
     auto cfg_batch_1 = raft::details::serialize_configuration_as_batches(cfg_1);
+    // use serde
+    cfg_2.set_version(raft::group_configuration::v_6);
     auto cfg_batch_2 = raft::details::serialize_configuration_as_batches(cfg_2);
     auto batches = model::test::make_random_batches(model::offset(0), 10, true);
 

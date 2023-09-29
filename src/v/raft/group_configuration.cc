@@ -288,8 +288,9 @@ group_configuration::group_configuration(
   group_nodes current,
   model::revision_id revision,
   std::optional<configuration_update> update,
-  std::optional<group_nodes> old)
-  : _version(current_version)
+  std::optional<group_nodes> old,
+  version_t version)
+  : _version(version)
   , _current(std::move(current))
   , _configuration_update(std::move(update))
   , _old(std::move(old))
@@ -1259,10 +1260,28 @@ std::ostream& operator<<(std::ostream& o, configuration_state t) {
 std::ostream& operator<<(std::ostream& o, const configuration_update& u) {
     fmt::print(
       o,
-      "{{to_add: {}, to_remove: {}}}",
+      "{{to_add: {}, to_remove: {}, learner_start_offset: {}}}",
       u.replicas_to_add,
-      u.replicas_to_remove);
+      u.replicas_to_remove,
+      u.learner_start_offset);
     return o;
+}
+group_configuration group_configuration::serde_direct_read(
+  iobuf_parser& p, const serde::header& h) {
+    auto current = serde::read_nested<group_nodes>(p, h._bytes_left_limit);
+    auto update = serde::read_nested<std::optional<configuration_update>>(
+      p, h._bytes_left_limit);
+    auto old = serde::read_nested<std::optional<group_nodes>>(
+      p, h._bytes_left_limit);
+    auto rev = serde::read_nested<model::revision_id>(p, h._bytes_left_limit);
+    return {std::move(current), rev, std::move(update), std::move(old)};
+}
+void group_configuration::serde_write(iobuf& out) {
+    using serde::write;
+    write(out, _current);
+    write(out, _configuration_update);
+    write(out, _old);
+    write(out, _revision);
 }
 } // namespace raft
 
@@ -1336,6 +1355,7 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
      * version 3 - model::broker with multiple endpoints
      * version 4 - persist configuration update request
      * version 5 - no brokers
+     * version 6 - serde
      */
 
     std::vector<model::broker> brokers;
@@ -1381,7 +1401,12 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
     }
     if (likely(version >= raft::group_configuration::v_5)) {
         return {
-          std::move(current), revision, std::move(update), std::move(old)};
+          std::move(current),
+          revision,
+          std::move(update),
+          std::move(old),
+          // adl configuration is limited to v_5
+          raft::group_configuration::v_5};
     } else {
         raft::group_configuration cfg{
           std::move(brokers),
@@ -1420,6 +1445,16 @@ adl<raft::configuration_update>::from(iobuf_parser& in) {
       .replicas_to_add = std::move(to_add),
       .replicas_to_remove = std::move(to_remove),
     };
+}
+
+void adl<raft::group_nodes>::to(iobuf& buffer, raft::group_nodes n) {
+    reflection::serialize(buffer, n.voters, n.learners);
+}
+raft::group_nodes adl<raft::group_nodes>::from(iobuf_parser& p) {
+    auto voters = adl<std::vector<raft::vnode>>{}.from(p);
+    auto learners = adl<std::vector<raft::vnode>>{}.from(p);
+    return raft::group_nodes{
+      .voters = std::move(voters), .learners = std::move(learners)};
 }
 
 } // namespace reflection

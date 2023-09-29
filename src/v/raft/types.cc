@@ -757,7 +757,7 @@ raft::snapshot_metadata adl<raft::snapshot_metadata>::from(iobuf_parser& in) {
         in.skip(sizeof(int8_t));
     }
 
-    auto cfg = adl<raft::group_configuration>{}.from(in);
+    auto cfg = raft::details::deserialize_nested_configuration(in);
     ss::lowres_clock::time_point cluster_time{
       adl<std::chrono::milliseconds>{}.from(in)};
 
@@ -776,11 +776,14 @@ raft::snapshot_metadata adl<raft::snapshot_metadata>::from(iobuf_parser& in) {
 void adl<raft::snapshot_metadata>::to(
   iobuf& out, raft::snapshot_metadata&& md) {
     reflection::serialize(
+      out, md.last_included_index, md.last_included_term, md.version);
+
+    auto cfg_buffer = raft::details::serialize_configuration(
+      std::move(md.latest_configuration));
+    out.append_fragments(std::move(cfg_buffer));
+
+    reflection::serialize(
       out,
-      md.last_included_index,
-      md.last_included_term,
-      md.version,
-      md.latest_configuration,
       std::chrono::duration_cast<std::chrono::milliseconds>(
         md.cluster_time.time_since_epoch()),
       md.log_start_delta);

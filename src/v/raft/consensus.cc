@@ -2507,6 +2507,14 @@ ss::future<std::error_code> consensus::replicate_configuration(
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
           maybe_upgrade_configuration_to_v4(cfg);
+          if (
+            cfg.version() == group_configuration::v_5
+            && use_serde_configuration()) {
+              vlog(
+                _ctxlog.debug, "Upgrading configuration {} version to 6", cfg);
+              cfg.set_version(group_configuration::v_6);
+          }
+
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
           for (auto& b : batches) {
