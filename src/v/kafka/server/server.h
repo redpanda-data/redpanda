@@ -61,6 +61,7 @@ public:
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&,
       ss::sharded<security::audit::audit_log_manager>&,
+      ss::sharded<security::oidc::service>&,
       ss::sharded<cluster::security_frontend>&,
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
@@ -133,6 +134,10 @@ public:
 
     security::audit::audit_log_manager& audit_mgr() {
         return _audit_mgr.local();
+    }
+
+    ss::sharded<security::oidc::service>& oidc_service() {
+        return _oidc_service;
     }
 
     cluster::security_frontend& security_frontend() {
@@ -215,6 +220,7 @@ private:
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
+    ss::sharded<security::oidc::service>& _oidc_service;
     ss::sharded<cluster::security_frontend>& _security_frontend;
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;

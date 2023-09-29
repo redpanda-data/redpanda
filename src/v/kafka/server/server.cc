@@ -97,6 +97,7 @@ server::server(
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<security::authorizer>& authorizer,
   ss::sharded<security::audit::audit_log_manager>& audit_mgr,
+  ss::sharded<security::oidc::service>& oidc_service,
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
@@ -128,6 +129,7 @@ server::server(
   , _credentials(credentials)
   , _authorizer(authorizer)
   , _audit_mgr(audit_mgr)
+  , _oidc_service(oidc_service)
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)

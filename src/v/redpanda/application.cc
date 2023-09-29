@@ -1843,6 +1843,7 @@ void application::wire_up_redpanda_services(
         std::ref(controller->get_credential_store()),
         std::ref(controller->get_authorizer()),
         std::ref(audit_mgr),
+        std::ref(controller->get_oidc_service()),
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),

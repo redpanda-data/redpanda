@@ -59,6 +59,7 @@
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "security/ephemeral_credential_store.h"
+#include "security/oidc_service.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/future.hh>
@@ -123,6 +124,24 @@ ss::future<> controller::wire_up() {
       .then([this] {
           return _authorizer.start(
             []() { return config::shard_local_cfg().superusers.bind(); });
+      })
+      .then([this] {
+          return _oidc_service.start(
+            ss::sharded_parameter(
+              [] { return config::shard_local_cfg().sasl_mechanisms.bind(); }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg().http_authentication.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg().oidc_discovery_url.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg().oidc_token_audience.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .oidc_clock_skew_tolerance.bind();
+            }));
       })
       .then([this] { return _tp_state.start(); })
       .then([this] {
@@ -500,6 +519,9 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
       .then([this] {
           return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
       })
+      .then([this] {
+          return _oidc_service.invoke_on_all(&security::oidc::service::start);
+      })
       .then([this, seed_nodes = std::move(seed_nodes)]() mutable {
           return _feature_manager.invoke_on(
             feature_manager::backend_shard,
@@ -636,6 +658,7 @@ ss::future<> controller::stop() {
           .then([this] { return _config_frontend.stop(); })
           .then([this] { return _feature_backend.stop(); })
           .then([this] { return _bootstrap_backend.stop(); })
+          .then([this] { return _oidc_service.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _ephemeral_credentials.stop(); })
           .then([this] { return _credentials.stop(); })
