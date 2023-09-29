@@ -5479,6 +5479,19 @@ ss::json::json_return_type serialize_topic_recovery_status(
 }
 } // namespace
 
+ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::initialize_cluster_recovery(
+  std::unique_ptr<ss::http::request> request,
+  std::unique_ptr<ss::http::reply> reply) {
+    reply->set_content_type("json");
+    co_return reply;
+}
+ss::future<ss::json::json_return_type>
+admin_server::get_cluster_recovery(std::unique_ptr<ss::http::request> req) {
+    ss::httpd::shadow_indexing_json::cluster_recovery_status ret;
+    co_return ret;
+}
+
 ss::future<ss::json::json_return_type>
 admin_server::query_automated_recovery(std::unique_ptr<ss::http::request> req) {
     ss::httpd::shadow_indexing_json::topic_recovery_status ret;
@@ -6113,6 +6126,15 @@ void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::query_automated_recovery,
       [this](auto req) { return query_automated_recovery(std::move(req)); });
+
+    register_route<superuser>(
+      ss::httpd::shadow_indexing_json::initialize_cluster_recovery,
+      request_handler_fn{[this](auto req, auto reply) {
+          return initialize_cluster_recovery(std::move(req), std::move(reply));
+      }});
+    register_route<superuser>(
+      ss::httpd::shadow_indexing_json::get_cluster_recovery,
+      [this](auto req) { return get_cluster_recovery(std::move(req)); });
 
     register_route<user>(
       ss::httpd::shadow_indexing_json::get_partition_cloud_storage_status,

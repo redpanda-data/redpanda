@@ -39,6 +39,36 @@
       ]
     },
     {
+      "path": "/v1/cloud_storage/cluster_recovery",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Initializes a cluster recovery",
+          "operationId": "initialize_cluster_recovery",
+          "nickname": "initialize_cluster_recovery",
+          "parameters": [
+            {
+              "name": "body",
+              "paramType": "body",
+              "required": false
+            }
+          ],
+          "responseMessages": [
+            {
+              "code": 200,
+              "message": "Cluster recovery was initialized successfully"
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "summary": "Get status of cluster recovery",
+          "operationId": "get_cluster_recovery",
+          "nickname": "get_cluster_recovery"
+        }
+      ]
+    },
+    {
       "path": "/v1/cloud_storage/automated_recovery",
       "operations": [
         {
@@ -333,6 +363,17 @@
         },
         "retention_ms": {
           "type": "int"
+        }
+      }
+    },
+    "cluster_recovery_status": {
+      "id": "cluster_recovery_status",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
         }
       }
     },
