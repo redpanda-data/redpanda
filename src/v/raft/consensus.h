@@ -839,7 +839,7 @@ private:
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     uint64_t _snapshot_size{0};
-    std::optional<storage::snapshot_writer> _snapshot_writer;
+    std::optional<storage::file_snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;
     configuration_manager _configuration_manager;

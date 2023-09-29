@@ -144,13 +144,13 @@ ss::future<> file_backed_stm_snapshot::persist_local_snapshot(
       [&snapshot_mgr,
        snapshot = std::move(snapshot),
        data_size_buf = std::move(data_size_buf)](
-        storage::snapshot_writer writer) mutable {
+        storage::file_snapshot_writer writer) mutable {
           return ss::do_with(
             std::move(writer),
             [&snapshot_mgr,
              snapshot = std::move(snapshot),
              data_size_buf = std::move(data_size_buf)](
-              storage::snapshot_writer& writer) mutable {
+              storage::file_snapshot_writer& writer) mutable {
                 return writer.write_metadata(std::move(data_size_buf))
                   .then([&writer, snapshot = std::move(snapshot)]() mutable {
                       return write_iobuf_to_output_stream(

@@ -61,7 +61,7 @@ ss::future<uint64_t> snapshot_manager::get_snapshot_size(ss::sstring filename) {
       });
 }
 
-ss::future<snapshot_writer>
+ss::future<file_snapshot_writer>
 snapshot_manager::start_snapshot(ss::sstring target) {
     // the random suffix is added because the lowres clock doesn't produce
     // unique file names when tests run fast.
@@ -85,12 +85,12 @@ snapshot_manager::start_snapshot(ss::sstring target) {
           return ss::make_file_output_stream(std::move(file), options);
       })
       .then([this, target, path](ss::output_stream<char> output) {
-          return snapshot_writer(
+          return file_snapshot_writer(
             std::move(output), path, snapshot_path(target));
       });
 }
 
-ss::future<> snapshot_manager::finish_snapshot(snapshot_writer& writer) {
+ss::future<> snapshot_manager::finish_snapshot(file_snapshot_writer& writer) {
     return ss::rename_file(writer.path().string(), writer.target().string())
       .then([this] { return ss::sync_directory(_dir.string()); });
 }
@@ -257,18 +257,19 @@ snapshot_writer::~snapshot_writer() noexcept {
     vassert(_closed, "snapshot writer has to be closed before destruction");
 }
 
-snapshot_writer::snapshot_writer(
+file_snapshot_writer::file_snapshot_writer(
   ss::output_stream<char> output,
   std::filesystem::path path,
   std::filesystem::path target) noexcept
-  : _path(std::move(path))
-  , _output(std::move(output))
+  : _writer(std::move(output))
+  , _path(std::move(path))
   , _target(std::move(target)) {}
 
+snapshot_writer::snapshot_writer(ss::output_stream<char> output) noexcept
+  : _output(std::move(output)) {}
+
 snapshot_writer::snapshot_writer(snapshot_writer&& o) noexcept
-  : _path(std::move(o._path))
-  , _output(std::move(o._output))
-  , _target(std::move(o._target))
+  : _output(std::move(o._output))
   , _closed(o._closed) {
     o._closed = true;
 }

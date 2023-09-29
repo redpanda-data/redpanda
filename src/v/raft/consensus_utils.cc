@@ -276,11 +276,11 @@ ss::future<> persist_snapshot(
   iobuf&& data) {
     return snapshot_manager.start_snapshot().then(
       [&snapshot_manager, md = std::move(md), data = std::move(data)](
-        storage::snapshot_writer writer) mutable {
+        storage::file_snapshot_writer writer) mutable {
           return ss::do_with(
             std::move(writer),
             [&snapshot_manager, md = std::move(md), data = std::move(data)](
-              storage::snapshot_writer& writer) mutable {
+              storage::file_snapshot_writer& writer) mutable {
                 return writer
                   .write_metadata(reflection::to_iobuf(std::move(md)))
                   .then([&writer, data = std::move(data)]() mutable {
