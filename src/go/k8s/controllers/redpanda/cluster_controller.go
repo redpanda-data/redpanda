@@ -265,7 +265,10 @@ func (r *ClusterReconciler) Reconcile(
 
 	// The following should be at the last part as it requires AdminAPI to be running
 	if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
-		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
+		log.Error(err, "setting pod node_id annotation after reconciling resources")
+		return ctrl.Result{
+			RequeueAfter: 4 * time.Second,
+		}, nil
 	}
 	if err := r.setPodNodeIDLabel(ctx, &vectorizedCluster, log, ar); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id label: %w", err)
