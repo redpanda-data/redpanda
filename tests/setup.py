@@ -18,7 +18,6 @@ setup(
         'pyyaml==6.0',
         'kafka-python==2.0.2',
         'crc32c==2.2',
-        'confluent-kafka==2.0.2',
         'zstandard==0.15.2',
         'xxhash==2.0.2',
         'protobuf==4.21.8',
