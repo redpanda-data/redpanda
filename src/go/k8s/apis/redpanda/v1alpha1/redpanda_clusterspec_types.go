@@ -28,7 +28,9 @@ type RedpandaClusterSpec struct {
 
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 
-	LicenseKey       *string           `json:"license_key,omitempty"`
+	// Deprecated: Use `Enterprise.LicenseKey` instead.
+	LicenseKey *string `json:"license_key,omitempty"`
+	// Deprecated: Use `Enterprise.LicenseSecretRef` instead.
 	LicenseSecretRef *LicenseSecretRef `json:"license_secret_ref,omitempty"`
 
 	RackAwareness *RackAwareness `json:"rackAwareness,omitempty"`
@@ -38,6 +40,8 @@ type RedpandaClusterSpec struct {
 	Auth *Auth `json:"auth,omitempty"`
 
 	TLS *TLS `json:"tls,omitempty"`
+
+	Enterprise *Enterprise `json:"enterprise,omitempty"`
 
 	External *External `json:"external,omitempty"`
 
@@ -155,13 +159,21 @@ type ListenerTLS struct {
 	RequireClientAuth *bool   `json:"requireClientAuth,omitempty"`
 }
 
+// ExternalService allows you to enable or disable creation of external service type
+type ExternalService struct {
+	Enabled bool `json:"enabled,omitempty"`
+}
+
 // External is a top level field of the values file
 type External struct {
-	Addresses   []string     `json:"addresses,omitempty"`
-	Domain      *string      `json:"domain,omitempty"`
-	Enabled     *bool        `json:"enabled,omitempty"`
-	Type        *string      `json:"type,omitempty"`
-	ExternalDNS *ExternalDNS `json:"externalDNS,omitempty"`
+	Addresses    []string          `json:"addresses,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	Domain       *string           `json:"domain,omitempty"`
+	Enabled      *bool             `json:"enabled,omitempty"`
+	Service      *ExternalService  `json:"service,omitempty"`
+	SourceRanges []string          `json:"sourceRanges,omitempty"`
+	Type         *string           `json:"type,omitempty"`
+	ExternalDNS  *ExternalDNS      `json:"externalDns,omitempty"`
 }
 
 // Logging is a top level field of the values file
@@ -232,7 +244,7 @@ type TieredConfig struct {
 
 // TieredStoragePersistentVolume is a top level field of the values file
 type TieredStoragePersistentVolume struct {
-	Annotations  map[string]string `json:"annotations"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
 	Enabled      bool              `json:"enabled"`
 	Labels       map[string]string `json:"labels"`
 	StorageClass string            `json:"storageClass"`
@@ -507,4 +519,16 @@ type SideCarObj struct {
 	Enabled         bool                         `json:"enabled,omitempty"`
 	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
 	SecurityContext *corev1.SecurityContext      `json:"SecurityContext,omitempty"`
+}
+
+// EnterpriseLicenseSecretRef is the secret used in the Enterprise struct
+type EnterpriseLicenseSecretRef struct {
+	Key  string `json:"key,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+// Enterprise represents license data
+type Enterprise struct {
+	License          *string                     `json:"license,omitempty"`
+	LicenseSecretRef *EnterpriseLicenseSecretRef `json:"licenseSecretRef,omitempty"`
 }
