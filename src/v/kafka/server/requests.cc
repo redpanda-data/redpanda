@@ -282,6 +282,13 @@ process_result_stages process_request(
           ctx.respond(sasl_authenticate_response(std::move(data))));
     }
 
+    if (ctx.sasl() && ctx.sasl()->expired()) [[unlikely]] {
+        throw sasl_session_expired_exception(fmt::format(
+          "Session for client '{}' expired after {}",
+          ctx.header().client_id.value_or(""),
+          ctx.sasl()->max_reauth()));
+    }
+
     if (auto handler = handler_for_key(key)) {
         return process_generic(*handler, std::move(ctx), g, sres);
     }

@@ -12,6 +12,7 @@
 #include "security/acl.h"
 #include "vassert.h"
 
+#include <seastar/core/lowres_clock.hh>
 
 #include <chrono>
 #include <memory>
@@ -40,6 +41,8 @@ public:
  * SASL server protocol manager.
  */
 class sasl_server final {
+    using clock_type = ss::lowres_clock;
+
 public:
     enum class sasl_state {
         initial,
@@ -49,13 +52,33 @@ public:
         failed,
     };
 
-    explicit sasl_server(sasl_state state)
-      : _state(state) {}
+    explicit sasl_server(
+      sasl_state state,
+      std::optional<std::chrono::milliseconds> max_reauth = std::nullopt)
+      : _state(state)
+      , _max_reauth_ms(max_reauth) {}
 
     sasl_state state() const { return _state; }
     void set_state(sasl_state state) { _state = state; }
 
     bool complete() const { return _state == sasl_state::complete; }
+    bool expired() const {
+        return _max_reauth_ms && clock_type::now() > _session_expiry;
+    }
+
+    std::chrono::milliseconds session_lifetime_ms() const {
+        using namespace std::chrono_literals;
+        if (!_max_reauth_ms.has_value()) {
+            return 0ms;
+        }
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          _session_expiry - clock_type::now());
+    }
+
+    std::chrono::milliseconds max_reauth() const {
+        using namespace std::chrono_literals;
+        return _max_reauth_ms.value_or(0ms);
+    }
 
     bool has_mechanism() const { return bool(_mechanism); }
     sasl_mechanism& mechanism() { return *_mechanism; }
@@ -78,6 +101,16 @@ private:
     sasl_state _state;
     std::unique_ptr<sasl_mechanism> _mechanism;
     bool _handshake_v0{false};
+    std::optional<std::chrono::milliseconds> _max_reauth_ms;
+    clock_type::time_point _session_expiry{};
+
+    void set_expiry(std::optional<std::chrono::milliseconds> cred_expiry_ms) {
+        using namespace std::chrono_literals;
+        auto offset = cred_expiry_ms
+                        ? std::min(max_reauth(), cred_expiry_ms.value())
+                        : max_reauth();
+        _session_expiry = clock_type::now() + offset;
+    }
 };
 
 // inline because the function is pretty small and clang complains about
