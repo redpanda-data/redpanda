@@ -155,7 +155,8 @@ ss::future<std::list<ss::sstring>> list_orphaned_by_manifest(
 ss::future<cluster_manifest_result> download_highest_manifest_in_bucket(
   cloud_storage::remote& remote,
   const cloud_storage_clients::bucket_name& bucket,
-  retry_chain_node& retry_node) {
+  retry_chain_node& retry_node,
+  std::optional<model::cluster_uuid> ignore_uuid) {
     // Look for unique cluster UUIDs for which we have metadata.
     constexpr auto cluster_prefix = "cluster_metadata/";
     vlog(clusterlog.trace, "Listing objects with prefix {}", cluster_prefix);
@@ -211,6 +212,9 @@ ss::future<cluster_manifest_result> download_highest_manifest_in_bucket(
               clusterlog.debug,
               "Ignoring invalid cluster UUID: {}",
               cluster_uuid_str);
+            continue;
+        }
+        if (ignore_uuid == cluster_uuid) {
             continue;
         }
         if (meta_id > highest_meta_id) {

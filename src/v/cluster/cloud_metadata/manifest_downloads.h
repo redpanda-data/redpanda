@@ -57,6 +57,7 @@ ss::future<std::list<ss::sstring>> list_orphaned_by_manifest(
 ss::future<cluster_manifest_result> download_highest_manifest_in_bucket(
   cloud_storage::remote& remote,
   const cloud_storage_clients::bucket_name& bucket,
-  retry_chain_node& retry_node);
+  retry_chain_node& retry_node,
+  std::optional<model::cluster_uuid> ignore_uuid = std::nullopt);
 
 } // namespace cluster::cloud_metadata
