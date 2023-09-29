@@ -28,6 +28,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <fmt/format.h>
 
+#include <ranges>
 #include <string_view>
 
 using namespace storage; // NOLINT
@@ -37,6 +38,19 @@ struct storage::segment_appender_test_accessor {
     segment_appender& sa; // NOLINT
 
     auto& inflight() { return sa._inflight; }
+    auto inflight_str() {
+        auto wr
+          = std::vector<ss::lw_shared_ptr<segment_appender::inflight_write>>(
+            sa._inflight.begin(), sa._inflight.end());
+        return fmt::format(
+          "[sz: {} [{}]]",
+          wr.size(),
+          fmt::join(
+            wr | std::views::transform([](auto ptr) -> decltype(auto) {
+                return *ptr.get();
+            }),
+            ", "));
+    }
     auto inflight_dispatched() { return sa._inflight_dispatched; }
     auto total_dispatched() { return sa._dispatched_writes; }
     auto total_merged() { return sa._merged_writes; }
@@ -346,6 +360,11 @@ static void run_concurrent_append_flush(
 
     // now there should be nothing in-flight
     BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
+
+    // NOTE this is not 0 always, see issue/13035
+    BOOST_TEST_INFO(fmt::format(
+      "appender inflight operations (should be empty): {}",
+      access(appender).inflight_str()));
     BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
     // now we expect all the prior flush futures to be available
