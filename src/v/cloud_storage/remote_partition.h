@@ -211,10 +211,10 @@ private:
       segment_reader_units segment_reader_unit,
       model::offset hint = {});
 
-    /// Materialize new segment
-    /// @return iterator that points to newly added segment (always valid
+    /// Materialize a new segment or grab one if it already exists
+    /// @return iterator that points a materialized segment (always valid
     /// iterator)
-    iterator materialize_segment(
+    iterator get_or_materialize_segment(
       const remote_segment_path& path, const segment_meta&, segment_units);
 
     retry_chain_node _rtc;
