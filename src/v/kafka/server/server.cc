@@ -271,10 +271,18 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
         config::shard_local_cfg().enable_sasl());
     const auto authn_method = get_authn_method(*conn);
 
+    const auto sasl_max_reauth
+      = config::shard_local_cfg().kafka_sasl_max_reauth_ms();
+
+    vlog(
+      klog.debug,
+      "max_reauth_ms: {}",
+      sasl_max_reauth.value_or(std::chrono::milliseconds{0}));
+
     // Only initialise sasl state if sasl is enabled
     auto sasl = authn_method == config::broker_authn_method::sasl
                   ? std::make_optional<security::sasl_server>(
-                    security::sasl_server::sasl_state::initial)
+                    security::sasl_server::sasl_state::initial, sasl_max_reauth)
                   : std::nullopt;
 
     // Only initialise mtls state if mtls_identity is enabled
@@ -406,10 +414,18 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
         auto result = co_await ctx.sasl()->authenticate(
           std::move(request.data.auth_bytes));
         if (likely(result)) {
+            if (ctx.sasl()->mechanism().complete()) {
+                vlog(
+                  klog.debug,
+                  "session_lifetime for principal '{}': {}",
+                  ctx.sasl()->principal(),
+                  ctx.sasl()->session_lifetime_ms());
+            }
             sasl_authenticate_response_data data{
               .error_code = error_code::none,
               .error_message = std::nullopt,
               .auth_bytes = std::move(result.value()),
+              .session_lifetime_ms = ctx.sasl()->session_lifetime_ms().count(),
             };
             co_return co_await ctx.respond(
               sasl_authenticate_response(std::move(data)));

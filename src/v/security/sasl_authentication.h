@@ -84,7 +84,16 @@ public:
     sasl_mechanism& mechanism() { return *_mechanism; }
 
     ss::future<result<bytes>> authenticate(bytes data) {
-        return _mechanism->authenticate(std::move(data));
+        auto res = co_await _mechanism->authenticate(std::move(data));
+        if (res) {
+            set_expiry(_mechanism->credential_expires_in_ms());
+        }
+        co_return res;
+    }
+
+    void reset() {
+        set_state(sasl_state::initial);
+        _mechanism = nullptr;
     }
 
     void set_mechanism(std::unique_ptr<sasl_mechanism> m) {

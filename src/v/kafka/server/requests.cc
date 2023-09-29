@@ -249,6 +249,17 @@ process_result_stages process_request(
   request_context&& ctx,
   ss::smp_service_group g,
   const session_resources& sres) {
+    auto key = ctx.header().key;
+
+    if (
+      ctx.sasl() && ctx.sasl()->complete()
+      && key == sasl_handshake_handler::api::key) [[unlikely]] {
+        // This is a client-driven reauthentication
+        vlog(
+          klog.debug,
+          "SASL reauthentication detected - resetting authn server");
+        ctx.sasl()->reset();
+    }
     /*
      * requests are handled as normal when auth is disabled. otherwise no
      * request is handled until the auth process has completed.
@@ -265,8 +276,6 @@ process_result_stages process_request(
                 return f;
             }));
     }
-
-    auto& key = ctx.header().key;
 
     if (key == sasl_handshake_handler::api::key) {
         return process_result_stages::single_stage(ctx.respond(
