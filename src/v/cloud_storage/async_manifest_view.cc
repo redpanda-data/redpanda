@@ -1283,6 +1283,9 @@ async_manifest_view::hydrate_manifest(
         co_return std::move(manifest);
     } catch (const ss::gate_closed_exception&) {
         vlog(_ctxlog.debug, "gate closed while hydrating manifest: {}", path);
+    } catch (ss::abort_requested_exception const&) {
+        vlog(
+          _ctxlog.debug, "abort requested while hydrating manifest: {}", path);
     } catch (...) {
         vlog(
           _ctxlog.error,
