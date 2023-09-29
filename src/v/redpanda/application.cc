@@ -661,11 +661,11 @@ void application::hydrate_config(const po::variables_map& cfg) {
         }
     };
 
-    ss::smp::invoke_on_all([&config, cfg_path] {
-        config::node().load(cfg_path, config);
+    ss::smp::invoke_on_others([config = &config, cfg_path = &cfg_path] {
+        config::node().load(*cfg_path, *config);
     }).get0();
 
-    auto node_config_errors = config::node().load(config);
+    auto node_config_errors = config::node().load(cfg_path, config);
     for (const auto& i : node_config_errors) {
         vlog(
           _log.warn,
@@ -2198,7 +2198,7 @@ void application::start_runtime_services(
 
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.
-    syschecks::systemd_message("Starting metadata dissination service").get();
+    syschecks::systemd_message("Starting metadata dissemination service").get();
     md_dissemination_service
       .invoke_on_all(&cluster::metadata_dissemination_service::start)
       .get();

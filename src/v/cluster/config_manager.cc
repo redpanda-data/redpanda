@@ -376,8 +376,9 @@ config_manager::preload_join(const controller_join_snapshot& snap) {
         preload_local(key, value, std::ref(result));
 
         // Broadcast value to all shards
-        co_await ss::smp::invoke_on_all(
-          [&key, &value]() { preload_local(key, value, std::nullopt); });
+        co_await ss::smp::invoke_on_others([key = &key, value = &value]() {
+            preload_local(*key, *value, std::nullopt);
+        });
     }
 
     co_return result;
@@ -452,15 +453,16 @@ ss::future<bool> config_manager::load_bootstrap() {
           i.second);
     }
 
-    co_await ss::smp::invoke_on_all(
-      [&config] { config::shard_local_cfg().read_yaml(config, {}); });
+    co_await ss::smp::invoke_on_others(
+      [config = &config] { config::shard_local_cfg().read_yaml(*config, {}); });
 
     co_return true;
 }
 
 ss::future<> config_manager::load_legacy(YAML::Node const& legacy_config) {
-    co_await ss::smp::invoke_on_all(
-      [&legacy_config] { config::shard_local_cfg().load(legacy_config); });
+    co_await ss::smp::invoke_on_others([legacy_config = &legacy_config] {
+        config::shard_local_cfg().load(*legacy_config);
+    });
 
     // This node has never seen a cluster configuration message.
     // Bootstrap configuration from local yaml file.
@@ -521,8 +523,9 @@ ss::future<config_manager::preload_result> config_manager::load_cache() {
         }
 
         // Broadcast value to all shards
-        co_await ss::smp::invoke_on_all(
-          [&key, &value]() { preload_local(key, value, std::nullopt); });
+        co_await ss::smp::invoke_on_others([key = &key, value = &value]() {
+            preload_local(*key, *value, std::nullopt);
+        });
     }
 
     co_return result;
@@ -882,7 +885,8 @@ config_manager::apply_delta(cluster_config_delta_cmd&& cmd_in) {
     // errors, so only need to check the errors on one)
     auto apply_r = apply_local(data, false);
 
-    co_await ss::smp::invoke_on_all([&data] { apply_local(data, true); });
+    co_await ss::smp::invoke_on_others(
+      [data = &data] { apply_local(*data, true); });
 
     // Merge results from this delta into our status.
     my_latest_status.version = delta_version;
