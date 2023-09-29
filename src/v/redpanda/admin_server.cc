@@ -1431,6 +1431,50 @@ void config_multi_property_validation(
           "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
 }
+
+/**
+ * A helper method to check locked configs in the request. Throws if:
+ * - Requested locked min > locked max
+ * - A pre-existing topic violates a requested locked config
+ */
+void check_config_constraints(
+  config::configuration const& updated_config,
+  const cluster::topic_table& topic_table) {
+    for (const auto& constraint : updated_config.constraints()) {
+        // TODO(@NyaliaLui): Consider a method that pre-checks the constraints.
+        // The idea is to return false (or throw) if min > max. Pre-check on
+        // constraint_validator_enabled is a noop.
+        vlog(
+          logger.info,
+          "AAA name {}, type {}",
+          constraint.name,
+          constraint.type);
+
+        for (const auto& [tp_ns, tp_md] : topic_table.all_topics_metadata()) {
+            if (!constraint.validate(tp_md.get_configuration())) {
+                if (constraint.type == config::constraint_type::_restrict) {
+                    std::string msg = fmt::format(
+                      "Failed to set constraints: topics {} has out-of-range "
+                      "value",
+                      tp_ns);
+                    vlog(logger.error, "{}", msg);
+                    throw ss::httpd::base_exception(
+                      msg, ss::http::reply::status_type::conflict, "json");
+                }
+
+                if (constraint.type == config::constraint_type::clamp) {
+                    vlog(
+                      logger.warn,
+                      "Clamping {}: topics {} has out-of-range value",
+                      constraint.name,
+                      tp_ns);
+                    // TODO(@NyaliaLui): Consider another interface method on
+                    // constraint_validator_t that does the clamping.
+                }
+            }
+        }
+    }
+}
 } // namespace
 
 void admin_server::register_cluster_config_routes() {
@@ -1549,6 +1593,11 @@ admin_server::patch_cluster_config_handler(
             // Don't both catching ParserException: this was encoded
             // just a few lines above.
             auto val = YAML::Load(yaml_value);
+            vlog(
+              logger.info,
+              "BBB yaml name {}, yaml val {}",
+              yaml_name,
+              yaml_value);
 
             if (!cfg.contains(yaml_name)) {
                 errors[yaml_name] = "Unknown property";
@@ -1637,6 +1686,8 @@ admin_server::patch_cluster_config_handler(
         // any multi-property validation errors
         config_multi_property_validation(
           auth_state.get_username(), _schema_registry, update, cfg, errors);
+
+        check_config_constraints(cfg, _controller->get_topics_state().local());
 
         if (!errors.empty()) {
             json::StringBuffer buf;
