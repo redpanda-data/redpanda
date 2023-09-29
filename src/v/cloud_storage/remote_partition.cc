@@ -52,27 +52,44 @@ namespace cloud_storage {
 using data_t = model::record_batch_reader::data_t;
 using storage_t = model::record_batch_reader::storage_t;
 
-remote_partition::iterator remote_partition::materialize_segment(
+remote_partition::iterator remote_partition::get_or_materialize_segment(
   const remote_segment_path& path,
   const segment_meta& meta,
   segment_units unit) {
     _as.check();
-    auto base_kafka_offset = meta.base_offset - meta.delta_offset;
+
+    if (auto iter = _segments.find(meta.base_offset); iter != _segments.end()) {
+        vlog(
+          _ctxlog.debug,
+          "Reusing materialized segment for meta {} with path {}",
+          meta,
+          path);
+
+        return iter;
+    }
+
     auto st = std::make_unique<materialized_segment_state>(
       meta, path, *this, std::move(unit));
-    auto [iter, ok] = _segments.insert(
+    auto [new_iter, ok] = _segments.insert(
       std::make_pair(meta.base_offset, std::move(st)));
+
+    // Should never fire since there's no scheduling point between
+    // the existence check and the insertion.
     vassert(
       ok,
-      "Segment with base log offset {} and base kafka offset {} is already "
-      "materialized, max offset of the new segment {}, max offset of the "
-      "existing segment {}",
-      meta.base_offset,
-      base_kafka_offset,
-      meta.committed_offset,
-      iter->second->segment->get_max_rp_offset());
+      "Segment with base offset {} is already materialized",
+      meta.base_offset);
+
     _ts_probe.segment_materialized();
-    return iter;
+
+    vlog(
+      _ctxlog.debug,
+      "Materialized new segment for meta {} with path {}",
+      meta,
+      path);
+    _ts_probe.segment_materialized();
+
+    return new_iter;
 }
 
 remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
@@ -162,7 +179,7 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
     }
     if (iter == _segments.end()) {
         auto path = manifest.generate_segment_path(*mit);
-        iter = materialize_segment(path, *mit, std::move(segment_unit));
+        iter = get_or_materialize_segment(path, *mit, std::move(segment_unit));
     }
     auto mit_committed_offset = mit->committed_offset;
     auto next_it = std::next(std::move(mit));
@@ -912,14 +929,15 @@ remote_partition::aborted_transactions(offset_range offsets) {
                 break;
             }
 
-            // Segment might be materialized, we need a
-            // second map lookup to learn if this is the case.
-            auto m = _segments.find(it->base_offset);
-            if (m == _segments.end()) {
-                auto path = stm_manifest.generate_segment_path(*it);
-                auto segment_unit = co_await materialized().get_segment_units();
-                m = materialize_segment(path, *it, std::move(segment_unit));
-            }
+            // Note: This is not buletproof: the segment might be
+            // re-uploaded/merged while waiting for the units which may result
+            // in a failure to materialise. This should be transient however.
+            // One solution for this is to grab all the required segment units
+            // up front at the start of the function.
+            auto segment_unit = co_await materialized().get_segment_units();
+            auto path = stm_manifest.generate_segment_path(*it);
+            auto m = get_or_materialize_segment(
+              path, *it, std::move(segment_unit));
             remote_segs.emplace_back(m->second->segment);
         }
         for (const auto& segment : remote_segs) {
@@ -960,16 +978,9 @@ remote_partition::aborted_transactions(offset_range offsets) {
           });
 
         for (const auto& [meta, path] : meta_to_materialize) {
-            // Segment might be materialized, we need a
-            // second map lookup to learn if this is the case.
-            auto m = _segments.find(meta.base_offset);
-            if (m == _segments.end()) {
-                // Here the 'manifest' might not be the one that contain 'meta'
-                // but it doesn't matter because 'materialize_segment' method is
-                // only used to generate a segment path.
-                auto segment_unit = co_await materialized().get_segment_units();
-                m = materialize_segment(path, meta, std::move(segment_unit));
-            }
+            auto segment_unit = co_await materialized().get_segment_units();
+            auto m = get_or_materialize_segment(
+              path, meta, std::move(segment_unit));
             auto tx = co_await m->second->segment->aborted_transactions(
               offsets.begin_rp, offsets.end_rp);
             std::copy(tx.begin(), tx.end(), std::back_inserter(result));
