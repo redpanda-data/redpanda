@@ -949,6 +949,17 @@ class Admin:
                              "cloud_storage/automated_recovery?extended=true",
                              **request_args)
 
+    def initialize_cluster_recovery(self, node=None, **kwargs):
+        request_args = {'node': node, **kwargs}
+
+        return self._request('post', "cloud_storage/cluster_recovery",
+                             **request_args)
+
+    def get_cluster_recovery_status(self, node=None, **kwargs):
+        request_args = {'node': node, **kwargs}
+        return self._request('get', "cloud_storage/cluster_recovery",
+                             **request_args)
+
     def self_test_start(self, options):
         return self._request("POST", "debug/self_test/start", json=options)
 
