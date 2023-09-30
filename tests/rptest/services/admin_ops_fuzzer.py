@@ -141,6 +141,13 @@ class DeleteTopicOperation(Operation):
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} deletion")
+        # validate RPK output first
+        topics = ctx.rpk().list_topics()
+        if self.topic in topics:
+            ctx.redpanda.logger.info(
+                f"found deleted topic {self.topic} in RPK response: {topics}")
+            return False
+
         try:
             brokers = ctx.admin().get_brokers()
         except:
