@@ -13,6 +13,11 @@ delete:
     kind: Job
     name: explicit-ports-tls-check
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: explicit-ports-tls-check
+    namespace: redpanda-system
   - apiVersion: cert-manager.io/v1
     kind: Issuer
     name: explicit-port-tls-issuer

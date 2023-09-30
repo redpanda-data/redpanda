@@ -17,7 +17,17 @@ delete:
     kind: Job
     name: create-schema
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-schema
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: retrive-schema
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: retrive-schema
     namespace: redpanda-system

@@ -17,3 +17,8 @@ delete:
     kind: Job
     name: set-superuser-password
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: set-superuser-password
+    namespace: redpanda-system

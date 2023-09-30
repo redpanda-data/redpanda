@@ -13,11 +13,26 @@ delete:
     kind: Job
     name: create-test-topic-with-pp-mtls
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-test-topic-with-pp-mtls
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: produce-message-with-pp-mtls
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: produce-message-with-pp-mtls
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: consume-message-with-pp-mtls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: consume-message-with-pp-mtls
     namespace: redpanda-system

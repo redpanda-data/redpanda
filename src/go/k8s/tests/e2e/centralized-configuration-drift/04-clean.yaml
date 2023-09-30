@@ -17,11 +17,26 @@ delete:
     kind: Job
     name: external-change
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: external-change
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-centralized-config-1-drift
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-centralized-config-1-drift
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-centralized-config-2-drift
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-centralized-config-2-drift
     namespace: redpanda-system
