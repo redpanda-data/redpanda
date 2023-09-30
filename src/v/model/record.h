@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
@@ -576,6 +577,34 @@ struct batch_identity {
     bool has_idempotent() { return pid.id >= 0; }
 };
 
+// A simple iterator for model::record_batch
+//
+// Usage:
+//
+// ```
+// auto it = model::record_batch_iterator::create(batch);
+// while (it.has_next()) {
+//   model::record record = it.next();
+//   // do something with record
+//   co_await ss::coroutine::maybe_yield();
+// }
+// ```
+class record_batch_iterator {
+public:
+    bool has_next() const noexcept;
+
+    model::record next();
+
+    static record_batch_iterator create(const model::record_batch& b);
+
+private:
+    record_batch_iterator(int32_t rc, iobuf_const_parser p);
+
+    int32_t _index = 0;
+    int32_t _record_count;
+    iobuf_const_parser _parser;
+};
+
 // 57 bytes
 constexpr uint32_t packed_record_batch_header_size
   = sizeof(model::record_batch_header::header_crc)          // 4
@@ -724,41 +753,25 @@ public:
      */
     template<typename Func>
     void for_each_record(Func f) const {
-        verify_iterable();
-        iobuf_const_parser parser(_records);
-        for (auto i = 0; i < _header.record_count; i++) {
-            if constexpr (std::is_same_v<
-                            std::invoke_result_t<Func, model::record>,
-                            void>) {
-                f(model::parse_one_record_copy_from_buffer(parser));
-
+        auto it = record_batch_iterator::create(*this);
+        while (it.has_next()) {
+            if constexpr (std::is_void_v<
+                            std::invoke_result_t<Func, model::record>>) {
+                f(it.next());
             } else {
-                ss::stop_iteration s = f(
-                  model::parse_one_record_copy_from_buffer(parser));
+                ss::stop_iteration s = f(it.next());
                 if (s == ss::stop_iteration::yes) {
                     return;
                 }
             }
         }
-        if (unlikely(parser.bytes_left())) {
-            throw std::out_of_range(fmt::format(
-              "Record iteration stopped with {} bytes remaining",
-              parser.bytes_left()));
-        }
     }
 
     template<typename Func>
     ss::future<> for_each_record_async(Func f) const {
-        verify_iterable();
-        iobuf_const_parser parser(_records);
-        for (auto i = 0; i < _header.record_count; i++) {
-            co_await ss::futurize_invoke(
-              f, model::parse_one_record_copy_from_buffer(parser));
-        }
-        if (unlikely(parser.bytes_left())) {
-            throw std::out_of_range(fmt::format(
-              "Record iteration stopped with {} bytes remaining",
-              parser.bytes_left()));
+        auto it = record_batch_iterator::create(*this);
+        while (it.has_next()) {
+            co_await ss::futurize_invoke(f, it.next());
         }
     }
 
@@ -832,6 +845,7 @@ private:
 
     explicit operator bool() const noexcept { return !empty(); }
     friend class ss::optimized_optional<record_batch>;
+    friend class record_batch_iterator;
 
     template<typename Func>
     friend ss::future<>
@@ -844,18 +858,16 @@ private:
 template<typename Func>
 inline ss::future<>
 for_each_record(const model::record_batch& batch, Func&& f) {
-    batch.verify_iterable();
     return ss::do_with(
-      iobuf_const_parser(batch.data()),
+      record_batch_iterator::create(batch),
       record{},
-      [record_count = batch.record_count(), f = std::forward<Func>(f)](
-        iobuf_const_parser& parser, record& record) mutable {
-          return ss::do_for_each(
-            boost::counting_iterator<int32_t>(0),
-            boost::counting_iterator<int32_t>(record_count),
-            [&parser, &record, f = std::forward<Func>(f)](int32_t) {
-                record = model::parse_one_record_copy_from_buffer(parser);
-                return f(record);
+      [f = std::forward<Func>(f)](
+        record_batch_iterator& it, record& r) mutable {
+          return ss::do_until(
+            [&it]() { return !it.has_next(); },
+            [&it, &r, f = std::forward<Func>(f)]() {
+                r = it.next();
+                return ss::futurize_invoke(f, r);
             });
       });
 }

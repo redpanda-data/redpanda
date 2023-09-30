@@ -8,6 +8,7 @@ v_cc_library(
     adl_serde.cc
     validation.cc
     transform.cc
+    record.cc
   DEPS
     v::bytes
     v::utils
