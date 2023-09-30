@@ -1254,7 +1254,8 @@ void application::wire_up_redpanda_services(
       std::ref(raft_group_manager),
       std::ref(feature_table),
       std::ref(cloud_storage_api),
-      std::ref(node_status_table));
+      std::ref(node_status_table),
+      std::ref(metadata_cache));
     controller->wire_up().get0();
 
     if (archival_storage_enabled()) {
