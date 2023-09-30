@@ -25,7 +25,17 @@ delete:
     kind: Job
     name: wait-for-v23-1-11
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: wait-for-v23-1-11
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: wait-for-tip-of-the-dev
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: wait-for-tip-of-the-dev
     namespace: redpanda-system

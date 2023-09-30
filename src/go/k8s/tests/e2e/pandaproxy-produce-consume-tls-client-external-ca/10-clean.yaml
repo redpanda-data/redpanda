@@ -13,25 +13,55 @@ delete:
     kind: Job
     name: create-test-topic-pp-ext-mtls
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-test-topic-pp-ext-mtls
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: produce-message-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: produce-message-pp-ext-mtls
     namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: consume-message-pp-ext-mtls
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: consume-message-pp-ext-mtls
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-topic-test-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-topic-test-pp-ext-mtls
     namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-topic-test-updated-ca-pp-ext-mtls
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-topic-test-updated-ca-pp-ext-mtls
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-topic-test-untrusted-ca-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-topic-test-untrusted-ca-pp-ext-mtls
     namespace: redpanda-system
   - apiVersion: v1
     kind: Secret

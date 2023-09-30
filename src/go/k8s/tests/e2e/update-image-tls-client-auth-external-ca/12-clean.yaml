@@ -17,27 +17,62 @@ delete:
     kind: Job
     name: create-schema-update-img-external-client-ca
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-schema-update-img-external-client-ca
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: create-topic-update-img-external-client-ca
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-topic-update-img-external-client-ca
     namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-schema-update-img-external-client-ca
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-schema-update-img-external-client-ca
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: produce-msg-update-img-external-client-ca
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: produce-msg-update-img-external-client-ca
     namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-topic-failure-update-img-external-client-ca
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-topic-failure-update-img-external-client-ca
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-schema-failure-update-img-external-client-ca
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-schema-failure-update-img-external-client-ca
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: call-console-update-img-external-client-ca
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: call-console-update-img-external-client-ca
     namespace: redpanda-system

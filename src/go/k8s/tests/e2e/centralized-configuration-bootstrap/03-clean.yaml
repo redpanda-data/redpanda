@@ -17,7 +17,17 @@ delete:
     kind: Job
     name: get-centralized-config-bootstrap-1
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-centralized-config-bootstrap-1
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-centralized-config-bootstrap-2
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-centralized-config-bootstrap-2
     namespace: redpanda-system
