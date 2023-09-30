@@ -42,6 +42,10 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
                              **kwargs)
         self.rpk = RpkTool(self.redpanda)
 
+    @property
+    def timeout_sec(self):
+        return 45 if not self.debug_mode else 90
+
     def get_offsets(self, group_name):
         offsets = {}
 
@@ -51,7 +55,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
         gd = wait_until_result(
             do_describe,
-            timeout_sec=30,
+            timeout_sec=self.timeout_sec,
             backoff_sec=0.5,
             err_msg="RPK failed to get consumer group offsets",
             retry_on_exc=True)
@@ -79,7 +83,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
 
         group_list_res = wait_until_result(
             do_list_groups,
-            timeout_sec=30,
+            timeout_sec=self.timeout_sec,
             backoff_sec=0.5,
             err_msg="RPK failed to list consumer groups",
             retry_on_exc=True)
@@ -117,7 +121,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
         producer.start(clean=False)
 
         wait_until(lambda: producer.produce_status.acked > 10,
-                   timeout_sec=30,
+                   timeout_sec=self.timeout_sec,
                    backoff_sec=0.5)
 
         consumer = KgoVerifierConsumerGroupConsumer(
