@@ -187,7 +187,9 @@ void scrub_segment_meta(
       previous && previous->delta_offset != model::offset_delta{}
       && current.delta_offset == model::offset_delta{}) {
         detected.insert(anomaly_meta{
-          .type = anomaly_type::missing_delta, .previous = previous});
+          .type = anomaly_type::missing_delta,
+          .at = current,
+          .previous = previous});
     }
 
     // The delta offset field of a segment should always be greater or
