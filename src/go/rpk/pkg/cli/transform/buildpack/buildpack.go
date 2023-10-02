@@ -142,7 +142,7 @@ type Downloader interface {
 
 // HTTPDownloader downloads a buildpack over HTTP.
 type HTTPDownloader struct {
-	Client httpapi.Client
+	Client *httpapi.Client
 }
 
 // Download implements the Downloader interface for HTTPDownloader.
