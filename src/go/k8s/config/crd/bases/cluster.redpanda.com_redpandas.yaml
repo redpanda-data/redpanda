@@ -193,6 +193,21 @@ spec:
                         - create
                         type: object
                     type: object
+                  enterprise:
+                    description: Enterprise represents license data
+                    properties:
+                      license:
+                        type: string
+                      licenseSecretRef:
+                        description: EnterpriseLicenseSecretRef is the secret used
+                          in the Enterprise struct
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        type: object
+                    type: object
                   external:
                     description: External is a top level field of the values file
                     properties:
@@ -200,17 +215,32 @@ spec:
                         items:
                           type: string
                         type: array
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
                       domain:
                         type: string
                       enabled:
                         type: boolean
-                      externalDNS:
+                      externalDns:
                         properties:
                           enabled:
                             type: boolean
                         required:
                         - enabled
                         type: object
+                      service:
+                        description: ExternalService allows you to enable or disable
+                          creation of external service type
+                        properties:
+                          enabled:
+                            type: boolean
+                        type: object
+                      sourceRanges:
+                        items:
+                          type: string
+                        type: array
                       type:
                         type: string
                     type: object
@@ -241,10 +271,10 @@ spec:
                       type: object
                     type: array
                   license_key:
+                    description: 'Deprecated: Use `Enterprise.LicenseKey` instead.'
                     type: string
                   license_secret_ref:
-                    description: LicenseSecretRef is a top level field of the values
-                      file
+                    description: 'Deprecated: Use `Enterprise.LicenseSecretRef` instead.'
                     properties:
                       secret_key:
                         type: string
@@ -2697,7 +2727,6 @@ spec:
                           storageClass:
                             type: string
                         required:
-                        - annotations
                         - enabled
                         - labels
                         - storageClass
