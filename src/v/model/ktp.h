@@ -122,6 +122,11 @@ public:
     }
 
     /**
+     * An explicit conversion operator of `as_tn_view`.
+     */
+    explicit operator topic_namespace_view() const { return as_tn_view(); }
+
+    /**
      * @brief Return a topic partition view corresponding to this object.
      *
      * Return a topic_partition_view over this object's topic and partition.
