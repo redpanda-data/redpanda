@@ -11,6 +11,7 @@
 
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
+#include "model/record_batch_reader.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
@@ -53,6 +54,9 @@ private:
       model::any_ntp auto,
       ss::chunked_fifo<model::record_batch>,
       model::timeout_clock::duration);
+
+    ss::future<result<iobuf, cluster::errc>> consume_wasm_binary_reader(
+      model::record_batch_reader, model::timeout_clock::duration);
 
     std::unique_ptr<topic_metadata_cache> _metadata_cache;
     std::unique_ptr<partition_manager> _partition_manager;

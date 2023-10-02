@@ -24,7 +24,9 @@
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
+#include "storage/types.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/serde.h"
 #include "utils/uuid.h"
@@ -207,9 +209,70 @@ ss::future<cluster::errc> local_service::delete_wasm_binary(
     co_return r.has_error() ? r.error() : cluster::errc::success;
 }
 
+ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
+  model::offset offset, model::timeout_clock::duration timeout) {
+    auto shard = _partition_manager->shard_owner(
+      model::wasm_binaries_internal_ntp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+    iobuf data;
+    auto ec = co_await _partition_manager->invoke_on_shard(
+      *shard,
+      model::wasm_binaries_internal_ntp,
+      [this, offset, timeout, &data](
+        kafka::partition_proxy* partition) mutable {
+          storage::log_reader_config reader_config(
+            /*start_offset=*/offset,
+            /*max_offset=*/model::next_offset(offset),
+            /*min_bytes=*/0,
+            /*max_bytes=*/1,
+            // TODO: a custom read priority
+            /*prio=*/kafka_read_priority(),
+            /*type_filter=*/std::nullopt,
+            /*time=*/std::nullopt,
+            /*as=*/std::nullopt);
+          model::timeout_clock::time_point deadline
+            = model::timeout_clock::now() + timeout;
+          return partition->make_reader(reader_config, deadline)
+            .then([this, timeout](storage::translating_reader rdr) {
+                return consume_wasm_binary_reader(
+                  std::move(rdr.reader), timeout);
+            })
+            .then([&data](result<iobuf, cluster::errc> r) {
+                if (r.has_error()) {
+                    return r.error();
+                }
+                data = std::move(r).value();
+                return cluster::errc::success;
+            });
+      });
+    if (ec != cluster::errc::success) {
+        co_return ec;
+    }
+    co_return data;
+}
+
 ss::future<result<iobuf, cluster::errc>>
-local_service::load_wasm_binary(model::offset, model::timeout_clock::duration) {
-    throw std::runtime_error("unimplemented");
+local_service::consume_wasm_binary_reader(
+  model::record_batch_reader rdr, model::timeout_clock::duration timeout) {
+    model::timeout_clock::time_point deadline = model::timeout_clock::now()
+                                                + timeout;
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(rdr), deadline);
+    if (batches.empty()) {
+        co_return cluster::errc::invalid_request;
+    }
+    auto& batch = batches.front();
+    auto records = batch.copy_records();
+    if (records.empty()) {
+        co_return cluster::errc::invalid_request;
+    }
+    iobuf data = records.front().release_value();
+    if (data.empty()) {
+        co_return cluster::errc::invalid_request;
+    }
+    co_return data;
 }
 
 ss::future<produce_reply>
