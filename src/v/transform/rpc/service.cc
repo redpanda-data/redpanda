@@ -135,6 +135,21 @@ ss::future<transformed_topic_data_result> local_service::produce(
     co_return transformed_topic_data_result(data.tp, ec);
 }
 
+ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+local_service::store_wasm_binary(iobuf, model::timeout_clock::duration) {
+    throw std::runtime_error("unimplemented");
+}
+
+ss::future<cluster::errc>
+local_service::delete_wasm_binary(uuid_t, model::timeout_clock::duration) {
+    throw std::runtime_error("unimplemented");
+}
+
+ss::future<result<iobuf, cluster::errc>>
+local_service::load_wasm_binary(model::offset, model::timeout_clock::duration) {
+    throw std::runtime_error("unimplemented");
+}
+
 ss::future<produce_reply>
 network_service::produce(produce_request&& req, ::rpc::streaming_context&) {
     auto results = co_await _service->local().produce(
@@ -142,4 +157,31 @@ network_service::produce(produce_request&& req, ::rpc::streaming_context&) {
     co_return produce_reply(std::move(results));
 }
 
+ss::future<delete_wasm_binary_reply> network_service::delete_wasm_binary(
+  delete_wasm_binary_request&& req, ::rpc::streaming_context&) {
+    auto results = co_await _service->local().delete_wasm_binary(
+      req.key, req.timeout);
+    co_return delete_wasm_binary_reply(results);
+}
+
+ss::future<load_wasm_binary_reply> network_service::load_wasm_binary(
+  load_wasm_binary_request&& req, ::rpc::streaming_context&) {
+    auto results = co_await _service->local().load_wasm_binary(
+      req.offset, req.timeout);
+    if (results.has_error()) {
+        co_return load_wasm_binary_reply(results.error(), {});
+    }
+    co_return load_wasm_binary_reply(
+      cluster::errc::success, std::move(results.value()));
+}
+
+ss::future<store_wasm_binary_reply> network_service::store_wasm_binary(
+  store_wasm_binary_request&& req, ::rpc::streaming_context&) {
+    auto results = co_await _service->local().store_wasm_binary(
+      std::move(req.data), req.timeout);
+    if (results.has_error()) {
+        co_return store_wasm_binary_reply(results.error(), {});
+    }
+    co_return store_wasm_binary_reply(cluster::errc::success, results.value());
+}
 } // namespace transform::rpc

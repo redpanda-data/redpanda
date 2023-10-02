@@ -23,7 +23,7 @@ namespace transform::rpc {
 
 /**
  * A per core sharded service that handles custom data path requests for data
- * transforms.
+ * transforms and storage of wasm binaries.
  */
 class local_service {
 public:
@@ -34,6 +34,15 @@ public:
     ss::future<ss::chunked_fifo<transformed_topic_data_result>> produce(
       ss::chunked_fifo<transformed_topic_data> topic_data,
       model::timeout_clock::duration timeout);
+
+    ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+    store_wasm_binary(iobuf, model::timeout_clock::duration timeout);
+
+    ss::future<cluster::errc>
+    delete_wasm_binary(uuid_t key, model::timeout_clock::duration timeout);
+
+    ss::future<result<iobuf, cluster::errc>>
+    load_wasm_binary(model::offset, model::timeout_clock::duration timeout);
 
 private:
     ss::future<transformed_topic_data_result>
@@ -57,6 +66,15 @@ public:
 
     ss::future<produce_reply>
     produce(produce_request&&, ::rpc::streaming_context&) override;
+
+    ss::future<store_wasm_binary_reply> store_wasm_binary(
+      store_wasm_binary_request&&, ::rpc::streaming_context&) override;
+
+    ss::future<load_wasm_binary_reply> load_wasm_binary(
+      load_wasm_binary_request&&, ::rpc::streaming_context&) override;
+
+    ss::future<delete_wasm_binary_reply> delete_wasm_binary(
+      delete_wasm_binary_request&&, ::rpc::streaming_context&) override;
 
 private:
     ss::sharded<local_service>* _service;
