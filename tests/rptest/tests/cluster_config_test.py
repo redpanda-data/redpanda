@@ -1406,7 +1406,7 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         self.redpanda.set_extra_rp_conf(
             {prop_set.aliased_name: prop_set.test_values[0]})
         self.redpanda.start()
-        # self._check_value_everywhere(prop_set.primary_name, prop_set.values[0])
+        self._check_value_everywhere(prop_set.primary_name, prop_set.test_values[0])
 
         # The configuration schema should include aliases
         schema = self.admin.get_cluster_config_schema()['properties']
