@@ -9,6 +9,21 @@
             "name": "produce",
             "input_type": "produce_request",
             "output_type": "produce_reply"
+        },
+        {
+            "name": "store_wasm_binary",
+            "input_type": "store_wasm_binary_request",
+            "output_type": "store_wasm_binary_reply"
+        },
+        {
+            "name": "load_wasm_binary",
+            "input_type": "load_wasm_binary_request",
+            "output_type": "load_wasm_binary_reply"
+        },
+        {
+            "name": "delete_wasm_binary",
+            "input_type": "delete_wasm_binary_request",
+            "output_type": "delete_wasm_binary_reply"
         }
     ]
 }

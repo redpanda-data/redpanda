@@ -15,6 +15,7 @@
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "serde/envelope.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
@@ -92,4 +93,131 @@ struct produce_reply
     ss::chunked_fifo<transformed_topic_data_result> results;
 };
 
+struct store_wasm_binary_request
+  : serde::envelope<
+      store_wasm_binary_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    store_wasm_binary_request() = default;
+    explicit store_wasm_binary_request(
+      iobuf d, model::timeout_clock::duration t)
+      : data(std::move(d))
+      , timeout(t) {}
+
+    auto serde_fields() { return std::tie(data, timeout); }
+
+    iobuf data;
+    model::timeout_clock::duration timeout{};
+};
+
+struct stored_wasm_binary_metadata
+  : serde::envelope<
+      stored_wasm_binary_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    stored_wasm_binary_metadata() = default;
+    stored_wasm_binary_metadata(uuid_t k, model::offset o)
+      : key(k)
+      , offset(o){};
+
+    auto serde_fields() { return std::tie(key, offset); }
+
+    uuid_t key{};
+    model::offset offset;
+};
+
+struct store_wasm_binary_reply
+  : serde::envelope<
+      store_wasm_binary_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    store_wasm_binary_reply() = default;
+    explicit store_wasm_binary_reply(
+      cluster::errc e, stored_wasm_binary_metadata s)
+      : ec(e)
+      , stored(s) {}
+
+    auto serde_fields() { return std::tie(ec, stored); }
+
+    cluster::errc ec = cluster::errc::success;
+    stored_wasm_binary_metadata stored;
+};
+
+struct delete_wasm_binary_request
+  : serde::envelope<
+      delete_wasm_binary_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    delete_wasm_binary_request() = default;
+    explicit delete_wasm_binary_request(
+      uuid_t k, model::timeout_clock::duration t)
+      : key(k)
+      , timeout(t) {}
+
+    auto serde_fields() { return std::tie(key, timeout); }
+
+    uuid_t key{};
+    model::timeout_clock::duration timeout{};
+};
+
+struct delete_wasm_binary_reply
+  : serde::envelope<
+      store_wasm_binary_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    delete_wasm_binary_reply() = default;
+    explicit delete_wasm_binary_reply(cluster::errc e)
+      : ec(e) {}
+
+    auto serde_fields() { return std::tie(ec); }
+
+    cluster::errc ec = cluster::errc::success;
+};
+
+struct load_wasm_binary_request
+  : serde::envelope<
+      store_wasm_binary_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    load_wasm_binary_request() = default;
+    explicit load_wasm_binary_request(
+      model::offset o, model::timeout_clock::duration t)
+      : offset(o)
+      , timeout(t) {}
+
+    auto serde_fields() { return std::tie(offset, timeout); }
+
+    model::offset offset;
+    model::timeout_clock::duration timeout{};
+};
+
+struct load_wasm_binary_reply
+  : serde::envelope<
+      store_wasm_binary_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    load_wasm_binary_reply() = default;
+    explicit load_wasm_binary_reply(cluster::errc e, iobuf b)
+      : ec(e)
+      , data(std::move(b)) {}
+
+    auto serde_fields() { return std::tie(ec, data); }
+
+    cluster::errc ec = cluster::errc::success;
+    iobuf data;
+};
 } // namespace transform::rpc
