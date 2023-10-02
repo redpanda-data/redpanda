@@ -194,6 +194,21 @@ public:
         return result;
     }
 
+    std::set<std::string_view> property_aliases() const {
+        std::set<std::string_view> result;
+        for (const auto& i : _aliases) {
+            result.insert(i.first);
+        }
+
+        return result;
+    }
+
+    std::set<std::string_view> property_names_and_aliases() const {
+        auto all = property_names();
+        all.merge(property_aliases());
+        return all;
+    }
+
     friend std::ostream&
     operator<<(std::ostream& o, const config::config_store& c) {
         o << "{ ";
