@@ -15,6 +15,7 @@
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
 #include <memory>
@@ -47,6 +48,11 @@ public:
 private:
     ss::future<transformed_topic_data_result>
       produce(transformed_topic_data, model::timeout_clock::duration);
+
+    ss::future<result<model::offset, cluster::errc>> produce(
+      model::any_ntp auto,
+      ss::chunked_fifo<model::record_batch>,
+      model::timeout_clock::duration);
 
     std::unique_ptr<topic_metadata_cache> _metadata_cache;
     std::unique_ptr<partition_manager> _partition_manager;

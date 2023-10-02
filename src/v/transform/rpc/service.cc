@@ -94,45 +94,57 @@ local_service::produce(
 ss::future<transformed_topic_data_result> local_service::produce(
   transformed_topic_data data, model::timeout_clock::duration timeout) {
     auto ktp = model::ktp(data.tp.topic, data.tp.partition);
-    auto shard = _partition_manager->shard_owner(ktp);
+    auto result = co_await produce(ktp, std::move(data.batches), timeout);
+    auto ec = result.has_error() ? result.error() : cluster::errc::success;
+    co_return transformed_topic_data_result(data.tp, ec);
+}
+
+ss::future<result<model::offset, cluster::errc>> local_service::produce(
+  model::any_ntp auto ntp,
+  ss::chunked_fifo<model::record_batch> batches,
+  model::timeout_clock::duration timeout) {
+    auto shard = _partition_manager->shard_owner(ntp);
     if (!shard) {
-        co_return transformed_topic_data_result(
-          data.tp, cluster::errc::not_leader);
+        co_return cluster::errc::not_leader;
     }
 
-    auto topic_cfg = _metadata_cache->find_topic_cfg(ktp.as_tn_view());
+    auto topic_cfg = _metadata_cache->find_topic_cfg(
+      model::topic_namespace_view(ntp));
     if (!topic_cfg) {
-        co_return transformed_topic_data_result(
-          data.tp, cluster::errc::topic_not_exists);
+        co_return cluster::errc::topic_not_exists;
     }
     // TODO: More validation of the batches, such as null record rejection and
     // crc checks.
     uint32_t max_batch_size = topic_cfg->properties.batch_max_bytes.value_or(
       _metadata_cache->get_default_batch_max_bytes());
-    for (const auto& batch : data.batches) {
+    for (const auto& batch : batches) {
         if (uint32_t(batch.size_bytes()) > max_batch_size) [[unlikely]] {
-            co_return transformed_topic_data_result(
-              data.tp, cluster::errc::invalid_request);
+            co_return cluster::errc::invalid_request;
         }
     }
     auto rdr = model::make_foreign_fragmented_memory_record_batch_reader(
-      std::move(data.batches));
+      std::move(batches));
     // TODO: schema validation
+    model::offset produced_offset;
     auto ec = co_await _partition_manager->invoke_on_shard(
       *shard,
-      ktp,
-      [timeout, r = std::move(rdr)](kafka::partition_proxy* partition) mutable {
+      ntp,
+      [timeout, r = std::move(rdr), &produced_offset](
+        kafka::partition_proxy* partition) mutable {
           return partition
             ->replicate(std::move(r), make_replicate_options(timeout))
-            .then([](result<model::offset> result) {
-                if (result.has_error()) {
-                    return map_errc(result.assume_error());
+            .then([&produced_offset](result<model::offset> r) {
+                if (r.has_error()) {
+                    return map_errc(r.assume_error());
                 }
+                produced_offset = r.value();
                 return cluster::errc::success;
             });
       });
-
-    co_return transformed_topic_data_result(data.tp, ec);
+    if (ec == cluster::errc::success) {
+        co_return produced_offset;
+    }
+    co_return ec;
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
