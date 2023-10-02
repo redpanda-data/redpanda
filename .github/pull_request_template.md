@@ -1,5 +1,5 @@
 <!--
-See https://github.com/redpanda-data/redpanda/blob/dev/CONTRIBUTING.md##pull-request-body
+See https://github.com/redpanda-data/redpanda/blob/dev/CONTRIBUTING.md#pull-request-body
 for more details and examples of what is expected in a PR body.
 
 Content in this top section is REQUIRED. Describe, in plain language, the motivation
