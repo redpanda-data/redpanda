@@ -193,9 +193,18 @@ local_service::store_wasm_binary(
     co_return result(stored_wasm_binary_metadata(key, r.value()));
 }
 
-ss::future<cluster::errc>
-local_service::delete_wasm_binary(uuid_t, model::timeout_clock::duration) {
-    throw std::runtime_error("unimplemented");
+ss::future<cluster::errc> local_service::delete_wasm_binary(
+  uuid_t key, model::timeout_clock::duration timeout) {
+    storage::record_batch_builder b(
+      model::record_batch_type::raft_data, model::offset(0));
+    std::vector<model::record_header> headers;
+    headers.push_back(make_header("state", "tombstone"));
+    b.add_raw_kw(make_iobuf(key), std::nullopt, std::move(headers));
+    ss::chunked_fifo<model::record_batch> batches;
+    batches.push_back(std::move(b).build());
+    auto r = co_await produce(
+      model::wasm_binaries_internal_ntp, std::move(batches), timeout);
+    co_return r.has_error() ? r.error() : cluster::errc::success;
 }
 
 ss::future<result<iobuf, cluster::errc>>
