@@ -5,6 +5,7 @@ metadata:
   name: topic-test
 spec:
   chartRef:
+    timeout: 1m
     chartVersion: "5.3.3"
   clusterSpec:
     statefulset:

@@ -5,6 +5,7 @@ metadata:
   name: values-check
 spec:
   chartRef:
+    timeout: 1m
     chartVersion: "5.3.2"
   clusterSpec:
     statefulset:
