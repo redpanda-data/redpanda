@@ -31,6 +31,7 @@ from rptest.services.redpanda import SISettings
 from rptest.utils.si_utils import BucketView, NTP
 
 TEST_TOPIC_NAME = "test-topic-1"
+TEST_COMPACTED_TOPIC_NAME = "test-topic-2-compact"
 
 
 class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
@@ -47,6 +48,11 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
                   replication_factor=3,
                   retention_bytes=-1,
                   cleanup_policy=TopicSpec.CLEANUP_DELETE),
+        TopicSpec(name=TEST_COMPACTED_TOPIC_NAME,
+                  partition_count=1,
+                  replication_factor=3,
+                  retention_bytes=-1,
+                  cleanup_policy=TopicSpec.CLEANUP_COMPACT),
     ]
 
     def __init__(self, test_context):
@@ -501,6 +507,23 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         assert low_watermark == 1
         topic_info = self.get_topic_info(TEST_TOPIC_NAME)
         assert topic_info.high_watermark == 1
+
+    @cluster(num_nodes=3)
+    @parametrize(cloud_storage_enabled=True)
+    @parametrize(cloud_storage_enabled=False)
+    def test_delete_records_compacted_topic(self, cloud_storage_enabled):
+        """
+        Tests that it is not allowed to delete records from a topic with cleanup.policy=compact
+        """
+        self._start(cloud_storage_enabled, start_with_data=False)
+
+        with expect_exception(
+                RpkException,
+                lambda e:
+                "Request parameters do not satisfy the configured policy" in
+                str(e),
+        ):
+            self.rpk.trim_prefix(TEST_COMPACTED_TOPIC_NAME, 0, [0])
 
     @cluster(num_nodes=3)
     @parametrize(cloud_storage_enabled=True)
