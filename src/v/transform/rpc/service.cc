@@ -18,12 +18,16 @@
 #include "kafka/server/partition_proxy.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "storage/record_batch_builder.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/serde.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
@@ -33,16 +37,19 @@
 #include <algorithm>
 #include <iterator>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace transform::rpc {
 namespace {
+
 raft::replicate_options
 make_replicate_options(model::timeout_clock::duration timeout) {
     return {
       raft::consistency_level::quorum_ack,
       std::chrono::duration_cast<std::chrono::milliseconds>(timeout)};
 }
+
 cluster::errc map_errc(std::error_code ec) {
     if (ec.category() == cluster::error_category()) {
         return static_cast<cluster::errc>(ec.value());
@@ -58,6 +65,25 @@ cluster::errc map_errc(std::error_code ec) {
         }
     }
     return cluster::errc::replication_error;
+}
+
+iobuf make_iobuf(ss::sstring str) {
+    iobuf b;
+    b.append(str.data(), str.size());
+    return b;
+}
+
+iobuf make_iobuf(uuid_t uuid) {
+    iobuf b;
+    b.append(uuid.mutable_uuid().begin(), uuid.length);
+    return b;
+}
+model::record_header make_header(ss::sstring k, ss::sstring v) {
+    auto key = make_iobuf(std::move(k));
+    auto ks = int32_t(key.size_bytes());
+    auto value = make_iobuf(std::move(v));
+    auto vs = int32_t(value.size_bytes());
+    return {ks, std::move(key), vs, std::move(value)};
 }
 } // namespace
 
@@ -148,8 +174,23 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
-local_service::store_wasm_binary(iobuf, model::timeout_clock::duration) {
-    throw std::runtime_error("unimplemented");
+local_service::store_wasm_binary(
+  iobuf data, model::timeout_clock::duration timeout) {
+    uuid_t key = uuid_t::create();
+    storage::record_batch_builder b(
+      model::record_batch_type::raft_data, model::offset(0));
+    std::vector<model::record_header> headers;
+    headers.push_back(make_header("state", "live"));
+    b.add_raw_kw(make_iobuf(key), std::move(data), std::move(headers));
+    ss::chunked_fifo<model::record_batch> batches;
+    batches.push_back(std::move(b).build());
+    auto r = co_await produce(
+      model::wasm_binaries_internal_ntp, std::move(batches), timeout);
+    using result = result<stored_wasm_binary_metadata, cluster::errc>;
+    if (r.has_error()) {
+        co_return result(r.error());
+    }
+    co_return result(stored_wasm_binary_metadata(key, r.value()));
 }
 
 ss::future<cluster::errc>
