@@ -55,3 +55,11 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map
   LABELS utils
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME seastar_histogram
+  SOURCES seastar_histogram_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::utils
+  LABELS utils
+)

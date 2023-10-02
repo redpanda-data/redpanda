@@ -96,7 +96,7 @@ public:
               prometheus_sanitize::metrics_name("internal_rpc"),
               {sm::make_histogram(
                 "latency",
-                [this] { return _methods[{{loop.index-1}}].probes.latency_hist().seastar_histogram_logform(); },
+                [this] { return _methods[{{loop.index-1}}].probes.latency_hist().internal_histogram_logform(); },
                 sm::description("Internal RPC service latency"),
                 labels)
                 .aggregate(aggregate_labels)});

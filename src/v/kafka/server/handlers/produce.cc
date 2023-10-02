@@ -404,7 +404,7 @@ static partition_produce_stages produce_topic_partition(
                   auto dur = std::chrono::steady_clock::now() - start;
                   octx.rctx.connection()->server().update_produce_latency(dur);
               } else {
-                  m->set_trace(false);
+                  m->cancel();
               }
               return p;
           });
