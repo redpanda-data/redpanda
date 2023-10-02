@@ -73,6 +73,7 @@ enum class errc : int16_t {
     transform_invalid_create,
     transform_invalid_source,
     transform_invalid_environment,
+    trackable_keys_limit_exceeded,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -211,6 +212,8 @@ struct errc_category final : public std::error_category {
             return "Invalid create transform configuration";
         case errc::transform_invalid_environment:
             return "Invalid transform environment";
+        case errc::trackable_keys_limit_exceeded:
+            return "Too many keys are currently tracked, no space for more.";
         }
         return "cluster::errc::unknown";
     }
