@@ -4,14 +4,14 @@ kind: Redpanda
 metadata:
   finalizers:
     - operator.redpanda.com/finalizer
-  name: redpanda
+  name: decommission
 status:
   conditions:
     - message: Redpanda reconciliation succeeded
       reason: RedpandaClusterDeployed
       status: "True"
       type: Ready
-  helmRelease: redpanda
+  helmRelease: decommission
   helmReleaseReady: true
   helmRepository: redpanda-repository
   helmRepositoryReady: true
@@ -20,7 +20,7 @@ status:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: redpanda
+  name: decommission
 status:
   availableReplicas: 5
   collisionCount: 0
@@ -33,7 +33,7 @@ status:
 apiVersion: helm.toolkit.fluxcd.io/v2beta1
 kind: HelmRelease
 metadata:
-  name: redpanda
+  name: decommission
 status:
   conditions:
     - message: Release reconciliation succeeded
@@ -44,7 +44,7 @@ status:
       reason: InstallSucceeded
       status: "True"
       type: Released
-  helmChart: redpanda/redpanda-redpanda
+  helmChart: redpanda/redpanda-decommission
   lastAppliedRevision: 5.3.2
   lastAttemptedRevision: 5.3.2
 ---

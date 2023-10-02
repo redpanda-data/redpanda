@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: redpanda
+  name: node-deleted
 status:
   availableReplicas: 3
   collisionCount: 0
