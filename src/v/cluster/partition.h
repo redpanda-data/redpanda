@@ -321,6 +321,10 @@ public:
     ss::future<std::vector<rm_stm::tx_range>>
     aborted_transactions_cloud(const cloud_storage::offset_range& offsets);
 
+    model::producer_id highest_producer_id() {
+        return _rm_stm->highest_producer_id();
+    }
+
     const ss::shared_ptr<cluster::archival_metadata_stm>&
     archival_meta_stm() const {
         return _archival_meta_stm;

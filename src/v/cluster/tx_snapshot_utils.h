@@ -125,6 +125,7 @@ struct tx_snapshot {
 
     fragmented_vector<tx_data_snapshot> tx_data;
     fragmented_vector<expiration_snapshot> expiration;
+    model::producer_id highest_producer_id{};
 
     bool operator==(const tx_snapshot&) const = default;
 };

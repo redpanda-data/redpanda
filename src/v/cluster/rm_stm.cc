@@ -1449,6 +1449,10 @@ rm_stm::aborted_transactions(model::offset from, model::offset to) {
       });
 }
 
+model::producer_id rm_stm::highest_producer_id() const {
+    return _highest_producer_id;
+}
+
 ss::future<fragmented_vector<rm_stm::tx_range>>
 rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
     fragmented_vector<rm_stm::tx_range> result;
@@ -1779,6 +1783,8 @@ void rm_stm::try_arm(time_point_type deadline) {
 void rm_stm::apply_fence(model::record_batch&& b) {
     auto batch_data = read_fence_batch(std::move(b));
 
+    _highest_producer_id = std::max(
+      _highest_producer_id, batch_data.bid.pid.get_id());
     auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
       batch_data.bid.pid.get_id(), batch_data.bid.pid.get_epoch());
     // using less-or-equal to update tx_seqs on every transaction
@@ -1824,6 +1830,7 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
 
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
+    _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
     _log_state.prepared.try_emplace(pid, prepare);
     _mem_state.expected.erase(pid);
     _mem_state.preparing.erase(pid);
@@ -1836,6 +1843,7 @@ ss::future<> rm_stm::apply_control(
     // manager already decided a tx's outcome and acked it to the client
 
     if (crt == model::control_record_type::tx_abort) {
+        _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
         _log_state.prepared.erase(pid);
         _log_state.current_txes.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
@@ -1856,6 +1864,7 @@ ss::future<> rm_stm::apply_control(
               _gate, [this] { return reduce_aborted_list(); });
         }
     } else if (crt == model::control_record_type::tx_commit) {
+        _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
         _log_state.prepared.erase(pid);
         _log_state.current_txes.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
@@ -1885,6 +1894,7 @@ ss::future<> rm_stm::reduce_aborted_list() {
 
 void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     if (bid.has_idempotent()) {
+        _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
         auto kafka_offset = from_log_offset(last_offset);
         auto producer = maybe_create_producer(bid.pid);
         producer->update(bid, kafka_offset);
@@ -1994,6 +2004,8 @@ rm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
          it++) {
         _log_state.aborted.push_back(*it);
     }
+    _highest_producer_id = std::max(
+      data.highest_producer_id, _highest_producer_id);
     co_await ss::max_concurrent_for_each(
       data.abort_indexes, 32, [this](const abort_index& idx) -> ss::future<> {
           auto f_name = abort_idx_name(idx.first, idx.last);
@@ -2250,6 +2262,7 @@ ss::future<stm_snapshot> rm_stm::do_take_local_snapshot(uint8_t version) {
                       tx_ss.expiration.push_back(expiration_snapshot{
                         .pid = entry.first, .timeout = entry.second.timeout});
                   }
+                  tx_ss.highest_producer_id = _highest_producer_id;
 
                   fut_serialize = reflection::async_adl<tx_snapshot>{}.to(
                     tx_ss_buf, std::move(tx_ss));

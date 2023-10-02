@@ -131,6 +131,14 @@ public:
     ss::future<fragmented_vector<rm_stm::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
+    /**
+     * Returns highest producer ID of any batch that has been applied to this
+     * partition. Note that the corresponding transactions may or may not have
+     * been committed or aborted; the only certainty of this ID is that it has
+     * been used.
+     */
+    model::producer_id highest_producer_id() const;
+
     model::offset max_collectible_offset() override {
         const auto lso = last_stable_offset();
         if (lso < model::offset{0}) {
@@ -633,6 +641,9 @@ private:
     metrics::internal_metric_groups _metrics;
     ss::abort_source _as;
     ss::gate _gate;
+    // Highest producer ID applied to this stm.
+    model::producer_id _highest_producer_id;
+
     friend struct ::rm_stm_test_fixture;
 };
 
