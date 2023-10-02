@@ -11,15 +11,22 @@
 
 #include "transform/rpc/deps.h"
 
+#include "cluster/controller.h"
 #include "cluster/fwd.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "cluster/topics_frontend.h"
+#include "cluster/types.h"
+#include "config/configuration.h"
 #include "kafka/server/partition_proxy.h"
 #include "model/ktp.h"
+#include "transform/rpc/logger.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
+
+#include <memory>
 
 namespace transform::rpc {
 
@@ -111,6 +118,40 @@ private:
     ss::sharded<cluster::shard_table>* _table;
     ss::sharded<cluster::partition_manager>* _manager;
 };
+
+class topic_creator_impl : public topic_creator {
+public:
+    explicit topic_creator_impl(cluster::controller* controller)
+      : _controller(controller) {}
+
+    ss::future<cluster::errc> create_topic(
+      model::topic_namespace_view tp_ns,
+      int32_t partition_count,
+      cluster::topic_properties properties) final {
+        cluster::topic_configuration topic_cfg(
+          tp_ns.ns,
+          tp_ns.tp,
+          partition_count,
+          _controller->internal_topic_replication());
+        topic_cfg.properties = properties;
+
+        try {
+            auto res = co_await _controller->get_topics_frontend()
+                         .local()
+                         .autocreate_topics(
+                           {std::move(topic_cfg)},
+                           config::shard_local_cfg().create_topic_timeout_ms());
+            vassert(res.size() == 1, "expected a single result");
+            co_return res[0].ec;
+        } catch (const std::exception& ex) {
+            vlog(log.warn, "unable to create topic {}: {}", tp_ns, ex);
+            co_return cluster::errc::topic_operation_error;
+        }
+    }
+
+private:
+    cluster::controller* _controller;
+};
 } // namespace
 
 std::unique_ptr<partition_leader_cache>
@@ -141,6 +182,7 @@ std::optional<ss::shard_id>
 partition_manager::shard_owner(const model::ktp& ktp) {
     return shard_owner(ktp.to_ntp());
 }
+
 ss::future<cluster::errc> partition_manager::invoke_on_shard(
   ss::shard_id shard_id,
   const model::ktp& ktp,
@@ -148,5 +190,10 @@ ss::future<cluster::errc> partition_manager::invoke_on_shard(
     fn) {
     auto ntp = ktp.to_ntp();
     co_return co_await invoke_on_shard(shard_id, ntp, std::move(fn));
+}
+
+std::unique_ptr<topic_creator>
+topic_creator::make_default(cluster::controller* controller) {
+    return std::make_unique<topic_creator_impl>(controller);
 }
 } // namespace transform::rpc
