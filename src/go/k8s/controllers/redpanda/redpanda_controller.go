@@ -85,6 +85,31 @@ type RedpandaReconciler struct {
 // +kubebuilder:rbac:groups="monitoring.coreos.com",namespace=default,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,namespace=default,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 
+// additional k8s resources required by flux (Cluster Scope)
+// The redpanda chart requires, for rack-awareness, that we have access to cluster scope resources.
+// So for a redpanda resource to enable rack-awareness the operator requires permissions
+// at the cluster scope.
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;delete
+
+// additional K8s resources (Cluster Scope) defined in rbac.yaml for the redpanda chart (rpk-bundle)
+// The redpanda chart requires, for rack-awareness, that we have access to cluster scope resources.
+// So for a redpanda resource to enable rack-awareness the operator requires permissions
+// at the cluster scope.
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=endpoints,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=events,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=limitranges,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=pods/log,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=replicationcontrollers,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=resourcequotas,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update;patch;delete
+
 // redpanda resources
 // +kubebuilder:rbac:groups=cluster.redpanda.com,namespace=default,resources=redpandas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cluster.redpanda.com,namespace=default,resources=redpandas/status,verbs=get;update;patch
