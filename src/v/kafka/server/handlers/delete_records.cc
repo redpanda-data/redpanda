@@ -55,7 +55,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         if (cfg.is_read_replica()) {
             return false;
         }
-        /// Immitates the logic in ntp_config::is_collectible
+        /// Immitates the logic in ntp_config::is_collectable
         if (
           !cfg.properties.has_overrides()
           || !cfg.properties.cleanup_policy_bitflags) {
