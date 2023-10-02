@@ -362,7 +362,7 @@ public:
         auto fplc = std::make_unique<fake_partition_leader_cache>();
         _fplc = fplc.get();
         _client = std::make_unique<rpc::client>(
-          self_node, std::move(fplc), &_conn_cache, &_local_services);
+          self_node, std::move(fplc), nullptr, &_conn_cache, &_local_services);
     }
     void TearDown() override {
         _client->stop().get();
