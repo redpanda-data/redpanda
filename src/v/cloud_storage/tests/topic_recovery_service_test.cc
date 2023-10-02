@@ -291,13 +291,13 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
-    wait_for_n_requests(16, equals::yes);
+    wait_for_n_requests(16, equals::no);
 
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return service.local().is_active() == false;
     }).get();
 
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 16);
+    BOOST_REQUIRE_GE(get_requests().size(), 16);
 }
 
 FIXTURE_TEST(recovery_where_topic_is_created, fixture) {

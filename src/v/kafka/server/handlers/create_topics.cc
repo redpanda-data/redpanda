@@ -254,18 +254,6 @@ ss::future<response_ptr> create_topics_handler::handle(
     valid_range_end = quota_exceeded_it;
 
     auto to_create = to_cluster_type(begin, valid_range_end);
-    /**
-     * We always override cleanup policy. i.e. topic cleanup policy will
-     * stay the same even if it was changed in defaults (broker
-     * configuration) and there was no override passed by client while
-     * creating a topic. The the same policy is applied in Kafka.
-     */
-    for (auto& tp : to_create) {
-        if (!tp.cfg.properties.cleanup_policy_bitflags.has_value()) {
-            tp.cfg.properties.cleanup_policy_bitflags
-              = ctx.metadata_cache().get_default_cleanup_policy_bitflags();
-        }
-    }
 
     // Create the topics with controller on core 0
     auto c_res = co_await ctx.topics_frontend().create_topics(
