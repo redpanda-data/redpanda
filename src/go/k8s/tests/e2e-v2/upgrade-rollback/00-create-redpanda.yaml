@@ -7,5 +7,7 @@ spec:
   chartRef:
     chartVersion: "5.3.2"
   clusterSpec:
+    image:
+      tag: v23.2.3
     statefulset:
       replicas: 1
