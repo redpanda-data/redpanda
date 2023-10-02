@@ -22,9 +22,9 @@ import json
 import random
 import time
 
-#Attempts to compute the retention point for the cloud log will fail
-#after a spillover manifest is manually removed.
 SCRUBBER_LOG_ALLOW_LIST = [
+    # Attempts to compute the retention point for the cloud log will fail
+    # after a spillover manifest is manually removed.
     r"cloud_storage - .* failed to download manifest {key_not_found}",
     r"cloud_storage - .* failed to download manifest.*cloud_storage::error_outcome:2",
     r"cloud_storage - .* Failed to materialize.*cloud_storage::error_outcome:2",
@@ -32,6 +32,12 @@ SCRUBBER_LOG_ALLOW_LIST = [
     r"cloud_storage - .* Failed to compute time-based retention",
     r"cloud_storage - .* Failed to compute size-based retention",
     r"cloud_storage - .* Failed to compute retention",
+
+    # The test removes a segment from the manifest for the scrubber to detect. A reupload
+    # may be attempted somewhere after the base offset of the removed segment. The STM
+    # manifest will refuse to apply the command and log the error below.
+    r"cloud_storage - .* New replacement segment does not line up with previous segment",
+    r"cluster - .* Can't add segment:"
 ]
 
 
