@@ -12,6 +12,7 @@
 #pragma once
 
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "seastarx.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
@@ -107,5 +108,9 @@ struct transform_offsets_value
 
     auto serde_fields() { return std::tie(offset); }
 };
+
+static const model::topic transform_offsets_topic("transform_offsets");
+static const model::topic_namespace transform_offsets_nt(
+  model::kafka_internal_namespace, transform_offsets_topic);
 
 } // namespace model

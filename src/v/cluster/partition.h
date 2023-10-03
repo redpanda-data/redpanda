@@ -14,6 +14,7 @@
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
+#include "cluster/distributed_kv_stm.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
 #include "cluster/partition_probe.h"
@@ -44,6 +45,11 @@ class partition_manager;
 /// holds cluster logic that is not raft related
 /// all raft logic is proxied transparently
 class partition {
+private:
+    using transform_offsets_stm_t = cluster::distributed_kv_stm<
+      model::transform_offsets_key,
+      model::transform_offsets_value>;
+
 public:
     partition(
       consensus_ptr r,
@@ -62,7 +68,7 @@ public:
     ~partition();
 
     raft::group_id group() const { return _raft->group(); }
-    ss::future<> start();
+    ss::future<> start(std::optional<topic_configuration>);
     ss::future<> stop();
 
     /// Part of constructor that we may sometimes need to do again
@@ -263,12 +269,16 @@ public:
         return _raft->get_latest_configuration_offset();
     }
 
-    ss::shared_ptr<cluster::tx_registry_stm> tx_registry_stm() {
+    ss::shared_ptr<cluster::tx_registry_stm> tx_registry_stm() const {
         return _tx_registry_stm;
     }
 
-    ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() {
+    ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() const {
         return _id_allocator_stm;
+    }
+
+    ss::shared_ptr<transform_offsets_stm_t> transform_offsets_stm() const {
+        return _transform_offsets_stm;
     }
 
     ss::lw_shared_ptr<const storage::offset_translator_state>
@@ -460,6 +470,7 @@ private:
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
+    ss::shared_ptr<transform_offsets_stm_t> _transform_offsets_stm;
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;

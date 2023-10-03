@@ -37,6 +37,7 @@ static ss::future<consensus_ptr> create_raft0(
         std::move(initial_brokers),
         std::nullopt,
         std::nullopt,
+        std::nullopt,
         raft::with_learner_recovery_throttle::no,
         raft::keep_snapshotted_log::yes)
       .then([&st](consensus_ptr p) {

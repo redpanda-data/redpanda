@@ -30,22 +30,28 @@
 
 #include <exception>
 
-namespace cluster {
-
-static bool is_id_allocator_topic(model::ntp ntp) {
+namespace {
+bool is_id_allocator_topic(model::ntp ntp) {
     return ntp.ns == model::kafka_internal_namespace
            && ntp.tp.topic == model::id_allocator_topic;
 }
 
-static bool is_tx_manager_topic(const model::ntp& ntp) {
+bool is_tx_manager_topic(const model::ntp& ntp) {
     return ntp.ns == model::kafka_internal_namespace
            && ntp.tp.topic == model::tx_manager_topic;
 }
 
-static bool is_tx_registry_topic(const model::ntp& ntp) {
+bool is_tx_registry_topic(const model::ntp& ntp) {
     return ntp.ns == model::kafka_internal_namespace
            && ntp.tp.topic == model::tx_registry_topic;
 }
+
+bool is_transform_offsets_topic(const model::ntp& ntp) {
+    return ntp.ns == model::kafka_internal_namespace
+           && ntp.tp.topic == model::transform_offsets_topic;
+}
+}; // namespace
+namespace cluster {
 
 partition::partition(
   consensus_ptr r,
@@ -425,7 +431,7 @@ kafka_stages partition::replicate_in_stages(
       std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
-ss::future<> partition::start() {
+ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
     const auto& ntp = _raft->ntp();
     _probe.setup_metrics(ntp);
     raft::state_machine_manager_builder builder;
@@ -450,6 +456,15 @@ ss::future<> partition::start() {
           _tm_stm_cache_manager.local().get(_raft->ntp().tp.partition));
         _raft->log()->stm_manager()->add_stm(_tm_stm);
         co_return co_await _raft->start(std::move(builder));
+    }
+
+    if (is_transform_offsets_topic(_raft->ntp())) {
+        vassert(
+          topic_cfg.has_value(),
+          "No topic configuration passed, stm requires configuration for "
+          "partition count.");
+        _transform_offsets_stm = builder.create_stm<transform_offsets_stm_t>(
+          topic_cfg->partition_count, clusterlog, _raft.get());
     }
     /**
      * Data partitions

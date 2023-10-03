@@ -90,6 +90,7 @@ public:
       storage::ntp_config,
       raft::group_id,
       std::vector<model::broker>,
+      std::optional<topic_configuration> topic_config = std::nullopt,
       std::optional<remote_topic_properties> = std::nullopt,
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
       raft::with_learner_recovery_throttle
