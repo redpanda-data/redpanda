@@ -117,6 +117,11 @@ generate_no_manifests_expectations(
     return expectations;
 }
 
+bool is_manifest_list_request(const http_test_utils::request_info& req) {
+    return req.method == "GET" && req.url.starts_with("/?list-type=2&prefix=")
+           && req.url.ends_with("0000000/");
+}
+
 } // namespace
 
 class fixture
@@ -133,32 +138,32 @@ public:
     }
 
     void wait_for_topic(model::topic_namespace tp_ns) {
-        tests::cooperative_spin_wait_with_timeout(
-          10s,
-          [this, tn = std::move(tp_ns)] {
-              const auto& topics
-                = app.controller->get_topics_state().local().all_topics();
-              const auto has_topic = std::find_if(
-                                       topics.cbegin(),
-                                       topics.cend(),
-                                       [&tn](const auto& tp_ns) {
-                                           return tp_ns == tn;
-                                       })
-                                     != topics.cend();
-              return ss::make_ready_future<bool>(has_topic);
-          })
-          .get();
+        RPTEST_REQUIRE_EVENTUALLY(10s, [this, tn = std::move(tp_ns)] {
+            const auto& topics
+              = app.controller->get_topics_state().local().all_topics();
+            const auto has_topic = std::find_if(
+                                     topics.cbegin(),
+                                     topics.cend(),
+                                     [&tn](const auto& tp_ns) {
+                                         return tp_ns == tn;
+                                     })
+                                   != topics.cend();
+            return ss::make_ready_future<bool>(has_topic);
+        });
     }
 
     using equals = ss::bool_class<struct equals_tag>;
-    void wait_for_n_requests(size_t n, equals e = equals::no) {
-        tests::cooperative_spin_wait_with_timeout(10s, [this, n, e] {
-            if (e) {
-                return get_requests().size() == n;
-            } else {
-                return get_requests().size() >= n;
-            }
-        }).get();
+    void wait_for_n_requests(
+      size_t n,
+      equals e = equals::no,
+      std::optional<req_pred_t> predicate = std::nullopt) {
+        RPTEST_REQUIRE_EVENTUALLY(10s, [this, n, e, predicate] {
+            const auto matching_requests_size
+              = predicate ? get_requests(predicate.value()).size()
+                          : get_requests().size();
+            return e ? matching_requests_size == n
+                     : matching_requests_size >= n;
+        });
     }
 
     cloud_storage::init_recovery_result
@@ -217,7 +222,7 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     BOOST_REQUIRE_EQUAL(result, expected);
 
     // Wait until one request is received, to list bucket for manifest files
-    wait_for_n_requests(16, equals::yes);
+    wait_for_n_requests(16, equals::yes, is_manifest_list_request);
 
     const auto& list_topics_req = get_requests()[0];
     BOOST_REQUIRE_EQUAL(list_topics_req.url, "/?list-type=2&prefix=00000000/");
@@ -291,7 +296,7 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
-    wait_for_n_requests(16, equals::no);
+    wait_for_n_requests(16, equals::yes, is_manifest_list_request);
 
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return service.local().is_active() == false;
@@ -388,7 +393,7 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
 
     start_recovery(R"JSON({"topic_names_pattern": "abc*"})JSON");
 
-    wait_for_n_requests(16, equals::yes);
+    wait_for_n_requests(16, equals::yes, is_manifest_list_request);
 
     auto& service = app.topic_recovery_service;
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
