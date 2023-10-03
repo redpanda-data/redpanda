@@ -199,7 +199,8 @@ public:
     ss::future<bool> wait_no_throw(
       model::offset offset,
       model::timeout_clock::time_point,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      std::optional<std::reference_wrapper<ss::abort_source>>
+      = std::nullopt) noexcept;
 
 private:
     ss::future<> wait_offset_committed(
