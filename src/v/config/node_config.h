@@ -74,6 +74,10 @@ public:
     // to the configuration at `storage_failure_injection_config_path`.
     property<bool> storage_failure_injection_enabled;
 
+    // If true, start redpanda in "metadata only" mode, skipping loading
+    // user partitions and allowing only metadata operations.
+    property<bool> recovery_mode_enabled;
+
     // Path to the configuration file for low level storage failure injection.
     property<std::optional<std::filesystem::path>>
       storage_failure_injection_config_path;

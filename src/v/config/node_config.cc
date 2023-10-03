@@ -165,6 +165,13 @@ node_config::node_config() noexcept
       "for production usage.",
       {.visibility = visibility::tunable},
       false)
+  , recovery_mode_enabled(
+      *this,
+      "recovery_mode_enabled",
+      "If true, start redpanda in \"metadata only\" mode, skipping "
+      "loading user partitions and allowing only metadata operations.",
+      {.visibility = visibility::user},
+      false)
   , storage_failure_injection_config_path(
       *this,
       "storage_failure_injection_config_path",
