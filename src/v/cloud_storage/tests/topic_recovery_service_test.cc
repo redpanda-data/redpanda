@@ -138,21 +138,18 @@ public:
     }
 
     void wait_for_topic(model::topic_namespace tp_ns) {
-        tests::cooperative_spin_wait_with_timeout(
-          10s,
-          [this, tn = std::move(tp_ns)] {
-              const auto& topics
-                = app.controller->get_topics_state().local().all_topics();
-              const auto has_topic = std::find_if(
-                                       topics.cbegin(),
-                                       topics.cend(),
-                                       [&tn](const auto& tp_ns) {
-                                           return tp_ns == tn;
-                                       })
-                                     != topics.cend();
-              return ss::make_ready_future<bool>(has_topic);
-          })
-          .get();
+        RPTEST_REQUIRE_EVENTUALLY(10s, [this, tn = std::move(tp_ns)] {
+            const auto& topics
+              = app.controller->get_topics_state().local().all_topics();
+            const auto has_topic = std::find_if(
+                                     topics.cbegin(),
+                                     topics.cend(),
+                                     [&tn](const auto& tp_ns) {
+                                         return tp_ns == tn;
+                                     })
+                                   != topics.cend();
+            return ss::make_ready_future<bool>(has_topic);
+        });
     }
 
     using equals = ss::bool_class<struct equals_tag>;
@@ -160,13 +157,13 @@ public:
       size_t n,
       equals e = equals::no,
       std::optional<req_pred_t> predicate = std::nullopt) {
-        tests::cooperative_spin_wait_with_timeout(10s, [this, n, e, predicate] {
+        RPTEST_REQUIRE_EVENTUALLY(10s, [this, n, e, predicate] {
             const auto matching_requests_size
               = predicate ? get_requests(predicate.value()).size()
                           : get_requests().size();
             return e ? matching_requests_size == n
                      : matching_requests_size >= n;
-        }).get();
+        });
     }
 
     cloud_storage::init_recovery_result
