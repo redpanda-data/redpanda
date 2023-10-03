@@ -21,6 +21,7 @@
 #include "model/record.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/io_priority_class.hh>
 
@@ -113,8 +114,7 @@ public:
         add_topic({model::kafka_namespace, topic_name}, 1, props).get();
         wait_for_leader(ntp).get();
         partition = app.partition_manager.local().get(ntp).get();
-        log = dynamic_cast<storage::disk_log_impl*>(
-          partition->log().get_impl());
+        log = partition->log();
         auto archiver_ref = partition->archiver();
         BOOST_REQUIRE(archiver_ref.has_value());
         archiver = &archiver_ref.value().get();
@@ -135,7 +135,7 @@ public:
     model::topic topic_name;
     model::ntp ntp;
     cluster::partition* partition;
-    storage::disk_log_impl* log;
+    ss::shared_ptr<storage::log> log;
     archival::ntp_archiver* archiver;
 };
 
@@ -267,9 +267,7 @@ FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
                    topic_name, model::partition_id(0), model::offset(1), 5s)
                  .get();
     BOOST_CHECK_EQUAL(model::offset(1), lwm);
-    tests::cooperative_spin_wait_with_timeout(10s, [this] {
-        return log->segment_count() == 1;
-    }).get();
+    boost_require_eventually(10s, [this] { return log->segment_count() == 1; });
 
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();

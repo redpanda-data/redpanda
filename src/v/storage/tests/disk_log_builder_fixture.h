@@ -24,7 +24,7 @@ public:
 
     ss::future<log_stats> get_stats() {
         return b.consume<stat_consumer>().then([this](log_stats stats) {
-            stats.seg_count = b.get_log().segment_count();
+            stats.seg_count = b.get_log()->segment_count();
             return ss::make_ready_future<log_stats>(stats);
         });
     }

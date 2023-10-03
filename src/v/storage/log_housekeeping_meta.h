@@ -20,10 +20,10 @@ struct log_housekeeping_meta {
         none = 0,
         compacted = 1U,
     };
-    explicit log_housekeeping_meta(log l) noexcept
+    explicit log_housekeeping_meta(ss::shared_ptr<log> l) noexcept
       : handle(std::move(l)) {}
 
-    log handle;
+    ss::shared_ptr<log> handle;
     bitflags flags{bitflags::none};
     ss::lowres_clock::time_point last_compaction;
 

@@ -34,7 +34,7 @@
 
 namespace storage {
 
-class disk_log_impl final : public log::impl {
+class disk_log_impl final : public log {
 public:
     using failure_probes = storage::log_failure_probes;
 
@@ -61,7 +61,7 @@ public:
       kvstore&,
       ss::sharded<features::feature_table>& feature_table);
     ~disk_log_impl() override;
-    disk_log_impl(disk_log_impl&&) noexcept = default;
+    disk_log_impl(disk_log_impl&&) noexcept = delete;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
     disk_log_impl(const disk_log_impl&) = delete;
     disk_log_impl& operator=(const disk_log_impl&) = delete;
@@ -98,14 +98,12 @@ public:
     ss::future<> maybe_roll_unlocked(
       model::term_id, model::offset next_offset, ss::io_priority_class);
 
-    // roll immediately with the current term. users should prefer the
-    // maybe_call interface which enforces sizing policies.
-    ss::future<> force_roll(ss::io_priority_class);
+    ss::future<> force_roll(ss::io_priority_class) override;
 
-    probe& get_probe() { return *_probe; }
+    probe& get_probe() override { return *_probe; }
     model::term_id term() const;
-    segment_set& segments() { return _segs; }
-    const segment_set& segments() const { return _segs; }
+    segment_set& segments() override { return _segs; }
+    const segment_set& segments() const override { return _segs; }
     size_t bytes_left_before_roll() const;
 
     size_t size_bytes() const override { return _probe->partition_size(); }
@@ -114,7 +112,7 @@ public:
 
     int64_t compaction_backlog() const final;
 
-    ss::future<usage_report> disk_usage(gc_config);
+    ss::future<usage_report> disk_usage(gc_config) override;
 
     /*
      * Interface for disk space management (see resource_mgmt/storage.cc).
@@ -132,9 +130,10 @@ public:
      */
     auto& gate() { return _compaction_housekeeping_gate; }
     fragmented_vector<ss::lw_shared_ptr<segment>> cloud_gc_eligible_segments();
-    void set_cloud_gc_offset(model::offset);
+    void set_cloud_gc_offset(model::offset) override;
 
-    ss::future<reclaimable_offsets> get_reclaimable_offsets(gc_config cfg);
+    ss::future<reclaimable_offsets>
+    get_reclaimable_offsets(gc_config cfg) override;
 
     std::optional<ssx::semaphore_units> try_segment_roll_lock() {
         return _segments_rolling_lock.try_get_units();
@@ -143,6 +142,8 @@ public:
     ss::future<ssx::semaphore_units> segment_roll_lock() {
         return _segments_rolling_lock.get_units();
     }
+
+    size_t reclaimable_local_size_bytes() const override;
 
 private:
     friend class disk_log_appender; // for multi-term appends
@@ -293,6 +294,7 @@ private:
     mutex _segments_rolling_lock;
 
     std::optional<model::offset> _cloud_gc_offset;
+    size_t _reclaimable_local_size_bytes{0};
 };
 
 } // namespace storage

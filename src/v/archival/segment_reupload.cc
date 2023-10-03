@@ -23,7 +23,7 @@ namespace archival {
 segment_collector::segment_collector(
   model::offset begin_inclusive,
   const cloud_storage::partition_manifest& manifest,
-  const storage::disk_log_impl& log,
+  const storage::log& log,
   size_t max_uploaded_segment_size,
   std::optional<model::offset> end_inclusive)
   : _begin_inclusive(begin_inclusive)

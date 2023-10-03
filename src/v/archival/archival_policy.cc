@@ -30,22 +30,7 @@
 
 #include <utility>
 
-namespace {
-
-std::optional<storage::disk_log_impl*> get_concrete_log_impl(storage::log log) {
-    // NOTE: we need to break encapsulation here to access underlying
-    // implementation because upload policy and archival subsystem needs to
-    // access individual log segments (disk backed).
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get_impl());
-    if (plog == nullptr || plog->segment_count() == 0) {
-        return std::nullopt;
-    }
-    return plog;
-}
-
 constexpr size_t compacted_segment_size_multiplier{3};
-
-} // namespace
 
 namespace archival {
 
@@ -120,27 +105,23 @@ bool archival_policy::upload_deadline_reached() {
 archival_policy::lookup_result archival_policy::find_segment(
   model::offset start_offset,
   model::offset adjusted_lso,
-  storage::log log,
+  ss::shared_ptr<storage::log> log,
   const storage::offset_translator_state& ot_state) {
     vlog(
       archival_log.debug,
       "Upload policy for {} invoked, start offset: {}",
       _ntp,
       start_offset);
-    auto maybe_plog = get_concrete_log_impl(std::move(log));
-    if (!maybe_plog) {
+    if (log->segment_count() == 0) {
         vlog(
           archival_log.debug,
-          "Upload policy for {}: can't find candidate, no segments or "
-          "in-memory log",
+          "Upload policy for {}: can't find candidate, no segments",
           _ntp);
         return {};
     }
 
-    auto plog = maybe_plog.value();
-    const auto& set = plog->segments();
-
-    const auto& ntp_conf = plog->config();
+    const auto& set = log->segments();
+    const auto& ntp_conf = log->config();
     auto it = set.lower_bound(start_offset);
     if (it == set.end() || (*it)->finished_self_compaction()) {
         // Skip forward if we hit a gap or compacted segment
@@ -389,7 +370,7 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
 ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
-  storage::log log,
+  ss::shared_ptr<storage::log> log,
   const storage::offset_translator_state& ot_state,
   ss::lowres_clock::duration segment_lock_duration) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
@@ -427,22 +408,20 @@ ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
 ss::future<upload_candidate_with_locks>
 archival_policy::get_next_compacted_segment(
   model::offset begin_inclusive,
-  storage::log log,
+  ss::shared_ptr<storage::log> log,
   const cloud_storage::partition_manifest& manifest,
   ss::lowres_clock::duration segment_lock_duration) {
-    auto plog = get_concrete_log_impl(std::move(log));
-    if (!plog) {
+    if (log->segment_count() == 0) {
         vlog(
           archival_log.warn,
-          "Upload policy find next compacted segment: cannot find log for ntp: "
-          "{}",
+          "Upload policy find next compacted segment: no segments ntp: {}",
           _ntp);
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
     segment_collector compacted_segment_collector{
       begin_inclusive,
       manifest,
-      **plog,
+      *log,
       config::shard_local_cfg().compacted_log_segment_size
         * compacted_segment_size_multiplier};
 

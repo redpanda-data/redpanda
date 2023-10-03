@@ -610,6 +610,13 @@ configuration::configuration()
       "How often do we trigger background compaction",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10s)
+  , log_disable_housekeeping_for_tests(
+      *this,
+      "log_disable_housekeeping_for_tests",
+      "Disables the housekeeping loop for local storage. The property exists "
+      "to simplify testing and shouldn't be set in production.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , retention_bytes(
       *this,
       "retention_bytes",
@@ -1987,8 +1994,10 @@ configuration::configuration()
       *this,
       "partition_autobalancing_movement_batch_size_bytes",
       "Total size of partitions that autobalancer is going to move in one "
-      "batch",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "batch (deprecated, use partition_autobalancing_concurrent_moves to "
+      "limit the autobalancer concurrency)",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       5_GiB)
   , partition_autobalancing_concurrent_moves(
       *this,

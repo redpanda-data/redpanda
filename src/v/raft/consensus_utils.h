@@ -44,8 +44,8 @@ model::record_batch_reader serialize_configuration(group_configuration cfg);
 
 /// returns a fully parsed config state from a given storage log, starting at
 /// given offset
-ss::future<raft::configuration_bootstrap_state>
-read_bootstrap_state(storage::log, model::offset, ss::abort_source&);
+ss::future<raft::configuration_bootstrap_state> read_bootstrap_state(
+  ss::shared_ptr<storage::log>, model::offset, ss::abort_source&);
 
 ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   model::offset, ss::circular_buffer<model::record_batch>&&);

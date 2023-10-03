@@ -45,7 +45,7 @@ record_count(const ss::circular_buffer<model::record_batch>& batches) {
 
 struct append_offsets_validator {
     append_offsets_validator(
-      storage::log* log, size_t record_count, bool is_flushed)
+      ss::shared_ptr<storage::log> log, size_t record_count, bool is_flushed)
       : log(log) {
         auto lstats = log->offsets();
 
@@ -100,7 +100,7 @@ struct append_offsets_validator {
         }
     }
 
-    storage::log* log;
+    ss::shared_ptr<storage::log> log;
     model::offset expected_dirty;
     model::offset expected_committed;
     size_t start_seg_count;
@@ -354,7 +354,7 @@ public:
       model::offset min_offset,
       model::offset max_offset,
       bool expect_empty,
-      storage::log log)
+      ss::shared_ptr<storage::log> log)
       : _min_offset(min_offset)
       , _max_offset(max_offset)
       , _expect_empty(expect_empty)
@@ -376,7 +376,7 @@ public:
           "[{}] - Violated max offset limit in reader. Limit: {}, batch "
           "base "
           "offset: {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _max_offset,
           b.base_offset());
 
@@ -385,7 +385,7 @@ public:
           "[{}] - Violated min offset limit in reader. Limit: {}, batch "
           "base "
           "offset: {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _min_offset,
           b.last_offset());
 
@@ -397,7 +397,7 @@ public:
         vlog(
           fuzzlogger.info,
           "[{}] - Read {} batches from: {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _read_batches,
           _log);
 
@@ -405,7 +405,7 @@ public:
           _expect_empty || _read_batches > 0,
           "[{}] - Reader is expected to consume some batches in range: "
           "[{},{}] - {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _min_offset,
           _max_offset,
           _log);
@@ -415,7 +415,7 @@ private:
     model::offset _min_offset;
     model::offset _max_offset;
     bool _expect_empty;
-    storage::log _log;
+    ss::shared_ptr<storage::log> _log;
     int64_t _read_batches{0};
 };
 
@@ -455,7 +455,7 @@ struct read_op final : opfuzz::op {
           [start, end, log = ctx.log, empty_log](
             model::record_batch_reader reader) {
               return std::move(reader).consume(
-                verifying_consumer(start, end, empty_log, *log),
+                verifying_consumer(start, end, empty_log, log),
                 model::no_timeout);
           });
     }
@@ -528,7 +528,7 @@ ss::future<> opfuzz::execute() {
     // compaction operation factory
     auto compact = [this]() {
         return ss::do_with(compact_op(), [this](compact_op& c) {
-            return c.invoke(op_context{&_term, &_log, &_as})
+            return c.invoke(op_context{&_term, _log, &_as})
               .handle_exception([](std::exception_ptr e) {
                   vlog(fuzzlogger.info, "Background compaction error: {}", e);
               });
@@ -543,7 +543,7 @@ ss::future<> opfuzz::execute() {
           c->name());
 
         std::vector<ss::future<>> ops;
-        ops.push_back(c->invoke(op_context{&_term, &_log, &_as}));
+        ops.push_back(c->invoke(op_context{&_term, _log, &_as}));
 
         if (
           c->concurrent_compaction_safe

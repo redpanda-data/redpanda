@@ -293,7 +293,7 @@ FIXTURE_TEST(immutability_test, offset_translator_fixture) {
 }
 
 static ss::future<std::vector<model::offset>>
-collect_base_offsets(storage::log log) {
+collect_base_offsets(ss::shared_ptr<storage::log> log) {
     struct consumer {
         ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
             res.push_back(batch.base_offset());
@@ -305,16 +305,16 @@ collect_base_offsets(storage::log log) {
         std::vector<model::offset> res;
     };
 
-    auto r = co_await log.make_reader(storage::log_reader_config(
-      log.offsets().start_offset,
-      log.offsets().dirty_offset,
+    auto r = co_await log->make_reader(storage::log_reader_config(
+      log->offsets().start_offset,
+      log->offsets().dirty_offset,
       ss::default_priority_class()));
     co_return co_await r.for_each_ref(consumer{}, model::no_timeout);
 }
 
 struct fuzz_checker {
     fuzz_checker(
-      storage::log log,
+      ss::shared_ptr<storage::log> log,
       std::function<raft::offset_translator()>&& make_offset_translator)
       : _make_offset_translator(std::move(make_offset_translator))
       , _log(std::move(log)) {}
@@ -344,7 +344,7 @@ struct fuzz_checker {
         public:
             consumer(fuzz_checker& self)
               : _self(self)
-              , _appender(self._log.make_appender(storage::log_append_config{
+              , _appender(self._log->make_appender(storage::log_append_config{
                   .should_fsync = storage::log_append_config::fsync::no,
                   .io_priority = ss::default_priority_class(),
                   .timeout = model::no_timeout})) {}
@@ -409,14 +409,14 @@ struct fuzz_checker {
 
         co_await _tr->truncate(truncate_at);
 
-        co_await _log.truncate(
+        co_await _log->truncate(
           storage::truncate_config(truncate_at, ss::default_priority_class()));
 
-        if (_log.offsets().dirty_offset() < 0) {
+        if (_log->offsets().dirty_offset() < 0) {
             _kafka_offsets.clear();
             _log_offsets.clear();
         } else {
-            _kafka_offsets.resize(_log.offsets().dirty_offset() + 1);
+            _kafka_offsets.resize(_log->offsets().dirty_offset() + 1);
             while (!_log_offsets.empty()
                    && _log_offsets.back()() >= _kafka_offsets.size()) {
                 _log_offsets.pop_back();
@@ -434,9 +434,9 @@ struct fuzz_checker {
           = batch_base_offsets[random_generators::get_int(
             batch_base_offsets.size() - 1)];
 
-        co_await _log.truncate_prefix(storage::truncate_prefix_config(
+        co_await _log->truncate_prefix(storage::truncate_prefix_config(
           new_start_offset, ss::default_priority_class()));
-        BOOST_REQUIRE_EQUAL(new_start_offset, _log.offsets().start_offset);
+        BOOST_REQUIRE_EQUAL(new_start_offset, _log->offsets().start_offset);
 
         _snapshot_offset = new_start_offset;
         if (_snapshot_offset() > 0) {
@@ -525,7 +525,7 @@ struct fuzz_checker {
     std::optional<raft::offset_translator> _tr;
     ss::gate _gate;
 
-    storage::log _log;
+    ss::shared_ptr<storage::log> _log;
 
     model::offset _snapshot_offset;
     int64_t _snapshot_delta = 0;

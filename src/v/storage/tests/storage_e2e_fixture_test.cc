@@ -68,8 +68,7 @@ FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
         produces.emplace_back(std::move(fut));
     }
     auto partition = app.partition_manager.local().get(ntp);
-    auto* log = dynamic_cast<storage::disk_log_impl*>(
-      partition->log().get_impl());
+    auto* log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
 
     while (incomplete > 0) {
         log->apply_segment_ms().get();

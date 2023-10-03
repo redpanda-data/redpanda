@@ -50,7 +50,7 @@ public:
       spec s,
       model::term_id term,
       ss::shared_ptr<cluster::rm_stm> stm,
-      storage::disk_log_impl* log) {
+      ss::shared_ptr<storage::log> log) {
         // ---- Step 1: Generate random transaction ops.
         // As we generate random txns, we populate them in a priority queue that
         // orders them by their associated weight, which controls the sequence
@@ -173,7 +173,7 @@ private:
     struct tx_op_ctx {
         ss::shared_ptr<linear_int_kv_batch_generator> _data_gen;
         ss::shared_ptr<rm_stm> _stm;
-        storage::disk_log_impl* _log;
+        ss::shared_ptr<storage::log> _log;
         model::producer_identity _pid;
         model::term_id _term;
     };

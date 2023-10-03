@@ -30,7 +30,9 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
     std::set<size_t> unavailable_nodes = {0};
     co_await populate_node_status_table(unavailable_nodes);
 
-    auto planner = make_planner();
+    const size_t max_concurrent_actions = 50;
+    auto planner = make_planner(
+      model::partition_autobalancing_mode::continuous, max_concurrent_actions);
 
     abort_source as;
     perf_tests::start_measuring_time();

@@ -327,7 +327,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
           return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
       })
       .then([this, &as = shard0_as] {
-          auto disk_dirty_offset = _raft0->log().offsets().dirty_offset;
+          auto disk_dirty_offset = _raft0->log()->offsets().dirty_offset;
 
           return _stm
             .invoke_on(
@@ -509,8 +509,6 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
               .storage_space_alert_free_threshold_percent.bind(),
             config::shard_local_cfg()
               .partition_autobalancing_tick_interval_ms.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_movement_batch_size_bytes.bind(),
             config::shard_local_cfg()
               .partition_autobalancing_concurrent_moves.bind(),
             config::shard_local_cfg()
