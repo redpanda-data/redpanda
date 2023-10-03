@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "bytes/bytes.h"
 #include "cluster/errc.h"
 #include "cluster/types.h"
 #include "gmock/gmock.h"
@@ -331,8 +332,11 @@ private:
           model::record_batch_reader rdr, raft::replicate_options) final {
             auto batches = co_await model::consume_reader_to_memory(
               std::move(rdr), model::no_timeout);
+            auto offset = latest_offset();
             for (const auto& batch : batches) {
-                _produced_batches->emplace_back(_ntp, batch.copy());
+                auto b = batch.copy();
+                b.header().base_offset = offset++;
+                _produced_batches->emplace_back(_ntp, std::move(b));
             }
             co_return _produced_batches->back().batch.last_offset();
         }
@@ -352,6 +356,16 @@ private:
         }
 
     private:
+        model::offset latest_offset() {
+            auto o = model::offset(0);
+            for (const auto& b : *_produced_batches) {
+                if (b.ntp == _ntp) {
+                    o = b.batch.last_offset();
+                }
+            }
+            return o;
+        }
+
         model::ntp _ntp;
         ss::chunked_fifo<produced_batch>* _produced_batches;
     };
@@ -361,6 +375,7 @@ private:
 };
 
 constexpr uint16_t test_server_port = 8080;
+constexpr auto test_timeout = std::chrono::seconds(10);
 constexpr model::node_id self_node = model::node_id(1);
 constexpr model::node_id other_node = model::node_id(2);
 
@@ -502,6 +517,17 @@ public:
         return client()->produce(ntp.tp, std::move(batches.underlying)).get();
     }
 
+    result<stored_wasm_binary_metadata, cluster::errc>
+    store_wasm_binary(iobuf b) {
+        return client()->store_wasm_binary(std::move(b), test_timeout).get();
+    }
+    result<iobuf, cluster::errc> load_wasm_binary(model::offset o) {
+        return client()->load_wasm_binary(o, test_timeout).get();
+    }
+    cluster::errc delete_wasm_binary(uuid_t key) {
+        return client()->delete_wasm_binary(key, test_timeout).get();
+    }
+
     model::node_id leader_node() const { return GetParam().leader_node; }
     model::node_id non_leader_node() const {
         return GetParam().non_leader_node;
@@ -555,6 +581,7 @@ model::ntp make_ntp(std::string_view topic) {
 }
 
 using ::testing::IsEmpty;
+using ::testing::SizeIs;
 
 TEST_P(TransformRpcTest, ClientCanProduce) {
     auto ntp = make_ntp("foo");
@@ -566,6 +593,32 @@ TEST_P(TransformRpcTest, ClientCanProduce) {
       << cluster::error_category().message(int(ec));
     EXPECT_THAT(non_leader_batches(ntp), IsEmpty());
     EXPECT_EQ(leader_batches(ntp), batches);
+}
+
+TEST_P(TransformRpcTest, WasmBinaryCrud) {
+    // clang-format off
+    // NOLINTBEGIN(*-magic-numbers)
+    iobuf wasm_binary = bytes_to_iobuf(
+      {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00,
+       0x00, 0x00, 0x00, 0x08, 0x04, 0x6e,
+       0x61, 0x6d, 0x65, 0x02, 0x01, 0x00});
+    // NOLINTEND(*-magic-numbers)
+    // clang-format on
+    // The topic is auto created
+    set_default_new_topic_leader(leader_node());
+
+    auto stored = store_wasm_binary(wasm_binary.copy());
+    ASSERT_TRUE(stored.has_value());
+    EXPECT_THAT(
+      non_leader_batches(model::wasm_binaries_internal_ntp), IsEmpty());
+    EXPECT_THAT(leader_batches(model::wasm_binaries_internal_ntp), SizeIs(1));
+    auto [key, offset] = stored.value();
+    auto loaded = load_wasm_binary(offset);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded.value(), wasm_binary);
+    auto ec = delete_wasm_binary(key);
+    EXPECT_EQ(ec, cluster::errc::success)
+      << cluster::error_category().message(int(ec));
 }
 
 INSTANTIATE_TEST_SUITE_P(
