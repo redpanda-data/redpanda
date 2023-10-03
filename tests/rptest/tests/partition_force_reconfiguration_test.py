@@ -30,6 +30,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
               self).__init__(test_context, *args, **kwargs)
 
     SPEC = TopicSpec(name="topic", replication_factor=5)
+    WAIT_TIMEOUT_S = 30
 
     def _start_redpanda(self, acks=-1):
         self.start_redpanda(
@@ -39,7 +40,8 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.topic = self.SPEC.name
         # Wait for initial leader
         self.redpanda._admin.await_stable_leader(topic=self.topic,
-                                                 replication=5)
+                                                 replication=5,
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
         # Start a producer at the desired acks level
         self.start_producer(acks=acks)
         self.await_num_produced(min_records=10000)
@@ -121,7 +123,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             self.redpanda._admin.await_stable_leader(
                 topic="__consumer_offsets",
                 partition=part,
-                timeout_s=30,
+                timeout_s=self.WAIT_TIMEOUT_S,
                 backoff_s=2,
                 hosts=self._alive_nodes())
 
@@ -170,7 +172,8 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             self.redpanda._admin.await_stable_leader(
                 topic=self.topic,
                 replication=reduced_replica_set_size,
-                hosts=alive_nodes_after)
+                hosts=alive_nodes_after,
+                timeout_s=self.WAIT_TIMEOUT_S)
         if acks == -1:
             self.run_validation()
 
@@ -208,7 +211,8 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         # New group should include the killed node.
         self.redpanda._admin.await_stable_leader(topic=self.topic,
                                                  replication=len(alive) + 1,
-                                                 hosts=self._alive_nodes())
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
 
     @cluster(num_nodes=7)
     @matrix(target_replica_set_size=[1, 3])
@@ -268,7 +272,8 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.redpanda._admin.await_stable_leader(
             topic=self.topic,
             replication=target_replica_set_size,
-            hosts=self._alive_nodes())
+            hosts=self._alive_nodes(),
+            timeout_s=self.WAIT_TIMEOUT_S)
 
         # Ensure it is empty
         lso = get_stable_lso()
