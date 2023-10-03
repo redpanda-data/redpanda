@@ -12,6 +12,7 @@
 #include "cluster/errc.h"
 #include "cluster/types.h"
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "kafka/server/partition_proxy.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -41,6 +42,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/net/socket_defs.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <gmock/gmock.h>
@@ -52,6 +54,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <stdexcept>
 #include <vector>
 
@@ -146,8 +149,8 @@ public:
         return it->second;
     }
 
-    void set_topic_cfg(
-      const model::topic_namespace& tp_ns, cluster::topic_configuration cfg) {
+    void set_topic_cfg(cluster::topic_configuration cfg) {
+        auto tp_ns = cfg.tp_ns;
         _topic_cfgs.insert_or_assign(tp_ns, std::move(cfg));
     }
 
@@ -161,6 +164,48 @@ private:
 struct produced_batch {
     model::ntp ntp;
     model::record_batch batch;
+};
+
+class fake_topic_creator : public topic_creator {
+public:
+    fake_topic_creator(
+      ss::noncopyable_function<void(const cluster::topic_configuration&)>
+        new_topic_cb,
+      ss::noncopyable_function<void(const model::ntp&, model::node_id)>
+        new_ntp_cb)
+      : _new_topic_cb(std::move(new_topic_cb))
+      , _new_ntp_cb(std::move(new_ntp_cb)) {}
+
+    ss::future<cluster::errc> create_topic(
+      model::topic_namespace_view tp_ns,
+      int32_t partition_count,
+      cluster::topic_properties properties) final {
+        cluster::topic_configuration tcfg{
+          tp_ns.ns,
+          tp_ns.tp,
+          partition_count,
+          /*replication_factor=*/1,
+        };
+        tcfg.properties = properties;
+        _new_topic_cb(tcfg);
+        for (int32_t i = 0; i < partition_count; ++i) {
+            _new_ntp_cb(
+              model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id(i)),
+              _default_new_topic_leader);
+        }
+        co_return cluster::errc::success;
+    }
+
+    void set_default_new_topic_leader(model::node_id node_id) {
+        _default_new_topic_leader = node_id;
+    }
+
+private:
+    model::node_id _default_new_topic_leader;
+    ss::noncopyable_function<void(const cluster::topic_configuration&)>
+      _new_topic_cb;
+    ss::noncopyable_function<void(const model::ntp&, model::node_id)>
+      _new_ntp_cb;
 };
 
 class fake_partition_manager : public partition_manager {
@@ -200,14 +245,14 @@ public:
             co_return cluster::errc::not_leader;
         }
         auto pp = kafka::partition_proxy(
-          std::make_unique<write_only_proxy>(ntp, &_produced_batches));
+          std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
         co_return co_await fn(&pp);
     }
 
 private:
-    class write_only_proxy : public kafka::partition_proxy::impl {
+    class in_memory_proxy : public kafka::partition_proxy::impl {
     public:
-        write_only_proxy(
+        in_memory_proxy(
           model::ntp ntp, ss::chunked_fifo<produced_batch>* produced_batches)
           : _ntp(std::move(ntp))
           , _produced_batches(produced_batches) {}
@@ -244,9 +289,28 @@ private:
             throw std::runtime_error("unimplemented");
         }
         ss::future<storage::translating_reader> make_reader(
-          storage::log_reader_config,
+          storage::log_reader_config config,
           std::optional<model::timeout_clock::time_point>) final {
-            throw std::runtime_error("unimplemented");
+            if (
+              config.first_timestamp.has_value()
+              || config.type_filter.has_value()) {
+                throw std::runtime_error("unimplemented");
+            }
+            model::record_batch_reader::data_t read_batches;
+            for (auto& b : *_produced_batches) {
+                if (b.ntp != _ntp) {
+                    continue;
+                }
+                if (b.batch.base_offset() < config.start_offset) {
+                    continue;
+                }
+                read_batches.push_back(b.batch.copy());
+                if (b.batch.last_offset() > config.max_offset) {
+                    break;
+                }
+            }
+            co_return model::make_memory_record_batch_reader(
+              std::move(read_batches));
         }
         ss::future<std::optional<storage::timequery_result>>
         timequery(storage::timequery_config) final {
@@ -300,7 +364,18 @@ constexpr uint16_t test_server_port = 8080;
 constexpr model::node_id self_node = model::node_id(1);
 constexpr model::node_id other_node = model::node_id(2);
 
-class TransformRpcTest : public ::testing::Test {
+struct test_parameters {
+    model::node_id leader_node;
+    model::node_id non_leader_node;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const test_parameters& tp) {
+        return os << "{leader_node: " << tp.leader_node
+                  << " non_leader_node: " << tp.non_leader_node << "}";
+    }
+};
+
+class TransformRpcTest : public ::testing::TestWithParam<test_parameters> {
 public:
     void SetUp() override {
         _as.start().get();
@@ -361,8 +436,21 @@ public:
 
         auto fplc = std::make_unique<fake_partition_leader_cache>();
         _fplc = fplc.get();
+        auto ftpc = std::make_unique<fake_topic_creator>(
+          [this](const cluster::topic_configuration& tp_cfg) {
+              remote_metadata_cache()->set_topic_cfg(tp_cfg);
+              local_metadata_cache()->set_topic_cfg(tp_cfg);
+          },
+          [this](const model::ntp& ntp, model::node_id leader) {
+              elect_leader(ntp, leader);
+          });
+        _ftpc = ftpc.get();
         _client = std::make_unique<rpc::client>(
-          self_node, std::move(fplc), nullptr, &_conn_cache, &_local_services);
+          self_node,
+          std::move(fplc),
+          std::move(ftpc),
+          &_conn_cache,
+          &_local_services);
     }
     void TearDown() override {
         _client->stop().get();
@@ -387,8 +475,8 @@ public:
           /*partition_count=*/1,
           /*replication_factor=*/1,
         };
-        remote_metadata_cache()->set_topic_cfg(tp_ns, tcfg);
-        local_metadata_cache()->set_topic_cfg(tp_ns, tcfg);
+        remote_metadata_cache()->set_topic_cfg(tcfg);
+        local_metadata_cache()->set_topic_cfg(tcfg);
     }
 
     void elect_leader(const model::ntp& ntp, model::node_id node_id) {
@@ -406,15 +494,24 @@ public:
         }
     }
 
+    void set_default_new_topic_leader(model::node_id node_id) {
+        _ftpc->set_default_new_topic_leader(node_id);
+    }
+
     cluster::errc produce(const model::ntp& ntp, record_batches batches) {
         return client()->produce(ntp.tp, std::move(batches.underlying)).get();
     }
 
-    record_batches remote_batches(const model::ntp& ntp) {
-        return remote_partition_manager()->partition_records(ntp);
+    model::node_id leader_node() const { return GetParam().leader_node; }
+    model::node_id non_leader_node() const {
+        return GetParam().non_leader_node;
     }
-    record_batches local_batches(const model::ntp& ntp) {
-        return local_partition_manager()->partition_records(ntp);
+
+    record_batches non_leader_batches(const model::ntp& ntp) {
+        return batches_for(non_leader_node(), ntp);
+    }
+    record_batches leader_batches(const model::ntp& ntp) {
+        return batches_for(leader_node(), ntp);
     }
 
     // local node state
@@ -430,12 +527,19 @@ public:
     rpc::local_service* remote_service() { return &_remote_services.local(); }
 
 private:
+    record_batches batches_for(model::node_id node, const model::ntp& ntp) {
+        auto manager = node == self_node ? local_partition_manager()
+                                         : remote_partition_manager();
+        return manager->partition_records(ntp);
+    }
+
     std::unique_ptr<::rpc::rpc_server> _server;
     fake_topic_metadata_cache* _local_ftmc = nullptr;
     fake_partition_manager* _local_fpm = nullptr;
     fake_topic_metadata_cache* _remote_ftmc = nullptr;
     fake_partition_manager* _remote_fpm = nullptr;
     fake_partition_leader_cache* _fplc = nullptr;
+    fake_topic_creator* _ftpc = nullptr;
     ss::sharded<rpc::local_service> _local_services;
     ss::sharded<rpc::local_service> _remote_services;
     ss::sharded<::rpc::connection_cache> _conn_cache;
@@ -447,32 +551,28 @@ private:
 
 model::ntp make_ntp(std::string_view topic) {
     return {
-      model::kafka_namespace, model::topic(topic), model::partition_id(1)};
+      model::kafka_namespace, model::topic(topic), model::partition_id(0)};
 }
 
 using ::testing::IsEmpty;
 
-TEST_F(TransformRpcTest, ClientCanProduceLocally) {
+TEST_P(TransformRpcTest, ClientCanProduce) {
     auto ntp = make_ntp("foo");
     create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
-    elect_leader(ntp, self_node);
-    auto batches = record_batches::make();
-    cluster::errc ec = produce(ntp, batches);
-    EXPECT_EQ(ec, cluster::errc::success);
-    EXPECT_THAT(remote_batches(ntp), IsEmpty());
-    EXPECT_EQ(local_batches(ntp), batches);
-}
-
-TEST_F(TransformRpcTest, ClientCanProduceOverRpc) {
-    auto ntp = make_ntp("foo");
-    create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
-    elect_leader(ntp, other_node);
+    elect_leader(ntp, leader_node());
     auto batches = record_batches::make();
     cluster::errc ec = produce(ntp, batches);
     EXPECT_EQ(ec, cluster::errc::success)
       << cluster::error_category().message(int(ec));
-    EXPECT_THAT(local_batches(ntp), IsEmpty());
-    EXPECT_EQ(remote_batches(ntp), batches);
+    EXPECT_THAT(non_leader_batches(ntp), IsEmpty());
+    EXPECT_EQ(leader_batches(ntp), batches);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+  WorksLocallyAndRemotely,
+  TransformRpcTest,
+  ::testing::Values(
+    test_parameters{.leader_node = self_node, .non_leader_node = other_node},
+    test_parameters{.leader_node = other_node, .non_leader_node = self_node}));
 
 } // namespace transform::rpc
