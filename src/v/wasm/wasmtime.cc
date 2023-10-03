@@ -471,9 +471,7 @@ public:
         return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
-    ss::future<> start() final { co_return; }
-
-    ss::future<> initialize() final { return initialize_wasi(); }
+    ss::future<> start() final { return initialize_wasi(); }
 
     ss::future<> stop() final { co_return; }
 

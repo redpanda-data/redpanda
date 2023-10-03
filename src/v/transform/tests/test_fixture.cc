@@ -66,6 +66,5 @@ uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
     return 64_KiB;
 };
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
-ss::future<> fake_wasm_engine::initialize() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
 } // namespace transform::testing

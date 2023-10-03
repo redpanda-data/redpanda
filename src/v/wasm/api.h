@@ -31,7 +31,6 @@ public:
     transform(model::record_batch batch, transform_probe* probe) = 0;
 
     virtual ss::future<> start() = 0;
-    virtual ss::future<> initialize() = 0;
     virtual ss::future<> stop() = 0;
 
     virtual std::string_view function_name() const = 0;

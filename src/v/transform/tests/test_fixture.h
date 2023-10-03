@@ -41,7 +41,6 @@ public:
     }
 
     ss::future<> start() override;
-    ss::future<> initialize() override;
     ss::future<> stop() override;
 
     std::string_view function_name() const override;
