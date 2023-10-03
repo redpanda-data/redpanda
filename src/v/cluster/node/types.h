@@ -107,6 +107,8 @@ struct local_state
         uint64_t data_target_size{0};
         uint64_t data_current_size{0};
         uint64_t data_reclaimable_size{0};
+        friend bool operator==(const log_data_state&, const log_data_state&)
+          = default;
         friend std::ostream& operator<<(std::ostream&, const log_data_state&);
     };
     std::optional<log_data_state> log_data_size{std::nullopt};
@@ -121,6 +123,7 @@ struct local_state
     void set_disk(storage::disk);
     void set_disks(std::vector<storage::disk>);
 
+    friend bool operator==(const local_state&, const local_state&) = default;
     friend std::ostream& operator<<(std::ostream&, const local_state&);
 };
 

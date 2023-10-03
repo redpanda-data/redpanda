@@ -44,8 +44,7 @@ public:
     inet_family family() const { return _family; }
 
     bool operator==(const unresolved_address& other) const = default;
-    friend bool operator<(const unresolved_address&, const unresolved_address&)
-      = default;
+    std::strong_ordering operator<=>(const unresolved_address&) const = default;
 
     auto serde_fields() { return std::tie(_host, _port, _family); }
 
