@@ -620,13 +620,147 @@ ss::future<std::error_code> archival_metadata_stm::process_anomalies(
     co_return co_await builder.replicate();
 }
 
+ss::future<bool>
+archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
+    // If there's any replications pending, wait for them to complete.
+    // Note that we throw away the result and use Raft's committed offset
+    // below. If replication failed, exit unsuccessfully.
+
+    if (_last_replicate) {
+        auto fut = std::exchange(_last_replicate, std::nullopt).value();
+
+        if (!fut.available()) {
+            vlog(
+              _logger.debug, "Waiting for ongoing replication before syncing");
+        }
+
+        try {
+            const auto before = model::timeout_clock::now();
+
+            const auto res = co_await ss::with_timeout(
+              before + timeout, std::move(fut));
+
+            const auto after = model::timeout_clock::now();
+            // Update the timeout whille accounting for under/overflow.
+            const auto duration = after > before
+                                    ? after - before
+                                    : ss::lowres_clock::duration{0};
+
+            if (duration >= timeout) {
+                throw ss::timed_out_error{};
+            }
+
+            timeout -= duration;
+
+            if (!res) {
+                vlog(
+                  _logger.warn,
+                  "Replication failed for archival STM command: {}",
+                  res.error());
+                co_return false;
+            }
+        } catch (const ss::timed_out_error&) {
+            vlog(_logger.error, "Replication wait for archival STM timed out");
+            co_return false;
+        } catch (...) {
+            vlog(
+              _logger.error,
+              "Replication failed for archival STM command: {}",
+              std::current_exception());
+            co_return false;
+        }
+    }
+
+    if (!_raft->is_leader()) {
+        co_return false;
+    }
+
+    const auto last_applied_term = _insync_term;
+    const auto last_applied_offset = _manifest->get_insync_offset();
+    const auto current_term = _raft->term();
+    const auto committed_offset = _raft->committed_offset();
+
+    if (
+      last_applied_term == current_term
+      && last_applied_offset < committed_offset) {
+        // Case 1: we have already synced (once or more) during the current
+        // term, but need to sync again (e.g. re-starting the archiver to
+        // apply topic configs)
+        vlog(
+          _logger.debug,
+          "Syncing archival STM from last applied offset {} to committed "
+          "offest {} in term {}",
+          last_applied_offset,
+          committed_offset,
+          current_term);
+
+        const bool synced = co_await wait_no_throw(
+          committed_offset, model::timeout_clock::now() + timeout);
+
+        if (!synced) {
+            vlog(
+              _logger.warn,
+              "Failed to sync archival STM from offset {} to offest {} in "
+              "term {}",
+              last_applied_offset,
+              committed_offset,
+              current_term);
+        }
+
+        co_return synced;
+    } else {
+        // Case 2: we have not synced since the last term (e.g. on
+        // leadership changes)
+        vlog(
+          _logger.debug,
+          "Syncing archival STM to latest term {} from term {}",
+          current_term,
+          last_applied_term);
+        const bool synced = co_await persisted_stm::sync(timeout);
+
+        if (!synced) {
+            vlog(_logger.warn, "Failed to sync archival STM to latest term");
+        }
+
+        co_return synced;
+    }
+}
+
 ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
   model::record_batch batch, ss::abort_source& as) {
-    auto current_term = _insync_term;
-    auto fut = _raft->replicate(
-      current_term,
-      model::make_memory_record_batch_reader(std::move(batch)),
-      raft::replicate_options{raft::consistency_level::quorum_ack});
+    vassert(
+      !_last_replicate.has_value(),
+      "Concurrent replication of archival STM commands");
+    vassert(
+      !_lock.try_get_units().has_value(),
+      "Attempt to replicate STM command while not under lock");
+
+    const auto current_term = _insync_term;
+
+    ss::promise<result<raft::replicate_result>> replication_promise;
+    _last_replicate = replication_promise.get_future();
+
+    auto fut
+      = _raft
+          ->replicate(
+            current_term,
+            model::make_memory_record_batch_reader(std::move(batch)),
+            raft::replicate_options{raft::consistency_level::quorum_ack})
+          .then_wrapped(
+            [replication_promise = std::move(replication_promise)](
+              auto f) mutable -> ss::future<result<raft::replicate_result>> {
+                if (f.failed()) {
+                    const auto ex_ptr = f.get_exception();
+                    replication_promise.set_exception(ex_ptr);
+                    return ss::make_exception_future<
+                      result<raft::replicate_result>>(ex_ptr);
+                } else {
+                    const auto res = f.get();
+                    replication_promise.set_value(res);
+                    return ss::make_ready_future<
+                      result<raft::replicate_result>>(res);
+                }
+            });
 
     // Raft's replicate() doesn't take an external abort source, and
     // archiver is shut down before consensus, so we must wrap this
@@ -639,10 +773,10 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
           _logger.warn,
           "error on replicating remote segment metadata: {}",
           result.error());
-        // If there was an error for whatever reason, it is unsafe to make any
-        // assumptions about whether batches were replicated or not. Explicitly
-        // step down if we're still leader and force callers to re-sync in a
-        // new term with a new leader.
+        // If there was an error for whatever reason, it is unsafe to make
+        // any assumptions about whether batches were replicated or not.
+        // Explicitly step down if we're still leader and force callers to
+        // re-sync in a new term with a new leader.
         if (_raft->is_leader() && _raft->term() == current_term) {
             co_await _raft->step_down(ssx::sformat(
               "failed to replicate archival batch in term {}", current_term));
@@ -762,11 +896,11 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
     }
 
     if (b.header().type == model::record_batch_type::prefix_truncate) {
-        // Special case handling for prefix_truncate batches: these originate
-        // in log_eviction_stm, but affect the entire partition, local and
-        // cloud storage alike. Despite the record originating elsewhere, note
-        // that the STM is still deterministic, as records are applied in
-        // order and are not allowed to fail.
+        // Special case handling for prefix_truncate batches: these
+        // originate in log_eviction_stm, but affect the entire partition,
+        // local and cloud storage alike. Despite the record originating
+        // elsewhere, note that the STM is still deterministic, as records
+        // are applied in order and are not allowed to fail.
         b.for_each_record(
           [this, base_offset = b.base_offset()](model::record&& r) {
               _last_dirty_at = base_offset + model::offset{r.offset_delta()};
@@ -1005,8 +1139,8 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {
-    // From Redpanda 22.3 up, the ntp_config's impression of whether archival
-    // is enabled is authoritative.
+    // From Redpanda 22.3 up, the ntp_config's impression of whether
+    // archival is enabled is authoritative.
     bool collect_all = !_raft->log_config().is_archival_enabled();
     bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
 
@@ -1021,9 +1155,9 @@ model::offset archival_metadata_stm::max_collectible_offset() {
     if (collect_all || is_read_replica) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
-        // In read-replicas the state machine exists and stores segments from
-        // the remote manifest. Since nothing is uploaded there is no need to
-        // interact with local retention.
+        // In read-replicas the state machine exists and stores segments
+        // from the remote manifest. Since nothing is uploaded there is no
+        // need to interact with local retention.
         return model::offset::max();
     }
     auto lo = get_last_offset();
@@ -1176,7 +1310,8 @@ void archival_metadata_stm::apply_spillover(const spillover_cmd& so) {
         _manifest->spillover(so.manifest_meta);
         vlog(
           _logger.debug,
-          "Spillover command applied, new start offset: {}, new last offset: "
+          "Spillover command applied, new start offset: {}, new last "
+          "offset: "
           "{}",
           get_start_offset(),
           get_last_offset());
@@ -1237,7 +1372,8 @@ archival_metadata_stm::get_segments_to_cleanup() const {
             if (m_name == s_name) {
                 vlog(
                   _logger.error,
-                  "The replaced segment name {} collides with the segment {} "
+                  "The replaced segment name {} collides with the segment "
+                  "{} "
                   "in the manifest. It will be removed to prevent the data "
                   "loss.",
                   m_name,

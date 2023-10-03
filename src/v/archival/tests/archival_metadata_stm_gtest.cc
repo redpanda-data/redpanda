@@ -161,3 +161,159 @@ TEST_F_CORO(archival_metadata_stm_gtest_fixture, test_archival_stm_happy_path) {
       get_leader_stm().get_dirty(),
       cluster::archival_metadata_stm::state_dirty::clean);
 }
+
+TEST_F_CORO(
+  archival_metadata_stm_gtest_fixture,
+  test_same_term_sync_pending_replication_success) {
+    /*
+     * Test that archival_metadata_stm::sync is able to sync
+     * within the same term and that it will wait for on-going
+     * replication futures to complete before doing so. To simulate
+     * this scenario we introduce a small delay on append entries
+     * response processing.
+     */
+
+    ss::abort_source never_abort;
+
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    co_await start();
+
+    auto res = co_await with_leader(
+      10s, [this, &m, &never_abort](raft::raft_node_instance&) {
+          return get_leader_stm().add_segments(
+            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+      });
+
+    ASSERT_TRUE_CORO(!res);
+
+    auto [plagued_node, delay_applied] = co_await with_leader(
+      10s, [](raft::raft_node_instance& node) {
+          raft::response_delay fail{
+            .length = 100ms, .on_applied = ss::promise<>{}};
+
+          auto delay_applied = fail.on_applied->get_future();
+          node.inject_failure(raft::msg_type::append_entries, std::move(fail));
+          return std::make_tuple(node.get_vnode(), std::move(delay_applied));
+      });
+
+    m.clear();
+    m.push_back(segment_meta{
+      .base_offset = model::offset(100),
+      .committed_offset = model::offset(199),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(1)});
+
+    auto slow_replication_fut = with_leader(
+      10s,
+      [this, &m, &never_abort, &plagued_node](raft::raft_node_instance& node) {
+          if (node.get_vnode() != plagued_node) {
+              throw std::runtime_error{"Leadership moved"};
+          }
+
+          return get_leader_stm().add_segments(
+            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+      });
+
+    co_await std::move(delay_applied);
+
+    auto synced = co_await with_leader(
+      10s, [this, &plagued_node](raft::raft_node_instance& node) mutable {
+          if (node.get_vnode() != plagued_node) {
+              throw std::runtime_error{"Leadership moved"};
+          }
+
+          return get_leader_stm().sync(10s);
+      });
+
+    ASSERT_TRUE_CORO(synced);
+
+    auto slow_replication_res = co_await std::move(slow_replication_fut);
+    ASSERT_TRUE_CORO(!slow_replication_res);
+
+    auto [committed_offset, term] = co_await with_leader(
+      10s, [](raft::raft_node_instance& node) mutable {
+          return std::make_tuple(
+            node.raft()->committed_offset(), node.raft()->term());
+      });
+
+    ASSERT_EQ_CORO(committed_offset, model::offset{2});
+    ASSERT_EQ_CORO(term, model::term_id{1});
+}
+
+TEST_F_CORO(
+  archival_metadata_stm_gtest_fixture,
+  test_same_term_sync_pending_replication_failure) {
+    /*
+     * Similar to the previous test, but in this case the injected replication
+     * delay is enough for leadership to reliably move and cause the replication
+     * to error. Sync will fail in this case.
+     */
+    ss::abort_source never_abort;
+
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    co_await start();
+
+    auto res = co_await with_leader(
+      10s, [this, &m, &never_abort](raft::raft_node_instance&) {
+          return get_leader_stm().add_segments(
+            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+      });
+
+    ASSERT_TRUE_CORO(!res);
+
+    auto [plagued_node, delay_applied] = co_await with_leader(
+      10s, [](raft::raft_node_instance& node) {
+          raft::response_delay fail{
+            .length = 5s, .on_applied = ss::promise<>{}};
+
+          auto delay_applied = fail.on_applied->get_future();
+          node.inject_failure(raft::msg_type::append_entries, std::move(fail));
+          return std::make_tuple(node.get_vnode(), std::move(delay_applied));
+      });
+
+    m.clear();
+    m.push_back(segment_meta{
+      .base_offset = model::offset(100),
+      .committed_offset = model::offset(199),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(1)});
+
+    auto slow_replication_fut = with_leader(
+      10s,
+      [this, &m, &never_abort, &plagued_node](raft::raft_node_instance& node) {
+          if (node.get_vnode() != plagued_node) {
+              throw std::runtime_error{"Leadership moved"};
+          }
+
+          return get_leader_stm().add_segments(
+            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+      });
+
+    co_await std::move(delay_applied);
+
+    auto synced = co_await with_leader(
+      10s, [this, &plagued_node](raft::raft_node_instance& node) mutable {
+          if (node.get_vnode() != plagued_node) {
+              throw std::runtime_error{"Leadership moved"};
+          }
+
+          return get_leader_stm().sync(10s);
+      });
+
+    ASSERT_FALSE_CORO(synced);
+
+    auto slow_replication_res = co_await std::move(slow_replication_fut);
+    ASSERT_TRUE_CORO(slow_replication_res);
+}
