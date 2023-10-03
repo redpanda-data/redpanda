@@ -138,6 +138,71 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
 		assert.NotEqual(t, 0, len(createTopic.Status.TopicConfiguration))
 	})
+	t.Run("overwrite_topic", func(t *testing.T) {
+		topicName := "overwrite-topic"
+		differentName := "different_name_with_underscore"
+
+		createTopic := v1alpha1.Topic{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      topicName,
+				Namespace: testNamespace,
+			},
+			Spec: v1alpha1.TopicSpec{
+				OverwriteTopicName: &differentName,
+				Partitions:         pointer.Int(3),
+				ReplicationFactor:  pointer.Int(1),
+				AdditionalConfig:   nil,
+				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
+					Brokers: []string{seedBroker},
+				},
+				SynchronizationInterval: &metav1.Duration{Duration: time.Second * 5},
+			},
+		}
+
+		err := c.Create(ctx, &createTopic)
+		require.NoError(t, err)
+
+		req := ctrl.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      topicName,
+				Namespace: testNamespace,
+			},
+		}
+		result, err := tr.Reconcile(ctx, req)
+		assert.NoError(t, err)
+
+		assert.False(t, result.Requeue)
+		assert.Equal(t, time.Second*5, result.RequeueAfter)
+
+		var mrt kmsg.MetadataResponseTopic
+		{
+			metaReq := kmsg.NewPtrMetadataRequest()
+			reqTopic := kmsg.NewMetadataRequestTopic()
+			reqTopic.Topic = kmsg.StringPtr(differentName)
+			metaReq.Topics = append(metaReq.Topics, reqTopic)
+			resp, errMetadata := metaReq.RequestWith(context.Background(), kafkaCl)
+			require.NoError(t, errMetadata)
+
+			mrt = resp.Topics[0]
+		}
+
+		assert.Equal(t, *createTopic.Spec.ReplicationFactor, len(mrt.Partitions[0].Replicas))
+		assert.Equal(t, *createTopic.Spec.Partitions, len(mrt.Partitions))
+
+		err = c.Get(ctx, types.NamespacedName{
+			Name:      topicName,
+			Namespace: testNamespace,
+		}, &createTopic)
+		require.NoError(t, err)
+
+		assert.Equal(t, "operator.redpanda.com/finalizer", createTopic.ObjectMeta.Finalizers[0])
+		assert.NotEmpty(t, createTopic.Status.Conditions)
+		cond := createTopic.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ReadyCondition, cond.Type)
+		assert.Equal(t, metav1.ConditionTrue, cond.Status)
+		assert.Equal(t, v1alpha1.SucceededReason, cond.Reason)
+		assert.NotEqual(t, 0, len(createTopic.Status.TopicConfiguration))
+	})
 	t.Run("create_topic_that_already_exist", func(t *testing.T) {
 		topicName := "create-already-existent-test-topic"
 
