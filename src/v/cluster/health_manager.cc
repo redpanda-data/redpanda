@@ -183,6 +183,11 @@ ss::future<> health_manager::do_tick() {
               model::kafka_namespace, model::schema_registry_internal_tp.topic};
             ok = co_await ensure_topic_replication(schema_registry_nt);
         }
+
+        if (ok) {
+            ok = co_await ensure_topic_replication(
+              model::topic_namespace_view(model::wasm_binaries_internal_ntp));
+        }
     }
 
     _timer.arm(_tick_interval);
