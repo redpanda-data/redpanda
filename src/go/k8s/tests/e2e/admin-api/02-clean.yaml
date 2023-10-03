@@ -13,3 +13,8 @@ delete:
     kind: Job
     name: call-admin-api
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: call-admin-api
+    namespace: redpanda-system

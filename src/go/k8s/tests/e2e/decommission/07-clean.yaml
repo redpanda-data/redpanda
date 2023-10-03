@@ -21,7 +21,17 @@ delete:
     kind: Job
     name: get-broker-count
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-broker-count
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-broker-count-again
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-broker-count-again
     namespace: redpanda-system

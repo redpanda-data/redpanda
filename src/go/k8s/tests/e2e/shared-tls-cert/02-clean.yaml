@@ -13,3 +13,8 @@ delete:
     kind: Job
     name: call-endpoints-shared-tls
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: call-endpoints-shared-tls
+    namespace: redpanda-system

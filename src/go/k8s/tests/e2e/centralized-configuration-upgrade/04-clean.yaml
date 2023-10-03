@@ -17,3 +17,8 @@ delete:
     kind: Job
     name: get-centralized-config
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: get-centralized-config
+    namespace: redpanda-system

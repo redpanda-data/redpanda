@@ -194,7 +194,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err = r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
-			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
+			log.Error(err, "setting pod node_id annotation")
 		}
 	}
 
@@ -265,7 +265,10 @@ func (r *ClusterReconciler) Reconcile(
 
 	// The following should be at the last part as it requires AdminAPI to be running
 	if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
-		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
+		log.Error(err, "setting pod node_id annotation after reconciling resources")
+		return ctrl.Result{
+			RequeueAfter: 4 * time.Second,
+		}, nil
 	}
 	if err := r.setPodNodeIDLabel(ctx, &vectorizedCluster, log, ar); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id label: %w", err)
@@ -338,7 +341,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 			// if the pod is not being deleted, set the finalizer
 			if err = r.setPodFinalizer(ctx, pod, log); err != nil {
 				//nolint:goerr113 // not going to use wrapped static error here this time
-				return fmt.Errorf(`unable to set the finalizer on pod "%s": %d`, pod.Name, err)
+				return fmt.Errorf(`unable to set the finalizer on pod "%s": %w`, pod.Name, err)
 			}
 			continue
 		}
@@ -464,6 +467,8 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 	if err != nil {
 		return fmt.Errorf("unable to fetch PodList: %w", err)
 	}
+
+	var combinedErrors error
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 		if pod.Annotations == nil {
@@ -473,7 +478,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, ar)
 		if err != nil {
-			log.Error(err, `cannot fetch node id for node-id annotation`)
+			combinedErrors = errors.Join(combinedErrors, fmt.Errorf(`cannot fetch node id for "%s" node-id annotation: %w`, pod.Name, err))
 			continue
 		}
 
@@ -487,22 +492,25 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		if annotationExist {
 			oldNodeID, err = strconv.Atoi(nodeIDStrAnnotation)
 			if err != nil {
-				return fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStrAnnotation, err)
+				combinedErrors = errors.Join(combinedErrors, fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStrAnnotation, err))
+				continue
 			}
 
 			log.WithValues("pod-name", pod.Name, "old-node-id", oldNodeID).Info("decommission old node-id")
 			if err = r.decommissionBroker(ctx, rp, oldNodeID, log, ar); err != nil {
-				return fmt.Errorf("unable to decommission broker: %w", err)
+				combinedErrors = errors.Join(combinedErrors, fmt.Errorf("unable to decommission broker: %w", err))
+				continue
 			}
 		}
 
 		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id annotation")
 		pod.Annotations[resources.PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
-			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
+			combinedErrors = errors.Join(combinedErrors, fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err))
+			continue
 		}
 	}
-	return nil
+	return combinedErrors
 }
 
 func (r *ClusterReconciler) setPodNodeIDLabel(

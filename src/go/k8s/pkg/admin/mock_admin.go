@@ -34,6 +34,7 @@ type MockAdminAPI struct {
 	unknown           []string
 	directValidation  bool
 	brokers           []admin.Broker
+	ghostBrokers      []admin.Broker
 	monitor           sync.Mutex
 	Log               logr.Logger
 	clusterHealth     bool
@@ -338,6 +339,13 @@ func (s *ScopedMockAdminAPI) GetNodeConfig(
 	if err != nil {
 		return admin.NodeConfig{}, err
 	}
+	for _, b := range s.ghostBrokers {
+		if b.NodeID == int(s.Ordinal) {
+			return admin.NodeConfig{
+				NodeID: b.NodeID,
+			}, nil
+		}
+	}
 	if len(brokers) <= int(s.Ordinal) {
 		return admin.NodeConfig{}, fmt.Errorf("broker not registered")
 	}
@@ -359,6 +367,15 @@ func (m *MockAdminAPI) AddBroker(broker admin.Broker) {
 	defer m.monitor.Unlock()
 
 	m.brokers = append(m.brokers, broker)
+}
+
+func (m *MockAdminAPI) AddGhostBroker(broker admin.Broker) bool {
+	m.Log.WithName("AddGhostBroker").WithValues("broker", broker).Info("called")
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	m.ghostBrokers = append(m.ghostBrokers, broker)
+	return true
 }
 
 func (m *MockAdminAPI) RemoveBroker(id int) bool {

@@ -21,3 +21,8 @@ delete:
     kind: Job
     name: call-console
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: call-console
+    namespace: redpanda-system

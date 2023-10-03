@@ -12,6 +12,7 @@ package certmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -79,14 +80,16 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	}
 	toApply = append(toApply, res...)
 
+	var joinedErrors error
 	for _, res := range toApply {
 		err := res.Ensure(ctx)
 		if err != nil {
 			r.logger.Error(err, "Failed to reconcile pki")
+			joinedErrors = errors.Join(joinedErrors, err)
 		}
 	}
 
-	return nil
+	return joinedErrors
 }
 
 func (r *PkiReconciler) Key() types.NamespacedName {
