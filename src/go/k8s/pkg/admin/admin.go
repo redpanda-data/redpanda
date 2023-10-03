@@ -19,7 +19,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
-	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
 

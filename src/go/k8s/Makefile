@@ -33,23 +33,36 @@ ifneq ($(TEST_NAME), )
 	TEST_ONLY_FLAG = --test $(TEST_NAME)
 endif
 
-all: manager
+all: build
 
 # Run tests
-test: generate vet manifests envtest
+test: manifests generate fmt vet envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test --race -v ./... -coverprofile cover.out
 
 # Build manager binary
-manager: generate vet
-	go build -o bin/manager main.go
+.PHONY: manager
+manager: manifests generate fmt vet
+	go build -o bin/manager cmd/main.go
+
+# Build manager binary
+.PHONY: configurator
+configurator: manifests generate fmt vet
+	go build -o bin/configurator cmd/configurator/main.go
+
+.PHONY: build
+build: manager configurator
+
+.PHONY: fmt
+fmt: ## Run go fmt against code.
+	go fmt ./...
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
-run: generate vet manifests
-	go run ./main.go
+run: generate vet manifests fmt
+	go run ./cmd/main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
-run-v2: generate vet manifests
-	go run ./main.go --namespace=$(NAMESPACE) --log-level=debug
+run-v2: generate vet manifests fmt
+	go run ./cmd/main.go --namespace=$(NAMESPACE) --log-level=debug
 
 # Install CRDs into a cluster
 install: manifests kustomize
@@ -73,14 +86,17 @@ undeploy:
 	$(KUSTOMIZE) build config/default | kubectl delete -f -
 
 # Generate manifests e.g. CRD, RBAC etc.
+.PHONY: manifests
 manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases output:rbac:artifacts:config=config/rbac/bases/operator
 
 # Run go vet against code
+.PHONY: vet
 vet:
 	go vet ./...
 
 # Generate code
+.PHONY: generate
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="../../../licenses/boilerplate.go.txt" paths="./..."
 
@@ -203,14 +219,18 @@ gofumpt-lint: gofumpt-install
 goimports: goimports-install
 	goimports -w .
 
-.PHONY: golangci-lint-install
-golangci-lint-install:
-	mkdir -p $(GOLANGCI_LINT)
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOLANGCI_LINT) v1.54.2
-
-.PHONY: golangci-lint
+GOLANGCI_LINT = $(shell pwd)/bin/golangci-lint
+GOLANGCI_LINT_VERSION ?= v1.54.2
 golangci-lint:
-	$(GOLANGCI_LINT)/golangci-lint run --go=1.21
+	@[ -f $(GOLANGCI_LINT) ] || { \
+	set -e ;\
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell dirname $(GOLANGCI_LINT)) $(  GOLANGCI_LINT_VERSION) ;\
+	}
 
 .PHONY: lint
-lint: gofumpt-lint golangci-lint
+lint: golangci-lint
+	$(GOLANGCI_LINT) run
+
+.PHONY: lint-fix
+lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+	$(GOLANGCI_LINT) run --fix
