@@ -9,19 +9,19 @@ resources:
 - bases/cluster.redpanda.com_topics.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
-patchesStrategicMerge:
+patches:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
-#- patches/webhook_in_clusters.yaml
-#- patches/webhook_in_consoles.yaml
-#- patches/webhook_in_topics.yaml
+- path: patches/webhook_in_clusters.yaml
+- path: patches/webhook_in_redpanda_consoles.yaml
+- path: patches/webhook_in_cluster.redpanda.com_topics.yaml
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # [CERTMANAGER] To enable webhook, uncomment all the sections with [CERTMANAGER] prefix.
 # patches here are for enabling the CA injection for each CRD
-#- patches/cainjection_in_clusters.yaml
-#- patches/cainjection_in_consoles.yaml
-#- patches/cainjection_in_topics.yaml
+- path: patches/cainjection_in_clusters.yaml
+- path: patches/cainjection_in_redpanda_consoles.yaml
+- path: patches/cainjection_in_cluster.redpanda.com_topics.yaml
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 
 # the following config is for teaching kustomize how to do kustomization for CRDs.
