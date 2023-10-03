@@ -55,13 +55,10 @@ public:
     }
 
     size_t key() const noexcept final {
-        if (!_key) [[unlikely]] {
-            size_t h = 0;
-            boost::hash_combine(h, this->hash());
-            boost::hash_combine(h, this->base_hash());
-            _key.emplace(h);
-        }
-        return *_key;
+        size_t h = 0;
+        boost::hash_combine(h, this->hash());
+        boost::hash_combine(h, this->base_hash());
+        return h;
     }
 
     ss::sstring to_json() const final {
@@ -134,8 +131,6 @@ private:
     timestamp_t _start_time;
     timestamp_t _time;
     type_uid _type_uid;
-
-    mutable std::optional<size_t> _key;
 
     size_t base_hash() const {
         size_t h = 0;
