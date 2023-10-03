@@ -1,3 +1,6 @@
+from reader import Reader
+
+
 def read_broker_shard(reader):
     b = {}
     b['id'] = reader.read_int32()
@@ -81,19 +84,46 @@ def read_configuration_update(rdr):
     }
 
 
+def decode_configuration_update(rdr: Reader, version: int):
+    ret = {}
+    ret['replicas_to_add'] = rdr.read_serde_vector(read_vnode_serde)
+    ret['replicas_to_remove'] = rdr.read_serde_vector(read_vnode_serde)
+    if version > 0:
+        ret['learner_start_offset'] = rdr.read_optional(Reader.read_int64)
+    return ret
+
+
+def read_configuration_update_serde(rdr: Reader):
+    return rdr.read_envelope(decode_configuration_update, max_version=1)
+
+
 def read_raft_config(rdr):
     cfg = {}
+    version = rdr.peek_int8()
+    if version >= 6:
+        return rdr.read_envelope(lambda rdr, _: {
+            "current":
+            read_group_nodes_serde(rdr),
+            "configuration_update":
+            rdr.read_optional(read_configuration_update_serde),
+            "old":
+            rdr.read_optional(read_group_nodes_serde),
+            "revision":
+            rdr.read_int64()
+        },
+                                 max_version=6)
 
-    cfg['version'] = rdr.read_int8()
-    if cfg['version'] < 5:
-        cfg['brokers'] = rdr.read_vector(read_broker)
-    cfg['current_config'] = read_group_nodes(rdr)
-    cfg['prev_config'] = rdr.read_optional(read_group_nodes)
-    cfg['revision'] = rdr.read_int64()
+    else:
+        cfg['version'] = rdr.read_int8()
+        if cfg['version'] < 5:
+            cfg['brokers'] = rdr.read_vector(read_broker)
+        cfg['current_config'] = read_group_nodes(rdr)
+        cfg['prev_config'] = rdr.read_optional(read_group_nodes)
+        cfg['revision'] = rdr.read_int64()
 
-    if cfg['version'] >= 4:
-        cfg['configuration_update'] = rdr.read_optional(
-            lambda ordr: read_configuration_update(ordr))
+        if cfg['version'] >= 4:
+            cfg['configuration_update'] = rdr.read_optional(
+                lambda ordr: read_configuration_update(ordr))
 
     return cfg
 
@@ -110,6 +140,21 @@ def read_group_nodes(r):
     ret['voters'] = r.read_vector(read_vnode)
     ret['learners'] = r.read_vector(read_vnode)
     return ret
+
+
+def read_vnode_serde(r):
+    return r.read_envelope(lambda r, _: {
+        "id": r.read_int32(),
+        "revision": r.read_int64()
+    })
+
+
+def read_group_nodes_serde(r):
+    return r.read_envelope(
+        lambda r, _: {
+            "voters": r.read_serde_vector(read_vnode_serde),
+            "learners": r.read_serde_vector(read_vnode_serde)
+        })
 
 
 def decode_cleanup_policy(bitflags):
