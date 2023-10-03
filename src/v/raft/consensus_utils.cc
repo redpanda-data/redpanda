@@ -181,11 +181,6 @@ serialize_configuration_as_batches(group_configuration cfg) {
     return batches;
 }
 
-model::record_batch_reader serialize_configuration(group_configuration cfg) {
-    return model::make_memory_record_batch_reader(
-      serialize_configuration_as_batches(std::move(cfg)));
-}
-
 model::record_batch make_ghost_batch(
   model::offset start_offset, model::offset end_offset, model::term_id term) {
     auto delta = end_offset - start_offset;

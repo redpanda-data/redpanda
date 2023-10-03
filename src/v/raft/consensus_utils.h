@@ -39,9 +39,6 @@ foreign_share_n(model::record_batch_reader&&, std::size_t);
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg);
 
-/// serialize group configuration to the record_batch_reader
-model::record_batch_reader serialize_configuration(group_configuration cfg);
-
 /// returns a fully parsed config state from a given storage log, starting at
 /// given offset
 ss::future<raft::configuration_bootstrap_state> read_bootstrap_state(
