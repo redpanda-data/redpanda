@@ -220,6 +220,24 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_types) {
                   decltype(v)::const_iterator>);
 }
 
+struct foo {
+    int a;
+    friend std::ostream& operator<<(std::ostream& os, foo const& f) {
+        return os << f.a;
+    }
+    friend auto operator<=>(foo const&, foo const&) = default;
+};
+
+BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_access) {
+    using vtype = fragmented_vector<foo, 8>;
+    auto vec = vtype{};
+    vec.push_back(foo{2});
+
+    BOOST_CHECK_EQUAL(*vec.begin(), foo{2});
+    BOOST_CHECK_EQUAL((*vec.begin()).a, 2);
+    BOOST_CHECK_EQUAL(vec.begin()->a, 2);
+}
+
 /**
  * Get a fragmented vector for elements of size E, with max_fragment_size F.
  */
@@ -317,23 +335,6 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_vector_clear) {
 
     v = make<int, 8>({5, 5, 5, 5});
     BOOST_CHECK_EQUAL(v->size(), 4);
-
-    v.u = std::vector{1, 2, 3};
-    BOOST_CHECK_EQUAL(v->size(), 3);
-}
-
-BOOST_AUTO_TEST_CASE(fragmented_vector_vector_assign) {
-    std::vector vin0{1, 2, 3};
-    std::vector vin1{4, 5};
-
-    checker<int, 8> v;
-    BOOST_CHECK_EQUAL(v, (make({})));
-
-    v.get() = std::vector{1};
-    BOOST_CHECK_EQUAL(v, (make({1})));
-
-    v.get() = std::vector{2, 3, 4};
-    BOOST_CHECK_EQUAL(v, (make({2, 3, 4})));
 }
 
 BOOST_AUTO_TEST_CASE(fragmented_vector_pop_back_n) {

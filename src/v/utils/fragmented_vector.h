@@ -208,19 +208,6 @@ public:
     static size_t elements_per_fragment() { return elems_per_frag; }
 
     /**
-     * Assign from a std::vector.
-     */
-    fragmented_vector& operator=(const std::vector<T>& rhs) noexcept {
-        clear();
-
-        for (auto& e : rhs) {
-            push_back(e);
-        }
-
-        return *this;
-    }
-
-    /**
      * Remove all elements from the vector.
      *
      * Unlike std::vector, this also releases all the memory from
@@ -247,6 +234,7 @@ public:
         iter() = default;
 
         reference operator*() const { return _vec->operator[](_index); }
+        pointer operator->() const { return &_vec->operator[](_index); }
 
         iter& operator+=(ssize_t n) {
             _index += n;
@@ -279,8 +267,6 @@ public:
             --*this;
             return tmp;
         }
-
-        pointer operator->() const { return &_vec->operator[](_index); }
 
         iter operator+(difference_type offset) { return iter{*this} += offset; }
         iter operator-(difference_type offset) { return iter{*this} -= offset; }
