@@ -21,7 +21,17 @@ delete:
     kind: Job
     name: call-console-admin-api
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: call-console-admin-api
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: check-version
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: check-version
     namespace: redpanda-system

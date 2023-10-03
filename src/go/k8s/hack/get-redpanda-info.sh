@@ -44,7 +44,16 @@ for cl in $(kubectl -n $script_namespace get cluster --output=jsonpath='{.items.
   done
 done
 
-kubectl get events --sort-by metadata.creationTimestamp >$ARTIFACTS_PATH/events.txt
+kubectl get -n $script_namespace certificates -o yaml >$ARTIFACTS_PATH/certificates.yaml
+kubectl get -n $script_namespace certificatesigningrequests -o yaml >$ARTIFACTS_PATH/certificatesigningrequests.yaml
+kubectl get -n $script_namespace issuers -o yaml >$ARTIFACTS_PATH/issuers.yaml
+kubectl get clusterissuers -o yaml >$ARTIFACTS_PATH/all-clusterissuers.yaml
+kubectl get -n $script_namespace certificaterequests -o yaml >$ARTIFACTS_PATH/certificaterequests.yaml
+
+kubectl get -n $script_namespace sts -o yaml >$ARTIFACTS_PATH/sts.yaml
+kubectl get -n $script_namespace redpanda -o yaml >$ARTIFACTS_PATH/redpandas.yaml
+
+kubectl get events -n $script_namespace --sort-by metadata.creationTimestamp >$ARTIFACTS_PATH/events.txt
 kubectl get events --sort-by metadata.creationTimestamp -A >$ARTIFACTS_PATH/all-events.txt
 kubectl describe node >$ARTIFACTS_PATH/described-nodes.txt
 kubectl get pod -A -o yaml >$ARTIFACTS_PATH/all-pods.yaml

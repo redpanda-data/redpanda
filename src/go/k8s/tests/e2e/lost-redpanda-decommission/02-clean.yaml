@@ -3,18 +3,17 @@ kind: TestStep
 delete:
   - apiVersion: redpanda.vectorized.io/v1alpha1
     kind: Cluster
-    name: cluster-sasl-no-calls
+    name: lost-rp-decommission
     namespace: redpanda-system
   - apiVersion: v1
     kind: PersistentVolumeClaim
-    name: datadir-cluster-sasl-no-calls-0
-    namespace: redpanda-system
-  - apiVersion: batch/v1
-    kind: Job
-    name: call-controller-status
+    name: datadir-lost-rp-decommission-0
     namespace: redpanda-system
   - apiVersion: v1
-    kind: Pod
-    labels:
-      job-name: call-controller-status
+    kind: PersistentVolumeClaim
+    name: datadir-lost-rp-decommission-1
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-lost-rp-decommission-2
     namespace: redpanda-system

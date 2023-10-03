@@ -10,9 +10,8 @@ testDirs:
 kindConfig: ./kind.yaml
 kindNodeCache: false
 commands:
+  - command: kubectl taint node kind-control-plane node-role.kubernetes.io/master- node-role.kubernetes.io/control-plane-
   - command: "mkdir -p tests/_e2e_artifacts"
-  - command: "kubectl taint nodes -l node-role.kubernetes.io/master= node-role.kubernetes.io/master:NoSchedule-"
-    ignoreFailure: true
   - command: "./hack/install-cert-manager.sh tests/_e2e_artifacts"
     background: true
     ignoreFailure: true
@@ -23,9 +22,9 @@ commands:
     background: true
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_e2e_artifacts
-timeout: 390
+timeout: 300
 reportFormat: xml
-parallel: 4
+parallel: 2
 namespace: redpanda-system
 suppress:
   - events

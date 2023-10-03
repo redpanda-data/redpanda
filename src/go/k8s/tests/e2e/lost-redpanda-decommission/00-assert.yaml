@@ -4,7 +4,7 @@ kind: Cluster
 metadata:
   name: lost-rp-decommission
 status:
-  version: "v23.2.3"
+  version: "v23.2.10"
   readyReplicas: 3
   replicas: 3
   upgrading: false

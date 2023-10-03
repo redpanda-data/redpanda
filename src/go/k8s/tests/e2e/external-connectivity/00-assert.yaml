@@ -1,3 +1,14 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: external-connectivity
+status:
+  replicas: 1
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

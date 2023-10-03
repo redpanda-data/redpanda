@@ -13,7 +13,17 @@ delete:
     kind: Job
     name: create-test-topic-long-name
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-test-topic-long-name
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: produce-message-long-name
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: produce-message-long-name
     namespace: redpanda-system

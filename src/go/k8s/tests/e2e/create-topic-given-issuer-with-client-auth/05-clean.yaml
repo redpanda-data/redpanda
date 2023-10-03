@@ -13,9 +13,19 @@ delete:
     kind: Job
     name: create-test-topic-with-client-auth
     namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-test-topic-with-client-auth
+    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: create-schema-with-client-auth
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: create-schema-with-client-auth
     namespace: redpanda-system
   - apiVersion: cert-manager.io/v1
     kind: ClusterIssuer

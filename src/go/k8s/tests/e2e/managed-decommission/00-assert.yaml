@@ -17,6 +17,20 @@ metadata:
   annotations:
     operator.redpanda.com/node-id: "0"
 ---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: managed-decommission-1
+  annotations:
+    operator.redpanda.com/node-id: "1"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: managed-decommission-2
+  annotations:
+    operator.redpanda.com/node-id: "2"
+---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

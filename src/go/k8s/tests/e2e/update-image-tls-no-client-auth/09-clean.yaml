@@ -21,3 +21,21 @@ delete:
     kind: Deployment
     name: kminion-admin-tls
     namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: wait-for-v23-1-11-tls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: wait-for-v23-1-11-tls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: wait-for-tip-of-the-dev-tls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Pod
+    labels:
+      job-name: wait-for-tip-of-the-dev-tls
+    namespace: redpanda-system
