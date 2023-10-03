@@ -71,4 +71,41 @@ struct transform_metadata
           name, input_topic, output_topics, environment, uuid, source_ptr);
     }
 };
+
+// key / value types used to track consumption offsets by transforms.
+struct transform_offsets_key
+  : serde::envelope<
+      transform_offsets_key,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_id id;
+    // id of the partition from transform's input/source topic.
+    partition_id partition;
+
+    auto operator<=>(const transform_offsets_key&) const = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const transform_offsets_key&);
+
+    template<typename H>
+    friend H AbslHashValue(H h, const transform_offsets_key& k) {
+        return H::combine(std::move(h), k.id(), k.partition());
+    }
+
+    auto serde_fields() { return std::tie(id, partition); }
+};
+
+struct transform_offsets_value
+  : serde::envelope<
+      transform_offsets_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    kafka::offset offset;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const transform_offsets_value&);
+
+    auto serde_fields() { return std::tie(offset); }
+};
+
 } // namespace model
