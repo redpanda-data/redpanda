@@ -294,7 +294,7 @@ private:
     ss::future<> fetch_deltas();
 
     ss::future<> reconcile_topics();
-    ss::future<> reconcile_ntp(deltas_t&);
+    ss::future<> reconcile_ntp(const model::ntp&, deltas_t&);
 
     ss::future<std::error_code> execute_partition_op(const delta_metadata&);
     ss::future<std::error_code> process_partition_reconfiguration(
@@ -405,6 +405,9 @@ private:
     void setup_metrics();
 
     bool command_based_membership_active() const;
+
+    bool should_skip(const model::ntp&) const;
+
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;

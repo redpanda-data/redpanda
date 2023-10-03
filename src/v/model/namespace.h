@@ -75,4 +75,14 @@ inline const model::topic_partition schema_registry_internal_tp{
 inline const model::ntp wasm_binaries_internal_ntp(
   model::redpanda_ns, model::topic("wasm_binaries"), model::partition_id(0));
 
+inline bool is_user_topic(topic_namespace_view tp_ns) {
+    return tp_ns.ns == kafka_namespace
+           && tp_ns.tp != kafka_consumer_offsets_topic
+           && tp_ns.tp != schema_registry_internal_tp.topic;
+}
+
+inline bool is_user_topic(const ntp& ntp) {
+    return is_user_topic(topic_namespace_view{ntp});
+}
+
 } // namespace model
