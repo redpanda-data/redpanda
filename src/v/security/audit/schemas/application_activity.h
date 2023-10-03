@@ -15,7 +15,7 @@
 #include "security/audit/schemas/types.h"
 
 namespace security::audit {
-class api_activity final : public ocsf_base_event {
+class api_activity final : public ocsf_base_event<api_activity> {
 public:
     enum class activity_id : uint8_t {
         unknown = 0,
@@ -118,7 +118,8 @@ private:
     }
 };
 
-class application_lifecycle final : public ocsf_base_event {
+class application_lifecycle final
+  : public ocsf_base_event<application_lifecycle> {
 public:
     enum class activity_id : uint8_t {
         unknown = 0,

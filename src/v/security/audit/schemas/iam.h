@@ -16,7 +16,7 @@
 #include "security/audit/schemas/types.h"
 
 namespace security::audit {
-class authentication final : public ocsf_base_event {
+class authentication final : public ocsf_base_event<authentication> {
 public:
     using used_cleartext = ss::bool_class<struct used_cleartext_tag>;
     using used_mfa = ss::bool_class<struct used_mfa_tag>;

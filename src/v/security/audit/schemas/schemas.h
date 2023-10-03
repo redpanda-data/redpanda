@@ -37,14 +37,24 @@ type_uid get_ocsf_type(class_uid class_uid, T activity_id) {
     return type_uid{t(class_uid) * factor + t(activity_id)};
 }
 
-class ocsf_base_event {
+class ocsf_base_impl {
 public:
-    void increment(timestamp_t event_time) const {
+    virtual ~ocsf_base_impl() = default;
+
+    virtual ss::sstring to_json() const = 0;
+    virtual size_t key() const noexcept = 0;
+    virtual void increment(timestamp_t) const = 0;
+};
+
+template<typename Derived>
+class ocsf_base_event : public ocsf_base_impl {
+public:
+    void increment(timestamp_t event_time) const final {
         this->_count++;
         this->_end_time = event_time;
     }
 
-    size_t key() const noexcept {
+    size_t key() const noexcept final {
         if (!_key) [[unlikely]] {
             size_t h = 0;
             boost::hash_combine(h, this->hash());
@@ -54,11 +64,16 @@ public:
         return *_key;
     }
 
+    ss::sstring to_json() const final {
+        return ::security::audit::rjson_serialize(
+          *(static_cast<const Derived*>(this)));
+    }
+
     ocsf_base_event(const ocsf_base_event&) = delete;
     ocsf_base_event& operator=(const ocsf_base_event&) = delete;
     ocsf_base_event(ocsf_base_event&&) = default;
     ocsf_base_event& operator=(ocsf_base_event&&) = default;
-    virtual ~ocsf_base_event() = default;
+    ~ocsf_base_event() override = default;
 
 protected:
     template<typename T>
