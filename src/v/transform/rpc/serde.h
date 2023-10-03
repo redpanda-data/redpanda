@@ -15,6 +15,7 @@
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "serde/envelope.h"
+#include "utils/fragmented_vector.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -220,4 +221,129 @@ struct load_wasm_binary_reply
     cluster::errc ec = cluster::errc::success;
     iobuf data;
 };
+
+struct find_coordinator_request
+  : serde::envelope<
+      find_coordinator_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    find_coordinator_request() = default;
+
+    void add(model::transform_offsets_key key) { keys.push_back(key); }
+
+    fragmented_vector<model::transform_offsets_key> keys;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const find_coordinator_request&);
+
+    auto serde_fields() { return std::tie(keys); }
+};
+
+struct find_coordinator_response
+  : serde::envelope<
+      find_coordinator_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    find_coordinator_response() = default;
+
+    cluster::errc ec{cluster::errc::success};
+    absl::flat_hash_map<model::transform_offsets_key, model::partition_id>
+      coordinators;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const find_coordinator_request&);
+
+    auto serde_fields() { return std::tie(ec, coordinators); }
+};
+
+struct offset_commit_request
+  : serde::envelope<
+      offset_commit_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    offset_commit_request() = default;
+    explicit offset_commit_request(model::partition_id c)
+      : coordinator(c) {}
+
+    void
+    add(model::transform_offsets_key key, model::transform_offsets_value val) {
+        kvs.insert({key, val});
+    }
+
+    absl::flat_hash_map<
+      model::transform_offsets_key,
+      model::transform_offsets_value>
+      kvs;
+    model::partition_id coordinator;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const offset_commit_request&);
+
+    auto serde_fields() { return std::tie(kvs, coordinator); }
+};
+
+struct offset_commit_response
+  : serde::envelope<
+      offset_commit_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    offset_commit_response() = default;
+    explicit offset_commit_response(cluster::errc e)
+      : errc(e) {}
+
+    cluster::errc errc{cluster::errc::success};
+
+    friend std::ostream&
+    operator<<(std::ostream&, const offset_commit_response&);
+
+    auto serde_fields() { return std::tie(errc); }
+};
+
+struct offset_fetch_request
+  : serde::envelope<
+      offset_commit_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    offset_fetch_request() = default;
+    explicit offset_fetch_request(
+      model::transform_offsets_key k, model::partition_id c)
+      : key(k)
+      , coordinator(c) {}
+
+    model::transform_offsets_key key;
+    model::partition_id coordinator;
+
+    auto serde_fields() { return std::tie(key, coordinator); }
+};
+
+struct offset_fetch_response
+  : serde::envelope<
+      offset_commit_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    offset_fetch_response() = default;
+    explicit offset_fetch_response(
+      cluster::errc e, std::optional<model::transform_offsets_value> res)
+      : errc(e)
+      , result(res) {}
+
+    cluster::errc errc{cluster::errc::success};
+    // result set on errc == success.
+    std::optional<model::transform_offsets_value> result;
+
+    auto serde_fields() { return std::tie(errc, result); }
+};
+
 } // namespace transform::rpc

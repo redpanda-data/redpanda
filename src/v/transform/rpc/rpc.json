@@ -24,6 +24,21 @@
             "name": "delete_wasm_binary",
             "input_type": "delete_wasm_binary_request",
             "output_type": "delete_wasm_binary_reply"
+        },
+        {
+            "name": "find_coordinator",
+            "input_type": "find_coordinator_request",
+            "output_type": "find_coordinator_response"
+        },
+        {
+            "name": "offset_commit",
+            "input_type": "offset_commit_request",
+            "output_type": "offset_commit_response"
+        },
+        {
+            "name": "offset_fetch",
+            "input_type": "offset_fetch_request",
+            "output_type": "offset_fetch_response"
         }
     ]
 }

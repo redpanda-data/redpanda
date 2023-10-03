@@ -162,6 +162,25 @@ private:
       _topic_cfgs;
 };
 
+class delegating_fake_topic_metadata_cache : public topic_metadata_cache {
+public:
+    explicit delegating_fake_topic_metadata_cache(
+      fake_topic_metadata_cache* cache)
+      : _delegator(cache) {}
+
+    std::optional<cluster::topic_configuration>
+    find_topic_cfg(model::topic_namespace_view tp_ns) const final {
+        return _delegator->find_topic_cfg(tp_ns);
+    }
+
+    uint32_t get_default_batch_max_bytes() const final {
+        return _delegator->get_default_batch_max_bytes();
+    };
+
+private:
+    fake_topic_metadata_cache* _delegator;
+};
+
 struct produced_batch {
     model::ntp ntp;
     model::record_batch batch;
@@ -248,6 +267,27 @@ public:
         auto pp = kafka::partition_proxy(
           std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
         co_return co_await fn(&pp);
+    }
+
+    ss::future<find_coordinator_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<ss::future<find_coordinator_response>(
+        cluster::partition_manager&)>) override final {
+        return ss::make_exception_future<find_coordinator_response>({});
+    }
+
+    ss::future<offset_commit_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<ss::future<offset_commit_response>(
+        cluster::partition_manager&)>) override final {
+        return ss::make_exception_future<offset_commit_response>({});
+    }
+
+    ss::future<offset_fetch_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<ss::future<offset_fetch_response>(
+        cluster::partition_manager&)>) override final {
+        return ss::make_exception_future<offset_fetch_response>({});
     }
 
 private:
@@ -463,6 +503,7 @@ public:
         _client = std::make_unique<rpc::client>(
           self_node,
           std::move(fplc),
+          std::make_unique<delegating_fake_topic_metadata_cache>(_local_ftmc),
           std::move(ftpc),
           &_conn_cache,
           &_local_services);

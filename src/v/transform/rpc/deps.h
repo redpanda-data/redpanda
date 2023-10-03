@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
+#include "transform/rpc/serde.h"
 
 #include <seastar/util/noncopyable_function.hh>
 
@@ -141,6 +142,24 @@ public:
       const model::ntp&,
       ss::noncopyable_function<
         ss::future<cluster::errc>(kafka::partition_proxy*)>)
+      = 0;
+
+    virtual ss::future<find_coordinator_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<
+        ss::future<find_coordinator_response>(cluster::partition_manager&)>)
+      = 0;
+
+    virtual ss::future<offset_commit_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<
+        ss::future<offset_commit_response>(cluster::partition_manager&)>)
+      = 0;
+
+    virtual ss::future<offset_fetch_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<
+        ss::future<offset_fetch_response>(cluster::partition_manager&)>)
       = 0;
 };
 

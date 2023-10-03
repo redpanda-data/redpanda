@@ -64,6 +64,13 @@ private:
     ss::sharded<cluster::metadata_cache>* _cache;
 };
 class partition_manager_impl final : public partition_manager {
+private:
+    template<class Func>
+    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
+    auto invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
+        return _manager->invoke_on(shard, std::forward<Func>(func));
+    }
+
 public:
     partition_manager_impl(
       ss::sharded<cluster::shard_table>* table,
@@ -91,6 +98,27 @@ public:
       ss::noncopyable_function<
         ss::future<cluster::errc>(kafka::partition_proxy*)> fn) final {
         return invoke_on_shard_impl(shard, ntp, std::move(fn));
+    }
+
+    ss::future<offset_commit_response> invoke_on_shard(
+      ss::shard_id shard,
+      ss::noncopyable_function<ss::future<offset_commit_response>(
+        cluster::partition_manager&)> func) final {
+        return invoke_func_on_shard_impl(shard, std::move(func));
+    }
+
+    ss::future<find_coordinator_response> invoke_on_shard(
+      ss::shard_id shard,
+      ss::noncopyable_function<ss::future<find_coordinator_response>(
+        cluster::partition_manager&)> func) final {
+        return invoke_func_on_shard_impl(shard, std::move(func));
+    }
+
+    ss::future<offset_fetch_response> invoke_on_shard(
+      ss::shard_id shard,
+      ss::noncopyable_function<ss::future<offset_fetch_response>(
+        cluster::partition_manager&)> func) final {
+        return invoke_func_on_shard_impl(shard, std::move(func));
     }
 
 private:
