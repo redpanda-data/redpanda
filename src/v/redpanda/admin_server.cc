@@ -1480,6 +1480,7 @@ void admin_server::register_cluster_config_routes() {
       });
 }
 
+// NOTEANDREA patch is complex and could hide some problems highlighted by aliases
 ss::future<ss::json::json_return_type>
 admin_server::patch_cluster_config_handler(
   std::unique_ptr<ss::http::request> req,
