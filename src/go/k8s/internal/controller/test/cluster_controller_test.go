@@ -30,6 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -858,7 +859,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 			for i := range pods {
 				objects = append(objects, pods[i])
 			}
-			fc := fake.NewClientBuilder().WithObjects(objects...).Build()
+			fc := fake.NewClientBuilder().WithObjects(objects...).WithStatusSubresource(objects...).Build()
 			r := &redpanda.ClusterReconciler{
 				Client:                    fc,
 				Log:                       ctrl.Log,
@@ -880,8 +881,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 
 	DescribeTable("Image pull policy tests table", func(imagePullPolicy string, matcher types2.GomegaMatcher) {
 		k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-			Scheme:             scheme.Scheme,
-			MetricsBindAddress: "0",
+			Scheme: scheme.Scheme,
+			Metrics: metricsserver.Options{
+				BindAddress: "0",
+			},
 		})
 		Expect(err).NotTo(HaveOccurred())
 

@@ -284,7 +284,7 @@ func TestValidateUpdate(t *testing.T) {
 		},
 	}
 
-	err := updatedCluster.ValidateUpdate(redpandaCluster)
+	_, err := updatedCluster.ValidateUpdate(redpandaCluster)
 	if err == nil {
 		t.Fatalf("expecting validation error but got none")
 	}
@@ -314,10 +314,10 @@ func TestValidateUpdate(t *testing.T) {
 
 func TestNilReplicasIsNotAllowed(t *testing.T) {
 	rpCluster := validRedpandaCluster()
-	err := rpCluster.ValidateCreate()
+	_, err := rpCluster.ValidateCreate()
 	require.Nil(t, err, "Initial cluster is not valid")
 	rpCluster.Spec.Replicas = nil
-	err = rpCluster.ValidateCreate()
+	_, err = rpCluster.ValidateCreate()
 	assert.Error(t, err)
 }
 
@@ -352,7 +352,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	}
 
 	t.Run("same object updated", func(t *testing.T) {
-		err := redpandaCluster.ValidateUpdate(redpandaCluster)
+		_, err := redpandaCluster.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
 
@@ -360,7 +360,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		scaleUp := *redpandaCluster.Spec.Replicas + 1
 		updatedScaleUp := redpandaCluster.DeepCopy()
 		updatedScaleUp.Spec.Replicas = &scaleUp
-		err := updatedScaleUp.ValidateUpdate(redpandaCluster)
+		_, err := updatedScaleUp.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
 
@@ -368,7 +368,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatedImage := redpandaCluster.DeepCopy()
 		updatedImage.Spec.Image = "differentimage"
 		updatedImage.Spec.Version = "111"
-		err := updatedImage.ValidateUpdate(redpandaCluster)
+		_, err := updatedImage.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
 
@@ -379,7 +379,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.RPCServer.Port = 200
 		updatePort.Spec.Configuration.SchemaRegistry.Port = 200
 
-		err := updatePort.ValidateUpdate(redpandaCluster)
+		_, err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -392,7 +392,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.PandaproxyAPI = append(updatePort.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
 
-		err := updatePort.ValidateUpdate(redpandaCluster)
+		_, err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -407,7 +407,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
 		}
 
-		err := updatePort.ValidateUpdate(redpandaCluster)
+		_, err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
 
@@ -419,7 +419,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 300
 		updatePort.Spec.Configuration.RPCServer.Port = 201
 
-		err := updatePort.ValidateUpdate(redpandaCluster)
+		_, err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -432,7 +432,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
 		updatePort.Spec.Configuration.RPCServer.Port = 301
 
-		err := updatePort.ValidateUpdate(redpandaCluster)
+		_, err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -440,7 +440,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.Configuration.SchemaRegistry.Port = updatePort.Spec.Configuration.PandaproxyAPI[0].Port
 
-		err := updatePort.ValidateUpdate(redpandaCluster)
+		_, err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -453,7 +453,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 200
 		updatePort.Spec.Configuration.RPCServer.Port = 300
 
-		err := updatePort.ValidateUpdate(redpandaCluster)
+		_, err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -462,7 +462,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		tls.Spec.Configuration.KafkaAPI[0].TLS.RequireClientAuth = true
 		tls.Spec.Configuration.KafkaAPI[0].TLS.Enabled = true
 
-		err := tls.ValidateUpdate(redpandaCluster)
+		_, err := tls.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
 
@@ -471,7 +471,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
 		exPort.Spec.Configuration.KafkaAPI = append(exPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
-		err := exPort.ValidateUpdate(redpandaCluster)
+		_, err := exPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -480,7 +480,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.KafkaAPI = append(multiPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{Port: 123})
-		err := multiPort.ValidateUpdate(redpandaCluster)
+		_, err := multiPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -488,7 +488,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("external listener cannot have port specified", func(t *testing.T) {
 		exPort := redpandaCluster.DeepCopy()
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
-		err := exPort.ValidateUpdate(redpandaCluster)
+		_, err := exPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -497,7 +497,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		noPort := redpandaCluster.DeepCopy()
 		noPort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
 
-		err := noPort.ValidateUpdate(redpandaCluster)
+		_, err := noPort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -505,7 +505,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
 			v1alpha1.AdminAPI{Port: 123})
-		err := multiPort.ValidateUpdate(redpandaCluster)
+		_, err := multiPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -519,7 +519,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 				External: v1alpha1.ExternalConnectivityConfig{Enabled: true},
 				TLS:      v1alpha1.AdminAPITLS{Enabled: true},
 			})
-		err := multiPort.ValidateUpdate(redpandaCluster)
+		_, err := multiPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -528,7 +528,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.AdminAPI[0].TLS.RequireClientAuth = true
 		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = false
-		err := multiPort.ValidateUpdate(redpandaCluster)
+		_, err := multiPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -541,7 +541,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 				External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"}},
 			},
 		}
-		err := withSub.ValidateUpdate(redpandaCluster)
+		_, err := withSub.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -550,7 +550,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{Port: 123}, v1alpha1.PandaproxyAPI{Port: 321})
-		err := multiPort.ValidateUpdate(redpandaCluster)
+		_, err := multiPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -559,7 +559,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		noInternal := redpandaCluster.DeepCopy()
 		noInternal.Spec.Configuration.PandaproxyAPI = append(noInternal.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123})
-		err := noInternal.ValidateUpdate(redpandaCluster)
+		_, err := noInternal.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
 	})
@@ -577,7 +577,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			TLS: v1alpha1.PandaproxyAPITLS{Enabled: false, RequireClientAuth: true},
 		})
 
-		err := tls.ValidateUpdate(redpandaCluster)
+		_, err := tls.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -594,7 +594,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			TLS: v1alpha1.PandaproxyAPITLS{Enabled: true, IssuerRef: &cmmeta.ObjectReference{}, NodeSecretRef: &corev1.ObjectReference{}},
 		})
 
-		err := tls.ValidateUpdate(redpandaCluster)
+		_, err := tls.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -612,7 +612,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			TLS: v1alpha1.PandaproxyAPITLS{Enabled: true, IssuerRef: &cmmeta.ObjectReference{}},
 		})
 
-		err := tls.ValidateUpdate(redpandaCluster)
+		_, err := tls.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
 
@@ -627,7 +627,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			corev1.ResourceCPU:    resource.MustParse("1"),
 		}
 
-		err := c.ValidateUpdate(redpandaCluster)
+		_, err := c.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -649,7 +649,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			},
 		}
 
-		err := c.ValidateUpdate(redpandaCluster)
+		_, err := c.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
 
@@ -661,7 +661,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		now := metav1.Now()
 		license.SetDeletionTimestamp(&now)
 
-		err := license.ValidateUpdate(redpandaCluster)
+		_, err := license.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
 
@@ -712,7 +712,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 				corev1.ResourceCPU:    resource.MustParse(tc.target),
 			}
 
-			err := newCluster.ValidateUpdate(oldCluster)
+			_, err := newCluster.ValidateUpdate(oldCluster)
 			if tc.error {
 				assert.Error(t, err)
 				if err != nil && tc.lowerBound != "" {
@@ -735,7 +735,7 @@ func TestCreation(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 
-		err := newPort.ValidateCreate()
+		_, err := newPort.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -746,7 +746,7 @@ func TestCreation(t *testing.T) {
 		newPort.Spec.Configuration.RPCServer.Port = 200
 		newPort.Spec.Configuration.SchemaRegistry.Port = 200
 
-		err := newPort.ValidateCreate()
+		_, err := newPort.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -760,7 +760,7 @@ func TestCreation(t *testing.T) {
 		newPort.Spec.Configuration.PandaproxyAPI = append(newPort.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
 
-		err := newPort.ValidateCreate()
+		_, err := newPort.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -775,7 +775,7 @@ func TestCreation(t *testing.T) {
 			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
 		}
 
-		err := newPort.ValidateCreate()
+		_, err := newPort.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -783,7 +783,7 @@ func TestCreation(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.Configuration.SchemaRegistry.Port = newPort.Spec.Configuration.PandaproxyAPI[0].Port
 
-		err := newPort.ValidateCreate()
+		_, err := newPort.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -791,7 +791,7 @@ func TestCreation(t *testing.T) {
 		noPort := redpandaCluster.DeepCopy()
 		noPort.Spec.Configuration.KafkaAPI = []v1alpha1.KafkaAPI{}
 
-		err := noPort.ValidateCreate()
+		_, err := noPort.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -799,7 +799,7 @@ func TestCreation(t *testing.T) {
 		noPort := redpandaCluster.DeepCopy()
 		noPort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
 
-		err := noPort.ValidateCreate()
+		_, err := noPort.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -807,7 +807,7 @@ func TestCreation(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
 			v1alpha1.AdminAPI{Port: 123})
-		err := multiPort.ValidateCreate()
+		_, err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -824,7 +824,7 @@ func TestCreation(t *testing.T) {
 			Redpanda: nil,
 		}
 
-		err := memory.ValidateCreate()
+		_, err := memory.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -841,7 +841,7 @@ func TestCreation(t *testing.T) {
 		}
 		memory.Spec.Configuration.DeveloperMode = true
 
-		err := memory.ValidateCreate()
+		_, err := memory.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -860,7 +860,7 @@ func TestCreation(t *testing.T) {
 			},
 		}
 
-		err := memory.ValidateCreate()
+		_, err := memory.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -884,7 +884,7 @@ func TestCreation(t *testing.T) {
 			},
 		}
 
-		err := memory.ValidateCreate()
+		_, err := memory.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -908,7 +908,7 @@ func TestCreation(t *testing.T) {
 			},
 		}
 
-		err := memory.ValidateCreate()
+		_, err := memory.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -932,7 +932,7 @@ func TestCreation(t *testing.T) {
 			},
 		}
 
-		err := memory.ValidateCreate()
+		_, err := memory.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -941,7 +941,7 @@ func TestCreation(t *testing.T) {
 		tls.Spec.Configuration.KafkaAPI[0].TLS.Enabled = true
 		tls.Spec.Configuration.KafkaAPI[0].TLS.RequireClientAuth = true
 
-		err := tls.ValidateCreate()
+		_, err := tls.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -950,7 +950,7 @@ func TestCreation(t *testing.T) {
 		tls.Spec.Configuration.KafkaAPI[0].TLS.Enabled = false
 		tls.Spec.Configuration.KafkaAPI[0].TLS.RequireClientAuth = true
 
-		err := tls.ValidateCreate()
+		_, err := tls.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -959,7 +959,7 @@ func TestCreation(t *testing.T) {
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
 		exPort.Spec.Configuration.KafkaAPI = append(exPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
-		err := exPort.ValidateCreate()
+		_, err := exPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -968,7 +968,7 @@ func TestCreation(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.KafkaAPI = append(multiPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{Port: 123})
-		err := multiPort.ValidateCreate()
+		_, err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -976,7 +976,7 @@ func TestCreation(t *testing.T) {
 	t.Run("external listener with port", func(t *testing.T) {
 		exPort := redpandaCluster.DeepCopy()
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
-		err := exPort.ValidateCreate()
+		_, err := exPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -990,7 +990,7 @@ func TestCreation(t *testing.T) {
 				External: v1alpha1.ExternalConnectivityConfig{Enabled: true},
 				TLS:      v1alpha1.AdminAPITLS{Enabled: true},
 			})
-		err := multiPort.ValidateCreate()
+		_, err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -999,7 +999,7 @@ func TestCreation(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.AdminAPI[0].TLS.RequireClientAuth = true
 		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = false
-		err := multiPort.ValidateCreate()
+		_, err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -1012,7 +1012,7 @@ func TestCreation(t *testing.T) {
 				External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"}},
 			},
 		}
-		err := withSub.ValidateCreate()
+		_, err := withSub.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -1021,7 +1021,7 @@ func TestCreation(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{Port: 123}, v1alpha1.PandaproxyAPI{Port: 321})
-		err := multiPort.ValidateCreate()
+		_, err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -1030,7 +1030,7 @@ func TestCreation(t *testing.T) {
 		noInternal := redpandaCluster.DeepCopy()
 		noInternal.Spec.Configuration.PandaproxyAPI = append(noInternal.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123})
-		err := noInternal.ValidateCreate()
+		_, err := noInternal.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -1040,7 +1040,7 @@ func TestCreation(t *testing.T) {
 		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123},
 			v1alpha1.PandaproxyAPI{Port: 321})
-		err := multiPort.ValidateCreate()
+		_, err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -1050,7 +1050,7 @@ func TestCreation(t *testing.T) {
 		tls.Spec.Configuration.PandaproxyAPI = append(tls.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{TLS: v1alpha1.PandaproxyAPITLS{Enabled: false, RequireClientAuth: true}})
 
-		err := tls.ValidateCreate()
+		_, err := tls.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -1082,7 +1082,7 @@ func TestCreation(t *testing.T) {
 				},
 			},
 		}
-		err = tls.ValidateCreate()
+		_, err = tls.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -1113,7 +1113,7 @@ func TestCreation(t *testing.T) {
 			},
 		}
 
-		err = tls.ValidateCreate()
+		_, err = tls.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -1121,7 +1121,7 @@ func TestCreation(t *testing.T) {
 		rp := redpandaCluster.DeepCopy()
 		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, PreferredAddressType: "preferred", Subdomain: "subdomain"}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	// No support for IP-based TLS certs (#2256)
@@ -1134,14 +1134,14 @@ func TestCreation(t *testing.T) {
 				},
 				Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, PreferredAddressType: "InternalIP"},
 			})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("bootstrap loadbalancer for kafka api needs a port", func(t *testing.T) {
 		rp := redpandaCluster.DeepCopy()
 		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{}}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("bootstrap loadbalancer not allowed for admin", func(t *testing.T) {
@@ -1150,7 +1150,7 @@ func TestCreation(t *testing.T) {
 			v1alpha1.AdminAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
 				Port: 123,
 			}}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("bootstrap loadbalancer not allowed for pandaproxy", func(t *testing.T) {
@@ -1159,7 +1159,7 @@ func TestCreation(t *testing.T) {
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
 				Port: 123,
 			}}}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("bootstrap loadbalancer not allowed for schemaregistry", func(t *testing.T) {
@@ -1171,7 +1171,7 @@ func TestCreation(t *testing.T) {
 				},
 			},
 		}}
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	//nolint:dupl // not really a duplicate
@@ -1190,7 +1190,7 @@ func TestCreation(t *testing.T) {
 				EndpointTemplate: "xxx",
 			},
 		}}
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("endpoint allowed for schemaregistry", func(t *testing.T) {
@@ -1211,7 +1211,7 @@ func TestCreation(t *testing.T) {
 			},
 			Endpoint: "xxx",
 		}}
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.NoError(t, err)
 	})
 	//nolint:dupl // not really a duplicate
@@ -1230,7 +1230,7 @@ func TestCreation(t *testing.T) {
 			},
 			Endpoint: "xx.xx",
 		}}
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("endpoint template not allowed for adminapi", func(t *testing.T) {
@@ -1246,7 +1246,7 @@ func TestCreation(t *testing.T) {
 			Subdomain:        commonDomain,
 			EndpointTemplate: "xxx",
 		}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("endpoint template without subdomain is not allowed in kafka API", func(t *testing.T) {
@@ -1256,7 +1256,7 @@ func TestCreation(t *testing.T) {
 			Enabled:          true,
 			EndpointTemplate: "xxx",
 		}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("endpoint template without subdomain is not allowed in pandaproxy API", func(t *testing.T) {
@@ -1269,7 +1269,7 @@ func TestCreation(t *testing.T) {
 			Enabled:          true,
 			EndpointTemplate: "xxx",
 		}}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("invalid endpoint template in kafka API", func(t *testing.T) {
@@ -1280,7 +1280,7 @@ func TestCreation(t *testing.T) {
 			Subdomain:        "example.com",
 			EndpointTemplate: "{{.Inexistent}}",
 		}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("valid endpoint template in kafka API", func(t *testing.T) {
@@ -1294,7 +1294,7 @@ func TestCreation(t *testing.T) {
 				EndpointTemplate: "{{.Index}}-broker",
 			},
 		})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.NoError(t, err)
 	})
 	t.Run("invalid endpoint template in pandaproxy API", func(t *testing.T) {
@@ -1310,7 +1310,7 @@ func TestCreation(t *testing.T) {
 			Subdomain:        commonDomain,
 			EndpointTemplate: "{{.Index | nonexistent }}",
 		}}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("valid endpoint template in pandaproxy API", func(t *testing.T) {
@@ -1329,7 +1329,7 @@ func TestCreation(t *testing.T) {
 			Subdomain:        commonDomain,
 			EndpointTemplate: "{{.Index}}-pp",
 		}}})
-		err := rp.ValidateCreate()
+		_, err := rp.ValidateCreate()
 		assert.NoError(t, err)
 	})
 	t.Run("valid ingress configuration in pandaproxy API", func(t *testing.T) {
@@ -1372,7 +1372,7 @@ func TestCreation(t *testing.T) {
 		}
 		for _, c := range cases {
 			rp.Spec.Configuration.PandaproxyAPI[len(rp.Spec.Configuration.PandaproxyAPI)-1].External.Ingress.Endpoint = c.endpoint
-			err := rp.ValidateCreate()
+			_, err := rp.ValidateCreate()
 			if c.error {
 				assert.Error(t, err)
 			} else {
@@ -1394,7 +1394,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		}
 		schemaReg.Spec.Configuration.KafkaAPI[0].External.Enabled = false
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
 	t.Run("schema registry externally available is valid when it has the same subdomain as kafka external listener", func(t *testing.T) {
@@ -1407,7 +1407,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{AuthenticationMethod: "none", External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"}})
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.NoError(t, err)
 	})
 	//nolint:dupl // the tests are not duplicates
@@ -1421,7 +1421,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "other.com"}})
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
 	//nolint:dupl // the tests are not duplicates
@@ -1435,7 +1435,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: ""}})
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -1448,7 +1448,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			},
 		}
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -1461,7 +1461,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			},
 		}
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
 }
@@ -1479,9 +1479,9 @@ func TestSchemaRegistryTLSExternalCAConfigValidations(t *testing.T) {
 			},
 		}
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
-		err = schemaReg.ValidateUpdate(schemaReg)
+		_, err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
 
@@ -1498,9 +1498,9 @@ func TestSchemaRegistryTLSExternalCAConfigValidations(t *testing.T) {
 			},
 		}
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
-		err = schemaReg.ValidateUpdate(schemaReg)
+		_, err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
 
@@ -1518,9 +1518,9 @@ func TestSchemaRegistryTLSExternalCAConfigValidations(t *testing.T) {
 			},
 		}
 
-		err := schemaReg.ValidateCreate()
+		_, err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
-		err = schemaReg.ValidateUpdate(schemaReg)
+		_, err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
 
@@ -1540,7 +1540,7 @@ func TestSchemaRegistryTLSExternalCAConfigValidations(t *testing.T) {
 			},
 		}
 
-		err := schemaReg.ValidateUpdate(schemaReg)
+		_, err := schemaReg.ValidateUpdate(schemaReg)
 		assert.NoError(t, err)
 	})
 }
@@ -1569,9 +1569,9 @@ func TestSchemaRegistryTLSExternalCACertValidations(t *testing.T) {
 			},
 		}
 
-		err = schemaReg.ValidateCreate()
+		_, err = schemaReg.ValidateCreate()
 		assert.Error(t, err)
-		err = schemaReg.ValidateUpdate(schemaReg)
+		_, err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
 
@@ -1597,9 +1597,9 @@ func TestSchemaRegistryTLSExternalCACertValidations(t *testing.T) {
 			},
 		}
 
-		err = schemaReg.ValidateCreate()
+		_, err = schemaReg.ValidateCreate()
 		assert.Error(t, err)
-		err = schemaReg.ValidateUpdate(schemaReg)
+		_, err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
 
@@ -1629,9 +1629,9 @@ func TestSchemaRegistryTLSExternalCACertValidations(t *testing.T) {
 			},
 		}
 
-		err = schemaReg.ValidateCreate()
+		_, err = schemaReg.ValidateCreate()
 		assert.Error(t, err)
-		err = schemaReg.ValidateUpdate(schemaReg)
+		_, err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
 }
@@ -1674,7 +1674,7 @@ func TestPodDisruptionBudget(t *testing.T) {
 			Enabled: false,
 		}
 
-		err := rpc.ValidateCreate()
+		_, err := rpc.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -1685,7 +1685,7 @@ func TestPodDisruptionBudget(t *testing.T) {
 			MaxUnavailable: &value,
 		}
 
-		err := rpc.ValidateCreate()
+		_, err := rpc.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -1696,7 +1696,7 @@ func TestPodDisruptionBudget(t *testing.T) {
 			MinAvailable: &value,
 		}
 
-		err := rpc.ValidateCreate()
+		_, err := rpc.ValidateCreate()
 		assert.NoError(t, err)
 	})
 
@@ -1708,7 +1708,7 @@ func TestPodDisruptionBudget(t *testing.T) {
 			MaxUnavailable: &value,
 		}
 
-		err := rpc.ValidateCreate()
+		_, err := rpc.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -1719,7 +1719,7 @@ func TestPodDisruptionBudget(t *testing.T) {
 			MinAvailable: &value,
 		}
 
-		err := rpc.ValidateCreate()
+		_, err := rpc.ValidateCreate()
 		assert.Error(t, err)
 	})
 
@@ -1728,7 +1728,7 @@ func TestPodDisruptionBudget(t *testing.T) {
 		rpc := rpCluster.DeepCopy()
 		rpc.Spec.PodDisruptionBudget = nil
 
-		err := rpc.ValidateCreate()
+		_, err := rpc.ValidateCreate()
 		assert.NoError(t, err)
 	})
 }
@@ -1872,7 +1872,7 @@ func TestRangesAndCollisions(t *testing.T) {
 				}}
 			}
 
-			err := c.ValidateUpdate(rpCluster)
+			_, err := c.ValidateUpdate(rpCluster)
 			if tc.error {
 				assert.Error(t, err)
 			} else {
@@ -1905,7 +1905,7 @@ func TestKafkaTLSRules(t *testing.T) {
 				},
 			}})
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.Error(t, err)
 	})
 
@@ -1933,7 +1933,7 @@ func TestKafkaTLSRules(t *testing.T) {
 				},
 			})
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
 	})
 
@@ -1956,7 +1956,7 @@ func TestKafkaTLSRules(t *testing.T) {
 				},
 			}})
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.Error(t, err)
 	})
 
@@ -1986,7 +1986,7 @@ func TestKafkaTLSRules(t *testing.T) {
 				},
 			})
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
 	})
 }
@@ -2006,10 +2006,10 @@ func TestKafkaAuthenticationMethod(t *testing.T) {
 				},
 			})
 
-		err := newRp.ValidateCreate()
+		_, err := newRp.ValidateCreate()
 		assert.Error(t, err)
 
-		err = newRp.ValidateUpdate(rpCluster)
+		_, err = newRp.ValidateUpdate(rpCluster)
 		assert.Error(t, err)
 	})
 
@@ -2025,10 +2025,10 @@ func TestKafkaAuthenticationMethod(t *testing.T) {
 				},
 			})
 
-		err := newRp.ValidateCreate()
+		_, err := newRp.ValidateCreate()
 		assert.NoError(t, err)
 
-		err = newRp.ValidateUpdate(rpCluster)
+		_, err = newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
 	})
 
@@ -2044,10 +2044,10 @@ func TestKafkaAuthenticationMethod(t *testing.T) {
 				},
 			})
 
-		err := newRp.ValidateCreate()
+		_, err := newRp.ValidateCreate()
 		assert.NoError(t, err)
 
-		err = newRp.ValidateUpdate(rpCluster)
+		_, err = newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
 	})
 }
@@ -2072,7 +2072,7 @@ func TestCloudStorage(t *testing.T) {
 		newRp.Spec.CloudStorage.SecretKeyRef.Name = secretKey
 		newRp.Spec.CloudStorage.SecretKeyRef.Namespace = namespace
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
 	})
 
@@ -2084,7 +2084,7 @@ func TestCloudStorage(t *testing.T) {
 		newRp.Spec.CloudStorage.SecretKeyRef.Name = secretKey
 		newRp.Spec.CloudStorage.SecretKeyRef.Namespace = namespace
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.Error(t, err)
 	})
 
@@ -2096,7 +2096,7 @@ func TestCloudStorage(t *testing.T) {
 		newRp.Spec.CloudStorage.Region = region
 		newRp.Spec.CloudStorage.AccessKey = accessKey
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.Error(t, err)
 	})
 
@@ -2107,7 +2107,7 @@ func TestCloudStorage(t *testing.T) {
 		newRp.Spec.CloudStorage.Bucket = bucket
 		newRp.Spec.CloudStorage.Region = region
 
-		err := newRp.ValidateUpdate(rpCluster)
+		_, err := newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
 	})
 }

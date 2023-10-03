@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
@@ -326,7 +325,7 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&netv1.Ingress{}).
 		Watches(
-			&source.Kind{Type: &vectorizedv1alpha1.Cluster{}},
+			&vectorizedv1alpha1.Cluster{},
 			handler.EnqueueRequestsFromMapFunc(r.reconcileConsoleForCluster),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
@@ -341,11 +340,11 @@ func (r *ConsoleReconciler) WithClusterDomain(
 	return r
 }
 
-func (r *ConsoleReconciler) reconcileConsoleForCluster(c client.Object) []reconcile.Request {
+func (r *ConsoleReconciler) reconcileConsoleForCluster(pctx context.Context, c client.Object) []reconcile.Request {
 	// Since Console is a managed Object, list requests should be handled at
 	// the level of client cache, so no real request to the cluster API.
 	// We set a strict timeout for this reason.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(pctx, 10*time.Second)
 	defer cancel()
 
 	cs := vectorizedv1alpha1.ConsoleList{}
