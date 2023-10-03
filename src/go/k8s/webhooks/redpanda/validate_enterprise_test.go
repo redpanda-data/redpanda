@@ -21,8 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
-	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
+	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/internal/controller/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"

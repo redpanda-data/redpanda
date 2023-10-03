@@ -16,7 +16,7 @@ import (
 	"github.com/cloudhut/common/rest"
 	"github.com/redpanda-data/console/backend/pkg/config"
 
-	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 )
 
 // ConsoleConfig is the config passed to the Redpanda Console app

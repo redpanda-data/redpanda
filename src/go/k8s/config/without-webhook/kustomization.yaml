@@ -12,7 +12,7 @@ namePrefix: redpanda-
 #commonLabels:
 #  someName: someValue
 
-bases:
+resources:
 - ../crd
 - ../rbac
 - ../manager
