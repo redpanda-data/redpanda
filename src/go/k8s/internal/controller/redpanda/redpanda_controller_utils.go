@@ -2,6 +2,7 @@ package redpanda
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -11,7 +12,7 @@ import (
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/logger"
-	"github.com/fluxcd/source-controller/controllers"
+	controllers "github.com/fluxcd/source-controller/shim"
 	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
@@ -89,33 +90,33 @@ func bestTrySetRetainPV(c client.Client, log logr.Logger, ctx context.Context, n
 	}
 }
 
-func ClientGenerator(isLogin bool) (*registry.Client, string, error) {
-	if isLogin {
-		// create a temporary file to store the credentials
-		// this is needed because otherwise the credentials are stored in ~/.docker/config.json.
-		credentialsFile, err := os.CreateTemp("", "credentials")
+// ClientGenerator generates a registry client and a temporary credential file.
+// The client is meant to be used for a single reconciliation.
+// The file is meant to be used for a single reconciliation and deleted after.
+func ClientGenerator(tlsConfig *tls.Config, isLogin bool) (*registry.Client, string, error) {
+	if !isLogin {
+		rClient, err := newClient("", tlsConfig)
 		if err != nil {
 			return nil, "", err
 		}
-		return tryCreateNewClient(credentialsFile)
+		return rClient, "", nil
 	}
-
-	rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard))
+	// create a temporary file to store the credentials
+	// this is needed because otherwise the credentials are stored in ~/.docker/config.json.
+	credentialsFile, err := os.CreateTemp("", "credentials")
 	if err != nil {
 		return nil, "", err
 	}
-	return rClient, "", nil
-}
 
-func tryCreateNewClient(credentialsFile *os.File) (*registry.Client, string, error) {
 	var errs []error
-	rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptCredentialsFile(credentialsFile.Name()))
+	rClient, err := newClient(credentialsFile.Name(), tlsConfig)
 	if err != nil {
 		errs = append(errs, err)
 		// attempt to delete the temporary file
 		if credentialsFile != nil {
-			if removeErr := os.Remove(credentialsFile.Name()); removeErr != nil {
-				errs = append(errs, removeErr)
+			err := os.Remove(credentialsFile.Name())
+			if err != nil {
+				errs = append(errs, err)
 			}
 		}
 		return nil, "", errors.NewAggregate(errs)
@@ -123,7 +124,25 @@ func tryCreateNewClient(credentialsFile *os.File) (*registry.Client, string, err
 	return rClient, credentialsFile.Name(), nil
 }
 
-func MustInitStorage(path, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) *controllers.Storage {
+func newClient(credentialsFile string, tlsConfig *tls.Config) (*registry.Client, error) {
+	opts := []registry.ClientOption{
+		registry.ClientOptWriter(io.Discard),
+	}
+	if tlsConfig != nil {
+		opts = append(opts, registry.ClientOptHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+			},
+		}))
+	}
+	if credentialsFile != "" {
+		opts = append(opts, registry.ClientOptCredentialsFile(credentialsFile))
+	}
+
+	return registry.NewClient(opts...)
+}
+
+func MustInitStorage(path, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) controllers.Storage {
 	if path == "" {
 		p, _ := os.Getwd()
 		path = filepath.Join(p, "bin")

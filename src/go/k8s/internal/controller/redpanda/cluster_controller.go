@@ -35,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -303,12 +302,12 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Watches(
-			&source.Kind{Type: &corev1.Pod{}},
+			&corev1.Pod{},
 			handler.EnqueueRequestsFromMapFunc(r.reconcileClusterForPods),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		Watches(
-			&source.Kind{Type: &corev1.Secret{}},
+			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.reconcileClusterForExternalCASecret),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
@@ -643,11 +642,11 @@ func (r *ClusterReconciler) reportStatus(
 	}
 	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts, version, versionErr) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			var cluster vectorizedv1alpha1.Cluster
+			cluster := &vectorizedv1alpha1.Cluster{}
 			err := r.Get(ctx, types.NamespacedName{
 				Name:      redpandaCluster.Name,
 				Namespace: redpandaCluster.Namespace,
-			}, &cluster)
+			}, cluster)
 			if err != nil {
 				return err
 			}
@@ -659,10 +658,10 @@ func (r *ClusterReconciler) reportStatus(
 				cluster.Status.Version = version
 			}
 
-			err = r.Status().Update(ctx, &cluster)
+			err = r.Status().Update(ctx, cluster)
 			if err == nil {
 				// sync original cluster variable to avoid conflicts on subsequent operations
-				*redpandaCluster = cluster
+				*redpandaCluster = *cluster
 			}
 			return err
 		})
@@ -706,7 +705,7 @@ func (r *ClusterReconciler) podList(ctx context.Context, redpandaCluster *vector
 	return observedPods, nil
 }
 
-func (r *ClusterReconciler) reconcileClusterForPods(pod client.Object) []reconcile.Request {
+func (r *ClusterReconciler) reconcileClusterForPods(ctx context.Context, pod client.Object) []reconcile.Request {
 	return []reconcile.Request{
 		{
 			NamespacedName: types.NamespacedName{
@@ -717,7 +716,7 @@ func (r *ClusterReconciler) reconcileClusterForPods(pod client.Object) []reconci
 	}
 }
 
-func (r *ClusterReconciler) reconcileClusterForExternalCASecret(s client.Object) []reconcile.Request {
+func (r *ClusterReconciler) reconcileClusterForExternalCASecret(ctx context.Context, s client.Object) []reconcile.Request {
 	hasExternalCA, found := s.GetAnnotations()[SecretAnnotationExternalCAKey]
 	if !found || hasExternalCA != "true" {
 		return nil

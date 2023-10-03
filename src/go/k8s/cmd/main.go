@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,13 +20,14 @@ import (
 
 	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	helmControllerAPIV2 "github.com/fluxcd/helm-controller/api/v2beta1"
-	helmController "github.com/fluxcd/helm-controller/controllers"
+	helmController "github.com/fluxcd/helm-controller/shim"
 	"github.com/fluxcd/pkg/runtime/client"
 	helper "github.com/fluxcd/pkg/runtime/controller"
 	"github.com/fluxcd/pkg/runtime/events"
 	"github.com/fluxcd/pkg/runtime/logger"
+	"github.com/fluxcd/pkg/runtime/metrics"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
-	helmSourceController "github.com/fluxcd/source-controller/controllers"
+	helmSourceController "github.com/fluxcd/source-controller/shim"
 	flag "github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/getter"
 	corev1 "k8s.io/api/core/v1"
@@ -193,6 +195,9 @@ func main() {
 		}()
 	}
 
+	ctx, done := context.WithCancel(context.Background())
+	defer done()
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                  scheme,
 		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
@@ -203,6 +208,7 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "Unable to start manager")
+		// nolint:gocritic // this exits without closing the context. That's ok.
 		os.Exit(1)
 	}
 
@@ -292,11 +298,10 @@ func main() {
 		storageAdvAddr = redpandacontrollers.DetermineAdvStorageAddr(storageAddr, setupLog)
 		storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, setupLog)
 
-		metricsH := helper.MustMakeMetrics(mgr)
+		metricsH := helper.NewMetrics(mgr, metrics.MustMakeRecorder())
 
 		// TODO fill this in with options
 		helmOpts := helmController.HelmReleaseReconcilerOptions{
-			MaxConcurrentReconciles:   1,                // "The number of concurrent HelmRelease reconciles."
 			DependencyRequeueInterval: 30 * time.Second, // The interval at which failing dependencies are reevaluated.
 			HTTPRetry:                 9,                // The maximum number of retries when failing to fetch artifacts over HTTP.
 			RateLimiter:               workqueue.NewItemExponentialFailureRateLimiter(30*time.Second, 60*time.Second),
@@ -309,7 +314,7 @@ func main() {
 		}
 
 		// Helm Release Controller
-		helmRelease := helmController.HelmReleaseReconciler{
+		helmRelease := helmController.HelmReleaseReconcilerFactory{
 			Client:         mgr.GetClient(),
 			Config:         mgr.GetConfig(),
 			Scheme:         mgr.GetScheme(),
@@ -317,7 +322,7 @@ func main() {
 			ClientOpts:     clientOptions,
 			KubeConfigOpts: kubeConfigOpts,
 		}
-		if err = helmRelease.SetupWithManager(mgr, helmOpts); err != nil {
+		if err = helmRelease.SetupWithManager(ctx, mgr, helmOpts); err != nil {
 			setupLog.Error(err, "Unable to create controller", "controller", "HelmRelease")
 		}
 
@@ -328,7 +333,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		helmChart := helmSourceController.HelmChartReconciler{
+		chartOpts := helmSourceController.HelmRepositoryReconcilerOptions{}
+		helmChart := helmSourceController.HelmChartReconcilerFactory{
 			Client:                  mgr.GetClient(),
 			RegistryClientGenerator: redpandacontrollers.ClientGenerator,
 			Getters:                 getters,
@@ -336,7 +342,7 @@ func main() {
 			Storage:                 storage,
 			EventRecorder:           helmChartEventRecorder,
 		}
-		if err = helmChart.SetupWithManager(mgr); err != nil {
+		if err = helmChart.SetupWithManager(ctx, mgr, chartOpts); err != nil {
 			setupLog.Error(err, "Unable to create controller", "controller", "HelmChart")
 		}
 
@@ -347,7 +353,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		helmRepository := helmSourceController.HelmRepositoryReconciler{
+		helmRepository := helmSourceController.HelmRepositoryReconcilerFactory{
 			Client:         mgr.GetClient(),
 			EventRecorder:  helmRepositoryEventRecorder,
 			Getters:        getters,
@@ -356,7 +362,7 @@ func main() {
 			Metrics:        metricsH,
 			Storage:        storage,
 		}
-		if err = helmRepository.SetupWithManager(mgr); err != nil {
+		if err = helmRepository.SetupWithManager(ctx, mgr, chartOpts); err != nil {
 			setupLog.Error(err, "Unable to create controller", "controller", "HelmRepository")
 		}
 

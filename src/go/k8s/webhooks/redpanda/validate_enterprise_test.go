@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
@@ -81,13 +82,18 @@ func TestDoNotValidateWhenDeleted(t *testing.T) {
 	}
 
 	webhookInstallOptions := &testEnv.WebhookInstallOptions
+	webhookServer := webhook.NewServer(webhook.Options{
+		Host:    webhookInstallOptions.LocalServingHost,
+		Port:    webhookInstallOptions.LocalServingPort,
+		CertDir: webhookInstallOptions.LocalServingCertDir,
+	})
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:             scheme.Scheme,
-		Host:               webhookInstallOptions.LocalServingHost,
-		Port:               webhookInstallOptions.LocalServingPort,
-		CertDir:            webhookInstallOptions.LocalServingCertDir,
-		LeaderElection:     false,
-		MetricsBindAddress: "0",
+		Scheme:         scheme.Scheme,
+		WebhookServer:  webhookServer,
+		LeaderElection: false,
+		Metrics: metricsserver.Options{
+			BindAddress: "0",
+		},
 	})
 	require.NoError(t, err)
 
