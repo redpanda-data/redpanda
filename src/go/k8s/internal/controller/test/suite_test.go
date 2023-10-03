@@ -22,10 +22,11 @@ import (
 
 	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	helmControllerAPIV2 "github.com/fluxcd/helm-controller/api/v2beta1"
-	helmController "github.com/fluxcd/helm-controller/controllers"
+	helmController "github.com/fluxcd/helm-controller/shim"
 	helper "github.com/fluxcd/pkg/runtime/controller"
+	"github.com/fluxcd/pkg/runtime/metrics"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
-	helmSourceController "github.com/fluxcd/source-controller/controllers"
+	helmSourceController "github.com/fluxcd/source-controller/shim"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
@@ -195,27 +196,27 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	storageAdvAddr := redpanda.DetermineAdvStorageAddr(storageAddr, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
 	storage := redpanda.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
 
-	metricsH := helper.MustMakeMetrics(k8sManager)
+	metricsH := helper.NewMetrics(k8sManager, metrics.MustMakeRecorder())
 	// TODO fill this in with options
 	helmOpts := helmController.HelmReleaseReconcilerOptions{
-		MaxConcurrentReconciles:   1,                // "The number of concurrent HelmRelease reconciles."
 		DependencyRequeueInterval: 30 * time.Second, // The interval at which failing dependencies are reevaluated.
 		HTTPRetry:                 9,                // The maximum number of retries when failing to fetch artifacts over HTTP.
 		RateLimiter:               workqueue.NewItemExponentialFailureRateLimiter(30*time.Second, 60*time.Second),
 	}
 
 	// Helm Release Controller
-	helmRelease := helmController.HelmReleaseReconciler{
+	helmRelease := helmController.HelmReleaseReconcilerFactory{
 		Client:        k8sManager.GetClient(),
 		Config:        k8sManager.GetConfig(),
 		Scheme:        k8sManager.GetScheme(),
 		EventRecorder: k8sManager.GetEventRecorderFor("HelmReleaseReconciler"),
 	}
-	err = helmRelease.SetupWithManager(k8sManager, helmOpts)
+	err = helmRelease.SetupWithManager(ctx, k8sManager, helmOpts)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Helm Chart Controller
-	helmChart := helmSourceController.HelmChartReconciler{
+	chartOpts := helmSourceController.HelmRepositoryReconcilerOptions{}
+	helmChart := helmSourceController.HelmChartReconcilerFactory{
 		Client:                  k8sManager.GetClient(),
 		RegistryClientGenerator: redpanda.ClientGenerator,
 		Getters:                 getters,
@@ -223,11 +224,11 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 		Storage:                 storage,
 		EventRecorder:           k8sManager.GetEventRecorderFor("HelmChartReconciler"),
 	}
-	err = helmChart.SetupWithManager(k8sManager)
+	err = helmChart.SetupWithManager(ctx, k8sManager, chartOpts)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Helm Repository Controller
-	helmRepository := helmSourceController.HelmRepositoryReconciler{
+	helmRepository := helmSourceController.HelmRepositoryReconcilerFactory{
 		Client:         k8sManager.GetClient(),
 		EventRecorder:  k8sManager.GetEventRecorderFor("HelmRepositoryReconciler"),
 		Getters:        getters,
@@ -236,7 +237,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 		Metrics:        metricsH,
 		Storage:        storage,
 	}
-	err = helmRepository.SetupWithManager(k8sManager)
+	err = helmRepository.SetupWithManager(ctx, k8sManager, chartOpts)
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {

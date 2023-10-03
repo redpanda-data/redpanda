@@ -31,6 +31,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
@@ -197,23 +198,23 @@ func (r *Cluster) setDefaultAdditionalConfiguration() {
 var _ webhook.Validator = &Cluster{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *Cluster) ValidateCreate() error {
+func (r *Cluster) ValidateCreate() (admission.Warnings, error) {
 	log := ctrl.Log.WithName("Cluster.ValidateCreate").WithValues("namespace", r.Namespace, "name", r.Name)
 	log.Info("validating create")
 
 	allErrs := r.validateCommon(log)
 
 	if len(allErrs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return apierrors.NewInvalid(
+	return nil, apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *Cluster) ValidateUpdate(old runtime.Object) error {
+func (r *Cluster) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	log := ctrl.Log.WithName("Cluster.ValidateUpdate").WithValues("namespace", r.Namespace, "name", r.Name)
 	log.Info("validating update")
 
@@ -223,7 +224,7 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	// the clientCACertRef can fail with secret not found if the referenced secret
 	// has already been deleted as part of the cluster deletion.
 	if !r.GetDeletionTimestamp().IsZero() {
-		return nil
+		return nil, nil
 	}
 
 	oldCluster := old.(*Cluster)
@@ -236,10 +237,10 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	allErrs = append(allErrs, r.validateLicense(oldCluster)...)
 
 	if len(allErrs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return apierrors.NewInvalid(
+	return nil, apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name, allErrs)
 }
@@ -1098,9 +1099,9 @@ func (r *Cluster) validateAdditionalConfiguration() field.ErrorList {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *Cluster) ValidateDelete() error {
+func (r *Cluster) ValidateDelete() (admission.Warnings, error) {
 	// this is a stub to implement the interface. We do not validate on delete.
-	return nil
+	return nil, nil
 }
 
 type listenersPorts struct {
