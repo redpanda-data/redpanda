@@ -32,10 +32,14 @@ class mutex {
 public:
     using duration = typename ss::semaphore::duration;
     using time_point = typename ss::semaphore::time_point;
+    using units = typename ssx::semaphore_units;
 
-    // TODO constructor to pass through name & change callers.
+    // TODO: stop using this constructor and force usage of explicit names.
     mutex()
       : _sem(1, "mutex") {}
+
+    explicit mutex(ss::sstring name)
+      : _sem(1, std::move(name)) {}
 
     template<typename Func>
     auto with(Func&& func) noexcept {
@@ -56,13 +60,15 @@ public:
           });
     }
 
-    auto get_units() noexcept { return ss::get_units(_sem, 1); }
+    ss::future<units> get_units() noexcept { return ss::get_units(_sem, 1); }
 
-    auto get_units(ss::abort_source& as) noexcept {
+    ss::future<units> get_units(ss::abort_source& as) noexcept {
         return ss::get_units(_sem, 1, as);
     }
 
-    auto try_get_units() noexcept { return ss::try_get_units(_sem, 1); }
+    std::optional<units> try_get_units() noexcept {
+        return ss::try_get_units(_sem, 1);
+    }
 
     void broken() noexcept { _sem.broken(); }
 
