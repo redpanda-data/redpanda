@@ -8,5 +8,11 @@ spec:
     timeout: 1m
     chartVersion: 5.5.1
   clusterSpec:
+    image:
+      tag: v23.2.9
     statefulset:
-      replicas: 1
+      replicas: 3
+      additionalRedpandaCmdFlags:
+        - --dump-memory-diagnostics-on-alloc-failure-kind=all
+        - --abort-on-seastar-bad-alloc
+        - --reserve-memory=100M
