@@ -70,4 +70,7 @@ inline const model::ntp tx_registry_ntp(
 inline const model::topic_partition schema_registry_internal_tp{
   model::topic{"_schemas"}, model::partition_id{0}};
 
+inline const model::ntp wasm_binaries_internal_ntp(
+  model::redpanda_ns, model::topic("wasm_binaries"), model::partition_id(0));
+
 } // namespace model

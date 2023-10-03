@@ -35,6 +35,7 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/when_all.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/btree_map.h>
@@ -90,10 +91,12 @@ cluster::errc map_errc(std::error_code ec) {
 client::client(
   model::node_id self,
   std::unique_ptr<partition_leader_cache> l,
+  std::unique_ptr<topic_creator> t,
   ss::sharded<::rpc::connection_cache>* c,
   ss::sharded<local_service>* s)
   : _self(self)
   , _leaders(std::move(l))
+  , _topic_creator(std::move(t))
   , _connections(c)
   , _local_service(s) {}
 
@@ -153,5 +156,178 @@ client::do_remote_produce(model::node_id node, produce_request req) {
         co_return reply;
     }
     co_return std::move(resp).value();
+}
+
+ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+client::store_wasm_binary(iobuf data, model::timeout_clock::duration timeout) {
+    auto leader = co_await compute_wasm_binary_ntp_leader();
+    if (!leader) {
+        co_return cluster::errc::not_leader;
+    }
+    co_return co_await (
+      leader == _self
+        ? do_local_store_wasm_binary(std::move(data), timeout)
+        : do_remote_store_wasm_binary(*leader, std::move(data), timeout));
+}
+
+ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+client::do_local_store_wasm_binary(
+  iobuf data, model::timeout_clock::duration timeout) {
+    return _local_service->local().store_wasm_binary(std::move(data), timeout);
+}
+
+ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+client::do_remote_store_wasm_binary(
+  model::node_id node, iobuf data, model::timeout_clock::duration timeout) {
+    auto resp = co_await _connections->local()
+                  .with_node_client<impl::transform_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [timeout, data = std::move(data)](
+                      impl::transform_rpc_client_protocol proto) mutable {
+                        return proto.store_wasm_binary(
+                          store_wasm_binary_request(std::move(data), timeout),
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<store_wasm_binary_reply>);
+    if (resp.has_error()) {
+        co_return map_errc(resp.assume_error());
+    }
+    auto reply = resp.value();
+    if (reply.ec != cluster::errc::success) {
+        co_return reply.ec;
+    }
+    co_return reply.stored;
+}
+
+ss::future<cluster::errc>
+client::delete_wasm_binary(uuid_t key, model::timeout_clock::duration timeout) {
+    auto leader = co_await compute_wasm_binary_ntp_leader();
+    if (!leader) {
+        co_return cluster::errc::not_leader;
+    }
+    co_return co_await (
+      leader == _self ? do_local_delete_wasm_binary(key, timeout)
+                      : do_remote_delete_wasm_binary(*leader, key, timeout));
+}
+
+ss::future<cluster::errc> client::do_local_delete_wasm_binary(
+  uuid_t key, model::timeout_clock::duration timeout) {
+    return _local_service->local().delete_wasm_binary(key, timeout);
+}
+
+ss::future<cluster::errc> client::do_remote_delete_wasm_binary(
+  model::node_id node, uuid_t key, model::timeout_clock::duration timeout) {
+    auto resp
+      = co_await _connections->local()
+          .with_node_client<impl::transform_rpc_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            node,
+            timeout,
+            [timeout, key](impl::transform_rpc_client_protocol proto) mutable {
+                return proto.delete_wasm_binary(
+                  delete_wasm_binary_request(key, timeout),
+                  ::rpc::client_opts(model::timeout_clock::now() + timeout));
+            })
+          .then(&::rpc::get_ctx_data<delete_wasm_binary_reply>);
+    if (resp.has_error()) {
+        co_return map_errc(resp.assume_error());
+    }
+    co_return resp.value().ec;
+}
+
+ss::future<result<iobuf, cluster::errc>> client::load_wasm_binary(
+  model::offset offset, model::timeout_clock::duration timeout) {
+    auto leader = co_await compute_wasm_binary_ntp_leader();
+    if (!leader) {
+        co_return cluster::errc::not_leader;
+    }
+    co_return co_await (
+      leader == _self ? do_local_load_wasm_binary(offset, timeout)
+                      : do_remote_load_wasm_binary(*leader, offset, timeout));
+}
+
+ss::future<result<iobuf, cluster::errc>> client::do_local_load_wasm_binary(
+  model::offset offset, model::timeout_clock::duration timeout) {
+    return _local_service->local().load_wasm_binary(offset, timeout);
+}
+
+ss::future<result<iobuf, cluster::errc>> client::do_remote_load_wasm_binary(
+  model::node_id node,
+  model::offset offset,
+  model::timeout_clock::duration timeout) {
+    auto resp = co_await _connections->local()
+                  .with_node_client<impl::transform_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [timeout, offset](
+                      impl::transform_rpc_client_protocol proto) mutable {
+                        return proto.load_wasm_binary(
+                          load_wasm_binary_request(offset, timeout),
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<load_wasm_binary_reply>);
+    if (resp.has_error()) {
+        co_return map_errc(resp.assume_error());
+    }
+    auto reply = std::move(resp).value();
+    if (reply.ec != cluster::errc::success) {
+        co_return reply.ec;
+    }
+    co_return std::move(reply.data);
+}
+
+ss::future<bool> client::try_create_wasm_binary_ntp() {
+    cluster::topic_properties topic_props;
+    // TODO: This should be configurable
+    constexpr size_t wasm_binaries_max_bytes = 10_MiB;
+    topic_props.batch_max_bytes = wasm_binaries_max_bytes;
+    // Mark all these as disabled
+    topic_props.retention_bytes = tristate<size_t>();
+    topic_props.retention_local_target_bytes = tristate<size_t>();
+    topic_props.retention_duration = tristate<std::chrono::milliseconds>();
+    topic_props.retention_local_target_ms
+      = tristate<std::chrono::milliseconds>();
+    topic_props.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    auto fut = co_await ss::coroutine::as_future<cluster::errc>(
+      _topic_creator->create_topic(
+        model::topic_namespace_view(model::wasm_binaries_internal_ntp),
+        1,
+        topic_props));
+    if (fut.failed()) {
+        vlog(
+          log.warn,
+          "unable to create internal wasm binary topic: {}",
+          std::move(fut).get_exception());
+        co_return false;
+    }
+    cluster::errc ec = fut.get();
+    if (ec != cluster::errc::success) {
+        vlog(log.warn, "unable to create internal wasm binary topic: {}", ec);
+        co_return false;
+    }
+    co_return true;
+}
+
+ss::future<std::optional<model::node_id>>
+client::compute_wasm_binary_ntp_leader() {
+    auto leader = _leaders->get_leader_node(model::wasm_binaries_internal_ntp);
+    if (!leader.has_value()) {
+        bool success = co_await try_create_wasm_binary_ntp();
+        if (!success) {
+            co_return std::nullopt;
+        }
+        leader = _leaders->get_leader_node(model::wasm_binaries_internal_ntp);
+    }
+    co_return leader;
 }
 } // namespace transform::rpc

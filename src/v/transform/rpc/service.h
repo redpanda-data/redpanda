@@ -11,10 +11,12 @@
 
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
+#include "model/record_batch_reader.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
 #include <memory>
@@ -23,7 +25,7 @@ namespace transform::rpc {
 
 /**
  * A per core sharded service that handles custom data path requests for data
- * transforms.
+ * transforms and storage of wasm binaries.
  */
 class local_service {
 public:
@@ -35,9 +37,26 @@ public:
       ss::chunked_fifo<transformed_topic_data> topic_data,
       model::timeout_clock::duration timeout);
 
+    ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+    store_wasm_binary(iobuf, model::timeout_clock::duration timeout);
+
+    ss::future<cluster::errc>
+    delete_wasm_binary(uuid_t key, model::timeout_clock::duration timeout);
+
+    ss::future<result<iobuf, cluster::errc>>
+    load_wasm_binary(model::offset, model::timeout_clock::duration timeout);
+
 private:
     ss::future<transformed_topic_data_result>
       produce(transformed_topic_data, model::timeout_clock::duration);
+
+    ss::future<result<model::offset, cluster::errc>> produce(
+      model::any_ntp auto,
+      ss::chunked_fifo<model::record_batch>,
+      model::timeout_clock::duration);
+
+    ss::future<result<iobuf, cluster::errc>> consume_wasm_binary_reader(
+      model::record_batch_reader, model::timeout_clock::duration);
 
     std::unique_ptr<topic_metadata_cache> _metadata_cache;
     std::unique_ptr<partition_manager> _partition_manager;
@@ -57,6 +76,15 @@ public:
 
     ss::future<produce_reply>
     produce(produce_request&&, ::rpc::streaming_context&) override;
+
+    ss::future<store_wasm_binary_reply> store_wasm_binary(
+      store_wasm_binary_request&&, ::rpc::streaming_context&) override;
+
+    ss::future<load_wasm_binary_reply> load_wasm_binary(
+      load_wasm_binary_request&&, ::rpc::streaming_context&) override;
+
+    ss::future<delete_wasm_binary_reply> delete_wasm_binary(
+      delete_wasm_binary_request&&, ::rpc::streaming_context&) override;
 
 private:
     ss::sharded<local_service>* _service;

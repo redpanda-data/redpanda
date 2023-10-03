@@ -18,12 +18,18 @@
 #include "kafka/server/partition_proxy.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "resource_mgmt/io_priority.h"
+#include "storage/record_batch_builder.h"
+#include "storage/types.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/serde.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
@@ -33,16 +39,19 @@
 #include <algorithm>
 #include <iterator>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace transform::rpc {
 namespace {
+
 raft::replicate_options
 make_replicate_options(model::timeout_clock::duration timeout) {
     return {
       raft::consistency_level::quorum_ack,
       std::chrono::duration_cast<std::chrono::milliseconds>(timeout)};
 }
+
 cluster::errc map_errc(std::error_code ec) {
     if (ec.category() == cluster::error_category()) {
         return static_cast<cluster::errc>(ec.value());
@@ -58,6 +67,25 @@ cluster::errc map_errc(std::error_code ec) {
         }
     }
     return cluster::errc::replication_error;
+}
+
+iobuf make_iobuf(ss::sstring str) {
+    iobuf b;
+    b.append(str.data(), str.size());
+    return b;
+}
+
+iobuf make_iobuf(uuid_t uuid) {
+    iobuf b;
+    b.append(uuid.mutable_uuid().begin(), uuid.length);
+    return b;
+}
+model::record_header make_header(ss::sstring k, ss::sstring v) {
+    auto key = make_iobuf(std::move(k));
+    auto ks = int32_t(key.size_bytes());
+    auto value = make_iobuf(std::move(v));
+    auto vs = int32_t(value.size_bytes());
+    return {ks, std::move(key), vs, std::move(value)};
 }
 } // namespace
 
@@ -94,45 +122,157 @@ local_service::produce(
 ss::future<transformed_topic_data_result> local_service::produce(
   transformed_topic_data data, model::timeout_clock::duration timeout) {
     auto ktp = model::ktp(data.tp.topic, data.tp.partition);
-    auto shard = _partition_manager->shard_owner(ktp);
+    auto result = co_await produce(ktp, std::move(data.batches), timeout);
+    auto ec = result.has_error() ? result.error() : cluster::errc::success;
+    co_return transformed_topic_data_result(data.tp, ec);
+}
+
+ss::future<result<model::offset, cluster::errc>> local_service::produce(
+  model::any_ntp auto ntp,
+  ss::chunked_fifo<model::record_batch> batches,
+  model::timeout_clock::duration timeout) {
+    auto shard = _partition_manager->shard_owner(ntp);
     if (!shard) {
-        co_return transformed_topic_data_result(
-          data.tp, cluster::errc::not_leader);
+        co_return cluster::errc::not_leader;
     }
 
-    auto topic_cfg = _metadata_cache->find_topic_cfg(ktp.as_tn_view());
+    auto topic_cfg = _metadata_cache->find_topic_cfg(
+      model::topic_namespace_view(ntp));
     if (!topic_cfg) {
-        co_return transformed_topic_data_result(
-          data.tp, cluster::errc::topic_not_exists);
+        co_return cluster::errc::topic_not_exists;
     }
     // TODO: More validation of the batches, such as null record rejection and
     // crc checks.
     uint32_t max_batch_size = topic_cfg->properties.batch_max_bytes.value_or(
       _metadata_cache->get_default_batch_max_bytes());
-    for (const auto& batch : data.batches) {
+    for (const auto& batch : batches) {
         if (uint32_t(batch.size_bytes()) > max_batch_size) [[unlikely]] {
-            co_return transformed_topic_data_result(
-              data.tp, cluster::errc::invalid_request);
+            co_return cluster::errc::invalid_request;
         }
     }
     auto rdr = model::make_foreign_fragmented_memory_record_batch_reader(
-      std::move(data.batches));
+      std::move(batches));
     // TODO: schema validation
+    model::offset produced_offset;
     auto ec = co_await _partition_manager->invoke_on_shard(
       *shard,
-      ktp,
-      [timeout, r = std::move(rdr)](kafka::partition_proxy* partition) mutable {
+      ntp,
+      [timeout, r = std::move(rdr), &produced_offset](
+        kafka::partition_proxy* partition) mutable {
           return partition
             ->replicate(std::move(r), make_replicate_options(timeout))
-            .then([](result<model::offset> result) {
-                if (result.has_error()) {
-                    return map_errc(result.assume_error());
+            .then([&produced_offset](result<model::offset> r) {
+                if (r.has_error()) {
+                    return map_errc(r.assume_error());
                 }
+                produced_offset = r.value();
                 return cluster::errc::success;
             });
       });
+    if (ec == cluster::errc::success) {
+        co_return produced_offset;
+    }
+    co_return ec;
+}
 
-    co_return transformed_topic_data_result(data.tp, ec);
+ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+local_service::store_wasm_binary(
+  iobuf data, model::timeout_clock::duration timeout) {
+    uuid_t key = uuid_t::create();
+    storage::record_batch_builder b(
+      model::record_batch_type::raft_data, model::offset(0));
+    std::vector<model::record_header> headers;
+    headers.push_back(make_header("state", "live"));
+    b.add_raw_kw(make_iobuf(key), std::move(data), std::move(headers));
+    ss::chunked_fifo<model::record_batch> batches;
+    batches.push_back(std::move(b).build());
+    auto r = co_await produce(
+      model::wasm_binaries_internal_ntp, std::move(batches), timeout);
+    using result = result<stored_wasm_binary_metadata, cluster::errc>;
+    if (r.has_error()) {
+        co_return result(r.error());
+    }
+    co_return result(stored_wasm_binary_metadata(key, r.value()));
+}
+
+ss::future<cluster::errc> local_service::delete_wasm_binary(
+  uuid_t key, model::timeout_clock::duration timeout) {
+    storage::record_batch_builder b(
+      model::record_batch_type::raft_data, model::offset(0));
+    std::vector<model::record_header> headers;
+    headers.push_back(make_header("state", "tombstone"));
+    b.add_raw_kw(make_iobuf(key), std::nullopt, std::move(headers));
+    ss::chunked_fifo<model::record_batch> batches;
+    batches.push_back(std::move(b).build());
+    auto r = co_await produce(
+      model::wasm_binaries_internal_ntp, std::move(batches), timeout);
+    co_return r.has_error() ? r.error() : cluster::errc::success;
+}
+
+ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
+  model::offset offset, model::timeout_clock::duration timeout) {
+    auto shard = _partition_manager->shard_owner(
+      model::wasm_binaries_internal_ntp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+    iobuf data;
+    auto ec = co_await _partition_manager->invoke_on_shard(
+      *shard,
+      model::wasm_binaries_internal_ntp,
+      [this, offset, timeout, &data](
+        kafka::partition_proxy* partition) mutable {
+          storage::log_reader_config reader_config(
+            /*start_offset=*/offset,
+            /*max_offset=*/model::next_offset(offset),
+            /*min_bytes=*/0,
+            /*max_bytes=*/1,
+            // TODO: a custom read priority
+            /*prio=*/kafka_read_priority(),
+            /*type_filter=*/std::nullopt,
+            /*time=*/std::nullopt,
+            /*as=*/std::nullopt);
+          model::timeout_clock::time_point deadline
+            = model::timeout_clock::now() + timeout;
+          return partition->make_reader(reader_config, deadline)
+            .then([this, timeout](storage::translating_reader rdr) {
+                return consume_wasm_binary_reader(
+                  std::move(rdr.reader), timeout);
+            })
+            .then([&data](result<iobuf, cluster::errc> r) {
+                if (r.has_error()) {
+                    return r.error();
+                }
+                data = std::move(r).value();
+                return cluster::errc::success;
+            });
+      });
+    if (ec != cluster::errc::success) {
+        co_return ec;
+    }
+    co_return data;
+}
+
+ss::future<result<iobuf, cluster::errc>>
+local_service::consume_wasm_binary_reader(
+  model::record_batch_reader rdr, model::timeout_clock::duration timeout) {
+    model::timeout_clock::time_point deadline = model::timeout_clock::now()
+                                                + timeout;
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(rdr), deadline);
+    if (batches.empty()) {
+        co_return cluster::errc::invalid_request;
+    }
+    auto& batch = batches.front();
+    auto records = batch.copy_records();
+    if (records.empty()) {
+        co_return cluster::errc::invalid_request;
+    }
+    iobuf data = records.front().release_value();
+    if (data.empty()) {
+        co_return cluster::errc::invalid_request;
+    }
+    co_return data;
 }
 
 ss::future<produce_reply>
@@ -142,4 +282,31 @@ network_service::produce(produce_request&& req, ::rpc::streaming_context&) {
     co_return produce_reply(std::move(results));
 }
 
+ss::future<delete_wasm_binary_reply> network_service::delete_wasm_binary(
+  delete_wasm_binary_request&& req, ::rpc::streaming_context&) {
+    auto results = co_await _service->local().delete_wasm_binary(
+      req.key, req.timeout);
+    co_return delete_wasm_binary_reply(results);
+}
+
+ss::future<load_wasm_binary_reply> network_service::load_wasm_binary(
+  load_wasm_binary_request&& req, ::rpc::streaming_context&) {
+    auto results = co_await _service->local().load_wasm_binary(
+      req.offset, req.timeout);
+    if (results.has_error()) {
+        co_return load_wasm_binary_reply(results.error(), {});
+    }
+    co_return load_wasm_binary_reply(
+      cluster::errc::success, std::move(results.value()));
+}
+
+ss::future<store_wasm_binary_reply> network_service::store_wasm_binary(
+  store_wasm_binary_request&& req, ::rpc::streaming_context&) {
+    auto results = co_await _service->local().store_wasm_binary(
+      std::move(req.data), req.timeout);
+    if (results.has_error()) {
+        co_return store_wasm_binary_reply(results.error(), {});
+    }
+    co_return store_wasm_binary_reply(cluster::errc::success, results.value());
+}
 } // namespace transform::rpc

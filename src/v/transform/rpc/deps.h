@@ -79,6 +79,30 @@ public:
 };
 
 /**
+ * A component that can create topics.
+ */
+class topic_creator {
+public:
+    topic_creator() = default;
+    topic_creator(const topic_creator&) = default;
+    topic_creator(topic_creator&&) = delete;
+    topic_creator& operator=(const topic_creator&) = default;
+    topic_creator& operator=(topic_creator&&) = delete;
+    virtual ~topic_creator() = default;
+
+    static std::unique_ptr<topic_creator> make_default(cluster::controller*);
+
+    /**
+     * Create a topic.
+     */
+    virtual ss::future<cluster::errc> create_topic(
+      model::topic_namespace_view,
+      int32_t partition_count,
+      cluster::topic_properties)
+      = 0;
+};
+
+/**
  * Handles routing for shard local partitions.
  */
 class partition_manager {
