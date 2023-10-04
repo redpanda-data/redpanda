@@ -18,7 +18,7 @@ on:
       - 'v*'
     paths:
       - .github/workflows/rpk-build.yml
-      - src/go/rpk
+      - 'src/go/rpk/**'
 
 jobs:
   test:
