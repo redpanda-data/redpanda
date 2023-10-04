@@ -3201,6 +3201,10 @@ admin_server::force_set_partition_replicas_handler(
           "Feature not active yet, upgrade in progress?");
     }
 
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
     auto ntp = parse_ntp_from_request(req->param);
     if (ntp == model::controller_ntp) {
         throw ss::httpd::bad_request_exception(
