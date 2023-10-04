@@ -875,26 +875,16 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 }
                 _wait_list.pop_front();
             }
-        } catch (const ss::broken_condition_variable&) {
-            vlog(_ctxlog.debug, "Hydration loop shut down");
-            set_waiter_errors(std::current_exception());
-            break;
-        } catch (const ss::abort_requested_exception&) {
-            vlog(_ctxlog.debug, "Hydration loop shut down");
-            set_waiter_errors(std::current_exception());
-            break;
-        } catch (const ss::gate_closed_exception&) {
-            vlog(_ctxlog.debug, "Hydration loop shut down");
-            set_waiter_errors(std::current_exception());
-            break;
-        } catch (const ss::broken_semaphore&) {
-            vlog(_ctxlog.debug, "Hydration loop shut down");
-            set_waiter_errors(std::current_exception());
-            break;
         } catch (...) {
             const auto err = std::current_exception();
-            vlog(_ctxlog.error, "Error in hydration loop: {}", err);
             set_waiter_errors(err);
+
+            if (ssx::is_shutdown_exception(err)) {
+                vlog(_ctxlog.debug, "Hydration loop shut down");
+                break;
+            } else {
+                vlog(_ctxlog.error, "Error in hydration loop: {}", err);
+            }
         }
     }
 
