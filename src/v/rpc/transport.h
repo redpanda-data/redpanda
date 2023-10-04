@@ -146,7 +146,7 @@ public:
 private:
     using sequence_t = named_type<uint64_t, struct sequence_tag>;
     struct entry {
-        std::unique_ptr<ss::scattered_message<char>> scattered_message;
+        ss::scattered_message<char> scattered_message;
         uint32_t correlation_id;
     };
     using requests_queue_t
