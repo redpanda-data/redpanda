@@ -1,11 +1,11 @@
 **
 !rpk/
-!k8s/apis
+!k8s/api
 !k8s/cmd
 !k8s/config
-!k8s/controllers
-!k8s/go.mod
-!k8s/go.sum
-!k8s/main.go
+!k8s/hack
+!k8s/internal
 !k8s/pkg
 !k8s/webhooks
+!k8s/go.mod
+!k8s/go.sum
