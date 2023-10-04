@@ -1377,7 +1377,7 @@ cloud_storage_graceful_transfer_timeout = PropertyAliasData(
 log_retention_ms = PropertyAliasData(primary_name="log_retention_ms",
                                      aliased_name="delete_retention_ms",
                                      redpanda_version=(23, 3),
-                                     test_values=(1000000, 300000, 500000))
+                                     test_values=(1234, 5678, 9876))
 # NOTE due to https://github.com/redpanda-data/redpanda/issues/13432 ,
 # test_values can't be -1 (a valid value nonetheless to signal infinite value)
 
@@ -1423,13 +1423,18 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         # Aliases should work when used in API POST
         self.redpanda.set_cluster_config(
             {prop_set.aliased_name: prop_set.test_values[1]})
+        # self._check_propagated_and_persistent(prop_set.primary_name, prop_set.test_values[1])
+
         self._check_value_everywhere(prop_set.primary_name,
-                                     prop_set.test_values[1])
+                                    prop_set.test_values[1])
 
         # Properties set via an alias should stay set after a restart
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        self._check_value_everywhere(prop_set.primary_name,
-                                     prop_set.test_values[1])
+        # time.sleep(10)
+        self.redpanda.set_cluster_config(
+            {prop_set.aliased_name: prop_set.test_values[1]})
+        self._check_propagated_and_persistent(prop_set.primary_name,
+                                    prop_set.test_values[1])
 
         # The rpk CLI should also accept aliased names
         # NOTE due to https://github.com/redpanda-data/redpanda/issues/13389
