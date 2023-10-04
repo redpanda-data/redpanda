@@ -24,6 +24,34 @@ struct cached_factory {
 namespace {
 
 /**
+ * The interval at which we gc factories and engines that are no longer used.
+ */
+constexpr auto gc_interval = std::chrono::minutes(10);
+
+template<typename Key, typename Value>
+ss::future<> gc_btree_map(absl::btree_map<Key, ss::shared_ptr<Value>>* cache) {
+    auto it = cache->begin();
+    while (it != cache->end()) {
+        // If the cache is the only thing holding a reference to the entry,
+        // then we can delete the factory from the cache.
+        if (it->second.use_count() == 1) {
+            it = cache->erase(it);
+        } else {
+            ++it;
+        }
+
+        if (ss::need_preempt() && it != cache->end()) {
+            // The iterator could have be invalidated if there was a write
+            // during the yield. We'll use the ordered nature of the btree to
+            // support resuming the iterator after the suspension point.
+            Key checkpoint = it->first;
+            co_await ss::yield();
+            it = cache->lower_bound(checkpoint);
+        }
+    }
+}
+
+/**
  * Allows sharing an engine between multiple uses.
  *
  * Must live on a single core.
@@ -139,16 +167,22 @@ private:
 } // namespace
 
 caching_runtime::caching_runtime(std::unique_ptr<runtime> u)
-  : _underlying(std::move(u)) {}
+  : _underlying(std::move(u))
+  , _gc_timer(
+      [this]() { ssx::spawn_with_gate(_gate, [this] { return do_gc(); }); }) {}
 
 caching_runtime::~caching_runtime() = default;
 
 ss::future<> caching_runtime::start() {
     co_await _underlying->start();
-    // TODO: Start a periodic timer to GC unused factories
+    _gc_timer.arm(gc_interval);
 }
 
-ss::future<> caching_runtime::stop() { co_await _underlying->stop(); }
+ss::future<> caching_runtime::stop() {
+    _gc_timer.cancel();
+    co_await _gate.close();
+    co_await _underlying->stop();
+}
 
 ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
   model::transform_metadata meta, iobuf binary, ss::logger* logger) {
@@ -179,6 +213,21 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
 
     // TODO: Use a factory that caches engines
     co_return cached->factory;
+}
+
+ss::future<> caching_runtime::do_gc() {
+    auto fut = co_await ss::coroutine::as_future(gc_factories());
+    if (fut.failed()) {
+        vlog(
+          wasm_log.warn,
+          "wasm caching runtime gc failed: {}",
+          fut.get_exception());
+    }
+    _gc_timer.arm(gc_interval);
+}
+
+ss::future<> caching_runtime::gc_factories() {
+    return gc_btree_map(&_factory_cache);
 }
 
 } // namespace wasm

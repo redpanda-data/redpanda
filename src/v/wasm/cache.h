@@ -53,6 +53,10 @@ public:
     make_factory(model::transform_metadata, iobuf, ss::logger*) override;
 
 private:
+    /** GC factories and engines that are no longer in use. */
+    ss::future<> do_gc();
+    ss::future<> gc_factories();
+
     /*
      * This map holds locks for creating factories.
      *
@@ -64,6 +68,8 @@ private:
     std::unique_ptr<runtime> _underlying;
     absl::btree_map<model::offset, ss::shared_ptr<cached_factory>>
       _factory_cache;
+    ss::timer<ss::lowres_clock> _gc_timer;
+    ss::gate _gate;
 };
 
 } // namespace wasm
