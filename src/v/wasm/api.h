@@ -33,7 +33,6 @@ public:
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;
 
-    virtual std::string_view function_name() const = 0;
     virtual uint64_t memory_usage_size_bytes() const = 0;
 
     engine() = default;

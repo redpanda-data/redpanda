@@ -453,8 +453,6 @@ public:
 
     ~wasmtime_engine() override = default;
 
-    std::string_view function_name() const final { return _user_module_name; }
-
     uint64_t memory_usage_size_bytes() const final {
         std::string_view memory_export_name = "memory";
         auto* ctx = wasmtime_store_context(_store.get());

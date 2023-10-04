@@ -43,7 +43,6 @@ public:
     ss::future<> start() override;
     ss::future<> stop() override;
 
-    std::string_view function_name() const override;
     uint64_t memory_usage_size_bytes() const override;
 };
 
