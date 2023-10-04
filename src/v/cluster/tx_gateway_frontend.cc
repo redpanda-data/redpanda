@@ -3274,25 +3274,29 @@ tx_gateway_frontend::get_all_transactions_for_one_tx_partition(
                 return_all_txs_res{tx_errc::unknown_server_error});
           }
 
-          auto gate_lock = gate_guard(self._gate);
-          return stm->read_lock().then([stm](ss::basic_rwlock<>::holder unit) {
-              return stm->get_all_transactions()
-                .then(
-                  [](tm_stm::get_txs_result res)
-                    -> ss::future<return_all_txs_res> {
-                      if (!res.has_value()) {
-                          if (res.error() == tm_stm::op_status::not_leader) {
-                              return ss::make_ready_future<return_all_txs_res>(
-                                return_all_txs_res{tx_errc::not_coordinator});
-                          }
-                          return ss::make_ready_future<return_all_txs_res>(
-                            return_all_txs_res{tx_errc::unknown_server_error});
-                      }
-                      return ss::make_ready_future<return_all_txs_res>(
-                        std::move(res).value());
-                  })
-                .finally([u = std::move(unit)] {});
-          });
+          auto gate_lock = self._gate.hold();
+          return stm->read_lock()
+            .then([stm](ss::basic_rwlock<>::holder unit) {
+                return stm->get_all_transactions()
+                  .then(
+                    [](tm_stm::get_txs_result res)
+                      -> ss::future<return_all_txs_res> {
+                        if (!res.has_value()) {
+                            if (res.error() == tm_stm::op_status::not_leader) {
+                                return ss::make_ready_future<
+                                  return_all_txs_res>(
+                                  return_all_txs_res{tx_errc::not_coordinator});
+                            }
+                            return ss::make_ready_future<return_all_txs_res>(
+                              return_all_txs_res{
+                                tx_errc::unknown_server_error});
+                        }
+                        return ss::make_ready_future<return_all_txs_res>(
+                          std::move(res).value());
+                    })
+                  .finally([u = std::move(unit)] {});
+            })
+            .finally([l = std::move(gate_lock)] {});
       });
 }
 
