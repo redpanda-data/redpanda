@@ -86,7 +86,7 @@ public:
      * Create a factory for this transform and the corresponding source wasm
      * module.
      */
-    virtual ss::future<std::unique_ptr<factory>>
+    virtual ss::future<ss::shared_ptr<factory>>
     make_factory(model::transform_metadata, iobuf, ss::logger*) = 0;
     virtual ~runtime() = default;
 };

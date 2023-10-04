@@ -737,7 +737,7 @@ public:
 
     ss::future<> stop() override { return _alien_thread_pool.stop(); }
 
-    ss::future<std::unique_ptr<factory>> make_factory(
+    ss::future<ss::shared_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
         auto user_module = co_await _alien_thread_pool.submit(
           [this, &meta, &buf] {
@@ -755,7 +755,7 @@ public:
               wasm_log.info("Finished compiling wasm module {}", meta.name);
               return user_module;
           });
-        co_return std::make_unique<wasmtime_engine_factory>(
+        co_return ss::make_shared<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
           user_module,
