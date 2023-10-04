@@ -49,6 +49,8 @@ struct configuration {
     ss::lowres_clock::duration segment_upload_timeout;
     /// Shor upload timeout
     ss::lowres_clock::duration manifest_upload_timeout;
+    /// Timeout for running delete operations during the GC phase
+    ss::lowres_clock::duration garbage_collect_timeout;
     /// Initial backoff for upload loop in case there is nothing to upload
     ss::lowres_clock::duration upload_loop_initial_backoff;
     /// Max backoff for upload loop in case there is nothing to upload

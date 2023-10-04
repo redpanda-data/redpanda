@@ -1226,8 +1226,9 @@ class TS_Delete(Expression):
         return [
             # We currently don't have metric for S3 delete
             LogBasedValidator("TS_Delete_log",
-                              "remote.*Delete object",
-                              execution_stage=TestRunStage.Intermediate),
+                              "remote.*Deleting objects count",
+                              execution_stage=TestRunStage.Intermediate,
+                              confidence_threshold=LOW_THRESHOLD),
         ]
 
 
@@ -1241,7 +1242,7 @@ class TS_STM_DeleteByGC(Expression):
         return [
             LogBasedValidator(
                 "TS_STM_DeleteByGC_log",
-                "ntp_archiver_service.*Deleted segment from cloud storage",
+                "ntp_archiver_service.*Deleting segment from cloud storage",
                 execution_stage=TestRunStage.Intermediate),
         ]
 
@@ -1291,12 +1292,7 @@ class TS_Spillover_DeleteByGC(Expression):
         return [
             LogBasedValidator(
                 "TS_Spillover_DeleteByGC_log",
-                # NOTE: this pattern is used by two messages, but there are two
-                # different places in the code that use it. One is used for
-                # deleting spillover segments and the other one is used for
-                # STM segments.
-                # TODO: update one of the log messages
-                "ntp_archiver_service.*Deleting segment from cloud storage",
+                "ntp_archiver_service.*Deleting spillover segment from cloud storage",
                 execution_stage=TestRunStage.Intermediate),
         ]
 

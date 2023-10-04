@@ -490,9 +490,13 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
 
     config::shard_local_cfg().log_retention_ms.set_value(
       std::chrono::milliseconds{1min});
+    config::shard_local_cfg()
+      .cloud_storage_garbage_collect_timeout_ms.set_value(
+        std::chrono::milliseconds{1min});
     archiver.apply_retention().get();
     archiver.garbage_collect().get();
     config::shard_local_cfg().log_retention_ms.reset();
+    config::shard_local_cfg().cloud_storage_garbage_collect_timeout_ms.reset();
 
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
@@ -502,15 +506,10 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
         auto urlstr = url().string();
         auto expected_delete_paths = {
           urlstr, urlstr + ".index", urlstr + ".tx"};
+        auto [req_begin, req_end] = get_targets().equal_range("/?delete");
+        BOOST_REQUIRE_EQUAL(std::distance(req_begin, req_end), 1);
         for (const auto& p : expected_delete_paths) {
-            auto [req_begin, req_end] = get_targets().equal_range("/" + p);
-            auto entity_deleted = std::find_if(
-                                    req_begin,
-                                    req_end,
-                                    [](auto entry) {
-                                        return entry.second.method == "DELETE";
-                                    })
-                                  != req_end;
+            const bool entity_deleted = req_begin->second.content.contains(p);
             BOOST_REQUIRE(entity_deleted == deletion_expected);
         }
     }

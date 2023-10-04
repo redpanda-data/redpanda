@@ -19,6 +19,7 @@
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/types.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "utils/intrusive_list_helpers.h"
@@ -28,6 +29,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 
+#include <ranges>
 #include <utility>
 
 namespace cloud_storage {
@@ -179,6 +181,7 @@ public:
     model::cloud_storage_backend backend() const;
 
     bool is_batch_delete_supported() const;
+    int delete_objects_max_keys() const;
 
     /// \brief Download manifest from pre-defined S3 location
     ///
@@ -354,10 +357,15 @@ public:
     /// to perform sequential deletes of the objects.
     ///
     /// \param bucket The bucket to delete from
-    /// \param keys A vector of keys which will be deleted
+    /// \param keys A range of keys which will be deleted
+    template<typename R>
+    requires std::ranges::range<R>
+             && std::same_as<
+               std::ranges::range_value_t<R>,
+               cloud_storage_clients::object_key>
     ss::future<upload_result> delete_objects(
       const cloud_storage_clients::bucket_name& bucket,
-      std::vector<cloud_storage_clients::object_key> keys,
+      R keys,
       retry_chain_node& parent);
 
     using list_result = result<
@@ -504,7 +512,21 @@ private:
       std::optional<cloud_storage_clients::http_byte_range> byte_range
       = std::nullopt);
 
+    template<typename R>
+    requires std::ranges::range<R>
+             && std::same_as<
+               std::ranges::range_value_t<R>,
+               cloud_storage_clients::object_key>
     ss::future<upload_result> delete_objects_sequentially(
+      const cloud_storage_clients::bucket_name& bucket,
+      R keys,
+      retry_chain_node& parent);
+
+    /// Delete a single batch of keys. The batch size must not exceed the
+    /// backend limits.
+    ///
+    /// \pre the number of keys is <= delete_objects_max_keys
+    ss::future<upload_result> delete_object_batch(
       const cloud_storage_clients::bucket_name& bucket,
       std::vector<cloud_storage_clients::object_key> keys,
       retry_chain_node& parent);
