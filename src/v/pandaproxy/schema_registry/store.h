@@ -175,7 +175,12 @@ public:
         res.reserve(_subjects.size());
         for (const auto& sub : _subjects) {
             if (inc_del || !sub.second.deleted) {
-                res.push_back(sub.first);
+                auto has_version = absl::c_any_of(
+                  sub.second.versions,
+                  [inc_del](auto const& v) { return inc_del || !v.deleted; });
+                if (has_version) {
+                    res.push_back(sub.first);
+                }
             }
         }
         return res;
