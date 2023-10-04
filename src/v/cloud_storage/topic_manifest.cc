@@ -94,6 +94,46 @@ struct topic_manifest_handler
         }
     }
 
+    bool Int(int i) { return Int64(i); }
+
+    bool Int64(int64_t i) {
+        if (i >= 0) {
+            // Should only be called when negative, but doesn't hurt to just
+            // defer to the unsigned variant.
+            return Uint64(i);
+        }
+        switch (_state) {
+        case state::expect_value:
+            if (_key == "version") {
+                _version = i;
+            } else if (_key == "partition_count") {
+                _partition_count = i;
+            } else if (_key == "replication_factor") {
+                _replication_factor = i;
+            } else if (_key == "revision_id") {
+                _revision_id = model::initial_revision_id{i};
+            } else if (_key == "segment_size") {
+                // NOTE: segment size and retention bytes are unsigned, but
+                // older versions of Redpanda could serialize them as negative.
+                // Just leave them empty.
+                _properties.segment_size = std::nullopt;
+            } else if (_key == "retention_bytes") {
+                _properties.retention_bytes = tristate<size_t>{};
+            } else if (_key == "retention_duration") {
+                _properties.retention_duration
+                  = tristate<std::chrono::milliseconds>(
+                    std::chrono::milliseconds(i));
+            } else {
+                return false;
+            }
+            _state = state::expect_key;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_key:
+            return false;
+        }
+    }
+
     bool Uint(unsigned u) { return Uint64(u); }
 
     bool Uint64(uint64_t u) {
@@ -375,7 +415,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     }
     w.Key("segment_size");
     if (_topic_config->properties.segment_size.has_value()) {
-        w.Int64(*_topic_config->properties.segment_size);
+        w.Uint64(*_topic_config->properties.segment_size);
     } else {
         w.Null();
     }
@@ -388,7 +428,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     if (!_topic_config->properties.retention_bytes.is_disabled()) {
         w.Key("retention_bytes");
         if (_topic_config->properties.retention_bytes.has_optional_value()) {
-            w.Int64(_topic_config->properties.retention_bytes.value());
+            w.Uint64(_topic_config->properties.retention_bytes.value());
         } else {
             w.Null();
         }

@@ -26,6 +26,9 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <limits>
+#include <ratio>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -110,6 +113,22 @@ static constexpr std::string_view wrong_compaction_strategy = R"json({
     "segment_size": 1234,
     "retention_bytes": 42342,
     "retention_duration": 36000000000
+})json";
+
+static constexpr std::string_view negative_properties_manifest = R"json({
+    "version": 1,
+    "namespace": "negative-test-namespace",
+    "topic": "full-test-topic",
+    "partition_count": 64,
+    "replication_factor": 6,
+    "revision_id": 1,
+    "compression": "snappy",
+    "cleanup_policy_bitflags": "compact,delete",
+    "compaction_strategy": "offset",
+    "timestamp_type": "LogAppendTime",
+    "segment_size": -1234,
+    "retention_bytes": -42342,
+    "retention_duration": -36000000000
 })json";
 
 inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
@@ -224,6 +243,46 @@ SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
       std::chrono::milliseconds(36000000000));
 }
 
+SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
+    manifest_topic_configuration min_cfg{cfg};
+    min_cfg.properties.retention_bytes = tristate<size_t>(
+      std::numeric_limits<size_t>::min());
+    min_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
+      std::chrono::milliseconds::min());
+    min_cfg.properties.segment_size = std::make_optional(
+      std::numeric_limits<size_t>::min());
+    topic_manifest m(min_cfg, model::initial_revision_id{0});
+    auto [is, size] = m.serialize().get();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    topic_manifest restored;
+    restored.update(std::move(rstr)).get();
+    BOOST_REQUIRE(m == restored);
+}
+
+SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
+    manifest_topic_configuration max_cfg{cfg};
+    max_cfg.properties.retention_bytes = tristate<size_t>(
+      std::numeric_limits<size_t>::max());
+    max_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
+      std::chrono::milliseconds::max());
+    max_cfg.properties.segment_size = std::make_optional(
+      std::numeric_limits<size_t>::max());
+    topic_manifest m(max_cfg, model::initial_revision_id{0});
+    auto [is, size] = m.serialize().get();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    topic_manifest restored;
+    restored.update(std::move(rstr)).get();
+    BOOST_REQUIRE(m == restored);
+}
+
 SEASTAR_THREAD_TEST_CASE(missing_required_fields_throws) {
     topic_manifest m;
     BOOST_REQUIRE_EXCEPTION(
@@ -293,4 +352,21 @@ SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
     restored.update(std::move(rstr)).get();
 
     BOOST_REQUIRE(m == restored);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
+    topic_manifest m(cfg, model::initial_revision_id(0));
+    m.update(make_manifest_stream(negative_properties_manifest)).get();
+    auto tp_cfg = m.get_topic_config();
+    BOOST_REQUIRE(tp_cfg.has_value());
+    BOOST_REQUIRE_EQUAL(64, tp_cfg->partition_count);
+    BOOST_REQUIRE_EQUAL(6, tp_cfg->replication_factor);
+    auto tp_props = tp_cfg->properties;
+    BOOST_REQUIRE(tp_props.retention_duration.has_optional_value());
+    BOOST_REQUIRE_EQUAL(
+      tp_props.retention_duration.value().count(), -36000000000);
+
+    // The usigned types that were passed in negative values shouldn't be set.
+    BOOST_REQUIRE(tp_props.retention_bytes.is_disabled());
+    BOOST_REQUIRE(!tp_props.segment_size.has_value());
 }
