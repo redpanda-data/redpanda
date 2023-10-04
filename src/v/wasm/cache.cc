@@ -17,6 +17,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/weak_ptr.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <absl/container/btree_set.h>
@@ -31,11 +32,14 @@ namespace {
 constexpr auto default_gc_interval = std::chrono::minutes(10);
 
 template<typename Key, typename Value>
-ss::future<> gc_btree_map(absl::btree_map<Key, ss::weak_ptr<Value>>* cache) {
+ss::future<int64_t>
+gc_btree_map(absl::btree_map<Key, ss::weak_ptr<Value>>* cache) {
+    int64_t cleanup_count = 0;
     auto it = cache->begin();
     while (it != cache->end()) {
         // If the weak_ptr is `nullptr` then we can remove it from the cache.
         if (!it->second) {
+            ++cleanup_count;
             it = cache->erase(it);
         } else {
             ++it;
@@ -50,6 +54,7 @@ ss::future<> gc_btree_map(absl::btree_map<Key, ss::weak_ptr<Value>>* cache) {
             it = cache->lower_bound(checkpoint);
         }
     }
+    co_return cleanup_count;
 }
 
 /**
@@ -195,7 +200,7 @@ public:
         return it->second->shared_from_this();
     }
 
-    ss::future<> gc() { return gc_btree_map(&_cache); }
+    ss::future<int64_t> gc() { return gc_btree_map(&_cache); }
 
 private:
     mutex _mu;
@@ -267,8 +272,9 @@ caching_runtime::caching_runtime(
   std::unique_ptr<runtime> u, ss::lowres_clock::duration gc_interval)
   : _underlying(std::move(u))
   , _gc_interval(gc_interval)
-  , _gc_timer(
-      [this]() { ssx::spawn_with_gate(_gate, [this] { return do_gc(); }); }) {}
+  , _gc_timer([this]() {
+      ssx::spawn_with_gate(_gate, [this] { return do_gc().discard_result(); });
+  }) {}
 
 caching_runtime::~caching_runtime() = default;
 
@@ -320,24 +326,27 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
     co_return cached;
 }
 
-ss::future<> caching_runtime::do_gc() {
+ss::future<int64_t> caching_runtime::do_gc() {
     auto fut = co_await ss::coroutine::as_future(
       ss::when_all_succeed(gc_factories(), gc_engines()));
+    _gc_timer.rearm(ss::lowres_clock::now() + _gc_interval);
     if (fut.failed()) {
         vlog(
           wasm_log.warn,
           "wasm caching runtime gc failed: {}",
           fut.get_exception());
+        co_return -1;
     }
-    _gc_timer.arm(_gc_interval);
+    co_return std::apply(std::plus<>(), fut.get());
 }
 
-ss::future<> caching_runtime::gc_factories() {
+ss::future<int64_t> caching_runtime::gc_factories() {
     return gc_btree_map(&_factory_cache);
 }
 
-ss::future<> caching_runtime::gc_engines() {
-    return _engine_caches.invoke_on_all(&engine_cache::gc);
+ss::future<int64_t> caching_runtime::gc_engines() {
+    return _engine_caches.map_reduce0(
+      &engine_cache::gc, int64_t(0), std::plus<>());
 }
 
 } // namespace wasm

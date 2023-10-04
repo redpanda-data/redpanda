@@ -124,6 +124,8 @@ private:
     state _state;
 };
 
+} // namespace
+
 class WasmCacheTest : public ::testing::Test {
 public:
     static void SetUpTestSuite() {
@@ -172,6 +174,7 @@ public:
         }).get();
     }
 
+    int64_t gc() { return _caching_runtime->do_gc().get(); }
     auto* state() { return _fake_runtime->get_state(); }
 
     model::record_batch random_batch() const {
@@ -184,8 +187,6 @@ private:
     fake_runtime* _fake_runtime;
     std::unique_ptr<caching_runtime> _caching_runtime;
 };
-
-} // namespace
 
 void PrintTo(const ss::shared_ptr<factory>& f, std::ostream* os) {
     *os << "factory{" << f.get() << "}";
@@ -266,6 +267,19 @@ TEST_F(WasmCacheTest, CanMultiplexTransforms) {
     engine_one->stop().get();
     engine_two->stop().get();
     EXPECT_EQ(state()->running_engines, 0);
+}
+
+TEST_F(WasmCacheTest, GC) {
+    auto meta = random_metadata();
+    auto factory = ss::make_foreign(make_factory(meta));
+    // Create an engine and destroy it
+    invoke_on_all([&factory] { factory->make_engine().get(); });
+    EXPECT_EQ(state()->engines, 0);
+    // We should GC each engine for each core
+    EXPECT_EQ(gc(), ss::smp::count);
+    factory = nullptr;
+    // Now we should GC the factory
+    EXPECT_EQ(gc(), 1);
 }
 
 } // namespace wasm

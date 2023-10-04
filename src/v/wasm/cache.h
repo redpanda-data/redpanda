@@ -60,10 +60,16 @@ public:
     make_factory(model::transform_metadata, iobuf, ss::logger*) override;
 
 private:
-    /** GC factories and engines that are no longer in use. */
-    ss::future<> do_gc();
-    ss::future<> gc_factories();
-    ss::future<> gc_engines();
+    friend class WasmCacheTest;
+
+    /**
+     * GC factories and engines that are no longer in use.
+     *
+     * Return the number of entries deleted (for testing).
+     */
+    ss::future<int64_t> do_gc();
+    ss::future<int64_t> gc_factories();
+    ss::future<int64_t> gc_engines();
 
     /*
      * This map holds locks for creating factories.
