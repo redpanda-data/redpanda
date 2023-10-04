@@ -130,7 +130,7 @@ public:
       Func&& f) {
         using ret_t = result_wrap_t<std::invoke_result_t<Func, Protocol>>;
 
-        if (_gate.is_closed()) {
+        if (is_shutting_down()) {
             return ss::futurize<ret_t>::convert(
               rpc::make_error_code(errc::shutting_down));
         }
@@ -145,7 +145,7 @@ public:
           *shard,
           [node_id, f = std::forward<Func>(f), connection_timeout](
             connection_cache& cache) mutable {
-              if (cache._gate.is_closed()) {
+              if (cache.is_shutting_down()) {
                   return ss::futurize<ret_t>::convert(
                     rpc::make_error_code(errc::shutting_down));
               }
