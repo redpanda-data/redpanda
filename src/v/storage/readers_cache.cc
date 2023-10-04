@@ -97,6 +97,11 @@ readers_cache::get_reader(const log_reader_config& cfg) {
     if (_gate.is_closed()) {
         return std::nullopt;
     }
+    vassert(
+      cfg.skip_readers_cache == false,
+      "{} - invalid readers_cache request {}",
+      _ntp,
+      cfg);
     vlog(stlog.trace, "{} - trying to get reader for: {}", _ntp, cfg);
     intrusive_list<entry, &entry::_hook> to_evict;
     /**

@@ -1749,6 +1749,9 @@ disk_log_impl::make_reader(log_reader_config config) {
         return ss::make_ready_future<model::record_batch_reader>(
           std::move(empty));
     }
+    if (config.skip_readers_cache) {
+        return make_unchecked_reader(config);
+    }
     return make_cached_reader(config);
 }
 
