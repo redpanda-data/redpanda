@@ -28,7 +28,7 @@ namespace {
 /**
  * The interval at which we gc factories and engines that are no longer used.
  */
-constexpr auto gc_interval = std::chrono::minutes(10);
+constexpr auto default_gc_interval = std::chrono::minutes(10);
 
 template<typename Key, typename Value>
 ss::future<> gc_btree_map(absl::btree_map<Key, ss::weak_ptr<Value>>* cache) {
@@ -261,7 +261,12 @@ private:
 };
 
 caching_runtime::caching_runtime(std::unique_ptr<runtime> u)
+  : caching_runtime(std::move(u), default_gc_interval) {}
+
+caching_runtime::caching_runtime(
+  std::unique_ptr<runtime> u, ss::lowres_clock::duration gc_interval)
   : _underlying(std::move(u))
+  , _gc_interval(gc_interval)
   , _gc_timer(
       [this]() { ssx::spawn_with_gate(_gate, [this] { return do_gc(); }); }) {}
 
@@ -270,7 +275,7 @@ caching_runtime::~caching_runtime() = default;
 ss::future<> caching_runtime::start() {
     co_await _underlying->start();
     co_await _engine_caches.start();
-    _gc_timer.arm(gc_interval);
+    _gc_timer.arm(_gc_interval);
 }
 
 ss::future<> caching_runtime::stop() {
@@ -324,7 +329,7 @@ ss::future<> caching_runtime::do_gc() {
           "wasm caching runtime gc failed: {}",
           fut.get_exception());
     }
-    _gc_timer.arm(gc_interval);
+    _gc_timer.arm(_gc_interval);
 }
 
 ss::future<> caching_runtime::gc_factories() {

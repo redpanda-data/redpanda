@@ -14,6 +14,7 @@
 #include "utils/mutex.h"
 #include "wasm/api.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/weak_ptr.hh>
 
@@ -41,6 +42,8 @@ class cached_factory;
 class caching_runtime : public runtime {
 public:
     explicit caching_runtime(std::unique_ptr<runtime>);
+    caching_runtime(
+      std::unique_ptr<runtime>, ss::lowres_clock::duration gc_interval);
     caching_runtime(const caching_runtime&) = delete;
     caching_runtime(caching_runtime&&) = delete;
     caching_runtime& operator=(const caching_runtime&) = delete;
@@ -73,6 +76,7 @@ private:
     std::unique_ptr<runtime> _underlying;
     absl::btree_map<model::offset, ss::weak_ptr<cached_factory>> _factory_cache;
     ss::sharded<engine_cache> _engine_caches;
+    ss::lowres_clock::duration _gc_interval;
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gate;
 };
