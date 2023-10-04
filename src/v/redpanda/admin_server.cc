@@ -117,6 +117,7 @@
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
 #include <seastar/json/json_elements.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/short_streams.hh>
@@ -1525,10 +1526,10 @@ admin_server::patch_cluster_config_handler(
         // by config_manager much after config is written to controller
         // log.
         auto& cfg = config::shard_local_cfg();
-
+        auto prev_val = config::to_yaml(cfg, config::redact_secrets::no);
         auto restore_prev_val = ss::defer(
-          [&cfg, prev_val = config::to_yaml(cfg, false)] {
-              cfg.load(prev_val);
+          [&] {
+              cfg.read_yaml(prev_val, {});
           });
         // Configuration properties cannot do multi-property validation
         // themselves, so there is some special casing here for critical
@@ -1563,7 +1564,7 @@ admin_server::patch_cluster_config_handler(
                     // call to validate (if this happens validate() was
                     // implemented wrongly, but let's be safe)
                     // NOTEANDREA this is probably the core of the issue
-                    auto changed = property.put_value(val);
+                    auto changed = property.set_value(val);
                     if (!changed) {
                         upsert_no_op_names.insert(yaml_name);
                     }
