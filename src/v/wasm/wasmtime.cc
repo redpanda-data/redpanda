@@ -27,6 +27,7 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <wasmtime/config.h>
 #include <wasmtime/error.h>
@@ -644,11 +645,13 @@ public:
       , _logger(l)
       , _alien_thread_pool(w) {}
 
-    ss::future<std::unique_ptr<engine>> make_engine() final {
+    ss::future<ss::shared_ptr<engine>> make_engine() final {
         ss::alien::instance* alien = &ss::engine().alien();
         ss::shard_id shard_id = ss::this_shard_id();
-        return _alien_thread_pool->submit(
-          [this, alien, shard_id]() -> std::unique_ptr<engine> {
+        auto factory = co_await _alien_thread_pool->submit(
+          [this,
+           alien,
+           shard_id]() -> ss::noncopyable_function<ss::shared_ptr<engine>()> {
               handle<wasmtime_store_t, wasmtime_store_delete> store{
                 wasmtime_store_new(_engine, nullptr, nullptr)};
               auto* context = wasmtime_store_context(store.get());
@@ -672,9 +675,14 @@ public:
               std::vector<ss::sstring> args{_meta.name()};
               absl::flat_hash_map<ss::sstring, ss::sstring> env
                 = _meta.environment;
-              env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
               env.emplace(
-                "REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
+                "REDPANDA_INPUT_"
+                "TOPIC",
+                _meta.input_topic.tp());
+              env.emplace(
+                "REDPANDA_OUTPUT_"
+                "TOPIC",
+                _meta.output_topics.begin()->tp());
               auto wasi_module = std::make_unique<wasi::preview1_module>(
                 std::move(args), std::move(env), _logger);
               host_function_envs.push_back(register_wasi_module(
@@ -688,18 +696,31 @@ public:
               check_error(error.get());
               check_trap(trap.get());
 
-              return std::make_unique<wasmtime_engine>(
-                _meta.name(),
-                std::move(linker),
-                std::move(store),
-                _module,
-                std::move(xform_module),
-                std::move(sr_module),
-                std::move(wasi_module),
-                std::move(host_function_envs),
-                instance,
-                _alien_thread_pool);
+              // shared_ptr needs to be created in a seastar reactor thread, so
+              // pass back a closure to allocate the engine.
+              return [this,
+                      name = _meta.name(),
+                      linker = std::move(linker),
+                      store = std::move(store),
+                      xform_module = std::move(xform_module),
+                      sr_module = std::move(sr_module),
+                      wasi_module = std::move(wasi_module),
+                      host_function_envs = std::move(host_function_envs),
+                      instance]() mutable {
+                  return ss::make_shared<wasmtime_engine>(
+                    std::move(name),
+                    std::move(linker),
+                    std::move(store),
+                    _module,
+                    std::move(xform_module),
+                    std::move(sr_module),
+                    std::move(wasi_module),
+                    std::move(host_function_envs),
+                    instance,
+                    _alien_thread_pool);
+              };
           });
+        co_return factory();
     }
 
 private:

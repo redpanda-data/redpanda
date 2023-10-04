@@ -58,7 +58,7 @@ public:
     factory& operator=(const factory&) = delete;
     factory(factory&&) = delete;
     factory& operator=(factory&&) = delete;
-    virtual ss::future<std::unique_ptr<engine>> make_engine() = 0;
+    virtual ss::future<ss::shared_ptr<engine>> make_engine() = 0;
     virtual ~factory() = default;
 };
 
