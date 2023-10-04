@@ -331,10 +331,12 @@ ss::future<> connection_cache::reset_client_backoff(
         return ss::now();
     }
 
-    return container().invoke_on(
-      *shard, [node_id](rpc::connection_cache& cache) mutable {
-          cache._cache.reset_client_backoff(node_id);
-      });
+    return ss::with_gate(_gate, [this, node_id, shard] {
+        return container().invoke_on(
+          *shard, [node_id](rpc::connection_cache& cache) mutable {
+              cache._cache.reset_client_backoff(node_id);
+          });
+    });
 }
 
 } // namespace rpc

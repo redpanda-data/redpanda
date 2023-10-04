@@ -21,6 +21,7 @@
 #include "rpc/types.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -141,17 +142,25 @@ public:
               rpc::make_error_code(errc::missing_node_rpc_client));
         }
 
-        return container().invoke_on(
-          *shard,
-          [node_id, f = std::forward<Func>(f), connection_timeout](
-            connection_cache& cache) mutable {
-              if (cache.is_shutting_down()) {
-                  return ss::futurize<ret_t>::convert(
-                    rpc::make_error_code(errc::shutting_down));
-              }
+        return ss::with_gate(
+          _gate,
+          [this,
+           node_id,
+           connection_timeout,
+           shard,
+           f = std::forward<Func>(f)]() mutable {
+              return container().invoke_on(
+                *shard,
+                [node_id, f = std::forward<Func>(f), connection_timeout](
+                  connection_cache& cache) mutable {
+                    if (cache.is_shutting_down()) {
+                        return ss::futurize<ret_t>::convert(
+                          rpc::make_error_code(errc::shutting_down));
+                    }
 
-              return cache._cache.with_node_client<Protocol, Func>(
-                node_id, connection_timeout, std::forward<Func>(f));
+                    return cache._cache.with_node_client<Protocol, Func>(
+                      node_id, connection_timeout, std::forward<Func>(f));
+                });
           });
     }
 
