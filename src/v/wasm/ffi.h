@@ -298,14 +298,11 @@ constexpr size_t num_parameters() {
         static_assert(utils::unsupported_type<Type>::value, "Unknown type");
     }
 }
-
-template<typename... Args>
-concept EmptyPack = sizeof...(Args) == 0;
 } // namespace detail
 
 template<typename... Rest>
 void transform_types(std::vector<val_type>&)
-requires detail::EmptyPack<Rest...>
+requires(sizeof...(Rest) == 0)
 {
     // Nothing to do
 }
@@ -319,7 +316,7 @@ void transform_types(std::vector<val_type>& types) {
 template<typename... Rest>
 std::tuple<>
 extract_parameters(ffi::memory*, std::span<const uint64_t>, unsigned)
-requires detail::EmptyPack<Rest...>
+requires(sizeof...(Rest) == 0)
 {
     return std::make_tuple();
 }
@@ -334,7 +331,7 @@ std::tuple<Type, Rest...> extract_parameters(
 
 template<typename... Rest>
 constexpr size_t parameter_count()
-requires detail::EmptyPack<Rest...>
+requires(sizeof...(Rest) == 0)
 {
     return 0;
 }

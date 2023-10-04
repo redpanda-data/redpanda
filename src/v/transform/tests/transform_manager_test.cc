@@ -258,12 +258,9 @@ private:
 
 using status_map = absl::flat_hash_map<std::string, lifecycle_status>;
 
-template<typename... Args>
-concept EmptyPack = sizeof...(Args) == 0;
-
 template<typename... Rest>
 void make_status_map(status_map& output)
-requires EmptyPack<Rest...>
+requires(sizeof...(Rest) == 0)
 {}
 
 template<typename... Rest>
