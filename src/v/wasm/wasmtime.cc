@@ -13,6 +13,7 @@
 #include "model/record.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
+#include "utils/type_traits.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
@@ -148,8 +149,7 @@ wasmtime_val_t convert_to_wasmtime(T value) {
           .kind = WASMTIME_I32, .of = {.i32 = static_cast<int32_t>(value)}};
     } else {
         static_assert(
-          ffi::detail::dependent_false<T>::value,
-          "Unsupported wasm result type");
+          utils::unsupported_type<T>::value, "Unsupported wasm result type");
     }
 }
 

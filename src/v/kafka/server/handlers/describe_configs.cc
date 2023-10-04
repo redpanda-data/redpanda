@@ -26,6 +26,7 @@
 #include "reflection/type_traits.h"
 #include "security/acl.h"
 #include "ssx/sformat.h"
+#include "utils/type_traits.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>
@@ -145,7 +146,7 @@ consteval describe_configs_type property_config_type() {
         return describe_configs_type::list;
     } else {
         static_assert(
-          config::detail::dependent_false<T>::value,
+          utils::unsupported_type<T>::value,
           "Type name is not supported in describe_configs_type");
     }
 }

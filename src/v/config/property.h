@@ -561,9 +561,6 @@ concept is_pair = requires(T x) {
 };
 
 template<typename T>
-struct dependent_false : std::false_type {};
-
-template<typename T>
 consteval std::string_view property_type_name() {
     using type = std::decay_t<T>;
     if constexpr (std::is_same_v<type, ss::sstring>) {
@@ -638,7 +635,8 @@ consteval std::string_view property_type_name() {
                              schema_id_validation_mode>) {
         return "string";
     } else {
-        static_assert(dependent_false<T>::value, "Type name not defined");
+        static_assert(
+          utils::unsupported_type<T>::value, "Type name not defined");
     }
 }
 
