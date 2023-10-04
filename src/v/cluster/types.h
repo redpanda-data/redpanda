@@ -3150,6 +3150,40 @@ struct reconciliation_state_request
     auto serde_fields() { return std::tie(ntps); }
 };
 
+struct ntp_with_majority_loss
+  : serde::envelope<
+      ntp_with_majority_loss,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    ntp_with_majority_loss() = default;
+    explicit ntp_with_majority_loss(
+      model::ntp n,
+      model::revision_id r,
+      std::vector<model::broker_shard> replicas,
+      std::vector<model::node_id> dead_nodes)
+      : ntp(std::move(n))
+      , topic_revision(r)
+      , assignment(std::move(replicas))
+      , defunct_nodes(std::move(dead_nodes)) {}
+    model::ntp ntp;
+    model::revision_id topic_revision;
+    std::vector<model::broker_shard> assignment;
+    std::vector<model::node_id> defunct_nodes;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const ntp_with_majority_loss& s) {
+        return H::combine(
+          std::move(h), s.ntp, s.topic_revision, s.assignment, s.defunct_nodes);
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const ntp_with_majority_loss&);
+    bool operator==(const ntp_with_majority_loss& other) const = default;
+    auto serde_fields() {
+        return std::tie(ntp, topic_revision, assignment, defunct_nodes);
+    }
+};
+
 struct reconciliation_state_reply
   : serde::envelope<
       reconciliation_state_reply,

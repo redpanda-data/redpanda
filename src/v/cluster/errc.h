@@ -77,6 +77,7 @@ enum class errc : int16_t {
     topic_disabled,
     partition_disabled,
     invalid_partition_operation,
+    concurrent_modification_error,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -223,6 +224,8 @@ struct errc_category final : public std::error_category {
             return "Partition disabled by user";
         case errc::invalid_partition_operation:
             return "Invalid partition operation";
+        case errc::concurrent_modification_error:
+            return "Concurrent modification error";
         }
         return "cluster::errc::unknown";
     }

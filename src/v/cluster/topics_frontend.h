@@ -92,9 +92,16 @@ public:
       std::optional<model::term_id> = std::nullopt);
 
     /**
-     * This overload of move_partition_replicas will use the partition allocator
-     * to generate a new replica set (i.e., a vector<broker_shard>) based on the
-     * given ntp and list of node ids.
+     * Given a list of defunct nodes, generates a list of ntps that lost
+     * majority due to unavailability of the nodes.
+     */
+    ss::future<result<fragmented_vector<ntp_with_majority_loss>>>
+    partitions_with_lost_majority(std::vector<model::node_id> defunct_nodes);
+
+    /**
+     * This overload of move_partition_replicas will use the partition
+     * allocator to generate a new replica set (i.e., a
+     * vector<broker_shard>) based on the given ntp and list of node ids.
      */
     ss::future<std::error_code> move_partition_replicas(
       model::ntp,

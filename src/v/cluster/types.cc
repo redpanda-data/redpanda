@@ -1246,6 +1246,18 @@ operator<<(std::ostream& o, const add_paritions_tx_request::topic& t) {
     fmt::print(o, "{{topic: {}, partitions: {}}}", t.name, t.partitions);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const ntp_with_majority_loss& entry) {
+    fmt::print(
+      o,
+      "{{ ntp: {}, topic_revision: {}, replicas: {}, defunct nodes: {} }}",
+      entry.ntp,
+      entry.topic_revision,
+      entry.assignment,
+      entry.defunct_nodes);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {

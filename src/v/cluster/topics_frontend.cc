@@ -46,6 +46,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <algorithm>
 #include <iterator>
@@ -861,6 +862,77 @@ ss::future<std::error_code> topics_frontend::force_update_partition_replicas(
 
     co_return co_await replicate_and_wait(
       _stm, _as, std::move(cmd), tout, term);
+}
+
+ss::future<result<fragmented_vector<ntp_with_majority_loss>>>
+topics_frontend::partitions_with_lost_majority(
+  std::vector<model::node_id> defunct_nodes) {
+    try {
+        fragmented_vector<ntp_with_majority_loss> result;
+        if (defunct_nodes.empty()) {
+            co_return result;
+        }
+        // Check if there are any non existent nodes in the input.
+        std::vector<model::node_id> missing_nodes;
+        missing_nodes.reserve(defunct_nodes.size());
+        for (const auto& defunct_node : defunct_nodes) {
+            if (!_members_table.local().contains(defunct_node)) {
+                missing_nodes.push_back(defunct_node);
+            }
+        }
+        if (!missing_nodes.empty()) {
+            vlog(
+              clusterlog.info,
+              "Invalid request, defunct nodes refer to non existent nodes: {}",
+              missing_nodes);
+            co_return errc::invalid_request;
+        }
+
+        const auto& topics = _topics.local();
+        for (auto it = topics.topics_iterator_begin();
+             it != topics.topics_iterator_end();
+             ++it) {
+            const auto& tn = it->first;
+            const auto& assignments = (it->second).get_assignments();
+            const auto topic_revision = it->second.get_revision();
+            for (const auto& assignment : assignments) {
+                const auto& current = assignment.replicas;
+                auto remaining = subtract_replica_sets_by_node_id(
+                  current, defunct_nodes);
+                auto lost_majority = remaining.size()
+                                     < (current.size() / 2) + 1;
+                if (!lost_majority) {
+                    continue;
+                }
+                model::ntp ntp(tn.ns, tn.tp, assignment.id);
+                if (topics.updates_in_progress().contains(ntp)) {
+                    // force reconfiguration does not support in progress
+                    // moves. this check can be relaxed once the limitation
+                    // is fixed.
+                    vlog(
+                      clusterlog.debug,
+                      "{} lost majority but skipping as an update is in "
+                      "progress.",
+                      ntp);
+                    continue;
+                }
+                result.emplace_back(
+                  std::move(ntp),
+                  topic_revision,
+                  assignment.replicas,
+                  defunct_nodes);
+                co_await ss::coroutine::maybe_yield();
+            }
+        }
+        co_return result;
+    } catch (const topic_table::concurrent_modification_error& e) {
+        // state changed while generating the plan, force caller to retry;
+        vlog(
+          clusterlog.info,
+          "Topic table state changed when generating force move plan: {}",
+          e.what());
+    }
+    co_return errc::concurrent_modification_error;
 }
 
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
