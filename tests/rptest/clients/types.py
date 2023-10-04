@@ -79,6 +79,9 @@ class TopicSpec:
     PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT = "confluent.value.schema.validation"
     PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT = "confluent.value.subject.name.strategy"
 
+    PROPERTY_INITIAL_RETENTION_LOCAL_TARGET_BYTES = "initial.retention.local.target.bytes"
+    PROPERTY_INITIAL_RETENTION_LOCAL_TARGET_MS = "initial.retention.local.target.ms"
+
     def __init__(self,
                  *,
                  name=None,
@@ -103,7 +106,9 @@ class TopicSpec:
                  record_value_schema_id_validation=None,
                  record_value_schema_id_validation_compat=None,
                  record_value_subject_name_strategy=None,
-                 record_value_subject_name_strategy_compat=None):
+                 record_value_subject_name_strategy_compat=None,
+                 initial_retention_local_target_bytes=None,
+                 initial_retention_local_target_ms=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -127,6 +132,8 @@ class TopicSpec:
         self.record_value_schema_id_validation_compat = record_value_schema_id_validation_compat
         self.record_value_subject_name_strategy = record_value_subject_name_strategy
         self.record_value_subject_name_strategy_compat = record_value_subject_name_strategy_compat
+        self.initial_retention_local_target_bytes = initial_retention_local_target_bytes
+        self.initial_retention_local_target_ms = initial_retention_local_target_ms
 
     def __str__(self):
         return self.name

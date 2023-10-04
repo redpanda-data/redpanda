@@ -92,6 +92,13 @@ def read_topic_properties_serde(rdr: Reader, version):
             'record_value_subject_name_strategy_compat':
             rdr.read_optional(Reader.read_serde_enum)
         }
+    if version >= 6:
+        topic_properties |= {
+            'initial_retention_local_target_bytes':
+            rdr.read_tristate(Reader.read_uint64),
+            'initial_retention_local_target_ms':
+            rdr.read_tristate(Reader.read_uint64)
+        }
 
     return topic_properties
 
@@ -112,7 +119,7 @@ def read_topic_configuration_assignment_serde(rdr: Reader):
                     rdr.read_int16(),
                     'properties':
                     rdr.read_envelope(read_topic_properties_serde,
-                                      max_version=5),
+                                      max_version=6),
                 }, 1),
             'assignments':
             rdr.read_serde_vector(lambda r: r.read_envelope(
@@ -226,10 +233,19 @@ def read_incremental_topic_update_serde(rdr: Reader):
                 'record_value_subject_name_strategy_compat':
                 rdr.read_optional(Reader.read_serde_enum)
             }
+        if version >= 5:
+            incr_obj |= {
+                'initial_retention_local_target_bytes':
+                read_property_update_serde(
+                    rdr, lambda r: r.read_tristate(Reader.read_uint64)),
+                'initial_retention_local_target_ms':
+                read_property_update_serde(
+                    rdr, lambda r: r.read_tristate(Reader.read_uint64))
+            }
 
         return incr_obj
 
-    return rdr.read_envelope(incr_topic_upd, max_version=4)
+    return rdr.read_envelope(incr_topic_upd, max_version=5)
 
 
 def read_create_partitions_serde(rdr: Reader):

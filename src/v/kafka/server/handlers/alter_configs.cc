@@ -232,6 +232,21 @@ create_topic_properties_update(
                   kafka::config_resource_operation::set);
                 continue;
             }
+            if (cfg.name == topic_property_initial_retention_local_target_ms) {
+                parse_and_set_tristate(
+                  update.properties.initial_retention_local_target_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
+            if (
+              cfg.name == topic_property_initial_retention_local_target_bytes) {
+                parse_and_set_tristate(
+                  update.properties.initial_retention_local_target_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
             if (
               config::shard_local_cfg().enable_schema_id_validation()
               != pandaproxy::schema_registry::schema_id_validation_mode::none) {

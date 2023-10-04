@@ -553,6 +553,20 @@ ss::future<> topic_recovery_service::reset_topic_configurations() {
             = tristate<size_t>{
               config::shard_local_cfg().retention_local_target_bytes_default()};
 
+          update.properties.initial_retention_local_target_ms.op
+            = cluster::incremental_update_operation::set;
+          update.properties.initial_retention_local_target_ms.value
+            = tristate<std::chrono::milliseconds>{
+              config::shard_local_cfg()
+                .initial_retention_local_target_ms_default()};
+
+          update.properties.initial_retention_local_target_bytes.op
+            = cluster::incremental_update_operation::set;
+          update.properties.initial_retention_local_target_bytes.value
+            = tristate<size_t>{
+              config::shard_local_cfg()
+                .initial_retention_local_target_bytes_default()};
+
           vlog(
             cst_log.debug,
             "resetting topic properties for {} using update: {}",

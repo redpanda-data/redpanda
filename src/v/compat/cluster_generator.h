@@ -622,7 +622,10 @@ struct instance_generator<cluster::topic_properties> {
           std::nullopt,
           std::nullopt,
           std::nullopt,
-          std::nullopt};
+          std::nullopt,
+          tests::random_tristate(
+            [] { return random_generators::get_int<size_t>(); }),
+          tests::random_tristate([] { return tests::random_duration_ms(); })};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

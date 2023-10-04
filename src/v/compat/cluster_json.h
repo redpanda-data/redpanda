@@ -596,6 +596,14 @@ inline void rjson_serialize(
       w,
       "record_value_subject_name_strategy_compat",
       tps.record_value_subject_name_strategy_compat);
+    write_member(
+      w,
+      "initial_retention_local_target_bytes",
+      tps.initial_retention_local_target_bytes);
+    write_member(
+      w,
+      "initial_retention_local_target_ms",
+      tps.initial_retention_local_target_ms);
     w.EndObject();
 }
 
@@ -650,6 +658,14 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
       rd,
       "record_value_subject_name_strategy_compat",
       obj.record_value_subject_name_strategy_compat);
+    read_member(
+      rd,
+      "initial_retention_local_target_bytes",
+      obj.initial_retention_local_target_bytes);
+    read_member(
+      rd,
+      "initial_retention_local_target_ms",
+      obj.initial_retention_local_target_ms);
 }
 
 inline void rjson_serialize(
