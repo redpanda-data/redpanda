@@ -3,6 +3,7 @@ v_cc_library(
   HDRS
     api.h
     fwd.h
+    cache.h
   SRCS
     api.cc
     ffi.cc
@@ -13,6 +14,7 @@ v_cc_library(
     transform_module.cc
     wasi.cc
     wasmtime.cc
+    cache.cc
   DEPS
     wasmtime
     v::storage
