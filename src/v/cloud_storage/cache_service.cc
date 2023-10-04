@@ -498,12 +498,16 @@ ss::future<> cache::trim(
           exhaustive_result.deleted_count, objects_to_delete);
         if ((size_to_delete > undeletable_bytes
              || objects_to_delete > undeletable_objects)) {
-            vlog(
-              cst_log.error,
+            const auto msg = fmt::format(
               "trim: failed to free sufficient space in exhaustive trim, {} "
               "bytes, {} objects still require deletion",
               size_to_delete,
               objects_to_delete);
+            if (exhaustive_result.trim_missed_tmp_files) {
+                vlog(cst_log.info, "{}", msg);
+            } else {
+                vlog(cst_log.error, "{}", msg);
+            }
             probe.failed_trim();
         }
     }
@@ -720,12 +724,26 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
         } catch (const ss::gate_closed_exception&) {
             // We are shutting down, stop iterating and propagate
             throw;
+        } catch (const std::filesystem::filesystem_error& e) {
+            if (likely(file_stat.path.ends_with(tmp_extension))) {
+                // In exhaustive scan we might hit a .part file and get ENOENT,
+                // this is expected behavior occasionally.
+                result.trim_missed_tmp_files = true;
+                vlog(
+                  cst_log.info,
+                  "trim: couldn't delete temp file {}: {}.",
+                  file_stat.path,
+                  e.what());
+            } else {
+                vlog(
+                  cst_log.error,
+                  "trim: couldn't delete {}: {}.",
+                  file_stat.path,
+                  e.what());
+            }
         } catch (const std::exception& e) {
-            // This is only a warning, because in exhaustive scan we might hit a
-            // .part file and get ENOENT, this is expected behavior
-            // occasionally.
             vlog(
-              cst_log.warn,
+              cst_log.error,
               "trim: couldn't delete {}: {}.",
               file_stat.path,
               e.what());

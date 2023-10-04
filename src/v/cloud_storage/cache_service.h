@@ -209,6 +209,7 @@ private:
     struct trim_result {
         uint64_t deleted_size{0};
         size_t deleted_count{0};
+        bool trim_missed_tmp_files{false};
     };
 
     /// Ordinary trim: prioritze trimming data chunks, only delete indices etc
