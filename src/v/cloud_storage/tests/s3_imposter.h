@@ -52,6 +52,7 @@ public:
     struct expectation {
         ss::sstring url;
         std::optional<ss::sstring> body;
+        bool slowdown = false;
     };
 
     /// Set expectaitions on REST API calls that supposed to be made
