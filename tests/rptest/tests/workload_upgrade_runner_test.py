@@ -164,8 +164,9 @@ class RedpandaUpgradeTest(PreallocNodesTest):
         workloads: list[PWorkload] = [
             DummyWorkload(self),
             MinimalWorkload(self),
-            LicenseWorkload(self),
             ProducerConsumerWorkload(self),
+            # NOTE: due to issue/13180 the next workload is temporarily disabled
+            # LicenseWorkload(self),
         ]
 
         # setup self as context for the workloads
