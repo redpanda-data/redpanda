@@ -35,6 +35,22 @@ class input_stream;
 
 namespace kafka::protocol {
 
+namespace detail {
+
+template<typename Container>
+concept push_backable = requires(Container c) {
+    typename Container::value_type;
+    c.push_back(std::declval<typename Container::value_type>());
+};
+
+template<typename Container>
+concept reserveable = requires(Container c) {
+    typename Container::value_type;
+    c.reserve(size_t{});
+};
+
+} // namespace detail
+
 class decoder {
 public:
     explicit decoder(iobuf io) noexcept
@@ -175,50 +191,62 @@ public:
     }
 
     template<
+      template<typename...> typename Container = std::vector,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::vector<T> read_array(ElementParser&& parser) {
+    requires detail::push_backable<Container<T>>
+    Container<T> read_array(ElementParser&& parser) {
         auto len = read_int32();
         if (len < 0) {
             throw std::out_of_range(
               "Attempt to read array with negative length");
         }
-        return do_read_array(len, std::forward<ElementParser>(parser));
+        return do_read_array<Container>(
+          len, std::forward<ElementParser>(parser));
     }
 
     template<
+      template<typename...> typename Container = std::vector,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::vector<T> read_flex_array(ElementParser&& parser) {
+    requires detail::push_backable<Container<T>>
+    Container<T> read_flex_array(ElementParser&& parser) {
         auto len = read_unsigned_varint();
         if (len == 0) {
             throw std::out_of_range(
               "Attempt to read non-null flex array with 0 length");
         }
-        return do_read_array(len - 1, std::forward<ElementParser>(parser));
+        return do_read_array<Container>(
+          len - 1, std::forward<ElementParser>(parser));
     }
 
     template<
+      template<typename...> typename Container = std::vector,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::optional<std::vector<T>> read_nullable_array(ElementParser&& parser) {
+    requires detail::push_backable<Container<T>>
+    std::optional<Container<T>> read_nullable_array(ElementParser&& parser) {
         auto len = read_int32();
         if (len < 0) {
             return std::nullopt;
         }
-        return do_read_array(len, std::forward<ElementParser>(parser));
+        return do_read_array<Container>(
+          len, std::forward<ElementParser>(parser));
     }
 
     template<
+      template<typename...> typename Container = std::vector,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::optional<std::vector<T>>
+    requires detail::push_backable<Container<T>>
+    std::optional<Container<T>>
     read_nullable_flex_array(ElementParser&& parser) {
         auto len = read_unsigned_varint();
         if (len == 0) {
             return std::nullopt;
         }
-        return do_read_array(len - 1, std::forward<ElementParser>(parser));
+        return do_read_array<Container>(
+          len - 1, std::forward<ElementParser>(parser));
     }
 
     // Only relevent when reading flex requests
@@ -270,17 +298,21 @@ private:
     }
 
     template<
+      template<typename...> typename Container = std::vector,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
     requires requires(ElementParser parser, decoder& rr) {
         { parser(rr) } -> std::same_as<T>;
+        detail::push_backable<Container<T>>;
     }
-    std::vector<T> do_read_array(int32_t len, ElementParser&& parser) {
+    Container<T> do_read_array(int32_t len, ElementParser&& parser) {
         if (len < 0) {
             throw std::out_of_range("Attempt to parse array w/ negative len");
         }
-        std::vector<T> res;
-        res.reserve(len);
+        Container<T> res;
+        if constexpr (detail::reserveable<Container<T>>) {
+            res.reserve(len);
+        }
         while (len-- > 0) {
             res.push_back(parser(*this));
         }

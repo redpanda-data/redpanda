@@ -28,6 +28,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -41,7 +42,18 @@ static remote_manifest_path
 
 using tx_range_t = model::tx_range;
 
-static std::vector<tx_range_t> ranges = {
+template<typename T = int>
+static fragmented_vector<T>
+make_fragmented_vector(std::initializer_list<T> in) {
+    fragmented_vector<T> ret;
+    std::copy(
+      std::make_move_iterator(in.begin()),
+      std::make_move_iterator(in.end()),
+      std::back_inserter(ret));
+    return ret;
+}
+
+static auto ranges = {
   tx_range_t{
     .pid = model::producer_identity(1, 2),
     .first = model::offset(3),
@@ -78,8 +90,7 @@ SEASTAR_THREAD_TEST_CASE(empty_serialization_roundtrip_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(serialization_roundtrip_test) {
-    fragmented_vector<tx_range_t> tx_ranges;
-    tx_ranges = ranges;
+    fragmented_vector<tx_range_t> tx_ranges = make_fragmented_vector(ranges);
     tx_range_manifest m(segment_path, std::move(tx_ranges));
     auto [is, size] = m.serialize().get();
     iobuf buf;
