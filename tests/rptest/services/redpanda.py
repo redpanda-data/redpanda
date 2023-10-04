@@ -1471,6 +1471,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         #     self.GLOBAL_CLOUD_PEER_OWNER_ID, None)
 
         self._cloud_cluster = CloudCluster(
+            context,
             self.logger,
             self._cc_config,
             provider_config=self._provider_config)
