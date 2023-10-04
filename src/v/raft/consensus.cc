@@ -1960,7 +1960,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         }
         auto f = ss::now();
         if (r.is_flush_required() && lstats.dirty_offset > _flushed_offset) {
-            f = flush_log();
+            f = flush_log().discard_result();
         }
         auto last_visible = std::min(
           lstats.dirty_offset, request_metadata.last_visible_index);
@@ -2597,36 +2597,36 @@ append_entries_reply consensus::make_append_entries_reply(
     return reply;
 }
 
-ss::future<> consensus::flush_log() {
-    if (!_has_pending_flushes) {
-        return ss::now();
+ss::future<consensus::flushed> consensus::flush_log() {
+    if (!has_pending_flushes()) {
+        co_return flushed::no;
     }
-    _probe->log_flushed();
-    _has_pending_flushes = false;
     auto flushed_up_to = _log->offsets().dirty_offset;
-    return _log->flush().then([this, flushed_up_to] {
-        auto lstats = _log->offsets();
-        /**
-         * log flush may be interleaved with trucation, hence we need to check
-         * if log was truncated, if so we do nothing, flushed offset will be
-         * updated in the truncation path.
-         */
-        if (flushed_up_to > lstats.dirty_offset) {
-            return;
-        }
+    _probe->log_flushed();
+    _not_flushed_bytes = 0;
+    co_await _log->flush();
+    const auto lstats = _log->offsets();
+    /**
+     * log flush may be interleaved with trucation, hence we need to check
+     * if log was truncated, if so we do nothing, flushed offset will be
+     * updated in the truncation path.
+     */
+    if (flushed_up_to > lstats.dirty_offset) {
+        co_return flushed::yes;
+    }
 
-        _flushed_offset = std::max(flushed_up_to, _flushed_offset);
-        vlog(_ctxlog.trace, "flushed offset updated: {}", _flushed_offset);
-        // TODO: remove this assertion when we will remove committed_offset
-        // from storage.
-        vassert(
-          lstats.committed_offset >= _flushed_offset,
-          "Raft incorrectly tracking flushed log offset. Expected offset: {}, "
-          " current log offsets: {}, log: {}",
-          _flushed_offset,
-          lstats,
-          _log);
-    });
+    _flushed_offset = std::max(flushed_up_to, _flushed_offset);
+    vlog(_ctxlog.trace, "flushed offset updated: {}", _flushed_offset);
+    // TODO: remove this assertion when we will remove committed_offset
+    // from storage.
+    vassert(
+      lstats.committed_offset >= _flushed_offset,
+      "Raft incorrectly tracking flushed log offset. Expected offset: {}, "
+      " current log offsets: {}, log: {}",
+      _flushed_offset,
+      lstats,
+      _log);
+    co_return flushed::yes;
 }
 
 ss::future<storage::append_result> consensus::disk_append(
@@ -2678,7 +2678,7 @@ ss::future<storage::append_result> consensus::disk_append(
                */
               _last_quorum_replicated_index = ret.last_offset;
           }
-          _has_pending_flushes = true;
+          _not_flushed_bytes += ret.byte_size;
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
@@ -2783,8 +2783,8 @@ ss::future<> consensus::refresh_commit_index() {
     return _op_lock.get_units()
       .then([this](ssx::semaphore_units u) mutable {
           auto f = ss::now();
-          if (_has_pending_flushes) {
-              f = flush_log();
+          if (has_pending_flushes()) {
+              f = flush_log().discard_result();
           }
 
           if (!is_elected_leader()) {
@@ -3829,6 +3829,29 @@ void consensus::upsert_recovery_state(
 
         _follower_recovery_state->update_progress(
           our_last_offset, leader_last_offset);
+    }
+}
+
+ss::future<> consensus::maybe_flush_log(size_t threshold_bytes) {
+    // if there is nothing to do exit without grabbing an op_lock, this check is
+    // sloppy as we data can be in flight but it is ok since next check will
+    // detect it and flush log.
+    if (_not_flushed_bytes < threshold_bytes) {
+        co_return;
+    }
+    try {
+        auto holder = _bg.hold();
+        auto u = co_await _op_lock.get_units();
+        auto flushed = co_await flush_log();
+        if (flushed && is_leader()) {
+            for (auto& [id, idx] : _fstats) {
+                // force full heartbeat to move the committed index forward
+                idx.last_sent_protocol_meta.reset();
+            }
+        }
+    } catch (const ss::gate_closed_exception&) {
+    } catch (const ss::broken_semaphore&) {
+        // ignore exception, group is shutting down.
     }
 }
 

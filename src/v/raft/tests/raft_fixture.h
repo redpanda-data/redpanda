@@ -24,6 +24,8 @@
 #include "raft/recovery_memory_quota.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
+#include "random/generators.h"
+#include "ssx/sformat.h"
 #include "storage/api.h"
 #include "test_utils/test.h"
 #include "utils/prefix_logger.h"
@@ -33,6 +35,7 @@
 #include <seastar/util/bool_class.hh>
 
 #include <absl/container/node_hash_map.h>
+#include <boost/range/irange.hpp>
 
 #include <optional>
 
@@ -251,6 +254,26 @@ public:
               model::record_batch_type::raft_data, model::offset(0));
             builder.add_raw_kv(
               serde::to_iobuf(std::move(k)), serde::to_iobuf(std::move(v)));
+            batches.push_back(std::move(builder).build());
+        }
+
+        return model::make_memory_record_batch_reader(std::move(batches));
+    }
+    model::record_batch_reader make_batches(
+      size_t batch_count,
+      size_t batch_record_count,
+      size_t record_payload_size) {
+        ss::circular_buffer<model::record_batch> batches;
+        batches.reserve(batch_count);
+        for (auto b_idx : boost::irange(batch_count)) {
+            storage::record_batch_builder builder(
+              model::record_batch_type::raft_data, model::offset(0));
+            for (int r_idx : boost::irange(batch_record_count)) {
+                builder.add_raw_kv(
+                  serde::to_iobuf(ssx::sformat("r-{}-{}", b_idx, r_idx)),
+                  serde::to_iobuf(
+                    random_generators::get_bytes(record_payload_size)));
+            }
             batches.push_back(std::move(builder).build());
         }
 

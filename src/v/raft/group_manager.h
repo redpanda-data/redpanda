@@ -16,6 +16,7 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
+#include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
 #include "ssx/metrics.h"
@@ -46,6 +47,8 @@ public:
         config::binding<bool> enable_lw_heartbeat;
         config::binding<size_t> recovery_concurrency_per_shard;
         config::binding<std::chrono::milliseconds> election_timeout_ms;
+        config::binding<std::optional<size_t>> replica_max_not_flushed_bytes;
+        config::binding<std::chrono::milliseconds> flush_timer_interval_ms;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 
@@ -96,9 +99,11 @@ private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
 
+    ss::future<> flush_groups();
+
     raft::group_configuration create_initial_configuration(
       std::vector<model::broker>, model::revision_id) const;
-
+    mutex _groups_mutex;
     model::node_id _self;
     ss::scheduling_group _raft_sg;
     raft::consensus_client_protocol _client;
@@ -115,6 +120,9 @@ private:
     recovery_memory_quota _recovery_mem_quota;
     recovery_scheduler _recovery_scheduler;
     features::feature_table& _feature_table;
+    ss::timer<clock_type> _flush_timer;
+    timeout_jitter _flush_timer_jitter;
+
     bool _is_ready;
 };
 

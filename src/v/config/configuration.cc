@@ -259,6 +259,21 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       64,
       {.min = 1, .max = 16384})
+  , raft_replica_max_pending_flush_bytes(
+      *this,
+      "raft_replica_max_pending_flush_bytes",
+      "Max not flushed bytes per partition. If configured threshold is reached "
+      "log will automatically be flushed even though it wasn't explicitly "
+      "requested",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      256_KiB)
+  , raft_flush_timer_interval_ms(
+      *this,
+      "raft_flush_timer_interval_ms",
+      "Interval of checking partition against the "
+      "`raft_replica_max_pending_flush_bytes`",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100ms)
   , enable_usage(
       *this,
       "enable_usage",
