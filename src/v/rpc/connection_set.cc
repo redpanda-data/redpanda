@@ -27,7 +27,7 @@ ss::future<> connection_set::try_add_or_update(
             co_return;
         }
         // configuration changed, first remove the client
-        _connections.erase(connection);
+        co_await remove(node);
     }
 
     auto cert_creds = co_await maybe_build_reloadable_certificate_credentials(
