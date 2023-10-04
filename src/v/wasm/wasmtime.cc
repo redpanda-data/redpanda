@@ -427,7 +427,6 @@ class wasmtime_engine : public engine {
 public:
     wasmtime_engine(
       ss::sstring user_module_name,
-      handle<wasmtime_linker_t, wasmtime_linker_delete> l,
       handle<wasmtime_store_t, wasmtime_store_delete> s,
       std::shared_ptr<wasmtime_module_t> user_module,
       std::unique_ptr<transform_module> transform_module,
@@ -443,7 +442,6 @@ public:
       , _transform_module(std::move(transform_module))
       , _sr_module(std::move(sr_module))
       , _wasi_module(std::move(wasi_module))
-      , _linker(std::move(l))
       , _instance(instance)
       , _alien_thread_pool(workers)
       , _host_function_environments(std::move(host_function_environments)) {}
@@ -622,7 +620,6 @@ private:
     std::unique_ptr<transform_module> _transform_module;
     std::unique_ptr<schema_registry_module> _sr_module;
     std::unique_ptr<wasi::preview1_module> _wasi_module;
-    handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
     ssx::sharded_thread_worker* _alien_thread_pool;
     std::vector<std::unique_ptr<host_function_environment>>
@@ -700,7 +697,6 @@ public:
               // pass back a closure to allocate the engine.
               return [this,
                       name = _meta.name(),
-                      linker = std::move(linker),
                       store = std::move(store),
                       xform_module = std::move(xform_module),
                       sr_module = std::move(sr_module),
@@ -709,7 +705,6 @@ public:
                       instance]() mutable {
                   return ss::make_shared<wasmtime_engine>(
                     std::move(name),
-                    std::move(linker),
                     std::move(store),
                     _module,
                     std::move(xform_module),
