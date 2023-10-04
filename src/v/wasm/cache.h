@@ -14,11 +14,14 @@
 #include "utils/mutex.h"
 #include "wasm/api.h"
 
+#include <seastar/core/sharded.hh>
+
 #include <absl/container/btree_map.h>
 
 namespace wasm {
 
-struct cached_factory;
+class engine_cache;
+class cached_factory;
 
 /**
  * A runtime that reuses factories and caches them per process as to share the
@@ -68,6 +71,7 @@ private:
     std::unique_ptr<runtime> _underlying;
     absl::btree_map<model::offset, ss::shared_ptr<cached_factory>>
       _factory_cache;
+    ss::sharded<engine_cache> _engine_caches;
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gate;
 };

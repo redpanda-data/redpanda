@@ -13,13 +13,10 @@
 
 #include "wasm/logger.h"
 
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
 
 namespace wasm {
-
-struct cached_factory {
-    ss::shared_ptr<factory> factory;
-};
 
 namespace {
 
@@ -58,7 +55,7 @@ ss::future<> gc_btree_map(absl::btree_map<Key, ss::shared_ptr<Value>>* cache) {
  */
 class shared_engine : public engine {
 public:
-    explicit shared_engine(std::unique_ptr<engine> underlying)
+    explicit shared_engine(ss::shared_ptr<engine> underlying)
       : _underlying(std::move(underlying)) {}
 
     ss::future<model::record_batch>
@@ -104,7 +101,7 @@ public:
 private:
     mutex _mu;
     size_t _ref_count = 0;
-    std::unique_ptr<engine> _underlying;
+    ss::shared_ptr<engine> _underlying;
 };
 
 /**
@@ -166,6 +163,70 @@ private:
 };
 } // namespace
 
+/** A cache for engines on a particular core. */
+class engine_cache {
+public:
+    void put(model::offset offset, ss::shared_ptr<engine> engine) {
+        _cache.emplace(offset, std::move(engine));
+    }
+
+    ss::future<mutex::units> lock() { return _mu.get_units(); }
+
+    ss::shared_ptr<engine> get(model::offset offset) {
+        auto it = _cache.find(offset);
+        if (it == _cache.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
+
+private:
+    mutex _mu;
+    absl::btree_map<model::offset, ss::shared_ptr<engine>> _cache;
+};
+
+/**
+ * A factory
+ *
+ * Owned by a single core (shared zero) but can be used on any core to make an
+ * engine local to that core.
+ */
+class cached_factory : public factory {
+public:
+    cached_factory(
+      ss::shared_ptr<factory> f,
+      model::offset offset,
+      ss::sharded<engine_cache>* e)
+      : _offset(offset)
+      , _underlying(std::move(f))
+      , _engine_cache(e) {}
+
+    ss::future<ss::shared_ptr<engine>> make_engine() override {
+        auto engine = _engine_cache->local().get(_offset);
+        // Try to grab an engine outside the lock
+        if (engine) {
+            co_return engine;
+        }
+        // Acquire the lock
+        auto u = co_await _engine_cache->local().lock();
+        // Double check nobody created one while we were grabbing the lock.
+        engine = _engine_cache->local().get(_offset);
+        if (engine) {
+            co_return engine;
+        }
+        // Create the actual engine and put it in the cache.
+        auto created = co_await _underlying->make_engine();
+        created = ss::make_shared<shared_engine>(std::move(created));
+        _engine_cache->local().put(_offset, std::move(created));
+        co_return _engine_cache->local().get(_offset);
+    }
+
+private:
+    model::offset _offset;
+    ss::shared_ptr<factory> _underlying;
+    ss::sharded<engine_cache>* _engine_cache;
+};
+
 caching_runtime::caching_runtime(std::unique_ptr<runtime> u)
   : _underlying(std::move(u))
   , _gc_timer(
@@ -190,16 +251,14 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
     // Look in the cache outside the lock
     auto it = _factory_cache.find(offset);
     if (it != _factory_cache.end()) {
-        // TODO: Use a factory that caches engines
-        co_return it->second->factory;
+        co_return it->second;
     }
     auto lock = co_await factory_creation_lock_guard::acquire(
       &_factory_creation_mu_map, offset);
     // Look again in the cache with the lock
     it = _factory_cache.find(offset);
     if (it != _factory_cache.end()) {
-        // TODO: Use a factory that caches engines
-        co_return it->second->factory;
+        co_return it->second;
     }
     // There is no factory and we're holding the lock,
     // time to create a new one.
@@ -207,15 +266,16 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
       std::move(meta), std::move(binary), logger);
 
     // Now cache the factory and return the result.
-    auto cached = ss::make_shared<cached_factory>(std::move(factory));
+    auto cached = ss::make_shared<cached_factory>(
+      std::move(factory), offset, &_engine_caches);
     auto [_, inserted] = _factory_cache.emplace(offset, cached);
     vassert(inserted, "expected factory to be inserted");
 
-    // TODO: Use a factory that caches engines
-    co_return cached->factory;
+    co_return cached;
 }
 
 ss::future<> caching_runtime::do_gc() {
+    // TODO: GC engines too
     auto fut = co_await ss::coroutine::as_future(gc_factories());
     if (fut.failed()) {
         vlog(
