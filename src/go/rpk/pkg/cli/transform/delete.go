@@ -20,6 +20,7 @@ import (
 )
 
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var noConfirm bool
 	cmd := &cobra.Command{
 		Use:   "delete [NAME]",
 		Short: "Delete a data transform",
@@ -32,10 +33,19 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 			functionName := args[0]
 
+			if !noConfirm {
+				confirmed, err := out.Confirm("Confirm deletion of transform %q?", functionName)
+				out.MaybeDie(err, "unable to confirm deletion: %v", err)
+				if !confirmed {
+					out.Exit("Deletion canceled.")
+				}
+			}
+
 			err = api.DeleteWasmTransform(cmd.Context(), functionName)
 			out.MaybeDie(err, "unable to delete transform %q: %v", functionName, err)
 			fmt.Println("Delete successful!")
 		},
 	}
+	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")
 	return cmd
 }
