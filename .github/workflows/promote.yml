@@ -1,0 +1,33 @@
+name: promote
+on:
+  release:
+    types: [published]
+
+jobs:
+  trigger-bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with: 
+          repository: redpanda-data/sparse-checkout 
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          path: sparse-checkout
+
+      - uses: ./sparse-checkout 
+        with:
+          repository: redpanda-data/vtools
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          patterns: actions
+          path: ghca 
+
+      - name: trigger redpanda artifact promotion
+        uses: ./ghca/actions/buildkite-pipeline-trigger
+        with:
+          buildkite_token: ${{ secrets.BUILDKITE_TOKEN }}
+          buildkite_org: redpanda
+          buildkite_pipeline: vtools
+          commit: HEAD
+          branch: dev
+          message: promote redpanda artifacts
+          env: '{"PROMOTE_REDPANDA_FROM_STAGING": "1", "TARGET_VERSION": "${{ github.ref_name }}"}'
