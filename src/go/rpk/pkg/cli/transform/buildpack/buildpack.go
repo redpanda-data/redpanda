@@ -20,10 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
@@ -140,9 +142,22 @@ type Downloader interface {
 	Download(ctx context.Context, bp *Buildpack, w io.Writer) error
 }
 
+// NewDownloader creates a new default downloader over HTTP with progress reporting.
+func NewDownloader() Downloader {
+	return &ProgressDownloader{
+		Underlying: &HTTPDownloader{
+			Client: httpapi.NewClient(
+				httpapi.HTTPClient(&http.Client{
+					Timeout: 120 * time.Second,
+				}),
+			),
+		},
+	}
+}
+
 // HTTPDownloader downloads a buildpack over HTTP.
 type HTTPDownloader struct {
-	Client httpapi.Client
+	Client *httpapi.Client
 }
 
 // Download implements the Downloader interface for HTTPDownloader.
