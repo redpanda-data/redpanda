@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	clusterredpandacomv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/cluster.redpanda.com/v1alpha1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/redpanda/v1alpha1"
@@ -289,8 +290,16 @@ func main() {
 				os.Exit(1)
 			}
 			hookServer := mgr.GetWebhookServer()
-			hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleDefaulter{Client: mgr.GetClient()}})
-			hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
+			hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{
+				Handler: &redpandawebhooks.ConsoleDefaulter{
+					Client:  mgr.GetClient(),
+					Decoder: admission.NewDecoder(scheme),
+				}})
+			hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{
+				Handler: &redpandawebhooks.ConsoleValidator{
+					Client:  mgr.GetClient(),
+					Decoder: admission.NewDecoder(scheme),
+				}})
 		}
 	case OperatorV2Mode:
 		ctrl.Log.Info("running in v2", "mode", OperatorV2Mode, "namespace", namespace)
