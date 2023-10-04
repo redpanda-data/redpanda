@@ -219,7 +219,8 @@ node_config::error_map_t node_config::load(const YAML::Node& root_node) {
     auto ignore = shard_local_cfg().property_names();
     ignore.merge(shard_local_cfg().property_aliases());
 
-    auto errors = config_store::read_yaml(root_node["redpanda"], std::move(ignore));
+    auto errors = config_store::read_yaml(
+      root_node["redpanda"], std::move(ignore));
     validate_multi_node_property_config(errors);
     return errors;
 }
