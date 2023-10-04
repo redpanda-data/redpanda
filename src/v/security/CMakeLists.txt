@@ -1,4 +1,15 @@
 v_cc_library(
+  NAME security_config
+  SRCS
+    config_bsl.cc
+    config_rcl.cc
+  DEPS
+    v::json
+    Seastar::seastar
+    re2
+)
+
+v_cc_library(
   NAME security
   SRCS
     scram_algorithm.cc
@@ -12,6 +23,8 @@ v_cc_library(
     krb5_configurator.cc
     gssapi_principal_mapper.cc
   DEPS
+    v::security_config
+    v::config
     v::bytes
     v::utils
     v::rprandom
