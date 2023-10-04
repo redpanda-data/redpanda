@@ -44,7 +44,6 @@ T varlong_reader(iobuf_parser& in) {
     return T(val);
 }
 
-namespace internal {
 struct hbeat_soa {
     explicit hbeat_soa(size_t n)
       : groups(n)
@@ -121,7 +120,6 @@ T read_one_varint_delta(iobuf_parser& in, const T& prev) {
     auto dst = varlong_reader<T>(in);
     return prev + dst;
 }
-} // namespace internal
 } // namespace
 
 namespace raft {
@@ -293,7 +291,7 @@ ss::future<> heartbeat_request::serde_async_write(iobuf& dst) {
 
     co_await ss::coroutine::maybe_yield();
 
-    internal::hbeat_soa encodee(request.heartbeats.size());
+    hbeat_soa encodee(request.heartbeats.size());
     // target physical node id is always the same it differs only by
     // revision
 
@@ -329,20 +327,14 @@ ss::future<> heartbeat_request::serde_async_write(iobuf& dst) {
     write(out, request.heartbeats.front().target_node_id.id());
     write(out, static_cast<uint32_t>(size));
 
-    internal::encode_one_delta_array<raft::group_id>(out, encodee.groups);
-    internal::encode_one_delta_array<model::offset>(
-      out, encodee.commit_indices);
-    internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
-    internal::encode_one_delta_array<model::offset>(
-      out, encodee.prev_log_indices);
-    internal::encode_one_delta_array<model::term_id>(
-      out, encodee.prev_log_terms);
-    internal::encode_one_delta_array<model::offset>(
-      out, encodee.last_visible_indices);
-    internal::encode_one_delta_array<model::revision_id>(
-      out, encodee.revisions);
-    internal::encode_one_delta_array<model::revision_id>(
-      out, encodee.target_revisions);
+    encode_one_delta_array<raft::group_id>(out, encodee.groups);
+    encode_one_delta_array<model::offset>(out, encodee.commit_indices);
+    encode_one_delta_array<model::term_id>(out, encodee.terms);
+    encode_one_delta_array<model::offset>(out, encodee.prev_log_indices);
+    encode_one_delta_array<model::term_id>(out, encodee.prev_log_terms);
+    encode_one_delta_array<model::offset>(out, encodee.last_visible_indices);
+    encode_one_delta_array<model::revision_id>(out, encodee.revisions);
+    encode_one_delta_array<model::revision_id>(out, encodee.target_revisions);
 
     write(dst, std::move(out));
 }
@@ -364,39 +356,37 @@ void heartbeat_request::serde_read(
     const size_t max = req.heartbeats.size();
     req.heartbeats[0].meta.group = varlong_reader<raft::group_id>(in);
     for (size_t i = 1; i < max; ++i) {
-        req.heartbeats[i].meta.group
-          = internal::read_one_varint_delta<raft::group_id>(
-            in, req.heartbeats[i - 1].meta.group);
+        req.heartbeats[i].meta.group = read_one_varint_delta<raft::group_id>(
+          in, req.heartbeats[i - 1].meta.group);
     }
     req.heartbeats[0].meta.commit_index = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < max; ++i) {
         req.heartbeats[i].meta.commit_index
-          = internal::read_one_varint_delta<model::offset>(
+          = read_one_varint_delta<model::offset>(
             in, req.heartbeats[i - 1].meta.commit_index);
     }
     req.heartbeats[0].meta.term = varlong_reader<model::term_id>(in);
     for (size_t i = 1; i < max; ++i) {
-        req.heartbeats[i].meta.term
-          = internal::read_one_varint_delta<model::term_id>(
-            in, req.heartbeats[i - 1].meta.term);
+        req.heartbeats[i].meta.term = read_one_varint_delta<model::term_id>(
+          in, req.heartbeats[i - 1].meta.term);
     }
     req.heartbeats[0].meta.prev_log_index = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < max; ++i) {
         req.heartbeats[i].meta.prev_log_index
-          = internal::read_one_varint_delta<model::offset>(
+          = read_one_varint_delta<model::offset>(
             in, req.heartbeats[i - 1].meta.prev_log_index);
     }
     req.heartbeats[0].meta.prev_log_term = varlong_reader<model::term_id>(in);
     for (size_t i = 1; i < max; ++i) {
         req.heartbeats[i].meta.prev_log_term
-          = internal::read_one_varint_delta<model::term_id>(
+          = read_one_varint_delta<model::term_id>(
             in, req.heartbeats[i - 1].meta.prev_log_term);
     }
     req.heartbeats[0].meta.last_visible_index = varlong_reader<model::offset>(
       in);
     for (size_t i = 1; i < max; ++i) {
         req.heartbeats[i].meta.last_visible_index
-          = internal::read_one_varint_delta<model::offset>(
+          = read_one_varint_delta<model::offset>(
             in, req.heartbeats[i - 1].meta.last_visible_index);
     }
 
@@ -405,7 +395,7 @@ void heartbeat_request::serde_read(
     for (size_t i = 1; i < max; ++i) {
         req.heartbeats[i].node_id = raft::vnode(
           node_id,
-          internal::read_one_varint_delta<model::revision_id>(
+          read_one_varint_delta<model::revision_id>(
             in, req.heartbeats[i - 1].node_id.revision()));
     }
 
@@ -414,7 +404,7 @@ void heartbeat_request::serde_read(
     for (size_t i = 1; i < max; ++i) {
         req.heartbeats[i].target_node_id = raft::vnode(
           target_node,
-          internal::read_one_varint_delta<model::revision_id>(
+          read_one_varint_delta<model::revision_id>(
             in, req.heartbeats[i - 1].target_node_id.revision()));
     }
 
@@ -479,7 +469,7 @@ void heartbeat_reply::serde_write(iobuf& dst) {
         write(out, reply.meta.front().target_node_id.id());
     }
 
-    internal::hbeat_response_array encodee(reply.meta.size());
+    hbeat_response_array encodee(reply.meta.size());
 
     for (size_t i = 0; i < reply.meta.size(); ++i) {
         encodee.groups[i] = reply.meta[i].group;
@@ -496,19 +486,14 @@ void heartbeat_reply::serde_write(iobuf& dst) {
         encodee.target_revisions[i] = std::max(
           model::revision_id(-1), reply.meta[i].target_node_id.revision());
     }
-    internal::encode_one_delta_array<raft::group_id>(out, encodee.groups);
-    internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
+    encode_one_delta_array<raft::group_id>(out, encodee.groups);
+    encode_one_delta_array<model::term_id>(out, encodee.terms);
 
-    internal::encode_one_delta_array<model::offset>(
-      out, encodee.last_flushed_log_index);
-    internal::encode_one_delta_array<model::offset>(
-      out, encodee.last_dirty_log_index);
-    internal::encode_one_delta_array<model::offset>(
-      out, encodee.last_term_base_offset);
-    internal::encode_one_delta_array<model::revision_id>(
-      out, encodee.revisions);
-    internal::encode_one_delta_array<model::revision_id>(
-      out, encodee.target_revisions);
+    encode_one_delta_array<model::offset>(out, encodee.last_flushed_log_index);
+    encode_one_delta_array<model::offset>(out, encodee.last_dirty_log_index);
+    encode_one_delta_array<model::offset>(out, encodee.last_term_base_offset);
+    encode_one_delta_array<model::revision_id>(out, encodee.revisions);
+    encode_one_delta_array<model::revision_id>(out, encodee.target_revisions);
     for (auto& m : reply.meta) {
         write(out, m.result);
     }
@@ -538,33 +523,33 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
     size_t size = reply.meta.size();
     reply.meta[0].group = varlong_reader<raft::group_id>(in);
     for (size_t i = 1; i < size; ++i) {
-        reply.meta[i].group = internal::read_one_varint_delta<raft::group_id>(
+        reply.meta[i].group = read_one_varint_delta<raft::group_id>(
           in, reply.meta[i - 1].group);
     }
     reply.meta[0].term = varlong_reader<model::term_id>(in);
     for (size_t i = 1; i < size; ++i) {
-        reply.meta[i].term = internal::read_one_varint_delta<model::term_id>(
+        reply.meta[i].term = read_one_varint_delta<model::term_id>(
           in, reply.meta[i - 1].term);
     }
 
     reply.meta[0].last_flushed_log_index = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < size; ++i) {
         reply.meta[i].last_flushed_log_index
-          = internal::read_one_varint_delta<model::offset>(
+          = read_one_varint_delta<model::offset>(
             in, reply.meta[i - 1].last_flushed_log_index);
     }
 
     reply.meta[0].last_dirty_log_index = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < size; ++i) {
         reply.meta[i].last_dirty_log_index
-          = internal::read_one_varint_delta<model::offset>(
+          = read_one_varint_delta<model::offset>(
             in, reply.meta[i - 1].last_dirty_log_index);
     }
 
     reply.meta[0].last_term_base_offset = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < size; ++i) {
         reply.meta[i].last_term_base_offset
-          = internal::read_one_varint_delta<model::offset>(
+          = read_one_varint_delta<model::offset>(
             in, reply.meta[i - 1].last_term_base_offset);
     }
 
@@ -573,7 +558,7 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
     for (size_t i = 1; i < size; ++i) {
         reply.meta[i].node_id = raft::vnode(
           node_id,
-          internal::read_one_varint_delta<model::revision_id>(
+          read_one_varint_delta<model::revision_id>(
             in, reply.meta[i - 1].node_id.revision()));
     }
 
@@ -582,7 +567,7 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
     for (size_t i = 1; i < size; ++i) {
         reply.meta[i].target_node_id = raft::vnode(
           target_node_id,
-          internal::read_one_varint_delta<model::revision_id>(
+          read_one_varint_delta<model::revision_id>(
             in, reply.meta[i - 1].target_node_id.revision()));
     }
 
