@@ -880,7 +880,18 @@ ss::future<> cache::stop() {
     _block_puts_cond.broken();
     _cleanup_sm.broken();
     if (ss::this_shard_id() == 0) {
-        co_await save_access_time_tracker();
+        co_await save_access_time_tracker().handle_exception([](auto eptr) {
+            // NOTE: see issue/11270 if the exception is "filesystem error:
+            // rename failed", some other process is deleting files in the
+            // middle of save_access_time_tracker. if in the future this error
+            // is logged, use the backtrace or a vassert to inspect who might be
+            // deleting accesstime.tmp
+            vlog(
+              cst_log.error,
+              "failed to save access time tracker during {}: {}",
+              __PRETTY_FUNCTION__,
+              eptr);
+        });
     }
     co_await _walker.stop();
     co_await _gate.close();
