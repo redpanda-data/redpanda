@@ -538,11 +538,13 @@ func (r *StatefulSetResource) updateStatefulSet(
 	current *appsv1.StatefulSet,
 	modified *appsv1.StatefulSet,
 ) error {
+	log := r.logger.WithName("StatefulSetResource.updateStatefulSet")
 	_, err := Update(ctx, current, modified, r.Client, r.logger)
 	if err != nil && strings.Contains(err.Error(), "spec: Forbidden: updates to statefulset spec for fields other than") {
 		// REF: https://github.com/kubernetes/kubernetes/issues/69041#issuecomment-723757166
 		// https://www.giffgaff.io/tech/resizing-statefulset-persistent-volumes-with-zero-downtime
 		// in-place rolling update of a pod - https://github.com/kubernetes/kubernetes/issues/9043
+		log.Info("forbidden change to statefulset. deleting StatefulSet orphaning pods", "StatefulSet", current.GetName())
 		orphan := metav1.DeletePropagationOrphan
 		err = r.Client.Delete(ctx, current, &k8sclient.DeleteOptions{
 			PropagationPolicy: &orphan,
@@ -550,11 +552,13 @@ func (r *StatefulSetResource) updateStatefulSet(
 		if err != nil {
 			return fmt.Errorf("unable to delete statefulset using orphan propagation policy: %w", err)
 		}
+		log.Info("StatefulSet has been deleted, requeueing to allow it to be recreated.", "StatefulSet", current.GetName())
 		return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for sts to be deleted"}
 	}
 	if err != nil {
 		return fmt.Errorf("unable to update statefulset: %w", err)
 	}
+	log.Info("StatefulSet has been updated.", "StatefulSet", current.GetName())
 	return nil
 }
 
