@@ -12,9 +12,12 @@
 #include "transform/api.h"
 
 #include "cluster/errc.h"
+#include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
 #include "features/feature_table.h"
+#include "kafka/server/replicated_partition.h"
 #include "model/timeout_clock.h"
+#include "resource_mgmt/io_priority.h"
 #include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
@@ -58,6 +61,54 @@ public:
 
 private:
     rpc::client* _client;
+};
+
+class partition_source final : public source {
+public:
+    explicit partition_source(kafka::partition_proxy p)
+      : _partition(std::move(p)) {}
+
+    ss::future<model::offset> load_latest_offset() final {
+        auto result = _partition.last_stable_offset();
+        if (result.has_error()) {
+            throw std::runtime_error(
+              kafka::make_error_code(result.error()).message());
+        }
+        co_return result.value();
+    }
+
+    ss::future<model::record_batch_reader>
+    read_batch(model::offset offset, ss::abort_source* as) final {
+        auto translater = co_await _partition.make_reader(
+          storage::log_reader_config(
+            /*start_offset=*/offset,
+            /*max_offset=*/model::offset::max(),
+            // TODO: Make a new priority for WASM transforms
+            /*prio=*/kafka_read_priority(),
+            /*as=*/*as));
+        co_return std::move(translater).reader;
+    }
+
+private:
+    kafka::partition_proxy _partition;
+};
+
+class partition_source_factory final : public source::factory {
+public:
+    explicit partition_source_factory(cluster::partition_manager* manager)
+      : _manager(manager) {}
+
+    std::optional<std::unique_ptr<source>> create(model::ntp ntp) final {
+        auto p = _manager->get(ntp);
+        if (!p) {
+            return std::nullopt;
+        }
+        return std::make_unique<partition_source>(kafka::partition_proxy(
+          std::make_unique<kafka::replicated_partition>(p)));
+    };
+
+private:
+    cluster::partition_manager* _manager;
 };
 
 } // namespace
