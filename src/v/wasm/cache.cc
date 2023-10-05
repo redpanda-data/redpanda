@@ -19,6 +19,7 @@
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/util/optimized_optional.hh>
 
 #include <absl/container/btree_set.h>
 
@@ -192,12 +193,12 @@ public:
 
     ss::future<mutex::units> lock() { return _mu.get_units(); }
 
-    ss::shared_ptr<engine> get(model::offset offset) {
+    ss::optimized_optional<ss::shared_ptr<engine>> get(model::offset offset) {
         auto it = _cache.find(offset);
         if (it == _cache.end() || !it->second) {
-            return nullptr;
+            return {};
         }
-        return it->second->shared_from_this();
+        return ss::static_pointer_cast<engine>(it->second->shared_from_this());
     }
 
     ss::future<int64_t> gc() { return gc_btree_map(&_cache); }
@@ -230,14 +231,14 @@ public:
         auto engine = _engine_cache->local().get(_offset);
         // Try to grab an engine outside the lock
         if (engine) {
-            co_return engine;
+            co_return *std::move(engine);
         }
         // Acquire the lock for this core
         auto u = co_await _engine_cache->local().lock();
         // Double check nobody created one while we were grabbing the lock.
         engine = _engine_cache->local().get(_offset);
         if (engine) {
-            co_return engine;
+            co_return *std::move(engine);
         }
         // Create the actual engine and put it in the cache.
         //
