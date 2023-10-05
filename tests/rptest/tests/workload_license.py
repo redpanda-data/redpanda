@@ -94,22 +94,20 @@ class LicenseWorkload(PWorkload):
         # first license installation
         if not self.license_installed:
             self.first_license_check = self.first_license_check or (
-                time.time() + LicenseWorkload.LICENSE_CHECK_INTERVAL_SEC * 2)
-            # ensure that enought time passed for log nag to appear
+                time.time() + LicenseWorkload.LICENSE_CHECK_INTERVAL_SEC * 4 *
+                len(self.ctx.redpanda.nodes))
+            # ensure that enough time passed for log nag to appear
             if self.first_license_check > time.time():
                 return PWorkload.NOT_DONE
 
             # check for License nag in the log
-            found_nag = self.ctx.redpanda.search_log_any(
-                "Enterprise feature(s).*")
-            if not found_nag:
-                if self.first_license_check > time.time():
-                    return PWorkload.NOT_DONE
-                else:
-                    assert False, "License nag log not found"
+            assert self.ctx.redpanda.search_log_any(
+                "Enterprise feature(s).*"), "License nag log not found"
 
             # Install license
             assert admin.put_license(self.license).status_code == 200
+            self.ctx.redpanda.unset_environment(
+                ['__REDPANDA_LICENSE_CHECK_INTERVAL_SEC'])
             self.license_installed = True
             return PWorkload.DONE
 
