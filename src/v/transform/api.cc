@@ -21,6 +21,7 @@
 #include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
+#include "transform/transform_manager.h"
 
 #include <seastar/coroutine/as_future.hh>
 
@@ -108,6 +109,44 @@ public:
     };
 
 private:
+    cluster::partition_manager* _manager;
+};
+
+class registry_adapter : public registry {
+public:
+    registry_adapter(
+      cluster::plugin_frontend* pf, cluster::partition_manager* m)
+      : _pf(pf)
+      , _manager(m) {}
+
+    absl::flat_hash_set<model::partition_id>
+    get_leader_partitions(model::topic_namespace_view tp_ns) const override {
+        absl::flat_hash_set<model::partition_id> p;
+        for (const auto& entry : _manager->get_topic_partition_table(tp_ns)) {
+            if (entry.second->is_elected_leader()) {
+                p.emplace(entry.first.tp.partition);
+            }
+        }
+        return p;
+    }
+
+    absl::flat_hash_set<model::transform_id>
+    lookup_by_input_topic(model::topic_namespace_view tp_ns) const override {
+        auto entries = _pf->lookup_transforms_by_input_topic(tp_ns);
+        absl::flat_hash_set<model::transform_id> result;
+        for (const auto& [id, _] : entries) {
+            result.emplace(id);
+        }
+        return result;
+    }
+
+    std::optional<model::transform_metadata>
+    lookup_by_id(model::transform_id id) const override {
+        return _pf->lookup_transform(id);
+    }
+
+private:
+    cluster::plugin_frontend* _pf;
     cluster::partition_manager* _manager;
 };
 
