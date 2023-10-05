@@ -16,6 +16,7 @@ v_cc_library(
   DEPS
     v::wasm
     v::model
+    v::transform_rpc
 )
 
 add_subdirectory(tests)

@@ -62,6 +62,8 @@ public:
     ss::future<cluster::errc> delete_transform(model::transform_name);
 
 private:
+    ss::gate _gate;
+
     wasm::runtime* _runtime;
     model::node_id _self;
     ss::sharded<cluster::plugin_frontend>* _plugin_frontend;
