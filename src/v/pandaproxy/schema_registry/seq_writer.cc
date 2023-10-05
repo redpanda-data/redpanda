@@ -132,7 +132,11 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
   subject_schema schema, model::offset write_at, seq_writer& seq) {
     // Check if store already contains this data: if
     // so, we do no I/O and return the schema ID.
-    auto projected = co_await seq._store.project_ids(schema);
+    auto projected = co_await seq._store.project_ids(schema).handle_exception(
+      [](std::exception_ptr e) {
+          vlog(plog.debug, "write_subject_version: project_ids failed: {}", e);
+          return ss::make_exception_future<sharded_store::insert_result>(e);
+      });
 
     if (!projected.inserted) {
         vlog(plog.debug, "write_subject_version: no-op");
