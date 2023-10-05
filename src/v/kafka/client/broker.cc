@@ -36,9 +36,13 @@ ss::future<shared_broker_t> make_broker(
       .then([node_id, addr](ss::lw_shared_ptr<transport> client) {
           return client->connect().then(
             [node_id, addr = std::move(addr), client] {
+                auto prefix = client->client_id().has_value()
+                                ? ssx::sformat("{}: ", *client->client_id())
+                                : "";
                 vlog(
                   kclog.info,
-                  "connected to broker:{} - {}:{}",
+                  "{}connected to broker:{} - {}:{}",
+                  prefix,
                   node_id,
                   addr.host(),
                   addr.port());
