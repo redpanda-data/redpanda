@@ -87,8 +87,7 @@ public:
           storage::log_reader_config(
             /*start_offset=*/offset,
             /*max_offset=*/model::offset::max(),
-            // TODO: Make a new priority for WASM transforms
-            /*prio=*/kafka_read_priority(),
+            /*prio=*/wasm_read_priority(),
             /*as=*/*as));
         co_return std::move(translater).reader;
     }

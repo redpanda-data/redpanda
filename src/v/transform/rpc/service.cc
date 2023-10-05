@@ -227,8 +227,7 @@ ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
             /*max_offset=*/model::next_offset(offset),
             /*min_bytes=*/0,
             /*max_bytes=*/1,
-            // TODO: a custom read priority
-            /*prio=*/kafka_read_priority(),
+            /*prio=*/wasm_read_priority(),
             /*type_filter=*/std::nullopt,
             /*time=*/std::nullopt,
             /*as=*/std::nullopt);
