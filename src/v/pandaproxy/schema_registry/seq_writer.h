@@ -11,6 +11,7 @@
 
 #include "kafka/client/client.h"
 #include "outcome.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -96,8 +97,22 @@ private:
     auto sequenced_write(F f) {
         auto base_backoff = _jitter.next_duration();
         auto remote = [base_backoff, f](seq_writer& seq) {
+            if (auto waiters = seq._write_sem.waiters(); waiters != 0) {
+                vlog(
+                  plog.trace,
+                  "sequenced_write waiting for {} waiters",
+                  waiters);
+            }
             return ss::with_semaphore(
               seq._write_sem, 1, [&seq, f, base_backoff]() {
+                  if (auto waiters = seq._wait_for_sem.waiters();
+                      waiters != 0) {
+                      vlog(
+                        plog.debug,
+                        "sequenced_write acquired write_sem with {} "
+                        "wait_for_sem waiters",
+                        waiters);
+                  }
                   return retry_with_backoff(
                     max_retries,
                     [f, &seq]() { return seq.sequenced_write_inner(f); },

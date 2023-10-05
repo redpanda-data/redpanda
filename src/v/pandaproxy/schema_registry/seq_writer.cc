@@ -14,6 +14,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
@@ -21,6 +22,9 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
+
+#include <exception>
 
 using namespace std::chrono_literals;
 
@@ -39,6 +43,9 @@ ss::future<> seq_writer::read_sync() {
 
 ss::future<> seq_writer::wait_for(model::offset offset) {
     return container().invoke_on(0, _smp_opts, [offset](seq_writer& seq) {
+        if (auto waiters = seq._wait_for_sem.waiters(); waiters != 0) {
+            vlog(plog.trace, "wait_for waiting for {} waiters", waiters);
+        }
         return ss::with_semaphore(seq._wait_for_sem, 1, [&seq, offset]() {
             if (offset > seq._loaded_offset) {
                 vlog(
