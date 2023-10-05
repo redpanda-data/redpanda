@@ -22,8 +22,11 @@
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
 #include "transform/transform_manager.h"
+#include "transform/transform_processor.h"
+#include "wasm/api.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/util/optimized_optional.hh>
 
 namespace transform {
 
@@ -148,6 +151,64 @@ public:
 private:
     cluster::plugin_frontend* _pf;
     cluster::partition_manager* _manager;
+};
+
+using wasm_engine_factory = ss::noncopyable_function<
+  ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>(
+    model::transform_metadata)>;
+
+class proc_factory : public processor_factory {
+public:
+    proc_factory(
+      wasm_engine_factory factory,
+      std::unique_ptr<source::factory> source_factory,
+      std::unique_ptr<sink::factory> sink_factory)
+      : _wasm_engine_factory(std::move(factory))
+      , _source_factory(std::move(source_factory))
+      , _sink_factory(std::move(sink_factory)) {}
+
+    ss::future<std::unique_ptr<processor>> create_processor(
+      model::transform_id id,
+      model::ntp ntp,
+      model::transform_metadata meta,
+      processor::error_callback cb,
+      probe* p) final {
+        auto engine = co_await _wasm_engine_factory(meta);
+        if (!engine) {
+            throw std::runtime_error("unable to create wasm engine");
+        }
+        auto src = _source_factory->create(ntp);
+        if (!src) {
+            throw std::runtime_error("unable to create transform source");
+        }
+        vassert(
+          meta.output_topics.size() == 1,
+          "only a single output topic is supported");
+        const auto& output_topic = meta.output_topics[0];
+        std::vector<std::unique_ptr<sink>> sinks;
+        auto sink = _sink_factory->create(
+          model::ntp(output_topic.ns, output_topic.tp, ntp.tp.partition));
+        if (!sink) {
+            throw std::runtime_error("unable to create transform sink");
+        }
+        sinks.push_back(*std::move(sink));
+        co_return std::make_unique<processor>(
+          id,
+          ntp,
+          meta,
+          *std::move(engine),
+          std::move(cb),
+          *std::move(src),
+          std::move(sinks),
+          p);
+    }
+
+private:
+    mutex _mu;
+    wasm_engine_factory _wasm_engine_factory;
+    std::unique_ptr<source::factory> _source_factory;
+    std::unique_ptr<sink::factory> _sink_factory;
+    absl::flat_hash_map<model::offset, std::unique_ptr<wasm::engine>> _cache;
 };
 
 } // namespace
