@@ -18,9 +18,11 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "features/feature_table.h"
+#include "model/metadata.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "utils/file_io.h"
@@ -81,7 +83,7 @@ config_manager::config_manager(
         /**
          * Register notification immediately not to lose status updates.
          */
-        _member_removed_notification
+        _member_update_notification
           = _members.local().register_members_updated_notification(
             [this](model::node_id id, model::membership_state new_state) {
                 handle_cluster_members_update(id, new_state);
@@ -229,17 +231,24 @@ ss::future<> config_manager::start() {
 }
 void config_manager::handle_cluster_members_update(
   model::node_id id, model::membership_state new_state) {
-    if (new_state != model::membership_state::removed) {
-        return;
+    vlog(
+      clusterlog.debug,
+      "Processing membership notification: {{id: {} state: {}}}",
+      id,
+      new_state);
+    if (new_state == model::membership_state::active) {
+        // add an empty status placeholder if node is not yet known
+        status.try_emplace(id, config_status{.node = id});
+    } else if (new_state == model::membership_state::removed) {
+        status.erase(id);
     }
-    status.erase(id);
 }
 
 ss::future<> config_manager::stop() {
     vlog(clusterlog.info, "Stopping Config Manager...");
     _reconcile_wait.broken();
     _members.local().unregister_members_updated_notification(
-      _member_removed_notification);
+      _member_update_notification);
     _leaders.local().unregister_leadership_change_notification(
       _raft0_leader_changed_notification);
     co_await _gate.close();

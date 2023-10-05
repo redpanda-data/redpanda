@@ -135,7 +135,7 @@ private:
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::members_table>& _members;
-    notification_id_type _member_removed_notification;
+    notification_id_type _member_update_notification;
     notification_id_type _raft0_leader_changed_notification;
 
     ss::condition_variable _reconcile_wait;
