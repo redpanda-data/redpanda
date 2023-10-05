@@ -25,11 +25,6 @@
 
 namespace security {
 
-namespace details {
-template<class T>
-struct dependent_false : std::false_type {};
-} // namespace details
-
 // cluster is a resource type and the acl data model requires that resources
 // have names, so this is a fixed name for that resource.
 //
@@ -63,7 +58,7 @@ consteval resource_type get_resource_type() {
     } else if constexpr (std::is_same_v<T, kafka::transactional_id>) {
         return resource_type::transactional_id;
     } else {
-        static_assert(details::dependent_false<T>::value, "Unsupported type");
+        static_assert(utils::unsupported_type<T>::value, "Unsupported type");
     }
 }
 

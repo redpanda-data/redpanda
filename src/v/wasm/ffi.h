@@ -14,6 +14,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "reflection/type_traits.h"
+#include "utils/type_traits.h"
 #include "vassert.h"
 
 #include <cstdint>
@@ -196,8 +197,6 @@ enum class val_type { i32, i64 };
 std::ostream& operator<<(std::ostream& o, val_type vt);
 
 namespace detail {
-template<class T>
-struct dependent_false : std::false_type {};
 
 template<class T>
 struct is_array : std::false_type {};
@@ -230,7 +229,7 @@ void transform_type(std::vector<val_type>& types) {
     } else if constexpr (ss::is_future<Type>::value) {
         transform_type<typename Type::value_type>(types);
     } else {
-        static_assert(dependent_false<Type>::value, "Unknown type");
+        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
     }
 }
 
@@ -279,7 +278,7 @@ std::tuple<Type> extract_parameter(
           mem, raw_params, idx);
         return std::tuple<Type>(underlying);
     } else {
-        static_assert(dependent_false<Type>::value, "Unknown type");
+        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
     }
 }
 
@@ -296,17 +295,14 @@ constexpr size_t num_parameters() {
     } else if constexpr (reflection::is_rp_named_type<Type>) {
         return num_parameters<typename Type::type>();
     } else {
-        static_assert(dependent_false<Type>::value, "Unknown type");
+        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
     }
 }
-
-template<typename... Args>
-concept EmptyPack = sizeof...(Args) == 0;
 } // namespace detail
 
 template<typename... Rest>
 void transform_types(std::vector<val_type>&)
-requires detail::EmptyPack<Rest...>
+requires(sizeof...(Rest) == 0)
 {
     // Nothing to do
 }
@@ -320,7 +316,7 @@ void transform_types(std::vector<val_type>& types) {
 template<typename... Rest>
 std::tuple<>
 extract_parameters(ffi::memory*, std::span<const uint64_t>, unsigned)
-requires detail::EmptyPack<Rest...>
+requires(sizeof...(Rest) == 0)
 {
     return std::make_tuple();
 }
@@ -335,7 +331,7 @@ std::tuple<Type, Rest...> extract_parameters(
 
 template<typename... Rest>
 constexpr size_t parameter_count()
-requires detail::EmptyPack<Rest...>
+requires(sizeof...(Rest) == 0)
 {
     return 0;
 }

@@ -11,16 +11,11 @@
 
 #include "serde/logger.h"
 #include "serde/rw/rw.h"
+#include "utils/type_traits.h"
 
 #include <chrono>
 
 namespace serde {
-
-namespace detail {
-// Helper for static_assert-ing false below.
-template<typename T>
-struct dependent_false : std::false_type {};
-} // namespace detail
 
 template<class R, class P>
 int64_t checked_duration_cast_to_nanoseconds(
@@ -117,7 +112,7 @@ void tag_invoke(
 template<typename Clock, typename Duration>
 void write(iobuf&, std::chrono::time_point<Clock, Duration> t) {
     static_assert(
-      detail::dependent_false<decltype(t)>::value,
+      utils::unsupported_type<decltype(t)>::value,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
 }
@@ -128,7 +123,7 @@ void read(
   std::chrono::time_point<Clock, Duration>& t,
   std::size_t const /* bytes_left_limit */) {
     static_assert(
-      detail::dependent_false<decltype(t)>::value,
+      utils::unsupported_type<decltype(t)>::value,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
 }

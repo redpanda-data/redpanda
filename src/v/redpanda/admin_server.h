@@ -26,6 +26,7 @@
 #include "seastarx.h"
 #include "storage/node.h"
 #include "utils/request_auth.h"
+#include "utils/type_traits.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/scheduling.hh>
@@ -51,12 +52,6 @@ enum class service_kind {
     http_proxy,
     schema_registry,
 };
-
-namespace detail {
-// Helper for static_assert-ing false below.
-template<auto V>
-struct dependent_false : std::false_type {};
-} // namespace detail
 
 namespace cloud_storage {
 struct topic_recovery_service;
@@ -121,7 +116,7 @@ private:
             auth_state.pass();
         } else {
             static_assert(
-              detail::dependent_false<required_auth>::value,
+              utils::unsupported_value<required_auth>::value,
               "Invalid auth_level");
         }
 
