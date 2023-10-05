@@ -1597,7 +1597,7 @@ configuration::configuration()
       "the average request rate for the configured period is lower than this "
       "threshold the cloud storage is considered being idle.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1.0)
+      10.0)
   , cloud_storage_background_jobs_quota(
       *this,
       "cloud_storage_background_jobs_quota",

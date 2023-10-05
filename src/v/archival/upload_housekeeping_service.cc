@@ -151,7 +151,12 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
         const auto avg_utilisation = _api_utilization->get();
         const auto avg_slow_downs = _api_slow_downs->get();
 
-        if (avg_utilisation >= _api_idle_threshold()) {
+        if (
+          avg_utilisation
+          >= _api_idle_threshold()
+               * std::chrono::duration_cast<std::chrono::seconds>(
+                   _idle_timeout())
+                   .count()) {
             // Not idle: restart the timer and delay idle timeout
             rearm_idle_timer();
         }
