@@ -98,6 +98,8 @@ private:
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace cloud_storage
