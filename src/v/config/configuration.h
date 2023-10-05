@@ -313,6 +313,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       cloud_storage_cluster_metadata_upload_interval_ms;
     property<double> cloud_storage_idle_threshold_rps;
+    property<int32_t> cloud_storage_background_jobs_quota;
     property<bool> cloud_storage_enable_segment_merging;
     property<bool> cloud_storage_enable_scrubbing;
     property<std::chrono::milliseconds> cloud_storage_scrubbing_interval_ms;

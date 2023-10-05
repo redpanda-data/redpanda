@@ -60,10 +60,12 @@ upload_housekeeping_service::upload_housekeeping_service(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _api_idle_threshold(
       config::shard_local_cfg().cloud_storage_idle_threshold_rps.bind())
+  , _raw_quota(
+      config::shard_local_cfg().cloud_storage_background_jobs_quota.bind())
   , _rtc(_as)
   , _ctxlog(archival_log, _rtc)
   , _filter(_rtc)
-  , _workflow(_rtc, sg, _probe)
+  , _workflow(_rtc, run_quota_t{_raw_quota()}, sg, _probe)
   , _api_utilization(
       std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
   , _api_slow_downs(
@@ -82,6 +84,9 @@ upload_housekeeping_service::upload_housekeeping_service(
 
     _epoch_duration.watch(
       [this] { _epoch_timer.rearm_periodic(_epoch_duration()); });
+
+    _raw_quota.watch(
+      [this] { _workflow.update_quota(run_quota_t{_raw_quota()}); });
 }
 
 upload_housekeeping_service::~upload_housekeeping_service() {}
@@ -203,11 +208,13 @@ void upload_housekeeping_service::deregister_jobs(
 
 housekeeping_workflow::housekeeping_workflow(
   retry_chain_node& parent,
+  run_quota_t quota,
   ss::scheduling_group sg,
   std::optional<std::reference_wrapper<upload_housekeeping_probe>> probe)
   : _parent(parent)
   , _sg(sg)
-  , _probe(probe) {}
+  , _probe(probe)
+  , _quota(quota) {}
 
 void housekeeping_workflow::register_job(housekeeping_job& job) {
     job.acquire();
@@ -310,8 +317,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
     auto start_time = ss::lowres_clock::now();
     // Tracks job execution time
     job_exec_timer exec_timer{};
-    run_quota_t quota = run_quota_t(
-      max_reuploads_per_run * static_cast<int32_t>(_pending.size()));
+    run_quota_t quota = _quota;
     while (!_as.abort_requested()) {
         vlog(
           archival_log.debug,
@@ -418,8 +424,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             jobs_executed = 0;
             start_time = ss::lowres_clock::now();
             exec_timer.reset();
-            quota = run_quota_t(
-              max_reuploads_per_run * static_cast<int32_t>(_pending.size()));
+            quota = _quota;
             if (_probe.has_value()) {
                 _probe->get().housekeeping_rounds(1);
             }
@@ -511,5 +516,7 @@ ss::future<> housekeeping_workflow::stop() {
 housekeeping_state housekeeping_workflow::state() const { return _state; }
 
 bool housekeeping_workflow::has_active_job() const { return !_running.empty(); }
+
+void housekeeping_workflow::update_quota(run_quota_t quota) { _quota = quota; }
 
 } // namespace archival

@@ -1598,6 +1598,14 @@ configuration::configuration()
       "threshold the cloud storage is considered being idle.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1.0)
+  , cloud_storage_background_jobs_quota(
+      *this,
+      "cloud_storage_background_jobs_quota",
+      "The number of total requests that the cloud storage background jobs are "
+      "allowed to make during one background housekeeping run. This is a per "
+      "shard limit.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5000)
   , cloud_storage_enable_segment_merging(
       *this,
       "cloud_storage_enable_segment_merging",
