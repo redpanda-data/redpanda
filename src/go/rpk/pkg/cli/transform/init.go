@@ -84,13 +84,16 @@ Will initialize a transform project in the foobar directory.
 			if ok {
 				out.Die("there is already a transform at %q, please delete it before retrying", c)
 			}
-			for name == "" {
+			if name == "" {
 				suggestion := filepath.Base(path)
 				if suggestion == "." {
 					suggestion = ""
 				}
 				name, err = out.PromptWithSuggestion(suggestion, "name this transform:")
 				out.MaybeDie(err, "unable to determine project name: %v", err)
+				if name == "" {
+					out.Die("transform name is required")
+				}
 			}
 			if lang == "" {
 				langVal, err := out.Pick(project.AllWasmLangs, "select a language:")
