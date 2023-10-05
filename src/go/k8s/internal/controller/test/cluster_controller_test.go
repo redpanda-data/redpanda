@@ -830,7 +830,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 		It("Should throw error due to restricted redpanda version", func() {
 			restrictedVersion := "v23.1.2"
 			key, redpandaCluster := getVersionedRedpanda("restricted-redpanda-negative", restrictedVersion)
-			fc := fake.NewClientBuilder().WithObjects(redpandaCluster).Build()
+			fc := fake.NewClientBuilder().WithObjects(redpandaCluster).WithStatusSubresource(redpandaCluster).Build()
 			r := &redpanda.ClusterReconciler{
 				Client:                    fc,
 				Log:                       ctrl.Log,
