@@ -11,26 +11,33 @@ package container
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func newStatusCommand() *cobra.Command {
+func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "status",
 		Short: "Get status",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := common.NewDockerClient()
-			if err != nil {
-				return err
-			}
+		Run: func(cmd *cobra.Command, _ []string) {
+			c, err := common.NewDockerClient(cmd.Context())
+			out.MaybeDieErr(err)
 			defer c.Close()
 
 			nodes, err := renderClusterInfo(c)
-			if err != nil {
-				return common.WrapIfConnErr(err)
+			out.MaybeDieErr(common.WrapIfConnErr(err))
+
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			y, ok := cfg.ActualRpkYaml()
+			var withProfile bool
+			if ok && y.Profile(common.ContainerProfileName) != nil && y.CurrentProfile == common.ContainerProfileName {
+				withProfile = true
 			}
-			renderClusterInteract(nodes)
-			return nil
+			renderClusterInteract(nodes, withProfile)
 		},
 	}
 

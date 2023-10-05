@@ -27,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -50,12 +51,13 @@ func collectFlags(args []string, flag string) []string {
 	return flags
 }
 
-func newStartCommand() *cobra.Command {
+func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		nodes   uint
-		retries uint
-		image   string
-		pull    bool
+		nodes     uint
+		retries   uint
+		image     string
+		pull      bool
+		noProfile bool
 	)
 	command := &cobra.Command{
 		Use:   "start",
@@ -66,60 +68,54 @@ func newStartCommand() *cobra.Command {
 			// (POSIX standard)
 			UnknownFlags: true,
 		},
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Run: func(cmd *cobra.Command, _ []string) {
 			if nodes < 1 {
-				return errors.New(
-					"--nodes should be 1 or greater",
-				)
+				out.Die("--nodes should be 1 or greater")
 			}
-			c, err := common.NewDockerClient()
-			if err != nil {
-				return err
-			}
+			c, err := common.NewDockerClient(cmd.Context())
+			out.MaybeDie(err, "unable to create docker client: %v", err)
 			defer c.Close()
 
 			configKvs := collectFlags(os.Args, "--set")
+			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, pull, configKvs)
+			out.MaybeDieErr(common.WrapIfConnErr(err))
 
-			return common.WrapIfConnErr(startCluster(
-				c,
-				nodes,
-				checkBrokers,
-				retries,
-				image,
-				pull,
-				configKvs,
-			))
+			if noProfile || isRestarted {
+				return
+			}
+
+			dockerNodes, err := renderClusterInfo(c)
+			out.MaybeDie(err, "unable to render cluster info: %v; you may run 'rpk container status' to retrieve the cluster info", err)
+
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			y, err := cfg.ActualRpkYamlOrEmpty()
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			err = common.CreateProfile(fs, c, y)
+			if err == nil {
+				fmt.Printf("\nCreated %q profile.\n", common.ContainerProfileName)
+				renderClusterInteract(dockerNodes, true)
+				return
+			}
+			if errors.Is(err, common.ErrContainerProfileExists) {
+				fmt.Printf(`Unable to create a profile for the rpk container: %v.
+
+You can retry profile creation by running:
+    rpk profile delete %s; rpk profile create --from-rpk-container`, err, common.ContainerProfileName)
+				return
+			} else {
+				out.Die("unable to create a profile for the rpk container: %v", err)
+			}
 		},
 	}
 
-	command.Flags().UintVarP(
-		&nodes,
-		"nodes",
-		"n",
-		1,
-		"The number of nodes to start",
-	)
-
-	command.Flags().UintVar(
-		&retries,
-		"retries",
-		10,
-		"The amount of times to check for the cluster before"+
-			" considering it unstable and exiting",
-	)
-	imageFlag := "image"
-	command.Flags().StringVar(
-		&image,
-		imageFlag,
-		common.DefaultImage(),
-		"An arbitrary container image to use",
-	)
-	command.Flags().BoolVar(
-		&pull,
-		"pull",
-		false,
-		"Force pull the container image used",
-	)
+	command.Flags().UintVarP(&nodes, "nodes", "n", 1, "The number of nodes to start")
+	command.Flags().UintVar(&retries, "retries", 10, "The amount of times to check for the cluster before considering it unstable and exiting")
+	command.Flags().StringVar(&image, "image", common.DefaultImage(), "An arbitrary container image to use")
+	command.Flags().BoolVar(&pull, "pull", false, "Force pull the container image used")
+	command.Flags().BoolVar(&noProfile, "no-profile", false, "If true, rpk will not create an rpk profile after creating a cluster")
 
 	return command
 }
@@ -132,11 +128,11 @@ func startCluster(
 	image string,
 	pull bool,
 	extraArgs []string,
-) error {
+) (isRestarted bool, rerr error) {
 	// Check if cluster exists and start it again.
 	restarted, err := restartCluster(c, check, retries)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// If a cluster was restarted, there's nothing else to do.
 	if len(restarted) != 0 {
@@ -145,14 +141,14 @@ func startCluster(
 		if len(restarted) != int(n) {
 			fmt.Print("\nTo change the number of nodes, first purge the existing cluster with\n'rpk container purge'.\n\n")
 		}
-		return nil
+		return true, nil
 	}
 
 	if pull {
 		fmt.Println("Force pulling image...")
 		err = common.PullImage(c, image)
 		if err != nil {
-			return err
+			return false, err
 		}
 	} else {
 		fmt.Println("Checking for a local image...")
@@ -165,7 +161,7 @@ func startCluster(
 			fmt.Printf("Version %q not found locally\n", image)
 			err = common.PullImage(c, image)
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
@@ -173,13 +169,13 @@ func startCluster(
 	// Create the docker network if it doesn't exist already
 	netID, err := common.CreateNetwork(c)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	reqPorts := n * 5 // we need 5 ports per node
 	ports, err := vnet.GetFreePortPool(int(reqPorts))
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Start a seed node.
@@ -205,7 +201,7 @@ func startCluster(
 		extraArgs...,
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	fmt.Println("Starting cluster...")
@@ -214,7 +210,7 @@ func startCluster(
 		seedState.ContainerID,
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	seedNode := node{
@@ -280,21 +276,16 @@ func startCluster(
 
 	err = grp.Wait()
 	if err != nil {
-		return fmt.Errorf("error restarting the cluster: %v", err)
+		return false, fmt.Errorf("error restarting the cluster: %v", err)
 	}
 	err = waitForCluster(check(nodes), retries)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	fmt.Println("Cluster started!")
-	dockerNodes, err := renderClusterInfo(c)
-	if err != nil {
-		return err
-	}
-	renderClusterInteract(dockerNodes)
 
-	return nil
+	return false, nil
 }
 
 func restartCluster(
@@ -431,7 +422,7 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 	return nodes, nil
 }
 
-func renderClusterInteract(nodes []*common.NodeState) {
+func renderClusterInteract(nodes []*common.NodeState, withProfile bool) {
 	var (
 		brokers    []string
 		adminAddrs []string
@@ -445,8 +436,16 @@ func renderClusterInteract(nodes []*common.NodeState) {
 	if len(brokers) == 0 || len(adminAddrs) == 0 {
 		return
 	}
+	if withProfile {
+		fmt.Printf(`
+You can use rpk to interact with this cluster. E.g:
 
-	m := `
+    rpk cluster info
+    rpk cluster health
+
+`)
+	} else {
+		msg := `
 You can use rpk to interact with this cluster. E.g:
 
     rpk cluster info -X brokers=%s
@@ -461,9 +460,10 @@ broker and admin API addresses:
     rpk cluster health
 
 `
-	b := strings.Join(brokers, ",")
-	a := strings.Join(adminAddrs, ",")
-	fmt.Printf(m, b, a, b, a)
+		b := strings.Join(brokers, ",")
+		a := strings.Join(adminAddrs, ",")
+		fmt.Printf(msg, b, a, b, a)
+	}
 }
 
 func nodeAddr(port uint) string {

@@ -101,7 +101,7 @@ type dockerClient struct {
 	*client.Client
 }
 
-func NewDockerClient() (Client, error) {
+func NewDockerClient(ctx context.Context) (Client, error) {
 	// First, we check if DOCKER_HOST is present or if /var/run/docker.sock
 	// exists. If either of these conditions is met, we can safely start the
 	// client using the pre-set client.FromEnv.
@@ -126,7 +126,7 @@ func NewDockerClient() (Client, error) {
 			return nil, err
 		}
 	}
-	c.NegotiateAPIVersion(context.Background())
+	c.NegotiateAPIVersion(ctx)
 	return &dockerClient{c}, nil
 }
 

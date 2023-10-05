@@ -26,6 +26,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 	"go.uber.org/zap"
 )
 
@@ -42,16 +43,17 @@ const (
 )
 
 type NodeState struct {
-	Status        string
-	Running       bool
-	ConfigFile    string
-	HostRPCPort   uint
-	HostKafkaPort uint
-	HostAdminPort uint
-	HostProxyPort uint
-	ID            uint
-	ContainerIP   string
-	ContainerID   string
+	Status         string
+	Running        bool
+	ConfigFile     string
+	HostRPCPort    uint
+	HostKafkaPort  uint
+	HostAdminPort  uint
+	HostProxyPort  uint
+	HostSchemaPort uint
+	ID             uint
+	ContainerIP    string
+	ContainerID    string
 }
 
 func ListenAddresses(ip string, internalPort, externalPort uint) string {
@@ -167,16 +169,24 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostSchemaPort, err := getHostPort(
+		config.DefaultSchemaRegPort,
+		containerJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &NodeState{
-		Running:       containerJSON.State.Running,
-		Status:        containerJSON.State.Status,
-		ContainerID:   containerJSON.ID,
-		ContainerIP:   ipAddress,
-		HostKafkaPort: hostKafkaPort,
-		HostRPCPort:   hostRPCPort,
-		HostAdminPort: hostAdminPort,
-		HostProxyPort: hostProxyPort,
-		ID:            nodeID,
+		Running:        containerJSON.State.Running,
+		Status:         containerJSON.State.Status,
+		ContainerID:    containerJSON.ID,
+		ContainerIP:    ipAddress,
+		HostKafkaPort:  hostKafkaPort,
+		HostRPCPort:    hostRPCPort,
+		HostAdminPort:  hostAdminPort,
+		HostProxyPort:  hostProxyPort,
+		HostSchemaPort: hostSchemaPort,
+		ID:             nodeID,
 	}, nil
 }
 
@@ -459,3 +469,46 @@ This can happen for a couple of reasons:
 	}
 	return err
 }
+
+func CreateProfile(fs afero.Fs, c Client, y *config.RpkYaml) error {
+	if p := y.Profile(ContainerProfileName); p != nil {
+		return ErrContainerProfileExists
+	}
+	var kaAddresses, aAddresses, srAddresses []string
+	existingNodes, err := GetExistingNodes(c)
+	if err != nil {
+		return fmt.Errorf("unable to get the existing nodes: %v", err)
+	}
+	for _, n := range existingNodes {
+		kaAddresses = append(kaAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostKafkaPort))
+		aAddresses = append(aAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostAdminPort))
+		srAddresses = append(srAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostSchemaPort))
+	}
+
+	profile := config.RpkProfile{
+		Name:        ContainerProfileName,
+		Description: "Automatically generated profile from 'rpk container start'",
+		KafkaAPI: config.RpkKafkaAPI{
+			Brokers: kaAddresses,
+		},
+		AdminAPI: config.RpkAdminAPI{
+			Addresses: aAddresses,
+		},
+		SR: config.RpkSchemaRegistryAPI{
+			Addresses: srAddresses,
+		},
+	}
+
+	y.CurrentProfile = y.PushProfile(profile)
+	err = y.Write(fs)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+const ContainerProfileName = "rpk-container"
+
+// ErrContainerProfileExists is returned when we attempt to create a container
+// profile but a profile named 'rpk-container' already exists.
+var ErrContainerProfileExists = fmt.Errorf("%q profile already exists", ContainerProfileName)
