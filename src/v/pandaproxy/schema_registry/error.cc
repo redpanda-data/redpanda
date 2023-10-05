@@ -66,9 +66,9 @@ struct error_category final : std::error_category {
         case error_code::topic_parse_error:
             return "Unexpected data found in topic";
         case error_code::compatibility_level_invalid:
-            return "Invalid compatibility level. Valid values are none, "
-                   "backward, forward, full, backward_transitive, "
-                   "forward_transitive, and full_transitive";
+            return "Invalid compatibility level. Valid values are NONE, "
+                   "BACKWARD, FORWARD, FULL, BACKWARD_TRANSITIVE, "
+                   "FORWARD_TRANSITIVE, and FULL_TRANSITIVE";
         }
         return "(unrecognized error)";
     }
