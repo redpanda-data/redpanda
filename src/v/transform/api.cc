@@ -49,8 +49,27 @@ ss::future<> service::start() { throw std::runtime_error("unimplemented"); }
 
 ss::future<> service::stop() { throw std::runtime_error("unimplemented"); }
 
-ss::future<cluster::errc> service::delete_transform(model::transform_name) {
-    throw std::runtime_error("unimplemented");
+ss::future<cluster::errc>
+service::delete_transform(model::transform_name name) {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::errc::feature_disabled;
+    }
+    auto _ = _gate.hold();
+
+    vlog(tlog.info, "deleting transform {}", name);
+    auto result = co_await _plugin_frontend->local().remove_transform(
+      name, model::timeout_clock::now() + metadata_timeout);
+
+    // Make deletes itempotent by translating does not exist into success
+    if (result.ec == cluster::errc::transform_does_not_exist) {
+        co_return cluster::errc::success;
+    }
+    if (result.ec != cluster::errc::success) {
+        co_return result.ec;
+    }
+    co_await cleanup_wasm_binary(result.uuid);
+    co_return cluster::errc::success;
 }
 
 ss::future<cluster::errc>
@@ -90,23 +109,31 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
       meta.name,
       cluster::error_category().message(int(ec)));
     if (ec != cluster::errc::success) {
-        // TODO(rockwood): This is a best effort cleanup, we should also have
-        // some sort of GC process as well.
-        auto result = co_await ss::coroutine::as_future<cluster::errc>(
-          _rpc_client->local().delete_wasm_binary(key, wasm_binary_timeout));
-        if (result.failed()) {
-            vlog(
-              tlog.debug,
-              "cleaning up wasm binary failed: {}",
-              result.get_exception());
-        } else if (auto ec = result.get(); ec != cluster::errc::success) {
-            vlog(
-              tlog.debug,
-              "cleaning up wasm binary failed: {}",
-              cluster::error_category().message(int(ec)));
-        }
+        co_await cleanup_wasm_binary(key);
     }
     co_return ec;
+}
+
+ss::future<> service::cleanup_wasm_binary(uuid_t key) {
+    // TODO(rockwood): This is a best effort cleanup, we should also have
+    // some sort of GC process as well.
+    auto result = co_await ss::coroutine::as_future<cluster::errc>(
+      _rpc_client->local().delete_wasm_binary(key, wasm_binary_timeout));
+    if (result.failed()) {
+        vlog(
+          tlog.debug,
+          "cleaning up wasm binary failed: {}",
+          result.get_exception());
+        co_return;
+    }
+    auto ec = result.get();
+    if (ec == cluster::errc::success) {
+        co_return;
+    }
+    vlog(
+      tlog.debug,
+      "cleaning up wasm binary failed: {}",
+      cluster::error_category().message(int(ec)));
 }
 
 } // namespace transform

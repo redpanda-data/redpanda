@@ -62,6 +62,8 @@ public:
     ss::future<cluster::errc> delete_transform(model::transform_name);
 
 private:
+    ss::future<> cleanup_wasm_binary(uuid_t);
+
     ss::gate _gate;
 
     wasm::runtime* _runtime;
