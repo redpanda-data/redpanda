@@ -67,11 +67,10 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
           .remaining = quota};
     }
 
-    vlog(_logger.info, "Starting scrub ...");
+    vlog(_logger.info, "Starting scrub with {} quota...", quota());
 
-    // TODO: make the timeout dynamic
-    retry_chain_node anomaly_detection_rtc(1min, 100ms, &rtc_node);
-    auto detect_result = co_await _detector.run(anomaly_detection_rtc);
+    retry_chain_node anomaly_detection_rtc(5min, 100ms, &rtc_node);
+    auto detect_result = co_await _detector.run(anomaly_detection_rtc, quota);
 
     // The quota accounting below compensates for the fact that
     // `run_quota_t` is signed, but `result::ops` is unsigned. Avoid

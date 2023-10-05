@@ -263,11 +263,12 @@ public:
           _as);
     }
 
-    cloud_storage::anomalies_detector::result run_detector() {
+    cloud_storage::anomalies_detector::result
+    run_detector(archival::run_quota_t quota) {
         BOOST_REQUIRE(_detector.has_value());
 
         retry_chain_node anomaly_detection_rtc(1min, 100ms, &_root_rtc);
-        auto res = _detector->run(anomaly_detection_rtc).get();
+        auto res = _detector->run(anomaly_detection_rtc, quota).get();
         vlog(
           test_logger.info,
           "Anomalies detector run result: status={}, detected={}",
@@ -442,10 +443,18 @@ FIXTURE_TEST(test_no_anomalies, bucket_view_fixture) {
     init_view(
       stm_manifest, {spillover_manifest_at_0, spillover_manifest_at_20});
 
-    auto result = run_detector();
-    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+    {
+        auto result = run_detector(archival::run_quota_t{100});
+        BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+        BOOST_REQUIRE(!result.detected.has_value());
+    }
 
-    BOOST_REQUIRE(!result.detected.has_value());
+    {
+        auto result = run_detector(archival::run_quota_t{5});
+        BOOST_REQUIRE_EQUAL(
+          result.status, cloud_storage::scrub_status::partial);
+        BOOST_REQUIRE(!result.detected.has_value());
+    }
 }
 
 FIXTURE_TEST(test_missing_segments, bucket_view_fixture) {
@@ -459,7 +468,7 @@ FIXTURE_TEST(test_missing_segments, bucket_view_fixture) {
     const auto& spill_segment = first_spill.begin();
     remove_segment(first_spill, *spill_segment);
 
-    const auto result = run_detector();
+    const auto result = run_detector(archival::run_quota_t{100});
     BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
 
     BOOST_REQUIRE(result.detected.has_value());
@@ -478,7 +487,7 @@ FIXTURE_TEST(test_missing_spillover_manifest, bucket_view_fixture) {
     const auto& spill_segment = first_spill.begin();
     remove_manifest(first_spill);
 
-    const auto result = run_detector();
+    const auto result = run_detector(archival::run_quota_t{100});
     BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
 
     BOOST_REQUIRE(result.detected.has_value());
@@ -498,7 +507,7 @@ FIXTURE_TEST(test_missing_stm_manifest, bucket_view_fixture) {
 
     remove_manifest(get_stm_manifest());
 
-    const auto result = run_detector();
+    const auto result = run_detector(archival::run_quota_t{100});
     BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
 
     BOOST_REQUIRE(result.detected.has_value());
@@ -642,7 +651,7 @@ FIXTURE_TEST(test_metadata_anomalies, bucket_view_fixture) {
 
     init_view(stm_man, {first_spill_man, last_spill_man});
 
-    const auto result = run_detector();
+    const auto result = run_detector(archival::run_quota_t{100});
     BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
 
     BOOST_REQUIRE(result.detected.has_value());
@@ -762,7 +771,7 @@ FIXTURE_TEST(test_filtering_of_segment_merge, bucket_view_fixture) {
     remove_segment(get_stm_manifest(), first_seg);
     remove_segment(get_stm_manifest(), last_seg);
 
-    const auto result = run_detector();
+    const auto result = run_detector(archival::run_quota_t{100});
     BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
     BOOST_REQUIRE(result.detected.has_value());
     BOOST_REQUIRE_EQUAL(result.detected.missing_segments.size(), 2);

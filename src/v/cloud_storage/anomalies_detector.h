@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "archival/types.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
@@ -46,19 +47,21 @@ public:
     struct result {
         scrub_status status{scrub_status::full};
         anomalies detected;
-        size_t ops{0};
+        int32_t ops{0};
 
         result& operator+=(result&&);
     };
 
-    ss::future<result> run(retry_chain_node&);
+    ss::future<result> run(retry_chain_node&, archival::run_quota_t);
 
 private:
     ss::future<std::optional<spillover_manifest>> download_spill_manifest(
       const ss::sstring& path, retry_chain_node& rtc_node);
 
-    ss::future<anomalies_detector::result> check_manifest(
+    ss::future<> check_manifest(
       const partition_manifest& manifest, retry_chain_node& rtc_node);
+
+    bool should_stop() const;
 
     cloud_storage_clients::bucket_name _bucket;
     model::ntp _ntp;
@@ -67,6 +70,9 @@ private:
     remote& _remote;
     retry_chain_logger& _logger;
     ss::abort_source& _as;
+
+    result _result;
+    archival::run_quota_t _received_quota;
 };
 
 } // namespace cloud_storage
