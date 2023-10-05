@@ -138,44 +138,48 @@ upload_housekeeping_probe::upload_housekeeping_probe() {
 
     _service_metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage_housekeeping"),
-      {
-        sm::make_counter(
-          "rounds",
-          [this] { return _housekeeping_rounds; },
-          sm::description("Number of upload housekeeping rounds"))
-          .aggregate(aggregate_labels),
-        sm::make_total_bytes(
-          "jobs_completed",
-          [this] { return _housekeeping_jobs; },
-          sm::description("Number of executed housekeeping jobs"))
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "jobs_failed",
-          [this] { return _housekeeping_jobs_failed; },
-          sm::description("Number of failed housekeeping jobs"))
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "jobs_skipped",
-          [this] { return _housekeeping_jobs_skipped; },
-          sm::description("Number of skipped housekeeping jobs"))
-          .aggregate(aggregate_labels),
-        sm::make_gauge(
-          "resumes",
-          [this] { return _housekeeping_resumes; },
-          sm::description("Number of times upload housekeeping was resumed"))
-          .aggregate(aggregate_labels),
-        sm::make_gauge(
-          "pauses",
-          [this] { return _housekeeping_pauses; },
-          sm::description("Number of times upload housekeeping was paused"))
-          .aggregate(aggregate_labels),
-        sm::make_gauge(
-          "drains",
-          [this] { return _housekeeping_drains; },
-          sm::description(
-            "Number of times upload housekeeping queue was drained"))
-          .aggregate(aggregate_labels),
-      });
+      {sm::make_counter(
+         "rounds",
+         [this] { return _housekeeping_rounds; },
+         sm::description("Number of upload housekeeping rounds"))
+         .aggregate(aggregate_labels),
+       sm::make_total_bytes(
+         "jobs_completed",
+         [this] { return _housekeeping_jobs; },
+         sm::description("Number of executed housekeeping jobs"))
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "jobs_failed",
+         [this] { return _housekeeping_jobs_failed; },
+         sm::description("Number of failed housekeeping jobs"))
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "jobs_skipped",
+         [this] { return _housekeeping_jobs_skipped; },
+         sm::description("Number of skipped housekeeping jobs"))
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "resumes",
+         [this] { return _housekeeping_resumes; },
+         sm::description("Number of times upload housekeeping was resumed"))
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "pauses",
+         [this] { return _housekeeping_pauses; },
+         sm::description("Number of times upload housekeeping was paused"))
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "drains",
+         [this] { return _housekeeping_drains; },
+         sm::description(
+           "Number of times upload housekeeping queue was drained"))
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "requests_throttled_average_rate",
+         [this] { return _requests_throttled_average_rate; },
+         sm::description(
+           "Average rate of requests from the read and write "
+           "path which were throttled by tiered storage (per shard)"))});
 
     _jobs_metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage_jobs"),

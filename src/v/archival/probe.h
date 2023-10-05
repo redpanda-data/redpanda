@@ -137,6 +137,9 @@ public:
     void job_metadata_syncs(uint64_t add) { _metadata_syncs += add; }
     void job_metadata_reuploads(uint64_t add) { _manifest_reuploads += add; }
     void job_segment_deletions(uint64_t add) { _segment_deletions += add; }
+    void requests_throttled_average_rate(double avg_rate) {
+        _requests_throttled_average_rate = avg_rate;
+    }
 
 private:
     // service metrics
@@ -144,6 +147,7 @@ private:
     uint64_t _housekeeping_jobs{0};
     uint64_t _housekeeping_jobs_failed{0};
     uint64_t _housekeeping_jobs_skipped{0};
+    double _requests_throttled_average_rate{0};
     // service state transitions
     uint64_t _housekeeping_resumes{0};
     uint64_t _housekeeping_pauses{0};

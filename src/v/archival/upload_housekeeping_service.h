@@ -252,6 +252,13 @@ private:
     using sliding_window_t = timed_moving_average<double, ss::lowres_clock>;
     std::unique_ptr<sliding_window_t> _api_utilization;
     std::unique_ptr<sliding_window_t> _api_slow_downs;
+
+    static constexpr auto slow_downs_rate_window = 2min;
+    static constexpr auto slow_downs_rate_resolution = 20s;
+    static constexpr double max_slow_downs_rate = 0.333;
+    // Tracks the rate of slow-downs for requests to cloud storage
+    // from the read and write paths.
+    std::unique_ptr<sliding_window_t> _api_slow_downs_rate;
 };
 
 } // namespace archival

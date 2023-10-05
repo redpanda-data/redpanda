@@ -69,7 +69,9 @@ upload_housekeeping_service::upload_housekeeping_service(
   , _api_utilization(
       std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
   , _api_slow_downs(
-      std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution)) {
+      std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
+  , _api_slow_downs_rate(std::make_unique<sliding_window_t>(
+      0.0, slow_downs_rate_window, slow_downs_rate_resolution)) {
     _idle_timer.set_callback([this] { return idle_timer_callback(); });
     _epoch_timer.set_callback([this] { return epoch_timer_callback(); });
     _idle_timeout.watch([this] {
@@ -145,21 +147,32 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
         const auto now = ss::lowres_clock::now();
         _api_utilization->update(weight, now);
         _api_slow_downs->update(slow_down_weight, now);
-        if (_api_utilization->get() >= _api_idle_threshold()) {
-            // Restart the timer and delay idle timeout
+
+        const auto avg_utilisation = _api_utilization->get();
+        const auto avg_slow_downs = _api_slow_downs->get();
+
+        if (avg_utilisation >= _api_idle_threshold()) {
+            // Not idle: restart the timer and delay idle timeout
             rearm_idle_timer();
-            if (_workflow.state() == housekeeping_state::active) {
-                // Try to pause the housekeeping workflow
-                vlog(
-                  _ctxlog.debug,
-                  "Cloud storage api utilisation greater than threshold ({} >= "
-                  "{}). Pausing housekeeping workflow.",
-                  _api_utilization->get(),
-                  _api_idle_threshold());
-                _workflow.pause();
-            }
-            // NOTE: do not pause if workflow is in housekeeping_state::draining
-            // state.
+        }
+
+        _api_slow_downs_rate->update(avg_slow_downs / avg_utilisation, now);
+        const auto slow_downs_rate = _api_slow_downs_rate->get();
+        _probe.requests_throttled_average_rate(slow_downs_rate);
+
+        // Pause the housekeeping jobs if the number of slow downs on the
+        // read and write paths exceeds the acceptable limit. Do not pause
+        // if workflow is in housekeeping_state::draining state.
+        if (
+          slow_downs_rate >= max_slow_downs_rate
+          && _workflow.state() == housekeeping_state::active) {
+            vlog(
+              _ctxlog.info,
+              "Too many cloud storage requests are being throttled ({}% >= "
+              "{}%). Pausing housekeeping workflow to get some headroom",
+              slow_downs_rate,
+              max_slow_downs_rate);
+            _workflow.pause();
         }
     }
 }
