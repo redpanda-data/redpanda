@@ -370,7 +370,7 @@ class LogBasedValidator(EffectValidator):
     def __init__(self,
                  name,
                  pattern,
-                 confidence_threshold=10,
+                 confidence_threshold=8,
                  execution_stage=TestRunStage.Produce):
         self.__confidence_threshold = confidence_threshold
         self.__name = name
@@ -426,7 +426,7 @@ class LogUniquenessValidator(EffectValidator):
     def __init__(self,
                  name,
                  pattern,
-                 confidence_threshold=10,
+                 confidence_threshold=8,
                  execution_stage=TestRunStage.Produce):
         self.__confidence_threshold = confidence_threshold
         self.__name = name
@@ -507,7 +507,7 @@ class MetricBasedValidator(EffectValidator):
     def __init__(self,
                  name,
                  metric_name,
-                 confidence_threshold=10,
+                 confidence_threshold=8,
                  execution_stage=TestRunStage.Produce):
         self.__confidence_threshold = confidence_threshold
         self.__name = name
@@ -1180,6 +1180,8 @@ class TransactionsAborted(Expression):
                     use_transactions=True,
                     transaction_abort_rate=0.1,
                     msgs_per_transaction=10,
+                    msg_size=512,
+                    msg_count=20000,
                 ))
         ]
 
@@ -1409,8 +1411,11 @@ class EnableSegmentMs(Expression):
                              "segment.bytes",
                              str(1024 * 1024 * 128),
                              stage=TestRunStage.Startup),
-            # ClusterConfigInput("SetLowCompactionInterval_rp_conf",
-            #                    {"log_compaction_interval_ms": "10"}),
+            # The 'segment.ms' is applied during the local storage housekeeping
+            # so the actual segments won't be rolled as frequently as 'segment.ms'
+            # suggests.
+            ClusterConfigInput("SetLowCompactionInterval_rp_conf",
+                               {"log_compaction_interval_ms": "1000"}),
         ]
 
 

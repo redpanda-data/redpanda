@@ -81,7 +81,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                                     msg_size=1024,
                                     msg_count=10000,
                                     use_transactions=False,
-                                    msgs_per_transaction=1,
+                                    msgs_per_transaction=10,
                                     debug_logs=True,
                                     trace_logs=True)
 
@@ -356,6 +356,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         num_produce_runs = 0
         done = 0
         total = 0
+        failed_validators = []
         for _ in range(0, MAX_RETRIES):
             lagging_validators = []
             self.logger.debug(f"Producer config: {self.producer_config}")
@@ -382,6 +383,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                 self.logger.info(
                     f"Produce delayed by lagging validators: {lagging_validators}"
                 )
+                failed_validators = lagging_validators
                 time.sleep(5)
 
             if fake_ts_enabled:
@@ -391,11 +393,19 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             # Apply other inputs
             self.run_stage_inputs(TestRunStage.Produce, test_case)
 
-        assert done == total, f"Failed to produce data after {num_produce_runs} runs"
+        assert done == total, f"Failed to produce data after {num_produce_runs} runs, {failed_validators} validators failed"
         self._build_timequery_map(num_produce_runs, original_fake_ts)
+
+    def clean_up_cache(self):
+        for node in self.redpanda.nodes:
+            path = self.redpanda.cache_dir + "/*"
+            self.logger.info(f"removing all files in {path}")
+            for line in node.account.ssh_capture(f"rm -rf  {path}"):
+                self.logger.info(f"rm command returned {line}")
 
     def consume_until_validated(self, test_case):
         num_consume_runs = 0
+        failed_validators = []
         for _ in range(0, MAX_RETRIES):
             self._oneshot_consume()
             self._timequery_consume()
@@ -421,11 +431,13 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                 self.logger.info(
                     f"Consume delayed by lagging validators: {lagging_validators}"
                 )
+                failed_validators = lagging_validators
                 time.sleep(5)
 
             # Apply inputs if needed
             self.run_stage_inputs(TestRunStage.Consume, test_case)
 
+        assert done == total, f"Failed to consume data after {num_consume_runs} runs, {failed_validators} validators failed"
         return num_consume_runs
 
     def _timequery_consume(self):
@@ -451,8 +463,28 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             self.logger.info(f"Starting validator {v.name()}")
             v.start(self)
 
+    def transfer_topic_leadership(self):
+        leader = self.redpanda._admin.get_partition_leader(namespace='kafka',
+                                                           topic=self.topic,
+                                                           partition=0)
+        broker_ids = [x['node_id'] for x in self.redpanda._admin.get_brokers()]
+        transfer_to = random.choice([n for n in broker_ids if n != leader])
+        self.redpanda._admin.transfer_leadership_to(namespace="kafka",
+                                                    topic=self.topic,
+                                                    partition=0,
+                                                    target_id=transfer_to,
+                                                    leader_id=leader)
+        self.redpanda._admin.await_stable_leader(
+            self.topic,
+            partition=0,
+            namespace='kafka',
+            timeout_s=30,
+            backoff_s=2,
+            check=lambda node_id: node_id == transfer_to)
+
     def run_stage_validators(self, stage, test_case):
         """Run all validators for the given stage."""
+        failed_validators = []
         for ix in range(0, MAX_RETRIES):
             done = 0
             total = 0
@@ -476,8 +508,16 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                 self.logger.info(
                     f"{stage} delayed by lagging validators: {lagging_validators}"
                 )
-                time.sleep(2 * ix)
-        assert done == total, f"Failed to validate data after {MAX_RETRIES} runs"
+                failed_validators = lagging_validators
+                if ix % 2 == 0:
+                    # Clean up cache on all nodes to force segment hydrations
+                    time.sleep(60)  # Wait STM max eviction time
+                    self.clean_up_cache()
+                else:
+                    # Force leadership transfer
+                    self.transfer_topic_leadership()
+
+        assert done == total, f"Failed to validate data after {MAX_RETRIES} runs, {failed_validators} validators failed"
 
     def start_inputs(self, test_case):
         """Start all inputs."""
