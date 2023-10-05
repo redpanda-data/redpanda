@@ -63,14 +63,16 @@ public:
           .with([this, r{std::move(r)}]() mutable {
               vlog(
                 kclog.debug,
-                "Dispatch to node {}: {} req: {}",
+                "{}Dispatch to node {}: {} req: {}",
+                *this,
                 _node_id,
                 api_t::name,
                 r);
               return _client.dispatch(std::move(r)).then([this](Ret res) {
                   vlog(
                     kclog.debug,
-                    "Dispatch from node {}: {} res: {}",
+                    "{}Dispatch from node {}: {} res: {}",
+                    *this,
                     _node_id,
                     api_t::name,
                     res);
@@ -101,6 +103,14 @@ public:
     }
 
 private:
+    /// \brief Log the client ID if it exists, otherwise don't log
+    friend std::ostream& operator<<(std::ostream& os, broker const& b) {
+        if (b._client.client_id().has_value()) {
+            fmt::print(os, "{}: ", b._client.client_id().value());
+        }
+        return os;
+    }
+
     model::node_id _node_id;
     transport _client;
     // TODO(Ben): allow overlapped requests
