@@ -218,6 +218,8 @@ public:
         }
     }
 
+    std::optional<ss::sstring> const& client_id() const { return _client_id; }
+
 private:
     void write_header(protocol::encoder& wr, api_key key, api_version version) {
         wr.write(int16_t(key()));

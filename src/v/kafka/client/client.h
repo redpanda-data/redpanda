@@ -191,6 +191,14 @@ private:
     /// \brief Apply metadata update
     ss::future<> apply(metadata_response res);
 
+    /// \brief Log the client ID if it exists, otherwise don't log
+    friend std::ostream& operator<<(std::ostream& os, client const& c) {
+        if (c._config.client_identifier().has_value()) {
+            fmt::print(os, "{}: ", c._config.client_identifier().value());
+        }
+        return os;
+    }
+
     /// \brief Client holds a copy of its configuration
     configuration _config;
     /// \brief Seeds are used when no brokers are connected.
