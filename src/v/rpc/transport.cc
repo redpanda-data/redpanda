@@ -249,14 +249,10 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
               [this, f = std::move(f), seq, corr](
                 ssx::semaphore_units units,
                 ss::scattered_message<char> scattered_message) mutable {
-                  auto e = entry{
-                    .scattered_message
-                    = std::make_unique<ss::scattered_message<char>>(
-                      std::move(scattered_message)),
-                    .correlation_id = corr};
+                  auto e = std::make_unique<entry>(
+                    std::move(scattered_message), corr);
+                  _requests_queue.emplace(seq, std::move(e));
 
-                  _requests_queue.emplace(
-                    seq, std::make_unique<entry>(std::move(e)));
                   // By this point the request may already have timed out but
                   // we still do dispatch_send where it is handled. This is
                   // needed for two reasons:
@@ -318,7 +314,7 @@ ss::future<> transport::do_dispatch_send() {
       [this] {
           auto it = _requests_queue.begin();
           _last_seq = it->first;
-          auto v = std::move(*it->second->scattered_message);
+          auto v = std::move(it->second->scattered_message);
           auto corr = it->second->correlation_id;
           _requests_queue.erase(it);
 
