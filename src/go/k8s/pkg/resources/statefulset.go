@@ -157,6 +157,7 @@ func NewStatefulSet(
 
 // Ensure will manage kubernetes v1.StatefulSet for redpanda.vectorized.io custom resource
 func (r *StatefulSetResource) Ensure(ctx context.Context) error {
+	log := r.logger.WithName("StatefulSetResource.Ensure")
 	var sts appsv1.StatefulSet
 
 	if r.pandaCluster.ExternalListener() != nil {
@@ -181,6 +182,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		return err
 	}
 	if created {
+		log.Info("created StatefulSet")
 		r.LastObservedState = obj.(*appsv1.StatefulSet)
 		return nil
 	}
@@ -197,13 +199,13 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		return err
 	}
 
-	r.logger.Info("Running update")
+	log.Info("Running update")
 	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
 	if err != nil {
 		return err
 	}
 
-	r.logger.Info("Running scale handler")
+	log.Info("Running scale handler")
 	return r.handleScaling(ctx)
 }
 

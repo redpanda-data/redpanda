@@ -12,14 +12,18 @@ package resources_test
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,6 +32,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
@@ -42,6 +49,16 @@ const (
 
 //nolint:funlen // Test function can have more than 100 lines
 func TestEnsure(t *testing.T) {
+	testEnv := &envtest.Environment{
+		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
+	}
+	logf := testr.New(t)
+	log.SetLogger(logf)
+
+	cfg, err := testEnv.Start()
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+
 	cluster := pandaCluster()
 	stsResource := stsFromCluster(cluster)
 
@@ -89,7 +106,7 @@ func TestEnsure(t *testing.T) {
 		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts, true, nil},
 		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts, true, nil},
 		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume, true, nil},
-		{"update none healthy cluster", stsResource, unhealthyRedpandaCluster, stsResource, false, &resources.RequeueAfterError{
+		{"update non healthy cluster", stsResource, unhealthyRedpandaCluster, stsResource, false, &resources.RequeueAfterError{
 			RequeueAfter: resources.RequeueDuration,
 			Msg:          "wait for cluster to become healthy (cluster restarting)",
 		}},
@@ -97,10 +114,12 @@ func TestEnsure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().Build()
-
-			err := vectorizedv1alpha1.AddToScheme(scheme.Scheme)
+			err = vectorizedv1alpha1.AddToScheme(scheme.Scheme)
 			assert.NoError(t, err, tt.name)
+
+			c, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+			assert.NoError(t, err, tt.name)
+			assert.NotNil(t, c, tt.name)
 
 			if tt.existingObject != nil {
 				tt.existingObject.SetResourceVersion("")
@@ -110,7 +129,7 @@ func TestEnsure(t *testing.T) {
 			}
 
 			err = c.Create(context.Background(), tt.pandaCluster)
-			assert.NoError(t, err)
+			assert.NoError(t, err, tt.name)
 
 			sts := resources.NewStatefulSet(
 				c,
@@ -138,12 +157,41 @@ func TestEnsure(t *testing.T) {
 				ctrl.Log.WithName("test"),
 				0)
 
-			err = sts.Ensure(context.Background())
-			if tt.expectedError != nil && errors.Is(err, tt.expectedError) {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err, tt.name)
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+
+		WaitForSTSEnsure:
+			for {
+				err = sts.Ensure(context.Background())
+				y, _ := yaml.Marshal(sts.LastObservedState.ObjectMeta)
+				logf.WithValues("current metadata", string(y)).Info("debug")
+
+				time.Sleep(time.Second)
+				select {
+				case <-ctx.Done():
+					t.Errorf("timed out waiting for sts.Ensure: %v", err)
+					break WaitForSTSEnsure
+				default:
+					if tt.expectedError != nil && errors.Is(err, tt.expectedError) {
+						assert.Error(t, err)
+					} else if errors.Is(err, &resources.RequeueAfterError{RequeueAfter: resources.RequeueDuration, Msg: "wait for sts to be deleted"}) {
+						// with ownerreferences, a orphan delete adds a finalizer to allow kube-controller-manager to manage the deletion.
+						// for this test, we don't need to worry about that.
+						deleteFinalizer := &appsv1.StatefulSet{}
+						err := c.Get(ctx, sts.Key(), deleteFinalizer)
+						assert.NoError(t, err)
+						deleteFinalizer.Finalizers = nil
+						err = c.Update(ctx, deleteFinalizer)
+						assert.NoError(t, err)
+						continue
+					} else {
+						assert.NoError(t, err, tt.name)
+					}
+					if err == nil {
+						break WaitForSTSEnsure
+					}
+				}
 			}
+			cancel()
 
 			actual := &v1.StatefulSet{}
 			err = c.Get(context.Background(), sts.Key(), actual)
@@ -169,8 +217,21 @@ func TestEnsure(t *testing.T) {
 				actual.Spec.VolumeClaimTemplates[i].Labels = nil
 			}
 			assert.Equal(t, tt.expectedObject.Spec.VolumeClaimTemplates, actual.Spec.VolumeClaimTemplates)
+			if tt.existingObject != nil {
+				err = c.Delete(context.Background(), tt.existingObject)
+				assert.NoError(t, err, tt.name)
+			}
+			err = c.Delete(context.Background(), tt.pandaCluster)
+			if !apierrors.IsNotFound(err) {
+				assert.NoError(t, err, tt.name)
+			}
+			err = c.Delete(context.Background(), sts.LastObservedState)
+			if !apierrors.IsNotFound(err) {
+				assert.NoError(t, err, tt.name)
+			}
 		})
 	}
+	testEnv.Stop()
 }
 
 func stsFromCluster(pandaCluster *vectorizedv1alpha1.Cluster) *v1.StatefulSet {
@@ -183,10 +244,18 @@ func stsFromCluster(pandaCluster *vectorizedv1alpha1.Cluster) *v1.StatefulSet {
 		},
 		Spec: v1.StatefulSetSpec{
 			Replicas: pandaCluster.Spec.Replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"testlabel": "statefulset_test",
+				},
+			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      pandaCluster.Name,
 					Namespace: pandaCluster.Namespace,
+					Labels: map[string]string{
+						"testlabel": "statefulset_test",
+					},
 				},
 				Spec: corev1.PodSpec{
 					InitContainers: []corev1.Container{{
@@ -225,6 +294,9 @@ func stsFromCluster(pandaCluster *vectorizedv1alpha1.Cluster) *v1.StatefulSet {
 						StorageClassName: &pandaCluster.Spec.Storage.StorageClassName,
 						VolumeMode:       &fileSystemMode,
 					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: "Pending",
+					},
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -240,6 +312,9 @@ func stsFromCluster(pandaCluster *vectorizedv1alpha1.Cluster) *v1.StatefulSet {
 						},
 						StorageClassName: &pandaCluster.Spec.CloudStorage.CacheStorage.StorageClassName,
 						VolumeMode:       &fileSystemMode,
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: "Pending",
 					},
 				},
 			},
