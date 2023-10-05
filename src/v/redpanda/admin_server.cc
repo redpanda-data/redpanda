@@ -2587,21 +2587,15 @@ void admin_server::register_broker_routes() {
     register_route<superuser>(
       ss::httpd::broker_json::start_local_maintenance,
       [this](std::unique_ptr<ss::http::request>) {
-          return _controller->get_drain_manager()
-            .invoke_on_all(
-              [](cluster::drain_manager& dm) { return dm.drain(); })
-            .then(
-              [] { return ss::json::json_return_type(ss::json::json_void()); });
+          return _controller->get_drain_manager().local().drain().then(
+            [] { return ss::json::json_return_type(ss::json::json_void()); });
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::stop_local_maintenance,
       [this](std::unique_ptr<ss::http::request>) {
-          return _controller->get_drain_manager()
-            .invoke_on_all(
-              [](cluster::drain_manager& dm) { return dm.restore(); })
-            .then(
-              [] { return ss::json::json_return_type(ss::json::json_void()); });
+          return _controller->get_drain_manager().local().restore().then(
+            [] { return ss::json::json_return_type(ss::json::json_void()); });
       });
 
     register_route<superuser>(

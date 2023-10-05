@@ -77,7 +77,6 @@ public:
     std::vector<model::node_id> all_nodes;
     absl::flat_hash_set<model::node_id> all_unavailable_nodes;
     absl::flat_hash_set<model::node_id> timed_out_unavailable_nodes;
-    size_t num_nodes_in_maintenance = 0;
     absl::flat_hash_set<model::node_id> decommissioning_nodes;
     absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
 
@@ -236,13 +235,6 @@ void partition_balancer_planner::init_per_node_state(
         }
 
         ctx.all_nodes.push_back(id);
-
-        if (
-          broker.state.get_maintenance_state()
-          == model::maintenance_state::active) {
-            vlog(clusterlog.debug, "node {}: in maintenance", id);
-            ctx.num_nodes_in_maintenance += 1;
-        }
 
         if (
           broker.state.get_membership_state()
@@ -1598,16 +1590,12 @@ partition_balancer_planner::plan_actions(
       ctx, ctx.decommissioning_nodes, change_reason::node_decommissioning);
 
     if (ctx.config().mode == model::partition_autobalancing_mode::continuous) {
-        if (ctx.num_nodes_in_maintenance == 0) {
-            co_await get_node_drain_actions(
-              ctx,
-              ctx.timed_out_unavailable_nodes,
-              change_reason::node_unavailable);
-            co_await get_rack_constraint_repair_actions(ctx);
-            co_await get_full_node_actions(ctx);
-        } else if (!result.violations.is_empty()) {
-            result.status = status::waiting_for_maintenance_end;
-        }
+        co_await get_node_drain_actions(
+          ctx,
+          ctx.timed_out_unavailable_nodes,
+          change_reason::node_unavailable);
+        co_await get_rack_constraint_repair_actions(ctx);
+        co_await get_full_node_actions(ctx);
     }
     co_await get_counts_rebalancing_actions(ctx);
 

@@ -63,7 +63,6 @@ public:
     enum class status {
         empty,
         actions_planned,
-        waiting_for_maintenance_end,
         waiting_for_reports,
         missing_sizes,
     };
