@@ -1,5 +1,6 @@
 from google.oauth2.service_account import Credentials
 from google.cloud import compute_v1
+from google.cloud import storage
 
 from rptest.services.provider_clients.client_utils import query_instance_meta
 
@@ -35,6 +36,7 @@ class GCPClient:
         self._net_cli = None
         self._subnet_cli = None
         self._zones_cli = None
+        self._storage_cli = None
         self._log = logger
 
     @property
@@ -59,6 +61,12 @@ class GCPClient:
         if self._zones_cli is None:
             self._zones_cli = compute_v1.ZonesClient(credentials=self.creds)
         return self._zones_cli
+
+    @property
+    def storage_cli(self):
+        if self._storage_cli is None:
+            self._storage_cli = storage.Client(credentials=self.creds)
+        return self._storage_cli
 
     def create_vpc_peering(self, params, facing_vpcs=True):
         """
@@ -195,3 +203,35 @@ class GCPClient:
         uri = f"{_prefix}{_target}{_suffix}"
 
         return query_instance_meta(uri, headers=headers)
+
+    def block_bucket_access(self, cluster_id, bucket_name):
+        """
+        Removes the rp cluster service account from the bucket iam policy bindings list to block TS writes.
+        Returns the binding that was removed so it can be used when unblocking
+
+        This requires ducktape gcp service account to have editor permissions not viewer
+        """
+        s = storage.Client(credentials=self.creds)
+
+        bucket = s.bucket(bucket_name)
+        policy = bucket.get_iam_policy(requested_policy_version=3)
+
+        idx = 0
+        sa = f'serviceAccount:rp-cl-{cluster_id}@{self.project_id}.iam.gserviceaccount.com'
+        for b in policy.bindings:
+            if sa in b['members']:
+                break
+            idx += 1
+        binding_removed = policy.bindings.pop(idx)
+        bucket.set_iam_policy(policy)
+        return binding_removed
+
+    def unblock_bucket_access(self, cluster_id, bucket_name, binding):
+        """
+        Add binding to bucket iam policy
+        """
+        s = storage.Client(credentials=self.creds)
+        bucket = s.bucket(bucket_name)
+        policy = bucket.get_iam_policy(requested_policy_version=3)
+        policy.bindings.append(binding)
+        bucket.set_iam_policy(policy)
