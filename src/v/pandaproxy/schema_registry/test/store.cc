@@ -415,6 +415,37 @@ BOOST_AUTO_TEST_CASE(test_store_get_subjects) {
     BOOST_REQUIRE(subjects.size() == 2);
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
+
+    // Delete subject0 version
+    pps::seq_marker dummy_marker;
+    s.upsert_subject(
+      dummy_marker,
+      subject0,
+      pps::schema_version{1},
+      pps::schema_id{1},
+      pps::is_deleted::yes);
+    subjects = s.get_subjects(pps::include_deleted::no);
+    BOOST_REQUIRE_EQUAL(subjects.size(), 1);
+    subjects = s.get_subjects(pps::include_deleted::yes);
+    BOOST_REQUIRE_EQUAL(subjects.size(), 2);
+    auto b = s.delete_subject_version(subject0, pps::schema_version{1});
+
+    // Delete subject1
+    auto versions = s.delete_subject(
+      dummy_marker, subject1, pps::permanent_delete::no);
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::no).size(), 0);
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::yes).size(), 1);
+    versions = s.delete_subject(
+      dummy_marker, subject1, pps::permanent_delete::yes);
+
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::no).size(), 0);
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::yes).size(), 0);
+
+    // Ensure subjects with empty versions is not returned
+    auto c = s.set_compatibility(
+      dummy_marker, subject0, pps::compatibility_level::none);
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::no).size(), 0);
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::yes).size(), 0);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_global_compat) {
