@@ -2115,9 +2115,7 @@ class RedpandaService(Service):
         # nodejs server and redpanda
         try:
             cmd = "pgrep --list-full --exact redpanda"
-            for line in node.account.ssh_capture(cmd,
-                                                 allow_fail=True,
-                                                 timeout_sec=10):
+            for line in node.account.ssh_capture(cmd, timeout_sec=10):
                 # Ignore SSH commands that lookup the version of redpanda
                 # by running `redpanda --version` like in `self.get_version(node)`
                 if "--version" in line:
