@@ -83,6 +83,8 @@ std::string_view to_string_view(feature f) {
         return "enhanced_force_reconfiguration";
     case feature::broker_time_based_retention:
         return "broker_time_based_retention";
+    case feature::wasm_transforms:
+        return "wasm_transforms";
 
     /*
      * testing features
