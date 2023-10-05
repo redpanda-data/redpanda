@@ -1283,71 +1283,46 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
     retry_chain_node local_rtc(&parent_rtc);
     retry_chain_logger ctxlog(cst_log, local_rtc);
 
-    auto replaced_segments = manifest.replaced_segments();
+    size_t segments_to_remove_count = 0;
+    std::deque<cloud_storage_clients::object_key> objects_to_remove;
 
-    // Erase all segments
-    // Loop over normal segments and replaced (pending deletion) segments
-    // at the same time, to batch them together into as few DeleteObjects
-    // requests as possible
-    const size_t batch_size = 1000;
-    auto segment_i = manifest.begin();
-    auto replaced_i = replaced_segments.begin();
+    auto replaced_segments = manifest.lw_replaced_segments();
+    for (const auto& lw_meta : replaced_segments) {
+        const auto path = manifest.generate_segment_path(lw_meta);
+        ++segments_to_remove_count;
 
-    while (segment_i != manifest.end()
-           || replaced_i != replaced_segments.end()) {
-        std::vector<cloud_storage_clients::object_key> batch_keys;
-        batch_keys.reserve(batch_size);
+        objects_to_remove.emplace_back(path);
+        objects_to_remove.emplace_back(
+          cloud_storage::generate_remote_tx_path(path));
+        objects_to_remove.emplace_back(
+          cloud_storage::generate_index_path(path));
+    }
 
-        std::vector<cloud_storage_clients::object_key> tx_batch_keys;
-        tx_batch_keys.reserve(batch_size);
+    for (const auto& meta : manifest) {
+        const auto path = manifest.generate_segment_path(meta);
+        ++segments_to_remove_count;
 
-        std::vector<cloud_storage_clients::object_key> index_keys;
-        index_keys.reserve(batch_size);
+        objects_to_remove.emplace_back(path);
+        objects_to_remove.emplace_back(
+          cloud_storage::generate_remote_tx_path(path));
+        objects_to_remove.emplace_back(
+          cloud_storage::generate_index_path(path));
+    }
 
-        for (
-          size_t k = 0;
-          k < batch_size
-          && (segment_i != manifest.end() || replaced_i != replaced_segments.end());
-          ++k) {
-            remote_segment_path segment_path;
-            if (segment_i != manifest.end()) {
-                segment_path = manifest.generate_segment_path(*segment_i);
-                ++segment_i;
-            } else {
-                vassert(
-                  replaced_i != replaced_segments.end(),
-                  "Loop condition should ensure one iterator is always valid");
-                segment_path = manifest.generate_segment_path(*replaced_i);
-                ++replaced_i;
-            }
-            batch_keys.emplace_back(segment_path);
-            tx_batch_keys.emplace_back(
-              tx_range_manifest(segment_path).get_manifest_path());
-            index_keys.emplace_back(generate_index_path(segment_path));
-        }
-
+    vlog(
+      ctxlog.info,
+      "[{}] Erasing {} segments",
+      manifest.get_ntp(),
+      segments_to_remove_count);
+    if (
+      co_await api.delete_objects(
+        bucket, std::move(objects_to_remove), local_rtc)
+      != upload_result::success) {
         vlog(
           ctxlog.info,
-          "[{}] Erasing segments {}-{}",
-          manifest.get_ntp(),
-          *(batch_keys.begin()),
-          *(--batch_keys.end()));
-
-        for (auto& object_set : std::vector{
-               std::move(batch_keys),
-               std::move(tx_batch_keys),
-               std::move(index_keys)}) {
-            if (
-              co_await api.delete_objects(
-                bucket, std::move(object_set), local_rtc)
-              != upload_result::success) {
-                vlog(
-                  ctxlog.info,
-                  "[{}] Failed to erase some segments, deferring deletion",
-                  manifest.get_ntp());
-                co_return erase_result::failed;
-            }
-        }
+          "[{}] Failed to erase some segments, deferring deletion",
+          manifest.get_ntp());
+        co_return erase_result::failed;
     }
 
     // If we got this far, we succeeded deleting all objects referenced by
