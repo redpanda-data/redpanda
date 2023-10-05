@@ -88,11 +88,11 @@ ss::future<> client::connect() {
 
 namespace {
 template<typename Func>
-ss::future<> catch_and_log(Func&& f) noexcept {
+ss::future<> catch_and_log(client const& c, Func&& f) noexcept {
     return ss::futurize_invoke(std::forward<Func>(f))
       .discard_result()
-      .handle_exception([](std::exception_ptr e) {
-          vlog(kclog.debug, "exception during stop: {}", e);
+      .handle_exception([&c](std::exception_ptr e) {
+          vlog(kclog.debug, "{}exception during stop: {}", c, e);
       });
 }
 
@@ -100,23 +100,23 @@ ss::future<> catch_and_log(Func&& f) noexcept {
 
 ss::future<> client::stop() noexcept {
     co_await _gate.close();
-    co_await catch_and_log([this]() { return _producer.stop(); });
+    co_await catch_and_log(*this, [this]() { return _producer.stop(); });
     for (auto& [id, group] : _consumers) {
         while (!group.empty()) {
             auto c = *group.begin();
-            co_await catch_and_log([c]() {
+            co_await catch_and_log(*this, [c]() {
                 // The consumer is constructed with an on_stopped which erases
                 // istelf from the map after leave() completes.
                 return c->leave();
             });
         }
     }
-    co_await catch_and_log([this]() { return _brokers.stop(); });
+    co_await catch_and_log(*this, [this]() { return _brokers.stop(); });
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
     return ss::try_with_gate(_gate, [this]() {
-        vlog(kclog.debug, "updating metadata");
+        vlog(kclog.debug, "{}updating metadata", *this);
         return _brokers.any()
           .then([this](shared_broker_t broker) {
               return broker->dispatch(metadata_request{.list_all_topics = true})
@@ -134,7 +134,8 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
 
                     return apply(std::move(res));
                 })
-                .finally([]() { vlog(kclog.trace, "updated metadata"); });
+                .finally(
+                  [this]() { vlog(kclog.trace, "{}updated metadata", *this); });
           })
           .handle_exception_type(
             [this](const broker_error&) { return connect(); });
@@ -156,13 +157,13 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
           } catch (const broker_error& ex) {
               // If there are no brokers, reconnect
               if (ex.node_id == unknown_node_id) {
-                  vlog(kclog.warn, "broker_error: {}", ex);
+                  vlog(kclog.warn, "{}broker_error: {}", *this, ex);
                   return connect();
               } else if (ex.error == error_code::not_controller) {
-                  vlog(kclog.debug, "broker_error: {}", ex);
+                  vlog(kclog.debug, "{}broker_error: {}", *this, ex);
                   return _wait_or_start_update_metadata();
               } else {
-                  vlog(kclog.debug, "broker_error: {}", ex);
+                  vlog(kclog.debug, "{}broker_error: {}", *this, ex);
                   return _brokers.erase(ex.node_id).then([this]() {
                       return _wait_or_start_update_metadata();
                   });
@@ -170,10 +171,10 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
           } catch (const consumer_error& ex) {
               switch (ex.error) {
               case error_code::coordinator_not_available:
-                  vlog(kclog.debug, "consumer_error: {}", ex);
+                  vlog(kclog.debug, "{}consumer_error: {}", *this, ex);
                   return _wait_or_start_update_metadata();
               default:
-                  vlog(kclog.warn, "consumer_error: {}", ex);
+                  vlog(kclog.warn, "{}consumer_error: {}", *this, ex);
                   return ss::make_exception_future(ex);
               }
           } catch (const partition_error& ex) {
@@ -181,35 +182,35 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
               case error_code::unknown_topic_or_partition:
               case error_code::not_leader_for_partition:
               case error_code::leader_not_available: {
-                  vlog(kclog.debug, "partition_error: {}", ex);
+                  vlog(kclog.debug, "{}partition_error: {}", *this, ex);
                   return _wait_or_start_update_metadata();
               }
               default:
-                  vlog(kclog.warn, "partition_error: {}", ex);
+                  vlog(kclog.warn, "{}partition_error: {}", *this, ex);
                   return ss::make_exception_future(ex);
               }
           } catch (const topic_error& ex) {
               switch (ex.error) {
               case error_code::unknown_topic_or_partition:
-                  vlog(kclog.debug, "topic_error: {}", ex);
+                  vlog(kclog.debug, "{}topic_error: {}", *this, ex);
                   return _wait_or_start_update_metadata();
               default:
-                  vlog(kclog.warn, "topic_error: {}", ex);
+                  vlog(kclog.warn, "{}topic_error: {}", *this, ex);
                   return ss::make_exception_future(ex);
               }
           } catch (const ss::gate_closed_exception&) {
-              vlog(kclog.debug, "gate_closed_exception");
+              vlog(kclog.debug, "{}gate_closed_exception", *this);
           } catch (const std::system_error& ex) {
               if (net::is_reconnect_error(ex)) {
-                  vlog(kclog.debug, "system_error: {}", ex);
+                  vlog(kclog.debug, "{}system_error: {}", *this, ex);
                   return _wait_or_start_update_metadata();
               } else {
-                  vlog(kclog.warn, "system_error: {}", ex);
+                  vlog(kclog.warn, "{}system_error: {}", *this, ex);
                   return ss::make_exception_future(ex);
               }
           } catch (const std::exception& ex) {
               // TODO(Ben): Probably vassert
-              vlog(kclog.error, "unknown exception: {}", ex);
+              vlog(kclog.error, "{}unknown exception: {}", *this, ex);
           }
           return ss::make_exception_future(ex);
       });
@@ -221,7 +222,8 @@ ss::future<produce_response::partition> client::produce_record_batch(
       _gate, [this, tp{std::move(tp)}, batch{std::move(batch)}]() mutable {
           vlog(
             kclog.debug,
-            "produce record_batch: {}, {{record_count: {}}}",
+            "{}produce record_batch: {}, {{record_count: {}}}",
+            *this,
             tp,
             batch.record_count());
           return _producer.produce(std::move(tp), std::move(batch));
@@ -518,7 +520,12 @@ ss::future<kafka::fetch_response> client::consumer_fetch(
     const auto end = model::timeout_clock::now()
                      + std::min(config_timout, timeout.value_or(config_timout));
     return gated_retry_with_mitigation([this, g_id, name, end, max_bytes]() {
-        vlog(kclog.debug, "consumer_fetch: group_id: {}, name: {}", g_id, name);
+        vlog(
+          kclog.debug,
+          "{}consumer_fetch: group_id: {}, name: {}",
+          *this,
+          g_id,
+          name);
         return get_consumer(g_id, name)
           .then([end, max_bytes](shared_consumer_t c) {
               auto timeout = std::max(
