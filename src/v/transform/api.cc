@@ -15,6 +15,7 @@
 #include "cluster/plugin_frontend.h"
 #include "features/feature_table.h"
 #include "model/timeout_clock.h"
+#include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
 
@@ -25,6 +26,40 @@ namespace transform {
 namespace {
 constexpr auto wasm_binary_timeout = std::chrono::seconds(3);
 constexpr auto metadata_timeout = std::chrono::seconds(1);
+
+class rpc_client_sink final : public sink {
+public:
+    rpc_client_sink(model::ntp ntp, rpc::client* c)
+      : _ntp(std::move(ntp))
+      , _client(c) {}
+
+    ss::future<> write(ss::chunked_fifo<model::record_batch> batches) override {
+        auto ec = co_await _client->produce(_ntp.tp, std::move(batches));
+        if (ec != cluster::errc::success) {
+            throw std::runtime_error(ss::format(
+              "failure to produce transform data: {}",
+              cluster::error_category().message(int(ec))));
+        }
+    }
+
+private:
+    model::ntp _ntp;
+    rpc::client* _client;
+};
+
+class rpc_client_factory final : public sink::factory {
+public:
+    explicit rpc_client_factory(rpc::client* c)
+      : _client(c) {}
+
+    std::optional<std::unique_ptr<sink>> create(model::ntp ntp) override {
+        return std::make_unique<rpc_client_sink>(ntp, _client);
+    };
+
+private:
+    rpc::client* _client;
+};
+
 } // namespace
 
 service::service(
