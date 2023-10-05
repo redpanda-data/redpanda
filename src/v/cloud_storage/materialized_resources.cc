@@ -51,7 +51,8 @@ struct throughput_limit {
     size_t download_shard_throughput_limit = std::numeric_limits<size_t>::max();
 };
 
-// Compute integer multiplication and division without the integer overflow
+/// Compute integer multiplication and division without the integer overflow
+/// \returns val * mul / div
 inline size_t muldiv(size_t val, size_t mul, size_t div) {
     const auto dv = std::lldiv(
       static_cast<long long>(val), static_cast<long long>(div));
@@ -61,15 +62,19 @@ inline size_t muldiv(size_t val, size_t mul, size_t div) {
 // Get device throughput for the mountpoint
 inline ss::future<std::optional<device_throughput>>
 get_storage_device_throughput() {
+    if (config::shard_local_cfg().cloud_storage_enabled() == false) {
+        co_return std::nullopt;
+    }
     try {
         auto cache_path = config::node().cloud_storage_cache_path().native();
         auto fs = co_await ss::file_stat(cache_path);
         auto& queue = ss::engine().get_io_queue(fs.device_id);
         auto cfg = queue.get_config();
-        auto percent
-          = config::shard_local_cfg().cloud_storage_throughput_limit_percent();
+        auto percent = config::shard_local_cfg()
+                         .cloud_storage_throughput_limit_percent()
+                         .value_or(0);
         if (percent > 0) {
-            // percent == 0 indicates that the throttling is disabled
+            // percent == nullopt indicates that the throttling is disabled
             // intentionally
             co_return device_throughput{
               .read = muldiv(cfg.read_bytes_rate, percent, 100),
@@ -79,8 +84,9 @@ get_storage_device_throughput() {
     } catch (...) {
         vlog(
           cst_log.info,
-          "Can't get device throughput: {}",
-          std::current_exception());
+          "Can't get device throughput: {} for {} mountpoint",
+          std::current_exception(),
+          config::node().cloud_storage_cache_path().native());
     }
     co_return std::nullopt;
 }
@@ -90,11 +96,12 @@ get_storage_device_throughput() {
 inline throughput_limit get_hard_throughput_limit() {
     auto hard_limit = config::shard_local_cfg()
                         .cloud_storage_max_download_throughput_per_shard()
+                        .value_or(0)
                       * ss::smp::count;
 
     if (hard_limit == 0) {
         // Run tiered-storage without throttling by setting
-        // 'cloud_storage_max_download_throughput_per_shard' to 0
+        // 'cloud_storage_max_download_throughput_per_shard' to nullopt
         return {};
     }
 
@@ -110,14 +117,18 @@ inline throughput_limit
 get_throughput_limit(std::optional<size_t> device_throughput) {
     auto hard_limit = config::shard_local_cfg()
                         .cloud_storage_max_download_throughput_per_shard()
+                        .value_or(0)
                       * ss::smp::count;
 
     if (
-      config::shard_local_cfg().cloud_storage_throughput_limit_percent() == 0
+      config::shard_local_cfg()
+          .cloud_storage_throughput_limit_percent()
+          .value_or(0)
+        == 0
       || hard_limit == 0) {
         // Run tiered-storage without throttling by setting
-        // 'cloud_storage_throughput_limit_percent' to 0 or
-        // 'cloud_storage_max_download_throughput_per_shard' to 0
+        // 'cloud_storage_throughput_limit_percent' to nullopt or
+        // 'cloud_storage_max_download_throughput_per_shard' to nullopt
         return throughput_limit{};
     }
 
@@ -230,7 +241,7 @@ void materialized_resources::set_net_max_bandwidth(size_t tput) {
 
 ss::future<> materialized_resources::set_disk_max_bandwidth(size_t tput) {
     try {
-        if (tput == std::numeric_limits<size_t>::max()) {
+        if (tput == 0 || tput == std::numeric_limits<size_t>::max()) {
             _throttling_disabled = true;
             vlog(
               cst_log.info,

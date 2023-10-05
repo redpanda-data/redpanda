@@ -310,8 +310,10 @@ struct configuration final : public config_store {
     property<size_t> cloud_storage_recovery_temporary_retention_bytes_default;
     property<std::optional<size_t>> cloud_storage_segment_size_target;
     property<std::optional<size_t>> cloud_storage_segment_size_min;
-    property<size_t> cloud_storage_max_download_throughput_per_shard;
-    bounded_property<size_t> cloud_storage_throughput_limit_percent;
+    property<std::optional<size_t>>
+      cloud_storage_max_download_throughput_per_shard;
+    bounded_property<std::optional<size_t>>
+      cloud_storage_throughput_limit_percent;
     property<std::optional<std::chrono::milliseconds>>
       cloud_storage_graceful_transfer_timeout_ms;
     enum_property<model::cloud_storage_backend> cloud_storage_backend;
