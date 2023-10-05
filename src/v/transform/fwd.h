@@ -14,4 +14,7 @@
 namespace transform {
 class processor;
 class probe;
+namespace rpc {
+class client;
+}
 } // namespace transform

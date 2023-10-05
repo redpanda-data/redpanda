@@ -79,8 +79,8 @@ private:
     // the backoff policy for this processor for when we attempt to restart
     // the processor. If it's been enough time since our last restart of the
     // processor we will reset this.
-    rpc::backoff_policy _backoff
-      = rpc::make_exponential_backoff_policy<ClockType>(
+    ::rpc::backoff_policy _backoff
+      = ::rpc::make_exponential_backoff_policy<ClockType>(
         base_duration, max_duration);
 };
 
