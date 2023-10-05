@@ -22,7 +22,6 @@ licenses           @emaxerrno @dswang
 /cmake                     @redpanda-data/devprod        @benpope
 /install-dependencies.sh   @redpanda-data/devprod
 /.yapfignore               @redpanda-data/devprod
-/tools                     @redpanda-data/devprod
 
 #
 # rpk
