@@ -108,7 +108,7 @@ func Execute() {
 		plugincmd.NewCommand(fs),
 		registry.NewCommand(fs, p),
 		topic.NewCommand(fs, p),
-		transform.NewCommand(fs, p),
+		transform.NewCommand(fs, p, osExec),
 		version.NewCommand(fs, p),
 
 		newStatusCommand(), // deprecated
