@@ -408,8 +408,8 @@ class CloudCluster():
                                        self.provider_key, self.provider_secret)
         if self.config.type == CLOUD_TYPE_BYOC:
             # remove current plugin if any
-            if not self.utils.rpk_plugin_uninstall('byoc'):
-                self.utils.rpk_plugin_uninstall('byoc', sudo=True)
+            self.utils.rpk_plugin_uninstall('byoc', sudo=True)
+            self.utils.rpk_plugin_uninstall('byoc')
 
         # save context
         self._ctx = context
@@ -735,8 +735,13 @@ class CloudCluster():
         :return: clusterId, e.g. 'cimuhgmdcaa1uc1jtabc'
         """
         # Check if previous test saved cluster id
-        _id = self.safe_load_cluster_id()
-        if _id:
+        # also, configuration takes priority 
+        # so the cluster id would be loaded only once
+        # This will work for FMC and BYOC alike
+        _id = self.config.id
+        _id = self.safe_load_cluster_id() if not _id else _id
+        if _id and self.config.use_same_cluster:
+            # update config with new id
             self.config.id = _id
         # set network flag
         if not self.isPublicNetwork:
@@ -822,13 +827,13 @@ class CloudCluster():
                        err_msg='Unable to deterimine readiness '
                        f'of cloud cluster {self.current.name}')
 
-            # at this point cluster is ready and if this is byoc
-            # just save the id to reuse it in next test
-            if self.config.type == CLOUD_TYPE_BYOC:
-                self.save_cluster_id(_cluster_id)
-
             self.config.id, self.current.network_id = \
                 self._get_cluster_id_and_network_id()
+
+            # at this point cluster is ready
+            # just save the id to reuse it in next test
+            if self.config.use_same_cluster:
+                self.save_cluster_id(self.config.id)
 
         # Update Cluster console Url
         self.current.consoleUrl = self._get_cluster_console_url()
