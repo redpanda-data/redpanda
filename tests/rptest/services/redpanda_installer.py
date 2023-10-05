@@ -25,7 +25,7 @@ from ducktape.utils.util import wait_until
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
 
 RELEASES_CACHE_FILE = "/tmp/redpanda_releases.json"
-RELEASES_CACHE_FILE_TTL = timedelta(seconds=300)
+RELEASES_CACHE_FILE_TTL = timedelta(minutes=30)
 
 
 def wait_for_num_versions(redpanda, num_versions):
