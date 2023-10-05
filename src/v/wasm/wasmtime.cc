@@ -428,7 +428,6 @@ public:
     wasmtime_engine(
       ss::sstring user_module_name,
       handle<wasmtime_store_t, wasmtime_store_delete> s,
-      std::shared_ptr<wasmtime_module_t> user_module,
       std::unique_ptr<transform_module> transform_module,
       std::unique_ptr<schema_registry_module> sr_module,
       std::unique_ptr<wasi::preview1_module> wasi_module,
@@ -438,7 +437,6 @@ public:
       ssx::sharded_thread_worker* workers)
       : _user_module_name(std::move(user_module_name))
       , _store(std::move(s))
-      , _user_module(std::move(user_module))
       , _transform_module(std::move(transform_module))
       , _sr_module(std::move(sr_module))
       , _wasi_module(std::move(wasi_module))
@@ -616,7 +614,6 @@ private:
 
     ss::sstring _user_module_name;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
-    std::shared_ptr<wasmtime_module_t> _user_module;
     std::unique_ptr<transform_module> _transform_module;
     std::unique_ptr<schema_registry_module> _sr_module;
     std::unique_ptr<wasi::preview1_module> _wasi_module;
@@ -631,7 +628,7 @@ public:
     wasmtime_engine_factory(
       wasm_engine_t* engine,
       model::transform_metadata meta,
-      std::shared_ptr<wasmtime_module_t> mod,
+      handle<wasmtime_module_t, wasmtime_module_delete> mod,
       schema_registry* sr,
       ss::logger* l,
       ssx::sharded_thread_worker* w)
@@ -706,7 +703,6 @@ public:
                   return ss::make_shared<wasmtime_engine>(
                     std::move(name),
                     std::move(store),
-                    _module,
                     std::move(xform_module),
                     std::move(sr_module),
                     std::move(wasi_module),
@@ -720,7 +716,7 @@ public:
 
 private:
     wasm_engine_t* _engine;
-    std::shared_ptr<wasmtime_module_t> _module;
+    handle<wasmtime_module_t, wasmtime_module_delete> _module;
     model::transform_metadata _meta;
     schema_registry* _sr;
     ss::logger* _logger;
@@ -766,15 +762,15 @@ public:
                 wasmtime_module_new(
                   _engine.get(), b.data(), b.size(), &user_module_ptr)};
               check_error(error.get());
-              std::shared_ptr<wasmtime_module_t> user_module{
-                user_module_ptr, wasmtime_module_delete};
+              handle<wasmtime_module_t, wasmtime_module_delete> user_module{
+                user_module_ptr};
               wasm_log.info("Finished compiling wasm module {}", meta.name);
               return user_module;
           });
         co_return ss::make_shared<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
-          user_module,
+          std::move(user_module),
           _sr.get(),
           logger,
           &_alien_thread_pool);

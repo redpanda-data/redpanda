@@ -24,6 +24,8 @@ namespace wasm {
 /**
  * A wasm engine is a running VM loaded with a user module and capable of
  * transforming batches.
+ *
+ * A wasm engine is local to the core it was created on.
  */
 class engine {
 public:
@@ -50,6 +52,9 @@ public:
  * The idea is that factory has a cached version of the parsed module so the
  * parsing/validation of a wasm module can be only done once and then the
  * attaching to an engine becomes a very fast operation.
+ *
+ * This object is safe to use across multiple threads concurrently. It only uses
+ * local state (and a few std::shared_ptr) to create engines.
  */
 class factory {
 public:
@@ -85,6 +90,9 @@ public:
     /**
      * Create a factory for this transform and the corresponding source wasm
      * module.
+     *
+     * This must only be called on a single shard, but the resulting factory
+     * can be used on any shard and is thread-safe.
      */
     virtual ss::future<ss::shared_ptr<factory>>
     make_factory(model::transform_metadata, iobuf, ss::logger*) = 0;
