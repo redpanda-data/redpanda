@@ -347,7 +347,7 @@ public:
         return _received_snapshot_index;
     }
     size_t received_snapshot_bytes() const { return _received_snapshot_bytes; }
-    bool has_pending_flushes() const { return _has_pending_flushes; }
+    bool has_pending_flushes() const { return _not_flushed_bytes > 0; }
 
     model::offset start_offset() const {
         return model::next_offset(_last_snapshot_index);
@@ -452,6 +452,12 @@ public:
 
     bool stopped() const { return _bg.is_closed(); }
 
+    /**
+     * Flushes underlying log only if there are more not flushed bytes than the
+     * requested threshold.
+     */
+    ss::future<> maybe_flush_log(size_t threshold_bytes);
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -547,7 +553,8 @@ private:
     void trigger_leadership_notification();
 
     /// \brief _does not_ hold the lock.
-    ss::future<> flush_log();
+    using flushed = ss::bool_class<struct flushed_executed_tag>;
+    ss::future<flushed> flush_log();
 
     void maybe_step_down();
 
@@ -735,7 +742,7 @@ private:
     follower_stats _fstats;
 
     replicate_batcher _batcher;
-    bool _has_pending_flushes{false};
+    size_t _not_flushed_bytes{0};
 
     /// used to wait for background ops before shutting down
     ss::gate _bg;
