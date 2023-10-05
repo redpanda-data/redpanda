@@ -29,6 +29,7 @@ public:
 
     explicit handler_probe();
     void setup_metrics(ss::metrics::metric_groups&, api_key);
+    void setup_public_metrics(ss::metrics::metric_groups&, api_key);
 
     void sample_in_progress();
     void request_completed() {
@@ -88,6 +89,8 @@ public:
 
 private:
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
     std::vector<handler_probe> _probes;
 };
 
