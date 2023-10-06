@@ -1527,10 +1527,7 @@ admin_server::patch_cluster_config_handler(
         // log.
         auto& cfg = config::shard_local_cfg();
         auto prev_val = config::to_yaml(cfg, config::redact_secrets::no);
-        auto restore_prev_val = ss::defer(
-          [&] {
-              cfg.read_yaml(prev_val, {});
-          });
+        auto restore_prev_val = ss::defer([&] { cfg.read_yaml(prev_val, {}); });
         // Configuration properties cannot do multi-property validation
         // themselves, so there is some special casing here for critical
         // properties.
