@@ -25,6 +25,9 @@
 #include "transform/transform_processor.h"
 #include "wasm/api.h"
 
+#include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/optimized_optional.hh>
 
@@ -230,9 +233,33 @@ service::service(
 
 service::~service() = default;
 
-ss::future<> service::start() { throw std::runtime_error("unimplemented"); }
+ss::future<> service::start() {
+    std::unique_ptr<partition_source_factory> source_factory
+      = std::make_unique<partition_source_factory>(
+        &_partition_manager->local());
+    std::unique_ptr<sink::factory> sink_factory
+      = std::make_unique<rpc_client_factory>(&_rpc_client->local());
 
-ss::future<> service::stop() { throw std::runtime_error("unimplemented"); }
+    _manager = std::make_unique<manager<ss::lowres_clock>>(
+      std::make_unique<registry_adapter>(
+        &_plugin_frontend->local(), &_partition_manager->local()),
+      std::make_unique<proc_factory>(
+        [this](model::transform_metadata meta) {
+            return create_engine(std::move(meta));
+        },
+        std::move(source_factory),
+        std::move(sink_factory)));
+    co_await _manager->start();
+}
+
+ss::future<> service::stop() {
+    co_await _gate.close();
+    // It's possible to call stop before start, so make sure we created the
+    // manager.
+    if (_manager) {
+        co_await _manager->stop();
+    }
+}
 
 ss::future<cluster::errc>
 service::delete_transform(model::transform_name name) {
@@ -319,6 +346,44 @@ ss::future<> service::cleanup_wasm_binary(uuid_t key) {
       tlog.debug,
       "cleaning up wasm binary failed: {}",
       cluster::error_category().message(int(ec)));
+}
+
+ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>
+service::create_engine(model::transform_metadata meta) {
+    auto factory = co_await get_factory(std::move(meta));
+    if (!factory) {
+        co_return ss::shared_ptr<wasm::engine>(nullptr);
+    }
+    co_return co_await (*factory)->make_engine();
+}
+
+ss::future<
+  ss::optimized_optional<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>>
+service::get_factory(model::transform_metadata meta) {
+    constexpr ss::shard_id creation_shard = 0;
+    // TODO(rockwood): Consider caching factories core local (or moving that
+    // optimization into the caching runtime.
+    if (ss::this_shard_id() != creation_shard) {
+        co_return co_await container().invoke_on(
+          creation_shard,
+          [](service& s, model::transform_metadata meta) {
+              return s.get_factory(std::move(meta));
+          },
+          std::move(meta));
+    }
+    // TODO(rockwood): We shouldn't make this RPC everytime.
+    auto result = co_await _rpc_client->local().load_wasm_binary(
+      meta.source_ptr, wasm_binary_timeout);
+    if (result.has_error()) {
+        vlog(
+          tlog.warn,
+          "unable to load wasm binary for transform {}: {}",
+          meta.name,
+          cluster::error_category().message(int(result.error())));
+        co_return ss::foreign_ptr<ss::shared_ptr<wasm::factory>>(nullptr);
+    }
+    co_return co_await _runtime->make_factory(
+      std::move(meta), std::move(result).value(), &tlog);
 }
 
 } // namespace transform

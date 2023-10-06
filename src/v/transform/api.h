@@ -20,6 +20,7 @@
 #include "transform/fwd.h"
 #include "wasm/fwd.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 
 namespace transform {
@@ -64,6 +65,13 @@ public:
 private:
     ss::future<> cleanup_wasm_binary(uuid_t);
 
+    ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>
+      create_engine(model::transform_metadata);
+
+    ss::future<
+      ss::optimized_optional<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>>
+      get_factory(model::transform_metadata);
+
     ss::gate _gate;
 
     wasm::runtime* _runtime;
@@ -73,6 +81,7 @@ private:
     ss::sharded<raft::group_manager>* _group_manager;
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<rpc::client>* _rpc_client;
+    std::unique_ptr<manager<ss::lowres_clock>> _manager;
 };
 
 } // namespace transform
