@@ -15,6 +15,7 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
+#include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
@@ -52,10 +53,13 @@
 #include "test_utils/logs.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <fmt/format.h>
 
 #include <chrono>
@@ -580,6 +584,40 @@ public:
           });
     }
 
+    ss::future<model::offset> wait_for_quiescent_controller_committed_offset(
+      std::chrono::milliseconds quiescent_time = 2s,
+      std::chrono::milliseconds timeout = 10s) {
+        model::offset last_committed_offset;
+        auto last_update_ts = model::timeout_clock::now();
+        const auto start_ts = last_update_ts;
+        while (model::timeout_clock::now() - last_update_ts < quiescent_time) {
+            auto current_committed_offset
+              = co_await app.partition_manager.invoke_on(
+                cluster::controller_stm_shard,
+                [](cluster::partition_manager& p_mgr) {
+                    auto ctrl_p = p_mgr.get(model::controller_ntp);
+                    vassert(ctrl_p, "Controller partition must exists");
+                    return ctrl_p->linearizable_barrier().then(
+                      [ctrl_p](result<model::offset> o) {
+                          return ctrl_p->committed_offset();
+                      });
+                });
+            auto now = model::timeout_clock::now();
+            if (now > start_ts + timeout) {
+                throw std::runtime_error(
+                  "Timeout waiting for controller to reach quiestent state");
+            }
+
+            if (current_committed_offset != last_committed_offset) {
+                last_update_ts = model::timeout_clock::now();
+            }
+
+            last_committed_offset = current_committed_offset;
+        }
+
+        co_return last_committed_offset;
+    }
+
     /**
      * Predict the revision ID of the next partition to be created.  Useful
      * if you want to pre-populate data directory.
@@ -589,21 +627,14 @@ public:
         auto shard = app.shard_table.local().shard_for(ntp);
         assert(shard);
         // flush any in flight changes for a consistent committed_offset.
-        app.partition_manager
-          .invoke_on(
-            *shard,
-            [ntp](cluster::partition_manager& mgr) {
-                auto partition = mgr.get(ntp);
-                assert(partition);
-                return partition->linearizable_barrier();
-            })
-          .get();
-        return app.partition_manager.invoke_on(
+        co_await wait_for_quiescent_controller_committed_offset();
+
+        co_return co_await app.partition_manager.invoke_on(
           *shard, [ntp](cluster::partition_manager& mgr) -> model::revision_id {
               auto partition = mgr.get(ntp);
               assert(partition);
-              return model::revision_id{partition->committed_offset()}
-                     + model::offset{1};
+              return model::revision_id{
+                model::next_offset(partition->committed_offset())};
           });
     }
 
