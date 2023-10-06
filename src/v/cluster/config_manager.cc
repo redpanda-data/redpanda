@@ -54,6 +54,55 @@ static constexpr std::string_view cache_file = "config_cache.yaml";
 // The filename within the data directory to use for first-start bootstrap
 static constexpr std::string_view bootstrap_file = ".bootstrap.yaml";
 
+static auto sanitize_prop(std::string_view alias) -> ss::sstring {
+    if (!config::shard_local_cfg().contains(alias)) {
+        return ss::sstring{alias};
+    }
+    return ss::sstring{config::shard_local_cfg().get(alias).name()};
+}
+
+static auto sanitize_property_names(std::map<ss::sstring, ss::sstring> in)
+  -> std::map<ss::sstring, ss::sstring> {
+    auto& cfg = config::shard_local_cfg();
+    auto aliases = cfg.property_aliases();
+    auto to_merge = std::map<std::string_view, decltype(in)::node_type>{};
+    for (auto alias : aliases) {
+        // this also removes the alias from in
+        auto alias_node = in.extract(ss::sstring{alias});
+        if (alias_node.empty()) {
+            continue;
+        }
+        auto proper_name = cfg.get(alias).name();
+        if (auto it = to_merge.find(proper_name); it != to_merge.end()) {
+            vlog(
+              clusterlog.error,
+              "property with alias {} is already going to be inserted as {}={}",
+              alias,
+              proper_name,
+              it->second.mapped());
+        }
+
+        to_merge[proper_name] = std::move(alias_node);
+    }
+
+    for (auto& [k, n] : to_merge) {
+        auto key = ss::sstring(k);
+        if (auto it = in.find(key); it != in.end()) {
+            vlog(
+              clusterlog.error,
+              "property_name {}={} is already populated and is going to be "
+              "replaced with value from alias {}={}",
+              it->first,
+              it->second,
+              n.key(),
+              n.mapped());
+        }
+        in[std::move(key)] = std::move(n.mapped());
+    }
+
+    return in;
+}
+
 config_manager::config_manager(
   config_manager::preload_result preload,
   ss::sharded<config_frontend>& cf,
@@ -75,7 +124,7 @@ config_manager::config_manager(
         _seen_version = preload.version;
         my_latest_status.node = _self;
         my_latest_status.version = preload.version;
-        _raw_values = preload.raw_values;
+        _raw_values = sanitize_property_names(std::move(preload.raw_values));
         my_latest_status.invalid = preload.invalid;
         my_latest_status.unknown = preload.unknown;
         /**
@@ -307,7 +356,7 @@ static void preload_local(
 
             if (result.has_value()) {
                 vlog(
-                  clusterlog.trace,
+                  clusterlog.info,
                   "Loaded property {}={} from local cache",
                   key,
                   property.format_raw(YAML::Dump(decoded)));
@@ -336,7 +385,6 @@ static void preload_local(
   std::optional<std::reference_wrapper<config_manager::preload_result>>
     result) {
     auto& cfg = config::shard_local_cfg();
-    auto& property = cfg.get(key);
     if (cfg.contains(key)) {
         std::string raw_value;
         try {
@@ -347,7 +395,7 @@ static void preload_local(
                   clusterlog.info,
                   "Ignoring invalid property: {}={}",
                   key,
-                  property.format_raw(YAML::Dump(value)));
+                  cfg.get(key).format_raw(YAML::Dump(value)));
                 result.value().get().invalid.push_back(key);
             }
             return;
@@ -368,9 +416,9 @@ config_manager::preload_join(const controller_join_snapshot& snap) {
 
     result.version = snap.config.version;
     for (const auto& i : snap.config.values) {
-        result.raw_values.insert(i);
-        auto& key = i.first;
+        auto key = sanitize_prop(i.first);
         auto& value = i.second;
+        result.raw_values[key] = value;
 
         // Run locally to get validation fields of result
         preload_local(key, value, std::ref(result));
@@ -792,7 +840,7 @@ void config_manager::merge_apply_result(
 ss::future<>
 config_manager::store_delta(cluster_config_delta_cmd_data const& data) {
     for (const auto& u : data.upsert) {
-        _raw_values[u.key] = u.value;
+        _raw_values[u.key] = sanitize_prop(u.value);
     }
     for (const auto& d : data.remove) {
         _raw_values.erase(d);
