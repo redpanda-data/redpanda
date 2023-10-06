@@ -68,14 +68,14 @@ enum class segment_name_format : int16_t {
 
 std::ostream& operator<<(std::ostream& o, const segment_name_format& r);
 
-enum class download_result : int32_t {
+enum class [[nodiscard]] download_result : int32_t {
     success,
     notfound,
     timedout,
     failed,
 };
 
-enum class upload_result : int32_t {
+enum class [[nodiscard]] upload_result : int32_t {
     success,
     timedout,
     failed,

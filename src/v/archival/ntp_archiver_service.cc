@@ -1194,7 +1194,11 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
           _conf->cloud_storage_initial_backoff,
           &rtc.get());
 
-        co_await _remote.upload_object(
+        // If we fail to upload the index but successfully upload the segment,
+        // the read path will create the index on the fly while downloading the
+        // segment, so it is okay to ignore the index upload failure, we still
+        // want to advance the offsets because the segment did get uploaded.
+        std::ignore = co_await _remote.upload_object(
           _conf->bucket_name,
           cloud_storage_clients::object_key{index_path},
           idx_res->index.to_iobuf(),
@@ -2041,7 +2045,11 @@ ntp_archiver::maybe_truncate_manifest() {
             vlog(
               ctxlog.debug,
               "archival metadata STM update passed, re-uploading manifest");
-            co_await upload_manifest(sync_local_state_ctx_label);
+
+            // The manifest upload will be retried after some time because the
+            // STM will have the 'dirty' flag set. `upload_manifest` will log an
+            // error so it won't be invisible.
+            std::ignore = co_await upload_manifest(sync_local_state_ctx_label);
         }
         vlog(
           ctxlog.info,
