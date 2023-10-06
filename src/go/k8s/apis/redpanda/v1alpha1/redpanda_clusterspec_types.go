@@ -75,20 +75,20 @@ type ConfigWatcher struct {
 	SecurityContext   *corev1.SecurityContext      `json:"SecurityContext,omitempty"`
 }
 
-// RedpandaImage is a top level field of the values file
+// RedpandaImage is a top-level field of the values file
 type RedpandaImage struct {
 	Repository *string `json:"repository,omitempty"`
 	Tag        *string `json:"tag,omitempty"`
 	PullPolicy *string `json:"pullPolicy,omitempty"`
 }
 
-// LicenseSecretRef is a top level field of the values file
+// LicenseSecretRef is a top-level field of the values file
 type LicenseSecretRef struct {
 	SecretKey  *string `json:"secret_key,omitempty"`
 	SecretName *string `json:"secret_name,omitempty"`
 }
 
-// RackAwareness is a top level field of the values file
+// RackAwareness is a top-level field of the values file
 type RackAwareness struct {
 	Enabled        bool   `json:"enabled"`
 	NodeAnnotation string `json:"nodeAnnotation"`
@@ -160,12 +160,12 @@ type ConsoleCreateObj struct {
 	Create bool `json:"create"`
 }
 
-// Auth is a top level field of the values file
+// Auth is a top-level field of the values file
 type Auth struct {
 	SASL *SASL `json:"sasl"`
 }
 
-// SASL is a top level field of the values file
+// SASL is a top-level field of the values file
 type SASL struct {
 	Enabled   bool         `json:"enabled"`
 	Mechanism *string      `json:"mechanism,omitempty"`
@@ -173,14 +173,14 @@ type SASL struct {
 	Users     []UsersItems `json:"users"`
 }
 
-// UsersItems is a top level field of the values file
+// UsersItems is a top-level field of the values file
 type UsersItems struct {
 	Mechanism *string `json:"mechanism,omitempty"`
 	Name      *string `json:"name,omitempty"`
 	Password  *string `json:"password,omitempty"`
 }
 
-// TLS is a top level field of the values file
+// TLS is a top-level field of the values file
 type TLS struct {
 	Certs   map[string]*Certificate `json:"certs,omitempty"`
 	Enabled *bool                   `json:"enabled,omitempty"`
@@ -202,7 +202,7 @@ type SecretRef struct {
 	Name string `json:"name"`
 }
 
-// ListenerTLS is a top level field of the values file
+// ListenerTLS is a top-level field of the values file
 type ListenerTLS struct {
 	Cert              *string `json:"cert,omitempty"`
 	Enabled           *bool   `json:"enabled,omitempty"`
@@ -214,7 +214,7 @@ type ExternalService struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// External is a top level field of the values file
+// External is a top-level field of the values file
 type External struct {
 	Addresses    []string          `json:"addresses,omitempty"`
 	Annotations  map[string]string `json:"annotations,omitempty"`
@@ -226,7 +226,7 @@ type External struct {
 	ExternalDNS  *ExternalDNS      `json:"externalDns,omitempty"`
 }
 
-// Logging is a top level field of the values file
+// Logging is a top-level field of the values file
 type Logging struct {
 	LogLevel   string     `json:"logLevel"`
 	UsageStats UsageStats `json:"usageStats"`
@@ -243,19 +243,19 @@ type Resources struct {
 	Memory *Memory `json:"memory,omitempty"`
 }
 
-// Limits is a top level field of the values file
+// Limits is a top-level field of the values file
 type Limits struct {
 	CPU    *int    `json:"cpu,omitempty"`
 	Memory *string `json:"memory,omitempty"`
 }
 
-// Requests is a top level field of the values file
+// Requests is a top-level field of the values file
 type Requests struct {
 	CPU    *int    `json:"cpu,omitempty"`
 	Memory *string `json:"memory,omitempty"`
 }
 
-// Storage is a top level field of the values file
+// Storage is a top-level field of the values file
 type Storage struct {
 	HostPath         *string           `json:"hostPath,omitempty"`
 	PersistentVolume *PersistentVolume `json:"persistentVolume,omitempty"`
@@ -269,7 +269,7 @@ type Tiered struct {
 	Config                        *TieredConfig                  `json:"config,omitempty"`
 }
 
-// TieredConfig is a top level field of the values file
+// TieredConfig is a top-level field of the values file
 type TieredConfig struct {
 	CloudStorageEnabled                     *string `json:"cloud_storage_enabled,omitempty"`
 	CloudStorageAPIEndpoint                 *string `json:"cloud_storage_api_endpoint,omitempty"`
@@ -298,23 +298,23 @@ type TieredConfig struct {
 	CloudStorageUploadCtrlUpdateIntervalMs  *int    `json:"cloud_storage_upload_ctrl_update_interval_ms,omitempty"`
 }
 
-// TieredStoragePersistentVolume is a top level field of the values file
+// TieredStoragePersistentVolume is a top-level field of the values file
 type TieredStoragePersistentVolume struct {
 	Annotations  map[string]string `json:"annotations,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
 	StorageClass *string           `json:"storageClass,omitempty"`
 }
 
-// PersistentVolume is a top level field of the values file
+// PersistentVolume is a top-level field of the values file
 type PersistentVolume struct {
 	Annotations  map[string]string `json:"annotations,omitempty"`
-	Enabled      *bool             `json:"enabled"`
+	Enabled      *bool             `json:"enabled,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
 	Size         *string           `json:"size,omitempty"`
 	StorageClass *string           `json:"storageClass,omitempty"`
 }
 
-// PostInstallJob is a top level field of the values file
+// PostInstallJob is a top-level field of the values file
 type PostInstallJob struct {
 	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
 	Annotations map[string]string            `json:"annotations,omitempty"`
@@ -322,7 +322,7 @@ type PostInstallJob struct {
 	Labels      map[string]string            `json:"labels,omitempty"`
 }
 
-// PostUpgradeJob is a top level field of the values file
+// PostUpgradeJob is a top-level field of the values file
 type PostUpgradeJob struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 	Enabled     bool              `json:"enabled"`
@@ -334,7 +334,7 @@ type PostUpgradeJob struct {
 	Resources    *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
-// Statefulset is a top level field of the values file
+// Statefulset is a top-level field of the values file
 type Statefulset struct {
 	AdditionalRedpandaCmdFlags    []string                   `json:"additionalRedpandaCmdFlags,omitempty"`
 	Annotations                   map[string]string          `json:"annotations,omitempty"`
@@ -360,33 +360,33 @@ type Statefulset struct {
 	TerminationGracePeriodSeconds *int                       `json:"terminationGracePeriodSeconds,omitempty"`
 }
 
-// Budget is a top level field of the values file
+// Budget is a top-level field of the values file
 type Budget struct {
 	MaxUnavailable int `json:"maxUnavailable"`
 }
 
-// LivenessProbe is a top level field of the values file
+// LivenessProbe is a top-level field of the values file
 type LivenessProbe struct {
 	FailureThreshold    int `json:"failureThreshold"`
 	InitialDelaySeconds int `json:"initialDelaySeconds"`
 	PeriodSeconds       int `json:"periodSeconds"`
 }
 
-// ReadinessProbe is a top level field of the values file
+// ReadinessProbe is a top-level field of the values file
 type ReadinessProbe struct {
 	FailureThreshold    int `json:"failureThreshold"`
 	InitialDelaySeconds int `json:"initialDelaySeconds"`
 	PeriodSeconds       int `json:"periodSeconds"`
 }
 
-// StartupProbe is a top level field of the values file
+// StartupProbe is a top-level field of the values file
 type StartupProbe struct {
 	FailureThreshold    int `json:"failureThreshold"`
 	InitialDelaySeconds int `json:"initialDelaySeconds"`
 	PeriodSeconds       int `json:"periodSeconds"`
 }
 
-// PodAntiAffinity is a top level field of the values file
+// PodAntiAffinity is a top-level field of the values file
 type PodAntiAffinity struct {
 	TopologyKey string `json:"topologyKey"`
 	Type        string `json:"type"`
@@ -395,19 +395,19 @@ type PodAntiAffinity struct {
 	Custom *runtime.RawExtension `json:"custom,omitempty"`
 }
 
-// TopologySpreadConstraints is a top level field of the values file
+// TopologySpreadConstraints is a top-level field of the values file
 type TopologySpreadConstraints struct {
 	MaxSkew           int    `json:"maxSkew"`
 	TopologyKey       string `json:"topologyKey"`
 	WhenUnsatisfiable string `json:"whenUnsatisfiable"`
 }
 
-// UpdateStrategy is a top level field of the values file
+// UpdateStrategy is a top-level field of the values file
 type UpdateStrategy struct {
 	Type string `json:"type"`
 }
 
-// Tuning is a top level field of the values file
+// Tuning is a top-level field of the values file
 type Tuning struct {
 	ExtraVolumeMounts string                       `json:"extraVolumeMounts,omitempty"`
 	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -419,7 +419,7 @@ type Tuning struct {
 	WellKnownIo       *string                      `json:"well_known_io,omitempty"`
 }
 
-// Listeners is a top level field of the values file
+// Listeners is a top-level field of the values file
 type Listeners struct {
 	Admin          *Admin          `json:"admin,omitempty"`
 	HTTP           *HTTP           `json:"http,omitempty"`
@@ -435,14 +435,14 @@ type ExternalListener struct {
 	AdvertisedPorts      []int        `json:"advertisedPorts,omitempty"`
 }
 
-// Admin is a top level field of the values file
+// Admin is a top-level field of the values file
 type Admin struct {
 	External map[string]*ExternalListener `json:"external,omitempty"`
 	Port     *int                         `json:"port,omitempty"`
 	TLS      *ListenerTLS                 `json:"tls,omitempty"`
 }
 
-// HTTP is a top level field of the values file`
+// HTTP is a top-level field of the values file`
 type HTTP struct {
 	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
 	Enabled              *bool                        `json:"enabled,omitempty"`
@@ -452,7 +452,7 @@ type HTTP struct {
 	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
 }
 
-// Kafka is a top level field of the values file
+// Kafka is a top-level field of the values file
 type Kafka struct {
 	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
 	External             map[string]*ExternalListener `json:"external,omitempty"`
@@ -460,13 +460,13 @@ type Kafka struct {
 	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
 }
 
-// RPC is a top level field of the values file
+// RPC is a top-level field of the values file
 type RPC struct {
 	Port *int         `json:"port,omitempty"`
 	TLS  *ListenerTLS `json:"tls,omitempty"`
 }
 
-// SchemaRegistry is a top level field of the values file
+// SchemaRegistry is a top-level field of the values file
 type SchemaRegistry struct {
 	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
 	Enabled              *bool                        `json:"enabled,omitempty"`
@@ -476,7 +476,7 @@ type SchemaRegistry struct {
 	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
 }
 
-// Config is a top level field of the values file
+// Config is a top-level field of the values file
 type Config struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Cluster *runtime.RawExtension `json:"cluster,omitempty"`
