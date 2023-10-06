@@ -34,6 +34,7 @@
 namespace cluster {
 
 namespace cloud_metadata {
+class cluster_recovery_backend;
 class uploader;
 } // namespace cloud_metadata
 
@@ -51,6 +52,7 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cloud_storage::remote>&,
+      ss::sharded<cloud_storage::cache>&,
       ss::sharded<node_status_table>&,
       ss::sharded<cluster::metadata_cache>&);
 
@@ -144,6 +146,10 @@ public:
 
     ss::sharded<cluster_recovery_manager>& get_cluster_recovery_manager() {
         return _recovery_manager;
+    }
+
+    cloud_metadata::cluster_recovery_backend& get_cluster_recovery_backend() {
+        return *_recovery_backend;
     }
 
     ss::sharded<cluster_recovery_table>& get_cluster_recovery_table() {
@@ -277,10 +283,12 @@ private:
     std::unique_ptr<cloud_metadata::uploader> _metadata_uploader;
     ss::sharded<cluster_recovery_table> _recovery_table; // instance per core
     ss::sharded<cluster_recovery_manager> _recovery_manager; // single instance
+    std::unique_ptr<cloud_metadata::cluster_recovery_backend> _recovery_backend;
 
     ss::gate _gate;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<cloud_storage::cache>& _cloud_cache;
     ss::sharded<node_status_table>& _node_status_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     controller_probe _probe;
