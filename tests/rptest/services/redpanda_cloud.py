@@ -735,7 +735,7 @@ class CloudCluster():
         :return: clusterId, e.g. 'cimuhgmdcaa1uc1jtabc'
         """
         # Check if previous test saved cluster id
-        # also, configuration takes priority 
+        # also, configuration takes priority
         # so the cluster id would be loaded only once
         # This will work for FMC and BYOC alike
         _id = self.config.id
