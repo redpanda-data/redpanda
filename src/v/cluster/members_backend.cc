@@ -340,6 +340,15 @@ ss::future<std::error_code> members_backend::reconcile() {
 
     // process one update at a time
     vassert(!_updates.empty(), "_updates was empty");
+
+    // remove those decommissioned nodes which doesn't have any pending
+    // reallocations
+    for (auto& meta : _updates) {
+        if (meta.update.type == node_update_type::decommissioned) {
+            co_await maybe_finish_decommissioning(meta);
+        }
+    }
+
     auto& meta = _updates.front();
 
     // leadership changed, drop not yet requested reallocations to make sure
@@ -421,48 +430,51 @@ ss::future<std::error_code> members_backend::reconcile() {
           return reconcile_reallocation_state(pair.first, pair.second);
       });
 
-    // remove those decommissioned nodes which doesn't have any pending
-    // reallocations
-    if (meta.update.type == node_update_type::decommissioned) {
-        auto node = _members.local().get_node_metadata_ref(meta.update.id);
-        if (!node) {
-            vlog(
-              clusterlog.debug,
-              "reconcile: node {} is gone, returning",
-              meta.update.id);
-            co_return errc::success;
-        }
-        const auto is_draining = node->get().state.get_membership_state()
-                                 == model::membership_state::draining;
-
-        const auto allocator_empty = _allocator.local().is_empty(
-          meta.update.id);
-        if (is_draining && allocator_empty) {
-            // we can safely discard the result since action is going to be
-            // retried if it fails
-            vlog(
-              clusterlog.info,
-              "[update: {}] decommissioning finished, removing node from "
-              "cluster",
-              meta.update);
-            co_await do_remove_node(meta.update.id);
-        } else {
-            // Decommissioning still in progress
-            vlog(
-              clusterlog.info,
-              "[update: {}] decommissioning in progress. "
-              "draining: {}, allocator_empty: {}",
-              meta.update,
-              is_draining,
-              allocator_empty);
-        }
-    }
     // remove finished reallocations
     absl::erase_if(meta.partition_reallocations, [](const auto& r) {
         return r.second.state == reallocation_state::finished;
     });
 
     co_return errc::update_in_progress;
+}
+
+ss::future<> members_backend::maybe_finish_decommissioning(update_meta& meta) {
+    vlog(
+      clusterlog.trace,
+      "[update: {}] checking if node decommissioning finished",
+      meta.update);
+    auto node = _members.local().get_node_metadata_ref(meta.update.id);
+    if (!node) {
+        vlog(
+          clusterlog.debug,
+          "reconcile: node {} is gone, returning",
+          meta.update.id);
+        co_return;
+    }
+    const auto is_draining = node->get().state.get_membership_state()
+                             == model::membership_state::draining;
+
+    const auto allocator_empty = _allocator.local().is_empty(meta.update.id);
+    if (is_draining && allocator_empty) {
+        // we can safely discard the result since action is going to be
+        // retried if it fails
+        vlog(
+          clusterlog.info,
+          "[update: {}] decommissioning finished, removing node from "
+          "cluster",
+          meta.update);
+        co_await do_remove_node(meta.update.id);
+        meta.finished = true;
+    } else {
+        // Decommissioning still in progress
+        vlog(
+          clusterlog.info,
+          "[update: {}] decommissioning in progress. draining: {}, "
+          "allocator_empty: {}",
+          meta.update,
+          is_draining,
+          allocator_empty);
+    }
 }
 
 ss::future<std::error_code> members_backend::do_remove_node(model::node_id id) {
