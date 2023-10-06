@@ -28,6 +28,7 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <wasmtime/config.h>
 #include <wasmtime/error.h>
@@ -426,9 +427,7 @@ class wasmtime_engine : public engine {
 public:
     wasmtime_engine(
       ss::sstring user_module_name,
-      handle<wasmtime_linker_t, wasmtime_linker_delete> l,
       handle<wasmtime_store_t, wasmtime_store_delete> s,
-      std::shared_ptr<wasmtime_module_t> user_module,
       std::unique_ptr<transform_module> transform_module,
       std::unique_ptr<schema_registry_module> sr_module,
       std::unique_ptr<wasi::preview1_module> wasi_module,
@@ -438,11 +437,9 @@ public:
       ssx::sharded_thread_worker* workers)
       : _user_module_name(std::move(user_module_name))
       , _store(std::move(s))
-      , _user_module(std::move(user_module))
       , _transform_module(std::move(transform_module))
       , _sr_module(std::move(sr_module))
       , _wasi_module(std::move(wasi_module))
-      , _linker(std::move(l))
       , _instance(instance)
       , _alien_thread_pool(workers)
       , _host_function_environments(std::move(host_function_environments)) {}
@@ -452,8 +449,6 @@ public:
     wasmtime_engine& operator=(wasmtime_engine&&) = default;
 
     ~wasmtime_engine() override = default;
-
-    std::string_view function_name() const final { return _user_module_name; }
 
     uint64_t memory_usage_size_bytes() const final {
         std::string_view memory_export_name = "memory";
@@ -471,9 +466,7 @@ public:
         return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
-    ss::future<> start() final { co_return; }
-
-    ss::future<> initialize() final { return initialize_wasi(); }
+    ss::future<> start() final { return initialize_wasi(); }
 
     ss::future<> stop() final { co_return; }
 
@@ -621,11 +614,9 @@ private:
 
     ss::sstring _user_module_name;
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
-    std::shared_ptr<wasmtime_module_t> _user_module;
     std::unique_ptr<transform_module> _transform_module;
     std::unique_ptr<schema_registry_module> _sr_module;
     std::unique_ptr<wasi::preview1_module> _wasi_module;
-    handle<wasmtime_linker_t, wasmtime_linker_delete> _linker;
     wasmtime_instance_t _instance;
     ssx::sharded_thread_worker* _alien_thread_pool;
     std::vector<std::unique_ptr<host_function_environment>>
@@ -637,7 +628,7 @@ public:
     wasmtime_engine_factory(
       wasm_engine_t* engine,
       model::transform_metadata meta,
-      std::shared_ptr<wasmtime_module_t> mod,
+      handle<wasmtime_module_t, wasmtime_module_delete> mod,
       schema_registry* sr,
       ss::logger* l,
       ssx::sharded_thread_worker* w)
@@ -648,11 +639,13 @@ public:
       , _logger(l)
       , _alien_thread_pool(w) {}
 
-    ss::future<std::unique_ptr<engine>> make_engine() final {
+    ss::future<ss::shared_ptr<engine>> make_engine() final {
         ss::alien::instance* alien = &ss::engine().alien();
         ss::shard_id shard_id = ss::this_shard_id();
-        return _alien_thread_pool->submit(
-          [this, alien, shard_id]() -> std::unique_ptr<engine> {
+        auto factory = co_await _alien_thread_pool->submit(
+          [this,
+           alien,
+           shard_id]() -> ss::noncopyable_function<ss::shared_ptr<engine>()> {
               handle<wasmtime_store_t, wasmtime_store_delete> store{
                 wasmtime_store_new(_engine, nullptr, nullptr)};
               auto* context = wasmtime_store_context(store.get());
@@ -676,9 +669,14 @@ public:
               std::vector<ss::sstring> args{_meta.name()};
               absl::flat_hash_map<ss::sstring, ss::sstring> env
                 = _meta.environment;
-              env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
               env.emplace(
-                "REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
+                "REDPANDA_INPUT_"
+                "TOPIC",
+                _meta.input_topic.tp());
+              env.emplace(
+                "REDPANDA_OUTPUT_"
+                "TOPIC",
+                _meta.output_topics.begin()->tp());
               auto wasi_module = std::make_unique<wasi::preview1_module>(
                 std::move(args), std::move(env), _logger);
               host_function_envs.push_back(register_wasi_module(
@@ -692,23 +690,33 @@ public:
               check_error(error.get());
               check_trap(trap.get());
 
-              return std::make_unique<wasmtime_engine>(
-                _meta.name(),
-                std::move(linker),
-                std::move(store),
-                _module,
-                std::move(xform_module),
-                std::move(sr_module),
-                std::move(wasi_module),
-                std::move(host_function_envs),
-                instance,
-                _alien_thread_pool);
+              // shared_ptr needs to be created in a seastar reactor thread, so
+              // pass back a closure to allocate the engine.
+              return [this,
+                      name = _meta.name(),
+                      store = std::move(store),
+                      xform_module = std::move(xform_module),
+                      sr_module = std::move(sr_module),
+                      wasi_module = std::move(wasi_module),
+                      host_function_envs = std::move(host_function_envs),
+                      instance]() mutable {
+                  return ss::make_shared<wasmtime_engine>(
+                    std::move(name),
+                    std::move(store),
+                    std::move(xform_module),
+                    std::move(sr_module),
+                    std::move(wasi_module),
+                    std::move(host_function_envs),
+                    instance,
+                    _alien_thread_pool);
+              };
           });
+        co_return factory();
     }
 
 private:
     wasm_engine_t* _engine;
-    std::shared_ptr<wasmtime_module_t> _module;
+    handle<wasmtime_module_t, wasmtime_module_delete> _module;
     model::transform_metadata _meta;
     schema_registry* _sr;
     ss::logger* _logger;
@@ -741,7 +749,7 @@ public:
 
     ss::future<> stop() override { return _alien_thread_pool.stop(); }
 
-    ss::future<std::unique_ptr<factory>> make_factory(
+    ss::future<ss::shared_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
         auto user_module = co_await _alien_thread_pool.submit(
           [this, &meta, &buf] {
@@ -754,15 +762,15 @@ public:
                 wasmtime_module_new(
                   _engine.get(), b.data(), b.size(), &user_module_ptr)};
               check_error(error.get());
-              std::shared_ptr<wasmtime_module_t> user_module{
-                user_module_ptr, wasmtime_module_delete};
+              handle<wasmtime_module_t, wasmtime_module_delete> user_module{
+                user_module_ptr};
               wasm_log.info("Finished compiling wasm module {}", meta.name);
               return user_module;
           });
-        co_return std::make_unique<wasmtime_engine_factory>(
+        co_return ss::make_shared<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
-          user_module,
+          std::move(user_module),
           _sr.get(),
           logger,
           &_alien_thread_pool);

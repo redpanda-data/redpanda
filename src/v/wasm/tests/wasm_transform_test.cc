@@ -36,12 +36,8 @@ TEST_F(WasmTestFixture, IdentityFunction) {
 TEST_F(WasmTestFixture, CanRestartEngine) {
     load_wasm("identity.wasm");
     engine()->stop().get();
-    // Can be restarted without initialization
-    engine()->start().get();
-    engine()->stop().get();
     // It still works after being restarted
     engine()->start().get();
-    engine()->initialize().get();
     auto batch = make_tiny_batch();
     auto transformed = transform(batch);
     ASSERT_EQ(transformed.copy_records(), batch.copy_records());

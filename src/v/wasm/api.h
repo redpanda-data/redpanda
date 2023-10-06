@@ -24,6 +24,8 @@ namespace wasm {
 /**
  * A wasm engine is a running VM loaded with a user module and capable of
  * transforming batches.
+ *
+ * A wasm engine is local to the core it was created on.
  */
 class engine {
 public:
@@ -31,10 +33,8 @@ public:
     transform(model::record_batch batch, transform_probe* probe) = 0;
 
     virtual ss::future<> start() = 0;
-    virtual ss::future<> initialize() = 0;
     virtual ss::future<> stop() = 0;
 
-    virtual std::string_view function_name() const = 0;
     virtual uint64_t memory_usage_size_bytes() const = 0;
 
     engine() = default;
@@ -52,6 +52,9 @@ public:
  * The idea is that factory has a cached version of the parsed module so the
  * parsing/validation of a wasm module can be only done once and then the
  * attaching to an engine becomes a very fast operation.
+ *
+ * This object is safe to use across multiple threads concurrently. It only uses
+ * local state (and a few std::shared_ptr) to create engines.
  */
 class factory {
 public:
@@ -60,7 +63,7 @@ public:
     factory& operator=(const factory&) = delete;
     factory(factory&&) = delete;
     factory& operator=(factory&&) = delete;
-    virtual ss::future<std::unique_ptr<engine>> make_engine() = 0;
+    virtual ss::future<ss::shared_ptr<engine>> make_engine() = 0;
     virtual ~factory() = default;
 };
 
@@ -87,8 +90,11 @@ public:
     /**
      * Create a factory for this transform and the corresponding source wasm
      * module.
+     *
+     * This must only be called on a single shard, but the resulting factory
+     * can be used on any shard and is thread-safe.
      */
-    virtual ss::future<std::unique_ptr<factory>>
+    virtual ss::future<ss::shared_ptr<factory>>
     make_factory(model::transform_metadata, iobuf, ss::logger*) = 0;
     virtual ~runtime() = default;
 };

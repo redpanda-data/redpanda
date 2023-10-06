@@ -47,8 +47,8 @@ public:
 
 private:
     std::unique_ptr<wasm::runtime> _runtime;
-    std::unique_ptr<wasm::factory> _factory;
-    std::unique_ptr<wasm::engine> _engine;
+    ss::shared_ptr<wasm::factory> _factory;
+    ss::shared_ptr<wasm::engine> _engine;
     std::unique_ptr<wasm::transform_probe> _probe;
     fake_schema_registry* _sr;
     model::transform_metadata _meta;

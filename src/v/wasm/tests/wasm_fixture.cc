@@ -145,7 +145,6 @@ void WasmTestFixture::load_wasm(const std::string& path) {
     }
     _engine = _factory->make_engine().get();
     _engine->start().get();
-    _engine->initialize().get();
 }
 
 model::record_batch WasmTestFixture::transform(const model::record_batch& b) {

@@ -58,14 +58,10 @@ fake_source::read_batch(model::offset offset, ss::abort_source* as) {
 ss::future<> fake_source::push_batch(model::record_batch batch) {
     co_await _batches.push_eventually(std::move(batch));
 }
-std::string_view fake_wasm_engine::function_name() const {
-    return my_metadata.name();
-}
 uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     return 64_KiB;
 };
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
-ss::future<> fake_wasm_engine::initialize() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
 } // namespace transform::testing

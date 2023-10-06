@@ -53,7 +53,6 @@ processor::processor(
 ss::future<> processor::start() {
     try {
         co_await _engine->start();
-        co_await _engine->initialize();
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
         _error_callback(_id, _ntp, _meta);
