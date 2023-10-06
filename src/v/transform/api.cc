@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
+#include "cluster/types.h"
 #include "features/feature_table.h"
 #include "kafka/server/replicated_partition.h"
 #include "model/timeout_clock.h"
@@ -251,9 +252,79 @@ ss::future<> service::start() {
         std::move(source_factory),
         std::move(sink_factory)));
     co_await _manager->start();
+    register_notifications();
 }
 
+void service::register_notifications() {
+    auto plugin_notif_id = _plugin_frontend->local().register_for_updates(
+      [this](model::transform_id id) { _manager->on_plugin_change(id); });
+    _notification_cleanups.emplace_back([this, plugin_notif_id] {
+        _plugin_frontend->local().unregister_for_updates(plugin_notif_id);
+    });
+    auto leadership_notif_id
+      = _group_manager->local().register_leadership_notification(
+        [this](
+          raft::group_id group_id,
+          model::term_id,
+          std::optional<model::node_id> leader) {
+            auto partition = _partition_manager->local().partition_for(
+              group_id);
+            if (!partition) {
+                vlog(
+                  tlog.debug,
+                  "got leadership notification for unknown partition: {}",
+                  group_id);
+                return;
+            }
+            bool node_is_leader = leader.has_value() && leader == _self;
+            if (!node_is_leader) {
+                _manager->on_leadership_change(
+                  partition->ntp(), ntp_leader::no);
+                return;
+            }
+            if (partition->ntp().ns != model::kafka_namespace) {
+                return;
+            }
+            ntp_leader is_leader = partition && partition->is_elected_leader()
+                                     ? ntp_leader::yes
+                                     : ntp_leader::no;
+            _manager->on_leadership_change(partition->ntp(), is_leader);
+        });
+    _notification_cleanups.emplace_back([this, leadership_notif_id] {
+        _group_manager->local().unregister_leadership_notification(
+          leadership_notif_id);
+    });
+    auto unmanage_notification_id
+      = _partition_manager->local().register_unmanage_notification(
+        model::kafka_namespace, [this](model::topic_partition_view tp) {
+            _manager->on_leadership_change(
+              model::ntp(model::kafka_namespace, tp.topic, tp.partition),
+              ntp_leader::no);
+        });
+    _notification_cleanups.emplace_back([this, unmanage_notification_id] {
+        _partition_manager->local().unregister_unmanage_notification(
+          unmanage_notification_id);
+    });
+    // NOTE: this will also trigger notifications for existing partitions, which
+    // will effectively bootstrap the transform manager.
+    auto manage_notification_id
+      = _partition_manager->local().register_manage_notification(
+        model::kafka_namespace,
+        [this](const ss::lw_shared_ptr<cluster::partition>& p) {
+            ntp_leader is_leader = p->is_elected_leader() ? ntp_leader::yes
+                                                          : ntp_leader::no;
+            _manager->on_leadership_change(p->ntp(), is_leader);
+        });
+    _notification_cleanups.emplace_back([this, manage_notification_id] {
+        _partition_manager->local().unregister_manage_notification(
+          manage_notification_id);
+    });
+}
+
+void service::unregister_notifications() { _notification_cleanups.clear(); }
+
 ss::future<> service::stop() {
+    unregister_notifications();
     co_await _gate.close();
     // It's possible to call stop before start, so make sure we created the
     // manager.

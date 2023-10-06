@@ -22,6 +22,8 @@
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/defer.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 namespace transform {
 
@@ -63,6 +65,9 @@ public:
     ss::future<cluster::errc> delete_transform(model::transform_name);
 
 private:
+    void register_notifications();
+    void unregister_notifications();
+
     ss::future<> cleanup_wasm_binary(uuid_t);
 
     ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>
@@ -82,6 +87,8 @@ private:
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<rpc::client>* _rpc_client;
     std::unique_ptr<manager<ss::lowres_clock>> _manager;
+    std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>
+      _notification_cleanups;
 };
 
 } // namespace transform
