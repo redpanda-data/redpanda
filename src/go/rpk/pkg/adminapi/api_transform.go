@@ -10,7 +10,10 @@
 package adminapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 )
 
@@ -18,7 +21,19 @@ const (
 	baseTransformEndpoint = "/v1/transform/"
 )
 
-// Delete a wasm transform in a cluster.
+// DeployWasmTransform deploys a wasm transform to a cluster.
+func (a *AdminAPI) DeployWasmTransform(ctx context.Context, t TransformMetadata, file io.Reader) error {
+	b, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	// The format of these bytes is a little awkward, there is a json header on the wasm source
+	// that specifies the configuration of the transform.
+	body := io.MultiReader(bytes.NewReader(b), file)
+	return a.sendToLeader(ctx, http.MethodPost, baseTransformEndpoint+"deploy", body, nil)
+}
+
+// DeleteWasmTransform deletes a wasm transform in a cluster.
 func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, name string) error {
 	return a.sendToLeader(ctx, http.MethodDelete, baseTransformEndpoint+name, nil, nil)
 }
@@ -43,7 +58,7 @@ type TransformMetadata struct {
 	Name         string                     `json:"name"`
 	InputTopic   string                     `json:"input_topic"`
 	OutputTopics []string                   `json:"output_topics"`
-	Status       []PartitionTransformStatus `json:"status"`
+	Status       []PartitionTransformStatus `json:"status,omitempty"`
 	Environment  []EnvironmentVariable      `json:"environment"`
 }
 

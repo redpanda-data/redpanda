@@ -1,0 +1,242 @@
+/*
+* Copyright 2023 Redpanda Data, Inc.
+*
+* Use of this software is governed by the Business Source License
+* included in the file licenses/BSL.md
+*
+* As of the Change Date specified in that file, in accordance with
+* the Business Source License, use of this software will be governed
+* by the Apache License, Version 2.0
+ */
+
+package transform
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+)
+
+func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var fc deployFlagConfig
+
+	cmd := &cobra.Command{
+		Use:   "deploy [WASM]",
+		Short: "Deploy a transform",
+		Long: `Deploy a transform.
+
+When run in the same directory as a transform.yaml it will read the configuration file,
+then look for a .wasm file with the same name as your project. If the input and output
+topics are specified in the configuration file, those will be used, otherwise the topics
+can be specified on the command line using the --input-topic and --output-topic flags.
+
+Wasm files can also be deployed directly without a transform.yaml file by specifying it
+like so:
+
+  rpk transform deploy transform.wasm --name myTransform
+
+Environment variables can be specified for the transform using the --env-var flag, these
+are separated by an equals for example: --env-var=KEY=VALUE
+
+The --env-var can be repeated to specify multiple variables.
+		`,
+		Args: cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			p, err := p.LoadVirtualProfile(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			api, err := adminapi.NewClient(fs, p)
+			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+			cfg := fc.ToProjectConfig()
+			fileConfig, err := project.LoadCfg(fs)
+			// We allow users to deploy if they aren't in a directory with transform.yaml
+			// in that case all config needs to be specified on the command line.
+			if err != nil {
+				cfg = mergeProjectConfigs(fileConfig, cfg)
+			}
+			err = validateProjectConfig(cfg, err)
+			out.MaybeDieErr(err)
+
+			deployable := fmt.Sprintf("%s.wasm", cfg.Name)
+			if len(args) == 1 {
+				deployable = args[0]
+			}
+			wasm, err := loadWasm(fs, deployable)
+			out.MaybeDieErr(err)
+
+			t := adminapi.TransformMetadata{
+				InputTopic:   cfg.InputTopic,
+				OutputTopics: []string{cfg.OutputTopic},
+				Name:         cfg.Name,
+				Status:       nil,
+				Environment:  mapToEnvVars(cfg.Env),
+			}
+			err = api.DeployWasmTransform(cmd.Context(), t, wasm)
+			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+				if he.Response.StatusCode == 400 {
+					body, bodyErr := he.DecodeGenericErrorBody()
+					if bodyErr == nil {
+						out.Die("unable to deploy transform %s: %s", cfg.Name, body.Message)
+					}
+				}
+			}
+			out.MaybeDie(err, "unable to deploy transform %s: %v", cfg.Name, err)
+
+			fmt.Printf("transform %q deployed.\n", cfg.Name)
+		},
+	}
+	cmd.Flags().StringVarP(&fc.inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
+	cmd.Flags().StringVarP(&fc.outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
+	cmd.Flags().StringVar(&fc.functionName, "name", "", "The name of the transform")
+	cmd.Flags().Var(&fc.env, "env-var", "Specify an environment variable in the form of KEY=VALUE")
+	return cmd
+}
+
+type environment struct {
+	vars map[string]string
+}
+
+func (e *environment) Set(s string) error {
+	i := strings.IndexByte(s, '=')
+	if i == -1 {
+		return errors.New("missing value")
+	}
+	k := s[:i]
+	if k == "" {
+		return errors.New("missing key")
+	}
+	v := s[i+1:]
+	if v == "" {
+		return errors.New("missing value")
+	}
+	e.vars[k] = v
+	return nil
+}
+
+func (*environment) Type() string {
+	return "environmentVariable"
+}
+
+func (e *environment) String() string {
+	if e.vars == nil {
+		return ""
+	}
+	vars := make([]string, 0)
+	for k, v := range e.vars {
+		vars = append(vars, k+"="+v)
+	}
+	return strings.Join(vars, ", ")
+}
+
+type deployFlagConfig struct {
+	inputTopic   string
+	outputTopic  string
+	functionName string
+	env          environment
+}
+
+// ToProjectConfig creates a project.Config from the specified command line flags.
+func (fc deployFlagConfig) ToProjectConfig() (out project.Config) {
+	out.Name = fc.functionName
+	out.InputTopic = fc.inputTopic
+	out.OutputTopic = fc.outputTopic
+	out.Env = fc.env.vars
+	return out
+}
+
+// mergeProjectConfigs overlays the rhs configuration (if specified) over lhs and returns a new config.
+func mergeProjectConfigs(lhs project.Config, rhs project.Config) (out project.Config) {
+	out = lhs
+	if rhs.Name != "" {
+		out.Name = rhs.Name
+	}
+	// for environment variables we merge the maps with the command line taking
+	// precedence over the config file.
+	m := map[string]string{}
+	if lhs.Env != nil {
+		for k, v := range lhs.Env {
+			m[k] = v
+		}
+	}
+	if rhs.Env != nil {
+		for k, v := range rhs.Env {
+			m[k] = v
+		}
+	}
+	out.Env = m
+	if rhs.InputTopic != "" {
+		out.InputTopic = rhs.InputTopic
+	}
+	if rhs.OutputTopic != "" {
+		out.OutputTopic = rhs.OutputTopic
+	}
+	return out
+}
+
+// isEmptyProjectConfig checks if a project config is completely empty.
+func isEmptyProjectConfig(cfg project.Config) bool {
+	return cfg.Name == "" && cfg.InputTopic == "" && cfg.OutputTopic == "" && (cfg.Env == nil || len(cfg.Env) == 0)
+}
+
+// validateProjectConfig validates the merged command line and file configurations.
+func validateProjectConfig(cfg project.Config, fileConfigErr error) error {
+	// If the user just typed `rpk transform deploy` then we assume they expected to take the configuration values from
+	// the file, so print out that error.
+	if isEmptyProjectConfig(cfg) && fileConfigErr == nil {
+		return fmt.Errorf("unable to find %q: %v", project.ConfigFileName, fileConfigErr)
+	}
+	if cfg.Name == "" {
+		return errors.New("missing name")
+	}
+	if cfg.InputTopic == "" {
+		return errors.New("missing input-topic")
+	}
+	if cfg.OutputTopic == "" {
+		return errors.New("missing output-topic")
+	}
+	return nil
+}
+
+// loadWasm loads the wasm file and ensures the magic bytes are correct.
+func loadWasm(fs afero.Fs, path string) (io.Reader, error) {
+	ok, err := afero.Exists(fs, path)
+	if err != nil {
+		return nil, fmt.Errorf("unable to determine if %q exists: %v", path, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("missing %q did you run `rpk transform build`", path)
+	}
+	contents, err := afero.ReadFile(fs, path)
+	if err != nil {
+		return nil, fmt.Errorf("missing %q: %v did you run `rpk transform build`", path, err)
+	}
+	// Check the file is a .wasm file (needs the magic \0asm prefix)
+	if !bytes.HasPrefix(contents, []byte{0x00, 0x61, 0x73, 0x6d}) {
+		return nil, fmt.Errorf("invalid wasm binary")
+	}
+	return bytes.NewReader(contents), err
+}
+
+// mapToEnvVars converts a map to the adminapi environment variable type.
+func mapToEnvVars(env map[string]string) (vars []adminapi.EnvironmentVariable) {
+	if env == nil {
+		return
+	}
+	for k, v := range env {
+		vars = append(vars, adminapi.EnvironmentVariable{
+			Key:   k,
+			Value: v,
+		})
+	}
+	return
+}
