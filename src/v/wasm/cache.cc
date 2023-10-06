@@ -296,16 +296,16 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
   model::transform_metadata meta, iobuf binary, ss::logger* logger) {
     model::offset offset = meta.source_ptr;
     // Look in the cache outside the lock
-    auto it = _factory_cache.find(offset);
-    if (it != _factory_cache.end() && it->second) {
-        co_return it->second->shared_from_this();
+    auto cached = get_cached_factory(meta);
+    if (cached) {
+        co_return *cached;
     }
     auto lock = co_await factory_creation_lock_guard::acquire(
       &_factory_creation_mu_map, offset);
     // Look again in the cache with the lock
-    it = _factory_cache.find(offset);
-    if (it != _factory_cache.end() && it->second) {
-        co_return it->second->shared_from_this();
+    cached = get_cached_factory(meta);
+    if (cached) {
+        co_return *cached;
     }
     // There is no factory and we're holding the lock,
     // time to create a new one.
@@ -318,13 +318,22 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
     // be accessed and used from any core (it's expected the caller of this
     // function will wrap the factories in foreign pointers to hand out to other
     // cores, and we can't do that here because of the inheritance).
-    auto cached = ss::make_shared<cached_factory>(
+    auto created = ss::make_shared<cached_factory>(
       ss::make_foreign(std::move(factory)), offset, &_engine_caches);
     auto [_, inserted] = _factory_cache.insert_or_assign(
-      offset, cached->weak_from_this());
+      offset, created->weak_from_this());
     vassert(inserted, "expected factory to be inserted");
 
-    co_return cached;
+    co_return created;
+}
+
+ss::optimized_optional<ss::shared_ptr<factory>>
+caching_runtime::get_cached_factory(const model::transform_metadata& meta) {
+    auto it = _factory_cache.find(meta.source_ptr);
+    if (it == _factory_cache.end() || !it->second) {
+        return {};
+    }
+    return ss::static_pointer_cast<factory>(it->second->shared_from_this());
 }
 
 ss::future<int64_t> caching_runtime::do_gc() {
@@ -349,5 +358,4 @@ ss::future<int64_t> caching_runtime::gc_engines() {
     return _engine_caches.map_reduce0(
       &engine_cache::gc, int64_t(0), std::plus<>());
 }
-
 } // namespace wasm
