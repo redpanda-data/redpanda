@@ -894,7 +894,8 @@ void application::configure_admin_server() {
       std::ref(storage_node),
       std::ref(_memory_sampling),
       std::ref(shadow_index_cache),
-      std::ref(_cpu_profiler))
+      std::ref(_cpu_profiler),
+      &_transform_service)
       .get();
 }
 
