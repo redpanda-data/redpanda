@@ -81,3 +81,48 @@ BOOST_AUTO_TEST_CASE(parse_and_set_optional_bool_alpha_test_remove) {
     BOOST_REQUIRE_EQUAL(
       property.op, cluster::incremental_update_operation::remove);
 }
+
+BOOST_AUTO_TEST_CASE(parse_and_set_topic_replication_factor_test) {
+    using namespace kafka;
+    cluster::property_update<std::optional<cluster::replication_factor>>
+      property;
+
+    using rep_factor_validator = config_validator_list<
+      cluster::replication_factor,
+      replication_factor_must_be_positive,
+      replication_factor_must_be_odd>;
+
+    parse_and_set_topic_replication_factor(
+      property,
+      "3",
+      kafka::config_resource_operation::set,
+      rep_factor_validator{});
+    BOOST_REQUIRE_EQUAL(property.value, 3);
+
+    auto is_pos_error = [](const validation_error& ex) {
+        return ss::sstring(ex.what()).contains("positive");
+    };
+    auto is_odd_error = [](const validation_error& ex) {
+        return ss::sstring(ex.what()).contains("odd");
+    };
+
+    BOOST_CHECK_EXCEPTION(
+      parse_and_set_topic_replication_factor(
+        property,
+        "0",
+        kafka::config_resource_operation::set,
+        rep_factor_validator{}),
+      validation_error,
+      is_pos_error);
+    BOOST_REQUIRE_EQUAL(property.value.has_value(), false);
+
+    BOOST_CHECK_EXCEPTION(
+      parse_and_set_topic_replication_factor(
+        property,
+        "4",
+        kafka::config_resource_operation::set,
+        rep_factor_validator{}),
+      validation_error,
+      is_odd_error);
+    BOOST_REQUIRE_EQUAL(property.value.has_value(), false);
+}
