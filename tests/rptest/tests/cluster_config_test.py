@@ -553,7 +553,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # using the cluster
         exclude_settings = {
             'enable_sasl', 'kafka_enable_authorization',
-            'kafka_mtls_principal_mapping_rules'
+            'kafka_mtls_principal_mapping_rules', 'constraints'
         }
 
         # Don't enable schema id validation: the interdepedencies are too complex and are tested elsewhere.
