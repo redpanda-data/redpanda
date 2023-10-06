@@ -939,7 +939,7 @@ class RedpandaServiceBase(Service):
     def metrics(self,
                 node,
                 metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
-        assert node in self._started, f"where node is {node.name}"
+        assert node in self._started, f"Node {node.account.hostname} is not started"
 
         metrics_endpoint = ("/metrics" if metrics_endpoint
                             == MetricsEndpoint.METRICS else "/public_metrics")
@@ -1686,7 +1686,7 @@ class RedpandaService(RedpandaServiceBase):
                 pass
 
     def set_extra_node_conf(self, node, conf):
-        assert node in self.nodes, f"where node is {node.name}"
+        assert node in self.nodes, f"Node {node.account.hostname} is not started"
         self._extra_node_conf[node] = conf
 
     def set_security_settings(self, settings):
@@ -2480,7 +2480,7 @@ class RedpandaService(RedpandaServiceBase):
         wait_until(is_awaited_state, timeout_sec=timeout_sec, backoff_sec=1)
 
     def monitor_log(self, node):
-        assert node in self.nodes, f"where node is {node.name}"
+        assert node in self.nodes, f"Node {node.account.hostname} is not started"
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
     def raise_on_crash(self,
@@ -3384,7 +3384,7 @@ class RedpandaService(RedpandaServiceBase):
         return int(node.account.ssh_output(shlex.join(cmd), timeout_sec=10))
 
     def broker_address(self, node, listener: str = "dnslistener"):
-        assert node in self.nodes, f"where node is {node.name}"
+        assert node in self.nodes, f"Node {node.account.hostname} is not started"
         assert node in self._started
         cfg = self._node_configs[node]
         if cfg['redpanda']['kafka_api']:
@@ -3399,7 +3399,7 @@ class RedpandaService(RedpandaServiceBase):
             return None
 
     def admin_endpoint(self, node):
-        assert node in self.nodes, f"where node is {node.name}"
+        assert node in self.nodes, f"Node {node.account.hostname} is not started"
         return f"{node.account.hostname}:9644"
 
     def admin_endpoints_list(self):
