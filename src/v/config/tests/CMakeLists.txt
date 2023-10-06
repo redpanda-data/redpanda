@@ -10,7 +10,8 @@ set(srcs
     seed_server_property_test.cc
     cloud_credentials_source_test.cc
     validator_tests.cc
-    throughput_control_group_test.cc)
+    throughput_control_group_test.cc
+    config_constraints_test.cc)
 
 rp_test(
   UNIT_TEST

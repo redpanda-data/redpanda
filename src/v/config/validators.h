@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/client_group_byte_rate_quota.h"
+#include "config/property_constraints.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -43,5 +44,8 @@ validate_non_empty_string_opt(const std::optional<ss::sstring>&);
 
 std::optional<ss::sstring>
 validate_audit_event_types(const std::vector<ss::sstring>& vs);
+
+std::optional<ss::sstring>
+validate_constraints(const std::vector<constraint_t>&);
 
 }; // namespace config

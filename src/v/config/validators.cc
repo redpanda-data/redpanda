@@ -164,4 +164,14 @@ validate_audit_event_types(const std::vector<ss::sstring>& vs) {
     }
     return std::nullopt;
 }
+
+std::optional<ss::sstring>
+validate_constraints(const std::vector<constraint_t>& constraints) {
+    for (const auto& constraint : constraints) {
+        if (auto err = constraint.check(); err) {
+            return err;
+        }
+    }
+    return std::nullopt;
+}
 }; // namespace config

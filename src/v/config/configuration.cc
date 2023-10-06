@@ -2664,7 +2664,17 @@ configuration::configuration()
       "The sample period for the CPU profiler",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       100ms,
-      {.min = 1ms}) {}
+      {.min = 1ms})
+  , constraints(
+      *this,
+      "constraints",
+      "A sequence of constraints for cluster-level configs",
+      {.needs_restart = needs_restart::no,
+       .example
+       = R"([{'name': 'default_topic_replications','type': 'restrict','min': 3, 'max': 9}])",
+       .visibility = visibility::user},
+      {},
+      validate_constraints) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
