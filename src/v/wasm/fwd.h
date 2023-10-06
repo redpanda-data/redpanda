@@ -16,5 +16,6 @@ class transform_probe;
 class engine;
 class factory;
 class runtime;
+class caching_runtime;
 class schema_registry;
 } // namespace wasm

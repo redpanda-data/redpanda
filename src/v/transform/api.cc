@@ -24,6 +24,7 @@
 #include "transform/transform_manager.h"
 #include "transform/transform_processor.h"
 #include "wasm/api.h"
+#include "wasm/cache.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -216,7 +217,7 @@ private:
 } // namespace
 
 service::service(
-  wasm::runtime* runtime,
+  wasm::caching_runtime* runtime,
   model::node_id self,
   ss::sharded<cluster::plugin_frontend>* plugin_frontend,
   ss::sharded<features::feature_table>* feature_table,
@@ -362,7 +363,7 @@ ss::future<
 service::get_factory(model::transform_metadata meta) {
     constexpr ss::shard_id creation_shard = 0;
     // TODO(rockwood): Consider caching factories core local (or moving that
-    // optimization into the caching runtime.
+    // optimization into the caching runtime).
     if (ss::this_shard_id() != creation_shard) {
         co_return co_await container().invoke_on(
           creation_shard,
@@ -371,7 +372,10 @@ service::get_factory(model::transform_metadata meta) {
           },
           std::move(meta));
     }
-    // TODO(rockwood): We shouldn't make this RPC everytime.
+    auto cached = _runtime->get_cached_factory(meta);
+    if (cached) {
+        co_return ss::make_foreign(*cached);
+    }
     auto result = co_await _rpc_client->local().load_wasm_binary(
       meta.source_ptr, wasm_binary_timeout);
     if (result.has_error()) {
@@ -382,8 +386,9 @@ service::get_factory(model::transform_metadata meta) {
           cluster::error_category().message(int(result.error())));
         co_return ss::foreign_ptr<ss::shared_ptr<wasm::factory>>(nullptr);
     }
-    co_return co_await _runtime->make_factory(
+    auto factory = co_await _runtime->make_factory(
       std::move(meta), std::move(result).value(), &tlog);
+    co_return ss::make_foreign(factory);
 }
 
 } // namespace transform

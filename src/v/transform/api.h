@@ -35,7 +35,7 @@ namespace transform {
 class service : public ss::peering_sharded_service<service> {
 public:
     service(
-      wasm::runtime* runtime,
+      wasm::caching_runtime* runtime,
       model::node_id self,
       ss::sharded<cluster::plugin_frontend>* plugin_frontend,
       ss::sharded<features::feature_table>* feature_table,
@@ -74,7 +74,7 @@ private:
 
     ss::gate _gate;
 
-    wasm::runtime* _runtime;
+    wasm::caching_runtime* _runtime;
     model::node_id _self;
     ss::sharded<cluster::plugin_frontend>* _plugin_frontend;
     ss::sharded<features::feature_table>* _feature_table;
