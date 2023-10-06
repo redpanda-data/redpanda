@@ -12,6 +12,7 @@
 #include "cluster/bootstrap_backend.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/cluster_discovery.h"
+#include "cluster/cluster_recovery_table.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller_api.h"
@@ -182,6 +183,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_feature_table),
             std::ref(_feature_backend));
       })
+      .then([this] { return _recovery_table.start(); })
       .then([this] { return _plugin_table.start(); })
       .then([this] { return _plugin_backend.start_single(&_plugin_table); })
       .then([this] {
@@ -615,6 +617,7 @@ ss::future<> controller::stop() {
               }
               return ss::make_ready_future();
           })
+          .then([this] { return _recovery_table.stop(); })
           .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })
           .then([this] { return _feature_manager.stop(); })

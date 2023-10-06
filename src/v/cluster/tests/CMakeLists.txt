@@ -142,3 +142,16 @@ rp_test(
   ARGS "-- -c 1"
   LABELS cluster
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME cluster_recovery_test
+  SOURCES
+    cluster_recovery_table_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::cluster
+  ARGS "-- -c 1"
+  LABELS cluster
+)

@@ -246,6 +246,22 @@ public:
         app.shutdown();
     }
 
+    using should_wipe = ss::bool_class<struct should_wipe_tag>;
+    void restart(should_wipe w = should_wipe::yes) {
+        shutdown();
+        if (w == should_wipe::yes) {
+            std::filesystem::remove_all(data_dir);
+        }
+        app_signal = std::make_unique<::stop_signal>();
+        ss::smp::invoke_on_all([] {
+            auto& config = config::shard_local_cfg();
+            config.get("disable_metrics").set_value(false);
+        }).get0();
+        app.initialize(proxy_config(), proxy_client_config());
+        app.check_environment();
+        app.wire_up_and_start(*app_signal, true);
+    }
+
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
     static cloud_storage_clients::s3_configuration

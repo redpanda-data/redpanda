@@ -123,6 +123,8 @@ public:
         return _store.reset_bindings(bindings);
     }
 
+    acl_store& store() { return _store; }
+
 private:
     /*
      * Compute whether the specified operation is allowed based on the implied

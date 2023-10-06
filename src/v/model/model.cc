@@ -363,6 +363,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::plugin_update";
     case record_batch_type::tx_registry:
         return o << "batch_type::tx_registry";
+    case record_batch_type::cluster_recovery_cmd:
+        return o << "batch_type::cluster_recovery_cmd";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

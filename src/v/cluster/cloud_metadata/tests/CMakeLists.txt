@@ -17,6 +17,7 @@ rp_test(
   FIXTURE_TEST
   BINARY_NAME cluster_cloud_metadata
   SOURCES
+    controller_snapshot_reconciliation_test.cc
     manifest_downloads_test.cc
     uploader_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK

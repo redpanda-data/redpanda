@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_hash_ranges.h"
@@ -2793,6 +2794,82 @@ struct bootstrap_cluster_cmd_data
     // the node that generated the bootstrap record.
     cluster_version founding_version{invalid_version};
     std::vector<model::broker> initial_nodes;
+};
+
+struct cluster_recovery_init_cmd_data
+  : serde::envelope<
+      cluster_recovery_init_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    friend bool operator==(
+      const cluster_recovery_init_cmd_data&,
+      const cluster_recovery_init_cmd_data&)
+      = default;
+
+    auto serde_fields() { return std::tie(manifest, bucket); }
+
+    // Cluster metadata manifest used to define the desired end state of the
+    // recovery.
+    cluster::cloud_metadata::cluster_metadata_manifest manifest;
+
+    // Bucket from which to download the cluster recovery state.
+    cloud_storage_clients::bucket_name bucket;
+};
+
+enum class recovery_stage : int8_t {
+    // A recovery has been initialized. We've already downloaded and serialized
+    // the manifest. While in this state, a recovery manager may validate that
+    // the recovery materials are downloadable.
+    initialized = 0,
+
+    // Recovery steps are beginning. We've already validated that the recovery
+    // materials are downloadable, though these aren't persisted in the
+    // controller beyond the manifest (it is expected that upon leadership
+    // changes, they are redownloaded).
+    starting = 1,
+
+    recovered_license = 2,
+    recovered_cluster_config = 3,
+    recovered_users = 4,
+    recovered_acls = 5,
+    recovered_remote_topic_data = 6,
+    recovered_topic_data = 7,
+
+    // All state from the controller snapshot has been recovered.
+    // Reconciliation attempts do not need to redownload the controller
+    // snapshot to proceed.
+    recovered_controller_snapshot = 8,
+
+    recovered_offsets_topic = 9,
+    recovered_tx_coordinator = 10,
+
+    // Recovery has completed successfully. This is a terminal state.
+    complete = 100,
+
+    // Recovery has failed. This is a terminal state.
+    failed = 101,
+};
+std::ostream& operator<<(std::ostream& o, const recovery_stage& s);
+
+struct cluster_recovery_update_cmd_data
+  : serde::envelope<
+      cluster_recovery_update_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    friend bool operator==(
+      const cluster_recovery_update_cmd_data&,
+      const cluster_recovery_update_cmd_data&)
+      = default;
+
+    auto serde_fields() { return std::tie(stage, error_msg); }
+
+    // The stage of the cluster recovery to be updated to.
+    recovery_stage stage;
+
+    // If set, the recovery is failed. Otherwise, it was a success.
+    std::optional<ss::sstring> error_msg;
 };
 
 enum class reconciliation_status : int8_t {
