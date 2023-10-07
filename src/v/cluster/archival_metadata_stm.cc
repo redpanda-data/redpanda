@@ -751,6 +751,16 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
 }
 
 ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
+    if (
+      b.header().type != model::record_batch_type::archival_metadata
+      && b.header().type != model::record_batch_type::prefix_truncate) {
+        // Advance in-sync offset immediately in case of data batch,
+        // or the batch that belongs to another STM. If the batch is handled
+        // by this STM it can only be advanced after we applied it.
+        _manifest->advance_insync_offset(b.last_offset());
+        co_return;
+    }
+
     if (b.header().type == model::record_batch_type::prefix_truncate) {
         // Special case handling for prefix_truncate batches: these originate
         // in log_eviction_stm, but affect the entire partition, local and
@@ -769,78 +779,77 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
                   apply_update_start_kafka_offset(val.kafka_start_offset);
               }
           });
+    } else {
+        b.for_each_record([this,
+                           base_offset = b.base_offset()](model::record&& r) {
+            auto key = serde::from_iobuf<cmd_key>(r.release_key());
 
-        co_return;
+            if (key != mark_clean_cmd::key) {
+                // All keys other than mark clean make the manifest dirty
+                _last_dirty_at = base_offset + model::offset{r.offset_delta()};
+            }
+
+            switch (key) {
+            case add_segment_cmd::key:
+                apply_add_segment(
+                  serde::from_iobuf<add_segment_cmd::value>(r.release_value()));
+                break;
+            case truncate_cmd::key:
+                apply_truncate(
+                  serde::from_iobuf<truncate_cmd::value>(r.release_value()));
+                break;
+            case update_start_offset_cmd::key:
+                apply_update_start_offset(
+                  serde::from_iobuf<update_start_offset_cmd::value>(
+                    r.release_value()));
+                break;
+            case cleanup_metadata_cmd::key:
+                apply_cleanup_metadata();
+                break;
+            case mark_clean_cmd::key:
+                apply_mark_clean(
+                  serde::from_iobuf<mark_clean_cmd::value>(r.release_value()));
+                break;
+            case truncate_archive_init_cmd::key:
+                apply_truncate_archive_init(
+                  serde::from_iobuf<truncate_archive_init_cmd::value>(
+                    r.release_value()));
+                break;
+            case truncate_archive_commit_cmd::key: {
+                auto cmd
+                  = serde::from_iobuf<truncate_archive_commit_cmd::value>(
+                    r.release_value());
+                apply_truncate_archive_commit(
+                  cmd.start_offset, cmd.bytes_removed);
+            } break;
+            case update_start_kafka_offset_cmd::key:
+                apply_update_start_kafka_offset(
+                  serde::from_iobuf<update_start_kafka_offset_cmd::value>(
+                    r.release_value()));
+                break;
+            case reset_metadata_cmd::key:
+                apply_reset_metadata();
+                break;
+            case spillover_cmd::key:
+                apply_spillover(
+                  serde::from_iobuf<spillover_cmd>(r.release_value()));
+                break;
+            case replace_manifest_cmd::key:
+                apply_replace_manifest(r.release_value());
+                break;
+            case process_anomalies_cmd::key:
+                apply_process_anomalies(r.release_value());
+                break;
+            default:
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format,
+                  "Unknown archival metadata STM command {}",
+                  static_cast<int>(key)));
+            };
+        });
     }
-    if (b.header().type != model::record_batch_type::archival_metadata) {
-        co_return;
-    }
 
-    b.for_each_record([this, base_offset = b.base_offset()](model::record&& r) {
-        auto key = serde::from_iobuf<cmd_key>(r.release_key());
-
-        if (key != mark_clean_cmd::key) {
-            // All keys other than mark clean make the manifest dirty
-            _last_dirty_at = base_offset + model::offset{r.offset_delta()};
-        }
-
-        switch (key) {
-        case add_segment_cmd::key:
-            apply_add_segment(
-              serde::from_iobuf<add_segment_cmd::value>(r.release_value()));
-            break;
-        case truncate_cmd::key:
-            apply_truncate(
-              serde::from_iobuf<truncate_cmd::value>(r.release_value()));
-            break;
-        case update_start_offset_cmd::key:
-            apply_update_start_offset(
-              serde::from_iobuf<update_start_offset_cmd::value>(
-                r.release_value()));
-            break;
-        case cleanup_metadata_cmd::key:
-            apply_cleanup_metadata();
-            break;
-        case mark_clean_cmd::key:
-            apply_mark_clean(
-              serde::from_iobuf<mark_clean_cmd::value>(r.release_value()));
-            break;
-        case truncate_archive_init_cmd::key:
-            apply_truncate_archive_init(
-              serde::from_iobuf<truncate_archive_init_cmd::value>(
-                r.release_value()));
-            break;
-        case truncate_archive_commit_cmd::key: {
-            auto cmd = serde::from_iobuf<truncate_archive_commit_cmd::value>(
-              r.release_value());
-            apply_truncate_archive_commit(cmd.start_offset, cmd.bytes_removed);
-        } break;
-        case update_start_kafka_offset_cmd::key:
-            apply_update_start_kafka_offset(
-              serde::from_iobuf<update_start_kafka_offset_cmd::value>(
-                r.release_value()));
-            break;
-        case reset_metadata_cmd::key:
-            apply_reset_metadata();
-            break;
-        case spillover_cmd::key:
-            apply_spillover(
-              serde::from_iobuf<spillover_cmd>(r.release_value()));
-            break;
-        case replace_manifest_cmd::key:
-            apply_replace_manifest(r.release_value());
-            break;
-        case process_anomalies_cmd::key:
-            apply_process_anomalies(r.release_value());
-            break;
-        default:
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Unknown archival metadata STM command {}",
-              static_cast<int>(key)));
-        };
-    });
-
+    // The offset should only be advanced after all the changes are applied.
     _manifest->advance_insync_offset(b.last_offset());
 }
 
