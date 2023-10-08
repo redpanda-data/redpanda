@@ -19,6 +19,7 @@ func NewPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newMovementCancelCommand(fs, p),
 		newMovementCancelCommandHidden(fs, p),
 		newListPartitionMovementsCommand(fs, p),
+		newDescribePartitionAssignmentsCommand(fs, p),
 	)
 	return cmd
 }

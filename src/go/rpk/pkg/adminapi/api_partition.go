@@ -71,6 +71,17 @@ func (a *AdminAPI) GetPartition(
 		&pa)
 }
 
+// GetTopic returns detailed all partition information for a given topic.
+func (a *AdminAPI) GetTopic(ctx context.Context, namespace, topic string) ([]Partition, error) {
+	var pa []Partition
+	return pa, a.sendAny(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/v1/partitions/%s/%s", namespace, topic),
+		nil,
+		&pa)
+}
+
 // Reconfigurations returns the list of ongoing partition reconfigurations.
 func (a *AdminAPI) Reconfigurations(ctx context.Context) ([]ReconfigurationsResponse, error) {
 	var rr []ReconfigurationsResponse
