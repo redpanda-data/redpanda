@@ -13,6 +13,7 @@
 #include "bytes/details/io_allocation_size.h"
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
+#include "oncore.h"
 #include "vassert.h"
 
 #include <seastar/core/bitops.hh>
@@ -161,6 +162,7 @@ iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
 }
 
 iobuf iobuf::share(size_t pos, size_t len) {
+    oncore_debug_verify(_verify_shard);
     iobuf ret;
     size_t left = len;
     for (auto& frag : _frags) {
