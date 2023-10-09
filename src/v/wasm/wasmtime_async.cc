@@ -176,6 +176,201 @@ private:
     wasmtime_memory_t _underlying;
 };
 
+class wasmtime_engine : public engine {
+public:
+    wasmtime_engine(
+      ss::sstring user_module_name,
+      handle<wasmtime_store_t, wasmtime_store_delete> s,
+      std::unique_ptr<transform_module> transform_module,
+      std::unique_ptr<schema_registry_module> sr_module,
+      std::unique_ptr<wasi::preview1_module> wasi_module,
+      wasmtime_instance_t instance,
+      ssx::sharded_thread_worker* workers)
+      : _user_module_name(std::move(user_module_name))
+      , _store(std::move(s))
+      , _transform_module(std::move(transform_module))
+      , _sr_module(std::move(sr_module))
+      , _wasi_module(std::move(wasi_module))
+      , _instance(instance)
+      , _alien_thread_pool(workers) {}
+    wasmtime_engine(const wasmtime_engine&) = delete;
+    wasmtime_engine& operator=(const wasmtime_engine&) = delete;
+    wasmtime_engine(wasmtime_engine&&) = default;
+    wasmtime_engine& operator=(wasmtime_engine&&) = default;
+
+    ~wasmtime_engine() override = default;
+
+    uint64_t memory_usage_size_bytes() const final {
+        std::string_view memory_export_name = "memory";
+        auto* ctx = wasmtime_store_context(_store.get());
+        wasmtime_extern_t memory_extern;
+        bool ok = wasmtime_instance_export_get(
+          ctx,
+          &_instance,
+          memory_export_name.data(),
+          memory_export_name.size(),
+          &memory_extern);
+        if (!ok || memory_extern.kind != WASMTIME_EXTERN_MEMORY) {
+            return 0;
+        }
+        return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
+    };
+
+    ss::future<> start() final { return initialize_wasi(); }
+
+    ss::future<> stop() final { co_return; }
+
+    struct transform_result {
+        model::record_batch batch;
+        // it's not safe to access seastar state in an alien thread, so make
+        // sure we're passing back the stats we need to record.
+        std::vector<uint64_t> latencies;
+    };
+
+    ss::future<model::record_batch>
+    transform(model::record_batch batch, transform_probe* probe) override {
+        vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
+        if (batch.record_count() == 0) {
+            co_return std::move(batch);
+        }
+        if (batch.compressed()) {
+            batch = co_await storage::internal::decompress_batch(
+              std::move(batch));
+        }
+        ss::future<transform_result> fut = co_await ss::coroutine::as_future(
+          invoke_transform(&batch));
+        if (fut.failed()) {
+            probe->transform_error();
+            std::rethrow_exception(fut.get_exception());
+        }
+        transform_result r = std::move(fut).get();
+        for (uint64_t latency : r.latencies) {
+            probe->record_latency(latency);
+        }
+        co_return std::move(r.batch);
+    }
+
+private:
+    void reset_fuel() {
+        auto* ctx = wasmtime_store_context(_store.get());
+        uint64_t fuel = 0;
+        wasmtime_context_fuel_remaining(ctx, &fuel);
+        handle<wasmtime_error_t, wasmtime_error_delete> error(
+          wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
+    }
+
+    ss::future<> initialize_wasi() {
+        return _alien_thread_pool->submit([this] {
+            // TODO: Consider having a different amount of fuel for
+            // initialization.
+            reset_fuel();
+            auto* ctx = wasmtime_store_context(_store.get());
+            wasmtime_extern_t start;
+            bool ok = wasmtime_instance_export_get(
+              ctx,
+              &_instance,
+              wasi::preview_1_start_function_name.data(),
+              wasi::preview_1_start_function_name.size(),
+              &start);
+            if (!ok || start.kind != WASMTIME_EXTERN_FUNC) {
+                throw wasm_exception(
+                  "Missing wasi initialization function",
+                  errc::user_code_failure);
+            }
+            vlog(
+              wasm_log.info,
+              "Initializing wasm function {}",
+              _user_module_name);
+            wasm_trap_t* trap_ptr = nullptr;
+            handle<wasmtime_error_t, wasmtime_error_delete> error{
+              wasmtime_func_call(
+                ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
+            handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+            check_error(error.get());
+            check_trap(trap.get());
+            vlog(
+              wasm_log.info, "Wasm function {} initialized", _user_module_name);
+        });
+    }
+
+    ss::future<transform_result>
+    invoke_transform(const model::record_batch* batch) {
+        return _alien_thread_pool->submit([this, batch] {
+            std::vector<uint64_t> latencies;
+            auto* ctx = wasmtime_store_context(_store.get());
+            wasmtime_extern_t cb;
+            bool ok = wasmtime_instance_export_get(
+              ctx,
+              &_instance,
+              redpanda_on_record_callback_function_name.data(),
+              redpanda_on_record_callback_function_name.size(),
+              &cb);
+            if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
+                throw wasm_exception(
+                  "Missing wasi initialization function",
+                  errc::user_code_failure);
+            }
+            auto transformed = _transform_module->for_each_record(
+              batch, [this, &ctx, &cb, &latencies](wasm_call_params params) {
+                  reset_fuel();
+                  _wasi_module->set_timestamp(params.current_record_timestamp);
+                  auto recorder = ss::defer(
+                    [&latencies,
+                     start_time = transform_probe::hist_t::clock_type::now()] {
+                        latencies.push_back(
+                          std::chrono::duration_cast<
+                            transform_probe::hist_t::duration_type>(
+                            transform_probe::hist_t::clock_type::now()
+                            - start_time)
+                            .count());
+                    });
+                  wasmtime_val_t result = {
+                    .kind = WASMTIME_I32, .of = {.i32 = -1}};
+                  std::array<wasmtime_val_t, 4> args = {
+                    wasmtime_val_t{
+                      .kind = WASMTIME_I32, .of = {.i32 = params.batch_handle}},
+                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_handle}},
+                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_size}},
+                    {.kind = WASMTIME_I32,
+                     .of = {.i32 = params.current_record_offset}}};
+                  wasm_trap_t* trap_ptr = nullptr;
+                  handle<wasmtime_error_t, wasmtime_error_delete> error{
+                    wasmtime_func_call(
+                      ctx,
+                      &cb.of.func,
+                      args.data(),
+                      args.size(),
+                      &result,
+                      /*results_size=*/1,
+                      &trap_ptr)};
+                  handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+                  check_error(error.get());
+                  check_trap(trap.get());
+                  if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
+                      throw wasm_exception(
+                        ss::format(
+                          "transform execution {} resulted in error {}",
+                          _user_module_name,
+                          result.of.i32),
+                        errc::user_code_failure);
+                  }
+              });
+            return transform_result{
+              .batch = std::move(transformed),
+              .latencies = std::move(latencies),
+            };
+        });
+    }
+
+    ss::sstring _user_module_name;
+    handle<wasmtime_store_t, wasmtime_store_delete> _store;
+    std::unique_ptr<transform_module> _transform_module;
+    std::unique_ptr<schema_registry_module> _sr_module;
+    std::unique_ptr<wasi::preview1_module> _wasi_module;
+    wasmtime_instance_t _instance;
+    ssx::sharded_thread_worker* _alien_thread_pool;
+};
+
 template<auto value>
 struct host_function;
 
@@ -377,201 +572,6 @@ void register_sr_module(wasmtime_linker_t* linker) {
     REG_HOST_FN(create_subject_schema);
 #undef REG_HOST_FN
 }
-
-class wasmtime_engine : public engine {
-public:
-    wasmtime_engine(
-      ss::sstring user_module_name,
-      handle<wasmtime_store_t, wasmtime_store_delete> s,
-      std::unique_ptr<transform_module> transform_module,
-      std::unique_ptr<schema_registry_module> sr_module,
-      std::unique_ptr<wasi::preview1_module> wasi_module,
-      wasmtime_instance_t instance,
-      ssx::sharded_thread_worker* workers)
-      : _user_module_name(std::move(user_module_name))
-      , _store(std::move(s))
-      , _transform_module(std::move(transform_module))
-      , _sr_module(std::move(sr_module))
-      , _wasi_module(std::move(wasi_module))
-      , _instance(instance)
-      , _alien_thread_pool(workers) {}
-    wasmtime_engine(const wasmtime_engine&) = delete;
-    wasmtime_engine& operator=(const wasmtime_engine&) = delete;
-    wasmtime_engine(wasmtime_engine&&) = default;
-    wasmtime_engine& operator=(wasmtime_engine&&) = default;
-
-    ~wasmtime_engine() override = default;
-
-    uint64_t memory_usage_size_bytes() const final {
-        std::string_view memory_export_name = "memory";
-        auto* ctx = wasmtime_store_context(_store.get());
-        wasmtime_extern_t memory_extern;
-        bool ok = wasmtime_instance_export_get(
-          ctx,
-          &_instance,
-          memory_export_name.data(),
-          memory_export_name.size(),
-          &memory_extern);
-        if (!ok || memory_extern.kind != WASMTIME_EXTERN_MEMORY) {
-            return 0;
-        }
-        return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
-    };
-
-    ss::future<> start() final { return initialize_wasi(); }
-
-    ss::future<> stop() final { co_return; }
-
-    struct transform_result {
-        model::record_batch batch;
-        // it's not safe to access seastar state in an alien thread, so make
-        // sure we're passing back the stats we need to record.
-        std::vector<uint64_t> latencies;
-    };
-
-    ss::future<model::record_batch>
-    transform(model::record_batch batch, transform_probe* probe) override {
-        vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
-        if (batch.record_count() == 0) {
-            co_return std::move(batch);
-        }
-        if (batch.compressed()) {
-            batch = co_await storage::internal::decompress_batch(
-              std::move(batch));
-        }
-        ss::future<transform_result> fut = co_await ss::coroutine::as_future(
-          invoke_transform(&batch));
-        if (fut.failed()) {
-            probe->transform_error();
-            std::rethrow_exception(fut.get_exception());
-        }
-        transform_result r = std::move(fut).get();
-        for (uint64_t latency : r.latencies) {
-            probe->record_latency(latency);
-        }
-        co_return std::move(r.batch);
-    }
-
-private:
-    void reset_fuel() {
-        auto* ctx = wasmtime_store_context(_store.get());
-        uint64_t fuel = 0;
-        wasmtime_context_fuel_remaining(ctx, &fuel);
-        handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
-    }
-
-    ss::future<> initialize_wasi() {
-        return _alien_thread_pool->submit([this] {
-            // TODO: Consider having a different amount of fuel for
-            // initialization.
-            reset_fuel();
-            auto* ctx = wasmtime_store_context(_store.get());
-            wasmtime_extern_t start;
-            bool ok = wasmtime_instance_export_get(
-              ctx,
-              &_instance,
-              wasi::preview_1_start_function_name.data(),
-              wasi::preview_1_start_function_name.size(),
-              &start);
-            if (!ok || start.kind != WASMTIME_EXTERN_FUNC) {
-                throw wasm_exception(
-                  "Missing wasi initialization function",
-                  errc::user_code_failure);
-            }
-            vlog(
-              wasm_log.info,
-              "Initializing wasm function {}",
-              _user_module_name);
-            wasm_trap_t* trap_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_func_call(
-                ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
-            handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-            check_error(error.get());
-            check_trap(trap.get());
-            vlog(
-              wasm_log.info, "Wasm function {} initialized", _user_module_name);
-        });
-    }
-
-    ss::future<transform_result>
-    invoke_transform(const model::record_batch* batch) {
-        return _alien_thread_pool->submit([this, batch] {
-            std::vector<uint64_t> latencies;
-            auto* ctx = wasmtime_store_context(_store.get());
-            wasmtime_extern_t cb;
-            bool ok = wasmtime_instance_export_get(
-              ctx,
-              &_instance,
-              redpanda_on_record_callback_function_name.data(),
-              redpanda_on_record_callback_function_name.size(),
-              &cb);
-            if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
-                throw wasm_exception(
-                  "Missing wasi initialization function",
-                  errc::user_code_failure);
-            }
-            auto transformed = _transform_module->for_each_record(
-              batch, [this, &ctx, &cb, &latencies](wasm_call_params params) {
-                  reset_fuel();
-                  _wasi_module->set_timestamp(params.current_record_timestamp);
-                  auto recorder = ss::defer(
-                    [&latencies,
-                     start_time = transform_probe::hist_t::clock_type::now()] {
-                        latencies.push_back(
-                          std::chrono::duration_cast<
-                            transform_probe::hist_t::duration_type>(
-                            transform_probe::hist_t::clock_type::now()
-                            - start_time)
-                            .count());
-                    });
-                  wasmtime_val_t result = {
-                    .kind = WASMTIME_I32, .of = {.i32 = -1}};
-                  std::array<wasmtime_val_t, 4> args = {
-                    wasmtime_val_t{
-                      .kind = WASMTIME_I32, .of = {.i32 = params.batch_handle}},
-                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_handle}},
-                    {.kind = WASMTIME_I32, .of = {.i32 = params.record_size}},
-                    {.kind = WASMTIME_I32,
-                     .of = {.i32 = params.current_record_offset}}};
-                  wasm_trap_t* trap_ptr = nullptr;
-                  handle<wasmtime_error_t, wasmtime_error_delete> error{
-                    wasmtime_func_call(
-                      ctx,
-                      &cb.of.func,
-                      args.data(),
-                      args.size(),
-                      &result,
-                      /*results_size=*/1,
-                      &trap_ptr)};
-                  handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-                  check_error(error.get());
-                  check_trap(trap.get());
-                  if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
-                      throw wasm_exception(
-                        ss::format(
-                          "transform execution {} resulted in error {}",
-                          _user_module_name,
-                          result.of.i32),
-                        errc::user_code_failure);
-                  }
-              });
-            return transform_result{
-              .batch = std::move(transformed),
-              .latencies = std::move(latencies),
-            };
-        });
-    }
-
-    ss::sstring _user_module_name;
-    handle<wasmtime_store_t, wasmtime_store_delete> _store;
-    std::unique_ptr<transform_module> _transform_module;
-    std::unique_ptr<schema_registry_module> _sr_module;
-    std::unique_ptr<wasi::preview1_module> _wasi_module;
-    wasmtime_instance_t _instance;
-    ssx::sharded_thread_worker* _alien_thread_pool;
-};
 
 class wasmtime_engine_factory : public factory {
 public:
