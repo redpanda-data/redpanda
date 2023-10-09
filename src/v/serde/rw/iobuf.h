@@ -25,7 +25,7 @@ inline void tag_invoke(
 
 inline void tag_invoke(tag_t<write_tag>, iobuf& out, iobuf t) {
     write<serde_size_t>(out, t.size_bytes());
-    out.append(t.share(0, t.size_bytes()));
+    out.append(std::move(t));
 }
 
 } // namespace serde
