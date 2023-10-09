@@ -250,6 +250,20 @@ public:
         co_return std::move(r.batch);
     }
 
+    template<typename T>
+    T* get_module() noexcept {
+        if constexpr (std::is_same_v<T, wasi::preview1_module>) {
+            return _wasi_module.get();
+        } else if constexpr (std::is_same_v<T, transform_module>) {
+            return _transform_module.get();
+        } else if constexpr (std::is_same_v<T, schema_registry_module>) {
+            return _sr_module.get();
+        } else {
+            static_assert(
+              utils::unsupported_type<T>::value, "unsupported module");
+        }
+    }
+
 private:
     void reset_fuel() {
         auto* ctx = wasmtime_store_context(_store.get());
@@ -396,18 +410,33 @@ public:
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
 
-        handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_linker_define_func(
-            linker,
-            Module::name.data(),
-            Module::name.size(),
-            function_name.data(),
-            function_name.size(),
-            functype.get(),
-            &invoke_host_fn,
-            /*data=*/nullptr,
-            /*finalizer=*/nullptr));
-        check_error(error.get());
+        if constexpr (ss::is_future<ReturnType>::value) {
+            handle<wasmtime_error_t, wasmtime_error_delete> error(
+              wasmtime_linker_define_async_func(
+                linker,
+                Module::name.data(),
+                Module::name.size(),
+                function_name.data(),
+                function_name.size(),
+                functype.get(),
+                &invoke_async_host_fn,
+                /*data=*/nullptr,
+                /*finalizer=*/nullptr));
+            check_error(error.get());
+        } else {
+            handle<wasmtime_error_t, wasmtime_error_delete> error(
+              wasmtime_linker_define_func(
+                linker,
+                Module::name.data(),
+                Module::name.size(),
+                function_name.data(),
+                function_name.size(),
+                functype.get(),
+                &invoke_sync_host_fn,
+                /*data=*/nullptr,
+                /*finalizer=*/nullptr));
+            check_error(error.get());
+        }
     }
 
 private:
@@ -417,23 +446,24 @@ private:
      * Extracts the memory module, and handles exceptions from our host
      * functions.
      */
-    static wasm_trap_t* invoke_host_fn(
-      void* env,
+    static wasm_trap_t* invoke_sync_host_fn(
+      void*,
       wasmtime_caller_t* caller,
       const wasmtime_val_t* args,
       size_t nargs,
       wasmtime_val_t* results,
       size_t nresults) {
-        // TODO: Right now this doesn't work, but a followup commit will
-        // fix getting the module.
-        auto* host_module = static_cast<Module*>(env);
-        memory mem(wasmtime_caller_context(caller));
+        auto* context = wasmtime_caller_context(caller);
+        auto* engine = static_cast<wasmtime_engine*>(
+          wasmtime_context_get_data(context));
+        auto* host_module = engine->get_module<Module>();
+        memory mem(context);
         wasm_trap_t* trap = extract_memory(caller, &mem);
         if (trap != nullptr) {
             return trap;
         }
         try {
-            do_invoke_host_fn(
+            do_invoke_sync_host_fn(
               host_module, &mem, {args, nargs}, {results, nresults});
             return nullptr;
         } catch (const std::exception& e) {
@@ -444,11 +474,72 @@ private:
     }
 
     /**
+     * Invoke an async function.
+     */
+    static void invoke_async_host_fn(
+      void*,
+      wasmtime_caller_t* caller,
+      const wasmtime_val_t* args,
+      size_t nargs,
+      wasmtime_val_t* results,
+      size_t nresults,
+      wasm_trap_t** trap_ret,
+      wasmtime_async_continuation_t* continuation) {
+        auto* context = wasmtime_caller_context(caller);
+        auto* engine = static_cast<wasmtime_engine*>(
+          wasmtime_context_get_data(context));
+        auto* host_module = engine->get_module<Module>();
+        // Keep this alive during the course of the host call incase it's used
+        // as a parameter to a host function, they'll expect it's alive the
+        // entire call. We'll move the ownership of this function into the host
+        // future continuation.
+        auto mem = std::make_unique<memory>(context);
+        wasm_trap_t* trap = extract_memory(caller, mem.get());
+        if (trap != nullptr) {
+            *trap_ret = trap;
+            // Return a callback that just says we're already done.
+            continuation->callback = [](void*) { return true; };
+            return;
+        }
+
+        ss::future<> host_future_result = do_invoke_async_host_fn(
+          host_module, mem.get(), {args, nargs}, {results, nresults});
+
+        using async_call_done = ss::bool_class<struct async_call_done_tag>;
+        // NOLINTNEXTLINE(*owning-memory)
+        auto* status = new async_call_done(false);
+
+        // TODO(rockwood): Register this with the engine.
+        ssx::background
+          = std::move(host_future_result)
+              .then_wrapped(
+                [status, trap_ret, mem = std::move(mem)](ss::future<> fut) {
+                    if (fut.failed()) {
+                        auto msg = ss::format(
+                          "Failure executing host function: {}",
+                          fut.get_exception());
+                        *trap_ret = wasmtime_trap_new(msg.data(), msg.size());
+                    }
+                    *status = async_call_done::yes;
+                });
+
+        continuation->env = status;
+        continuation->finalizer = [](void* env) {
+            // NOLINTNEXTLINE(*owning-memory)
+            delete static_cast<async_call_done*>(env);
+        };
+        continuation->callback = [](void* env) {
+            async_call_done status = *static_cast<async_call_done*>(env);
+            return status == async_call_done::yes;
+        };
+    }
+
+    /**
      * Translate wasmtime types into our native types, then invoke the
      * corresponding host function, translating the response types into the
      * correct types.
      */
-    static void do_invoke_host_fn(
+    static void do_invoke_sync_host_fn(
       Module* host_module,
       memory* mem,
       std::span<const wasmtime_val_t> args,
@@ -460,15 +551,6 @@ private:
               module_func,
               std::tuple_cat(
                 std::make_tuple(host_module), std::move(host_params)));
-        } else if constexpr (ss::is_future<ReturnType>::value) {
-            auto fut = std::apply(
-              module_func,
-              std::tuple_cat(
-                std::make_tuple(host_module), std::move(host_params)));
-            // TODO: This get isn't valid and won't work right now, but
-            // that will be fixed in the next commit.
-            results[0] = convert_to_wasmtime<typename ReturnType::value_type>(
-              std::move(fut).get());
         } else {
             ReturnType host_result = std::apply(
               module_func,
@@ -476,6 +558,34 @@ private:
                 std::make_tuple(host_module), std::move(host_params)));
             results[0] = convert_to_wasmtime<ReturnType>(
               std::move(host_result));
+        }
+    }
+
+    /**
+     * Same as do_invoke_sync_host_fn but async.
+     */
+    static ss::future<> do_invoke_async_host_fn(
+      Module* host_module,
+      memory* mem,
+      std::span<const wasmtime_val_t> args,
+      std::span<wasmtime_val_t> results) {
+        auto raw = to_raw_values(args);
+        auto host_params = ffi::extract_parameters<ArgTypes...>(mem, raw, 0);
+        using FutureType = typename ReturnType::value_type;
+        if constexpr (std::is_void_v<FutureType>) {
+            return ss::futurize_apply(
+              module_func,
+              std::tuple_cat(
+                std::make_tuple(host_module), std::move(host_params)));
+        } else {
+            return ss::futurize_apply(
+                     module_func,
+                     std::tuple_cat(
+                       std::make_tuple(host_module), std::move(host_params)))
+              .then([results](FutureType host_future_result) {
+                  results[0] = convert_to_wasmtime<FutureType>(
+                    host_future_result);
+              });
         }
     }
 
