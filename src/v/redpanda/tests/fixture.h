@@ -99,7 +99,8 @@ public:
       configure_node_id use_node_id = configure_node_id::yes,
       const empty_seed_starts_cluster empty_seed_starts_cluster_val
       = empty_seed_starts_cluster::yes,
-      std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt)
+      std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt,
+      bool enable_data_transforms = false)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -117,7 +118,8 @@ public:
           std::move(cloud_cfg),
           use_node_id,
           empty_seed_starts_cluster_val,
-          kafka_admin_topic_api_rate);
+          kafka_admin_topic_api_rate,
+          enable_data_transforms);
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -316,7 +318,8 @@ public:
       configure_node_id use_node_id = configure_node_id::yes,
       const empty_seed_starts_cluster empty_seed_starts_cluster_val
       = empty_seed_starts_cluster::yes,
-      std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt) {
+      std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt,
+      bool data_transforms_enabled = false) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
@@ -328,7 +331,8 @@ public:
                                 cloud_cfg,
                                 use_node_id,
                                 empty_seed_starts_cluster_val,
-                                kafka_admin_topic_api_rate]() mutable {
+                                kafka_admin_topic_api_rate,
+                                data_transforms_enabled]() mutable {
             auto& config = config::shard_local_cfg();
 
             config.get("enable_pid_file").set_value(false);
@@ -405,6 +409,8 @@ public:
                 config.get("kafka_admin_topic_api_rate")
                   .set_value(kafka_admin_topic_api_rate);
             }
+            config.get("data_transforms_enabled")
+              .set_value(data_transforms_enabled);
         }).get0();
     }
 
