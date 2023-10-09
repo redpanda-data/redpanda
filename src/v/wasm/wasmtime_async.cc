@@ -176,12 +176,6 @@ private:
     wasmtime_memory_t _underlying;
 };
 
-struct host_function_environment {
-    void* host_module;
-    ss::alien::instance* alien;
-    ss::shard_id shard_id;
-};
-
 template<auto value>
 struct host_function;
 
@@ -196,10 +190,7 @@ public:
      * Register a host function such that it can be invoked from the Wasmtime
      * VM.
      */
-    static void reg(
-      wasmtime_linker_t* linker,
-      host_function_environment* env,
-      std::string_view function_name) {
+    static void reg(wasmtime_linker_t* linker, std::string_view function_name) {
         std::vector<ffi::val_type> ffi_inputs;
         ffi::transform_types<ArgTypes...>(ffi_inputs);
         std::vector<ffi::val_type> ffi_outputs;
@@ -219,7 +210,7 @@ public:
             function_name.size(),
             functype.get(),
             &invoke_host_fn,
-            env,
+            /*data=*/nullptr,
             /*finalizer=*/nullptr));
         check_error(error.get());
     }
@@ -238,8 +229,9 @@ private:
       size_t nargs,
       wasmtime_val_t* results,
       size_t nresults) {
-        auto* fenv = static_cast<host_function_environment*>(env);
-        auto* host_module = static_cast<Module*>(fenv->host_module);
+        // TODO: Right now this doesn't work, but a followup commit will
+        // fix getting the module.
+        auto* host_module = static_cast<Module*>(env);
         memory mem(wasmtime_caller_context(caller));
         wasm_trap_t* trap = extract_memory(caller, &mem);
         if (trap != nullptr) {
@@ -247,12 +239,7 @@ private:
         }
         try {
             do_invoke_host_fn(
-              host_module,
-              &mem,
-              fenv->alien,
-              fenv->shard_id,
-              {args, nargs},
-              {results, nresults});
+              host_module, &mem, {args, nargs}, {results, nresults});
             return nullptr;
         } catch (const std::exception& e) {
             vlog(wasm_log.warn, "Failure executing host function: {}", e);
@@ -269,8 +256,6 @@ private:
     static void do_invoke_host_fn(
       Module* host_module,
       memory* mem,
-      ss::alien::instance* alien,
-      ss::shard_id shard_id,
       std::span<const wasmtime_val_t> args,
       std::span<wasmtime_val_t> results) {
         auto raw = to_raw_values(args);
@@ -281,15 +266,12 @@ private:
               std::tuple_cat(
                 std::make_tuple(host_module), std::move(host_params)));
         } else if constexpr (ss::is_future<ReturnType>::value) {
-            auto fut = ss::alien::submit_to(
-              *alien,
-              shard_id,
-              [host_module, host_params = std::move(host_params)]() mutable {
-                  return std::apply(
-                    module_func,
-                    std::tuple_cat(
-                      std::make_tuple(host_module), std::move(host_params)));
-              });
+            auto fut = std::apply(
+              module_func,
+              std::tuple_cat(
+                std::make_tuple(host_module), std::move(host_params)));
+            // TODO: This get isn't valid and won't work right now, but
+            // that will be fixed in the next commit.
             results[0] = convert_to_wasmtime<typename ReturnType::value_type>(
               std::move(fut).get());
         } else {
@@ -324,16 +306,10 @@ private:
     }
 };
 
-std::unique_ptr<host_function_environment> register_wasi_module(
-  wasi::preview1_module* mod,
-  wasmtime_linker_t* linker,
-  ss::alien::instance* alien,
-  ss::shard_id shard_id) {
-    auto env = std::make_unique<host_function_environment>(
-      mod, alien, shard_id);
+void register_wasi_module(wasmtime_linker_t* linker) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&wasi::preview1_module::name>::reg(linker, env.get(), #name)
+    host_function<&wasi::preview1_module::name>::reg(linker, #name)
     REG_HOST_FN(args_get);
     REG_HOST_FN(args_sizes_get);
     REG_HOST_FN(environ_get);
@@ -379,42 +355,27 @@ std::unique_ptr<host_function_environment> register_wasi_module(
     REG_HOST_FN(sock_send);
     REG_HOST_FN(sock_shutdown);
 #undef REG_HOST_FN
-    return env;
 }
 
-std::unique_ptr<host_function_environment> register_transform_module(
-  transform_module* mod,
-  wasmtime_linker_t* linker,
-  ss::alien::instance* alien,
-  ss::shard_id shard_id) {
-    auto env = std::make_unique<host_function_environment>(
-      mod, alien, shard_id);
+void register_transform_module(wasmtime_linker_t* linker) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&transform_module::name>::reg(linker, env.get(), #name)
+    host_function<&transform_module::name>::reg(linker, #name)
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_record);
     REG_HOST_FN(write_record);
 #undef REG_HOST_FN
-    return env;
 }
-std::unique_ptr<host_function_environment> register_sr_module(
-  schema_registry_module* mod,
-  wasmtime_linker_t* linker,
-  ss::alien::instance* alien,
-  ss::shard_id shard_id) {
-    auto env = std::make_unique<host_function_environment>(
-      mod, alien, shard_id);
+void register_sr_module(wasmtime_linker_t* linker) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&schema_registry_module::name>::reg(linker, env.get(), #name)
+    host_function<&schema_registry_module::name>::reg(linker, #name)
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
     REG_HOST_FN(get_subject_schema);
     REG_HOST_FN(get_subject_schema_len);
     REG_HOST_FN(create_subject_schema);
 #undef REG_HOST_FN
-    return env;
 }
 
 class wasmtime_engine : public engine {
@@ -425,8 +386,6 @@ public:
       std::unique_ptr<transform_module> transform_module,
       std::unique_ptr<schema_registry_module> sr_module,
       std::unique_ptr<wasi::preview1_module> wasi_module,
-      std::vector<std::unique_ptr<host_function_environment>>
-        host_function_environments,
       wasmtime_instance_t instance,
       ssx::sharded_thread_worker* workers)
       : _user_module_name(std::move(user_module_name))
@@ -435,8 +394,7 @@ public:
       , _sr_module(std::move(sr_module))
       , _wasi_module(std::move(wasi_module))
       , _instance(instance)
-      , _alien_thread_pool(workers)
-      , _host_function_environments(std::move(host_function_environments)) {}
+      , _alien_thread_pool(workers) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
     wasmtime_engine(wasmtime_engine&&) = default;
@@ -613,8 +571,6 @@ private:
     std::unique_ptr<wasi::preview1_module> _wasi_module;
     wasmtime_instance_t _instance;
     ssx::sharded_thread_worker* _alien_thread_pool;
-    std::vector<std::unique_ptr<host_function_environment>>
-      _host_function_environments;
 };
 
 class wasmtime_engine_factory : public factory {
@@ -634,12 +590,8 @@ public:
       , _alien_thread_pool(w) {}
 
     ss::future<ss::shared_ptr<engine>> make_engine() final {
-        ss::alien::instance* alien = &ss::engine().alien();
-        ss::shard_id shard_id = ss::this_shard_id();
         auto factory = co_await _alien_thread_pool->submit(
-          [this,
-           alien,
-           shard_id]() -> ss::noncopyable_function<ss::shared_ptr<engine>()> {
+          [this]() -> ss::noncopyable_function<ss::shared_ptr<engine>()> {
               handle<wasmtime_store_t, wasmtime_store_delete> store{
                 wasmtime_store_new(_engine, nullptr, nullptr)};
               auto* context = wasmtime_store_context(store.get());
@@ -649,32 +601,21 @@ public:
               handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
                 wasmtime_linker_new(_engine)};
 
-              std::vector<std::unique_ptr<host_function_environment>>
-                host_function_envs;
-
               auto xform_module = std::make_unique<transform_module>();
-              host_function_envs.push_back(register_transform_module(
-                xform_module.get(), linker.get(), alien, shard_id));
+              register_transform_module(linker.get());
 
               auto sr_module = std::make_unique<schema_registry_module>(_sr);
-              host_function_envs.push_back(register_sr_module(
-                sr_module.get(), linker.get(), alien, shard_id));
+              register_sr_module(linker.get());
 
               std::vector<ss::sstring> args{_meta.name()};
               absl::flat_hash_map<ss::sstring, ss::sstring> env
                 = _meta.environment;
+              env.emplace("REDPANDA_INPUT_TOPIC", _meta.input_topic.tp());
               env.emplace(
-                "REDPANDA_INPUT_"
-                "TOPIC",
-                _meta.input_topic.tp());
-              env.emplace(
-                "REDPANDA_OUTPUT_"
-                "TOPIC",
-                _meta.output_topics.begin()->tp());
+                "REDPANDA_OUTPUT_TOPIC", _meta.output_topics.begin()->tp());
               auto wasi_module = std::make_unique<wasi::preview1_module>(
                 std::move(args), std::move(env), _logger);
-              host_function_envs.push_back(register_wasi_module(
-                wasi_module.get(), linker.get(), alien, shard_id));
+              register_wasi_module(linker.get());
 
               wasmtime_instance_t instance;
               wasm_trap_t* trap_ptr = nullptr;
@@ -692,7 +633,6 @@ public:
                       xform_module = std::move(xform_module),
                       sr_module = std::move(sr_module),
                       wasi_module = std::move(wasi_module),
-                      host_function_envs = std::move(host_function_envs),
                       instance]() mutable {
                   return ss::make_shared<wasmtime_engine>(
                     std::move(name),
@@ -700,7 +640,6 @@ public:
                     std::move(xform_module),
                     std::move(sr_module),
                     std::move(wasi_module),
-                    std::move(host_function_envs),
                     instance,
                     _alien_thread_pool);
               };
