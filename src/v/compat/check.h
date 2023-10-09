@@ -54,7 +54,11 @@
             return {compat_binary::serde(obj)};                                \
         }                                                                      \
         static void check(class_name obj, compat_binary test) {                \
-            verify_serde_only(obj, std::move(test));                           \
+            if constexpr (std::equality_comparable<class_name>) {              \
+                verify_serde_only(obj, std::move(test));                       \
+            } else {                                                           \
+                verify_serde_round_trip(obj, std::move(test));                 \
+            }                                                                  \
         }                                                                      \
     };
 
@@ -224,6 +228,25 @@ void verify_serde_only(T expected, compat_binary test) {
           name,
           expected,
           decoded));
+    }
+}
+
+template<typename T>
+void verify_serde_round_trip(T, compat_binary test) {
+    const auto name = test.name;
+
+    auto expected = test.data.copy();
+    auto decoded = decode_serde_only<T>(std::move(test));
+
+    iobuf after_round_trip;
+    serde::write_async(after_round_trip, decoded).get();
+    if (expected != after_round_trip) {
+        throw compat_error(fmt::format(
+          "Verify of {{{}}} round trip decoding failed:\nExpected: "
+          "{}\nDecoded: {}",
+          name,
+          expected,
+          after_round_trip));
     }
 }
 

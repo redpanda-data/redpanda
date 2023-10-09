@@ -65,6 +65,7 @@ struct usage
     auto serde_fields() {
         return std::tie(bytes_sent, bytes_received, bytes_cloud_storage);
     }
+    friend bool operator==(const usage&, const usage&) = default;
     friend std::ostream& operator<<(std::ostream& os, const usage& u) {
         fmt::print(
           os,

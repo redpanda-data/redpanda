@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cinttypes>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
@@ -38,12 +39,36 @@ struct compat_version {
  */
 template<typename T, typename Version, typename CompatVersion>
 struct envelope {
-    bool operator==(envelope const&) const = default;
-    auto operator<=>(envelope const&) const = default;
     using value_t = T;
     static constexpr auto redpanda_serde_version = Version::v;
     static constexpr auto redpanda_serde_compat_version = CompatVersion::v;
     static constexpr auto redpanda_inherits_from_envelope = true;
+
+    // The operator definitions below may look strange, but they have the role
+    // of ensuring that serde types (which inherit from envelope) do not use
+    // the envelope comparison operators.
+    //
+    // The implementation is templated in order to distinguish the implicit call
+    // when the operator is generated for the base class (will have const
+    // serde::envelope& on both sides) and accidental calls from sub classes
+    // that do not override the operator (will have the derived template type on
+    // both sides).
+
+    template<typename O>
+    requires(std::is_same_v<
+             std::remove_cvref_t<O>,
+             envelope<T, Version, CompatVersion>>)
+    bool operator==(O const&) const {
+        return true;
+    }
+
+    template<typename O>
+    requires(std::is_same_v<
+             std::remove_cvref_t<O>,
+             envelope<T, Version, CompatVersion>>)
+    std::strong_ordering operator<=>(O const&) const {
+        return std::strong_ordering::equal;
+    }
 };
 
 // Overhead of the envelope in bytes: 4 bytes of size, one byte of version,

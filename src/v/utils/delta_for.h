@@ -359,6 +359,11 @@ public:
         return tmp;
     }
 
+    friend bool operator==(
+      const deltafor_encoder<TVal, DeltaStep, use_nttp_deltastep, delta_alg>&,
+      const deltafor_encoder<TVal, DeltaStep, use_nttp_deltastep, delta_alg>&)
+      = default;
+
 private:
     template<typename T>
     void _pack_as(const row_t& input) {

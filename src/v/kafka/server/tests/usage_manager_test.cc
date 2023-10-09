@@ -117,7 +117,7 @@ FIXTURE_TEST(test_usage, kvstore_test_fixture) {
 
     /// Create expected data set
     std::vector<kafka::usage> data;
-    for (auto i = 0; i < num_windows; ++i) {
+    for (auto i = 0; i < num_windows - 1; ++i) {
         const uint64_t sent = i * 100;
         const uint64_t recv = i * 200;
         data.emplace_back(
@@ -136,6 +136,11 @@ FIXTURE_TEST(test_usage, kvstore_test_fixture) {
           print_window_data(usage_fiber->get_usage_stats().get()));
     }
     auto result = strip_window_data(usage_fiber->get_usage_stats().get());
+
+    /// Compare the expected to the observed, must re-order expected and insert
+    /// an empty window to properly compare
+    data.emplace_back(kafka::usage{.bytes_sent = 0, .bytes_received = 0});
+    std::reverse(data.begin(), data.end());
     BOOST_CHECK_EQUAL(result, data);
 
     /// Add to open window
@@ -152,6 +157,9 @@ FIXTURE_TEST(test_usage, kvstore_test_fixture) {
     BOOST_CHECK_EQUAL(open_window.u.bytes_sent, 20);
     BOOST_CHECK_EQUAL(open_window.u.bytes_received, 20);
 
+    /// Grab most recent result before shutdown
+    result = strip_window_data(usage_fiber->get_usage_stats().get());
+
     /// Shut it down, note clean shutdowns persist data to kvstore
     usage_fiber->stop().get();
     usage_fiber = nullptr;
@@ -162,11 +170,12 @@ FIXTURE_TEST(test_usage, kvstore_test_fixture) {
     usage_fiber->start().get();
 
     // Ensure open window is consistent
-    result = strip_window_data(usage_fiber->get_usage_stats().get());
-    const auto& new_open_window = result[0];
+    auto result_after_restart = strip_window_data(
+      usage_fiber->get_usage_stats().get());
+    const auto& new_open_window = result_after_restart[0];
     BOOST_CHECK_EQUAL(new_open_window.bytes_sent, 20);
     BOOST_CHECK_EQUAL(new_open_window.bytes_received, 20);
-    BOOST_CHECK_EQUAL(result, data);
+    BOOST_CHECK_EQUAL(result, result_after_restart);
 
     usage_fiber->stop().get();
     kvstore->stop().get();
