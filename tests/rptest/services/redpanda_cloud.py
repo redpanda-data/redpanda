@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 from ducktape.utils.util import wait_until
+from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients import make_provider_client
 from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 
@@ -166,7 +167,7 @@ class RpCloudApiClient(object):
         except requests.HTTPError as e:
             self.lasterror = f'{e} {response.text}'
             self._logger.error(self.lasterror)
-            return None
+            raise e
         return response
 
     def _get_token(self):
@@ -266,7 +267,7 @@ class CloudClusterConfig:
     type: str = "FMC"
     network: str = "public"
     config_profile_name: str = "default"
-
+    use_same_cluster: bool = True
     install_pack_ver: str = "latest"
     install_pack_url_template: str = ""
     install_pack_auth_type: str = ""
@@ -313,11 +314,13 @@ class CloudCluster():
     Creates and deletes a cluster. Will also create a new namespace for
     that cluster.
     """
+    _cid_filename = '.cluster_id'
 
     CHECK_TIMEOUT_SEC = 3600
     CHECK_BACKOFF_SEC = 60.0
 
     def __init__(self,
+                 context,
                  logger,
                  cluster_config,
                  delete_namespace=False,
@@ -399,6 +402,17 @@ class CloudCluster():
                 )
                 raise RuntimeError("Private networking is not implemented "
                                    f"for '{self.config.provider}'")
+
+        # prepare rpk plugin
+        self.utils = CloudClusterUtils(context, self._logger,
+                                       self.provider_key, self.provider_secret)
+        if self.config.type == CLOUD_TYPE_BYOC:
+            # remove current plugin if any
+            self.utils.rpk_plugin_uninstall('byoc', sudo=True)
+            self.utils.rpk_plugin_uninstall('byoc')
+
+        # save context
+        self._ctx = context
 
     @property
     def cluster_id(self):
@@ -674,16 +688,65 @@ class CloudCluster():
 
         return
 
+    @property
+    def _cid_file(self):
+        return os.path.join(self._ctx.session_context.results_dir,
+                            self._cid_filename)
+
+    def _cluster_id_updated(self, uuid):
+        _cluster = self.cloudv2._http_get(endpoint=f'/api/v1/clusters/{uuid}')
+        return _cluster['id'] != uuid
+
+    def save_cluster_id(self, cluster_id):
+        """
+        Save cluster id to results folder for next test to use
+        """
+        with open(self._cid_file, 'w') as cf:
+            cf.write(cluster_id)
+        return
+
+    def safe_load_cluster_id(self):
+        """
+        Checks if cluster_id is saved by previous test and loads it
+        """
+        _id = None
+        if os.path.exists(self._cid_file):
+            with open(self._cid_file, 'r') as cf:
+                _id = cf.read()
+        return _id
+
+    def _wait_for_cluster_id(self, uuid):
+        wait_until(lambda: self._cluster_id_updated(uuid),
+                   timeout_sec=120,
+                   backoff_sec=10,
+                   err_msg='Failed to get proper id '
+                   f'of cloud cluster {self.current.name}')
+
+        # Use clusters handle to wait for non-uuid id :)
+        _cluster = self.cloudv2._http_get(endpoint=f'/api/v1/clusters/{uuid}')
+        _id = _cluster['id']
+        self._logger.info(f"Cluster ID is '{_id}'")
+        return _id
+
     def create(self, superuser: Optional[SaslCredentials] = None) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
         :param config_profile_name: config profile name, default 'tier-1-aws'
         :return: clusterId, e.g. 'cimuhgmdcaa1uc1jtabc'
         """
-
+        # Check if previous test saved cluster id
+        # also, configuration takes priority
+        # so the cluster id would be loaded only once
+        # This will work for FMC and BYOC alike
+        _id = self.config.id
+        _id = self.safe_load_cluster_id() if not _id else _id
+        if _id and self.config.use_same_cluster:
+            # update config with new id
+            self.config.id = _id
+        # set network flag
         if not self.isPublicNetwork:
             self.current.connection_type = 'private'
-
+        # Prepare the cluster
         if self.config.id != '':
             # Cluster already exist
             # Just load needed info to create peering
@@ -727,26 +790,50 @@ class CloudCluster():
             # Prepare cluster payload block
             _body = self._create_cluster_payload()
             self._logger.debug(f'body: {json.dumps(_body)}')
-            # Send API request
+            # Send API request to create cluster
             r = self.cloudv2._http_post(
                 endpoint='/api/v1/workflows/network-cluster', json=_body)
 
             # handle error on CloudV2 side
             if r is None:
                 raise RuntimeError(self.cloudv2.lasterror)
+            # In case of BYOC cluster, do some additional stuff to create it
+            if self.config.type == CLOUD_TYPE_BYOC:
+                # At this point cluster has UUID instead of normal one
+                # For BYOC creation a non-uuid is needed
+                # It gets updated when spec makes it through
+                # the workslow, so just wait
+                _cluster_id = self._wait_for_cluster_id(r['id'])
+                # Handle byoc creation
+                # Login without saving creds
+                self.utils.rpk_cloud_login(self.config.oauth_client_id,
+                                           self.config.oauth_client_secret)
+                # Install proper plugin
+                self.utils.rpk_cloud_byoc_install(_cluster_id)
+                # Kick off cluster creation
+                # Timeout for this is half an hour as this is only agent
+                self.utils.rpk_cloud_apply(_cluster_id)
 
+            # In case of FMC, just poll the cluster and wait when ready
+            # Poll API and wait for the cluster creation
+            # Announce wait
             self._logger.info(
                 f'waiting for creation of cluster {self.current.name} '
                 f'namespaceUuid {r["namespaceUuid"]}, checking every '
                 f'{self.CHECK_BACKOFF_SEC} seconds')
-            # Poll API and wait for the cluster creation
             wait_until(lambda: self._cluster_ready(),
                        timeout_sec=self.CHECK_TIMEOUT_SEC,
                        backoff_sec=self.CHECK_BACKOFF_SEC,
                        err_msg='Unable to deterimine readiness '
                        f'of cloud cluster {self.current.name}')
+
             self.config.id, self.current.network_id = \
                 self._get_cluster_id_and_network_id()
+
+            # at this point cluster is ready
+            # just save the id to reuse it in next test
+            if self.config.use_same_cluster:
+                self.save_cluster_id(self.config.id)
 
         # Update Cluster console Url
         self.current.consoleUrl = self._get_cluster_console_url()
