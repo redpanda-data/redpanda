@@ -80,10 +80,6 @@ public:
      * the redpanda_transform_on_record_written function that the guest should
      * expose.
      */
-    model::record_batch for_each_record(
-      const model::record_batch*,
-      ss::noncopyable_function<void(wasm_call_params)>);
-
     ss::future<model::record_batch> for_each_record_async(
       const model::record_batch*,
       ss::noncopyable_function<ss::future<>(wasm_call_params)>);
