@@ -44,6 +44,10 @@ CDT_CONFIGURATION = {
     "cloud_storage_segment_max_upload_interval_sec": 5
 }
 
+ALLOWED_LOG_LINES = [
+    'Ensure that your bucket exists and that the cloud_storage_bucket and cloud_storage_region cluster configs are correct.'
+]
+
 
 class CloudStorageCompactionTest(EndToEndTest):
     topic = "panda-topic"
@@ -162,7 +166,7 @@ class CloudStorageCompactionTest(EndToEndTest):
                    timeout_sec=30,
                    backoff_sec=5)
 
-    @cluster(num_nodes=9)
+    @cluster(num_nodes=9, log_allow_list=ALLOWED_LOG_LINES)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         docker_use_arbitrary=True))
     def test_read_from_replica(self, cloud_storage_type):
