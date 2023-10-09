@@ -101,7 +101,7 @@ private:
     std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
 };
 
-enum class api_activity_notification {
+enum class api_activity_type {
     segment_upload,
     segment_download,
     segment_delete,
@@ -109,6 +109,11 @@ enum class api_activity_notification {
     manifest_download,
     controller_snapshot_upload,
     controller_snapshot_download,
+};
+
+struct api_activity_notification {
+    api_activity_type type;
+    bool is_retry;
 };
 
 /// \brief Represents remote endpoint
@@ -428,7 +433,7 @@ public:
         /// Event filter that subscribes to events from all sources.
         /// The event type wildcard can also be specified.
         explicit event_filter(
-          std::unordered_set<api_activity_notification> ignored_events = {})
+          std::unordered_set<api_activity_type> ignored_events = {})
           : _events_to_ignore(std::move(ignored_events)) {}
         /// Event filter that subscribes to events from all sources
         /// except one. The event type wildcard can also be specified.
@@ -438,7 +443,7 @@ public:
         /// own.
         explicit event_filter(
           retry_chain_node& ignored_src,
-          std::unordered_set<api_activity_notification> ignored_events = {})
+          std::unordered_set<api_activity_type> ignored_events = {})
           : _source_to_ignore(std::ref(ignored_src))
           , _events_to_ignore(std::move(ignored_events)) {}
 
@@ -452,7 +457,7 @@ public:
     private:
         std::optional<std::reference_wrapper<retry_chain_node>>
           _source_to_ignore;
-        std::unordered_set<api_activity_notification> _events_to_ignore;
+        std::unordered_set<api_activity_type> _events_to_ignore;
         std::optional<ss::promise<api_activity_notification>> _promise;
         intrusive_list_hook _hook;
     };
@@ -490,7 +495,7 @@ private:
       retry_chain_node& parent,
       lazy_abort_source& lazy_abort_source,
       const std::string_view stream_label,
-      api_activity_notification event_type,
+      api_activity_type event_type,
       FailedUploadMetricFn failed_upload_metric,
       SuccessfulUploadMetricFn successful_upload_metric,
       UploadBackoffMetricFn upload_backoff_metric);

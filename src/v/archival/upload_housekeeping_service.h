@@ -243,6 +243,7 @@ private:
     static constexpr auto ma_resolution = 20ms;
     using sliding_window_t = timed_moving_average<double, ss::lowres_clock>;
     std::unique_ptr<sliding_window_t> _api_utilization;
+    std::unique_ptr<sliding_window_t> _api_slow_downs;
 };
 
 } // namespace archival

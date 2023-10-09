@@ -65,6 +65,8 @@ upload_housekeeping_service::upload_housekeeping_service(
   , _filter(_rtc)
   , _workflow(_rtc, sg, _probe)
   , _api_utilization(
+      std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
+  , _api_slow_downs(
       std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution)) {
     _idle_timer.set_callback([this] { return idle_timer_callback(); });
     _epoch_timer.set_callback([this] { return epoch_timer_callback(); });
@@ -108,29 +110,36 @@ housekeeping_workflow& upload_housekeeping_service::workflow() {
 ss::future<> upload_housekeeping_service::bg_idle_loop() {
     ss::gate::holder holder(_gate);
     while (!_as.abort_requested()) {
-        auto event = co_await _remote.subscribe(_filter);
+        const auto event = co_await _remote.subscribe(_filter);
         double weight = 0;
-        switch (event) {
+        double slow_down_weight = 0;
+        switch (event.type) {
         // Write path events
-        case cloud_storage::api_activity_notification::manifest_upload:
-        case cloud_storage::api_activity_notification::segment_upload:
-        case cloud_storage::api_activity_notification::segment_delete:
+        case cloud_storage::api_activity_type::manifest_upload:
+        case cloud_storage::api_activity_type::segment_upload:
+        case cloud_storage::api_activity_type::segment_delete:
             weight = 1;
+            if (event.is_retry) {
+                slow_down_weight = 1;
+            }
             break;
         // Read path events
-        case cloud_storage::api_activity_notification::manifest_download:
-        case cloud_storage::api_activity_notification::segment_download:
+        case cloud_storage::api_activity_type::manifest_download:
+        case cloud_storage::api_activity_type::segment_download:
             weight = 1;
+            if (event.is_retry) {
+                slow_down_weight = 1;
+            }
             break;
         // Controller snapshot IO is independent of housekeeping.
-        case cloud_storage::api_activity_notification::
-          controller_snapshot_download:
-        case cloud_storage::api_activity_notification::
-          controller_snapshot_upload:
+        case cloud_storage::api_activity_type::controller_snapshot_download:
+        case cloud_storage::api_activity_type::controller_snapshot_upload:
             break;
         };
 
-        _api_utilization->update(weight, ss::lowres_clock::now());
+        const auto now = ss::lowres_clock::now();
+        _api_utilization->update(weight, now);
+        _api_slow_downs->update(slow_down_weight, now);
         if (_api_utilization->get() >= _api_idle_threshold()) {
             // Restart the timer and delay idle timeout
             rearm_idle_timer();

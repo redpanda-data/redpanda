@@ -272,7 +272,10 @@ ss::future<download_result> remote::do_download_manifest(
     while (!_gate.is_closed() && retry_permit.is_allowed
            && !result.has_value()) {
         notify_external_subscribers(
-          api_activity_notification::manifest_download, parent);
+          api_activity_notification{
+            .type = api_activity_type::manifest_download,
+            .is_retry = fib.retry_count() > 1},
+          parent);
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout(), expect_missing);
 
@@ -372,7 +375,10 @@ ss::future<upload_result> remote::upload_manifest(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
         notify_external_subscribers(
-          api_activity_notification::manifest_upload, parent);
+          api_activity_notification{
+            .type = api_activity_type::manifest_upload,
+            .is_retry = fib.retry_count() > 1},
+          parent);
         auto [is, size] = co_await manifest.serialize();
         const auto res = co_await lease.client->put_object(
           bucket, path, size, std::move(is), fib.get_timeout());
@@ -450,7 +456,7 @@ ss::future<upload_result> remote::upload_manifest(
 void remote::notify_external_subscribers(
   api_activity_notification event, const retry_chain_node& caller) {
     for (auto& flt : _filters) {
-        if (flt._events_to_ignore.contains(event)) {
+        if (flt._events_to_ignore.contains(event.type)) {
             continue;
         }
         if (
@@ -494,7 +500,7 @@ ss::future<upload_result> remote::upload_controller_snapshot(
       parent,
       lazy_abort_source,
       "controller snapshot",
-      api_activity_notification::controller_snapshot_upload,
+      api_activity_type::controller_snapshot_upload,
       [this] { _probe.controller_snapshot_failed_upload(); },
       [this] { _probe.controller_snapshot_successful_upload(); },
       [this] { _probe.controller_snapshot_upload_backoff(); });
@@ -512,7 +518,7 @@ ss::future<upload_result> remote::upload_stream(
   retry_chain_node& parent,
   lazy_abort_source& lazy_abort_source,
   const std::string_view stream_label,
-  api_activity_notification event_type,
+  api_activity_type event_type,
   FailedUploadMetricFn failed_upload_metric,
   SuccessfulUploadMetricFn successful_upload_metric,
   UploadBackoffMetricFn upload_backoff_metric) {
@@ -529,7 +535,10 @@ ss::future<upload_result> remote::upload_stream(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
-        notify_external_subscribers(event_type, parent);
+        notify_external_subscribers(
+          api_activity_notification{
+            .type = event_type, .is_retry = fib.retry_count() > 1},
+          parent);
 
         // Client acquisition can take some time. Do a check before starting
         // the upload if we can still continue.
@@ -629,7 +638,7 @@ ss::future<upload_result> remote::upload_segment(
       parent,
       lazy_abort_source,
       "segment",
-      api_activity_notification::segment_upload,
+      api_activity_type::segment_upload,
       [this] { _probe.failed_upload(); },
       [this] { _probe.successful_upload(); },
       [this] { _probe.upload_backoff(); });
@@ -710,7 +719,10 @@ ss::future<download_result> remote::download_stream(
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
-          api_activity_notification::segment_download, parent);
+          api_activity_notification{
+            .type = api_activity_type::segment_download,
+            .is_retry = fib.retry_count() > 1},
+          parent);
 
         auto download_latency_measure = download_latency_measurement();
         auto resp = co_await lease.client->get_object(
@@ -806,7 +818,10 @@ ss::future<download_result> remote::download_index(
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
-          api_activity_notification::segment_download, parent);
+          api_activity_notification{
+            .type = api_activity_type::segment_download,
+            .is_retry = fib.retry_count() > 1},
+          parent);
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout());
 
@@ -941,7 +956,10 @@ ss::future<upload_result> remote::delete_object(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
-          api_activity_notification::segment_delete, parent);
+          api_activity_notification{
+            .type = api_activity_type::segment_delete,
+            .is_retry = fib.retry_count() > 1},
+          parent);
         // NOTE: DeleteObject in S3 doesn't return an error
         // if the object doesn't exist. Because of that we're
         // using 'upload_result' type as a return type. No need
@@ -1090,7 +1108,10 @@ ss::future<upload_result> remote::delete_object_batch(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
-          api_activity_notification::segment_delete, parent);
+          api_activity_notification{
+            .type = api_activity_type::segment_delete,
+            .is_retry = fib.retry_count() > 1},
+          parent);
         auto res = co_await lease.client->delete_objects(
           bucket, keys, fib.get_timeout());
 
