@@ -483,6 +483,11 @@ public:
         return tmp;
     }
 
+    friend bool operator==(
+      const deltafor_encoder<TVal, DeltaStep, use_nttp_deltastep, delta_alg>&,
+      const deltafor_encoder<TVal, DeltaStep, use_nttp_deltastep, delta_alg>&)
+      = default;
+
 private:
     static_assert(
       row_width == 16,

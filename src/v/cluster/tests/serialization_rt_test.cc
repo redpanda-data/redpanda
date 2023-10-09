@@ -475,19 +475,39 @@ void roundtrip_test(T a) {
         err = std::current_exception();
     }
 
-    // On failures, log the type and the content of the buffer.
-    if (err || original != from_serde) {
-        std::cerr << "Failed serde roundtrip on " << typeid(T).name()
-                  << std::endl;
-        std::cerr << "Dump " << serde_out.size_bytes()
-                  << " bytes: " << serde_out.hexdump(1024) << std::endl;
-    }
+    if constexpr (std::equality_comparable<T>) {
+        // On failures, log the type and the content of the buffer.
+        if (err || original != from_serde) {
+            std::cerr << "Failed serde roundtrip on " << typeid(T).name()
+                      << std::endl;
+            std::cerr << "Dump " << serde_out.size_bytes()
+                      << " bytes: " << serde_out.hexdump(1024) << std::endl;
+        }
 
-    if (err) {
-        std::rethrow_exception(err);
-    }
+        if (err) {
+            std::rethrow_exception(err);
+        }
 
-    BOOST_REQUIRE(original == from_serde);
+        BOOST_REQUIRE(original == from_serde);
+    } else {
+        auto serde_out_after_roundtrip = serde::to_iobuf(from_serde);
+        if (err || serde_out_after_roundtrip != serde_out) {
+            std::cerr << "Failed serde roundtrip on " << typeid(T).name()
+                      << std::endl;
+            std::cerr << "Iobuf before " << serde_out.size_bytes()
+                      << " bytes: " << serde_out.hexdump(1024) << std::endl;
+            std::cerr << "Iobuf after "
+                      << serde_out_after_roundtrip.size_bytes()
+                      << " bytes: " << serde_out_after_roundtrip.hexdump(1024)
+                      << std::endl;
+        }
+
+        if (err) {
+            std::rethrow_exception(err);
+        }
+
+        BOOST_REQUIRE(serde_out_after_roundtrip == serde_out);
+    }
 }
 
 template<typename T>
@@ -2142,7 +2162,9 @@ void serde_roundtrip_cmd(Key key, Value value) {
     auto deserialized_cmd = std::get<Cmd>(deserialized);
 
     BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
-    BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    if constexpr (std::equality_comparable<Value>) {
+        BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    }
 }
 
 template<typename Cmd, typename Key, typename Value>
@@ -2155,7 +2177,10 @@ void adl_roundtrip_cmd(Key key, Value value) {
     auto deserialized_cmd = std::get<Cmd>(deserialized);
 
     BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
-    BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+
+    if constexpr (std::equality_comparable<Value>) {
+        BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    }
 }
 
 template<typename Cmd, typename Key, typename Value>

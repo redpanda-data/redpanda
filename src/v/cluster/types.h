@@ -2036,6 +2036,7 @@ struct nt_revision
         return H::combine(std::move(h), ntr.nt, ntr.initial_revision_id);
     }
 
+    friend bool operator==(const nt_revision& lhs, const nt_revision& rhs);
     friend std::ostream& operator<<(std::ostream&, const nt_revision&);
 
     auto serde_fields() { return std::tie(nt, initial_revision_id); }
