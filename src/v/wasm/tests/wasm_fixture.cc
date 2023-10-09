@@ -108,6 +108,25 @@ public:
 private:
     std::vector<ppsr::subject_schema> _schemas;
 };
+
+void WasmTestFixture::SetUpTestSuite() {
+    // This is a bit of a hack to set the signal set for the ss::async thread
+    // that runs the tests.
+    // In debug mode (only) ss::thread uses swapcontext to switch stacks,
+    // and swapcontext *also* keeps track of the signalset and swaps those.
+    // so depending on the running context we can get the signals that wasmtime
+    // needs can be blocked, as these signals are blocked by default and we only
+    // unblock the signals on the reactor threads in wasm::runtime::start
+    //
+    // In release mode, longjmp and setjmp is used instead of swapcontext, so
+    // there is nothing that resets the signalset.
+    auto mask = ss::make_empty_sigset_mask();
+    sigaddset(&mask, SIGSEGV);
+    sigaddset(&mask, SIGILL);
+    sigaddset(&mask, SIGFPE);
+    ss::throw_pthread_error(::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
+}
+
 void WasmTestFixture::SetUp() {
     _probe = std::make_unique<wasm::transform_probe>();
     auto sr = std::make_unique<fake_schema_registry>();
