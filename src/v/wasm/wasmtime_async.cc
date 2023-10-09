@@ -254,13 +254,6 @@ public:
         co_return;
     }
 
-    struct transform_result {
-        model::record_batch batch;
-        // it's not safe to access seastar state in an alien thread, so make
-        // sure we're passing back the stats we need to record.
-        std::vector<uint64_t> latencies;
-    };
-
     ss::future<model::record_batch>
     transform(model::record_batch batch, transform_probe* probe) override {
         vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
@@ -271,17 +264,13 @@ public:
             batch = co_await storage::internal::decompress_batch(
               std::move(batch));
         }
-        ss::future<transform_result> fut = co_await ss::coroutine::as_future(
-          invoke_transform(&batch));
+        ss::future<model::record_batch> fut = co_await ss::coroutine::as_future(
+          invoke_transform(&batch, probe));
         if (fut.failed()) {
             probe->transform_error();
             std::rethrow_exception(fut.get_exception());
         }
-        transform_result r = std::move(fut).get();
-        for (uint64_t latency : r.latencies) {
-            probe->record_latency(latency);
-        }
-        co_return std::move(r.batch);
+        co_return std::move(fut).get();
     }
 
     template<typename T>
@@ -398,9 +387,8 @@ private:
         vlog(wasm_log.info, "Wasm function {} initialized", _meta.name());
     }
 
-    ss::future<transform_result>
-    invoke_transform(const model::record_batch* batch) {
-        std::vector<uint64_t> latencies;
+    ss::future<model::record_batch>
+    invoke_transform(const model::record_batch* batch, transform_probe* p) {
         auto* ctx = wasmtime_store_context(_store.get());
         wasmtime_extern_t cb;
         bool ok = wasmtime_instance_export_get(
@@ -413,53 +401,46 @@ private:
             throw wasm_exception(
               "Missing wasi initialization function", errc::user_code_failure);
         }
-        auto transformed = _transform_module.for_each_record(
-          batch, [this, &ctx, &cb, &latencies](wasm_call_params params) {
+        wasmtime_val_t result;
+        std::array<wasmtime_val_t, 4> args{};
+        co_return co_await _transform_module.for_each_record_async(
+          batch,
+          [this, &ctx, &cb, &p, &result, &args](wasm_call_params params) {
               reset_fuel(ctx);
               _wasi_module.set_timestamp(params.current_record_timestamp);
-              auto recorder = ss::defer(
-                [&latencies,
-                 start_time = transform_probe::hist_t::clock_type::now()] {
-                    latencies.push_back(
-                      std::chrono::duration_cast<
-                        transform_probe::hist_t::duration_type>(
-                        transform_probe::hist_t::clock_type::now() - start_time)
-                        .count());
+              auto recorder = p->latency_measurement();
+              args[0] = {
+                .kind = WASMTIME_I32,
+                .of = {.i32 = params.batch_handle},
+              };
+              args[1] = {
+                .kind = WASMTIME_I32,
+                .of = {.i32 = params.record_handle},
+              };
+              args[2] = {
+                .kind = WASMTIME_I32,
+                .of = {.i32 = params.record_size},
+              };
+              args[3] = {
+                .kind = WASMTIME_I32,
+                .of = {.i32 = params.current_record_offset},
+              };
+              result = {
+                .kind = WASMTIME_I32,
+                .of = {.i32 = -1},
+              };
+              return call_host_func(ctx, &cb.of.func, args, {&result, 1})
+                .then([this, &result, r = std::move(recorder)] {
+                    if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
+                        throw wasm_exception(
+                          ss::format(
+                            "transform execution {} resulted in error {}",
+                            _meta.name(),
+                            result.of.i32),
+                          errc::user_code_failure);
+                    }
                 });
-              wasmtime_val_t result = {.kind = WASMTIME_I32, .of = {.i32 = -1}};
-              std::array<wasmtime_val_t, 4> args = {
-                wasmtime_val_t{
-                  .kind = WASMTIME_I32, .of = {.i32 = params.batch_handle}},
-                {.kind = WASMTIME_I32, .of = {.i32 = params.record_handle}},
-                {.kind = WASMTIME_I32, .of = {.i32 = params.record_size}},
-                {.kind = WASMTIME_I32,
-                 .of = {.i32 = params.current_record_offset}}};
-              wasm_trap_t* trap_ptr = nullptr;
-              handle<wasmtime_error_t, wasmtime_error_delete> error{
-                wasmtime_func_call(
-                  ctx,
-                  &cb.of.func,
-                  args.data(),
-                  args.size(),
-                  &result,
-                  /*results_size=*/1,
-                  &trap_ptr)};
-              handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-              check_error(error.get());
-              check_trap(trap.get());
-              if (result.kind != WASMTIME_I32 || result.of.i32 != 0) {
-                  throw wasm_exception(
-                    ss::format(
-                      "transform execution {} resulted in error {}",
-                      _meta.name(),
-                      result.of.i32),
-                    errc::user_code_failure);
-              }
           });
-        co_return transform_result{
-          .batch = std::move(transformed),
-          .latencies = std::move(latencies),
-        };
     }
 
     wasm_engine_t* _engine;
