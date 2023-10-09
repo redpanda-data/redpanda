@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration
 
-go 1.20
+go 1.21
 
 require (
 	github.com/json-iterator/go v1.1.12
