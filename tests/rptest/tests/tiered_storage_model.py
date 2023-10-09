@@ -1294,7 +1294,7 @@ class TS_Spillover_DeleteByGC(Expression):
         return [
             LogBasedValidator(
                 "TS_Spillover_DeleteByGC_log",
-                "ntp_archiver_service.*Deleting spillover segment from cloud storage",
+                "ntp_archiver_service.*Enqueuing spillover segment delete from cloud storage",
                 execution_stage=TestRunStage.Intermediate),
         ]
 
@@ -1346,7 +1346,7 @@ class TS_Spillover_ManifestDeleted(Expression):
         return [
             LogBasedValidator(
                 "TS_Spillover_ManifestDeleted_log",
-                "ntp_archiver_service.*Deleting spillover manifest from cloud storage",
+                "ntp_archiver_service.*Enqueuing spillover manifest delete from cloud",
                 confidence_threshold=LOW_THRESHOLD,
                 execution_stage=TestRunStage.Intermediate),
         ]
