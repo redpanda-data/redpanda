@@ -28,6 +28,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -223,6 +224,9 @@ public:
     ~wasmtime_engine() override = default;
 
     uint64_t memory_usage_size_bytes() const final {
+        if (!_store) {
+            return 0;
+        }
         std::string_view memory_export_name = "memory";
         auto* ctx = wasmtime_store_context(_store.get());
         wasmtime_extern_t memory_extern;
@@ -238,9 +242,17 @@ public:
         return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
-    ss::future<> start() final { return initialize_wasi(); }
+    ss::future<> start() final {
+        co_await create_instance();
+        co_await initialize_wasi();
+    }
 
-    ss::future<> stop() final { co_return; }
+    ss::future<> stop() final {
+        // Deleting the store invalidates the instance and actually frees the
+        // memory for the underlying instance.
+        _store = nullptr;
+        co_return;
+    }
 
     struct transform_result {
         model::record_batch batch;
@@ -287,19 +299,57 @@ public:
     }
 
 private:
-    void reset_fuel() {
-        auto* ctx = wasmtime_store_context(_store.get());
+    void reset_fuel(wasmtime_context_t* ctx) {
         uint64_t fuel = 0;
         wasmtime_context_fuel_remaining(ctx, &fuel);
         handle<wasmtime_error_t, wasmtime_error_delete> error(
           wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
     }
 
+    ss::future<> create_instance() {
+        // The underlying "data" for this store is our engine, which is what
+        // allows our host functions to access the actual module for that host
+        // function.
+        handle<wasmtime_store_t, wasmtime_store_delete> store{
+          wasmtime_store_new(_engine, /*data=*/this, /*finalizer=*/nullptr)};
+        auto* context = wasmtime_store_context(store.get());
+        reset_fuel(context);
+
+        _wasi_module.set_timestamp(model::timestamp::min());
+
+        // The wasm spec has a feature that a module can specify a startup
+        // function that is run on start.
+        wasm_trap_t* trap_ptr = nullptr;
+        wasmtime_error_t* error_ptr = nullptr;
+        handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
+          wasmtime_instance_pre_instantiate_async(
+            _preinitialized->underlying.get(),
+            context,
+            &_instance,
+            &trap_ptr,
+            &error_ptr)};
+
+        // Poll the call future to completion, yielding to the scheduler when
+        // the future yields.
+        while (!wasmtime_call_future_poll(fut.get())) {
+            co_await ss::coroutine::maybe_yield();
+        }
+
+        // Now that the call future has returned as completed, we can assume the
+        // out pointers have been set, we need to check them for errors.
+        handle<wasmtime_error_t, wasmtime_error_delete> error{error_ptr};
+        handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+        check_error(error.get());
+        check_trap(trap.get());
+        // initialization success (_instance is valid to use with this store)
+        _store = std::move(store);
+    }
+
     ss::future<> initialize_wasi() {
         // TODO: Consider having a different amount of fuel for
         // initialization.
-        reset_fuel();
         auto* ctx = wasmtime_store_context(_store.get());
+        reset_fuel(ctx);
         wasmtime_extern_t start;
         bool ok = wasmtime_instance_export_get(
           ctx,
@@ -340,7 +390,7 @@ private:
         }
         auto transformed = _transform_module.for_each_record(
           batch, [this, &ctx, &cb, &latencies](wasm_call_params params) {
-              reset_fuel();
+              reset_fuel(ctx);
               _wasi_module.set_timestamp(params.current_record_timestamp);
               auto recorder = ss::defer(
                 [&latencies,
@@ -395,8 +445,9 @@ private:
     schema_registry_module _sr_module;
     wasi::preview1_module _wasi_module;
 
-    wasmtime_instance_t _instance{};
+    // The following state is only valid if there is a non-null store.
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
+    wasmtime_instance_t _instance{};
 };
 
 template<auto value>
