@@ -241,14 +241,17 @@ class HighThroughputTest(RedpandaTest):
     def _add_resource_tracking(self, type, resource):
         self.resources.append({"type": type, "spec": resource})
 
-    def _create_default_topics(self):
+    def _create_topic_spec(self):
         _spec = TopicSpec(
             partition_count=self.tier_config.partitions_upper_limit,
             replication_factor=3,
             retention_bytes=-1)
         self.topics = [_spec]
-        self._create_initial_topics()
         self._add_resource_tracking("topic", _spec)
+
+    def _create_default_topics(self):
+        self._create_topic_spec()
+        self._create_initial_topics()
 
     def _clean_resources(self):
         for item in self.resources:
@@ -558,7 +561,6 @@ class HighThroughputTest(RedpandaTest):
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
-    @ignore
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
@@ -771,12 +773,12 @@ class HighThroughputTest(RedpandaTest):
     @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
+        # create default topics
+        self._create_default_topics()
+
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
-
-        # create default topics
-        self._create_default_topics()
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
@@ -808,9 +810,7 @@ class HighThroughputTest(RedpandaTest):
     @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_ts_resource_utilization(self):
-        # create default topics
-        self._create_default_topics()
-
+        self._create_topic_spec()
         self.stage_tiered_storage_consuming()
 
     def stage_lots_of_failed_consumers(self):
@@ -881,11 +881,12 @@ class HighThroughputTest(RedpandaTest):
     @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume_miss_cache(self):
+        # create default topics
+        self._create_default_topics()
+
         self.adjust_topic_segment_properties(
             segment_bytes=self.small_segment_size,
             retention_local_bytes=2 * self.small_segment_size)
-        # create default topics
-        self._create_default_topics()
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
@@ -1232,8 +1233,8 @@ class HighThroughputTest(RedpandaTest):
             "name": "HT004-MINPARTOMB",
             "topics": 1,
             "partitions_per_topic": partitions,
-            "subscriptions_per_topic": consumers,
-            "consumer_per_subscription": 1,
+            "subscriptions_per_topic": 1,
+            "consumer_per_subscription": consumers,
             "producers_per_topic": producers,
             "producer_rate": rate,
             "message_size": msg_size,
@@ -1260,8 +1261,8 @@ class HighThroughputTest(RedpandaTest):
         # Get values for almost idle cluster load
         rampup_time = 1
         runtime = 30
-        rate = self.tier_config.ingress_rate
         msg_size = 16 * KiB
+        rate = self.tier_config.ingress_rate // msg_size
         producers = 1 * (self.tier_config.num_brokers // 3) + 1
         consumers = producers * 2
 
