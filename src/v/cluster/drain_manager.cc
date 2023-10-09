@@ -25,47 +25,58 @@ ss::future<> drain_manager::start() {
 
 ss::future<> drain_manager::stop() {
     if (!_drain.has_value()) {
-        vlog(clusterlog.info, "Drain manager stopping (was not started)");
+        vlog(clusterlog.info, "Drain manager stopped (was not started)");
         return ss::now();
     }
     vlog(clusterlog.info, "Drain manager stopping");
     _abort.request_abort();
     _sem.signal();
-    return _drain.value().handle_exception([](std::exception_ptr e) {
-        vlog(clusterlog.warn, "Draining manager task experience error: {}", e);
-    });
+    return _drain.value()
+      .then([] { vlog(clusterlog.info, "Drain manager stopped"); })
+      .handle_exception([](std::exception_ptr e) {
+          vlog(
+            clusterlog.warn, "Draining manager task experience error: {}", e);
+      });
 }
 
 ss::future<> drain_manager::drain() {
-    if (_abort.abort_requested()) {
-        // handle http requests racing with shutdown
-        co_return;
-    }
+    return container().invoke_on_all([](cluster::drain_manager& self) {
+        if (self._abort.abort_requested()) {
+            // handle http requests racing with shutdown
+            return ss::now();
+        }
 
-    if (_draining) {
-        vlog(clusterlog.info, "Node draining is already active");
-        co_return;
-    }
+        if (self._draining_requested || self._drained) {
+            vlog(clusterlog.info, "Node draining is already active");
+            return ss::now();
+        }
 
-    vlog(clusterlog.info, "Node draining is starting");
-    _draining = true;
-    _status = drain_status{};
-    _sem.signal();
+        vlog(clusterlog.info, "Node draining is starting");
+        self._draining_requested = true;
+        self._restore_requested = false;
+        self._status = drain_status{};
+        self._sem.signal();
+        return ss::now();
+    });
 }
 
 ss::future<> drain_manager::restore() {
-    if (_abort.abort_requested()) {
-        co_return;
-    }
+    return container().invoke_on_all([](cluster::drain_manager& self) {
+        if (self._abort.abort_requested()) {
+            return ss::now();
+        }
 
-    if (!_draining) {
-        vlog(clusterlog.info, "Node draining is not active");
-        co_return;
-    }
+        if (!self._draining_requested && !self._drained) {
+            vlog(clusterlog.info, "Node draining is not active");
+            return ss::now();
+        }
 
-    vlog(clusterlog.info, "Node draining is stopping");
-    _draining = false;
-    _sem.signal();
+        vlog(clusterlog.info, "Node draining is stopping");
+        self._draining_requested = false;
+        self._restore_requested = true;
+        self._sem.signal();
+        return ss::now();
+    });
 }
 
 ss::future<std::optional<drain_manager::drain_status>> drain_manager::status() {
@@ -75,7 +86,7 @@ ss::future<std::optional<drain_manager::drain_status>> drain_manager::status() {
 
     co_return co_await container().map_reduce0(
       [](drain_manager& dm) -> std::optional<drain_status> {
-          if (dm._draining) {
+          if (dm._draining_requested || dm._drained) {
               return dm._status;
           }
           return std::nullopt;
@@ -121,22 +132,17 @@ ss::future<> drain_manager::task() {
             break;
         }
 
-        const auto draining = _draining;
-        try {
-            if (draining) {
-                co_await do_drain();
-            } else {
-                co_await do_restore();
-            }
-        } catch (...) {
-            vlog(
-              clusterlog.warn,
-              "Draining task {{{}}} experienced error: {}",
-              draining ? "drain" : "restore",
-              std::current_exception());
-            _status.errors = true;
+        if (_draining_requested) {
+            co_await do_drain();
+            _draining_requested = false;
+            _status.finished = true;
         }
-        _status.finished = true;
+
+        if (_restore_requested) {
+            _drained = false;
+            co_await do_restore();
+            _restore_requested = false;
+        }
     }
 }
 
@@ -151,7 +157,7 @@ ss::future<> drain_manager::do_drain() {
      */
     _partition_manager.local().block_new_leadership();
 
-    while (_draining && !_abort.abort_requested()) {
+    while (!_restore_requested && !_abort.abort_requested()) {
         /*
          * build a set of eligible partitions. ignore any raft groups that
          * will fail when transferring leadership and which shouldn't be
@@ -171,7 +177,12 @@ ss::future<> drain_manager::do_drain() {
         _status.partitions = _partition_manager.local().partitions().size();
 
         if (eligible.empty()) {
-            break;
+            vlog(
+              clusterlog.info,
+              "Node draining has completed on shard {}",
+              ss::this_shard_id());
+            _drained = true;
+            co_return;
         }
 
         /*
@@ -207,7 +218,7 @@ ss::future<> drain_manager::do_drain() {
 
         vlog(
           clusterlog.info,
-          "Draining leadership from {} groups",
+          "Draining leadership from {} partitions",
           transfers.size());
 
         auto started = ss::lowres_clock::now();
@@ -246,7 +257,7 @@ ss::future<> drain_manager::do_drain() {
          * to avoid spinning, cool off if we failed fast
          */
         auto dur = ss::lowres_clock::now() - started;
-        if (failed > 0 && dur < transfer_throttle && _draining) {
+        if (failed > 0 && dur < transfer_throttle && !_restore_requested) {
             try {
                 co_await ss::sleep_abortable(transfer_throttle - dur, _abort);
             } catch (ss::sleep_aborted&) {
@@ -256,7 +267,7 @@ ss::future<> drain_manager::do_drain() {
 
     vlog(
       clusterlog.info,
-      "Node draining has completed on shard {}",
+      "Node draining fiber has stopped on shard {}",
       ss::this_shard_id());
 }
 
