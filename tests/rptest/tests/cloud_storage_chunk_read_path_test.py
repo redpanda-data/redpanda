@@ -346,6 +346,9 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
 
         self._consume_baseline(timeout=180, max_msgs=read_count)
         observe_cache_dir.stop()
+        observe_cache_dir.join(timeout=10)
+        assert not observe_cache_dir.is_alive(
+        ), 'cache observer is unexpectedly alive'
 
         self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
         self._assert_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
