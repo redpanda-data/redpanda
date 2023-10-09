@@ -8,8 +8,6 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "wasm/wasmtime.h"
-
 #include "model/record.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
@@ -22,6 +20,7 @@
 #include "wasm/schema_registry_module.h"
 #include "wasm/transform_module.h"
 #include "wasm/wasi.h"
+#include "wasm/wasmtime.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/posix.hh>
@@ -30,13 +29,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
-#include <wasmtime/config.h>
-#include <wasmtime/error.h>
-#include <wasmtime/extern.h>
-#include <wasmtime/func.h>
-#include <wasmtime/instance.h>
-#include <wasmtime/memory.h>
-#include <wasmtime/store.h>
+#include <wasmtime/async.h>
+#include <wasmtime/val.h>
 
 #include <csignal>
 #include <memory>
@@ -793,14 +787,27 @@ std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     wasmtime_config_consume_fuel_set(config, true);
     // We want to enable memcopy and other efficent memcpy operators
     wasmtime_config_wasm_bulk_memory_set(config, true);
-    // Our internal build disables this feature, so we don't need to turn it
-    // off, otherwise we'd want to turn this off by default.
+    // Our build disables this feature, so we don't need to turn it
+    // off, otherwise we'd want to turn this off (it's on by default).
     // wasmtime_config_parallel_compilation_set(config, false);
 
+    // Let wasmtime do the stack switching so we can run async host functions
+    // and allow running out of fuel to pause the runtime.
+    //
+    // See the documentation for more information:
+    // https://docs.wasmtime.dev/api/wasmtime/struct.Config.html#asynchronous-wasm
+    wasmtime_config_async_support_set(config, true);
     // Set max stack size to generally be as big as a contiguous memory region
     // we're willing to allocate in Redpanda.
+    //
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    wasmtime_config_max_wasm_stack_set(config, 128_KiB);
+    wasmtime_config_async_stack_size_set(config, 128_KiB);
+    // The stack size needs to be less than the async stack size, and
+    // whatever is difference between the two is how much host functions can
+    // get, make sure to leave our own functions some room to execute.
+    //
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+    wasmtime_config_max_wasm_stack_set(config, 64_KiB);
     // This disables static memory, see:
     // https://docs.wasmtime.dev/contributing-architecture.html#linear-memory
     wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
