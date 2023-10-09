@@ -345,11 +345,43 @@ private:
         _store = std::move(store);
     }
 
-    ss::future<> initialize_wasi() {
-        // TODO: Consider having a different amount of fuel for
-        // initialization.
-        auto* ctx = wasmtime_store_context(_store.get());
+    ss::future<> call_host_func(
+      wasmtime_context_t* ctx,
+      const wasmtime_func_t* func,
+      std::span<const wasmtime_val_t> args,
+      std::span<wasmtime_val_t> results) {
         reset_fuel(ctx);
+        wasm_trap_t* trap_ptr = nullptr;
+        wasmtime_error_t* err_ptr = nullptr;
+        handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
+          wasmtime_func_call_async(
+            ctx,
+            func,
+            args.data(),
+            args.size(),
+            results.data(),
+            results.size(),
+            &trap_ptr,
+            &err_ptr)};
+
+        // Poll the call future to completion, yielding to the scheduler when
+        // the future yields.
+        while (!wasmtime_call_future_poll(fut.get())) {
+            co_await ss::coroutine::maybe_yield();
+        }
+
+        // Now that the call future has returned as completed, we can assume the
+        // out pointers have been set, we need to check them for errors.
+        // Any results have been written to results and it's on the caller to
+        // check.
+        handle<wasmtime_error_t, wasmtime_error_delete> error{err_ptr};
+        handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
+        check_error(error.get());
+        check_trap(trap.get());
+    }
+
+    ss::future<> initialize_wasi() {
+        auto* ctx = wasmtime_store_context(_store.get());
         wasmtime_extern_t start;
         bool ok = wasmtime_instance_export_get(
           ctx,
@@ -362,15 +394,8 @@ private:
               "Missing wasi initialization function", errc::user_code_failure);
         }
         vlog(wasm_log.info, "Initializing wasm function {}", _meta.name());
-        wasm_trap_t* trap_ptr = nullptr;
-        handle<wasmtime_error_t, wasmtime_error_delete> error{
-          wasmtime_func_call(
-            ctx, &start.of.func, nullptr, 0, nullptr, 0, &trap_ptr)};
-        handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
-        check_error(error.get());
-        check_trap(trap.get());
+        co_await call_host_func(ctx, &start.of.func, {}, {});
         vlog(wasm_log.info, "Wasm function {} initialized", _meta.name());
-        co_return;
     }
 
     ss::future<transform_result>
