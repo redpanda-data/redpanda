@@ -826,54 +826,51 @@ public:
       , _sr(std::move(sr)) {}
 
     ss::future<> start() override {
-        co_await _alien_thread_pool.start({.name = "wasm"});
-        co_await ss::smp::invoke_on_all([this] {
-            return _alien_thread_pool.submit([] {
-                // wasmtime needs some signals for it's handling, make sure we
-                // unblock them.
-                auto mask = ss::make_empty_sigset_mask();
-                sigaddset(&mask, SIGSEGV);
-                sigaddset(&mask, SIGILL);
-                sigaddset(&mask, SIGFPE);
-                ss::throw_pthread_error(
-                  ::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
-            });
+        co_await _alien_thread.start({.name = "wasm"});
+        co_await ss::smp::invoke_on_all([] {
+            // wasmtime needs some signals for it's handling, make sure we
+            // unblock them.
+            auto mask = ss::make_empty_sigset_mask();
+            sigaddset(&mask, SIGSEGV);
+            sigaddset(&mask, SIGILL);
+            sigaddset(&mask, SIGFPE);
+            ss::throw_pthread_error(
+              ::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
         });
     }
 
-    ss::future<> stop() override { return _alien_thread_pool.stop(); }
+    ss::future<> stop() override { return _alien_thread.stop(); }
 
     ss::future<ss::shared_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
         auto preinitialized = ss::make_lw_shared<preinitialized_instance>();
-        co_await _alien_thread_pool.submit(
-          [this, &meta, &buf, &preinitialized] {
-              vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
-              // This can be a large contiguous allocation, however it happens
-              // on an alien thread so it bypasses the seastar allocator.
-              bytes b = iobuf_to_bytes(buf);
-              wasmtime_module_t* user_module_ptr = nullptr;
-              handle<wasmtime_error_t, wasmtime_error_delete> error{
-                wasmtime_module_new(
-                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
-              check_error(error.get());
-              handle<wasmtime_module_t, wasmtime_module_delete> user_module{
-                user_module_ptr};
-              wasm_log.info("Finished compiling wasm module {}", meta.name);
+        co_await _alien_thread.submit([this, &meta, &buf, &preinitialized] {
+            vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
+            // This can be a large contiguous allocation, however it happens
+            // on an alien thread so it bypasses the seastar allocator.
+            bytes b = iobuf_to_bytes(buf);
+            wasmtime_module_t* user_module_ptr = nullptr;
+            handle<wasmtime_error_t, wasmtime_error_delete> error{
+              wasmtime_module_new(
+                _engine.get(), b.data(), b.size(), &user_module_ptr)};
+            check_error(error.get());
+            handle<wasmtime_module_t, wasmtime_module_delete> user_module{
+              user_module_ptr};
+            wasm_log.info("Finished compiling wasm module {}", meta.name);
 
-              handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
-                wasmtime_linker_new(_engine.get())};
+            handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
+              wasmtime_linker_new(_engine.get())};
 
-              register_transform_module(linker.get());
-              register_sr_module(linker.get());
-              register_wasi_module(linker.get());
+            register_transform_module(linker.get());
+            register_sr_module(linker.get());
+            register_wasi_module(linker.get());
 
-              wasmtime_instance_pre_t* preinitialized_ptr = nullptr;
-              error.reset(wasmtime_linker_instantiate_pre(
-                linker.get(), user_module.get(), &preinitialized_ptr));
-              preinitialized->underlying.reset(preinitialized_ptr);
-              check_error(error.get());
-          });
+            wasmtime_instance_pre_t* preinitialized_ptr = nullptr;
+            error.reset(wasmtime_linker_instantiate_pre(
+              linker.get(), user_module.get(), &preinitialized_ptr));
+            preinitialized->underlying.reset(preinitialized_ptr);
+            check_error(error.get());
+        });
         co_return ss::make_shared<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
@@ -885,7 +882,7 @@ public:
 private:
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
-    ssx::sharded_thread_worker _alien_thread_pool;
+    ssx::singleton_thread_worker _alien_thread;
 };
 
 } // namespace
