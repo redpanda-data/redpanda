@@ -62,7 +62,7 @@ ss::future<> seq_writer::wait_for(model::offset offset) {
                   .consume(
                     consume_to_store{seq._store, seq}, model::no_timeout);
             } else {
-                vlog(plog.debug, "wait_for clean (offset  {})", offset);
+                vlog(plog.trace, "wait_for clean (offset  {})", offset);
                 return ss::make_ready_future<>();
             }
         });

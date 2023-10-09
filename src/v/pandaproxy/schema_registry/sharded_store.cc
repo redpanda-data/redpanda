@@ -123,8 +123,8 @@ sharded_store::make_valid_schema(canonical_schema schema) {
     throw as_exception(invalid_schema_type(schema.type()));
 }
 
-ss::future<sharded_store::insert_result>
-sharded_store::project_ids(subject_schema schema) {
+ss::future<sharded_store::has_schema_result>
+sharded_store::get_schema_version(subject_schema schema) {
     // Validate the schema (may throw)
     co_await validate_schema(schema.schema);
 
@@ -179,14 +179,18 @@ sharded_store::project_ids(subject_schema schema) {
           return res.value();
       });
 
-    auto has_version = s_id.has_value()
-                       && absl::c_any_of(
-                         versions, [id = *s_id](auto const& s_id_v) {
-                             return s_id_v.id == id;
-                         });
+    std::optional<schema_version> v_id;
+    if (s_id.has_value()) {
+        auto v_it = absl::c_find_if(versions, [id = *s_id](auto const& s_id_v) {
+            return s_id_v.id == id;
+        });
+        if (v_it != versions.end()) {
+            v_id.emplace(v_it->version);
+        }
+    }
 
     // Check compatibility of the schema
-    if (!has_version && !versions.empty()) {
+    if (!v_id.has_value() && !versions.empty()) {
         auto compat = co_await is_compatible(
           versions.back().version, schema.schema);
         if (!compat) {
@@ -198,17 +202,23 @@ sharded_store::project_ids(subject_schema schema) {
                 sub));
         }
     }
+    co_return has_schema_result{s_id, v_id};
+}
 
-    if (!s_id) {
+ss::future<sharded_store::insert_result>
+sharded_store::project_ids(subject_schema schema) {
+    auto const& sub = schema.schema.sub();
+    auto s_id = schema.id;
+    if (s_id == invalid_schema_id) {
         // New schema, project an ID for it.
         s_id = co_await project_schema_id();
-        vlog(plog.debug, "project_ids: projected new ID {}", s_id.value());
+        vlog(plog.debug, "project_ids: projected new ID {}", s_id);
     }
 
     auto sub_shard{shard_for(sub)};
     auto v_id = co_await _store.invoke_on(
-      sub_shard, _smp_opts, [sub, id{s_id.value()}](store& s) {
-          return s.project_version(sub, id);
+      sub_shard, _smp_opts, [sub, s_id](store& s) {
+          return s.project_version(sub, s_id);
       });
 
     const bool is_new = v_id.has_value();
@@ -217,7 +227,7 @@ sharded_store::project_ids(subject_schema schema) {
     }
 
     co_return insert_result{
-      v_id.value_or(invalid_schema_version), s_id.value(), is_new};
+      v_id.value_or(invalid_schema_version), s_id, is_new};
 }
 
 ss::future<bool> sharded_store::upsert(

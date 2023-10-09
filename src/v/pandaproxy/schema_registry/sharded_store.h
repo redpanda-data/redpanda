@@ -35,12 +35,17 @@ public:
     ///\brief Construct a schema in the native format
     ss::future<valid_schema> make_valid_schema(canonical_schema schema);
 
+    struct has_schema_result {
+        std::optional<schema_id> id;
+        std::optional<schema_version> version;
+    };
+    ss::future<has_schema_result> get_schema_version(subject_schema schema);
+
     struct insert_result {
         schema_version version;
         schema_id id;
         bool inserted;
     };
-
     ss::future<insert_result> project_ids(subject_schema schema);
 
     ss::future<bool> upsert(
