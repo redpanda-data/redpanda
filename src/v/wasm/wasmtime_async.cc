@@ -220,7 +220,6 @@ public:
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
     wasmtime_engine(wasmtime_engine&&) = default;
     wasmtime_engine& operator=(wasmtime_engine&&) = default;
-
     ~wasmtime_engine() override = default;
 
     uint64_t memory_usage_size_bytes() const final {
@@ -251,6 +250,10 @@ public:
         // Deleting the store invalidates the instance and actually frees the
         // memory for the underlying instance.
         _store = nullptr;
+        vassert(
+          !_pending_host_function,
+          "pending host functions should be awaited upon before stopping the "
+          "engine");
         co_return;
     }
 
@@ -287,6 +290,12 @@ public:
         }
     }
 
+    // Register that a pending async host function is happening, this future
+    // must never fail.
+    void register_pending_host_function(ss::future<> fut) noexcept {
+        _pending_host_function.emplace(std::move(fut));
+    }
+
 private:
     void reset_fuel(wasmtime_context_t* ctx) {
         uint64_t fuel = 0;
@@ -321,6 +330,11 @@ private:
         // Poll the call future to completion, yielding to the scheduler when
         // the future yields.
         while (!wasmtime_call_future_poll(fut.get())) {
+            if (_pending_host_function) {
+                auto host_future = std::exchange(_pending_host_function, {});
+                co_await std::move(host_future).value();
+                continue;
+            }
             co_await ss::coroutine::maybe_yield();
         }
 
@@ -356,6 +370,11 @@ private:
         // Poll the call future to completion, yielding to the scheduler when
         // the future yields.
         while (!wasmtime_call_future_poll(fut.get())) {
+            if (_pending_host_function) {
+                auto host_future = std::exchange(_pending_host_function, {});
+                co_await std::move(host_future).value();
+                continue;
+            }
             co_await ss::coroutine::maybe_yield();
         }
 
@@ -454,6 +473,7 @@ private:
     // The following state is only valid if there is a non-null store.
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     wasmtime_instance_t _instance{};
+    std::optional<ss::future<>> _pending_host_function;
 };
 
 template<auto value>
@@ -576,23 +596,36 @@ private:
         ss::future<> host_future_result = do_invoke_async_host_fn(
           host_module, mem.get(), {args, nargs}, {results, nresults});
 
+        // It's possible for the async function to be inlined in this fiber and
+        // have completed synchronously, in that case we don't need to register
+        // this future and can return that it's completed.
+        if (host_future_result.available()) {
+            if (host_future_result.failed()) {
+                auto msg = ss::format(
+                  "Failure executing host function: {}",
+                  host_future_result.get_exception());
+                *trap_ret = wasmtime_trap_new(msg.data(), msg.size());
+            }
+            continuation->callback = [](void*) { return true; };
+            return;
+        }
+
         using async_call_done = ss::bool_class<struct async_call_done_tag>;
         // NOLINTNEXTLINE(*owning-memory)
         auto* status = new async_call_done(false);
 
-        // TODO(rockwood): Register this with the engine.
-        ssx::background
-          = std::move(host_future_result)
-              .then_wrapped(
-                [status, trap_ret, mem = std::move(mem)](ss::future<> fut) {
-                    if (fut.failed()) {
-                        auto msg = ss::format(
-                          "Failure executing host function: {}",
-                          fut.get_exception());
-                        *trap_ret = wasmtime_trap_new(msg.data(), msg.size());
-                    }
-                    *status = async_call_done::yes;
-                });
+        engine->register_pending_host_function(
+          std::move(host_future_result)
+            .then_wrapped(
+              [status, trap_ret, mem = std::move(mem)](ss::future<> fut) {
+                  if (fut.failed()) {
+                      auto msg = ss::format(
+                        "Failure executing host function: {}",
+                        fut.get_exception());
+                      *trap_ret = wasmtime_trap_new(msg.data(), msg.size());
+                  }
+                  *status = async_call_done::yes;
+              }));
 
         continuation->env = status;
         continuation->finalizer = [](void* env) {
