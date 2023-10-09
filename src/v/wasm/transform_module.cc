@@ -98,6 +98,70 @@ model::record_batch transform_module::for_each_record(
     return batch;
 }
 
+ss::future<model::record_batch> transform_module::for_each_record_async(
+  const model::record_batch* input,
+  ss::noncopyable_function<ss::future<>(wasm_call_params)> func) {
+    vassert(
+      input->header().attrs.compression() == model::compression::none,
+      "wasm transforms expect uncompressed batches");
+
+    iobuf_const_parser parser(input->data());
+
+    auto bh = batch_handle(input->header().crc);
+
+    std::vector<record_position> record_positions;
+    record_positions.reserve(input->record_count());
+
+    while (parser.bytes_left() > 0) {
+        auto start_index = parser.bytes_consumed();
+        auto [size, amt] = parser.read_varlong();
+        parser.skip(sizeof(model::record_attributes::type));
+        auto [timestamp_delta, td] = parser.read_varlong();
+        parser.skip(size - sizeof(model::record_attributes::type) - td);
+        record_positions.push_back(
+          {.start_index = start_index,
+           .size = size_t(size + amt),
+           .timestamp_delta = int32_t(timestamp_delta)});
+    }
+
+    _call_ctx.emplace(transform_context{
+      .input = input,
+    });
+
+    for (const auto& record_position : record_positions) {
+        _call_ctx->current_record = record_position;
+        auto current_record_timestamp = input->header().first_timestamp()
+                                        + record_position.timestamp_delta;
+        try {
+            co_await func({
+              .batch_handle = bh,
+              .record_handle = record_handle(
+                int32_t(record_position.start_index)),
+              .record_size = int32_t(record_position.size),
+              .current_record_offset = int32_t(_call_ctx->output_record_count),
+              .current_record_timestamp = model::timestamp(
+                current_record_timestamp),
+            });
+        } catch (...) {
+            _call_ctx = std::nullopt;
+            std::rethrow_exception(std::current_exception());
+        }
+    }
+
+    model::record_batch::compressed_records records = std::move(
+      _call_ctx->output_records);
+    model::record_batch_header header = _call_ctx->input->header();
+    header.size_bytes = int32_t(
+      model::packed_record_batch_header_size + records.size_bytes());
+    header.record_count = _call_ctx->output_record_count;
+    model::record_batch batch(
+      header, std::move(records), model::record_batch::tag_ctor_ng{});
+    batch.header().crc = model::crc_record_batch(batch);
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
+    _call_ctx = std::nullopt;
+    co_return batch;
+}
+
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 int32_t transform_module::read_batch_header(
   batch_handle bh,
