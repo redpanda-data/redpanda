@@ -26,8 +26,6 @@ constexpr std::string_view recovery_result_prefix{"recovery_state"};
 // {recovery_result_prefix}/{ns}/{topic}/{partition}_{uuid}/{success:true|false}
 constexpr std::string_view recovery_result_format{"{}/{}/{}/{}_{}.{}"};
 
-constexpr size_t max_delete_items_per_call{1000};
-
 // Matches the recovery_result_format. Example:
 // "recovery_state/test_ns/test_topic/0_<UUID>.true" OR
 // "recovery_state/test_ns/test_topic/0_<UUID>.false"
@@ -138,34 +136,12 @@ ss::future<> clear_recovery_results(
       std::back_inserter(keys),
       [](auto&& item) { return make_result_path(item); });
 
-    std::vector<cloud_storage_clients::object_key> to_delete;
-    to_delete.reserve(max_delete_items_per_call);
-    while (!keys.empty()) {
-        auto end = keys.size() > max_delete_items_per_call
-                     ? keys.begin() + max_delete_items_per_call
-                     : keys.end();
-        to_delete.insert(
-          to_delete.end(),
-          std::make_move_iterator(keys.begin()),
-          std::make_move_iterator(end));
-
-        vlog(
-          cst_log.trace,
-          "deleting {} of {} result files",
-          to_delete.size(),
-          keys.size());
-
-        keys.erase(keys.begin(), end);
-
-        auto result = co_await remote.delete_objects(bucket, to_delete, fib);
-        if (result != upload_result::success) {
-            vlog(
-              cst_log.error, "failed to delete recovery results: {}", result);
-        } else {
-            vlog(cst_log.debug, "delete recovery results: {}", result);
-        }
-
-        to_delete.clear();
+    vlog(cst_log.trace, "deleting {} result files", keys.size());
+    auto result = co_await remote.delete_objects(bucket, keys, fib);
+    if (result != upload_result::success) {
+        vlog(cst_log.error, "failed to delete recovery results: {}", result);
+    } else {
+        vlog(cst_log.debug, "delete recovery results: {}", result);
     }
 
     co_return;
