@@ -90,9 +90,16 @@ struct raft_node_map {
       node_for(model::node_id) = 0;
 };
 
+struct response_delay {
+    std::chrono::milliseconds length;
+    std::optional<ss::promise<>> on_applied;
+};
+
+using failure_t = std::variant<response_delay>;
+
 class in_memory_test_protocol : public consensus_client_protocol::impl {
 public:
-    explicit in_memory_test_protocol(raft_node_map&);
+    explicit in_memory_test_protocol(raft_node_map&, prefix_logger&);
 
     ss::future<result<vote_reply>>
     vote(model::node_id, vote_request&&, rpc::client_opts) final;
@@ -127,6 +134,9 @@ public:
 
     channel& get_channel(model::node_id id);
 
+    void inject_failure(msg_type type, failure_t failure);
+    void remove_failure(msg_type type);
+
     ss::future<> stop();
 
 private:
@@ -134,7 +144,9 @@ private:
     ss::future<result<RespT>> dispatch(model::node_id, ReqT req);
     ss::gate _gate;
     absl::flat_hash_map<model::node_id, std::unique_ptr<channel>> _channels;
+    absl::flat_hash_map<msg_type, failure_t> _failures;
     raft_node_map& _nodes;
+    prefix_logger& _logger;
 };
 
 /**
@@ -198,9 +210,13 @@ public:
 
     ss::future<model::offset> random_batch_base_offset(model::offset max);
 
+    void inject_failure(msg_type type, failure_t failure);
+    void remove_failure(msg_type type);
+
 private:
     model::node_id _id;
     model::revision_id _revision;
+    prefix_logger _logger;
     ss::sstring _base_directory;
     ss::shared_ptr<in_memory_test_protocol> _protocol;
     ss::sharded<storage::api> _storage;
@@ -212,7 +228,6 @@ private:
     recovery_scheduler _recovery_scheduler;
     std::unique_ptr<heartbeat_manager> _hb_manager;
     leader_update_clb_t _leader_clb;
-    prefix_logger _logger;
     ss::lw_shared_ptr<consensus> _raft;
     bool started = false;
 };
