@@ -22,12 +22,14 @@ v_cc_library(
     krb5.cc
     krb5_configurator.cc
     gssapi_principal_mapper.cc
+    audit/schemas/utils.cc
   DEPS
     v::security_config
     v::config
     v::bytes
     v::utils
     v::rprandom
+    v::version
     absl::flat_hash_map
     absl::flat_hash_set
     cryptopp
