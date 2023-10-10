@@ -282,22 +282,6 @@ std::tuple<Type> extract_parameter(
     }
 }
 
-template<typename Type>
-constexpr size_t num_parameters() {
-    if constexpr (std::is_same_v<ffi::memory*, Type>) {
-        return 0;
-    } else if constexpr (
-      is_array<Type>::value || std::is_same_v<ss::sstring, Type>) {
-        // one for the pointer and one for the length
-        return 2;
-    } else if constexpr (std::is_pointer_v<Type> || std::is_integral_v<Type>) {
-        return 1;
-    } else if constexpr (reflection::is_rp_named_type<Type>) {
-        return num_parameters<typename Type::type>();
-    } else {
-        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
-    }
-}
 } // namespace detail
 
 template<typename... Rest>
@@ -329,15 +313,4 @@ std::tuple<Type, Rest...> extract_parameters(
       std::move(head_type), extract_parameters<Rest...>(mem, params, idx));
 }
 
-template<typename... Rest>
-constexpr size_t parameter_count()
-requires(sizeof...(Rest) == 0)
-{
-    return 0;
-}
-
-template<typename Type, typename... Rest>
-constexpr size_t parameter_count() {
-    return detail::num_parameters<Type>() + parameter_count<Rest...>();
-}
 } // namespace wasm::ffi

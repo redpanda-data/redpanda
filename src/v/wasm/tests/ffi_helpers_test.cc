@@ -114,17 +114,6 @@ TEST(FFIHelpers, ConvertSignature) {
         val_type::i32));
 }
 
-TEST(FFIHelpers, CountParameters) {
-    constexpr size_t count = ffi::parameter_count<
-      ffi::memory*,
-      ffi::array<int>,
-      model::ns,
-      int32_t,
-      int64_t,
-      uint64_t*>();
-    ASSERT_EQ(count, 7);
-}
-
 TEST(FFIHelpers, ExtractParameters) {
     constexpr size_t array_offset = 42;
     constexpr size_t array_len = 2;
