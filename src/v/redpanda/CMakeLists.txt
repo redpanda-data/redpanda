@@ -48,9 +48,11 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v::cluster
+    v::kafka_recovery
     v::finjector
     v::syschecks
     v::kafka
+    v::kafka_recovery
     v::pandaproxy_rest
     v::pandaproxy_schema_registry
     v::migrations

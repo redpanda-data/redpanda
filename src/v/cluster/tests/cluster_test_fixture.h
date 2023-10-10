@@ -180,6 +180,10 @@ public:
         return groups;
     }
 
+    redpanda_thread_fixture* instance(model::node_id id) {
+        return _instances[id].get();
+    }
+
 private:
     scheduling_groups _sgroups;
     ss::deferred_action<std::function<void()>> _group_deleter;

@@ -65,6 +65,15 @@ namespace cluster {
 class cluster_discovery;
 } // namespace cluster
 
+namespace cluster::cloud_metadata {
+class offsets_lookup;
+class offsets_recoverer;
+class offsets_recovery_manager;
+class offsets_recovery_router;
+class offsets_upload_router;
+class offsets_uploader;
+} // namespace cluster::cloud_metadata
+
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
     std::chrono::system_clock::now().time_since_epoch())};
@@ -126,6 +135,20 @@ public:
 
     ss::sharded<features::feature_table> feature_table;
 
+    // Services required for consumer offsets trimming and recovery.
+    ss::sharded<cluster::cloud_metadata::offsets_lookup> offsets_lookup;
+    ss::sharded<cluster::cloud_metadata::offsets_recoverer> offsets_recoverer;
+    ss::sharded<cluster::cloud_metadata::offsets_recovery_router>
+      offsets_recovery_router;
+
+    ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_manager>
+      offsets_recovery_manager;
+
+    // Services required for consumer offsets snapshotting.
+    ss::sharded<cluster::cloud_metadata::offsets_uploader> offsets_uploader;
+    ss::sharded<cluster::cloud_metadata::offsets_upload_router>
+      offsets_upload_router;
+
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<kafka::quota_manager> quota_mgr;
@@ -146,6 +169,8 @@ public:
     std::unique_ptr<ssx::singleton_thread_worker> thread_worker;
 
     ss::sharded<kafka::server> _kafka_server;
+    ss::sharded<rpc::connection_cache> _connection_cache;
+    ss::sharded<kafka::group_manager> _group_manager;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;
@@ -256,8 +281,6 @@ private:
     std::optional<config::binding<bool>> _abort_on_oom;
 
     ss::sharded<memory_sampling> _memory_sampling;
-    ss::sharded<rpc::connection_cache> _connection_cache;
-    ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::rpc_server> _rpc;
     ss::sharded<admin_server> _admin;
     ss::sharded<net::conn_quota> _kafka_conn_quotas;

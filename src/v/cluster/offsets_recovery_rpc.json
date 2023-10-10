@@ -1,0 +1,28 @@
+{
+    "namespace": "cluster::cloud_metadata",
+    "service_name": "offsets_recovery",
+    "includes": [
+        "cluster/cloud_metadata/offsets_lookup_rpc_types.h",
+        "cluster/cloud_metadata/offsets_recovery_rpc_types.h",
+        "cluster/cloud_metadata/offsets_upload_rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "offsets_recovery",
+            "input_type": "offsets_recovery_request",
+            "output_type": "offsets_recovery_reply"
+        },
+        {
+            "name": "offsets_lookup",
+            "input_type": "offsets_lookup_request",
+            "output_type": "offsets_lookup_reply"
+        },
+        {
+            "name": "offsets_upload",
+            "input_type": "offsets_upload_request",
+            "output_type": "offsets_upload_reply"
+        }
+    ]
+}
+
+
