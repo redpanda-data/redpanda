@@ -212,8 +212,10 @@ ss::future<> channel::dispatch_loop() {
     }
 }
 
-in_memory_test_protocol::in_memory_test_protocol(raft_node_map& node_map)
-  : _nodes(node_map) {}
+in_memory_test_protocol::in_memory_test_protocol(
+  raft_node_map& node_map, prefix_logger& logger)
+  : _nodes(node_map)
+  , _logger(logger) {}
 
 channel& in_memory_test_protocol::get_channel(model::node_id id) {
     auto it = _channels.find(id);
@@ -230,6 +232,15 @@ channel& in_memory_test_protocol::get_channel(model::node_id id) {
     }
     return *it->second;
 }
+
+void in_memory_test_protocol::inject_failure(msg_type type, failure_t failure) {
+    _failures.emplace(type, std::move(failure));
+}
+
+void in_memory_test_protocol::remove_failure(msg_type type) {
+    _failures.erase(type);
+}
+
 ss::future<> in_memory_test_protocol::stop() {
     for (auto& [_, ch] : _channels) {
         co_await ch->stop();
@@ -281,8 +292,24 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
     iobuf buffer;
     co_await serde::write_async(buffer, std::move(req));
     try {
-        auto resp = co_await node_channel.exchange(
-          map_msg_type<ReqT>(), std::move(buffer));
+        const auto msg_type = map_msg_type<ReqT>();
+
+        if (auto iter = _failures.find(msg_type); iter != _failures.end()) {
+            auto& fail = iter->second;
+            co_await ss::visit(fail, [this, msg_type](response_delay& f) {
+                vlog(
+                  _logger.info,
+                  "Injecting response delay of length {} for {}",
+                  f.length,
+                  msg_type);
+                if (f.on_applied) {
+                    f.on_applied->set_value();
+                }
+                return ss::sleep(f.length);
+            });
+        }
+
+        auto resp = co_await node_channel.exchange(msg_type, std::move(buffer));
         iobuf_parser parser(std::move(resp));
         co_return co_await serde::read_async<RespT>(parser);
     } catch (const seastar::gate_closed_exception&) {
@@ -340,9 +367,10 @@ raft_node_instance::raft_node_instance(
   leader_update_clb_t leader_update_clb)
   : _id(id)
   , _revision(revision)
+  , _logger(test_log, fmt::format("[node: {}]", _id))
   , _base_directory(fmt::format(
       "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)))
-  , _protocol(ss::make_shared<in_memory_test_protocol>(node_map))
+  , _protocol(ss::make_shared<in_memory_test_protocol>(node_map, _logger))
   , _features(feature_table)
   , _recovery_mem_quota([] {
       return raft::recovery_memory_quota::configuration{
@@ -353,8 +381,7 @@ raft_node_instance::raft_node_instance(
   })
   , _recovery_scheduler(
       config::mock_binding<size_t>(64), config::mock_binding(10ms))
-  , _leader_clb(std::move(leader_update_clb))
-  , _logger(test_log, fmt::format("[node: {}]", _id)) {
+  , _leader_clb(std::move(leader_update_clb)) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
@@ -468,6 +495,14 @@ raft_node_instance::read_all_data_batches() {
 
     co_return co_await model::consume_reader_to_memory(
       std::move(rdr), model::no_timeout);
+}
+
+void raft_node_instance::inject_failure(msg_type type, failure_t failure) {
+    _protocol->inject_failure(type, std::move(failure));
+}
+
+void raft_node_instance::remove_failure(msg_type type) {
+    _protocol->remove_failure(type);
 }
 
 seastar::future<> raft_fixture::TearDownAsync() {
