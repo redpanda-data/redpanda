@@ -437,9 +437,11 @@ extra_headers = {
 }
 # yapf: enable
 
-# These types, when they appear as the member type of an array, will use
-# a vector implementation which resists fragmentation.
-enable_fragmentation_resistance = {'metadata_response_partition'}
+# These types, when they appear as the member type of an array, will override
+# the container type from std::vector
+override_member_container = {
+    'metadata_response_partition': 'large_fragment_vector'
+}
 
 
 def make_context_field(path):
@@ -1012,8 +1014,8 @@ class Field:
         yield name
         if isinstance(self._type, ArrayType):
             assert default_value is None  # not supported
-            if name in enable_fragmentation_resistance:
-                yield "large_fragment_vector"
+            if name in override_member_container:
+                yield override_member_container[name]
             else:
                 yield "std::vector"
         if self.nullable():
