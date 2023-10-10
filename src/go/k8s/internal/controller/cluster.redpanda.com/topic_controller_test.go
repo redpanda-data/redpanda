@@ -821,10 +821,9 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 
 		deleteTopic := v1alpha1.Topic{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:              deleteTopicName,
-				Namespace:         testNamespace,
-				DeletionTimestamp: &metav1.Time{Time: time.Now()},
-				Finalizers:        []string{clusterredpandacom.FinalizerKey},
+				Name:       deleteTopicName,
+				Namespace:  testNamespace,
+				Finalizers: []string{clusterredpandacom.FinalizerKey},
 			},
 			Spec: v1alpha1.TopicSpec{
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
@@ -834,6 +833,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		}
 
 		err = c.Create(ctx, &deleteTopic)
+		require.NoError(t, err)
+		err = c.Delete(ctx, &deleteTopic)
 		require.NoError(t, err)
 
 		req := ctrl.Request{
@@ -864,10 +865,9 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 
 		noneExistentTestTopic := v1alpha1.Topic{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:              deleteNoneExistentTopicName,
-				Namespace:         testNamespace,
-				DeletionTimestamp: &metav1.Time{Time: time.Now()},
-				Finalizers:        []string{clusterredpandacom.FinalizerKey},
+				Name:       deleteNoneExistentTopicName,
+				Namespace:  testNamespace,
+				Finalizers: []string{clusterredpandacom.FinalizerKey},
 			},
 
 			Spec: v1alpha1.TopicSpec{
@@ -878,6 +878,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		}
 
 		err := c.Create(ctx, &noneExistentTestTopic)
+		require.NoError(t, err)
+		err = c.Delete(ctx, &noneExistentTestTopic)
 		require.NoError(t, err)
 
 		req := ctrl.Request{
