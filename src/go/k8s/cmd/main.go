@@ -294,12 +294,14 @@ func main() {
 				Handler: &redpandawebhooks.ConsoleDefaulter{
 					Client:  mgr.GetClient(),
 					Decoder: admission.NewDecoder(scheme),
-				}})
+				},
+			})
 			hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{
 				Handler: &redpandawebhooks.ConsoleValidator{
 					Client:  mgr.GetClient(),
 					Decoder: admission.NewDecoder(scheme),
-				}})
+				},
+			})
 		}
 	case OperatorV2Mode:
 		ctrl.Log.Info("running in v2", "mode", OperatorV2Mode, "namespace", namespace)

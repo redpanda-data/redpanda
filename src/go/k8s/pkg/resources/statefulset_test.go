@@ -20,7 +20,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/assert"
-	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -171,23 +170,22 @@ func TestEnsure(t *testing.T) {
 					t.Errorf("timed out waiting for sts.Ensure: %v", err)
 					break WaitForSTSEnsure
 				default:
-					if tt.expectedError != nil && errors.Is(err, tt.expectedError) {
+					switch {
+					case tt.expectedError != nil && errors.Is(err, tt.expectedError):
 						assert.Error(t, err)
-					} else if errors.Is(err, &resources.RequeueAfterError{RequeueAfter: resources.RequeueDuration, Msg: "wait for sts to be deleted"}) {
+					case errors.Is(err, &resources.RequeueAfterError{RequeueAfter: resources.RequeueDuration, Msg: "wait for sts to be deleted"}):
 						// with ownerreferences, a orphan delete adds a finalizer to allow kube-controller-manager to manage the deletion.
 						// for this test, we don't need to worry about that.
-						deleteFinalizer := &appsv1.StatefulSet{}
-						err := c.Get(ctx, sts.Key(), deleteFinalizer)
+						deleteFinalizer := &v1.StatefulSet{}
+						err = c.Get(ctx, sts.Key(), deleteFinalizer)
 						assert.NoError(t, err)
 						deleteFinalizer.Finalizers = nil
 						err = c.Update(ctx, deleteFinalizer)
 						assert.NoError(t, err)
-						continue
-					} else {
-						assert.NoError(t, err, tt.name)
-					}
-					if err == nil {
-						break WaitForSTSEnsure
+					default:
+						if assert.NoError(t, err, tt.name) {
+							break WaitForSTSEnsure
+						}
 					}
 				}
 			}
@@ -231,7 +229,7 @@ func TestEnsure(t *testing.T) {
 			}
 		})
 	}
-	testEnv.Stop()
+	_ = testEnv.Stop()
 }
 
 func stsFromCluster(pandaCluster *vectorizedv1alpha1.Cluster) *v1.StatefulSet {
