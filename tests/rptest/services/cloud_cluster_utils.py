@@ -10,13 +10,14 @@ class FakePanda:
 
 
 class CloudClusterUtils:
-    def __init__(self, context, logger, infra_id, infra_secret):
+    def __init__(self, context, logger, infra_id, infra_secret, provider):
         # Create fake redpanda class with logger only
         self.fake_panda = FakePanda(context, logger)
         # Create rpk to use several functions that is isolated
         # from actual redpanda service
         self.rpk = RpkTool(self.fake_panda)
         self.logger = logger
+        self.provider = provider.lower()
         self.env = {
             "RPK_CLOUD_SKIP_VERSION_CHECK": "True",
             "RPK_CLOUD_URL": "https://cloud-api.ppd.cloud.redpanda.com",
@@ -85,7 +86,7 @@ class CloudClusterUtils:
     def rpk_cloud_apply(self, cluster_id):
         self.logger.info("Deploying cluster agent")
         cmd = self._get_rpk_cloud_cmd()
-        cmd += ["byoc", "aws", "apply", f"--redpanda-id={cluster_id}"]
+        cmd += ["byoc", self.provider, "apply", f"--redpanda-id={cluster_id}"]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
         return out
@@ -107,3 +108,13 @@ class CloudClusterUtils:
                 return True
         self.logger.warning(f"No plugins with the name  '{plugin_name}' found")
         return False
+
+    def rpk_cloud_agent_delete(self, cluster_id):
+        self.logger.info("Destroying cluster agent")
+        cmd = self._get_rpk_cloud_cmd()
+        cmd += [
+            "byoc", self.provider, "destroy", f"--redpanda-id={cluster_id}"
+        ]
+        out = self._exec(cmd, timeout=1800)
+        # TODO: Handle errors
+        return out
