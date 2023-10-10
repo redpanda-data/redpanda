@@ -891,8 +891,8 @@ class CloudCluster():
         resp = self.cloudv2._http_delete(
             endpoint=f'/api/v1/clusters/{self.config.id}')
         self._logger.debug(f'resp: {json.dumps(resp)}')
-        self.config.id = ''
 
+        # Check if this is a BYOC and delete agent
         if self.config.type == CLOUD_TYPE_BYOC:
             wait_until(lambda: self._cluster_status('deleting_agent'),
                        timeout_sec=self.CHECK_TIMEOUT_SEC,
@@ -902,6 +902,8 @@ class CloudCluster():
             # Once deleted run agent delete
             self.utils.rpk_cloud_agent_delete(self.config.id)
 
+        # This cluster is no longer available
+        self.config.id = ''
         # skip namespace deletion to avoid error because cluster delete not complete yet
         if self._delete_namespace:
             resp = self.cloudv2._http_delete(
@@ -1081,7 +1083,8 @@ class CloudCluster():
         def _route_exists(routes, _cidr):
             # Lookup CIDR and VpcId in table
             for _route in routes:
-                if _route['DestinationCidrBlock'] == _cidr and \
+                if 'DestinationCidrBlock' in _route and \
+                    _route['DestinationCidrBlock'] == _cidr and \
                     'VpcPeeringConnectionId' in _route and \
                     _route['VpcPeeringConnectionId'] == self.current.vpc_peering_id:
                     return True
