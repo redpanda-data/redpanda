@@ -98,8 +98,10 @@ func (r *TopicReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 	}
 
+	l.Info("reconciling topic")
 	topic, result, err := r.reconcile(ctx, topic, l)
 
+	l.Info("updating topic status")
 	// Update status after reconciliation.
 	if updateStatusErr := r.patchTopicStatus(ctx, topic, l); updateStatusErr != nil {
 		l.Error(updateStatusErr, "unable to update topic status after reconciliation")
