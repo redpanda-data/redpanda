@@ -3,9 +3,11 @@ package clusterredpandacom_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -20,7 +22,8 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/api/cluster.redpanda.com/v1alpha1"
 	clusterredpandacom "github.com/redpanda-data/redpanda/src/go/k8s/internal/controller/cluster.redpanda.com"
@@ -30,14 +33,30 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 	defer cancel()
 
+	testEnv := &envtest.Environment{
+		CRDDirectoryPaths: []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+	}
+	logf := testr.New(t)
+	log.SetLogger(logf)
+
+	cfg, err := testEnv.Start()
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+
+	err = v1alpha1.AddToScheme(scheme.Scheme)
+	require.NoError(t, err)
+
+	c, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
 	var kafkaAdmCl *kadm.Client
 	var kafkaCl *kgo.Client
 	var seedBroker string
-	var c client.WithWatch
 
 	defer os.Unsetenv("TESTCONTAINERS_RYUK_DISABLED")
 
-	testNamespace := "test-namespace"
+	testNamespace := "default"
 	{
 		if os.Getenv("CI") == "true" {
 			err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
@@ -64,10 +83,6 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		defer kafkaCl.Close()
 
 		kafkaAdmCl = kadm.NewClient(kafkaCl)
-
-		c = fake.NewClientBuilder().Build()
-		err = v1alpha1.AddToScheme(scheme.Scheme)
-		require.NoError(t, err)
 	}
 
 	tr := clusterredpandacom.TopicReconciler{
