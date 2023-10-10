@@ -206,6 +206,16 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_feature_backend));
       })
       .then([this] { return _recovery_table.start(); })
+      .then([this] {
+          return _recovery_manager.start_single(
+            std::ref(_as),
+            std::ref(_stm),
+            std::ref(_feature_table),
+            std::ref(_cloud_storage_api),
+            std::ref(_recovery_table),
+            std::ref(_storage),
+            _raft0);
+      })
       .then([this] { return _plugin_table.start(); })
       .then([this] { return _plugin_backend.start_single(&_plugin_table); })
       .then([this] {
@@ -269,7 +279,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_config_manager),
             std::ref(_feature_backend),
             std::ref(_bootstrap_backend),
-            std::ref(_plugin_backend));
+            std::ref(_plugin_backend),
+            std::ref(_recovery_manager));
       })
       .then([this] {
           return _members_frontend.start(
@@ -651,6 +662,7 @@ ss::future<> controller::stop() {
               return ss::make_ready_future();
           })
           .then([this] { return _recovery_table.stop(); })
+          .then([this] { return _recovery_manager.stop(); })
           .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })
           .then([this] { return _feature_manager.stop(); })

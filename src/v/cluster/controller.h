@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_storage/fwd.h"
 #include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
@@ -139,6 +140,10 @@ public:
 
     cloud_metadata::uploader& metadata_uploader() {
         return *_metadata_uploader;
+    }
+
+    ss::sharded<cluster_recovery_manager>& get_cluster_recovery_manager() {
+        return _recovery_manager;
     }
 
     ss::sharded<cluster_recovery_table>& get_cluster_recovery_table() {
@@ -271,6 +276,7 @@ private:
     ss::sharded<partition_balancer_backend> _partition_balancer;
     std::unique_ptr<cloud_metadata::uploader> _metadata_uploader;
     ss::sharded<cluster_recovery_table> _recovery_table; // instance per core
+    ss::sharded<cluster_recovery_manager> _recovery_manager; // single instance
 
     ss::gate _gate;
     consensus_ptr _raft0;

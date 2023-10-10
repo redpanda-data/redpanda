@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/cluster_recovery_state.h"
 #include "cluster/config_manager.h"
 #include "cluster/types.h"
 #include "features/feature_table_snapshot.h"
@@ -232,12 +233,25 @@ struct plugins_t
     auto serde_fields() { return std::tie(transforms); }
 };
 
+struct cluster_recovery_t
+  : public serde::envelope<
+      cluster_recovery_t,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    std::vector<cluster_recovery_state> recovery_states;
+
+    friend bool operator==(const cluster_recovery_t&, const cluster_recovery_t&)
+      = default;
+
+    auto serde_fields() { return std::tie(recovery_states); }
+};
+
 } // namespace controller_snapshot_parts
 
 struct controller_snapshot
   : public serde::checksum_envelope<
       controller_snapshot,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     controller_snapshot_parts::bootstrap_t bootstrap;
     controller_snapshot_parts::features_t features;
@@ -247,6 +261,7 @@ struct controller_snapshot
     controller_snapshot_parts::security_t security;
     controller_snapshot_parts::metrics_reporter_t metrics_reporter;
     controller_snapshot_parts::plugins_t plugins;
+    controller_snapshot_parts::cluster_recovery_t cluster_recovery;
 
     friend bool
     operator==(const controller_snapshot&, const controller_snapshot&)

@@ -13,6 +13,7 @@
 
 namespace cluster {
 
+class cluster_recovery_manager;
 class cluster_recovery_table;
 class controller;
 class controller_backend;

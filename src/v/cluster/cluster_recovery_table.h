@@ -80,8 +80,8 @@ public:
     std::error_code apply(model::offset offset, cluster_recovery_init_cmd);
     std::error_code apply(model::offset offset, cluster_recovery_update_cmd);
 
-    void fill_snapshot(controller_snapshot&) {
-        // TODO: fill me in!
+    void fill_snapshot(controller_snapshot& snap) {
+        snap.cluster_recovery.recovery_states = _states;
     }
     void set_recovery_states(std::vector<cluster_recovery_state> states) {
         _states = std::move(states);
