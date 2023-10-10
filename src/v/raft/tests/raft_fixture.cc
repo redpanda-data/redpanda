@@ -291,7 +291,7 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
 }
 
 ss::future<result<vote_reply>> in_memory_test_protocol::vote(
-  model::node_id id, vote_request&& req, rpc::client_opts opts) {
+  model::node_id id, vote_request&& req, rpc::client_opts) {
     return dispatch<vote_request, vote_reply>(id, req);
 };
 
@@ -546,8 +546,9 @@ std::optional<model::node_id> raft_fixture::get_leader() const {
 }
 
 ss::future<> raft_fixture::create_simple_group(size_t number_of_nodes) {
-    for (auto id = 0; id < number_of_nodes; ++id) {
-        add_node(model::node_id(id), model::revision_id{0});
+    for (size_t id = 0; id < number_of_nodes; ++id) {
+        add_node(
+          model::node_id(static_cast<int32_t>(id)), model::revision_id{0});
     }
 
     co_await ss::coroutine::parallel_for_each(_nodes, [this](auto& pair) {
