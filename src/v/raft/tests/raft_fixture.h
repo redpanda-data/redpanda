@@ -148,6 +148,7 @@ public:
       model::node_id id,
       model::revision_id revision,
       raft_node_map& node_map,
+      ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb);
 
     raft_node_instance(const raft_node_instance&) = delete;
@@ -157,6 +158,10 @@ public:
     ~raft_node_instance() = default;
 
     ss::lw_shared_ptr<consensus> raft() { return _raft; }
+
+    ss::sharded<features::feature_table>& get_feature_table() {
+        return _features;
+    }
 
     ss::future<> start(
       std::vector<raft::vnode> initial_nodes,
@@ -192,7 +197,7 @@ private:
     ss::sharded<storage::api> _storage;
     config::binding<std::chrono::milliseconds> _election_timeout
       = config::mock_binding(500ms);
-    ss::sharded<features::feature_table> _features;
+    ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
     recovery_scheduler _recovery_scheduler;
@@ -406,6 +411,8 @@ private:
     ss::logger _logger;
 
     absl::flat_hash_map<model::node_id, leadership_status> _leaders_view;
+
+    ss::sharded<features::feature_table> _features;
 };
 
 std::ostream& operator<<(std::ostream& o, msg_type type);

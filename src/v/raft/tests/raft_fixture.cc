@@ -336,12 +336,14 @@ raft_node_instance::raft_node_instance(
   model::node_id id,
   model::revision_id revision,
   raft_node_map& node_map,
+  ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb)
   : _id(id)
   , _revision(revision)
   , _base_directory(fmt::format(
       "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)))
   , _protocol(ss::make_shared<in_memory_test_protocol>(node_map))
+  , _features(feature_table)
   , _recovery_mem_quota([] {
       return raft::recovery_memory_quota::configuration{
         .max_recovery_memory = config::mock_binding<std::optional<size_t>>(
@@ -359,7 +361,6 @@ raft_node_instance::raft_node_instance(
 ss::future<> raft_node_instance::start(
   std::vector<vnode> initial_nodes,
   std::optional<raft::state_machine_manager_builder> builder) {
-    co_await _features.start();
     _hb_manager = std::make_unique<heartbeat_manager>(
       config::mock_binding<std::chrono::milliseconds>(50ms),
       consensus_client_protocol(_protocol),
@@ -388,9 +389,6 @@ ss::future<> raft_node_instance::start(
     storage::ntp_config ntp_cfg(ntp(), _base_directory);
 
     auto log = co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
-
-    co_await _features.invoke_on_all(
-      [](features::feature_table& ft) { return ft.testing_activate_all(); });
 
     _raft = ss::make_lw_shared<consensus>(
       _id,
@@ -428,7 +426,6 @@ ss::future<> raft_node_instance::stop() {
         vlog(_logger.debug, "stopping heartbeat manager");
         co_await _hb_manager->stop();
         vlog(_logger.debug, "stopping feature table");
-        co_await _features.stop();
         _raft = nullptr;
         vlog(_logger.debug, "stopping storage");
         co_await _storage.stop();
@@ -484,6 +481,8 @@ raft_node_instance::random_batch_base_offset(model::offset max) {
 seastar::future<> raft_fixture::TearDownAsync() {
     co_await seastar::coroutine::parallel_for_each(
       _nodes, [](auto& pair) { return pair.second->stop(); });
+
+    co_await _features.stop();
 }
 seastar::future<> raft_fixture::SetUpAsync() {
     for (auto cpu : ss::smp::all_cpus()) {
@@ -492,12 +491,16 @@ seastar::future<> raft_fixture::SetUpAsync() {
             config::shard_local_cfg().disable_public_metrics.set_value(true);
         });
     }
+
+    co_await _features.start();
+    co_await _features.invoke_on_all(
+      [](features::feature_table& ft) { return ft.testing_activate_all(); });
 }
 
 raft_node_instance&
 raft_fixture::add_node(model::node_id id, model::revision_id rev) {
     auto instance = std::make_unique<raft_node_instance>(
-      id, rev, *this, [id, this](leadership_status lst) {
+      id, rev, *this, _features, [id, this](leadership_status lst) {
           _leaders_view[id] = lst;
       });
 
