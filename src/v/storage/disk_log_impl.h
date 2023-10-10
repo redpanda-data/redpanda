@@ -31,6 +31,9 @@
 
 namespace storage {
 
+class key_offset_map;
+class compacted_index_reader;
+
 class disk_log_impl final : public log {
 public:
     using failure_probes = storage::log_failure_probes;
@@ -111,6 +114,8 @@ public:
 
     ss::future<usage_report> disk_usage(gc_config) override;
 
+    ss::future<compaction_result> compact(const compaction_config& cfg);
+
     /*
      * Interface for disk space management (see resource_mgmt/storage.cc).
      *
@@ -166,6 +171,17 @@ private:
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
     find_compaction_range(const compaction_config&);
+
+    ss::future<bool> build_offset_map_for_segment(
+      compacted_index_reader& rdr, key_offset_map& m);
+
+    // Returns the start offset of the oldest segment that was fully indexed.
+    // The resulting map may contain offsets below this point (i.e. a segment
+    // may have been partially indexed), but to fully deduplicate the log,
+    // subsequent compactions should start below this offset.
+    ss::future<model::offset>
+    build_offset_map(const compaction_config& cfg, key_offset_map& m);
+
     ss::future<std::optional<model::offset>> do_gc(gc_config);
 
     ss::future<> remove_empty_segments();

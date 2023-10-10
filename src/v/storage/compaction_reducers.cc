@@ -19,6 +19,7 @@
 #include "storage/parser_utils.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_utils.h"
+#include "utils/base64.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
@@ -161,7 +162,46 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     const auto base = batch.base_offset();
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
-    batch.for_each_record([this, base, &offset_deltas](const model::record& r) {
+    batch.for_each_record([this, base, &batch, &offset_deltas](
+                            const model::record& r) {
+        if (_offset_map) {
+            auto key_view = compaction_key{iobuf_to_bytes(r.key())};
+            auto key = enhance_key(
+              batch.header().type, batch.header().attrs.is_control(), key_view);
+            auto key_str = iobuf_to_base64(r.key());
+            auto latest_offset = _offset_map->get(key);
+            const auto o = base + model::offset(r.offset_delta());
+            if (_force_kept_offset == o && _idx.empty()) {
+                offset_deltas.push_back(r.offset_delta());
+                return;
+            }
+            if (!latest_offset.has_value()) {
+                // The index has no information about the key. Keep the key.
+                offset_deltas.push_back(r.offset_delta());
+                vlog(
+                  gclog.info,
+                  "Keeping offset {}, key {} not indexed",
+                  o,
+                  key_str);
+                return;
+            }
+            if (latest_offset.value() <= o) {
+                offset_deltas.push_back(r.offset_delta());
+                vlog(
+                  gclog.info,
+                  "Keeping offset {}, latest value of {}",
+                  o,
+                  key_str);
+                return;
+            }
+            vlog(
+              gclog.info,
+              "Removing offset {}, latest value of {} is at {}",
+              o,
+              key_str,
+              latest_offset.value());
+            return;
+        }
         if (should_keep(base, r.offset_delta())) {
             offset_deltas.push_back(r.offset_delta());
         }

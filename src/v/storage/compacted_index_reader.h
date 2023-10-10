@@ -14,6 +14,7 @@
 #include "model/timeout_clock.h"
 #include "storage/compacted_index.h"
 #include "storage/fs_utils.h"
+#include "storage/logger.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/file.hh>
@@ -75,10 +76,12 @@ public:
             while (true) {
                 while (likely(!is_slice_empty())) {
                     if (f(pop_batch()) == ss::stop_iteration::yes) {
+                        vlog(gclog.debug, "Exit early because f said stop");
                         co_return;
                     }
                 }
                 if (is_end_of_stream()) {
+                    vlog(gclog.debug, "Exit early because end of stream");
                     co_return;
                 }
                 co_await do_load_slice(timeout);

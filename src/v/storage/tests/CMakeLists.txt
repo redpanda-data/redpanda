@@ -15,6 +15,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME storage_single_thread
   SOURCES
+    compaction_test.cc
     log_segment_appender_test.cc
     segment_size_jitter_test.cc
     log_segment_reader_test.cc
