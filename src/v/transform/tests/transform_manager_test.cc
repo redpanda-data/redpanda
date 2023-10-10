@@ -190,7 +190,7 @@ class processor_tracker : public processor_factory {
             id,
             std::move(ntp),
             std::move(meta),
-            std::make_unique<testing::fake_wasm_engine>(),
+            ss::make_shared<testing::fake_wasm_engine>(),
             [](auto, auto, auto) {},
             std::make_unique<testing::fake_source>(model::offset(1)),
             make_sink(),
@@ -225,6 +225,7 @@ public:
       model::transform_id id,
       model::ntp ntp,
       model::transform_metadata meta,
+      processor::error_callback,
       probe* probe) override {
         EXPECT_NE(probe, nullptr);
         co_return std::make_unique<tracked_processor>(

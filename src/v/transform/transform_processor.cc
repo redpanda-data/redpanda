@@ -29,7 +29,7 @@ processor::processor(
   model::transform_id id,
   model::ntp ntp,
   model::transform_metadata meta,
-  std::unique_ptr<wasm::engine> engine,
+  ss::shared_ptr<wasm::engine> engine,
   error_callback cb,
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,

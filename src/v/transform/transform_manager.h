@@ -18,6 +18,7 @@
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
 #include "transform/io.h"
+#include "transform/transform_processor.h"
 #include "wasm/fwd.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -70,7 +71,11 @@ public:
 
     // Create a processor with the given metadata and input partition.
     virtual ss::future<std::unique_ptr<processor>> create_processor(
-      model::transform_id, model::ntp, model::transform_metadata, probe*)
+      model::transform_id,
+      model::ntp,
+      model::transform_metadata,
+      processor::error_callback,
+      probe*)
       = 0;
 };
 

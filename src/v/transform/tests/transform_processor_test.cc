@@ -26,8 +26,8 @@ namespace {
 class ProcessorTestFixture : public ::testing::Test {
 public:
     void SetUp() override {
-        std::unique_ptr<wasm::engine> engine
-          = std::make_unique<testing::fake_wasm_engine>();
+        ss::shared_ptr<wasm::engine> engine
+          = ss::make_shared<testing::fake_wasm_engine>();
         auto src = std::make_unique<testing::fake_source>(_offset);
         _src = src.get();
         auto sink = std::make_unique<testing::fake_sink>();

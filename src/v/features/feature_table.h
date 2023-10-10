@@ -66,6 +66,7 @@ enum class feature : std::uint64_t {
     cloud_storage_scrubbing = 1ULL << 32U,
     enhanced_force_reconfiguration = 1ULL << 33U,
     broker_time_based_retention = 1ULL << 34U,
+    wasm_transforms = 1ULL << 35U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -313,6 +314,12 @@ constexpr static std::array feature_schema{
     "broker_time_based_retention",
     feature::broker_time_based_retention,
     feature_spec::available_policy::new_clusters_only,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{11},
+    "wasm_transforms",
+    feature::wasm_transforms,
+    feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
 

@@ -59,6 +59,12 @@ public:
     ss::future<ss::shared_ptr<factory>>
     make_factory(model::transform_metadata, iobuf, ss::logger*) override;
 
+    /**
+     * If a factory exists in cached, return it without needing the binary.
+     */
+    ss::optimized_optional<ss::shared_ptr<factory>>
+    get_cached_factory(const model::transform_metadata&);
+
 private:
     friend class WasmCacheTest;
 

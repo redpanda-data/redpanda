@@ -49,13 +49,15 @@ v_cc_library(
     Seastar::seastar
     v::cluster
     v::finjector
-    v::syschecks
     v::kafka
+    v::migrations
     v::pandaproxy_rest
     v::pandaproxy_schema_registry
-    v::migrations
     v::storage_resource_mgmt
+    v::syschecks
+    v::transform
     v::version 
+    v::wasm
   )
 
 add_subdirectory(tests)

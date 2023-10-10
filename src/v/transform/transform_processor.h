@@ -41,7 +41,7 @@ public:
       model::transform_id,
       model::ntp,
       model::transform_metadata,
-      std::unique_ptr<wasm::engine>,
+      ss::shared_ptr<wasm::engine>,
       error_callback,
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
@@ -64,7 +64,7 @@ private:
     model::transform_id _id;
     model::ntp _ntp;
     model::transform_metadata _meta;
-    std::unique_ptr<wasm::engine> _engine;
+    ss::shared_ptr<wasm::engine> _engine;
     std::unique_ptr<source> _source;
     std::vector<std::unique_ptr<sink>> _sinks;
     error_callback _error_callback;

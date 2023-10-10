@@ -79,8 +79,8 @@ private:
     // the backoff policy for this processor for when we attempt to restart
     // the processor. If it's been enough time since our last restart of the
     // processor we will reset this.
-    rpc::backoff_policy _backoff
-      = rpc::make_exponential_backoff_policy<ClockType>(
+    ::rpc::backoff_policy _backoff
+      = ::rpc::make_exponential_backoff_policy<ClockType>(
         base_duration, max_duration);
 };
 
@@ -353,8 +353,15 @@ template<typename ClockType>
 ss::future<> manager<ClockType>::create_processor(
   model::ntp ntp, model::transform_id id, model::transform_metadata meta) {
     auto p = _processors->get_or_create_probe(id, meta);
+    processor::error_callback cb = [this](
+                                     model::transform_id id,
+                                     model::ntp ntp,
+                                     model::transform_metadata meta) {
+        on_transform_error(id, std::move(ntp), std::move(meta));
+    };
     auto fut = co_await ss::coroutine::as_future(
-      _processor_factory->create_processor(id, ntp, meta, p.get()));
+      _processor_factory->create_processor(
+        id, ntp, meta, std::move(cb), p.get()));
     if (fut.failed()) {
         vlog(
           tlog.warn,

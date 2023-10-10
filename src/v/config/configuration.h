@@ -67,6 +67,9 @@ struct configuration final : public config_store {
     deprecated_property coproc_max_batch_size;
     deprecated_property coproc_offset_flush_interval_ms;
 
+    // Data Transforms
+    property<bool> enable_data_transforms;
+
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
     bounded_property<std::optional<int32_t>> topic_fds_per_partition;
