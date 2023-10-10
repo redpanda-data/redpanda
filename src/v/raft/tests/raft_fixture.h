@@ -159,10 +159,19 @@ public:
         return _features;
     }
 
-    ss::future<> start(
+    // Initialise the node instance and create the consensus instance
+    ss::future<> initialise(std::vector<raft::vnode> initial_nodes);
+
+    // Start the node instance with an optionally provided state machine builder
+    ss::future<>
+    start(std::optional<raft::state_machine_manager_builder> builder);
+
+    // Initialise and start the node instance
+    ss::future<> init_and_start(
       std::vector<raft::vnode> initial_nodes,
       std::optional<raft::state_machine_manager_builder> builder
       = std::nullopt);
+
     ss::future<> stop();
 
     ss::future<> remove_data();

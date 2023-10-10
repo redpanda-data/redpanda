@@ -306,7 +306,7 @@ TEST_F_CORO(state_machine_manager_fixture, test_basic_apply) {
         raft::state_machine_manager_builder builder;
         auto kv_stm = builder.create_stm<simple_kv>(*node);
         auto other_kv_stm = builder.create_stm<other_simple_kv>(*node);
-        co_await node->start(all_vnodes(), std::move(builder));
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
         stms.push_back(kv_stm);
         stms.push_back(ss::dynamic_pointer_cast<simple_kv>(other_kv_stm));
     }
@@ -331,7 +331,7 @@ TEST_F_CORO(state_machine_manager_fixture, test_apply_throwing_exception) {
         raft::state_machine_manager_builder builder;
         auto kv_stm = builder.create_stm<simple_kv>(*node);
         auto throwing_kv_stm = builder.create_stm<throwing_kv>(*node);
-        co_await node->start(all_vnodes(), std::move(builder));
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
         stms.push_back(kv_stm);
         stms.push_back(ss::dynamic_pointer_cast<simple_kv>(throwing_kv_stm));
     }
@@ -356,7 +356,7 @@ TEST_F_CORO(state_machine_manager_fixture, test_recovery_without_snapshot) {
         raft::state_machine_manager_builder builder;
         auto kv_stm = builder.create_stm<simple_kv>(*node);
         auto throwing_kv_stm = builder.create_stm<throwing_kv>(*node);
-        co_await node->start(all_vnodes(), std::move(builder));
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
         stms.push_back(kv_stm);
         stms.push_back(ss::dynamic_pointer_cast<simple_kv>(throwing_kv_stm));
     }
@@ -377,7 +377,7 @@ TEST_F_CORO(state_machine_manager_fixture, test_recovery_without_snapshot) {
     raft::state_machine_manager_builder builder;
     auto kv_stm = builder.create_stm<simple_kv>(new_node);
     auto throwing_kv_stm = builder.create_stm<throwing_kv>(new_node);
-    co_await new_node.start(all_vnodes(), std::move(builder));
+    co_await new_node.init_and_start(all_vnodes(), std::move(builder));
     auto committed_offset = co_await with_leader(
       10s,
       [](raft_node_instance& node) { return node.raft()->committed_offset(); });
@@ -400,7 +400,7 @@ TEST_F_CORO(state_machine_manager_fixture, test_recovery_from_snapshot) {
         raft::state_machine_manager_builder builder;
         auto kv_stm = builder.create_stm<simple_kv>(*node);
         auto throwing_kv_stm = builder.create_stm<throwing_kv>(*node);
-        co_await node->start(all_vnodes(), std::move(builder));
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
         stms.push_back(kv_stm);
         stms.push_back(ss::dynamic_pointer_cast<simple_kv>(throwing_kv_stm));
     }
@@ -449,7 +449,7 @@ TEST_F_CORO(state_machine_manager_fixture, test_recovery_from_snapshot) {
     raft::state_machine_manager_builder builder;
     auto kv_stm = builder.create_stm<simple_kv>(new_node);
     auto throwing_kv_stm = builder.create_stm<throwing_kv>(new_node);
-    co_await new_node.start({}, std::move(builder));
+    co_await new_node.init_and_start({}, std::move(builder));
 
     co_await with_leader(
       10s, [vn = new_node.get_vnode()](raft_node_instance& node) {
@@ -476,7 +476,7 @@ TEST_F_CORO(
         raft::state_machine_manager_builder builder;
         stms.push_back(builder.create_stm<local_snapshot_stm>(*node));
 
-        co_await node->start(all_vnodes(), std::move(builder));
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
     }
 
     auto expected = co_await build_random_state(1000);
@@ -521,7 +521,7 @@ TEST_F_CORO(
     raft::state_machine_manager_builder builder;
     auto new_stm = builder.create_stm<local_snapshot_stm>(new_node);
 
-    co_await new_node.start({}, std::move(builder));
+    co_await new_node.init_and_start({}, std::move(builder));
 
     co_await with_leader(
       10s, [vn = new_node.get_vnode()](raft_node_instance& node) {
