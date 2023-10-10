@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/yaml"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
@@ -161,8 +160,6 @@ func TestEnsure(t *testing.T) {
 		WaitForSTSEnsure:
 			for {
 				err = sts.Ensure(context.Background())
-				y, _ := yaml.Marshal(sts.LastObservedState.ObjectMeta)
-				logf.WithValues("current metadata", string(y)).Info("debug")
 
 				time.Sleep(time.Second)
 				select {
