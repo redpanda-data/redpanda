@@ -13,6 +13,7 @@
 
 #include "ffi.h"
 #include "seastarx.h"
+#include "units.h"
 #include "utils/utf8.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -86,6 +87,10 @@ uint32_t log_writer::flush() {
     if (!is_valid_utf8(joined) || contains_control_character(joined))
       [[unlikely]] {
         joined = absl::CHexEscape(joined);
+    }
+    constexpr static size_t max_log_line = 2_KiB;
+    if (joined.size() > max_log_line) {
+        joined.resize(max_log_line);
     }
     _logger->log(level, "{} - {}", _name, joined);
     return amt;

@@ -9,10 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
+#include "units.h"
 #include "wasm/wasi.h"
 
 #include <seastar/util/log.hh>
 
+#include <absl/strings/str_join.h>
 #include <absl/strings/str_split.h>
 #include <gtest/gtest.h>
 
@@ -86,6 +88,12 @@ INSTANTIATE_TEST_SUITE_P(
       .want = "INFO   [shard 0:main] LOGGER_NAME - XFORM_NAME - hello\n"
               "INFO   [shard 0:main] LOGGER_NAME - XFORM_NAME - world\n",
     },
+    test_param{
+      .input = std::string(8_KiB, 'a'),
+      .want = absl::StrCat(
+        "INFO   [shard 0:main] LOGGER_NAME - XFORM_NAME - ",
+        std::string(2_KiB, 'a'),
+        "\n")},
     test_param{
       .input = "The quic\b\b\b\b\b\bk brown "
                "fo\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007"
