@@ -1582,9 +1582,9 @@ configuration::configuration()
       "cloud_storage_segment_size_target/2",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
-  , cloud_storage_max_download_throughput_per_shard(
+  , cloud_storage_max_throughput_per_shard(
       *this,
-      "cloud_storage_max_download_throughput_per_shard",
+      "cloud_storage_max_throughput_per_shard",
       "Max throughput used by tiered-storage per shard in bytes per second. "
       "This value is an upper bound of the throughput available to the "
       "tiered-storage subsystem. This parameter is intended to be used as a "

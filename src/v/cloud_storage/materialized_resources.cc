@@ -95,13 +95,13 @@ get_storage_device_throughput() {
 // for the node. Doesn't take into account hardware configuration.
 inline throughput_limit get_hard_throughput_limit() {
     auto hard_limit = config::shard_local_cfg()
-                        .cloud_storage_max_download_throughput_per_shard()
+                        .cloud_storage_max_throughput_per_shard()
                         .value_or(0)
                       * ss::smp::count;
 
     if (hard_limit == 0) {
         // Run tiered-storage without throttling by setting
-        // 'cloud_storage_max_download_throughput_per_shard' to nullopt
+        // 'cloud_storage_max_throughput_per_shard' to nullopt
         return {};
     }
 
@@ -116,7 +116,7 @@ inline throughput_limit get_hard_throughput_limit() {
 inline throughput_limit
 get_throughput_limit(std::optional<size_t> device_throughput) {
     auto hard_limit = config::shard_local_cfg()
-                        .cloud_storage_max_download_throughput_per_shard()
+                        .cloud_storage_max_throughput_per_shard()
                         .value_or(0)
                       * ss::smp::count;
 
@@ -128,7 +128,7 @@ get_throughput_limit(std::optional<size_t> device_throughput) {
       || hard_limit == 0) {
         // Run tiered-storage without throttling by setting
         // 'cloud_storage_throughput_limit_percent' to nullopt or
-        // 'cloud_storage_max_download_throughput_per_shard' to nullopt
+        // 'cloud_storage_max_throughput_per_shard' to nullopt
         return throughput_limit{};
     }
 
@@ -175,8 +175,7 @@ materialized_resources::materialized_resources()
       get_hard_throughput_limit().download_shard_throughput_limit,
       "ts-segment-downloads")
   , _throughput_shard_limit_config(
-      config::shard_local_cfg()
-        .cloud_storage_max_download_throughput_per_shard.bind())
+      config::shard_local_cfg().cloud_storage_max_throughput_per_shard.bind())
   , _relative_throughput(
       config::shard_local_cfg().cloud_storage_throughput_limit_percent.bind()) {
     auto update_max_mem = [this]() {

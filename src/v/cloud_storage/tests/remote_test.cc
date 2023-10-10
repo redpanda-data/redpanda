@@ -1038,17 +1038,16 @@ FIXTURE_TEST(test_filter_lifetime_2, remote_fixture) { // NOLINT
 struct throttle_low_limit {
     throttle_low_limit() {
         config::shard_local_cfg()
-          .cloud_storage_max_download_throughput_per_shard.set_value(
+          .cloud_storage_max_throughput_per_shard.set_value(
             manifest_payload.size());
         vlog(
           test_log.info,
           "CONF throughput: {}",
-          config::shard_local_cfg()
-            .cloud_storage_max_download_throughput_per_shard());
+          config::shard_local_cfg().cloud_storage_max_throughput_per_shard());
     }
     ~throttle_low_limit() {
         config::shard_local_cfg()
-          .cloud_storage_max_download_throughput_per_shard.reset();
+          .cloud_storage_max_throughput_per_shard.reset();
     }
 };
 
@@ -1120,14 +1119,14 @@ struct no_throttle {
         config::shard_local_cfg()
           .cloud_storage_throughput_limit_percent.set_value(0);
         config::shard_local_cfg()
-          .cloud_storage_max_download_throughput_per_shard.set_value(
+          .cloud_storage_max_throughput_per_shard.set_value(
             manifest_payload.size());
     }
     ~no_throttle() {
         config::shard_local_cfg()
           .cloud_storage_throughput_limit_percent.reset();
         config::shard_local_cfg()
-          .cloud_storage_max_download_throughput_per_shard.reset();
+          .cloud_storage_max_throughput_per_shard.reset();
     }
 };
 

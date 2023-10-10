@@ -390,8 +390,7 @@ class SISettings:
                      int] = None,
                  fast_uploads=False,
                  retention_local_strict=True,
-                 cloud_storage_max_download_throughput_per_shard: Optional[
-                     int] = None):
+                 cloud_storage_max_throughput_per_shard: Optional[int] = None):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -441,7 +440,7 @@ class SISettings:
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
         self.cloud_storage_spillover_manifest_max_segments = cloud_storage_spillover_manifest_max_segments
         self.retention_local_strict = retention_local_strict
-        self.cloud_storage_max_download_throughput_per_shard = cloud_storage_max_download_throughput_per_shard
+        self.cloud_storage_max_throughput_per_shard = cloud_storage_max_throughput_per_shard
 
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
@@ -583,9 +582,9 @@ class SISettings:
 
         conf['retention_local_strict'] = self.retention_local_strict
 
-        if self.cloud_storage_max_download_throughput_per_shard:
+        if self.cloud_storage_max_throughput_per_shard:
             conf[
-                'cloud_storage_max_download_throughput_per_shard'] = self.cloud_storage_max_download_throughput_per_shard
+                'cloud_storage_max_throughput_per_shard'] = self.cloud_storage_max_throughput_per_shard
 
         return conf
 
@@ -671,8 +670,8 @@ class SecurityConfig:
     # sasl is required
     def sasl_enabled(self):
         return (self.kafka_enable_authorization is None and self.enable_sasl
-                and self.endpoint_authn_method
-                is None) or self.endpoint_authn_method == "sasl"
+                and self.endpoint_authn_method is None
+                ) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
     def mtls_identity_enabled(self):
@@ -2402,10 +2401,8 @@ class RedpandaService(RedpandaServiceBase):
             admin_client = self._admin
 
         patch_result = admin_client.patch_cluster_config(
-            upsert={
-                k: v
-                for k, v in values.items() if v is not None
-            },
+            upsert={k: v
+                    for k, v in values.items() if v is not None},
             remove=[k for k, v in values.items() if v is None])
         new_version = patch_result['config_version']
 
