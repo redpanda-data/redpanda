@@ -82,3 +82,8 @@ rp_test(
   ARGS "-c 1 --duration=1 --runs=1 --memory=1G"
   LABELS raft
 )
+
+v_cc_library(
+    NAME raft_fixture
+    SRCS raft_fixture.cc
+    DEPS Seastar::seastar v::raft v::gtest_main)
