@@ -156,6 +156,10 @@ public:
         return _schema_registry;
     }
 
+    ss::sharded<transform::rpc::client>& transforms_client() {
+        return _transform_rpc_client;
+    }
+
 private:
     using deferred_actions
       = std::deque<ss::deferred_action<std::function<void()>>>;

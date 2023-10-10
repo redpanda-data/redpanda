@@ -48,6 +48,10 @@ class WasmClusterFixture : public cluster_test_fixture {
     }
 
 public:
+    ss::sharded<transform::rpc::client>& transforms_client(model::node_id id) {
+        return get_node_application(id)->transforms_client();
+    }
+
     void create_transform_offsets_topic(int num_partitions = 3) {
         create_topic(
           {model::kafka_internal_namespace, model::transform_offsets_topic},

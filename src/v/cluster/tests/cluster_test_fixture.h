@@ -246,6 +246,23 @@ public:
         }).get0();
     }
 
+    void shuffle_leadership(model::ntp ntp) {
+        BOOST_REQUIRE(!_instances.empty());
+        auto& app = _instances.begin()->second.get()->app;
+        auto& leaders = app.controller->get_partition_leaders().local();
+        auto current_leader = leaders.get_leader(ntp);
+        if (!current_leader) {
+            return;
+        }
+        auto& leader_app = _instances.at(*current_leader).get()->app;
+        auto partition = leader_app.partition_manager.local().get(ntp);
+        BOOST_REQUIRE(partition);
+        partition
+          ->transfer_leadership(
+            raft::transfer_leadership_request{.group = partition->group()})
+          .get();
+    }
+
 protected:
     scheduling_groups _sgroups;
 
