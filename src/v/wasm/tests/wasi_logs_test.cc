@@ -85,4 +85,16 @@ INSTANTIATE_TEST_SUITE_P(
                "world\n",
       .want = "INFO   [shard 0:main] LOGGER_NAME - XFORM_NAME - hello\n"
               "INFO   [shard 0:main] LOGGER_NAME - XFORM_NAME - world\n",
-    }));
+    },
+    test_param{
+      .input = "The quic\b\b\b\b\b\bk brown "
+               "fo\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007"
+               "\u0007x... [Beeeep]\n",
+      .want = "INFO   [shard 0:main] LOGGER_NAME - XFORM_NAME - "
+              "The quic\\x08\\x08\\x08\\x08\\x08\\x08k brown "
+              "fo\\x07\\x07\\x07\\x07\\x07\\x07\\x07\\x07\\x07\\x07"
+              "\\x07x... [Beeeep]\n"},
+    test_param{
+      .input = "invalid utf8: \xF0\xA4\xAD\x7F\n",
+      .want = "INFO   [shard 0:main] LOGGER_NAME - XFORM_NAME - invalid utf8: "
+              "\\xf0\\xa4\\xad\\x7f\n"}));

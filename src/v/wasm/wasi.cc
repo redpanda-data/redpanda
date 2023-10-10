@@ -13,6 +13,7 @@
 
 #include "ffi.h"
 #include "seastarx.h"
+#include "utils/utf8.h"
 #include "vassert.h"
 #include "vlog.h"
 #include "wasm/logger.h"
@@ -24,6 +25,8 @@
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/strings/escaping.h>
+#include <absl/strings/str_join.h>
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -79,7 +82,12 @@ uint32_t log_writer::flush() {
         amt += b.size();
     }
     auto level = _is_guest_stdout ? ss::log_level::info : ss::log_level::warn;
-    _logger->log(level, "{} - {}", _name, fmt::join(buf, ""));
+    auto joined = absl::StrJoin(buf, "");
+    if (!is_valid_utf8(joined) || contains_control_character(joined))
+      [[unlikely]] {
+        joined = absl::CHexEscape(joined);
+    }
+    _logger->log(level, "{} - {}", _name, joined);
     return amt;
 }
 
