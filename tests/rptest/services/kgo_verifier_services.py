@@ -517,7 +517,8 @@ class KgoVerifierProducer(KgoVerifierService):
                  key_set_cardinality=None,
                  username=None,
                  password=None,
-                 enable_tls=False):
+                 enable_tls=False,
+                 msgs_per_producer_id=None):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
                              debug_logs, trace_logs, username, password,
@@ -532,6 +533,7 @@ class KgoVerifierProducer(KgoVerifierService):
         self._msgs_per_transaction = msgs_per_transaction
         self._rate_limit_bps = rate_limit_bps
         self._key_set_cardinality = key_set_cardinality
+        self._msgs_per_producer_id = msgs_per_producer_id
 
     @property
     def produce_status(self):
@@ -620,7 +622,8 @@ class KgoVerifierProducer(KgoVerifierService):
 
         if self._key_set_cardinality is not None:
             cmd += f" --key-set-cardinality {self._key_set_cardinality}"
-
+        if self._msgs_per_producer_id is not None:
+            cmd += f" --msgs-per-producer-id {self._msgs_per_producer_id}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ProduceStatus)
