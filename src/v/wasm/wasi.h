@@ -225,7 +225,7 @@ struct event_t {
  */
 struct iovec_t {
     /** The (guest) address of the buffer to be written. */
-    uint32_t buf;
+    ffi::ptr buf_addr;
     /** The length of the buffer to be written. */
     uint32_t buf_len;
 };
@@ -280,8 +280,8 @@ public:
     errno_t clock_res_get(clock_id_t, timestamp_t*);
     errno_t clock_time_get(clock_id_t, timestamp_t, timestamp_t*);
     errno_t args_sizes_get(uint32_t*, uint32_t*);
-    errno_t args_get(ffi::memory*, uint32_t, uint32_t);
-    errno_t environ_get(ffi::memory*, uint32_t, uint32_t);
+    errno_t args_get(ffi::memory*, ffi::ptr, ffi::ptr);
+    errno_t environ_get(ffi::memory*, ffi::ptr, ffi::ptr);
     errno_t environ_sizes_get(uint32_t*, uint32_t*);
     errno_t fd_advise(fd_t, uint64_t, uint64_t, uint8_t);
     errno_t fd_allocate(fd_t, uint64_t, uint64_t);
@@ -324,7 +324,7 @@ public:
     errno_t path_rename(fd_t, ffi::array<uint8_t>, fd_t, ffi::array<uint8_t>);
     errno_t path_symlink(ffi::array<uint8_t>, fd_t, ffi::array<uint8_t>);
     errno_t path_unlink_file(fd_t, ffi::array<uint8_t>);
-    errno_t poll_oneoff(ffi::memory*, int32_t, int32_t, uint32_t, uint32_t*);
+    errno_t poll_oneoff(ffi::memory*, ffi::ptr, ffi::ptr, uint32_t, uint32_t*);
     errno_t random_get(ffi::array<uint8_t>);
     void proc_exit(int32_t exit_code);
     ss::future<errno_t> sched_yield();

@@ -124,7 +124,7 @@ TEST(FFIHelpers, ExtractParameters) {
     static uint64_t num = num_value;
     class test_memory : public memory {
         // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-        void* translate_raw(size_t guest_ptr, size_t len) final {
+        void* translate_raw(ptr guest_ptr, uint32_t len) final {
             switch (guest_ptr) {
             case array_offset: {
                 if (len != (array_len * sizeof(int32_t))) {

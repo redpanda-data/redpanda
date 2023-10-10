@@ -204,9 +204,12 @@ public:
       : _ctx(ctx)
       , _underlying() {}
 
-    void* translate_raw(size_t guest_ptr, size_t len) final {
-        auto memory_size = wasmtime_memory_data_size(_ctx, &_underlying);
-        if ((guest_ptr + len) > memory_size) [[unlikely]] {
+    void* translate_raw(ffi::ptr guest_ptr, uint32_t len) final {
+        size_t memory_size = wasmtime_memory_data_size(_ctx, &_underlying);
+        // Prevent overflow by upgrading to a larger type.
+        size_t end_read_addr = guest_ptr();
+        end_read_addr += len;
+        if (end_read_addr > memory_size) [[unlikely]] {
             throw wasm_exception(
               ss::format(
                 "Out of bounds memory access in FFI: {} + {} >= {}",

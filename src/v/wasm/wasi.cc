@@ -188,7 +188,7 @@ preview1_module::args_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
 }
 
 errno_t preview1_module::args_get(
-  ffi::memory* mem, uint32_t args_ptrs_offset, uint32_t args_buf_offset) {
+  ffi::memory* mem, ffi::ptr args_ptrs_offset, ffi::ptr args_buf_offset) {
     try {
         auto args_ptrs_buf = mem->translate_array<uint32_t>(
           args_ptrs_offset, _args.size());
@@ -211,7 +211,7 @@ preview1_module::environ_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
 }
 
 errno_t preview1_module::environ_get(
-  ffi::memory* mem, uint32_t environ_ptrs_offset, uint32_t environ_buf_offset) {
+  ffi::memory* mem, ffi::ptr environ_ptrs_offset, ffi::ptr environ_buf_offset) {
     try {
         auto environ_ptrs_buf = mem->translate_array<uint32_t>(
           environ_ptrs_offset, _environ.size());
@@ -288,7 +288,7 @@ errno_t preview1_module::fd_write(
         for (const iovec_t& vec : iovecs) {
             try {
                 ffi::array<char> data = mem->translate_array<char>(
-                  vec.buf, vec.buf_len);
+                  vec.buf_addr, vec.buf_len);
                 amt += logger->write(
                   std::string_view(data.data(), data.size()));
             } catch (const std::exception& ex) {
@@ -351,8 +351,8 @@ errno_t preview1_module::path_unlink_file(fd_t, ffi::array<uint8_t>) {
 }
 errno_t preview1_module::poll_oneoff(
   ffi::memory* memory,
-  int32_t in_addr,
-  int32_t out_addr,
+  ffi::ptr in_addr,
+  ffi::ptr out_addr,
   uint32_t nsubscriptions,
   uint32_t* retptr) {
     // This is a minimal implementation of poll_oneoff for golang, which
