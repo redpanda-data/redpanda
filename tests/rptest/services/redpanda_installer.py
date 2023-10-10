@@ -24,9 +24,14 @@ from ducktape.utils.util import wait_until
 # released version.
 # E.g. "v22.1.1-rc1-1373-g77f868..."
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
-
+# strict variant of VERSION_RE that only matches "vX.Y.Z" strings
+STRICT_VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 RELEASES_CACHE_FILE = "/tmp/redpanda_releases.json"
-RELEASES_CACHE_FILE_TTL = timedelta(seconds=300)
+RELEASES_CACHE_FILE_TTL = timedelta(minutes=30)
+
+# environment variable to pass to ducktape the list of released versions.
+# It's a ":"-separated list of versions, e.g.: v23.2.1:v23.1.12:v23.1.11
+RP_GIT_RELEASED_VERSIONS = "RP_GIT_RELEASED_VERSIONS"
 
 
 def wait_for_num_versions(redpanda, num_versions):
@@ -386,21 +391,37 @@ class RedpandaInstaller:
             if len(self._released_versions) > 0:
                 return self._released_versions
 
-            releases_json = self._released_versions_json()
             versions = []
-            for release in releases_json:
-                match = VERSION_RE.findall(release["tag_name"])
-                if match:
-                    versions.append(int_tuple(match[0]))
-                else:
-                    if release["tag_name"].startswith("release-"):
-                        # Tags like 'release-20.12.4' predate the modern Redpanda versioning scheme
-                        self._redpanda.logger.info(
-                            f"Ignoring legacy release {release['tag_name']}")
+
+            if releases_env := os.getenv(RP_GIT_RELEASED_VERSIONS):
+                # releases provided with an environment variable, parse and save it
+                self._redpanda.logger.debug(
+                    f"getting released_versions from environment variable {RP_GIT_RELEASED_VERSIONS}={releases_env}"
+                )
+                for release in releases_env.split(":"):
+                    if match := STRICT_VERSION_RE.findall(release):
+                        versions.append(int_tuple(match[0]))
                     else:
                         self._redpanda.logger.warn(
-                            f"Malformed release tag in repo: {release['tag_name']}"
+                            f"Malformed release tag in {RP_GIT_RELEASED_VERSIONS}: '{release}'"
                         )
+            else:
+                # fallback to github
+                releases_json = self._released_versions_json()
+                for release in releases_json:
+                    match = VERSION_RE.findall(release["tag_name"])
+                    if match:
+                        versions.append(int_tuple(match[0]))
+                    else:
+                        if release["tag_name"].startswith("release-"):
+                            # Tags like 'release-20.12.4' predate the modern Redpanda versioning scheme
+                            self._redpanda.logger.info(
+                                f"Ignoring legacy release {release['tag_name']}"
+                            )
+                        else:
+                            self._redpanda.logger.warn(
+                                f"Malformed release tag in repo: {release['tag_name']}"
+                            )
 
             self._released_versions = sorted(versions, reverse=True)
 
