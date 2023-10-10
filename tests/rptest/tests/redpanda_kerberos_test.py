@@ -368,8 +368,11 @@ class RedpandaKerberosExternalActiveDirectoryTest(RedpandaKerberosTestBase):
     @ok_to_fail  # Not all CI builders have access to an ADDS - let's find out which ones.
     @cluster(num_nodes=2)
     def test_metadata(self):
-        principal = f"client/localhost"
-        self.client.add_primary(primary=principal)
-        metadata = self.client.metadata(principal)
-        self.logger.info(f"metadata: {metadata}")
-        assert len(metadata['brokers']) == 1
+        try:
+            principal = f"client/localhost"
+            self.client.add_primary(primary=principal)
+            metadata = self.client.metadata(principal)
+            self.logger.info(f"metadata: {metadata}")
+            assert len(metadata['brokers']) == 1
+        except AuthenticationError:
+            assert False

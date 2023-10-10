@@ -6,6 +6,7 @@ from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccount
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
+from paramiko.ssh_exception import AuthenticationException
 
 KADM5_ACL_TMPL = """
 {kadmin_principal}@{realm} *
@@ -547,6 +548,8 @@ class ActiveDirectoryKdc:
                 self.logger.debug(
                     f"Running ssh command '{cmd}' exited with status {exit_status} and message: {stderr.readlines()}"
                 )
+        except AuthenticationException as e:
+            raise AuthenticationError(f"{e}")
         finally:
             stdin.close()
             stdout.close()
