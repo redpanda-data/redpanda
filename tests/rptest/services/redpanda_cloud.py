@@ -272,6 +272,8 @@ class CloudClusterConfig:
     install_pack_url_template: str = ""
     install_pack_auth_type: str = ""
     install_pack_auth: str = ""
+    grafana_token: str = ""
+    grafana_alerts_url: str = ""
 
 
 @dataclass
