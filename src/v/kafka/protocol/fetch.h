@@ -213,7 +213,7 @@ struct fetch_response final {
     public:
         using partition_iterator = std::vector<partition>::iterator;
         using partition_response_iterator
-          = std::vector<partition_response>::iterator;
+          = small_fragment_vector<partition_response>::iterator;
 
         struct value_type {
             partition_iterator partition;
