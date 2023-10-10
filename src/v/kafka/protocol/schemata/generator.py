@@ -440,7 +440,8 @@ extra_headers = {
 # These types, when they appear as the member type of an array, will override
 # the container type from std::vector
 override_member_container = {
-    'metadata_response_partition': 'large_fragment_vector'
+    'metadata_response_partition': 'large_fragment_vector',
+    'fetchable_partition_response': 'small_fragment_vector'
 }
 
 
