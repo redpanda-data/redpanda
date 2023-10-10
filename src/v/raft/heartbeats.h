@@ -161,7 +161,8 @@ public:
         auto cnt = read_nested<uint32_t>(in, bytes_left_limit);
         auto last = read_nested<field_t>(in, bytes_left_limit);
         auto buffer = read_nested<iobuf>(in, bytes_left_limit);
-        c._data = encoder_t(initial, cnt, last, std::move(buffer));
+        // copy buffer content not share the buffer cross shards
+        c._data = encoder_t(initial, cnt, last, buffer.copy());
         c._cnt = read_nested<size_t>(in, bytes_left_limit);
     }
 
@@ -172,7 +173,8 @@ public:
         write(out, state._data.get_initial_value());
         write(out, state._data.get_row_count());
         write(out, state._data.get_last_value());
-        write(out, state._data.share());
+        // copy buffer content not share the buffer cross shards
+        write(out, state._data.copy());
         write(out, state._cnt);
     }
 
