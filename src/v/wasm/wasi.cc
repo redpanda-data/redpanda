@@ -349,8 +349,51 @@ preview1_module::path_symlink(ffi::array<uint8_t>, fd_t, ffi::array<uint8_t>) {
 errno_t preview1_module::path_unlink_file(fd_t, ffi::array<uint8_t>) {
     return ERRNO_NOSYS;
 }
-errno_t preview1_module::poll_oneoff(void*, void*, uint32_t, uint32_t*) {
-    return ERRNO_NOSYS;
+errno_t preview1_module::poll_oneoff(
+  ffi::memory* memory,
+  int32_t in_addr,
+  int32_t out_addr,
+  uint32_t nsubscriptions,
+  uint32_t* retptr) {
+    // This is a minimal implementation of poll_oneoff for golang, which
+    // requires it for sleep support.
+    // In reality this should be a full poll(2) implemenation, but we don't
+    // actually need that unless we're going to support some kind of filesystem
+    // access.
+    auto subscriptions = memory->translate_array<subscription_t>(
+      in_addr, nsubscriptions);
+    auto events = memory->translate_array<event_t>(out_addr, nsubscriptions);
+    for (uint32_t i = 0; i < nsubscriptions; ++i) {
+        const auto& sub = subscriptions[i];
+        auto& event = events[i];
+        event.userdata = sub.userdata;
+        event.type = sub.u.tag;
+        switch (sub.u.tag) {
+        case CLOCK_EVENT_TYPE: {
+            // Actually noop the real sleep.
+            // There is no need to actually sleep since this it the only event
+            // we support. Usually if clock is used in conjunction with
+            // reads/writes to implement timeouts, but since we're not
+            // supporting reads or writes of fd, we can just immediately return
+            // that we've slept.
+            // IF we ever actually want to truly sleep here, we need to make
+            // sure it can be aborted, so that users can't hang VMs while this
+            // sleep is happening.
+            event.error = ERRNO_SUCCESS;
+            break;
+        }
+        case FD_WRITE_EVENT_TYPE:
+        case FD_READ_EVENT_TYPE: {
+            event.error = ERRNO_NOSYS;
+            break;
+        }
+        default:
+            return ERRNO_NOSYS;
+        }
+    }
+    // Report how many events we wrote back out.
+    *retptr = nsubscriptions;
+    return ERRNO_SUCCESS;
 }
 errno_t preview1_module::random_get(ffi::array<uint8_t> buf) {
     // https://imgur.com/uR4WuQ0
