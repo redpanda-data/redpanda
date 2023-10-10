@@ -340,6 +340,18 @@ request_creator::make_delete_objects_request(
 
 // client //
 
+inline cloud_storage_clients::s3_error_code
+status_to_error_code(boost::beast::http::status s) {
+    // According to this https://repost.aws/knowledge-center/http-5xx-errors-s3
+    // the 500 and 503 errors are used in case of throttling
+    if (
+      s == boost::beast::http::status::service_unavailable
+      || s == boost::beast::http::status::internal_server_error) {
+        return cloud_storage_clients::s3_error_code::slow_down;
+    }
+    return cloud_storage_clients::s3_error_code::_unknown;
+}
+
 template<class ResultT = void>
 ss::future<ResultT>
 parse_rest_error_response(boost::beast::http::status result, iobuf&& buf) {
@@ -349,12 +361,11 @@ parse_rest_error_response(boost::beast::http::status result, iobuf&& buf) {
         // Without a proper code, we treat it as a hint to gracefully retry
         // (synthesize the slow_down code).
         rest_error_response err(
-          fmt::format("{}", cloud_storage_clients::s3_error_code::slow_down),
+          fmt::format("{}", status_to_error_code(result)),
           fmt::format("Empty error response, status code {}", result),
           "",
           "");
         return ss::make_exception_future<ResultT>(err);
-
     } else {
         try {
             auto resp = util::iobuf_to_ptree(std::move(buf), s3_log);
@@ -384,12 +395,8 @@ ss::future<ResultT> parse_head_error_response(
         if (hdr.result() == boost::beast::http::status::not_found) {
             code = "NoSuchKey";
             msg = "Not found";
-        } else if (
-          hdr.result() == boost::beast::http::status::service_unavailable) {
-            code = "SlowDown";
-            msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
         } else {
-            code = "Unknown";
+            code = fmt::format("{}", status_to_error_code(hdr.result()));
             msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
         }
         auto rid = hdr.at(aws_header_names::x_amz_request_id);
