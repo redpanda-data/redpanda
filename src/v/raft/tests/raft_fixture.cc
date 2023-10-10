@@ -358,9 +358,8 @@ raft_node_instance::raft_node_instance(
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
-ss::future<> raft_node_instance::start(
-  std::vector<vnode> initial_nodes,
-  std::optional<raft::state_machine_manager_builder> builder) {
+ss::future<>
+raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     _hb_manager = std::make_unique<heartbeat_manager>(
       config::mock_binding<std::chrono::milliseconds>(50ms),
       consensus_client_protocol(_protocol),
@@ -407,6 +406,17 @@ ss::future<> raft_node_instance::start(
       _recovery_scheduler,
       _features.local());
     co_await _hb_manager->register_group(_raft);
+}
+
+ss::future<> raft_node_instance::init_and_start(
+  std::vector<vnode> initial_nodes,
+  std::optional<raft::state_machine_manager_builder> builder) {
+    co_await initialise(std::move(initial_nodes));
+    co_await start(std::move(builder));
+}
+
+ss::future<> raft_node_instance::start(
+  std::optional<raft::state_machine_manager_builder> builder) {
     co_await _raft->start(std::move(builder));
     started = true;
 }
@@ -561,8 +571,9 @@ ss::future<> raft_fixture::create_simple_group(size_t number_of_nodes) {
         add_node(model::node_id(id), model::revision_id{0});
     }
 
-    co_await ss::coroutine::parallel_for_each(
-      _nodes, [this](auto& pair) { return pair.second->start(all_vnodes()); });
+    co_await ss::coroutine::parallel_for_each(_nodes, [this](auto& pair) {
+        return pair.second->init_and_start(all_vnodes());
+    });
 }
 
 ss::future<> raft_fixture::wait_for_committed_offset(

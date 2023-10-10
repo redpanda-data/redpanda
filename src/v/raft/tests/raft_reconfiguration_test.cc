@@ -184,7 +184,7 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
             model::node_id(initial_size + i), model::revision_id(0));
           current_nodes.push_back(n.get_vnode());
           added_nodes.emplace(n.get_vnode());
-          return n.start({});
+          return n.init_and_start({});
       });
 
     ASSERT_EQ_CORO(
