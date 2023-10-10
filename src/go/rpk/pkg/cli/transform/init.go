@@ -225,16 +225,6 @@ func executeGenerate(fs afero.Fs, p transformProject) error {
 
 func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 	if p.Lang == project.WasmLangTinygo {
-		ok, err := buildpack.Tinygo.IsUpToDate(fs)
-		if err != nil {
-			return fmt.Errorf("unable to determine if tinygo buildpack is up to date: %v", err)
-		}
-		if !ok {
-			dl := buildpack.NewDownloader()
-			if err := buildpack.Tinygo.Download(ctx, dl, fs); err != nil {
-				return fmt.Errorf("unable to install tinygo buildpack: %v", err)
-			}
-		}
 		g, err := exec.LookPath("go")
 		if err != nil {
 			return fmt.Errorf("go is not available on $PATH, please download and install it: https://go.dev/doc/install")
@@ -252,6 +242,9 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		}
 		if err := runGoCli("mod", "tidy"); err != nil {
 			return fmt.Errorf("unable to run go mod tidy: %v", err)
+		}
+		if _, err := buildpack.Tinygo.Install(ctx, fs); err != nil {
+			return fmt.Errorf("unable to install tinygo buildpack: %v", err)
 		}
 		return nil
 	}

@@ -259,3 +259,21 @@ func (bp *Buildpack) DownloadTo(ctx context.Context, dl Downloader, basePath str
 
 	return g.Wait()
 }
+
+// Install downloads a build pack if it is not yet installed and returns the binary path for the compiler.
+func (bp *Buildpack) Install(ctx context.Context, fs afero.Fs) (path string, err error) {
+	ok, err := bp.IsUpToDate(fs)
+	if err != nil {
+		return "", fmt.Errorf("unable to determine if %s buildpack is up to date: %v", bp.Name, err)
+	}
+	if !ok {
+		fmt.Printf("latest %s buildpack not found, downloading now...\n", bp.Name)
+		dl := NewDownloader()
+		err := bp.Download(ctx, dl, fs)
+		if err != nil {
+			return "", fmt.Errorf("unable to install %s buildpack: %v", bp.Name, err)
+		}
+		fmt.Printf("latest %s buildpack download complete\n", bp.Name)
+	}
+	return bp.BinPath()
+}
