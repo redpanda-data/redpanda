@@ -17,6 +17,7 @@
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/loop.hh>
 
 #include <memory>
 namespace storage {
@@ -66,6 +67,22 @@ public:
               std::move(consumer), [this, timeout](Consumer& consumer) {
                   return do_consume(consumer, timeout);
               });
+        }
+
+        template<typename Func>
+        ss::future<>
+        for_each_async(Func f, model::timeout_clock::time_point timeout) {
+            while (true) {
+                while (likely(!is_slice_empty())) {
+                    if (co_await f(pop_batch()) == ss::stop_iteration::yes) {
+                        co_return;
+                    }
+                }
+                if (is_end_of_stream()) {
+                    co_return;
+                }
+                co_await do_load_slice(timeout);
+            }
         }
 
     private:
@@ -127,6 +144,12 @@ public:
     requires CompactedIndexEntryConsumer<Consumer>
     auto consume(Consumer consumer, model::timeout_clock::time_point timeout) {
         return _impl->consume(std::move(consumer), timeout);
+    }
+
+    template<typename Func>
+    ss::future<>
+    for_each_async(Func f, model::timeout_clock::time_point timeout) {
+        return _impl->for_each_async(std::move(f), timeout);
     }
 
     friend std::ostream&
