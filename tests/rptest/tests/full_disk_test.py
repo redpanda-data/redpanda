@@ -13,6 +13,7 @@ from time import sleep, time, time_ns
 from collections import defaultdict
 
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 from kafka import KafkaProducer
@@ -20,17 +21,18 @@ from kafka.errors import BrokerNotAvailableError, NotLeaderForPartitionError
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.redpanda import SISettings
 from ducktape.mark import matrix
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import LoggingConfig
+from rptest.services.redpanda import LoggingConfig, RedpandaService
 from rptest.services.storage import Topic
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import search_logs_with_timeout, produce_total_bytes
+from rptest.util import expect_exception, search_logs_with_timeout, produce_total_bytes
 from rptest.utils.full_disk import FullDiskHelper
 from rptest.utils.partition_metrics import PartitionMetrics
 from rptest.utils.si_utils import BucketView, quiesce_uploads
@@ -547,8 +549,10 @@ class LogStorageMaxSizeSI(RedpandaTest):
         return total_bytes
 
     @cluster(num_nodes=4)
-    @matrix(log_segment_size=[1024 * 1024])
-    def test_stay_below_target_size(self, log_segment_size):
+    @matrix(
+        log_segment_size=[1024 * 1024],
+        cleanup_policy=[TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE])
+    def test_stay_below_target_size(self, log_segment_size, cleanup_policy):
         """
         Tests that when a log storage target size is specified that data
         uploaded into s3 will become eligible for forced GC in order to meet the
@@ -558,6 +562,7 @@ class LogStorageMaxSizeSI(RedpandaTest):
         si_settings = SISettings(test_context=self.test_context,
                                  log_segment_size=log_segment_size)
         extra_rp_conf = {
+            'compacted_log_segment_size': log_segment_size,
             'disk_reservation_percent': 0,
             'retention_local_target_capacity_percent': 100,
         }
@@ -581,9 +586,11 @@ class LogStorageMaxSizeSI(RedpandaTest):
 
         # make the sink topic
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic(topic_name,
-                         partitions=partition_count,
-                         replicas=replica_count)
+        rpk.create_topic(
+            topic_name,
+            partitions=partition_count,
+            replicas=replica_count,
+            config={TopicSpec.PROPERTY_CLEANUP_POLICY: cleanup_policy})
 
         msg_count = data_size // msg_size
 
@@ -630,6 +637,8 @@ class LogStorageMaxSizeSI(RedpandaTest):
         # having infinte retention, at which point we should see the storage
         # usage drop back down. we end up writing 3x * 3x the target size, and
         # add a few segments per node on for fuzz factor
+        #
+        # Exception to this case are topics created with `cleanup.policy=compact`.
         def target_size_reached():
             total = sum(
                 self._kafka_size_on_disk(n) for n in self.redpanda.nodes)
@@ -642,5 +651,64 @@ class LogStorageMaxSizeSI(RedpandaTest):
                 )
             return below
 
-        # give it plenty of time. on debug it is hella slow
-        wait_until(target_size_reached, timeout_sec=120, backoff_sec=5)
+        # In the case of the `cleanup.policy=compact` We want to assert a "safety property,"
+        # which means proving that nothing bad happens. The best mechanism we have for doing
+        # this here is to run the system for some time and periodically check the invariant(s).
+        # The informal guarantee that this correctly tests the behavior we're interesting in
+        # is given by the fact that the `cleanup.policy=delete` hits the same invariants within
+        # the same timeout.
+        timeout_sec = 120
+
+        if cleanup_policy == TopicSpec.CLEANUP_COMPACT:
+            # For `cleanup.policy=compat` we don't expect any removal. Wait for timeout.
+            with expect_exception(TimeoutError, bool):
+                wait_until(target_size_reached,
+                           timeout_sec=timeout_sec,
+                           backoff_sec=5)
+            assert max_local_start_offset(
+                self.redpanda, topic_name
+            ) == 0, "not expecting local offsets to advance when `cleanup.policy=compact`"
+        else:
+            # give it plenty of time. on debug it is hella slow
+            wait_until(target_size_reached,
+                       timeout_sec=timeout_sec,
+                       backoff_sec=5)
+            assert min_local_start_offset(
+                self.redpanda, topic_name
+            ) > 0, "expecting disk storage to be reduced by advancing local offsets (local log prefix trim)"
+
+
+def max_local_start_offset(redpanda: RedpandaService, topic: str):
+    max_offset = 0
+    for node in redpanda.nodes:
+        for p in local_start_offsets(redpanda, node, topic):
+            max_offset = max(max_offset, p['start offset'])
+    return max_offset
+
+
+def min_local_start_offset(redpanda: RedpandaService, topic: str):
+    min_offset = None
+    for node in redpanda.nodes:
+        for p in local_start_offsets(redpanda, node, topic):
+            if min_offset == None:
+                min_offset = p['start offset']
+            else:
+                min_offset = max(min_offset, p['start offset'])
+    return min_offset
+
+
+def local_start_offsets(redpanda: RedpandaService, node: ClusterNode,
+                        topic: str):
+    viewer = OfflineLogViewer(redpanda)
+    for shard_items in viewer.read_kvstore(node).values():
+        for item in shard_items:
+            k = item['key']
+            if (k['keyspace'] == 'storage'
+                    and k['data']['name'] == 'start offset'
+                    and k['data']['ntp']['namespace'] == 'kafka'
+                    and k['data']['ntp']['topic'] == topic):
+
+                yield {
+                    "partition": k['data']['ntp']['partition'],
+                    "start offset": item["value"]
+                }

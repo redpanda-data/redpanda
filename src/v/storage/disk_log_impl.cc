@@ -863,7 +863,7 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
           "[{}] applying 'deletion' log cleanup with remote retention override "
           "offset {} and config {}",
           config().ntp(),
-          _cloud_gc_offset,
+          offset,
           cfg);
 
         co_return co_await request_eviction_until_offset(offset);
