@@ -31,7 +31,7 @@ class PeriodicFlushWithRelaxedConsistencyTest(EndToEndTest):
 
         self.start_producer(1, throughput=1000, acks=1)
         self.start_consumer()
-        self.consumer.start()
+
         msg_count = 10000
         wait_until(
             lambda: len(self.producer.acked_values) >= msg_count,
