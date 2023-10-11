@@ -294,6 +294,9 @@ connection_cache::update_broker_client_coordinator(connection_config cfg) {
       conn_shards, [this, cfg = std::move(cfg)](auto shard) {
           return container().invoke_on(
             shard, [cfg](connection_cache& cache) mutable {
+                if (cache.is_shutting_down()) {
+                    return ss::now();
+                }
                 return cache._cache.try_add_or_update(
                   cfg.dest_node,
                   std::move(cfg.addr),
@@ -327,6 +330,10 @@ ss::future<> connection_cache::update_broker_client(
 
 ss::future<> connection_cache::reset_client_backoff(
   model::node_id self, ss::shard_id src_shard, model::node_id node_id) {
+    if (is_shutting_down()) {
+        return ss::now();
+    }
+
     auto shard = rpc::connection_cache::shard_for(self, src_shard, node_id);
     if (!shard) {
         return ss::now();
@@ -335,6 +342,9 @@ ss::future<> connection_cache::reset_client_backoff(
     return ss::with_gate(_gate, [this, node_id, shard] {
         return container().invoke_on(
           *shard, [node_id](rpc::connection_cache& cache) mutable {
+              if (cache.is_shutting_down()) {
+                  return;
+              }
               cache._cache.reset_client_backoff(node_id);
           });
     });
