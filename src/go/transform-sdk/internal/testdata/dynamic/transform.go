@@ -15,6 +15,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 
 	"github.com/redpanda-data/redpanda/src/go/transform-sdk"
@@ -24,14 +26,27 @@ func main() {
 	redpanda.OnRecordWritten(identityTransform)
 }
 
+var allocated bytes.Buffer
+
 func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	key := string(e.Record().Key)
 	switch key {
 	case "poison":
 		return nil, errors.New("☠︎")
-	case "cheese":
+	case "bomb":
+		panic("💥")
+	case "allocate":
+		amt := binary.LittleEndian.Uint32(e.Record().Value)
+		allocated.Grow(int(amt))
+		return nil, nil
+	case "zero":
+		return []redpanda.Record{}, nil
+	case "mirror":
+		return []redpanda.Record{e.Record()}, nil
+	case "double":
 		return []redpanda.Record{
-			{Key: []byte("yum!"), Value: []byte("cheese eaten")},
+			e.Record(),
+			e.Record(),
 		}, nil
 	}
 	println("unknown record:", key)
