@@ -527,7 +527,7 @@ type RBAC struct {
 type ServiceAccount struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 	Create      bool              `json:"create"`
-	Name        string            `json:"name"`
+	Name        string            `json:"name,omitempty"`
 }
 
 type SetDataDirOwnership struct {
