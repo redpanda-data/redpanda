@@ -196,8 +196,6 @@ ss::future<> connection_cache::stop() {
 ss::future<> connection_cache::apply_changes(
   connection_allocation_strategy::changes changes,
   std::optional<connection_config> config) {
-    auto units = co_await _coordinator_state->mtx.get_units();
-
     // Add connections we have the config for.
     if (config) {
         for (auto& con_add : changes.add_connections) {
@@ -250,7 +248,9 @@ ss::future<> connection_cache::remove_broker_client_coordinator(
     }
     auto holder = _gate.hold();
 
+    auto units = co_await _coordinator_state->mtx.get_units();
     auto& alloc_strat = _coordinator_state->alloc_strat;
+
     if (alloc_strat.has_connection_assignments_for(dest)) {
         auto changes = alloc_strat.remove_connection_assignments_for(dest);
         co_await apply_changes(changes, std::nullopt);
@@ -279,6 +279,7 @@ connection_cache::update_broker_client_coordinator(connection_config cfg) {
     }
     auto holder = _gate.hold();
 
+    auto units = co_await _coordinator_state->mtx.get_units();
     auto& alloc_strat = _coordinator_state->alloc_strat;
 
     if (!alloc_strat.has_connection_assignments_for(cfg.dest_node)) {
@@ -293,6 +294,9 @@ connection_cache::update_broker_client_coordinator(connection_config cfg) {
       conn_shards, [this, cfg = std::move(cfg)](auto shard) {
           return container().invoke_on(
             shard, [cfg](connection_cache& cache) mutable {
+                if (cache.is_shutting_down()) {
+                    return ss::now();
+                }
                 return cache._cache.try_add_or_update(
                   cfg.dest_node,
                   std::move(cfg.addr),
@@ -326,15 +330,24 @@ ss::future<> connection_cache::update_broker_client(
 
 ss::future<> connection_cache::reset_client_backoff(
   model::node_id self, ss::shard_id src_shard, model::node_id node_id) {
+    if (is_shutting_down()) {
+        return ss::now();
+    }
+
     auto shard = rpc::connection_cache::shard_for(self, src_shard, node_id);
     if (!shard) {
         return ss::now();
     }
 
-    return container().invoke_on(
-      *shard, [node_id](rpc::connection_cache& cache) mutable {
-          cache._cache.reset_client_backoff(node_id);
-      });
+    return ss::with_gate(_gate, [this, node_id, shard] {
+        return container().invoke_on(
+          *shard, [node_id](rpc::connection_cache& cache) mutable {
+              if (cache.is_shutting_down()) {
+                  return;
+              }
+              cache._cache.reset_client_backoff(node_id);
+          });
+    });
 }
 
 } // namespace rpc
