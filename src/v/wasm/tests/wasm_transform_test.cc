@@ -24,6 +24,7 @@
 #include <avro/Specific.hh>
 #include <avro/Stream.hh>
 #include <avro/ValidSchema.hh>
+#include <gtest/gtest.h>
 
 TEST_F(WasmTestFixture, IdentityFunction) {
     load_wasm("identity.wasm");
@@ -100,4 +101,10 @@ TEST_F(WasmTestFixture, SchemaRegistry) {
     ASSERT_EQ(records.size(), 1);
     EXPECT_EQ(
       iobuf_to_bytes(records[0].value()), R"JSON({"a":4,"b":"foo"})JSON");
+}
+
+TEST_F(WasmTestFixture, MemoryIsLimited) {
+    load_wasm("dynamic.wasm");
+    EXPECT_NO_THROW(execute_command("allocate", 5_KiB));
+    EXPECT_THROW(execute_command("allocate", MAX_MEMORY), wasm::wasm_exception);
 }
