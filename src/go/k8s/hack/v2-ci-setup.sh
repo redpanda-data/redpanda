@@ -13,7 +13,7 @@ echo "Will be creating tests in ${TEST_DIR}"
 echo "Pulling git repository"
 
 git clone -n --depth=1 --filter=tree:0 https://github.com/redpanda-data/helm-charts.git
-cd helm-charts
+pushd helm-charts
 git sparse-checkout set --no-cone charts/redpanda/ci
 git checkout
 
