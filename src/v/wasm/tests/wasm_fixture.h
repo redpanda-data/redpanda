@@ -30,6 +30,8 @@ class WasmTestFixture : public ::testing::Test {
 public:
     static constexpr model::timestamp NOW = model::timestamp(1687201340524ULL);
 
+    static void SetUpTestSuite();
+
     void SetUp() override;
     void TearDown() override;
 

@@ -34,9 +34,9 @@ constexpr int32_t NO_ACTIVE_TRANSFORM = -1;
 constexpr int32_t INVALID_HANDLE = -2;
 constexpr int32_t INVALID_BUFFER = -3;
 
-model::record_batch transform_module::for_each_record(
+ss::future<model::record_batch> transform_module::for_each_record_async(
   const model::record_batch* input,
-  ss::noncopyable_function<void(wasm_call_params)> func) {
+  ss::noncopyable_function<ss::future<>(wasm_call_params)> func) {
     vassert(
       input->header().attrs.compression() == model::compression::none,
       "wasm transforms expect uncompressed batches");
@@ -69,7 +69,7 @@ model::record_batch transform_module::for_each_record(
         auto current_record_timestamp = input->header().first_timestamp()
                                         + record_position.timestamp_delta;
         try {
-            func({
+            co_await func({
               .batch_handle = bh,
               .record_handle = record_handle(
                 int32_t(record_position.start_index)),
@@ -95,7 +95,7 @@ model::record_batch transform_module::for_each_record(
     batch.header().crc = model::crc_record_batch(batch);
     batch.header().header_crc = model::internal_header_only_crc(batch.header());
     _call_ctx = std::nullopt;
-    return batch;
+    co_return batch;
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)

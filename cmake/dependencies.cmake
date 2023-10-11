@@ -93,7 +93,7 @@ fetch_dep(hdrhistogram
 FetchContent_Declare(
   wasmtime
   GIT_REPOSITORY https://github.com/bytecodealliance/wasmtime
-  GIT_TAG ec07c89b9b57a2e4d377b3c730f1b8cf8e31bd3a
+  GIT_TAG b77b407b25c3c158be209b8df6d9054ac6e43203
   # Remove the features we don't use.
   PATCH_COMMAND
     sed -i "s/default \\\\= \\\\['jitdump', 'wat', 'wasi', 'cache', 'parallel\\\\-compilation', 'async'\\\\]/default = ['async']/g" crates/c-api/Cargo.toml
