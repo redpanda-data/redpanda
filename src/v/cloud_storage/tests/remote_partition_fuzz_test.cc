@@ -433,7 +433,7 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     // NOTE: see issues/11271
     BOOST_TEST_INFO("scan_unit_close should terminate in a finite amount of "
                     "time at shutdown");
-    BOOST_REQUIRE_NO_THROW(
-      ss::with_timeout(model::timeout_clock::now() + 60s, std::move(close_fut))
-        .get());
+    auto timeout_fut = ss::with_timeout(
+      model::timeout_clock::now() + 60s, std::move(close_fut));
+    BOOST_REQUIRE_NO_THROW(timeout_fut.get());
 }
