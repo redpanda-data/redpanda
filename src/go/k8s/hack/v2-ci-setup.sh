@@ -60,7 +60,7 @@ rm helm-chart/charts/operator-tests/files/19-*.yaml || true
 
 echo "Creating template files for testing"
 
-cd helm-chart/charts
+pushd helm-chart/charts
 
 # clean and recreate if it exists already
 rm -rf temp_tests || true
