@@ -83,3 +83,16 @@ rp_test(
   ARGS "-- -c 4"
   LABELS wasm
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME wasm_allocator
+  SOURCES
+    wasm_allocator_test.cc
+  LIBRARIES 
+    v::gtest_main
+    v::wasm
+  ARGS "-- -c 1"
+  LABELS wasm
+)

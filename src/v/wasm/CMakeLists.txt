@@ -15,6 +15,7 @@ v_cc_library(
     wasi.cc
     wasmtime.cc
     cache.cc
+    allocator.cc
   DEPS
     wasmtime
     v::storage
