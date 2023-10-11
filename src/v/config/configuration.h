@@ -68,7 +68,9 @@ struct configuration final : public config_store {
     deprecated_property coproc_offset_flush_interval_ms;
 
     // Data Transforms
-    property<bool> enable_data_transforms;
+    property<bool> data_transforms_enabled;
+    property<size_t> data_transforms_per_core_memory_reservation;
+    property<size_t> data_transforms_per_function_memory_limit;
 
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;

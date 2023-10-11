@@ -556,9 +556,6 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             'kafka_mtls_principal_mapping_rules'
         }
 
-        # Don't enable coproc: it generates log errors if its companion service isn't running
-        exclude_settings.add('enable_coproc')
-
         # Don't enable schema id validation: the interdepedencies are too complex and are tested elsewhere.
         exclude_settings.add('enable_schema_id_validation')
 
@@ -608,10 +605,6 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 valid_value = [
                     'RULE:[1:$1]/L', 'RULE:[2:$1](Test.*)s/ABC///L', 'DEFAULT'
                 ]
-
-            if name == 'enable_coproc':
-                # Don't try enabling coproc, it has external dependencies
-                continue
 
             if name == 'admin_api_require_auth':
                 # Don't lock ourselves out of the admin API!

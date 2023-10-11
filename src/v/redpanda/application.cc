@@ -1788,7 +1788,7 @@ bool application::archival_storage_enabled() {
 }
 
 bool application::wasm_data_transforms_enabled() {
-    return config::shard_local_cfg().enable_data_transforms.value()
+    return config::shard_local_cfg().data_transforms_enabled.value()
            && !config::node().emergency_disable_data_transforms.value();
 }
 
@@ -2198,10 +2198,13 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     controller->set_ready().get();
 
     if (wasm_data_transforms_enabled()) {
-        constexpr wasm::runtime::config config = {
+        const auto& cluster = config::shard_local_cfg();
+        wasm::runtime::config config = {
           .heap_memory = {
-            .per_core_pool_size_bytes = 20_MiB,
-            .per_engine_memory_limit = 2_MiB,
+            .per_core_pool_size_bytes = 
+              cluster.data_transforms_per_core_memory_reservation.value(),
+            .per_engine_memory_limit = 
+              cluster.data_transforms_per_function_memory_limit.value(),
           },
         };
         _wasm_runtime->start(config).get();
