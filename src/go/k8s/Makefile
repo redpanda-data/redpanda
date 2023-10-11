@@ -2,7 +2,7 @@
 OPERATOR_IMG_LATEST ?= "localhost/redpanda-operator:dev"
 CONFIGURATOR_IMG_LATEST ?= "localhost/configurator:dev"
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
+CRD_OPTIONS ?= "crd"
 
 # default redpanda image to load
 REDPANDA_IMG ?= "localhost/redpanda:dev"
@@ -164,7 +164,7 @@ GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.4.1
+CONTROLLER_TOOLS_VERSION ?= v0.13.0
 KUTTL_VERSION ?= v0.15.0
 
 GOLANGCI_LINT_VERSION ?= v1.54.2
