@@ -2,12 +2,13 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/fluxcd.resources.yaml
 - bases/redpanda.vectorized.io_clusters.yaml
 - bases/redpanda.vectorized.io_consoles.yaml
 - bases/cluster.redpanda.com_redpandas.yaml
 - bases/cluster.redpanda.com_topics.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
+- bases/toolkit.fluxcd.io/helm-controller.yaml
+- bases/toolkit.fluxcd.io/source-controller.yaml
 
 patches:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
