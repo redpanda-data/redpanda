@@ -86,6 +86,7 @@ v_cc_library(
     tx_registry_frontend.cc
     tx_gateway_frontend.cc
     tx_gateway.cc
+    tx_snapshot_utils.cc
     service.cc
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
