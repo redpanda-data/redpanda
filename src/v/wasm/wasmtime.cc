@@ -37,10 +37,6 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
-#include <wasmtime/config.h>
-#include <wasmtime/error.h>
-#include <wasmtime/memory.h>
-
 #include <cmath>
 #include <csignal>
 #include <memory>
@@ -82,6 +78,49 @@ void check_trap(const wasm_trap_t* trap) {
     std::stringstream sb;
     sb << std::string_view(msg.data, msg.size);
     wasm_byte_vec_delete(&msg);
+    wasmtime_trap_code_t code = 0;
+    if (wasmtime_trap_code(trap, &code)) {
+        switch (static_cast<wasmtime_trap_code_enum>(code)) {
+        case WASMTIME_TRAP_CODE_STACK_OVERFLOW:
+            sb << " (code STACK_OVERFLOW)";
+            break;
+        case WASMTIME_TRAP_CODE_MEMORY_OUT_OF_BOUNDS:
+            sb << " (code MEMORY_OUT_OF_BOUNDS)";
+            break;
+        case WASMTIME_TRAP_CODE_HEAP_MISALIGNED:
+            sb << " (code HEAP_MISALIGNED)";
+            break;
+        case WASMTIME_TRAP_CODE_TABLE_OUT_OF_BOUNDS:
+            sb << " (code TABLE_OUT_OF_BOUNDS)";
+            break;
+        case WASMTIME_TRAP_CODE_INDIRECT_CALL_TO_NULL:
+            sb << " (code INDIRECT_CALL_TO_NULL)";
+            break;
+        case WASMTIME_TRAP_CODE_BAD_SIGNATURE:
+            sb << " (code BAD_SIGNATURE)";
+            break;
+        case WASMTIME_TRAP_CODE_INTEGER_OVERFLOW:
+            sb << " (code INTEGER_OVERFLOW)";
+            break;
+        case WASMTIME_TRAP_CODE_INTEGER_DIVISION_BY_ZERO:
+            sb << " (code INTEGER_DIVISION_BY_ZERO)";
+            break;
+        case WASMTIME_TRAP_CODE_BAD_CONVERSION_TO_INTEGER:
+            sb << " (code BAD_CONVERSION_TO_INTEGER)";
+            break;
+        case WASMTIME_TRAP_CODE_UNREACHABLE_CODE_REACHED:
+            sb << " (code UNREACHABLE_CODE_REACHED)";
+            break;
+        case WASMTIME_TRAP_CODE_INTERRUPT:
+            sb << " (code INTERRUPT)";
+            break;
+        case WASMTIME_TRAP_CODE_OUT_OF_FUEL:
+            sb << " (code OUT_OF_FUEL)";
+            break;
+        default:
+            break;
+        }
+    }
     wasm_frame_vec_t trace{.size = 0, .data = nullptr};
     wasm_trap_trace(trap, &trace);
     for (wasm_frame_t* frame : std::span(trace.data, trace.size)) {
@@ -309,6 +348,7 @@ private:
         wasmtime_context_fuel_remaining(ctx, &fuel);
         handle<wasmtime_error_t, wasmtime_error_delete> error(
           wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
+        check_error(error.get());
     }
 
     ss::future<> create_instance() {
