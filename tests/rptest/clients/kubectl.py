@@ -233,12 +233,15 @@ class KubectlTool:
             self._redpanda.logger.info(
                 'skipping tbot start to generate identity')
             return None
-
+        # Select method to join
+        _method = "iam"
+        if self._provider == 'gcp':
+            _method = "gcp"
         self._redpanda.logger.info('starting tbot to generate identity')
         cmd = [
             'tbot', 'start', '--data-dir=/tmp/tbot-data',
             f'--destination-dir={self.TELEPORT_DEST_DIR}',
-            f'--auth-server={self._tp_proxy}', '--join-method=iam',
+            f'--auth-server={self._tp_proxy}', f'--join-method={_method}',
             f'--token={self._tp_token}', '--certificate-ttl=6h',
             '--renewal-interval=6h', '--oneshot'
         ]
