@@ -50,7 +50,7 @@ public:
     caching_runtime& operator=(caching_runtime&&) = delete;
     ~caching_runtime() override;
 
-    ss::future<> start() override;
+    ss::future<> start(runtime::config) override;
     ss::future<> stop() override;
 
     /**

@@ -2198,7 +2198,13 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     controller->set_ready().get();
 
     if (wasm_data_transforms_enabled()) {
-        _wasm_runtime->start().get();
+        constexpr wasm::runtime::config config = {
+          .heap_memory = {
+            .per_core_pool_size_bytes = 20_MiB,
+            .per_engine_memory_limit = 2_MiB,
+          },
+        };
+        _wasm_runtime->start(config).get();
         _transform_service.invoke_on_all(&transform::service::start).get();
     }
 

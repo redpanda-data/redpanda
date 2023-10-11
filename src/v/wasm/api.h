@@ -85,7 +85,16 @@ public:
     runtime& operator=(const runtime&) = delete;
     runtime(runtime&&) = delete;
     runtime& operator=(runtime&&) = delete;
-    virtual ss::future<> start() = 0;
+
+    struct config {
+        struct heap_memory {
+            size_t per_core_pool_size_bytes;
+            size_t per_engine_memory_limit;
+        };
+        heap_memory heap_memory;
+    };
+
+    virtual ss::future<> start(config) = 0;
     virtual ss::future<> stop() = 0;
     /**
      * Create a factory for this transform and the corresponding source wasm
