@@ -83,6 +83,10 @@ partition_balancer_backend::partition_balancer_backend(
   , _raft_learner_recovery_rate(std::move(raft_learner_recovery_rate))
   , _timer([this] { tick(); }) {}
 
+bool partition_balancer_backend::is_enabled() const {
+    return is_leader() && !config::node().recovery_mode_enabled();
+}
+
 void partition_balancer_backend::start() {
     _topic_table_updates = _state.topics().register_lw_notification(
       [this]() { on_topic_table_update(); });
@@ -103,6 +107,10 @@ ss::future<std::error_code> partition_balancer_backend::request_rebalance() {
 
     if (!is_leader()) {
         co_return errc::not_leader;
+    }
+
+    if (config::node().recovery_mode_enabled()) {
+        co_return errc::feature_disabled;
     }
 
     auto units = co_await _lock.get_units();
@@ -137,6 +145,9 @@ void partition_balancer_backend::maybe_rearm_timer(bool now) {
     if (_gate.is_closed()) {
         return;
     }
+    if (config::node().recovery_mode_enabled()) {
+        return;
+    }
     auto schedule_at = now ? clock_t::now() : clock_t::now() + _tick_interval();
     auto duration_ms = [](clock_t::time_point time_point) {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -161,7 +172,7 @@ void partition_balancer_backend::maybe_rearm_timer(bool now) {
 
 void partition_balancer_backend::on_members_update(
   model::node_id id, model::membership_state state) {
-    if (!is_leader()) {
+    if (!is_enabled()) {
         return;
     }
 
@@ -199,7 +210,7 @@ void partition_balancer_backend::on_members_update(
 }
 
 void partition_balancer_backend::on_topic_table_update() {
-    if (!is_leader()) {
+    if (!is_enabled()) {
         return;
     }
 
@@ -290,7 +301,7 @@ ss::future<> partition_balancer_backend::stop() {
 }
 
 ss::future<> partition_balancer_backend::do_tick() {
-    if (!_raft0->is_leader()) {
+    if (!is_enabled()) {
         vlog(clusterlog.debug, "not leader, skipping tick");
         co_return;
     }
@@ -483,7 +494,9 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
 
     partition_balancer_overview_reply ret;
 
-    if (_mode() != model::partition_autobalancing_mode::continuous) {
+    if (
+      _mode() != model::partition_autobalancing_mode::continuous
+      || config::node().recovery_mode_enabled()) {
         ret.status = partition_balancer_status::off;
         ret.error = errc::feature_disabled;
         return ret;
