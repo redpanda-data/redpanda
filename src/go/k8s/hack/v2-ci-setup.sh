@@ -21,7 +21,7 @@ echo "Filter files that cannot be tested"
 
 popd
 
-# Removing files that can only be tested in origin
+# Removing files that require environment variables available only in helm chart Github Action execution. 
 rm helm-charts/charts/redpanda/ci/9*.yaml || true
 rm helm-charts/charts/redpanda/ci/9*.yaml.tpl || true
 
