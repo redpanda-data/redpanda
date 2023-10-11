@@ -20,6 +20,7 @@
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
+#include "config/node_config.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "raft/rpc_client_protocol.h"
@@ -174,6 +175,13 @@ void leader_balancer::check_unregister_leadership_change_notification() {
 }
 
 ss::future<> leader_balancer::start() {
+    if (config::node().recovery_mode_enabled()) {
+        vlog(
+          clusterlog.info,
+          "not starting leader balancer, recovery mode enabled");
+        co_return;
+    }
+
     /*
      * register for raft0 leadership change notifications. shutdown the balancer
      * when we lose leadership, and start it when we gain leadership.
@@ -201,6 +209,10 @@ ss::future<> leader_balancer::start() {
 }
 
 ss::future<> leader_balancer::stop() {
+    if (config::node().recovery_mode_enabled()) {
+        return ss::now();
+    }
+
     vlog(clusterlog.info, "Stopping Leader Balancer...");
     _leaders.unregister_leadership_change_notification(
       _raft0->ntp(), _leader_notify_handle);
