@@ -130,6 +130,68 @@ class RetentionPolicyTest(RedpandaTest):
                                             target_bytes=local_retention)
 
 
+class RetentionPolicyToggleTest(RedpandaTest):
+    topics = (TopicSpec(partition_count=1,
+                        replication_factor=3,
+                        cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+
+    log_compaction_interval_ms = 1000
+
+    def __init__(self, test_context):
+        self.extra_rp_conf = dict(
+            log_compaction_interval_ms=self.log_compaction_interval_ms,
+            log_segment_size=1048576,
+            compacted_log_segment_size=1048576,
+        )
+
+        super().__init__(test_context=test_context,
+                         num_brokers=3,
+                         extra_rp_conf=self.extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test_changing_topic_cleanup_policy(self):
+        """
+        Test changing topic cleanup policy and retention property,
+        then waits for segments to be removed.
+        """
+
+        self.client().alter_topic_configs(
+            self.topic, {
+                TopicSpec.PROPERTY_CLEANUP_POLICY: TopicSpec.CLEANUP_DELETE,
+            })
+
+        produce_until_segments(
+            self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+        )
+
+        local_retention = 10000
+        self.client().alter_topic_configs(
+            self.topic, {
+                TopicSpec.PROPERTY_RETENTION_BYTES: local_retention,
+            })
+
+        wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                        topic=self.topic,
+                                        target_bytes=local_retention)
+
+        self.logger.debug(f"Toggling back to cleanup.policy=compact")
+        self.client().alter_topic_configs(
+            self.topic, {
+                TopicSpec.PROPERTY_CLEANUP_POLICY: TopicSpec.CLEANUP_COMPACT,
+            })
+
+        rpk = RpkTool(self.redpanda)
+        start_offset_before = next(rpk.describe_topic(self.topic)).start_offset
+        produce_total_bytes(self.redpanda, self.topic, 10 * 1024 * 1024)
+        time.sleep(5 * self.log_compaction_interval_ms / 1000)
+        start_offset_after = next(rpk.describe_topic(self.topic)).start_offset
+        assert start_offset_before == start_offset_after,\
+            f"start offsets shouldn't move if cleanup.policy=compact; before: {start_offset_before}, after: {start_offset_after}"
+
+
 class ShadowIndexingLocalRetentionTest(RedpandaTest):
     segment_size = 1000000  # 1MB
     default_retention_segments = 2

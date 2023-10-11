@@ -844,6 +844,10 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
 
     cfg = apply_overrides(cfg);
 
+    if (!config().is_collectable()) {
+        co_return std::nullopt;
+    }
+
     /*
      * _cloud_gc_offset is used to communicate the intent to collect
      * partition data in excess of normal retention settings (and for infinite
@@ -867,10 +871,6 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
           cfg);
 
         co_return co_await request_eviction_until_offset(offset);
-    }
-
-    if (!config().is_collectable()) {
-        co_return std::nullopt;
     }
 
     vlog(
