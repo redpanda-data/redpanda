@@ -110,10 +110,10 @@ spec:
                 description: ClusterSpec defines the values to use in the cluster
                 properties:
                   auth:
-                    description: Auth is a top level field of the values file
+                    description: Auth is a top-level field of the values file
                     properties:
                       sasl:
-                        description: SASL is a top level field of the values file
+                        description: SASL is a top-level field of the values file
                         properties:
                           enabled:
                             type: boolean
@@ -123,7 +123,7 @@ spec:
                             type: string
                           users:
                             items:
-                              description: UsersItems is a top level field of the
+                              description: UsersItems is a top-level field of the
                                 values file
                               properties:
                                 mechanism:
@@ -152,7 +152,7 @@ spec:
                       release
                     type: object
                   config:
-                    description: Config is a top level field of the values file
+                    description: Config is a top-level field of the values file
                     properties:
                       cluster:
                         type: object
@@ -286,7 +286,7 @@ spec:
                         type: object
                     type: object
                   external:
-                    description: External is a top level field of the values file
+                    description: External is a top-level field of the values file
                     properties:
                       addresses:
                         items:
@@ -359,10 +359,10 @@ spec:
                         type: string
                     type: object
                   listeners:
-                    description: Listeners is a top level field of the values file
+                    description: Listeners is a top-level field of the values file
                     properties:
                       admin:
-                        description: Admin is a top level field of the values file
+                        description: Admin is a top-level field of the values file
                         properties:
                           external:
                             additionalProperties:
@@ -376,7 +376,7 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: ListenerTLS is a top level field of
+                                  description: ListenerTLS is a top-level field of
                                     the values file
                                   properties:
                                     cert:
@@ -391,7 +391,7 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: ListenerTLS is a top level field of the values
+                            description: ListenerTLS is a top-level field of the values
                               file
                             properties:
                               cert:
@@ -403,7 +403,7 @@ spec:
                             type: object
                         type: object
                       http:
-                        description: HTTP is a top level field of the values file`
+                        description: HTTP is a top-level field of the values file`
                         properties:
                           authenticationMethod:
                             type: string
@@ -421,7 +421,7 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: ListenerTLS is a top level field of
+                                  description: ListenerTLS is a top-level field of
                                     the values file
                                   properties:
                                     cert:
@@ -438,7 +438,7 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: ListenerTLS is a top level field of the values
+                            description: ListenerTLS is a top-level field of the values
                               file
                             properties:
                               cert:
@@ -450,7 +450,7 @@ spec:
                             type: object
                         type: object
                       kafka:
-                        description: Kafka is a top level field of the values file
+                        description: Kafka is a top-level field of the values file
                         properties:
                           authenticationMethod:
                             type: string
@@ -466,7 +466,7 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: ListenerTLS is a top level field of
+                                  description: ListenerTLS is a top-level field of
                                     the values file
                                   properties:
                                     cert:
@@ -481,7 +481,7 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: ListenerTLS is a top level field of the values
+                            description: ListenerTLS is a top-level field of the values
                               file
                             properties:
                               cert:
@@ -493,12 +493,12 @@ spec:
                             type: object
                         type: object
                       rpc:
-                        description: RPC is a top level field of the values file
+                        description: RPC is a top-level field of the values file
                         properties:
                           port:
                             type: integer
                           tls:
-                            description: ListenerTLS is a top level field of the values
+                            description: ListenerTLS is a top-level field of the values
                               file
                             properties:
                               cert:
@@ -510,7 +510,7 @@ spec:
                             type: object
                         type: object
                       schemaRegistry:
-                        description: SchemaRegistry is a top level field of the values
+                        description: SchemaRegistry is a top-level field of the values
                           file
                         properties:
                           authenticationMethod:
@@ -529,7 +529,7 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: ListenerTLS is a top level field of
+                                  description: ListenerTLS is a top-level field of
                                     the values file
                                   properties:
                                     cert:
@@ -546,7 +546,7 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: ListenerTLS is a top level field of the values
+                            description: ListenerTLS is a top-level field of the values
                               file
                             properties:
                               cert:
@@ -559,7 +559,7 @@ spec:
                         type: object
                     type: object
                   logging:
-                    description: Logging is a top level field of the values file
+                    description: Logging is a top-level field of the values file
                     properties:
                       logLevel:
                         type: string
@@ -602,7 +602,7 @@ spec:
                       release
                     type: object
                   post_install_job:
-                    description: PostInstallJob is a top level field of the values
+                    description: PostInstallJob is a top-level field of the values
                       file
                     properties:
                       annotations:
@@ -669,7 +669,7 @@ spec:
                     - enabled
                     type: object
                   post_upgrade_job:
-                    description: PostUpgradeJob is a top level field of the values
+                    description: PostUpgradeJob is a top-level field of the values
                       file
                     properties:
                       annotations:
@@ -886,7 +886,7 @@ spec:
                     - enabled
                     type: object
                   rackAwareness:
-                    description: RackAwareness is a top level field of the values
+                    description: RackAwareness is a top-level field of the values
                       file
                     properties:
                       enabled:
@@ -974,10 +974,9 @@ spec:
                         type: string
                     required:
                     - create
-                    - name
                     type: object
                   statefulset:
-                    description: Statefulset is a top level field of the values file
+                    description: Statefulset is a top-level field of the values file
                     properties:
                       additionalRedpandaCmdFlags:
                         items:
@@ -988,7 +987,7 @@ spec:
                           type: string
                         type: object
                       budget:
-                        description: Budget is a top level field of the values file
+                        description: Budget is a top-level field of the values file
                         properties:
                           maxUnavailable:
                             type: integer
@@ -1184,7 +1183,7 @@ spec:
                                 type: object
                             type: object
                           tuning:
-                            description: Tuning is a top level field of the values
+                            description: Tuning is a top-level field of the values
                               file
                             properties:
                               ballast_file_path:
@@ -1256,7 +1255,7 @@ spec:
                             type: object
                         type: object
                       livenessProbe:
-                        description: LivenessProbe is a top level field of the values
+                        description: LivenessProbe is a top-level field of the values
                           file
                         properties:
                           failureThreshold:
@@ -1915,7 +1914,7 @@ spec:
                       priorityClassName:
                         type: string
                       readinessProbe:
-                        description: ReadinessProbe is a top level field of the values
+                        description: ReadinessProbe is a top-level field of the values
                           file
                         properties:
                           failureThreshold:
@@ -2629,7 +2628,7 @@ spec:
                       skipChown:
                         type: boolean
                       startupProbe:
-                        description: StartupProbe is a top level field of the values
+                        description: StartupProbe is a top-level field of the values
                           file
                         properties:
                           failureThreshold:
@@ -2687,7 +2686,7 @@ spec:
                           type: object
                         type: array
                       topologySpreadConstraints:
-                        description: TopologySpreadConstraints is a top level field
+                        description: TopologySpreadConstraints is a top-level field
                           of the values file
                         properties:
                           maxSkew:
@@ -2702,7 +2701,7 @@ spec:
                         - whenUnsatisfiable
                         type: object
                       updateStrategy:
-                        description: UpdateStrategy is a top level field of the values
+                        description: UpdateStrategy is a top-level field of the values
                           file
                         properties:
                           type:
@@ -2712,12 +2711,12 @@ spec:
                         type: object
                     type: object
                   storage:
-                    description: Storage is a top level field of the values file
+                    description: Storage is a top-level field of the values file
                     properties:
                       hostPath:
                         type: string
                       persistentVolume:
-                        description: PersistentVolume is a top level field of the
+                        description: PersistentVolume is a top-level field of the
                           values file
                         properties:
                           annotations:
@@ -2734,13 +2733,11 @@ spec:
                             type: string
                           storageClass:
                             type: string
-                        required:
-                        - enabled
                         type: object
                       tiered:
                         properties:
                           config:
-                            description: TieredConfig is a top level field of the
+                            description: TieredConfig is a top-level field of the
                               values file
                             properties:
                               cloud_storage_api_endpoint:
@@ -2802,7 +2799,7 @@ spec:
                           mountType:
                             type: string
                           persistentVolume:
-                            description: TieredStoragePersistentVolume is a top level
+                            description: TieredStoragePersistentVolume is a top-level
                               field of the values file
                             properties:
                               annotations:
@@ -2819,7 +2816,7 @@ spec:
                         type: object
                     type: object
                   tls:
-                    description: TLS is a top level field of the values file
+                    description: TLS is a top-level field of the values file
                     properties:
                       certs:
                         additionalProperties:
@@ -2895,7 +2892,7 @@ spec:
                       type: object
                     type: array
                   tuning:
-                    description: Tuning is a top level field of the values file
+                    description: Tuning is a top-level field of the values file
                     properties:
                       ballast_file_path:
                         type: string
