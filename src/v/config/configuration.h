@@ -69,8 +69,10 @@ struct configuration final : public config_store {
 
     // Data Transforms
     property<bool> data_transforms_enabled;
-    property<size_t> data_transforms_per_core_memory_reservation;
-    property<size_t> data_transforms_per_function_memory_limit;
+
+    // Wasm
+    property<size_t> wasm_per_core_memory_reservation;
+    property<size_t> wasm_per_function_memory_limit;
 
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;

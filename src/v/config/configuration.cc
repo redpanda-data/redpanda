@@ -150,28 +150,28 @@ configuration::configuration()
       "Enables WebAssembly powered Data Transforms directly in the broker",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
-  , data_transforms_per_core_memory_reservation(
+  , wasm_per_core_memory_reservation(
       *this,
-      "data_transforms_per_core_memory_reservation",
+      "wasm_per_core_memory_reservation",
       "The amount of memory to reserve per core for all WebAssembly Virtual "
       "Machines. Memory is reserved on boot. The maximum number of functions "
       "that can be deployed to a cluster is equal to "
-      "data_transforms_per_core_memory_reservation / "
-      "data_transforms_per_function_memory_limit",
+      "wasm_per_core_memory_reservation / "
+      "wasm_per_function_memory_limit",
       {
         .needs_restart = needs_restart::yes,
         .example = std::to_string(25_MiB),
         .visibility = visibility::tunable,
       },
       20_MiB)
-  , data_transforms_per_function_memory_limit(
+  , wasm_per_function_memory_limit(
       *this,
-      "data_transforms_per_function_memory_limit",
+      "wasm_per_function_memory_limit",
       "The amount of memory to give an instance of a WebAssembly Virtual "
       "Machine. The maximum number of functions "
       "that can be deployed to a cluster is equal to "
-      "data_transforms_per_core_memory_reservation / "
-      "data_transforms_per_function_memory_limit",
+      "wasm_per_core_memory_reservation / "
+      "wasm_per_function_memory_limit",
       {
         .needs_restart = needs_restart::yes,
         .example = std::to_string(5_MiB),
