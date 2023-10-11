@@ -40,8 +40,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 	log.SetLogger(logf)
 
 	cfg, err := testEnv.Start()
-	assert.NoError(t, err)
-	assert.NotNil(t, cfg)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
 
 	err = v1alpha1.AddToScheme(scheme.Scheme)
 	require.NoError(t, err)

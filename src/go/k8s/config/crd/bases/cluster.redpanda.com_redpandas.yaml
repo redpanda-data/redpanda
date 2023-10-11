@@ -1,11 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.13.0
   name: redpandas.cluster.redpanda.com
 spec:
   group: cluster.redpanda.com
@@ -345,6 +343,7 @@ spec:
                             TODO: Add other useful fields. apiVersion, kind, uid?'
                           type: string
                       type: object
+                      x-kubernetes-map-type: atomic
                     type: array
                   license_key:
                     description: 'Deprecated: Use `Enterprise.LicenseKey` instead.'
@@ -721,6 +720,7 @@ spec:
                                   required:
                                   - key
                                   type: object
+                                  x-kubernetes-map-type: atomic
                                 fieldRef:
                                   description: 'Selects a field of the pod: supports
                                     metadata.name, metadata.namespace, `metadata.labels[''<KEY>'']`,
@@ -739,6 +739,7 @@ spec:
                                   required:
                                   - fieldPath
                                   type: object
+                                  x-kubernetes-map-type: atomic
                                 resourceFieldRef:
                                   description: 'Selects a resource of the container:
                                     only resources limits and requests (limits.cpu,
@@ -764,6 +765,7 @@ spec:
                                   required:
                                   - resource
                                   type: object
+                                  x-kubernetes-map-type: atomic
                                 secretKeyRef:
                                   description: Selects a key of a secret in the pod's
                                     namespace
@@ -785,6 +787,7 @@ spec:
                                   required:
                                   - key
                                   type: object
+                                  x-kubernetes-map-type: atomic
                               type: object
                           required:
                           - name
@@ -808,6 +811,7 @@ spec:
                                     be defined
                                   type: boolean
                               type: object
+                              x-kubernetes-map-type: atomic
                             prefix:
                               description: An optional identifier to prepend to each
                                 key in the ConfigMap. Must be a C_IDENTIFIER.
@@ -825,6 +829,7 @@ spec:
                                     defined
                                   type: boolean
                               type: object
+                              x-kubernetes-map-type: atomic
                           type: object
                         type: array
                       labels:
@@ -1353,6 +1358,7 @@ spec:
                                             only "value". The requirements are ANDed.
                                           type: object
                                       type: object
+                                      x-kubernetes-map-type: atomic
                                     namespaceSelector:
                                       description: A label query over the set of namespaces
                                         that the term applies to. The term is applied
@@ -1410,6 +1416,7 @@ spec:
                                             only "value". The requirements are ANDed.
                                           type: object
                                       type: object
+                                      x-kubernetes-map-type: atomic
                                     namespaces:
                                       description: namespaces specifies a static list
                                         of namespace names that the term applies to.
@@ -1514,6 +1521,7 @@ spec:
                                         The requirements are ANDed.
                                       type: object
                                   type: object
+                                  x-kubernetes-map-type: atomic
                                 namespaceSelector:
                                   description: A label query over the set of namespaces
                                     that the term applies to. The term is applied
@@ -1570,6 +1578,7 @@ spec:
                                         The requirements are ANDed.
                                       type: object
                                   type: object
+                                  x-kubernetes-map-type: atomic
                                 namespaces:
                                   description: namespaces specifies a static list
                                     of namespace names that the term applies to. The
@@ -1672,6 +1681,7 @@ spec:
                                             only "value". The requirements are ANDed.
                                           type: object
                                       type: object
+                                      x-kubernetes-map-type: atomic
                                     namespaceSelector:
                                       description: A label query over the set of namespaces
                                         that the term applies to. The term is applied
@@ -1729,6 +1739,7 @@ spec:
                                             only "value". The requirements are ANDed.
                                           type: object
                                       type: object
+                                      x-kubernetes-map-type: atomic
                                     namespaces:
                                       description: namespaces specifies a static list
                                         of namespace names that the term applies to.
@@ -1833,6 +1844,7 @@ spec:
                                         The requirements are ANDed.
                                       type: object
                                   type: object
+                                  x-kubernetes-map-type: atomic
                                 namespaceSelector:
                                   description: A label query over the set of namespaces
                                     that the term applies to. The term is applied
@@ -1889,6 +1901,7 @@ spec:
                                         The requirements are ANDed.
                                       type: object
                                   type: object
+                                  x-kubernetes-map-type: atomic
                                 namespaces:
                                   description: namespaces specifies a static list
                                     of namespace names that the term applies to. The
@@ -2963,14 +2976,12 @@ spec:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
                     use as an array at the field path .status.conditions.  For example,
-                    \n \ttype FooStatus struct{ \t    // Represents the observations
-                    of a foo's current state. \t    // Known .status.conditions.type
-                    are: \"Available\", \"Progressing\", and \"Degraded\" \t    //
-                    +patchMergeKey=type \t    // +patchStrategy=merge \t    // +listType=map
-                    \t    // +listMapKey=type \t    Conditions []metav1.Condition
+                    \n type FooStatus struct{ // Represents the observations of a
+                    foo's current state. // Known .status.conditions.type are: \"Available\",
+                    \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
+                    // +listType=map // +listMapKey=type Conditions []metav1.Condition
                     `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
-                    protobuf:\"bytes,1,rep,name=conditions\"` \n \t    // other fields
-                    \t}"
+                    protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
                   properties:
                     lastTransitionTime:
                       description: lastTransitionTime is the last time the condition
@@ -3070,9 +3081,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

@@ -36,6 +36,7 @@ resources:
   group: cluster
   kind: Redpanda
   path: github.com/redpanda-data/redpanda/src/go/k8s/api/redpanda/v1alpha1
+  plural: redpandas
   version: v1alpha1
 - api:
     crdVersion: v1
