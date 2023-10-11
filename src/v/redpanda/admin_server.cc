@@ -5137,6 +5137,8 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
     json.archive_size_bytes = status.archive_size_bytes;
     json.local_log_size_bytes = status.local_log_size_bytes;
     json.stm_region_segment_count = status.stm_region_segment_count;
+    // TODO: add spillover segments.
+    json.cloud_log_segment_count = status.stm_region_segment_count;
     json.local_log_segment_count = status.local_log_segment_count;
 
     if (status.cloud_log_start_offset) {

@@ -330,6 +330,10 @@
             "type": "long",
             "description": "Number of segments in the STM region of the cloud log"
         },
+        "cloud_log_segment_count": {
+            "type": "long",
+            "description": "Number of segments in the STM region of the cloud log"
+        },
         "local_log_segment_count": {
             "type": "long",
             "description": "Number of segments in the local log"
