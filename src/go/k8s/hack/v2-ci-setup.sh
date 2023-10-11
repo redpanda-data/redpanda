@@ -19,7 +19,7 @@ git checkout
 
 echo "Filter files that cannot be tested"
 
-cd ../
+popd
 
 # Removing files that can only be tested in origin
 rm helm-charts/charts/redpanda/ci/9*.yaml || true
