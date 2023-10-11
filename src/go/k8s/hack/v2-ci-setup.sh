@@ -86,7 +86,7 @@ else
   grep -rl "#---" temp_tests | xargs sed -i -e 's/#---/---/g'
 fi
 
-cd ../../
+popd
 
 mv helm-chart/charts/temp_tests $TEST_DIR
 
