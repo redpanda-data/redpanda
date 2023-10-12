@@ -85,4 +85,4 @@ rp_test(
 v_cc_library(
     NAME raft_fixture
     SRCS raft_fixture.cc
-    DEPS Seastar::seastar v::raft)
+    DEPS Seastar::seastar v::raft v::gtest_main)
