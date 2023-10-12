@@ -12,6 +12,7 @@
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -21,6 +22,7 @@
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 #include "storage/directories.h"
@@ -29,9 +31,11 @@
 #include "test_utils/tmp_dir.h"
 #include "utils/retry_chain_node.h"
 
+#include <seastar/core/app-template.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/resource.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/test_case.hh>
@@ -1029,4 +1033,160 @@ FIXTURE_TEST(test_filter_lifetime_2, remote_fixture) { // NOLINT
     auto subscription = remote.local().subscribe(*flt);
     flt.reset();
     BOOST_REQUIRE_THROW(subscription.get(), ss::broken_promise);
+}
+
+struct throttle_low_limit {
+    throttle_low_limit() {
+        config::shard_local_cfg()
+          .cloud_storage_max_throughput_per_shard.set_value(
+            manifest_payload.size());
+        vlog(
+          test_log.info,
+          "CONF throughput: {}",
+          config::shard_local_cfg().cloud_storage_max_throughput_per_shard());
+    }
+    ~throttle_low_limit() {
+        config::shard_local_cfg()
+          .cloud_storage_max_throughput_per_shard.reset();
+    }
+};
+
+using throttle_remote_fixture = remote_fixture_base<throttle_low_limit>;
+
+FIXTURE_TEST(
+  test_download_segment_throttle, throttle_remote_fixture) { // NOLINT
+    set_expectations_and_listen({});
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    auto subscription = remote.local().subscribe(allow_all);
+    auto name = segment_name("1-2-v1.log");
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
+    uint64_t clen = manifest_payload.size();
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+        iobuf out;
+        out.append(manifest_payload.data(), manifest_payload.size());
+        co_return std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out)));
+    };
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+    auto upl_res = remote.local()
+                     .upload_segment(
+                       bucket, path, clen, reset_stream, fib, always_continue)
+                     .get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+
+    auto download_one = [](cloud_storage::remote& api, auto path, auto bucket) {
+        retry_chain_node fib(never_abort, 100ms, 20ms);
+        iobuf downloaded;
+        auto try_consume = [&downloaded](
+                             uint64_t len, ss::input_stream<char> is) {
+            downloaded.clear();
+            auto rds = make_iobuf_ref_output_stream(downloaded);
+            return ss::do_with(
+              std::move(rds),
+              std::move(is),
+              [&downloaded](auto& rds, auto& is) {
+                  return ss::copy(is, rds).then(
+                    [&downloaded] { return downloaded.size_bytes(); });
+              });
+        };
+        auto dnl_res
+          = api.download_segment(bucket, path, try_consume, fib).get();
+
+        BOOST_REQUIRE(dnl_res == download_result::success);
+        iobuf_parser p(std::move(downloaded));
+        auto actual = p.read_string(p.bytes_left());
+        // segment and manifest has the same synthetic payload in this test
+        BOOST_REQUIRE(actual == manifest_payload);
+    };
+    download_one(remote.local(), path, bucket);
+    auto s1 = remote.local()
+                .materialized()
+                .get_read_path_probe()
+                .get_downloads_throttled_sum();
+    BOOST_REQUIRE(s1 == 0);
+    download_one(remote.local(), path, bucket);
+    auto s2 = remote.local()
+                .materialized()
+                .get_read_path_probe()
+                .get_downloads_throttled_sum();
+    BOOST_REQUIRE(s2 > 0);
+}
+
+struct no_throttle {
+    no_throttle() {
+        config::shard_local_cfg()
+          .cloud_storage_throughput_limit_percent.set_value(0);
+        config::shard_local_cfg()
+          .cloud_storage_max_throughput_per_shard.set_value(
+            manifest_payload.size());
+    }
+    ~no_throttle() {
+        config::shard_local_cfg()
+          .cloud_storage_throughput_limit_percent.reset();
+        config::shard_local_cfg()
+          .cloud_storage_max_throughput_per_shard.reset();
+    }
+};
+
+using no_throttle_remote_fixture = remote_fixture_base<no_throttle>;
+
+// This test checks that the throttling can actually be disabled
+FIXTURE_TEST(
+  test_download_segment_no_throttle, no_throttle_remote_fixture) { // NOLINT
+    set_expectations_and_listen({});
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    auto subscription = remote.local().subscribe(allow_all);
+    auto name = segment_name("1-2-v1.log");
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
+    uint64_t clen = manifest_payload.size();
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+        iobuf out;
+        out.append(manifest_payload.data(), manifest_payload.size());
+        co_return std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out)));
+    };
+    static const auto timeout = 1s;
+    static const auto backoff = 10ms;
+    retry_chain_node fib(never_abort, timeout, backoff);
+    auto upl_res = remote.local()
+                     .upload_segment(
+                       bucket, path, clen, reset_stream, fib, always_continue)
+                     .get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+
+    auto download_one =
+      [](cloud_storage::remote& api, auto path, auto bucket) { // NOLINT
+          retry_chain_node fib(never_abort, timeout, backoff);
+          auto downloaded = ss::make_lw_shared<iobuf>();
+          auto try_consume = [downloaded](uint64_t, ss::input_stream<char> is) {
+              auto rds = make_iobuf_ref_output_stream(*downloaded);
+              return ss::do_with(
+                std::move(rds),
+                std::move(is),
+                downloaded,
+                [](auto& rds, auto& is, auto dl) { // NOLINT
+                    return ss::copy(is, rds).then(
+                      [dl] { return dl->size_bytes(); });
+                });
+          };
+          auto dnl_res
+            = api.download_segment(bucket, path, try_consume, fib).get();
+
+          BOOST_REQUIRE(dnl_res == download_result::success);
+          iobuf_parser p(std::move(*downloaded));
+          auto actual = p.read_string(p.bytes_left());
+          BOOST_REQUIRE(actual == manifest_payload);
+      };
+    for (int i = 0; i < 100; i++) {
+        download_one(remote.local(), path, bucket);
+        auto times_throttled = remote.local()
+                                 .materialized()
+                                 .get_read_path_probe()
+                                 .get_downloads_throttled_sum();
+        BOOST_REQUIRE(times_throttled == 0);
+    }
 }

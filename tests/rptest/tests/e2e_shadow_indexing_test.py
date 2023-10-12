@@ -105,36 +105,40 @@ def num_manifests_downloaded(test_self):
     return s
 
 
+def all_uploads_done(rpk, topic, redpanda, logger):
+    topic_description = rpk.describe_topic(topic)
+    partition = next(topic_description)
+
+    hwm = partition.high_watermark
+
+    manifest = None
+    try:
+        bucket = BucketView(redpanda)
+        manifest = bucket.manifest_for_ntp(topic, partition.id)
+    except Exception as e:
+        logger.info(f"Exception thrown while retrieving the manifest: {e}")
+        return False
+
+    top_segment = max(manifest['segments'].values(),
+                      key=lambda seg: seg['base_offset'])
+    uploaded_raft_offset = top_segment['committed_offset']
+    uploaded_kafka_offset = uploaded_raft_offset - top_segment[
+        'delta_offset_end']
+    logger.info(
+        f"Remote HWM {uploaded_kafka_offset} (raft {uploaded_raft_offset}), local hwm {hwm}"
+    )
+
+    # -1 because uploaded offset is inclusive, hwm is exclusive
+    if uploaded_kafka_offset < (hwm - 1):
+        return False
+
+    return True
+
+
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     def _all_uploads_done(self):
-        topic_description = self.rpk.describe_topic(self.topic)
-        partition = next(topic_description)
-
-        hwm = partition.high_watermark
-
-        manifest = None
-        try:
-            bucket = BucketView(self.redpanda)
-            manifest = bucket.manifest_for_ntp(self.topic, partition.id)
-        except Exception as e:
-            self.logger.info(
-                f"Exception thrown while retrieving the manifest: {e}")
-            return False
-
-        top_segment = max(manifest['segments'].values(),
-                          key=lambda seg: seg['base_offset'])
-        uploaded_raft_offset = top_segment['committed_offset']
-        uploaded_kafka_offset = uploaded_raft_offset - top_segment[
-            'delta_offset_end']
-        self.logger.info(
-            f"Remote HWM {uploaded_kafka_offset} (raft {uploaded_raft_offset}), local hwm {hwm}"
-        )
-
-        # -1 because uploaded offset is inclusive, hwm is exclusive
-        if uploaded_kafka_offset < (hwm - 1):
-            return False
-
-        return True
+        return all_uploads_done(self.rpk, self.topic, self.redpanda,
+                                self.logger)
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -1187,3 +1191,104 @@ class EndToEndSpilloverTest(RedpandaTest):
 
         self.logger.info("Restart consumer")
         self.consume()
+
+
+class EndToEndThrottlingTest(RedpandaTest):
+    topics = (TopicSpec(partition_count=8,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_context):
+        self.si_settings = SISettings(
+            test_context,
+            log_segment_size=1024,
+            fast_uploads=True,
+            # Set small throughput limit to trigger throttling
+            cloud_storage_max_throughput_per_shard=5 * 1024 * 1024)
+
+        super(EndToEndThrottlingTest,
+              self).__init__(test_context=test_context,
+                             si_settings=self.si_settings)
+
+        self.rpk = RpkTool(self.redpanda)
+        # 1.3GiB
+        self.msg_size = 1024 * 128
+        self.msg_count = 10000
+
+    def get_throttling_metric(self):
+        return self.redpanda.metric_sum(
+            "vectorized_cloud_storage_read_path_downloads_throttled_sum_total")
+
+    def produce(self):
+        topic_name = self.topics[0].name
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       topic_name,
+                                       msg_size=self.msg_size,
+                                       msg_count=self.msg_count)
+
+        producer.start()
+        producer.wait()
+        producer.free()
+
+        wait_until(self._all_uploads_done, timeout_sec=180, backoff_sec=10)
+
+    def _all_uploads_done(self):
+        return all_uploads_done(self.rpk, self.topic, self.redpanda,
+                                self.logger)
+
+    def consume(self):
+        topic_name = self.topics[0].name
+        consumer = KgoVerifierSeqConsumer(self.test_context,
+                                          self.redpanda,
+                                          topic_name,
+                                          msg_size=self.msg_size,
+                                          debug_logs=True,
+                                          trace_logs=True)
+        consumer.start()
+
+        consumer.wait(timeout_sec=300)
+
+        assert consumer.consumer_status.validator.invalid_reads == 0
+        assert consumer.consumer_status.validator.valid_reads >= self.msg_count
+
+        consumer.free()
+
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_throttling(self, cloud_storage_type):
+
+        self.logger.info("Start producer")
+        self.produce()
+
+        self.logger.info("Remove local data")
+
+        rpk = RpkTool(self.redpanda)
+        num_partitions = self.topics[0].partition_count
+        topic_name = self.topics[0].name
+        rpk.alter_topic_config(topic_name, 'retention.local.target.bytes',
+                               0x1000)
+
+        for pix in range(0, num_partitions):
+            wait_for_local_storage_truncate(self.redpanda,
+                                            self.topic,
+                                            target_bytes=0x2000,
+                                            partition_idx=pix,
+                                            timeout_sec=30)
+
+        self.logger.info("Start consumer")
+        self.consume()
+
+        self.logger.info("Stop nodes")
+        for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node, timeout=120)
+
+        self.logger.info("Start nodes")
+        for node in self.redpanda.nodes:
+            self.redpanda.start_node(node, timeout=120)
+
+        self.logger.info("Restart consumer")
+        self.consume()
+
+        times_throttled = self.get_throttling_metric()
+        self.logger.info(f"Consumer was throttled {times_throttled} times")
+        assert times_throttled > 0, f"Expected consumer to be throttled, metric value: {times_throttled}"

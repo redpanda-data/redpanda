@@ -20,7 +20,9 @@
 #include "ssx/semaphore.h"
 #include "utils/adjustable_semaphore.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/token_bucket.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -50,6 +52,8 @@ class materialized_manifest_cache;
  * evicted objects, instead of each partition doing it independently.
  */
 class materialized_resources {
+    friend class throttled_dl_source;
+
 public:
     materialized_resources();
 
@@ -72,6 +76,8 @@ public:
     ///
     /// The undrlying semaphore limits number of parallel hydrations
     ss::future<ssx::semaphore_units> get_hydration_units(size_t n);
+    ss::input_stream<char>
+    throttle_download(ss::input_stream<char> underlying, ss::abort_source& as);
 
 private:
     /// Timer use to periodically evict stale segment readers
@@ -112,6 +118,15 @@ private:
 
     /// Consume from _eviction_list
     ss::future<> run_eviction_loop();
+
+    /// Set bandwidth for tiered-storage scheduling_group
+    ss::future<> set_disk_max_bandwidth(size_t tput);
+
+    /// Set download bandwidth for cloud storage API
+    void set_net_max_bandwidth(size_t tput);
+
+    /// Recalculate and reset throughput limits
+    ss::future<> update_throughput();
 
     /// Try to evict segment readers until `target_free` units are available in
     /// _reader_units, i.e. available for new readers to be created.
@@ -157,6 +172,11 @@ private:
     uint64_t _segments_delayed{0};
 
     ts_read_path_probe _read_path_probe;
+    token_bucket<> _throughput_limit;
+    config::binding<std::optional<size_t>> _throughput_shard_limit_config;
+    config::binding<std::optional<size_t>> _relative_throughput;
+    bool _throttling_disabled{false};
+    std::optional<size_t> _device_throughput;
 };
 
 } // namespace cloud_storage

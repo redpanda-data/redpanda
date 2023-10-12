@@ -73,6 +73,12 @@ public:
         return _chunk_hydration_latency.auto_measure();
     }
 
+    void download_throttled(size_t value) { _downloads_throttled_sum += value; }
+
+    auto get_downloads_throttled_sum() const noexcept {
+        return _downloads_throttled_sum;
+    }
+
 private:
     int32_t _cur_materialized_segments = 0;
 
@@ -88,9 +94,12 @@ private:
 
     size_t _chunks_hydrated = 0;
     hist_t _chunk_hydration_latency;
+    size_t _downloads_throttled_sum = 0;
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace cloud_storage
