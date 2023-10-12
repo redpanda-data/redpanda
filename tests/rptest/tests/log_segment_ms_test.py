@@ -118,8 +118,13 @@ class SegmentMsTest(RedpandaTest):
         num_messages = messages_to_generate_segments(TEST_NUM_SEGMENTS,
                                                      SERVER_SEGMENT_MS)
 
+        # make the test fair by ensuring that the range segment.ms is clamped too is low enough
         start_count, stop_count = self.generate_workload(
-            server_cfg, topic_cfg, use_alter_cfg, num_messages)
+            server_cfg,
+            topic_cfg,
+            use_alter_cfg,
+            num_messages,
+            extra_cluster_cfg={'log_segment_ms_min': '60000'})
         assert start_count == stop_count, f"{start_count=} != {stop_count=}"
 
     @cluster(num_nodes=3)
@@ -165,8 +170,11 @@ class SegmentMsTest(RedpandaTest):
         Tests that an old enough segment will roll in a finite amount of time,
         once an alter-config sets segment.ms low enough
         """
-        # ensure that the cluster do not have a fallback value
-        self.redpanda.set_cluster_config({"log_segment_ms": None})
+        # ensure that the cluster do not have a fallback value, and that the clamp range of segment.ms is low enough
+        self.redpanda.set_cluster_config({
+            "log_segment_ms": None,
+            "log_segment_ms_min": "60000"
+        })
         topic = TopicSpec()
         rpk = RpkTool(self.redpanda)
         rpk.create_topic(topic=topic.name, partitions=1)
