@@ -136,7 +136,6 @@ spec:
                             type: array
                         required:
                         - enabled
-                        - users
                         type: object
                     required:
                     - sasl
@@ -895,7 +894,6 @@ spec:
                         type: string
                     required:
                     - enabled
-                    - nodeAnnotation
                     type: object
                   rbac:
                     properties:
