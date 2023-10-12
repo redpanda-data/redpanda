@@ -1416,6 +1416,9 @@ class EnableSegmentMs(Expression):
             # suggests.
             ClusterConfigInput("SetLowCompactionInterval_rp_conf",
                                {"log_compaction_interval_ms": "1000"}),
+            # Update lower clamp applied to segment.ms for testing
+            ClusterConfigInput("SetLogSegmentMsMin_rp_conf",
+                               {"log_segment_ms_min": "60000"}),
         ]
 
 
