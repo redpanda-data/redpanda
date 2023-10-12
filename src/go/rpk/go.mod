@@ -31,9 +31,9 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
 	github.com/tklauser/go-sysconf v0.3.12
-	github.com/twmb/franz-go v1.15.0
-	github.com/twmb/franz-go/pkg/kadm v1.9.2
-	github.com/twmb/franz-go/pkg/kmsg v1.6.1
+	github.com/twmb/franz-go v1.15.1
+	github.com/twmb/franz-go/pkg/kadm v1.10.0
+	github.com/twmb/franz-go/pkg/kmsg v1.7.0
 	github.com/twmb/franz-go/pkg/sr v0.0.0-20231012204113-ae169a1f35c2
 	github.com/twmb/franz-go/plugin/kzap v1.1.2
 	github.com/twmb/tlscfg v1.2.1
@@ -77,7 +77,7 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/klauspost/compress v1.17.0 // indirect
+	github.com/klauspost/compress v1.17.2 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.2 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
