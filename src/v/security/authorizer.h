@@ -26,6 +26,121 @@
 
 namespace security {
 
+/**
+ * Holds authZ check metadata for audit processing
+ */
+struct auth_result {
+    // Flag indicating if user is authorized
+    bool authorized{false};
+    // Indicates if the authorization system is disabled
+    bool authorization_disabled{false};
+    // Indicates if the user is a superuser
+    bool is_superuser{false};
+    // Indicates if no ACL matches were found
+    bool empty_matches{false};
+
+    // If found, the resource pattern that was matched to provide authZ decision
+    std::optional<std::reference_wrapper<const resource_pattern>>
+      resource_pattern;
+    // If found, the ACL that was matched that provided the authZ decision
+    std::optional<acl_entry_set::const_reference> acl;
+    // The principal that was checked
+    security::acl_principal principal;
+    // The host
+    security::acl_host host;
+    // The type of resource
+    security::resource_type resource_type;
+    // The name of the resource
+    ss::sstring resource_name;
+
+    explicit operator bool() const noexcept { return is_authorized(); }
+
+    bool is_authorized() const noexcept { return authorized; }
+
+    template<typename T>
+    static auth_result authz_disabled(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      const T& resource) {
+        return {
+          .authorized = true,
+          .authorization_disabled = true,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+        };
+    }
+
+    template<typename T>
+    static auth_result superuser_authorized(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      const T& resource) {
+        return {
+          .authorized = true,
+          .is_superuser = true,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+        };
+    }
+
+    template<typename T>
+    static auth_result empty_match_result(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      const T& resource,
+      bool authorized) {
+        return {
+          .authorized = authorized,
+          .empty_matches = true,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+        };
+    }
+
+    template<typename T>
+    static auth_result acl_match(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      const T& resource,
+      bool authorized,
+      const acl_matches::acl_match& match) {
+        return {
+          .authorized = authorized,
+          .resource_pattern = match.resource,
+          .acl = match.acl,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource()};
+    }
+
+    template<typename T>
+    static auth_result opt_acl_match(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      const T& resource,
+      const std::optional<acl_matches::acl_match>& match) {
+        return {
+          .authorized = match.has_value(),
+          .empty_matches = !match.has_value(),
+          .resource_pattern = match.has_value()
+                                ? std::make_optional(match->resource)
+                                : std::nullopt,
+          .acl = match.has_value() ? std::make_optional(match->acl)
+                                   : std::nullopt,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource()};
+    }
+};
+
 /*
  * Primary interface for request authorization and management of ACLs.
  *
@@ -89,7 +204,7 @@ public:
      * the type `T` of the name of the resouce (e.g. `model::topic`).
      */
     template<typename T>
-    bool authorized(
+    auth_result authorized(
       const T& resource_name,
       acl_operation operation,
       const acl_principal& principal,
@@ -98,20 +213,29 @@ public:
         auto acls = _store.find(type, resource_name());
 
         if (_superusers.contains(principal)) {
-            return true;
+            return auth_result::superuser_authorized(
+              principal, host, resource_name);
         }
 
         if (acls.empty()) {
-            return bool(_allow_empty_matches);
+            return auth_result::empty_match_result(
+              principal, host, resource_name, bool(_allow_empty_matches));
         }
 
         // check for deny
-        if (acls.contains(operation, principal, host, acl_permission::deny)) {
-            return false;
+        if (auto entry = acls.find(
+              operation, principal, host, acl_permission::deny);
+            entry.has_value()) {
+            return auth_result::acl_match(
+              principal, host, resource_name, false, *entry);
         }
 
         // check for allow
-        return acl_any_implied_ops_allowed(acls, principal, host, operation);
+        return auth_result::opt_acl_match(
+          principal,
+          host,
+          resource_name,
+          acl_any_implied_ops_allowed(acls, principal, host, operation));
     }
 
     ss::future<fragmented_vector<acl_binding>> all_bindings() const {
@@ -130,14 +254,23 @@ private:
      * Compute whether the specified operation is allowed based on the implied
      * operations.
      */
-    bool acl_any_implied_ops_allowed(
+    std::optional<acl_matches::acl_match> acl_any_implied_ops_allowed(
       const acl_matches& acls,
       const acl_principal& principal,
       const acl_host& host,
       const acl_operation operation) const {
-        auto check_op = [&acls, &principal, &host](acl_operation operation) {
-            return acls.contains(
-              operation, principal, host, acl_permission::allow);
+        auto check_op = [&acls, &principal, &host](
+                          auto begin,
+                          auto end) -> std::optional<acl_matches::acl_match> {
+            for (; begin != end; ++begin) {
+                if (auto entry = acls.find(
+                      *begin, principal, host, acl_permission::allow);
+                    entry.has_value()) {
+                    return entry;
+                }
+            }
+
+            return {};
         };
 
         switch (operation) {
@@ -149,17 +282,17 @@ private:
               acl_operation::remove,
               acl_operation::alter,
             };
-            return std::any_of(ops.begin(), ops.end(), check_op);
+            return check_op(ops.begin(), ops.end());
         }
         case acl_operation::describe_configs: {
             static constexpr std::array ops = {
               acl_operation::describe_configs,
               acl_operation::alter_configs,
             };
-            return std::any_of(ops.begin(), ops.end(), check_op);
+            return check_op(ops.begin(), ops.end());
         }
         default:
-            return check_op(operation);
+            return acls.find(operation, principal, host, acl_permission::allow);
         }
     }
     acl_store _store;

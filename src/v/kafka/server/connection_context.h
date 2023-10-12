@@ -164,13 +164,8 @@ public:
     std::optional<security::sasl_server>& sasl() { return _sasl; }
 
     template<typename T>
-    bool authorized(
+    security::auth_result authorized(
       security::acl_operation operation, const T& name, authz_quiet quiet) {
-        // authorization disabled?
-        if (!_enable_authorizer) {
-            return true;
-        }
-
         auto get_principal = [this]() {
             if (_mtls_state) {
                 return _mtls_state->principal();
@@ -180,16 +175,23 @@ public:
             // anonymous user
             return security::acl_principal{security::principal_type::user, {}};
         };
+
+        // authorization disabled?
+        if (!_enable_authorizer) {
+            return security::auth_result::authz_disabled(
+              get_principal(), security::acl_host(_client_addr), name);
+        }
+
         return authorized_user(get_principal(), operation, name, quiet);
     }
 
     template<typename T>
-    bool authorized_user(
+    security::auth_result authorized_user(
       security::acl_principal principal,
       security::acl_operation operation,
       const T& name,
       authz_quiet quiet) {
-        bool authorized = _server.authorizer().authorized(
+        auto authorized = _server.authorizer().authorized(
           name, operation, principal, security::acl_host(_client_addr));
 
         if (!authorized) {

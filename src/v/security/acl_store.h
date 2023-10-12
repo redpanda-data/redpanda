@@ -73,7 +73,17 @@ private:
  */
 class acl_matches {
 public:
-    using entry_set_ref = std::reference_wrapper<const acl_entry_set>;
+    struct acl_entry_set_match {
+        std::reference_wrapper<const resource_pattern> resource;
+        std::reference_wrapper<const acl_entry_set> acl_entry_set;
+    };
+
+    using entry_set_ref = acl_entry_set_match;
+
+    struct acl_match {
+        std::reference_wrapper<const resource_pattern> resource;
+        acl_entry_set::const_reference acl;
+    };
 
     acl_matches(
       std::optional<entry_set_ref> wildcards,
@@ -91,11 +101,19 @@ public:
 
     bool empty() const;
 
-    bool contains(
+    std::optional<acl_match> find(
       acl_operation operation,
       const acl_principal& principal,
       const acl_host& host,
       acl_permission perm) const;
+
+    bool contains(
+      acl_operation operation,
+      const acl_principal& principal,
+      const acl_host& host,
+      acl_permission perm) const {
+        return find(operation, principal, host, perm).has_value();
+    }
 
 private:
     std::optional<entry_set_ref> wildcards;
