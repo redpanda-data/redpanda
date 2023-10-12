@@ -44,6 +44,8 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
+#include "security/acl.h"
+#include "security/sasl_authentication.h"
 #include "ssx/thread_worker.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -668,8 +670,22 @@ public:
 
     using conn_ptr = ss::lw_shared_ptr<kafka::connection_context>;
 
+    struct fake_sasl_mech : public security::sasl_mechanism {
+        bool complete() const final { return true; }
+        bool failed() const final { return false; }
+        const security::acl_principal& principal() const final {
+            static const security::acl_principal fake_principal{
+              security::principal_type::user, "fake-user"};
+            return fake_principal;
+        }
+        ss::future<result<bytes>> authenticate(bytes) final {
+            vassert(false, "Don't call this");
+        }
+    };
+
     conn_ptr make_connection_context() {
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
+        sasl.set_mechanism(std::make_unique<fake_sasl_mech>());
         return ss::make_lw_shared<kafka::connection_context>(
           proto.local(),
           nullptr,
