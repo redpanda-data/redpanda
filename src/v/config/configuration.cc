@@ -98,9 +98,9 @@ configuration::configuration()
       "Lower bound on topic segment.ms: lower values will be clamped to this "
       "value",
       {.needs_restart = needs_restart::no,
-       .example = "60000",
+       .example = "600000",
        .visibility = visibility::tunable},
-      60s)
+      10min)
   , log_segment_ms_max(
       *this,
       "log_segment_ms_max",
