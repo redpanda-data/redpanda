@@ -12,11 +12,10 @@
 #include "config/property.h"
 #include "kafka/client/fwd.h"
 #include "kafka/client/types.h"
-#include "kafka/server/logger.h"
-#include "kafka/types.h"
 #include "model/timeout_clock.h"
 #include "net/types.h"
 #include "security/audit/schemas/schemas.h"
+#include "security/audit/types.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>
@@ -33,7 +32,7 @@
 
 using namespace std::chrono_literals;
 
-namespace kafka {
+namespace security::audit {
 
 template<typename T>
 concept InheritsFromOCSFBase
@@ -67,7 +66,7 @@ public:
     /// publish messages. Consumers of this API should react accordingly, i.e.
     /// return an error to the client.
     template<InheritsFromOCSFBase T, typename... Args>
-    bool enqueue_audit_event(audit_event_type type, Args&&... args) {
+    bool enqueue_audit_event(event_type type, Args&&... args) {
         if (!_audit_enabled() || !is_audit_event_enabled(type)) {
             return true;
         }
@@ -95,7 +94,7 @@ private:
     ss::future<> pause();
     ss::future<> resume();
 
-    bool is_audit_event_enabled(audit_event_type) const;
+    bool is_audit_event_enabled(event_type) const;
     bool do_enqueue_audit_event(
       std::unique_ptr<security::audit::ocsf_base_impl> msg);
     void set_enabled_events();
@@ -126,8 +125,7 @@ private:
     config::binding<size_t> _max_queue_elements_per_shard;
     config::binding<std::vector<ss::sstring>> _audit_event_types;
     static constexpr auto enabled_set_bitlength
-      = std::underlying_type_t<audit_event_type>(
-        audit_event_type::num_elements);
+      = std::underlying_type_t<event_type>(event_type::num_elements);
     std::bitset<enabled_set_bitlength> _enabled_event_types{0};
 
     /// Shutdown primitives
@@ -158,7 +156,7 @@ private:
 
     /// Other references
     cluster::controller* _controller;
-    client::configuration& _config;
+    kafka::client::configuration& _config;
 };
 
-} // namespace kafka
+} // namespace security::audit

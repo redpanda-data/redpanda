@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Redpanda Data, Inc.
+ * Copyright 2023 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -8,19 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
+#include <seastar/util/log.hh>
 
-namespace security {
-
-class authorizer;
-class credential_store;
-class ephemeral_credential_store;
-
-namespace audit {
-
-class audit_log_manager;
-
-} // namespace audit
-
-} // namespace security
+namespace security::audit {
+extern seastar::logger adtlog;
+} // namespace security::audit

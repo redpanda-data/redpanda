@@ -55,12 +55,12 @@ public:
       ss::sharded<snc_quota_manager>&,
       ss::sharded<kafka::group_router>&,
       ss::sharded<kafka::usage_manager>&,
-      ss::sharded<kafka::audit_log_manager>&,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<cluster::id_allocator_frontend>&,
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&,
+      ss::sharded<security::audit::audit_log_manager>&,
       ss::sharded<cluster::security_frontend>&,
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
@@ -122,7 +122,6 @@ public:
     fetch_session_cache& fetch_sessions_cache() { return _fetch_session_cache; }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
     usage_manager& usage_mgr() { return _usage_manager.local(); }
-    audit_log_manager& audit_mgr() { return _audit_mgr.local(); }
     snc_quota_manager& snc_quota_mgr() { return _snc_quota_mgr.local(); }
     bool is_idempotence_enabled() const { return _is_idempotence_enabled; }
     bool are_transactions_enabled() const { return _are_transactions_enabled; }
@@ -130,6 +129,10 @@ public:
     security::credential_store& credentials() { return _credentials.local(); }
 
     security::authorizer& authorizer() { return _authorizer.local(); }
+
+    security::audit::audit_log_manager& audit_mgr() {
+        return _audit_mgr.local();
+    }
 
     cluster::security_frontend& security_frontend() {
         return _security_frontend.local();
@@ -201,7 +204,6 @@ private:
     ss::sharded<snc_quota_manager>& _snc_quota_mgr;
     ss::sharded<kafka::group_router>& _group_router;
     ss::sharded<kafka::usage_manager>& _usage_manager;
-    ss::sharded<kafka::audit_log_manager>& _audit_mgr;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     kafka::fetch_session_cache _fetch_session_cache;
@@ -210,6 +212,7 @@ private:
     bool _are_transactions_enabled{false};
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
+    ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
     ss::sharded<cluster::security_frontend>& _security_frontend;
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;

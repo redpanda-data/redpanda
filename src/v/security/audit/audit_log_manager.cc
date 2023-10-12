@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/server/audit_log_manager.h"
+#include "security/audit/audit_log_manager.h"
 
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
@@ -15,6 +15,7 @@
 #include "kafka/client/config_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "security/acl.h"
+#include "security/audit/logger.h"
 #include "security/ephemeral_credential_store.h"
 #include "storage/parser_utils.h"
 #include "utils/retry.h"
@@ -24,7 +25,7 @@
 
 #include <memory>
 
-namespace kafka {
+namespace security::audit {
 
 /// TODO: Create a new ephemeral user for the audit principal so even clients
 /// instantiated by pandaproxy cannot modify or produce to the audit topic
@@ -38,7 +39,7 @@ class audit_client {
 public:
     static const auto shard_id = ss::shard_id{0};
 
-    audit_client(cluster::controller*, client::configuration&);
+    audit_client(cluster::controller*, kafka::client::configuration&);
 
     /// Initializes the client (with all necessary auth) and connects to the
     /// remote broker. If successful requests to create audit topic and all
@@ -52,7 +53,7 @@ public:
 
     /// Produces to the audit topic, internal partitioner assigns partitions
     /// to the batches provided. Blocks if semaphore is exhausted.
-    ss::future<> produce(std::vector<client::record_essence>);
+    ss::future<> produce(std::vector<kafka::client::record_essence>);
 
     bool is_initialized() const { return _is_initialized; }
 
@@ -70,7 +71,7 @@ private:
     ss::gate _gate;
     bool _is_initialized{false};
     ssx::semaphore _send_sem;
-    client::client _client;
+    kafka::client::client _client;
     cluster::controller* _controller;
 };
 
@@ -83,7 +84,7 @@ public:
     audit_sink(
       audit_log_manager* audit_mgr,
       cluster::controller* controller,
-      client::configuration& config) noexcept;
+      kafka::client::configuration& config) noexcept;
 
     /// Starts a kafka::client if none is allocated, backgrounds the work
     ss::future<> start();
@@ -94,7 +95,7 @@ public:
     /// Produce to the audit topic within the context of the internal locks,
     /// ensuring toggling of the audit master switch happens in lock step with
     /// calls to produce()
-    ss::future<> produce(std::vector<client::record_essence> records);
+    ss::future<> produce(std::vector<kafka::client::record_essence> records);
 
     /// Allocates and connects, or deallocates and shuts down the audit client
     void toggle(bool enabled);
@@ -118,11 +119,11 @@ private:
     /// audit_client and members necessary to pass to its constructor
     std::unique_ptr<audit_client> _client;
     cluster::controller* _controller;
-    client::configuration& _config;
+    kafka::client::configuration& _config;
 };
 
 audit_client::audit_client(
-  cluster::controller* controller, client::configuration& client_config)
+  cluster::controller* controller, kafka::client::configuration& client_config)
   : _send_sem(
     config::shard_local_cfg().audit_client_max_buffer_size(),
     "audit_log_producer_semaphore")
@@ -150,7 +151,7 @@ ss::future<> audit_client::initialize() {
 
 ss::future<> audit_client::configure() {
     try {
-        auto config = co_await client::create_client_credentials(
+        auto config = co_await kafka::client::create_client_credentials(
           *_controller,
           config::shard_local_cfg(),
           _client.config(),
@@ -167,10 +168,10 @@ ss::future<> audit_client::configure() {
         /// Retries should be "infinite", to avoid dropping data, there is a
         /// known issue within the client setting this value to size_t::max
         _client.config().retries.set_value(10000);
-        vlog(klog.info, "Audit log client initialized");
+        vlog(adtlog.info, "Audit log client initialized");
     } catch (...) {
         vlog(
-          klog.warn,
+          adtlog.warn,
           "Audit log client failed to initialize: {}",
           std::current_exception());
         throw;
@@ -210,13 +211,13 @@ ss::future<> audit_client::mitigate_error(std::exception_ptr eptr) {
         /// TODO: Investigate looping behavior on shutdown
         co_return;
     }
-    vlog(klog.trace, "mitigate_error: {}", eptr);
+    vlog(adtlog.trace, "mitigate_error: {}", eptr);
     auto f = ss::now();
     try {
         std::rethrow_exception(eptr);
-    } catch (client::broker_error const& ex) {
+    } catch (kafka::client::broker_error const& ex) {
         if (
-          ex.error == error_code::sasl_authentication_failed
+          ex.error == kafka::error_code::sasl_authentication_failed
           && _has_ephemeral_credentials) {
             f = inform(ex.node_id).then([this]() { return _client.connect(); });
         } else {
@@ -229,10 +230,10 @@ ss::future<> audit_client::mitigate_error(std::exception_ptr eptr) {
 }
 
 ss::future<> audit_client::inform(model::node_id id) {
-    vlog(klog.trace, "inform: {}", id);
+    vlog(adtlog.trace, "inform: {}", id);
 
     // Inform a particular node
-    if (id != client::unknown_node_id) {
+    if (id != kafka::client::unknown_node_id) {
         return do_inform(id);
     }
 
@@ -245,41 +246,42 @@ ss::future<> audit_client::inform(model::node_id id) {
 ss::future<> audit_client::do_inform(model::node_id id) {
     auto& fe = _controller->get_ephemeral_credential_frontend().local();
     auto ec = co_await fe.inform(id, audit_principal);
-    vlog(klog.info, "Informed: broker: {}, ec: {}", id, ec);
+    vlog(adtlog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 
 ss::future<> audit_client::create_internal_topic() {
     constexpr std::string_view retain_forever = "-1";
     constexpr std::string_view seven_days = "604800000";
-    creatable_topic audit_topic{
+    kafka::creatable_topic audit_topic{
       .name = model::kafka_audit_logging_topic,
       .num_partitions = config::shard_local_cfg().audit_log_num_partitions(),
       .replication_factor
       = config::shard_local_cfg().audit_log_replication_factor(),
       .assignments = {},
       .configs = {
-        createable_topic_config{
-          .name = ss::sstring(topic_property_retention_bytes),
+        kafka::createable_topic_config{
+          .name = ss::sstring(kafka::topic_property_retention_bytes),
           .value{retain_forever}},
-        createable_topic_config{
-          .name = ss::sstring(topic_property_retention_duration),
+        kafka::createable_topic_config{
+          .name = ss::sstring(kafka::topic_property_retention_duration),
           .value{seven_days}}}};
-    vlog(klog.info, "Creating audit log topic with settings: {}", audit_topic);
+    vlog(
+      adtlog.info, "Creating audit log topic with settings: {}", audit_topic);
     const auto resp = co_await _client.create_topic({std::move(audit_topic)});
     if (resp.data.topics.size() != 1) {
         throw std::runtime_error(
           fmt::format("Unexpected create topics response: {}", resp.data));
     }
     const auto& topic = resp.data.topics[0];
-    if (topic.error_code == error_code::none) {
-        vlog(klog.debug, "Auditing: created audit log topic: {}", topic);
-    } else if (topic.error_code == error_code::topic_already_exists) {
-        vlog(klog.debug, "Auditing: topic already exists");
+    if (topic.error_code == kafka::error_code::none) {
+        vlog(adtlog.debug, "Auditing: created audit log topic: {}", topic);
+    } else if (topic.error_code == kafka::error_code::topic_already_exists) {
+        vlog(adtlog.debug, "Auditing: topic already exists");
         co_await _client.update_metadata();
     } else {
-        if (topic.error_code == error_code::invalid_replication_factor) {
+        if (topic.error_code == kafka::error_code::invalid_replication_factor) {
             vlog(
-              klog.warn,
+              adtlog.warn,
               "Auditing: invalid replication factor on audit topic, "
               "check/modify settings, then disable and re-enable "
               "'audit_enabled'");
@@ -296,7 +298,7 @@ ss::future<> audit_client::shutdown() {
     if (_as.abort_requested()) {
         co_return;
     }
-    vlog(klog.info, "Shutting down audit client");
+    vlog(adtlog.info, "Shutting down audit client");
     _as.request_abort();
     _send_sem.broken();
     co_await _client.stop();
@@ -304,7 +306,7 @@ ss::future<> audit_client::shutdown() {
 }
 
 ss::future<>
-audit_client::produce(std::vector<client::record_essence> records) {
+audit_client::produce(std::vector<kafka::client::record_essence> records) {
     /// TODO: Produce with acks=1, atm -1 is hardcoded into client
     const auto records_size = [](const auto& records) {
         std::size_t size = 0;
@@ -330,19 +332,21 @@ audit_client::produce(std::vector<client::record_essence> records) {
                 .produce_records(
                   model::kafka_audit_logging_topic, std::move(records))
                 .discard_result()
-                .handle_exception_type([](const client::partition_error& ex) {
-                    /// TODO: Possible optimization to retry with different
-                    /// partition strategy.
-                    ///
-                    /// If reached here non-mitigatable error occured, or
-                    /// attempts on mitigation had been used up.
-                    vlog(klog.error, "Audit records dropped, reason: {}", ex);
-                })
+                .handle_exception_type(
+                  [](const kafka::client::partition_error& ex) {
+                      /// TODO: Possible optimization to retry with different
+                      /// partition strategy.
+                      ///
+                      /// If reached here non-mitigatable error occured, or
+                      /// attempts on mitigation had been used up.
+                      vlog(
+                        adtlog.error, "Audit records dropped, reason: {}", ex);
+                  })
                 .finally([units = std::move(units)] {});
           });
     } catch (const ss::broken_semaphore&) {
         vlog(
-          klog.debug,
+          adtlog.debug,
           "Shutting down the auditor kafka::client, semaphore broken");
     }
     co_return;
@@ -353,7 +357,7 @@ audit_client::produce(std::vector<client::record_essence> records) {
 audit_sink::audit_sink(
   audit_log_manager* audit_mgr,
   cluster::controller* controller,
-  client::configuration& config) noexcept
+  kafka::client::configuration& config) noexcept
   : _audit_mgr(audit_mgr)
   , _controller(controller)
   , _config(config) {}
@@ -371,7 +375,8 @@ ss::future<> audit_sink::stop() {
     co_await _gate.close();
 }
 
-ss::future<> audit_sink::produce(std::vector<client::record_essence> records) {
+ss::future<>
+audit_sink::produce(std::vector<kafka::client::record_essence> records) {
     /// No locks/gates since the calls to this method are done in controlled
     /// context of other synchronization primitives
     vassert(_client, "produce() called on a null client");
@@ -407,10 +412,10 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
             _client.reset(nullptr);
         }
     } catch (const ss::broken_semaphore&) {
-        vlog(klog.info, "Failed to toggle audit status, shutting down");
+        vlog(adtlog.info, "Failed to toggle audit status, shutting down");
     } catch (...) {
         vlog(
-          klog.error,
+          adtlog.error,
           "Failed to toggle audit status: {}",
           std::current_exception());
     }
@@ -419,19 +424,19 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
 /// audit_log_manager
 
 void audit_log_manager::set_enabled_events() {
-    using underlying_enum_t = std::underlying_type_t<audit_event_type>;
+    using underlying_enum_t = std::underlying_type_t<event_type>;
     _enabled_event_types = underlying_enum_t(0);
     for (const auto& e : _audit_event_types()) {
-        const auto as_uint = underlying_enum_t(string_to_audit_event_type(e));
+        const auto as_uint = underlying_enum_t(string_to_event_type(e));
         _enabled_event_types[as_uint] = true;
     }
     vassert(
-      !is_audit_event_enabled(audit_event_type::unknown),
-      "Unknown audit_event_type observed");
+      !is_audit_event_enabled(event_type::unknown),
+      "Unknown event_type observed");
 }
 
 audit_log_manager::audit_log_manager(
-  cluster::controller* controller, client::configuration& client_config)
+  cluster::controller* controller, kafka::client::configuration& client_config)
   : _audit_enabled(config::shard_local_cfg().audit_enabled.bind())
   , _queue_drain_interval_ms(
       config::shard_local_cfg().audit_queue_drain_interval_ms.bind())
@@ -452,7 +457,7 @@ audit_log_manager::audit_log_manager(
                   return drain()
                     .handle_exception([](std::exception_ptr e) {
                         vlog(
-                          klog.warn,
+                          adtlog.warn,
                           "Exception in audit_log_manager fiber: {}",
                           e);
                     })
@@ -468,9 +473,9 @@ audit_log_manager::audit_log_manager(
 
 audit_log_manager::~audit_log_manager() = default;
 
-bool audit_log_manager::is_audit_event_enabled(
-  audit_event_type event_type) const {
-    using underlying_enum_t = std::underlying_type_t<audit_event_type>;
+bool audit_log_manager::is_audit_event_enabled(event_type event_type) const {
+    using underlying_enum_t
+      = std::underlying_type_t<security::audit::event_type>;
     return _enabled_event_types.test(underlying_enum_t(event_type));
 }
 
@@ -482,16 +487,17 @@ ss::future<> audit_log_manager::start() {
         try {
             _sink->toggle(_audit_enabled());
         } catch (const ss::gate_closed_exception&) {
-            vlog(klog.debug, "Failed to toggle auditing state, shutting down");
+            vlog(
+              adtlog.debug, "Failed to toggle auditing state, shutting down");
         } catch (...) {
             vlog(
-              klog.error,
+              adtlog.error,
               "Failed to toggle auditing state: {}",
               std::current_exception());
         }
     });
     if (_audit_enabled()) {
-        vlog(klog.info, "Starting audit_log_manager");
+        vlog(adtlog.info, "Starting audit_log_manager");
         co_await _sink->start();
     }
 }
@@ -500,7 +506,7 @@ ss::future<> audit_log_manager::stop() {
     _drain_timer.cancel();
     _as.request_abort();
     if (ss::this_shard_id() == audit_client::shard_id) {
-        vlog(klog.info, "Shutting down audit log manager");
+        vlog(adtlog.info, "Shutting down audit log manager");
         co_await _sink->stop();
     }
     if (!_gate.is_closed()) {
@@ -509,7 +515,7 @@ ss::future<> audit_log_manager::stop() {
     }
     if (_queue.size() > 0) {
         vlog(
-          klog.debug,
+          adtlog.debug,
           "{} records were not pushed to the audit log before shutdown",
           _queue.size());
     }
@@ -568,7 +574,7 @@ ss::future<> audit_log_manager::drain() {
     }
 
     /// Combine all batched audit msgs into record_essences
-    std::vector<client::record_essence> essences;
+    std::vector<kafka::client::record_essence> essences;
     auto records = std::exchange(_queue, underlying_t{});
     auto& records_seq = records.get<underlying_list>();
     while (!records_seq.empty()) {
@@ -577,7 +583,8 @@ ss::future<> audit_log_manager::drain() {
         records_seq.pop_front();
         iobuf b;
         b.append(as_json.c_str(), as_json.size());
-        essences.push_back(client::record_essence{.value = std::move(b)});
+        essences.push_back(
+          kafka::client::record_essence{.value = std::move(b)});
         co_await ss::maybe_yield();
     }
 
@@ -593,4 +600,4 @@ ss::future<> audit_log_manager::drain() {
       });
 }
 
-} // namespace kafka
+} // namespace security::audit
