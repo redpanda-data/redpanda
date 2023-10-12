@@ -142,6 +142,8 @@ public:
 
     size_t reclaimable_local_size_bytes() const override;
 
+    std::optional<model::offset> retention_offset(gc_config) const final;
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
@@ -197,8 +199,8 @@ private:
     // These methods search the log for the offset to evict at such that
     // the retention policy is satisfied. If no such offset is found
     // std::nullopt is returned.
-    std::optional<model::offset> size_based_gc_max_offset(gc_config);
-    std::optional<model::offset> time_based_gc_max_offset(gc_config);
+    std::optional<model::offset> size_based_gc_max_offset(gc_config) const;
+    std::optional<model::offset> time_based_gc_max_offset(gc_config) const;
 
     /// Conditionally adjust retention timestamp on any segment that appears
     /// to have invalid timestamps, to ensure retention can proceed.
@@ -220,8 +222,6 @@ private:
     gc_config override_retention_config(gc_config) const;
 
     bool is_cloud_retention_active() const;
-
-    std::optional<model::offset> retention_offset(gc_config);
 
     // returns retention_offset(cfg) but may also first apply adjustments to
     // future timestamps if this option is turned on in configuration.

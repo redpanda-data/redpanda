@@ -24,6 +24,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <optional>
 #include <utility>
 
 namespace storage {
@@ -148,6 +149,10 @@ public:
      * cases where this is not applicable, such as the log not being TS-enabled.
      */
     virtual size_t reclaimable_local_size_bytes() const = 0;
+    /**
+     * Returns new log start offset for given retention settings.
+     */
+    virtual std::optional<model::offset> retention_offset(gc_config) const = 0;
 
 private:
     ntp_config _config;

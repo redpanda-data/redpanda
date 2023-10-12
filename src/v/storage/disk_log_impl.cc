@@ -210,7 +210,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
 }
 
 std::optional<model::offset>
-disk_log_impl::size_based_gc_max_offset(gc_config cfg) {
+disk_log_impl::size_based_gc_max_offset(gc_config cfg) const {
     if (!cfg.max_bytes.has_value()) {
         return std::nullopt;
     }
@@ -242,7 +242,7 @@ disk_log_impl::size_based_gc_max_offset(gc_config cfg) {
 }
 
 std::optional<model::offset>
-disk_log_impl::time_based_gc_max_offset(gc_config cfg) {
+disk_log_impl::time_based_gc_max_offset(gc_config cfg) const {
     // The following compaction has a Kafka behavior compatibility bug. for
     // which we defer do nothing at the moment, possibly crashing the machine
     // and running out of disk. Kafka uses the same logic below as of
@@ -972,7 +972,8 @@ disk_log_impl::maybe_adjusted_retention_offset(gc_config cfg) {
     co_return retention_offset(cfg);
 }
 
-std::optional<model::offset> disk_log_impl::retention_offset(gc_config cfg) {
+std::optional<model::offset>
+disk_log_impl::retention_offset(gc_config cfg) const {
     if (deletion_exempt(config().ntp())) {
         vlog(
           gclog.trace,
