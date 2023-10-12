@@ -36,7 +36,7 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
  * A snapshot of node-local state: i.e. things that don't depend on consensus.
  */
 struct local_state
-  : serde::envelope<local_state, serde::version<2>, serde::compat_version<0>> {
+  : serde::envelope<local_state, serde::version<3>, serde::compat_version<0>> {
     application_version redpanda_version;
     cluster_version logical_version{invalid_version};
     std::chrono::milliseconds uptime;
@@ -112,6 +112,9 @@ struct local_state
         friend std::ostream& operator<<(std::ostream&, const log_data_state&);
     };
     std::optional<log_data_state> log_data_size{std::nullopt};
+
+    // True if the node has been booted up in recovery mode.
+    bool recovery_mode_enabled = false;
 
     void serde_read(iobuf_parser&, const serde::header&);
     void serde_write(iobuf& out) const;

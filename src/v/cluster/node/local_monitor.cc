@@ -82,6 +82,7 @@ ss::future<> local_monitor::update_state() {
       .redpanda_version = application_version(ss::sstring(redpanda_version())),
       .uptime = std::chrono::duration_cast<std::chrono::milliseconds>(
         ss::engine().uptime()),
+      .recovery_mode_enabled = config::node().recovery_mode_enabled(),
     };
     co_await update_disks(new_state);
     update_alert_state(new_state);
