@@ -338,3 +338,9 @@ private:
  */
 template<typename T>
 using large_fragment_vector = fragmented_vector<T, 32 * 1024>;
+
+/**
+ * An alias for a fragmented_vector using a smaller fragment size.
+ */
+template<typename T>
+using small_fragment_vector = fragmented_vector<T, 1024>;
