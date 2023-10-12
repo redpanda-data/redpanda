@@ -99,6 +99,8 @@ private:
 
 class cache : public ss::peering_sharded_service<cache> {
 public:
+    bool should_skip_cache() const;
+
     /// C-tor.
     ///
     /// \param cache_dir is a directory where cached data is stored

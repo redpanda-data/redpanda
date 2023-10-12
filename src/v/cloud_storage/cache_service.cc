@@ -20,6 +20,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/metrics_api.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -64,6 +65,209 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 }
 
 static constexpr std::string_view tmp_extension{".part"};
+
+namespace {
+
+using namespace std::chrono_literals;
+
+[[maybe_unused]] bool has_label(
+  const ss::metrics::impl::labels_type& labels,
+  std::string_view k,
+  std::string_view v) {
+    return std::find_if(
+             labels.cbegin(),
+             labels.cend(),
+             [&](const auto& pair) {
+                 return pair.first == k && pair.second == v;
+             })
+           != labels.cend();
+}
+
+double get_class_metric(
+  std::string_view class_name, std::string_view metric_family_name) {
+    auto all_metrics = *ss::metrics::impl::get_values();
+    auto metric_values_v = all_metrics.values;
+    auto metadata_v = all_metrics.metadata;
+
+    auto values_it = metric_values_v.cbegin();
+
+    for (auto it = metadata_v->cbegin();
+         it != metadata_v->cend() && values_it != metric_values_v.cend();
+         ++it, ++values_it) {
+        if (it->mf.name != metric_family_name) {
+            continue;
+        }
+
+        auto values = values_it->begin();
+        for (const auto& metric_info : it->metrics) {
+            const auto& labels = metric_info.id.labels();
+            if (
+              has_label(labels, "mountpoint", "/var/lib/redpanda/data")
+              && has_label(labels, "class", class_name)) {
+                return values->d();
+            }
+            values++;
+        }
+    }
+
+    vlog(
+      cst_log.warn,
+      "get_class_metric: failed to find value for family {} and class {}",
+      metric_family_name,
+      class_name);
+    return 0;
+}
+
+struct rate_of_metric_change {
+    rate_of_metric_change(
+      std::string_view metric_name, std::string_view class_name)
+      : _metric_name{metric_name}
+      , _class_name{class_name}
+      , _current_value(get_class_metric(_class_name, _metric_name))
+      , _updated_at{ss::lowres_clock::now()} {}
+
+    double rate_of_change_per_second() {
+        auto new_value = get_class_metric(_class_name, _metric_name);
+        auto now = ss::lowres_clock::now();
+        auto delta = new_value - _current_value;
+        auto s_elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                           now - _updated_at)
+                           .count();
+        vlog(
+          cst_log.info,
+          "RATE: current v: {}, new v: {} delta: {}, seconds elapsed: {}",
+          _current_value,
+          new_value,
+          delta,
+          s_elapsed);
+        _updated_at = now;
+        _current_value = new_value;
+        return s_elapsed > 0 ? delta / static_cast<double>(s_elapsed) : 0;
+    }
+
+    double current_value() const { return _current_value; }
+
+private:
+    ss::sstring _metric_name;
+    ss::sstring _class_name;
+    double _current_value;
+    ss::lowres_clock::time_point _updated_at;
+};
+
+struct cache_control {
+    static constexpr ss::lowres_clock::duration limit = 15s;
+    static constexpr double rate_of_change_threshold = 5.0;
+
+public:
+    explicit cache_control()
+      : _updated(ss::lowres_clock::now())
+      , _duration(limit)
+      , _rate("io_queue_total_delay_sec", "raft") {}
+
+    bool should_skip_cache() {
+        const auto now = ss::lowres_clock::now();
+        const auto delta = now - _updated;
+
+        if (delta > _duration) {
+            _updated = now;
+            auto rate_of_change = _rate.rate_of_change_per_second();
+            _throttled = rate_of_change >= rate_of_change_threshold;
+            vlog(
+              cst_log.info,
+              "rate of change of raft queue delay in seconds: {}, current "
+              "value: {}, throttled: {}",
+              rate_of_change,
+              _rate.current_value(),
+              _throttled);
+        }
+
+        return _throttled;
+    }
+
+private:
+    double queue_adjusted_consumption(std::string_view class_name) {
+        return get_class_metric(class_name, "io_queue_adjusted_consumption");
+    }
+
+    double total_delay_sec(std::string_view class_name) {
+        return get_class_metric(class_name, "io_queue_total_delay_sec");
+    }
+
+    double current_consumption_delta() {
+        const auto raft_cons = queue_adjusted_consumption("raft");
+        const auto si_cons = queue_adjusted_consumption("shadow-indexing");
+        const auto delta = raft_cons - si_cons;
+        vlog(
+          cst_log.info,
+          "raft cons: {} SI cons: {} delta: {}",
+          raft_cons,
+          si_cons,
+          delta);
+        return delta;
+    }
+
+    std::optional<uint64_t> current_p95_latency() {
+        auto all_metrics = *ss::metrics::impl::get_values();
+        auto metric_values_v = all_metrics.values;
+        auto metadata_v = all_metrics.metadata;
+
+        std::vector<std::pair<double, long>> counts{};
+        bool found_family = false;
+        auto values_it = metric_values_v.cbegin();
+        for (auto it = metadata_v->cbegin();
+             it != metadata_v->cend() && values_it != metric_values_v.cend()
+             && !found_family;
+             ++it, ++values_it) {
+            if (it->mf.name != "kafka_latency_produce_latency_us") {
+                continue;
+            }
+
+            found_family = true;
+            for (const auto& bucket :
+                 values_it->begin()->get_histogram().buckets) {
+                counts.emplace_back(bucket.upper_bound, bucket.count);
+            }
+        }
+
+        if (counts.empty()) {
+            vlog(cst_log.error, "metrics no count!!");
+            return std::nullopt;
+        }
+
+        auto result = counts.front().first;
+        const auto p95_count = counts.back().second * 0.95;
+        for (const auto& [u, c] : counts) {
+            if (c < p95_count) {
+                result = u;
+            } else {
+                break;
+            }
+        }
+        return result;
+    }
+
+    ss::lowres_clock::time_point _updated;
+    uint64_t _current_p95_latency{0};
+    ss::lowres_clock::duration _duration;
+    bool _throttled{false};
+    rate_of_metric_change _rate;
+};
+
+static thread_local std::unique_ptr<cache_control> cache_controller;
+
+void init_cc() { cache_controller = std::make_unique<cache_control>(); }
+
+bool control_skip_cache() {
+    if (unlikely(!cache_controller)) {
+        init_cc();
+    }
+
+    return cache_controller->should_skip_cache();
+}
+
+} // namespace
+
+bool cache::should_skip_cache() const { return control_skip_cache(); }
 
 cache::cache(
   std::filesystem::path cache_dir,
