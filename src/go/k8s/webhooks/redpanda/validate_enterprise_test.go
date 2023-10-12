@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -32,6 +30,7 @@ import (
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/redpanda/v1alpha1"
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/internal/controller/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
@@ -69,14 +68,9 @@ func (m *mockKafkaAdmin) DeleteACLs(
 
 //nolint:funlen // Test using testEnv needs to be long
 func TestDoNotValidateWhenDeleted(t *testing.T) {
-	testEnv := &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
-		WebhookInstallOptions: envtest.WebhookInstallOptions{
-			Paths: []string{filepath.Join("..", "..", "config", "webhook")},
-		},
-	}
+	testEnv := &testutils.RedpandaTestEnv{}
 
-	cfg, err := testEnv.Start()
+	cfg, err := testEnv.StartRedpandaTestEnv(true)
 	defer testEnv.Stop() //nolint:errcheck // in test test env error is not relevant
 	require.NoError(t, err)
 	require.NotNil(t, cfg)

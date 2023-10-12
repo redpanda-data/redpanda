@@ -12,7 +12,6 @@ package resources_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -31,10 +30,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -47,13 +46,11 @@ const (
 
 //nolint:funlen // Test function can have more than 100 lines
 func TestEnsure(t *testing.T) {
-	testEnv := &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
-	}
+	testEnv := &testutils.RedpandaTestEnv{}
 	logf := testr.New(t)
 	log.SetLogger(logf)
 
-	cfg, err := testEnv.Start()
+	cfg, err := testEnv.StartRedpandaTestEnv(false)
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg)
 

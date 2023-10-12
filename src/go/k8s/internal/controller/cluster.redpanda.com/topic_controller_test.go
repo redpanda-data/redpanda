@@ -3,11 +3,9 @@ package clusterredpandacom_test
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -22,24 +20,18 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/api/cluster.redpanda.com/v1alpha1"
 	clusterredpandacom "github.com/redpanda-data/redpanda/src/go/k8s/internal/controller/cluster.redpanda.com"
+	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 )
 
 func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear subtests.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 	defer cancel()
 
-	testEnv := &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
-	}
-	logf := testr.New(t)
-	log.SetLogger(logf)
-
-	cfg, err := testEnv.Start()
+	testEnv := testutils.RedpandaTestEnv{}
+	cfg, err := testEnv.StartRedpandaTestEnv(false)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
