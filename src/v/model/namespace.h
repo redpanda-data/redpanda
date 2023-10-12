@@ -40,6 +40,8 @@ inline const model::topic kafka_consumer_offsets_topic("__consumer_offsets");
 inline const model::topic_namespace kafka_consumer_offsets_nt(
   model::kafka_namespace, kafka_consumer_offsets_topic);
 
+inline const model::topic kafka_audit_logging_topic("__audit_log");
+
 inline const model::topic tx_manager_topic("tx");
 inline const model::topic_namespace
   tx_manager_nt(model::kafka_internal_namespace, tx_manager_topic);

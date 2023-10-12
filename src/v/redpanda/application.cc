@@ -62,6 +62,7 @@
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
+#include "kafka/server/audit_log_manager.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
@@ -184,6 +185,23 @@ set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
     if (!client_config.client_identifier.is_overriden()) {
         client_config.client_identifier.set_value(
           std::make_optional<ss::sstring>("schema_registry_client"));
+    }
+}
+
+static void set_auditing_kafka_client_defaults(
+  kafka::client::configuration& client_config) {
+    if (!client_config.produce_batch_delay.is_overriden()) {
+        client_config.produce_batch_delay.set_value(0ms);
+    }
+    if (!client_config.produce_batch_record_count.is_overriden()) {
+        client_config.produce_batch_record_count.set_value(int32_t(0));
+    }
+    if (!client_config.produce_batch_size_bytes.is_overriden()) {
+        client_config.produce_batch_size_bytes.set_value(int32_t(0));
+    }
+    if (!client_config.client_identifier.is_overriden()) {
+        client_config.client_identifier.set_value(
+          std::make_optional<ss::sstring>("audit_log_client"));
     }
 }
 
@@ -406,6 +424,7 @@ void application::initialize(
   std::optional<YAML::Node> proxy_client_cfg,
   std::optional<YAML::Node> schema_reg_cfg,
   std::optional<YAML::Node> schema_reg_client_cfg,
+  std::optional<YAML::Node> audit_log_client_cfg,
   std::optional<scheduling_groups> groups) {
     construct_service(
       _memory_sampling, std::ref(_log), ss::sharded_parameter([]() {
@@ -496,6 +515,9 @@ void application::initialize(
 
     if (schema_reg_client_cfg) {
         _schema_reg_client_config.emplace(*schema_reg_client_cfg);
+    }
+    if (audit_log_client_cfg) {
+        _audit_log_client_config.emplace(*audit_log_client_cfg);
     }
 }
 
@@ -717,6 +739,15 @@ void application::hydrate_config(const po::variables_map& cfg) {
         config_printer("schema_registry", *_schema_reg_config);
         config_printer("schema_registry_client", *_schema_reg_client_config);
     }
+    /// Auditing will be toggled via cluster config settings, internal audit
+    /// client options can be configured via local config properties
+    if (config["audit_log_client"]) {
+        _audit_log_client_config.emplace(config["audit_log_client"]);
+    } else {
+        set_local_kafka_client_config(_audit_log_client_config, config::node());
+    }
+    set_auditing_kafka_client_defaults(*_audit_log_client_config);
+    config_printer("audit_log_client", *_audit_log_client_config);
 }
 
 void application::check_environment() {
@@ -1396,6 +1427,11 @@ void application::wire_up_redpanda_services(
     construct_service(quota_mgr).get();
     construct_service(snc_quota_mgr).get();
 
+    syschecks::systemd_message("Creating auditing subsystem").get();
+    construct_service(
+      audit_mgr, controller.get(), std::ref(*_audit_log_client_config))
+      .get();
+
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
@@ -1756,6 +1792,7 @@ void application::wire_up_redpanda_services(
         std::ref(snc_quota_mgr),
         std::ref(group_router),
         std::ref(usage_manager),
+        std::ref(audit_mgr),
         std::ref(shard_table),
         std::ref(partition_manager),
         std::ref(id_allocator_frontend),
@@ -2193,6 +2230,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           "Started Schema Registry listening at {}",
           _schema_reg_config->schema_registry_api());
     }
+
+    audit_mgr.invoke_on_all(&kafka::audit_log_manager::start).get();
 
     start_kafka(node_id, app_signal);
     controller->set_ready().get();

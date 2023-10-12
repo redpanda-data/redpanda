@@ -1303,6 +1303,65 @@ configuration::configuration()
        .example = "false",
        .visibility = visibility::user},
       true)
+  , audit_enabled(
+      *this,
+      "audit_enabled",
+      "Enable/Disable audit logging.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , audit_log_num_partitions(
+      *this,
+      "audit_log_num_partitions",
+      "Number of partitions for the internal audit log topic. Attempt to "
+      "create topic is only performed if it doesn't already exist, disable and "
+      "re-enable auditing for changes to take affect",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      12)
+  , audit_log_replication_factor(
+      *this,
+      "audit_log_replication_factor",
+      "Replication factor of the internal audit log topic. Attempt to create "
+      "topic is only performed if it doesn't already exist, disable and "
+      "re-enable auditing for changes to take affect",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      3)
+  , audit_client_max_buffer_size(
+      *this,
+      "audit_client_max_buffer_size",
+      "Maximum number of bytes the internal audit client will allocate for "
+      "audit log records. Disable and re-enable auditing for changes to take "
+      "affect",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      1_MiB)
+  , audit_queue_drain_interval_ms(
+      *this,
+      "audit_queue_drain_interval_ms",
+      "Frequency in which per shard audit logs are batched to client for write "
+      "to audit log. Longer intervals allow for greater change for coalescing "
+      "duplicates (great for high throughput auditing scenarios) but increase "
+      "the risk of data loss during hard shutdowns.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      500ms)
+  , audit_max_queue_elements_per_shard(
+      *this,
+      "audit_max_queue_elements_per_shard",
+      "Maximum number of allowed elements in the audit buffers, per shard. "
+      "Once this value is reached, any request handlers that cannot enqueue "
+      "audit messages will return a non retryable error to the client. Note "
+      "that this only will occur when handling requests that are currently "
+      "enabled for auditing.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100000)
+  , audit_enabled_event_types(
+      *this,
+      "audit_enabled_event_types",
+      "List of event classes that will be audited, options are: "
+      "[management, produce, consume, describe, heartbeat, authenticate]. "
+      "Please refer to the documentation to know exactly which request(s) map "
+      "to a particular audit event type.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {"management"},
+      validate_audit_event_types)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

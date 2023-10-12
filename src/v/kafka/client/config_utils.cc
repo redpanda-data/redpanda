@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "pandaproxy/config_utils.h"
+#include "kafka/client/config_utils.h"
 
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
@@ -24,7 +24,7 @@
 
 #include <exception>
 
-namespace pandaproxy {
+namespace kafka::client {
 
 ss::future<std::unique_ptr<kafka::client::configuration>>
 create_client_credentials(
@@ -66,6 +66,14 @@ create_client_credentials(
     co_return new_cfg;
 }
 
+void set_client_credentials(
+  kafka::client::configuration const& client_cfg,
+  kafka::client::client& client) {
+    client.config().sasl_mechanism.set_value(client_cfg.sasl_mechanism());
+    client.config().scram_username.set_value(client_cfg.scram_username());
+    client.config().scram_password.set_value(client_cfg.scram_password());
+}
+
 ss::future<> set_client_credentials(
   kafka::client::configuration const& client_cfg,
   ss::sharded<kafka::client::client>& client) {
@@ -76,4 +84,4 @@ ss::future<> set_client_credentials(
     });
 }
 
-} // namespace pandaproxy
+} // namespace kafka::client

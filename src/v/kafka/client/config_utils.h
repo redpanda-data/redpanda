@@ -22,7 +22,7 @@
 
 #include <vector>
 
-namespace pandaproxy {
+namespace kafka::client {
 
 ss::future<std::unique_ptr<kafka::client::configuration>>
 create_client_credentials(
@@ -31,8 +31,12 @@ create_client_credentials(
   kafka::client::configuration const& client_cfg,
   security::acl_principal principal);
 
+void set_client_credentials(
+  kafka::client::configuration const& client_cfg,
+  kafka::client::client& client);
+
 ss::future<> set_client_credentials(
   kafka::client::configuration const& client_cfg,
   ss::sharded<kafka::client::client>& client);
 
-} // namespace pandaproxy
+} // namespace kafka::client

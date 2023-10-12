@@ -19,6 +19,7 @@
 #include "seastarx.h"
 #include "utils/base64.h"
 #include "utils/named_type.h"
+#include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -137,6 +138,28 @@ struct partition_info {
     std::vector<replica_info> replicas;
     std::optional<model::node_id> leader;
 };
+
+enum class audit_event_type : std::uint8_t {
+    management = 0,
+    produce,
+    consume,
+    describe,
+    heartbeat,
+    authenticate,
+    unknown,
+    num_elements
+};
+
+inline audit_event_type string_to_audit_event_type(const std::string_view s) {
+    return string_switch<audit_event_type>(s)
+      .match("management", audit_event_type::management)
+      .match("produce", audit_event_type::produce)
+      .match("consume", audit_event_type::consume)
+      .match("describe", audit_event_type::describe)
+      .match("heartbeat", audit_event_type::heartbeat)
+      .match("authenticate", audit_event_type::authenticate)
+      .default_match(audit_event_type::unknown);
+}
 } // namespace kafka
 
 /*

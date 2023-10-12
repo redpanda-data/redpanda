@@ -12,10 +12,10 @@
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/members_table.h"
+#include "kafka/client/config_utils.h"
 #include "net/unresolved_address.h"
 #include "pandaproxy/api/api-doc/rest.json.hh"
 #include "pandaproxy/auth_utils.h"
-#include "pandaproxy/config_utils.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/exceptions.h"
 #include "pandaproxy/parsing/from_chars.h"
@@ -166,12 +166,12 @@ ss::future<> proxy::do_start() {
 }
 
 ss::future<> proxy::configure() {
-    auto config = co_await pandaproxy::create_client_credentials(
+    auto config = co_await kafka::client::create_client_credentials(
       *_controller,
       config::shard_local_cfg(),
       _client.local().config(),
       principal);
-    co_await set_client_credentials(*config, _client);
+    co_await kafka::client::set_client_credentials(*config, _client);
 
     auto const& store = _controller->get_ephemeral_credential_store().local();
     bool has_ephemeral_credentials = store.has(store.find(principal));

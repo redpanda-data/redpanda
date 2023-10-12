@@ -7,6 +7,7 @@ v_cc_library(
     client.cc
     client_fetch_batch_reader.cc
     configuration.cc
+    config_utils.cc
     consumer.cc
     fetcher.cc
     fetch_session.cc
