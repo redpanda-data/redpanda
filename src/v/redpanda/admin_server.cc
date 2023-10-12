@@ -925,6 +925,8 @@ get_brokers(cluster::controller* const controller) {
 
               if (r_it != h_report.value().node_reports.end()) {
                   it->second.version = r_it->local_state.redpanda_version;
+                  it->second.recovery_mode_enabled
+                    = r_it->local_state.recovery_mode_enabled;
                   auto nm = members_table.get_node_metadata_ref(r_it->id);
                   if (nm && r_it->drain_status) {
                       it->second.maintenance_status = fill_maintenance_status(
