@@ -14,7 +14,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -26,13 +25,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -40,7 +39,7 @@ import (
 
 var (
 	k8sClient client.Client
-	testEnv   *envtest.Environment
+	testEnv   *testutils.RedpandaTestEnv
 	ctx       context.Context
 	cancel    context.CancelFunc
 )
@@ -57,14 +56,8 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
-		WebhookInstallOptions: envtest.WebhookInstallOptions{
-			Paths: []string{filepath.Join("..", "..", "..", "config", "webhook")},
-		},
-	}
-
-	cfg, err := testEnv.Start()
+	testEnv = &testutils.RedpandaTestEnv{}
+	cfg, err := testEnv.StartRedpandaTestEnv(true)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
@@ -82,7 +75,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	Expect(k8sClient).NotTo(BeNil())
 
 	// start webhook server using Manager
-	webhookInstallOptions := &testEnv.WebhookInstallOptions
+	webhookInstallOptions := testEnv.WebhookInstallOptions
 	webhookServer := webhook.NewServer(webhook.Options{
 		Host:    webhookInstallOptions.LocalServingHost,
 		Port:    webhookInstallOptions.LocalServingPort,

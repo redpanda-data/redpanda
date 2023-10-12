@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -37,13 +36,13 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/redpanda/v1alpha1"
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/internal/controller/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -56,7 +55,7 @@ import (
 
 var (
 	k8sClient             client.Client
-	testEnv               *envtest.Environment
+	testEnv               *testutils.RedpandaTestEnv
 	cfg                   *rest.Config
 	testAdminAPI          *adminutils.MockAdminAPI
 	testAdminAPIFactory   adminutils.AdminAPIClientFactory
@@ -90,10 +89,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
+	testEnv = &testutils.RedpandaTestEnv{}
 
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f, err := os.Open("testdata/metrics.golden.txt")
@@ -108,7 +104,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	resources.UnderReplicatedPartitionsHostOverwrite = ts.Listener.Addr().String()
 
 	var err error
-	cfg, err = testEnv.Start()
+	cfg, err = testEnv.StartRedpandaTestEnv(false)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
