@@ -88,6 +88,20 @@ def _choice_random_user(ctx, prefix):
     return _random_choice(prefix, ctx.admin().list_users())
 
 
+TOPIC_PROPERTIES = {
+    TopicSpec.PROPERTY_CLEANUP_POLICY:
+    lambda: random.choice(["delete", "compact"]),
+    TopicSpec.PROPERTY_TIMESTAMP_TYPE:
+    lambda: random.choice(["CreateTime", "LogAppendTime"]),
+    TopicSpec.PROPERTY_SEGMENT_SIZE:
+    lambda: random.randint(10 * 2**20, 512 * 2**20),
+    TopicSpec.PROPERTY_RETENTION_BYTES:
+    lambda: random.randint(10 * 2**20, 512 * 2**20),
+    TopicSpec.PROPERTY_RETENTION_TIME:
+    lambda: random.randint(10000, 1000000),
+}
+
+
 # topic operations
 class CreateTopicOperation(Operation):
     def __init__(self, prefix, max_partitions, min_replication,
@@ -97,12 +111,18 @@ class CreateTopicOperation(Operation):
         self.partitions = random.randint(1, max_partitions)
         self.rf = random.choice(
             [x for x in range(min_replication, max_replication + 1, 2)])
+        self.config = {
+            k: v()
+            for k, v in TOPIC_PROPERTIES.items()
+            if random.choice([True, False])
+        }
 
     def execute(self, ctx):
         ctx.redpanda.logger.info(
             f"Creating topic with name {self.topic}, replication: {self.rf} partitions: {self.partitions}"
         )
-        ctx.rpk().create_topic(self.topic, self.partitions, self.rf)
+        ctx.rpk().create_topic(self.topic, self.partitions, self.rf,
+                               self.config)
         return True
 
     def validate(self, ctx):
@@ -110,7 +130,11 @@ class CreateTopicOperation(Operation):
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} creation")
         topics = ctx.rpk().list_topics()
-        return self.topic in topics
+        if self.topic not in topics:
+            return False
+        else:
+            desc = ctx.rpk().describe_topic_configs(self.topic)
+            return all([desc[k][0] == str(v) for k, v in self.config.items()])
 
     def describe(self):
         return {
@@ -119,6 +143,7 @@ class CreateTopicOperation(Operation):
                 "name": self.topic,
                 "replication_factor": self.topic,
                 "partitions": self.topic,
+                "config": self.config,
             }
         }
 
@@ -182,20 +207,6 @@ class DeleteTopicOperation(Operation):
 
 
 class UpdateTopicOperation(Operation):
-
-    properties = {
-        TopicSpec.PROPERTY_CLEANUP_POLICY:
-        lambda: random.choice(['delete', 'compact']),
-        TopicSpec.PROPERTY_TIMESTAMP_TYPE:
-        lambda: random.choice(['CreateTime', 'LogAppendTime']),
-        TopicSpec.PROPERTY_SEGMENT_SIZE:
-        lambda: random.randint(10 * 2**20, 512 * 2**20),
-        TopicSpec.PROPERTY_RETENTION_BYTES:
-        lambda: random.randint(10 * 2**20, 512 * 2**20),
-        TopicSpec.PROPERTY_RETENTION_TIME:
-        lambda: random.randint(10000, 1000000)
-    }
-
     def __init__(self, prefix):
         self.prefix = prefix
         self.topic = None
@@ -207,9 +218,8 @@ class UpdateTopicOperation(Operation):
             self.topic = _choice_random_topic(ctx, prefix=self.prefix)
             if self.topic is None:
                 return False
-            self.property = random.choice(
-                list(UpdateTopicOperation.properties.keys()))
-            self.value = UpdateTopicOperation.properties[self.property]()
+            self.property = random.choice(list(TOPIC_PROPERTIES.keys()))
+            self.value = TOPIC_PROPERTIES[self.property]()
 
         ctx.redpanda.logger.info(
             f"Updating topic: {self.topic} with: {self.property}={self.value}")
@@ -700,7 +710,6 @@ class AdminOperationsFuzzer():
 
     def execute_one(self):
         op_type, op = self.make_random_operation()
-        self.append_to_history(op)
 
         def validate_result():
             try:
@@ -732,6 +741,8 @@ class AdminOperationsFuzzer():
             self.redpanda.logger.error(f"Operation: {op.describe()} failed",
                                        exc_info=True)
             raise e
+        finally:
+            self.append_to_history(op)
 
     def execute_with_retries(self, op_type, op):
         self.redpanda.logger.info(
