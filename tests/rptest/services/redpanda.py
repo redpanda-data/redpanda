@@ -96,7 +96,12 @@ DEFAULT_LOG_ALLOW_LIST = [
     # value for type, overflow, alignment, etc...
     re.compile(
         r"SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior aead.c:(182|214)"
-    )
+    ),
+
+    # Sometines we're getting 'Internal Server Error' from S3 on CDT and it doesn't
+    # lead to any test failure because the error is transient (AWS weather).
+    re.compile(r"unexpected REST API error \"Internal Server Error\" detected"
+               ),
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
