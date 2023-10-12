@@ -163,7 +163,8 @@ configuration::configuration()
         .example = std::to_string(25_MiB),
         .visibility = visibility::tunable,
       },
-      20_MiB)
+      20_MiB,
+      {.min = 64_KiB, .max = 100_GiB})
   , wasm_per_function_memory_limit(
       *this,
       "wasm_per_function_memory_limit",
@@ -177,7 +178,9 @@ configuration::configuration()
         .example = std::to_string(5_MiB),
         .visibility = visibility::tunable,
       },
-      2_MiB)
+      2_MiB,
+      // WebAssembly uses 64KiB pages and has a 32bit address space
+      {.min = 64_KiB, .max = 4_GiB})
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",
