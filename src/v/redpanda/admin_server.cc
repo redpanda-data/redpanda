@@ -4855,6 +4855,8 @@ void admin_server::register_cluster_routes() {
                 ret.unhealthy_reasons = health_overview.unhealthy_reasons;
                 ret.all_nodes = health_overview.all_nodes;
                 ret.nodes_down = health_overview.nodes_down;
+                ret.nodes_in_recovery_mode
+                  = health_overview.nodes_in_recovery_mode;
 
                 ret.leaderless_count = health_overview.leaderless_count;
                 ret.under_replicated_count

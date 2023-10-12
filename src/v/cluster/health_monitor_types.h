@@ -241,6 +241,8 @@ struct cluster_health_overview {
     // A list of known nodes which are down from the point of view of the health
     // subsystem.
     std::vector<model::node_id> nodes_down;
+    // A list of nodes that have been booted up in recovery mode.
+    std::vector<model::node_id> nodes_in_recovery_mode;
     std::vector<model::ntp> leaderless_partitions;
     size_t leaderless_count{};
     std::vector<model::ntp> under_replicated_partitions;
