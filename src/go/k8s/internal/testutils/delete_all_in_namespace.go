@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgo "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 const (
@@ -32,7 +31,7 @@ const (
 	interval = 100 * time.Millisecond
 )
 
-func DeleteAllInNamespace(testEnv *envtest.Environment, k8sClient client.Client, namespaces ...client.Object) {
+func DeleteAllInNamespace(testEnv *RedpandaTestEnv, k8sClient client.Client, namespaces ...client.Object) {
 	ctx := context.Background()
 	clientGo, err := clientgo.NewForConfig(testEnv.Config)
 	Expect(err).ShouldNot(HaveOccurred())
