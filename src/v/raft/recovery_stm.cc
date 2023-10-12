@@ -327,6 +327,9 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
               (*meta)->expected_log_end_offset = _ptr->_last_snapshot_index;
           }
           vlog(_ctxlog.trace, "sending install_snapshot request: {}", req);
+          if (is_recovery_finished()) {
+              return ss::now();
+          }
           auto hb_guard = _ptr->suppress_heartbeats(_node_id);
           return _ptr->_client_protocol
             .install_snapshot(
