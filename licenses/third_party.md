@@ -104,6 +104,13 @@ cat /tmp/license.md | sort | uniq
 | equivalent | Apache-2.0 OR MIT |
 | fallible-iterator | Apache-2.0 OR MIT |
 | form_urlencoded | Apache-2.0 OR MIT |
+| futures | Apache-2.0 OR MIT |
+| futures-channel | Apache-2.0 OR MIT |
+| futures-core | Apache-2.0 OR MIT |
+| futures-io | Apache-2.0 OR MIT |
+| futures-sink | Apache-2.0 OR MIT |
+| futures-task | Apache-2.0 OR MIT |
+| futures-util | Apache-2.0 OR MIT |
 | fxhash | Apache-2.0 OR MIT |
 | fxprof-processed-profile | Apache-2.0 OR MIT |
 | generic-array | MIT |
@@ -133,9 +140,10 @@ cat /tmp/license.md | sort | uniq
 | once_cell | Apache-2.0 OR MIT |
 | paste | Apache-2.0 OR MIT |
 | percent-encoding | Apache-2.0 OR MIT |
+| pin-project-lite | Apache-2.0 OR MIT |
+| pin-utils | Apache-2.0 OR MIT |
 | ppv-lite86 | Apache-2.0 OR MIT |
 | proc-macro2 | Apache-2.0 OR MIT |
-| psm | Apache-2.0 OR MIT |
 | pulldown-cmark | MIT |
 | quote | Apache-2.0 OR MIT |
 | rand | Apache-2.0 OR MIT |
