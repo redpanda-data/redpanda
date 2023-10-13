@@ -1048,6 +1048,11 @@ public:
         // exceptions to grab a lock in libgcc and deadlock the Redpanda
         // process.
         wasmtime_config_native_unwind_info_set(config, false);
+        // Memory data segments can be initialized using mmap tricks and copy on
+        // write memory support in the kernel. However this functionality isn't
+        // exposed in custom allocators, and we'd have to `mmap` to use this
+        // feature. Since we can't use it just disable it.
+        wasmtime_config_memory_init_cow_set(config, false);
 
         wasmtime_memory_creator_t memory_creator = {
           .env = this,
