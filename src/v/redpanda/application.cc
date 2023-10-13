@@ -926,7 +926,8 @@ void application::configure_admin_server() {
       std::ref(_memory_sampling),
       std::ref(shadow_index_cache),
       std::ref(_cpu_profiler),
-      &_transform_service)
+      &_transform_service,
+      std::ref(audit_mgr))
       .get();
 }
 

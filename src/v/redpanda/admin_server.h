@@ -24,6 +24,7 @@
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
+#include "security/fwd.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
 #include "utils/request_auth.h"
@@ -81,7 +82,8 @@ public:
       ss::sharded<memory_sampling>&,
       ss::sharded<cloud_storage::cache>&,
       ss::sharded<resources::cpu_profiler>&,
-      ss::sharded<transform::service>*);
+      ss::sharded<transform::service>*,
+      ss::sharded<security::audit::audit_log_manager>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -552,6 +554,7 @@ private:
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     ss::sharded<resources::cpu_profiler>& _cpu_profiler;
     ss::sharded<transform::service>* _transform_service;
+    ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

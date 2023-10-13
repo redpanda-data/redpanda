@@ -89,6 +89,7 @@
 #include "rpc/errc.h"
 #include "rpc/rpc_utils.h"
 #include "security/acl.h"
+#include "security/audit/audit_log_manager.h"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
@@ -244,7 +245,8 @@ admin_server::admin_server(
   ss::sharded<memory_sampling>& memory_sampling_service,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::sharded<resources::cpu_profiler>& cpu_profiler,
-  ss::sharded<transform::service>* transform_service)
+  ss::sharded<transform::service>* transform_service,
+  ss::sharded<security::audit::audit_log_manager>& audit_mgr)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -272,6 +274,7 @@ admin_server::admin_server(
   , _cloud_storage_cache(cloud_storage_cache)
   , _cpu_profiler(cpu_profiler)
   , _transform_service(transform_service)
+  , _audit_mgr(audit_mgr)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
