@@ -63,8 +63,15 @@ class RpkException(Exception):
 
 
 class RpkPartition:
-    def __init__(self, id, leader, leader_epoch, replicas, lso, hw,
-                 start_offset):
+    def __init__(self,
+                 id,
+                 leader,
+                 leader_epoch,
+                 replicas,
+                 lso,
+                 hw,
+                 start_offset,
+                 load_error=None):
         self.id = id
         self.leader = leader
         self.leader_epoch = leader_epoch
@@ -72,11 +79,15 @@ class RpkPartition:
         self.last_stable_offset = lso
         self.high_watermark = hw
         self.start_offset = start_offset
+        self.load_error = load_error
 
     def __str__(self):
-        return "id: {}, leader: {}, leader_epoch: {} replicas: {}, hw: {}, start_offset: {}".format(
+        ret = "id: {}, leader: {}, leader_epoch: {} replicas: {}, hw: {}, start_offset: {}".format(
             self.id, self.leader, self.leader_epoch, self.replicas,
             self.high_watermark, self.start_offset)
+        if self.load_error:
+            ret += f", load_error: `{self.load_error}'"
+        return ret
 
     def __eq__(self, other):
         if other is None:
@@ -85,7 +96,8 @@ class RpkPartition:
             and self.leader_epoch == other.leader_epoch \
             and self.replicas == other.replicas \
             and self.high_watermark == other.high_watermark \
-            and self.start_offset == other.start_offset
+            and self.start_offset == other.start_offset \
+            and self.load_error == other.load_error
 
 
 class RpkGroupPartition(typing.NamedTuple):
@@ -438,7 +450,7 @@ class RpkTool:
 
         expected_columns = set([
             "PARTITION", "LEADER", "EPOCH", "REPLICAS", "LOG-START-OFFSET",
-            "HIGH-WATERMARK", "LAST-STABLE-OFFSET"
+            "HIGH-WATERMARK", "LAST-STABLE-OFFSET", "LOAD-ERROR"
         ])
         received_columns = set()
 
@@ -453,7 +465,10 @@ class RpkTool:
         # sometimes LSO is present, sometimes it isn't
         # same is true for EPOCH:
         # https://github.com/redpanda-data/redpanda/issues/8381#issuecomment-1403051606
-        missing_columns = missing_columns - {"LAST-STABLE-OFFSET", "EPOCH"}
+        # LOAD-ERROR is not present if there was no error.
+        missing_columns = missing_columns - {
+            "LAST-STABLE-OFFSET", "EPOCH", "LOAD-ERROR"
+        }
 
         if len(missing_columns) != 0:
             missing_columns = ",".join(missing_columns)
@@ -490,7 +505,8 @@ class RpkTool:
                                      replicas=obj["REPLICAS"],
                                      lso=None,
                                      hw=obj["HIGH-WATERMARK"],
-                                     start_offset=obj["LOG-START-OFFSET"])
+                                     start_offset=obj["LOG-START-OFFSET"],
+                                     load_error=obj.get("LOAD-ERROR"))
 
             if initialized or tolerant:
                 yield partition
