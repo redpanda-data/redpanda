@@ -16,6 +16,8 @@
 #include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
+#include <seastar/core/reactor.hh>
+
 #include <absl/strings/str_cat.h>
 #include <avro/Compiler.hh>
 #include <avro/Encoder.hh>
@@ -107,4 +109,15 @@ TEST_F(WasmTestFixture, MemoryIsLimited) {
     load_wasm("dynamic.wasm");
     EXPECT_NO_THROW(execute_command("allocate", 5_KiB));
     EXPECT_THROW(execute_command("allocate", MAX_MEMORY), wasm::wasm_exception);
+}
+
+TEST_F(WasmTestFixture, CpuIsLimited) {
+    load_wasm("dynamic.wasm");
+    ss::engine().update_blocked_reactor_notify_ms(100ms);
+    bool stalled = false;
+    ss::engine().set_stall_detector_report_function(
+      [&stalled] { stalled = true; });
+    EXPECT_THROW(execute_command("loop", 0), wasm::wasm_exception);
+    // TODO(rockwood): Prevent stalls via yielding
+    EXPECT_TRUE(stalled);
 }
