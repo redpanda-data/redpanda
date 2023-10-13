@@ -318,7 +318,9 @@ class UsageTest(RedpandaTest):
         fire_times = [delta_parse(x) for x in log_lines]
 
         # Ensure all deltas are 0 meaning there is no skew
-        return all([x == 0 for x in fire_times])
+        # Make an exception for 1 second delta to account for late timers
+        # in debug builds
+        return all([x == 0 or x == 1 for x in fire_times])
 
     @cluster(num_nodes=3)
     def test_usage_metrics_collection(self):
@@ -357,7 +359,8 @@ class UsageTest(RedpandaTest):
             iterations += 1
 
         # Additional validation to ensure there were no gaps and the timer fired exactly on time
-        assert self._validate_timer_interval()
+        assert self._validate_timer_interval(
+        ), "A timer skew of greater then 1s has been detected within a usage fiber"
 
     @cluster(num_nodes=4)
     def test_usage_collection_restart(self):
