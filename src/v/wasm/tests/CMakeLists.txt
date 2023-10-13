@@ -27,6 +27,7 @@ rp_test(
     v::wasm_test_fixture
     Avro::avro
   BUILD_DEPENDENCIES
+    wasm_testdata_dynamic
     wasm_testdata_identity
     wasm_testdata_schema_registry
     wasm_testdata_setup_panic
@@ -34,6 +35,7 @@ rp_test(
     wasm_testdata_transform_panic
     wasm_testdata_wasi
   INPUT_FILES
+    "${TESTDATA_DIR}/dynamic.wasm"
     "${TESTDATA_DIR}/identity.wasm"
     "${TESTDATA_DIR}/schema-registry.wasm"
     "${TESTDATA_DIR}/setup-panic.wasm"
@@ -81,5 +83,18 @@ rp_test(
     v::model_test_utils
     v::wasm
   ARGS "-- -c 4"
+  LABELS wasm
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME wasm_allocator
+  SOURCES
+    wasm_allocator_test.cc
+  LIBRARIES 
+    v::gtest_main
+    v::wasm
+  ARGS "-- -c 1"
   LABELS wasm
 )

@@ -279,8 +279,8 @@ caching_runtime::caching_runtime(
 
 caching_runtime::~caching_runtime() = default;
 
-ss::future<> caching_runtime::start() {
-    co_await _underlying->start();
+ss::future<> caching_runtime::start(runtime::config c) {
+    co_await _underlying->start(c);
     co_await _engine_caches.start();
     _gc_timer.arm(_gc_interval);
 }

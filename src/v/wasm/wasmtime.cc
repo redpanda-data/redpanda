@@ -15,6 +15,8 @@
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
 #include "utils/type_traits.h"
+#include "vassert.h"
+#include "wasm/allocator.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
@@ -24,6 +26,7 @@
 #include "wasm/transform_module.h"
 #include "wasm/wasi.h"
 
+#include <seastar/core/align.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/posix.hh>
 #include <seastar/core/sharded.hh>
@@ -34,10 +37,12 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <cmath>
 #include <csignal>
 #include <memory>
 #include <pthread.h>
 #include <span>
+#include <unistd.h>
 #include <wasm.h>
 #include <wasmtime.h>
 
@@ -73,6 +78,49 @@ void check_trap(const wasm_trap_t* trap) {
     std::stringstream sb;
     sb << std::string_view(msg.data, msg.size);
     wasm_byte_vec_delete(&msg);
+    wasmtime_trap_code_t code = 0;
+    if (wasmtime_trap_code(trap, &code)) {
+        switch (static_cast<wasmtime_trap_code_enum>(code)) {
+        case WASMTIME_TRAP_CODE_STACK_OVERFLOW:
+            sb << " (code STACK_OVERFLOW)";
+            break;
+        case WASMTIME_TRAP_CODE_MEMORY_OUT_OF_BOUNDS:
+            sb << " (code MEMORY_OUT_OF_BOUNDS)";
+            break;
+        case WASMTIME_TRAP_CODE_HEAP_MISALIGNED:
+            sb << " (code HEAP_MISALIGNED)";
+            break;
+        case WASMTIME_TRAP_CODE_TABLE_OUT_OF_BOUNDS:
+            sb << " (code TABLE_OUT_OF_BOUNDS)";
+            break;
+        case WASMTIME_TRAP_CODE_INDIRECT_CALL_TO_NULL:
+            sb << " (code INDIRECT_CALL_TO_NULL)";
+            break;
+        case WASMTIME_TRAP_CODE_BAD_SIGNATURE:
+            sb << " (code BAD_SIGNATURE)";
+            break;
+        case WASMTIME_TRAP_CODE_INTEGER_OVERFLOW:
+            sb << " (code INTEGER_OVERFLOW)";
+            break;
+        case WASMTIME_TRAP_CODE_INTEGER_DIVISION_BY_ZERO:
+            sb << " (code INTEGER_DIVISION_BY_ZERO)";
+            break;
+        case WASMTIME_TRAP_CODE_BAD_CONVERSION_TO_INTEGER:
+            sb << " (code BAD_CONVERSION_TO_INTEGER)";
+            break;
+        case WASMTIME_TRAP_CODE_UNREACHABLE_CODE_REACHED:
+            sb << " (code UNREACHABLE_CODE_REACHED)";
+            break;
+        case WASMTIME_TRAP_CODE_INTERRUPT:
+            sb << " (code INTERRUPT)";
+            break;
+        case WASMTIME_TRAP_CODE_OUT_OF_FUEL:
+            sb << " (code OUT_OF_FUEL)";
+            break;
+        default:
+            break;
+        }
+    }
     wasm_frame_vec_t trace{.size = 0, .data = nullptr};
     wasm_trap_trace(trap, &trace);
     for (wasm_frame_t* frame : std::span(trace.data, trace.size)) {
@@ -300,6 +348,7 @@ private:
         wasmtime_context_fuel_remaining(ctx, &fuel);
         handle<wasmtime_error_t, wasmtime_error_delete> error(
           wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
+        check_error(error.get());
     }
 
     ss::future<> create_instance() {
@@ -817,13 +866,87 @@ private:
 
 class wasmtime_runtime : public runtime {
 public:
-    wasmtime_runtime(
-      handle<wasm_engine_t, &wasm_engine_delete> h,
-      std::unique_ptr<schema_registry> sr)
-      : _engine(std::move(h))
-      , _sr(std::move(sr)) {}
+    explicit wasmtime_runtime(std::unique_ptr<schema_registry> sr)
+      : _sr(std::move(sr)) {
+        wasm_config_t* config = wasm_config_new();
 
-    ss::future<> start() override {
+        // Spend more time compiling so that we can have faster code.
+        wasmtime_config_cranelift_opt_level_set(
+          config, WASMTIME_OPT_LEVEL_SPEED);
+        // Fuel allows us to stop execution after some time.
+        wasmtime_config_consume_fuel_set(config, true);
+        // We want to enable memcopy and other efficent memcpy operators
+        wasmtime_config_wasm_bulk_memory_set(config, true);
+        // Our build disables this feature, so we don't need to turn it
+        // off, otherwise we'd want to turn this off (it's on by default).
+        // wasmtime_config_parallel_compilation_set(config, false);
+
+        // Let wasmtime do the stack switching so we can run async host
+        // functions and allow running out of fuel to pause the runtime.
+        //
+        // See the documentation for more information:
+        // https://docs.wasmtime.dev/api/wasmtime/struct.Config.html#asynchronous-wasm
+        wasmtime_config_async_support_set(config, true);
+        // Set max stack size to generally be as big as a contiguous memory
+        // region we're willing to allocate in Redpanda.
+        //
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+        wasmtime_config_async_stack_size_set(config, 128_KiB);
+        // The stack size needs to be less than the async stack size, and
+        // whatever is difference between the two is how much host functions can
+        // get, make sure to leave our own functions some room to execute.
+        //
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+        wasmtime_config_max_wasm_stack_set(config, 64_KiB);
+        // This disables static memory, see:
+        // https://docs.wasmtime.dev/contributing-architecture.html#linear-memory
+        wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
+        wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
+        wasmtime_config_dynamic_memory_reserved_for_growth_set(config, 0_KiB);
+        // Don't modify the unwind info as registering these symbols causes C++
+        // exceptions to grab a lock in libgcc and deadlock the Redpanda
+        // process.
+        wasmtime_config_native_unwind_info_set(config, false);
+
+        wasmtime_memory_creator_t memory_creator = {
+          .env = this,
+          .new_memory = &wasmtime_runtime::allocate_heap_memory,
+          .finalizer = nullptr,
+        };
+        wasmtime_config_host_memory_creator_set(config, &memory_creator);
+
+        _engine.reset(wasm_engine_new_with_config(config));
+    }
+
+    ss::future<> start(runtime::config c) override {
+        size_t page_size = ::getpagesize();
+        size_t aligned_pool_size = ss::align_down(
+          c.heap_memory.per_core_pool_size_bytes, page_size);
+        if (aligned_pool_size == 0) {
+            throw std::runtime_error(ss::format(
+              "aligned per core wasm memory pool size must be >0 "
+              "(page_size={}, pool_size={})",
+              page_size,
+              c.heap_memory.per_core_pool_size_bytes));
+        }
+        size_t aligned_instance_limit = ss::align_down(
+          c.heap_memory.per_engine_memory_limit, page_size);
+        if (aligned_instance_limit == 0) {
+            throw std::runtime_error(ss::format(
+              "aligned per wasm engine memory limit must be >0 (page_size={}, "
+              "limit={})",
+              page_size,
+              c.heap_memory.per_engine_memory_limit));
+        }
+        size_t num_heaps = aligned_pool_size / aligned_instance_limit;
+        if (num_heaps == 0) {
+            throw std::runtime_error("must allow at least one wasm heap");
+        }
+
+        co_await _heap_allocator.start(heap_allocator::config{
+          .heap_memory_size = aligned_instance_limit,
+          .num_heaps = num_heaps,
+        });
         co_await _alien_thread.start({.name = "wasm"});
         co_await ss::smp::invoke_on_all([] {
             // wasmtime needs some signals for it's handling, make sure we
@@ -837,7 +960,10 @@ public:
         });
     }
 
-    ss::future<> stop() override { return _alien_thread.stop(); }
+    ss::future<> stop() override {
+        co_await _alien_thread.stop();
+        co_await _heap_allocator.stop();
+    }
 
     ss::future<ss::shared_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
@@ -878,54 +1004,87 @@ public:
     }
 
 private:
+    // We don't have control over this API.
+    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
+    static wasmtime_error_t* allocate_heap_memory(
+      void* env,
+      const wasm_memorytype_t* ty,
+      size_t minimum,
+      size_t maximum,
+      size_t reserved_size_in_bytes,
+      size_t guard_size_in_bytes,
+      wasmtime_linear_memory_t* memory_ret) {
+        // NOLINTEND(bugprone-easily-swappable-parameters)
+        vassert(
+          !wasmtime_memorytype_is64(ty),
+          "we only support 32bit addressable memory");
+        vassert(
+          reserved_size_in_bytes == 0,
+          "this value should be set to 0 according to the config");
+        vassert(
+          guard_size_in_bytes == 0,
+          "this value should be set to 0 according to the config");
+        auto* runtime = static_cast<wasmtime_runtime*>(env);
+        return runtime->allocate_heap_memory(minimum, maximum, memory_ret);
+    }
+
+    wasmtime_error_t* allocate_heap_memory(
+      size_t minimum, size_t maximum, wasmtime_linear_memory_t* memory_ret) {
+        auto memory = _heap_allocator.local().allocate(
+          {.minimum = minimum, .maximum = maximum});
+        if (!memory) {
+            auto msg = ss::format(
+              "unable to allocate memory with bounds [{}, {}]",
+              minimum,
+              maximum);
+            return wasmtime_error_new(msg.c_str());
+        }
+        struct linear_memory {
+            heap_memory underlying;
+            ss::noncopyable_function<void(heap_memory)> reclaimer;
+        };
+        memory_ret->env = new linear_memory{
+          .underlying = *std::move(memory),
+          .reclaimer =
+            [this](heap_memory mem) {
+                _heap_allocator.local().deallocate(std::move(mem));
+            },
+        };
+        memory_ret->finalizer = [](void* env) {
+            auto* mem = static_cast<linear_memory*>(env);
+            mem->reclaimer(std::move(mem->underlying));
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+            delete mem;
+        };
+        memory_ret->get_memory =
+          // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+          [](void* env, size_t* byte_size, size_t* max_byte_size) {
+              auto* mem = static_cast<linear_memory*>(env);
+              *byte_size = mem->underlying.size;
+              *max_byte_size = mem->underlying.size;
+              return mem->underlying.data.get();
+          };
+        memory_ret->grow_memory =
+          [](void* env, size_t new_size) -> wasmtime_error_t* {
+            auto* mem = static_cast<linear_memory*>(env);
+            if (new_size == mem->underlying.size) {
+                return nullptr;
+            }
+            return wasmtime_error_new(
+              "linear memories are fixed size and ungrowable");
+        };
+        return nullptr;
+    }
+
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
+    ss::sharded<heap_allocator> _heap_allocator;
 };
 
 } // namespace
 
 std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
-    wasm_config_t* config = wasm_config_new();
-
-    // Spend more time compiling so that we can have faster code.
-    wasmtime_config_cranelift_opt_level_set(config, WASMTIME_OPT_LEVEL_SPEED);
-    // Fuel allows us to stop execution after some time.
-    wasmtime_config_consume_fuel_set(config, true);
-    // We want to enable memcopy and other efficent memcpy operators
-    wasmtime_config_wasm_bulk_memory_set(config, true);
-    // Our build disables this feature, so we don't need to turn it
-    // off, otherwise we'd want to turn this off (it's on by default).
-    // wasmtime_config_parallel_compilation_set(config, false);
-
-    // Let wasmtime do the stack switching so we can run async host functions
-    // and allow running out of fuel to pause the runtime.
-    //
-    // See the documentation for more information:
-    // https://docs.wasmtime.dev/api/wasmtime/struct.Config.html#asynchronous-wasm
-    wasmtime_config_async_support_set(config, true);
-    // Set max stack size to generally be as big as a contiguous memory region
-    // we're willing to allocate in Redpanda.
-    //
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    wasmtime_config_async_stack_size_set(config, 128_KiB);
-    // The stack size needs to be less than the async stack size, and
-    // whatever is difference between the two is how much host functions can
-    // get, make sure to leave our own functions some room to execute.
-    //
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    wasmtime_config_max_wasm_stack_set(config, 64_KiB);
-    // This disables static memory, see:
-    // https://docs.wasmtime.dev/contributing-architecture.html#linear-memory
-    wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
-    wasmtime_config_dynamic_memory_guard_size_set(config, 0_KiB);
-    wasmtime_config_dynamic_memory_reserved_for_growth_set(config, 0_KiB);
-    // Don't modify the unwind info as registering these symbols causes C++
-    // exceptions to grab a lock in libgcc and deadlock the Redpanda process.
-    wasmtime_config_native_unwind_info_set(config, false);
-
-    handle<wasm_engine_t, &wasm_engine_delete> engine{
-      wasm_engine_new_with_config(config)};
-    return std::make_unique<wasmtime_runtime>(std::move(engine), std::move(sr));
+    return std::make_unique<wasmtime_runtime>(std::move(sr));
 }
 } // namespace wasm::wasmtime

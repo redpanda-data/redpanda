@@ -144,12 +144,43 @@ configuration::configuration()
   , coproc_max_ingest_bytes(*this, "coproc_max_ingest_bytes")
   , coproc_max_batch_size(*this, "coproc_max_batch_size")
   , coproc_offset_flush_interval_ms(*this, "coproc_offset_flush_interval_ms")
-  , enable_data_transforms(
+  , data_transforms_enabled(
       *this,
-      "enable_data_transforms",
+      "data_transforms_enabled",
       "Enables WebAssembly powered Data Transforms directly in the broker",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
+  , wasm_per_core_memory_reservation(
+      *this,
+      "wasm_per_core_memory_reservation",
+      "The amount of memory to reserve per core for all WebAssembly Virtual "
+      "Machines. Memory is reserved on boot. The maximum number of functions "
+      "that can be deployed to a cluster is equal to "
+      "wasm_per_core_memory_reservation / "
+      "wasm_per_function_memory_limit",
+      {
+        .needs_restart = needs_restart::yes,
+        .example = std::to_string(25_MiB),
+        .visibility = visibility::tunable,
+      },
+      20_MiB,
+      {.min = 64_KiB, .max = 100_GiB})
+  , wasm_per_function_memory_limit(
+      *this,
+      "wasm_per_function_memory_limit",
+      "The amount of memory to give an instance of a WebAssembly Virtual "
+      "Machine. The maximum number of functions "
+      "that can be deployed to a cluster is equal to "
+      "wasm_per_core_memory_reservation / "
+      "wasm_per_function_memory_limit",
+      {
+        .needs_restart = needs_restart::yes,
+        .example = std::to_string(5_MiB),
+        .visibility = visibility::tunable,
+      },
+      2_MiB,
+      // WebAssembly uses 64KiB pages and has a 32bit address space
+      {.min = 64_KiB, .max = 4_GiB})
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",

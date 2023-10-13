@@ -132,7 +132,14 @@ void WasmTestFixture::SetUp() {
     auto sr = std::make_unique<fake_schema_registry>();
     _sr = sr.get();
     _runtime = wasm::wasmtime::create_runtime(std::move(sr));
-    _runtime->start().get();
+    // Support creating up to 4 instances in a test
+    constexpr wasm::runtime::config wasm_runtime_config {
+        .heap_memory = {
+          .per_core_pool_size_bytes = MAX_MEMORY * 4,
+          .per_engine_memory_limit = MAX_MEMORY,
+        },
+    };
+    _runtime->start(wasm_runtime_config).get();
     _meta = {
       .name = model::transform_name(ss::sstring("test_wasm_transform")),
       .input_topic = model::random_topic_namespace(),

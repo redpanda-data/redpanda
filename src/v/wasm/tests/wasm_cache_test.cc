@@ -110,7 +110,7 @@ private:
 
 class fake_runtime : public runtime {
 public:
-    ss::future<> start() override { co_return; }
+    ss::future<> start(runtime::config) override { co_return; }
     ss::future<> stop() override { co_return; }
 
     ss::future<ss::shared_ptr<factory>>
@@ -138,7 +138,7 @@ public:
         // Effectively disable the gc interval
         _caching_runtime = std::make_unique<caching_runtime>(
           std::move(fr), /*gc_interval=*/std::chrono::hours(1));
-        _caching_runtime->start().get();
+        _caching_runtime->start({}).get();
     }
 
     void TearDown() override {
