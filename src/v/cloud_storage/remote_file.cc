@@ -75,9 +75,7 @@ ss::future<uint64_t>
 remote_file::put_in_cache(uint64_t size_bytes, ss::input_stream<char> s) {
     try {
         auto reservation = co_await _cache.reserve_space(size_bytes, 1);
-        co_await _cache.put(_remote_path, s, reservation).finally([&s] {
-            return s.close();
-        });
+        co_await _cache.put(_remote_path, std::move(s), reservation);
     } catch (...) {
         auto put_exception = std::current_exception();
         vlog(

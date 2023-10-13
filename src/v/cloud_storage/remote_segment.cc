@@ -419,10 +419,7 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
       remote_segment_sampling_step_bytes);
     auto fparse = parser->consume().finally(
       [parser] { return parser->close(); });
-    auto fput
-      = _cache.put(_path, sput, reservation).finally([sref = std::ref(sput)] {
-            return sref.get().close();
-        });
+    auto fput = _cache.put(_path, std::move(sput), reservation);
     auto [rparse, rput] = co_await ss::when_all(
       std::move(fparse), std::move(fput));
     bool index_prepared = true;
@@ -447,7 +444,9 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
           storage::segment_index::estimate_size(size_bytes), 1);
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
         co_await _cache.put(
-          generate_index_path(_path), index_stream, index_reservation);
+          generate_index_path(_path),
+          std::move(index_stream),
+          index_reservation);
         _index = std::move(tmpidx);
     }
     co_return size_bytes;
@@ -458,9 +457,7 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache(
   space_reservation_guard& reservation,
   ss::input_stream<char> s) {
     try {
-        co_await _cache.put(_path, s, reservation).finally([&s] {
-            return s.close();
-        });
+        co_await _cache.put(_path, std::move(s), reservation);
     } catch (...) {
         auto put_exception = std::current_exception();
         vlog(
@@ -478,8 +475,8 @@ ss::future<> remote_segment::put_chunk_in_cache(
   ss::input_stream<char> stream,
   chunk_start_offset_t chunk_start) {
     try {
-        co_await _cache.put(get_path_to_chunk(chunk_start), stream, reservation)
-          .finally([&stream] { return stream.close(); });
+        co_await _cache.put(
+          get_path_to_chunk(chunk_start), std::move(stream), reservation);
     } catch (...) {
         auto put_exception = std::current_exception();
         vlog(
@@ -548,9 +545,7 @@ ss::future<> remote_segment::do_hydrate_index() {
 
     auto reservation = co_await _cache.reserve_space(buf.size_bytes(), 1);
     auto str = make_iobuf_input_stream(std::move(buf));
-    co_await _cache.put(_index_path, str, reservation).finally([&str] {
-        return str.close();
-    });
+    co_await _cache.put(_index_path, std::move(str), reservation);
 }
 
 ss::future<> remote_segment::do_hydrate_txrange() {
@@ -587,8 +582,8 @@ ss::future<> remote_segment::do_hydrate_txrange() {
 
         auto [stream, size] = co_await manifest.serialize();
         auto reservation = co_await _cache.reserve_space(size, 1);
-        co_await _cache.put(manifest.get_manifest_path(), stream, reservation)
-          .finally([&s = stream]() mutable { return s.close(); });
+        co_await _cache.put(
+          manifest.get_manifest_path(), std::move(stream), reservation);
     }
 
     _tx_range = std::move(manifest).get_tx_range();

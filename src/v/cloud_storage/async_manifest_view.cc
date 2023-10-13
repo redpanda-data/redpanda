@@ -1364,7 +1364,7 @@ async_manifest_view::hydrate_manifest(
         auto reservation = co_await _cache.local().reserve_space(len, 1);
         co_await _cache.local().put(
           manifest.get_manifest_path()(),
-          str,
+          std::move(str),
           reservation,
           priority_manager::local().shadow_indexing_priority());
         _ts_probe.on_spillover_manifest_hydration();

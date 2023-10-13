@@ -96,7 +96,7 @@ FIXTURE_TEST(is_cached_after_put_success, cache_test_fixture) {
     auto reservation
       = sharded_cache.local().reserve_space(buf.size_bytes(), 1).get();
     auto input = make_iobuf_input_stream(std::move(buf));
-    sharded_cache.local().put(KEY, input, reservation).get();
+    sharded_cache.local().put(KEY, std::move(input), reservation).get();
 
     auto is_cached = sharded_cache.local().is_cached(KEY).get();
 
@@ -293,7 +293,7 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
     auto input = make_iobuf_input_stream(std::move(buf));
 
     BOOST_CHECK_EXCEPTION(
-      sharded_cache.local().put(key, input, reservation).get(),
+      sharded_cache.local().put(key, std::move(input), reservation).get(),
       std::invalid_argument,
       [](const std::invalid_argument& e) {
           return std::string(e.what()).find(

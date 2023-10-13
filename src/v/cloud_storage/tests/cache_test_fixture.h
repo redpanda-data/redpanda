@@ -100,7 +100,7 @@ public:
               ? space_reservation_guard(sharded_cache.local(), 0, 0)
               : sharded_cache.local().reserve_space(buf.size_bytes(), 1).get();
         auto input = make_iobuf_input_stream(std::move(buf));
-        sharded_cache.local().put(key, input, reservation).get();
+        sharded_cache.local().put(key, std::move(input), reservation).get();
     }
 
     ss::future<> clean_up_at_start() {

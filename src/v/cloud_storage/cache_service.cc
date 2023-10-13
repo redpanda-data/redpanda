@@ -14,6 +14,7 @@
 #include "seastar/util/file.hh"
 #include "ssx/future-util.h"
 #include "storage/segment.h"
+#include "utils/stream_utils.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -934,7 +935,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
 
 ss::future<> cache::put(
   std::filesystem::path key,
-  ss::input_stream<char>& data,
+  ss::input_stream<char> data,
   space_reservation_guard& reservation,
   ss::io_priority_class io_priority,
   size_t write_buffer_size,
@@ -1021,9 +1022,7 @@ ss::future<> cache::put(
 
     std::exception_ptr disk_full_error;
     try {
-        co_await ss::copy(data, out)
-          .then([&out]() { return out.flush(); })
-          .finally([&out]() { return out.close(); });
+        co_await transfer(std::move(data), std::move(out), true);
     } catch (std::filesystem::filesystem_error& e) {
         // For ENOSPC errors, delay handling so that we can do a trim
         if (e.code() == std::errc::no_space_on_device) {
