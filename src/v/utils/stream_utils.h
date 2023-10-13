@@ -22,6 +22,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -264,4 +265,65 @@ auto input_stream_fanout(
       },
       fds);
     return is;
+}
+
+namespace detail {
+struct transfer_consumer {
+    explicit transfer_consumer(ss::output_stream<char> out, bool z_copy)
+      : is_zero_copy(z_copy)
+      , out(std::move(out)) {}
+    using result_t = std::optional<ss::temporary_buffer<char>>;
+    ss::future<result_t> operator()(ss::temporary_buffer<char> buf) {
+        if (buf.empty()) {
+            is_eof = true;
+            return ss::make_ready_future<result_t>();
+        }
+        if (is_zero_copy) {
+            // This will bypass internal buffering. The writes will be
+            // taking zero-copy codepath.
+            return out.write(ss::net::packet(std::move(buf))).then([] {
+                return ss::make_ready_future<result_t>();
+            });
+        }
+        // Normal path. Will copy bytes from the buffer to the current
+        // write buffer of the output stream.
+        return out.write(buf.get(), buf.size()).then([] {
+            return ss::make_ready_future<result_t>();
+        });
+    }
+    bool is_eof{false};
+    bool is_zero_copy;
+    ss::output_stream<char> out;
+};
+
+} // namespace detail
+
+/// Copy entire content of 'in' into the 'out' and close both streams
+inline ss::future<> transfer(
+  ss::input_stream<char> in,
+  ss::output_stream<char> out,
+  bool zero_copy = false) {
+    detail::transfer_consumer c(std::move(out), zero_copy);
+    std::exception_ptr eptr;
+    try {
+        co_await in.consume(c);
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+    try {
+        co_await c.out.flush();
+        co_await c.out.close();
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+
+    try {
+        co_await in.close();
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+
+    if (eptr) {
+        std::rethrow_exception(eptr);
+    }
 }
