@@ -561,11 +561,19 @@ class HighThroughputTest(RedpandaTest):
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
+    @ok_to_fail
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
         Make segments replicate to the cloud, then disrupt S3 connectivity
-        and restore it
+        and restore it.
+
+        Test designed with access to provider in mind and is
+        for BYOC clouds only.
+        Using it against FMC clouds will cause it to fail as
+        there is no access to S3 account that is used inside
+        cloudv2 API to create/update buckets and its
+        properties/policies
         """
         # create default topics
         self._create_default_topics()
