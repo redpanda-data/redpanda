@@ -1441,7 +1441,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         vlog(
           _rtclog.warn,
           "Upload skipped for range: {}-{} because these offsets lie inside "
-          "batches",
+          "batches or the reupload is not smaller than the current segment",
           upload.starting_offset,
           upload.final_offset);
         co_return scheduled_upload{
