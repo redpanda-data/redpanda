@@ -55,7 +55,12 @@ func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-			subjects, err := cl.Subjects(cmd.Context(), sr.HideShowDeleted(deleted))
+			ctx := cmd.Context()
+			if deleted {
+				ctx = sr.WithParams(cmd.Context(), sr.ShowDeleted)
+			}
+
+			subjects, err := cl.Subjects(ctx)
 			out.MaybeDieErr(err)
 
 			if isText, _, s, err := f.Format(subjects); !isText {

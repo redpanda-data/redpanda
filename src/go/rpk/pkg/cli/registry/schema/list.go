@@ -46,8 +46,12 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
+			ctx := cmd.Context()
+			if deleted {
+				ctx = sr.WithParams(cmd.Context(), sr.ShowDeleted)
+			}
 			if len(subjects) == 0 {
-				subjects, err = cl.Subjects(cmd.Context(), sr.HideShowDeleted(deleted))
+				subjects, err = cl.Subjects(ctx)
 				out.MaybeDieErr(err)
 			}
 
@@ -66,7 +70,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					ss, err := cl.Schemas(cmd.Context(), subject, sr.HideShowDeleted(deleted))
+					ss, err := cl.Schemas(ctx, subject)
 					mu.Lock()
 					defer mu.Unlock()
 					results = append(results, res{

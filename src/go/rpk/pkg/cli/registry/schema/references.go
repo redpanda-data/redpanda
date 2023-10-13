@@ -36,11 +36,16 @@ func newReferencesCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
+			ctx := cmd.Context()
+			if deleted {
+				ctx = sr.WithParams(cmd.Context(), sr.ShowDeleted)
+			}
+
 			version, err := parseVersion(sversion)
 			out.MaybeDieErr(err)
 
 			subject := args[0]
-			references, err := cl.SchemaReferences(cmd.Context(), subject, version, sr.HideShowDeleted(deleted))
+			references, err := cl.SchemaReferences(ctx, subject, version)
 			out.MaybeDie(err, "unable to check for references of subject %q and version %q: %v", subject, sversion, err)
 
 			err = printSubjectSchemaTable(f, false, references...)

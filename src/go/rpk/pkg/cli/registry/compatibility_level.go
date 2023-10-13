@@ -66,7 +66,7 @@ per-subject levels.
 			if len(subjects) > 0 && global {
 				subjects = append(subjects, sr.GlobalSubject)
 			}
-			results := cl.CompatibilityLevel(context.Background(), subjects...)
+			results := cl.Compatibility(context.Background(), subjects...)
 
 			err = printCompatibilityResult(results, f)
 			out.MaybeDieErr(err)
@@ -106,7 +106,7 @@ per-subject levels.
 			err = l.UnmarshalText([]byte(level))
 			out.MaybeDieErr(err)
 
-			results := cl.SetCompatibilityLevel(context.Background(), l, subjects...)
+			results := cl.SetCompatibility(context.Background(), sr.SetCompatibility{Level: l}, subjects...)
 			err = printCompatibilityResult(results, f)
 			out.MaybeDieErr(err)
 		},

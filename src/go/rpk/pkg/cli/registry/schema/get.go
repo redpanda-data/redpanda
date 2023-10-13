@@ -54,6 +54,11 @@ potential (mutually exclusive) ways:
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
+			ctx := cmd.Context()
+			if deleted {
+				ctx = sr.WithParams(cmd.Context(), sr.ShowDeleted)
+			}
+
 			var n int
 			if sversion != "" {
 				n++
@@ -80,12 +85,12 @@ potential (mutually exclusive) ways:
 			case sversion != "":
 				version, err := parseVersion(sversion)
 				out.MaybeDieErr(err)
-				s, err := cl.SchemaByVersion(cmd.Context(), args[0], version, sr.HideShowDeleted(deleted))
+				s, err := cl.SchemaByVersion(ctx, args[0], version)
 				out.MaybeDieErr(err)
 				ss = []sr.SubjectSchema{s}
 
 			case id != 0:
-				ss, err = cl.SchemaUsagesByID(cmd.Context(), id, sr.HideShowDeleted(deleted))
+				ss, err = cl.SchemaUsagesByID(ctx, id)
 				out.MaybeDieErr(err)
 				if len(args) == 0 {
 					break
