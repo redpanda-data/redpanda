@@ -915,6 +915,13 @@ public:
         };
         wasmtime_config_host_memory_creator_set(config, &memory_creator);
 
+        wasmtime_stack_creator_t stack_creator = {
+          .env = this,
+          .new_stack = &wasmtime_runtime::allocate_stack_memory,
+          .finalizer = nullptr,
+        };
+        wasmtime_config_host_stack_creator_set(config, &stack_creator);
+
         _engine.reset(wasm_engine_new_with_config(config));
     }
 
@@ -947,6 +954,9 @@ public:
           .heap_memory_size = aligned_instance_limit,
           .num_heaps = num_heaps,
         });
+        co_await _stack_allocator.start(stack_allocator::config{
+          .tracking_enabled = false,
+        });
         co_await _alien_thread.start({.name = "wasm"});
         co_await ss::smp::invoke_on_all([] {
             // wasmtime needs some signals for it's handling, make sure we
@@ -963,6 +973,7 @@ public:
     ss::future<> stop() override {
         co_await _alien_thread.stop();
         co_await _heap_allocator.stop();
+        co_await _stack_allocator.stop();
     }
 
     ss::future<ss::shared_ptr<factory>> make_factory(
@@ -1004,6 +1015,41 @@ public:
     }
 
 private:
+    static wasmtime_error_t* allocate_stack_memory(
+      void* env, size_t size, wasmtime_stack_memory_t* memory_ret) {
+        auto* runtime = static_cast<wasmtime_runtime*>(env);
+        return runtime->allocate_stack_memory(size, memory_ret);
+    }
+
+    wasmtime_error_t*
+    allocate_stack_memory(size_t size, wasmtime_stack_memory_t* memory_ret) {
+        auto stack = _stack_allocator.local().allocate(size);
+        struct vm_stack {
+            stack_memory underlying;
+            ss::noncopyable_function<void(stack_memory)> reclaimer;
+        };
+        memory_ret->env = new vm_stack{
+          .underlying = std::move(stack),
+          .reclaimer =
+            [this](stack_memory mem) {
+                _stack_allocator.local().deallocate(std::move(mem));
+            },
+        };
+        memory_ret->get_stack_memory =
+          [](void* env, size_t* len_ret) -> uint8_t* {
+            auto* mem = static_cast<vm_stack*>(env);
+            *len_ret = mem->underlying.size();
+            return mem->underlying.bounds().top;
+        };
+        memory_ret->finalizer = [](void* env) {
+            auto* mem = static_cast<vm_stack*>(env);
+            mem->reclaimer(std::move(mem->underlying));
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+            delete mem;
+        };
+        return nullptr;
+    }
+
     // We don't have control over this API.
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     static wasmtime_error_t* allocate_heap_memory(
@@ -1080,6 +1126,7 @@ private:
     std::unique_ptr<schema_registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
     ss::sharded<heap_allocator> _heap_allocator;
+    ss::sharded<stack_allocator> _stack_allocator;
 };
 
 } // namespace
