@@ -12,6 +12,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.cluster import cluster
 
+from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 
 from rptest.utils.mode_checks import skip_debug_mode
@@ -84,9 +85,10 @@ class IdempotencyStressTest(PreallocNodesTest):
     def validate_metrics(self, expected_size):
         metrics = self.redpanda.metrics_sample("idempotency_pid_cache_size")
         values = [s.value for s in metrics.samples]
-        assert all(
-            [v <= expected_size for v in values]
-        ), f"Max cache size exceeded, sample values: {values}, expected cache size: {expected_size}"
+        self.logger.debug(
+            f"Metrics sample values: {values}, expected cache size: {expected_size}"
+        )
+        return all([v <= expected_size for v in values])
 
     @cluster(num_nodes=4)
     @matrix(max_producer_ids=[100, 1000, 3000])
@@ -109,5 +111,11 @@ class IdempotencyStressTest(PreallocNodesTest):
         producer = self._create_producer()
         producer.start()
         producer.wait_for_acks(self.msg_cnt, 600, 1)
+        producer.stop()
 
-        self.validate_metrics(max_producer_ids)
+        wait_until(
+            lambda: self.validate_metrics(max_producer_ids),
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg=
+            f"Idempotent producer cache size exceeded {max_producer_ids}")
