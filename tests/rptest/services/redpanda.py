@@ -6,60 +6,59 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import collections
 import concurrent.futures
 import copy
-
-import time
-import os
-import socket
-import signal
-import tempfile
-import shutil
-import requests
 import json
+import os
+import pathlib
 import random
-import threading
-import collections
 import re
+import shlex
+import shutil
+import signal
+import socket
+import tempfile
+import threading
+import time
 import uuid
 import zipfile
-import pathlib
-import shlex
 from enum import Enum, IntEnum
 from typing import Mapping, Optional, Tuple, Any
 
+import requests
 import yaml
-from ducktape.services.service import Service
-from ducktape.tests.test import TestContext
-from requests.exceptions import HTTPError
-from rptest.archival.s3_client import S3Client
-from rptest.archival.abs_client import ABSClient
-from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.utils.local_filesystem_utils import mkdir_p
-from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.cluster_spec import ClusterSpec
-from prometheus_client.parser import text_string_to_metric_families
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.errors import TimeoutError
+from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
+from ducktape.utils.local_filesystem_utils import mkdir_p
+from ducktape.utils.util import wait_until
+from prometheus_client.parser import text_string_to_metric_families
+from requests.exceptions import HTTPError
 
-from rptest.archival.abs_client import build_connection_string
+from rptest.archival.abs_client import ABSClient
+from rptest.archival.s3_client import S3Client
 from rptest.clients.helm import HelmTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kubectl import KubectlTool
-from rptest.clients.rpk import RpkTool
-from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rp_storage_tool import RpStorageTool
+from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.services import tls
 from rptest.services.admin import Admin
+from rptest.services.redpanda_cloud import CloudCluster, load_tier_profiles, tiers_config_filename, \
+    AdvertisedTierConfig, AdvertisedTierConfigs, CloudTierName
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
-from rptest.services.redpanda_cloud import CloudCluster, load_tier_profiles, tiers_config_filename, AdvertisedTierConfig, AdvertisedTierConfigs, CloudTierName
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
+from rptest.utils.timed_allow_list import TimedLogAllowList, TimeRange
 
 Partition = collections.namedtuple('Partition',
                                    ['topic', 'index', 'leader', 'replicas'])
@@ -1180,9 +1179,13 @@ class RedpandaServiceBase(Service):
             allow_list = DEFAULT_LOG_ALLOW_LIST
         else:
             combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
-            # Accept either compiled or string regexes
+            # Accept either compiled or string regexes or TimedLogAllowList
             for a in allow_list:
-                if not isinstance(a, re.Pattern):
+                if isinstance(a, TimedLogAllowList):
+                    if hasattr(self, 'bad_log_allowed_time_ranges'):
+                        a.time_ranges = self.bad_log_allowed_time_ranges.get(
+                            a.expression, [])
+                elif not isinstance(a, re.Pattern):
                     a = re.compile(a)
                 combined_allow_list.append(a)
             allow_list = combined_allow_list
@@ -1222,7 +1225,11 @@ class RedpandaServiceBase(Service):
 
                 allowed = False
                 for a in allow_list:
-                    if a.search(line) is not None:
+                    if (search := a.search(line)) is not None:
+                        if isinstance(search, TimeRange):
+                            self.logger.warn(
+                                f"Ignoring allow-listed log line '{line}', it falls in allowed range {search}"
+                            )
                         self.logger.warn(
                             f"Ignoring allow-listed log line '{line}'")
                         allowed = True
