@@ -19,7 +19,6 @@ on:
     paths:
       - .github/workflows/redpanda-migration-build.yml
       - 'src/go/cluster-to-redpanda-migration/**'
-      - 'src/go/k8s/**'
 
 jobs:
   test:
