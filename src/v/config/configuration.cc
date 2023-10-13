@@ -422,7 +422,7 @@ configuration::configuration()
       "labels. "
       "Aggregations are performed where it makes sense by the shard and/or "
       "partition labels.",
-      {.needs_restart = needs_restart::yes},
+      {.needs_restart = needs_restart::no},
       false)
   , group_min_session_timeout_ms(
       *this,
