@@ -2243,6 +2243,9 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
             .per_core_pool_size_bytes = cluster.wasm_per_core_memory_reservation.value(),
             .per_engine_memory_limit = cluster.wasm_per_function_memory_limit.value(),
           },
+          .stack_memory = {
+            .debug_host_stack_usage = false,
+          },
         };
         _wasm_runtime->start(config).get();
         _transform_service.invoke_on_all(&transform::service::start).get();
