@@ -114,17 +114,6 @@ TEST(FFIHelpers, ConvertSignature) {
         val_type::i32));
 }
 
-TEST(FFIHelpers, CountParameters) {
-    constexpr size_t count = ffi::parameter_count<
-      ffi::memory*,
-      ffi::array<int>,
-      model::ns,
-      int32_t,
-      int64_t,
-      uint64_t*>();
-    ASSERT_EQ(count, 7);
-}
-
 TEST(FFIHelpers, ExtractParameters) {
     constexpr size_t array_offset = 42;
     constexpr size_t array_len = 2;
@@ -135,7 +124,7 @@ TEST(FFIHelpers, ExtractParameters) {
     static uint64_t num = num_value;
     class test_memory : public memory {
         // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-        void* translate_raw(size_t guest_ptr, size_t len) final {
+        void* translate_raw(ptr guest_ptr, uint32_t len) final {
             switch (guest_ptr) {
             case array_offset: {
                 if (len != (array_len * sizeof(int32_t))) {

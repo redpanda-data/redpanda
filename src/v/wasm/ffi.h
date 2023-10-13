@@ -14,6 +14,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "reflection/type_traits.h"
+#include "utils/named_type.h"
 #include "utils/type_traits.h"
 #include "vassert.h"
 
@@ -26,11 +27,16 @@
 namespace wasm::ffi {
 
 /**
+ * A "raw" pointer into guest VM memory.
+ */
+using ptr = named_type<uint32_t, struct ptr_tag>;
+
+/**
  * An container for a sequence of T from the Wasm VM guest.
  *
  * This can be used in exposed functions, and the parameter translation will
- * convert this to two parameters on the guest side: a raw pointer and the size
- * of that pointer.
+ * convert this to two parameters on the guest side: a raw pointer and the
+ * size of that pointer.
  *
  * We'll bounds check the entire array during the parameter translation
  * transparently.
@@ -177,7 +183,7 @@ public:
      *
      * Throws if out of bounds.
      */
-    virtual void* translate_raw(size_t guest_ptr, size_t len) = 0;
+    virtual void* translate_raw(ptr guest_ptr, uint32_t len) = 0;
 
     /**
      * Convert a guest pointer into an array of items in host memory.
@@ -185,7 +191,7 @@ public:
      * Will throw if the memory is out of bounds of the guest memory.
      */
     template<typename T>
-    ffi::array<T> translate_array(size_t guest_ptr, size_t len) {
+    ffi::array<T> translate_array(ptr guest_ptr, uint32_t len) {
         void* ptr = translate_raw(guest_ptr, len * sizeof(T));
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return ffi::array<T>(reinterpret_cast<T*>(ptr), len);
@@ -222,7 +228,9 @@ void transform_type(std::vector<val_type>& types) {
     } else if constexpr (
       std::is_same_v<Type, int64_t> || std::is_same_v<Type, uint64_t>) {
         types.push_back(val_type::i64);
-    } else if constexpr (std::is_pointer_v<Type> || std::is_integral_v<Type>) {
+    } else if constexpr (
+      std::is_pointer_v<Type> || std::is_integral_v<Type>
+      || std::is_same_v<Type, ptr>) {
         types.push_back(val_type::i32);
     } else if constexpr (reflection::is_rp_named_type<Type>) {
         transform_type<typename Type::type>(types);
@@ -242,7 +250,7 @@ std::tuple<Type> extract_parameter(
     if constexpr (std::is_same_v<ffi::memory*, Type>) {
         return std::tuple(mem);
     } else if constexpr (detail::is_array<Type>::value) {
-        auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
+        ptr guest_ptr{static_cast<uint32_t>(raw_params[idx++])};
         auto ptr_len = static_cast<uint32_t>(raw_params[idx++]);
         void* host_ptr = mem->translate_raw(
           guest_ptr, ptr_len * sizeof(typename Type::element_type));
@@ -251,7 +259,7 @@ std::tuple<Type> extract_parameter(
           reinterpret_cast<typename Type::element_type*>(host_ptr),
           ptr_len));
     } else if constexpr (std::is_same_v<ss::sstring, Type>) {
-        auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
+        ptr guest_ptr{static_cast<uint32_t>(raw_params[idx++])};
         auto ptr_len = static_cast<uint32_t>(raw_params[idx++]);
         void* host_ptr = mem->translate_raw(guest_ptr, ptr_len);
         return std::make_tuple(ss::sstring(
@@ -266,7 +274,7 @@ std::tuple<Type> extract_parameter(
         return std::make_tuple(static_cast<Type>(nullptr));
     } else if constexpr (std::is_pointer_v<Type>) {
         // Assume this is an out val
-        auto guest_ptr = static_cast<uint32_t>(raw_params[idx++]);
+        ptr guest_ptr{static_cast<uint32_t>(raw_params[idx++])};
         uint32_t ptr_len = sizeof(typename std::remove_pointer_t<Type>);
         void* host_ptr = mem->translate_raw(guest_ptr, ptr_len);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -282,22 +290,6 @@ std::tuple<Type> extract_parameter(
     }
 }
 
-template<typename Type>
-constexpr size_t num_parameters() {
-    if constexpr (std::is_same_v<ffi::memory*, Type>) {
-        return 0;
-    } else if constexpr (
-      is_array<Type>::value || std::is_same_v<ss::sstring, Type>) {
-        // one for the pointer and one for the length
-        return 2;
-    } else if constexpr (std::is_pointer_v<Type> || std::is_integral_v<Type>) {
-        return 1;
-    } else if constexpr (reflection::is_rp_named_type<Type>) {
-        return num_parameters<typename Type::type>();
-    } else {
-        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
-    }
-}
 } // namespace detail
 
 template<typename... Rest>
@@ -329,15 +321,4 @@ std::tuple<Type, Rest...> extract_parameters(
       std::move(head_type), extract_parameters<Rest...>(mem, params, idx));
 }
 
-template<typename... Rest>
-constexpr size_t parameter_count()
-requires(sizeof...(Rest) == 0)
-{
-    return 0;
-}
-
-template<typename Type, typename... Rest>
-constexpr size_t parameter_count() {
-    return detail::num_parameters<Type>() + parameter_count<Rest...>();
-}
 } // namespace wasm::ffi
