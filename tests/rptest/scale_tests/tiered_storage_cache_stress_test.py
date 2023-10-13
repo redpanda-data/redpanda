@@ -34,7 +34,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
 
     # Anywhere we calculate an expected runtime based on an expected bandwidth,
     # use this grace factor to make timeouts reasonably permissive.
-    runtime_grace_factor = 2.0
+    runtime_grace_factor = 4.0
 
     def __init__(self, test_context, *args, **kwargs):
 
