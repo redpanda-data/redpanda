@@ -65,8 +65,8 @@ public:
     /// the queue or not. If unsuccessful this means the audit subsystem cannot
     /// publish messages. Consumers of this API should react accordingly, i.e.
     /// return an error to the client.
-    template<InheritsFromOCSFBase T, typename... Args>
-    bool enqueue_audit_event(event_type type, Args&&... args) {
+    template<InheritsFromOCSFBase T>
+    bool enqueue_audit_event(event_type type, T&& t) {
         if (!_audit_enabled() || !is_audit_event_enabled(type)) {
             return true;
         }
@@ -75,8 +75,7 @@ public:
             /// queue may be entirely flushed before shutdown
             return false;
         }
-        return do_enqueue_audit_event(
-          std::make_unique<T>(std::forward<Args>(args)...));
+        return do_enqueue_audit_event(std::make_unique<T>(std::forward<T>(t)));
     }
 
     /// Returns the number of items pending to be written to auditing log
