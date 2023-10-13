@@ -339,6 +339,8 @@ func (s *ScopedMockAdminAPI) GetNodeConfig(
 	if err != nil {
 		return admin.NodeConfig{}, err
 	}
+	s.monitor.Lock()
+	defer s.monitor.Unlock()
 	for _, b := range s.ghostBrokers {
 		if b.NodeID == int(s.Ordinal) {
 			return admin.NodeConfig{
