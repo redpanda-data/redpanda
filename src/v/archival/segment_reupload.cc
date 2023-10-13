@@ -322,40 +322,7 @@ const storage::ntp_config* segment_collector::ntp_cfg() const {
 }
 
 bool segment_collector::should_replace_manifest_segment() const {
-    const bool valid_collection = _can_replace_manifest_segment
-                                  && _begin_inclusive < _end_inclusive;
-
-    // If we have selected only one segment for collection, ensure
-    // that its compacted size is smaller than the size associated
-    // with the selected segment in the manifest. This guards against,
-    // name clashing between the existing segment and the re-uploaded segment.
-    if (valid_collection && _segments.size() == 1) {
-        auto segment_to_replace = _manifest.segment_containing(
-          _begin_inclusive);
-
-        // This branch is *not* taken if the begin and/or end offsets of the
-        // collected range are in a manifest gap. In that scenario, a name
-        // clash is not possible.
-        if (
-          segment_to_replace != _manifest.end()
-          && _begin_inclusive == segment_to_replace->base_offset
-          && _end_inclusive == segment_to_replace->committed_offset) {
-            const bool should = _collected_size
-                                < segment_to_replace->size_bytes;
-
-            if (!should) {
-                vlog(
-                  archival_log.debug,
-                  "Skipping re-upload of compacted segment as its size has "
-                  "not decreased as a result of self-compaction: {}",
-                  *(_segments.front()));
-            }
-
-            return should;
-        }
-    }
-
-    return valid_collection;
+    return _can_replace_manifest_segment && _begin_inclusive < _end_inclusive;
 }
 
 cloud_storage::segment_name segment_collector::adjust_segment_name() const {
@@ -560,6 +527,37 @@ segment_collector::make_upload_candidate(
           final_offset,
           _end_inclusive);
         final_offset = _end_inclusive;
+    }
+
+    // Now that we know the final size of the reupload, perform
+    // a final sanity check to ensure that the size of the new segment
+    // is smaller than that of the replaced one. Skip the upload if that's not
+    // the case.
+    if (auto to_replace = _manifest.find(starting_offset);
+        to_replace != _manifest.end()
+        && to_replace->committed_offset == final_offset) {
+        if (to_replace->size_bytes <= content_length) {
+            vlog(
+              archival_log.debug,
+              "Skipping re-upload of compacted segment as its size has "
+              "not decreased as a result of self-compaction: {}",
+              _segments.front());
+
+            co_return upload_candidate_with_locks{
+              upload_candidate{
+                .exposed_name = {},
+                .starting_offset = _begin_inclusive,
+                .file_offset = 0,
+                .content_length = 0,
+                .final_offset = _end_inclusive,
+                .final_file_offset = 0,
+                .base_timestamp = {},
+                .max_timestamp = {},
+                .term = {},
+                .sources = {},
+              },
+              {}};
+        }
     }
 
     co_return upload_candidate_with_locks{
