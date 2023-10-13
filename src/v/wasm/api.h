@@ -88,10 +88,21 @@ public:
 
     struct config {
         struct heap_memory {
+            // per core how many bytes to reserve
             size_t per_core_pool_size_bytes;
+            // per engine the max amount of memory
             size_t per_engine_memory_limit;
         };
         heap_memory heap_memory;
+        struct stack_memory {
+            // Enable debugging of host function's stack usage.
+            // These host functions are called on the VM stack, so we need to
+            // ensure that we aren't susceptible to guests that use most of the
+            // stack and then our host function overflowing the rest of the
+            // stack.
+            bool debug_host_stack_usage;
+        };
+        stack_memory stack_memory;
     };
 
     virtual ss::future<> start(config) = 0;
