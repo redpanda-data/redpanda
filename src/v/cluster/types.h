@@ -4164,6 +4164,56 @@ struct remove_plugin_response
     auto serde_fields() { return std::tie(uuid, ec); }
 };
 
+enum class reconfiguration_policy {
+    /**
+     * Moving partition with full local retention policy will deliver all
+     * partition data available locally on the leader to newly joining learners.
+     * If tiered storage is disabled for a partition the move will alawys be
+     * executed with full local retention.
+     */
+    full_local_retention = 0,
+    /**
+     * With target initial retention parittion move policy controller backend
+     * will calulate the learner start offset based on the configured learner
+     * initial retention configuration (either a global cluster property or
+     * topic override ) and partition max collectible offset. Max collectible
+     * offset is advanced after all the previous offsets were succesfully
+     * uploaded to the cloud.
+     */
+    target_initial_retention = 1,
+    /*
+     * The min local retention policy, before requesting partition
+     * reconfiguration in the Raft layer will request log to be uploaded to the
+     * Object Store up to the active segment boundry. After all data are update
+     * the controller backend will request partition move setting learner
+     * initial offset to the active segment start offset, allowing all the data
+     * from not active segments to be skiped while recoverying learners.
+     */
+    min_local_retention = 2
+};
+
+std::ostream& operator<<(std::ostream&, reconfiguration_policy);
+
+struct update_partition_replicas_cmd_data
+  : serde::envelope<
+      update_partition_replicas_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::ntp ntp;
+    std::vector<model::broker_shard> replicas;
+    reconfiguration_policy policy;
+
+    friend bool operator==(
+      const update_partition_replicas_cmd_data&,
+      const update_partition_replicas_cmd_data&)
+      = default;
+
+    auto serde_fields() { std::tie(ntp, replicas, policy); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const update_partition_replicas_cmd_data&);
+};
+
 } // namespace cluster
 namespace std {
 template<>
