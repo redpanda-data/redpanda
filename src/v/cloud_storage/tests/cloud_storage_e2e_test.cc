@@ -9,6 +9,8 @@
  */
 
 #include "archival/ntp_archiver_service.h"
+#include "cloud_storage/cache_service.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/manual_fixture.h"
@@ -16,17 +18,30 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/rm_stm.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
+#include "model/record.h"
+#include "model/timeout_clock.h"
+#include "raft/types.h"
+#include "random/generators.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/disk_log_appender.h"
+#include "storage/types.h"
+#include "test_utils/randoms.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/util/later.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <exception>
 #include <iterator>
+#include <limits>
 
 using tests::kafka_consume_transport;
 using tests::kafka_produce_transport;
@@ -584,4 +599,250 @@ FIXTURE_TEST(
 
     // health report never reported non-zero reclaimable sizes. bummer!
     BOOST_REQUIRE(false);
+}
+
+namespace cloud_storage {
+class materialized_resources_accessor {
+public:
+    static void evict_all_readers(materialized_resources& mr) {
+        mr.trim_segment_readers(std::numeric_limits<size_t>::max());
+    }
+
+    static void evict_all_segments_and_readers(materialized_resources& mr) {
+        mr.trim_segment_readers(std::numeric_limits<size_t>::max());
+        mr.trim_segments(std::numeric_limits<size_t>::max());
+    }
+};
+
+} // namespace cloud_storage
+
+static ss::future<bool> evict_all(
+  cloud_storage::remote& remote_api,
+  cloud_storage::cache& cache,
+  ss::gate& gate) {
+    auto& mr = remote_api.materialized();
+    while (!gate.is_closed()) {
+        vlog(e2e_test_log.debug, "Trigger reader eviction");
+        if (tests::random_bool()) {
+            cloud_storage::materialized_resources_accessor::evict_all_readers(
+              mr);
+        } else {
+            cloud_storage::materialized_resources_accessor::
+              evict_all_segments_and_readers(mr);
+        }
+        co_await ss::yield();
+    }
+    vlog(e2e_test_log.debug, "Exit evict_all");
+    co_return true;
+}
+
+inline model::record_batch_reader
+random_batch_reader(model::test::record_batch_spec spec) {
+    auto batch = model::test::make_random_batch(spec);
+    ss::circular_buffer<model::record_batch> batches;
+    batches.reserve(1);
+    batch.set_term(model::term_id(0));
+    batches.push_back(std::move(batch));
+    return model::make_memory_record_batch_reader(std::move(batches));
+}
+
+struct random_batch_reader_with_id {
+    model::batch_identity id;
+    model::record_batch_reader reader;
+};
+
+inline random_batch_reader_with_id make_random_reader(
+  model::producer_identity pid,
+  int first_seq,
+  int count,
+  bool is_transactional) {
+    return random_batch_reader_with_id{
+      .id = model::
+        batch_identity{.pid = pid, .first_seq = first_seq, .last_seq = first_seq + count - 1, .record_count = count, .is_transactional = is_transactional},
+      .reader = random_batch_reader(model::test::record_batch_spec{
+        .offset = model::offset(0),
+        .allow_compression = false,
+        .count = count,
+        .producer_id = pid.id,
+        .producer_epoch = pid.epoch,
+        .base_sequence = first_seq,
+        .is_transactional = is_transactional})};
+}
+
+void produce_until_segments(
+  int num_segments,
+  int tx_per_segment,
+  int batches_per_tx,
+  float abort_ratio,
+  cluster::partition* partition,
+  archival::ntp_archiver* archiver) {
+    cluster::rm_stm& stm = *partition->rm_stm();
+    auto p = partition->get_ntp_config().ntp().tp.partition;
+
+    auto pid = model::producer_identity(42, 1);
+
+    for (int s_ix = 0; s_ix < num_segments; s_ix++) {
+        for (int tx = 0; tx < tx_per_segment; tx++) {
+            // start tx
+            auto res = stm.begin_tx(pid, model::tx_seq(0), 1s, p).get();
+            BOOST_REQUIRE(res.has_failure() == false);
+            auto tx_term = res.value();
+            vlog(e2e_test_log.info, "Tx term: {}", tx_term);
+
+            // produce randomized transactional batches
+            auto rrd = make_random_reader(pid, 0, batches_per_tx, true);
+            stm
+              .replicate(
+                rrd.id,
+                std::move(rrd.reader),
+                raft::replicate_options(raft::consistency_level::quorum_ack))
+              .get();
+
+            auto x = random_generators::get_real(0.0, 1.0);
+            if (x > abort_ratio) {
+                // commit tx
+                auto commit_res
+                  = stm.commit_tx(pid, model::tx_seq(0), 1s).get();
+                BOOST_REQUIRE(commit_res == cluster::tx_errc::none);
+            } else {
+                vlog(e2e_test_log.info, "Abort Tx term: {}", tx_term);
+                auto abort_res = stm.abort_tx(pid, model::tx_seq(0), 1s).get();
+                BOOST_REQUIRE_EQUAL(abort_res, cluster::tx_errc::none);
+            }
+        }
+
+        // Roll the segment
+        auto log = dynamic_cast<storage::disk_log_impl*>(
+          partition->log().get());
+        log->flush().get();
+        log->force_roll(ss::default_priority_class()).get();
+
+        BOOST_REQUIRE(archiver->sync_for_tests().get());
+        archiver->upload_next_candidates().get();
+    }
+
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      archiver->upload_manifest("test").get());
+    archiver->flush_manifest_clean_offset().get();
+
+    vlog(
+      e2e_test_log.info,
+      "Test manifest size is {} bytes",
+      partition->archival_meta_stm()->manifest().segments_metadata_bytes());
+}
+
+ss::future<bool> check_consume_from_beginning_no_check(
+  kafka::client::transport client,
+  const model::topic& topic_name,
+  ss::gate& gate) {
+    try {
+        kafka_consume_transport consumer(std::move(client));
+        co_await consumer.start();
+        int iters = 0;
+        while (iters == 0 || !gate.is_closed()) {
+            auto holder = gate.hold();
+            auto kvs = co_await consumer.consume_from_partition(
+              topic_name, model::partition_id(0), model::offset(0));
+            vlog(e2e_test_log.debug, "Fetch returned {} records", kvs.size());
+            iters++;
+        }
+        co_return true;
+    } catch (...) {
+        vlog(
+          e2e_test_log.error,
+          "Consumer exception: {}",
+          std::current_exception());
+    }
+    co_return false;
+}
+
+FIXTURE_TEST(
+  test_consume_with_random_evictions, cloud_storage_manual_e2e_test) {
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records
+      = gen.num_segments(100).batches_per_segment(10).produce().get();
+    BOOST_REQUIRE_GE(total_records, 1000);
+
+    // Compact the local log to GC to the collectible offset.
+    ss::abort_source as;
+    storage::housekeeping_config housekeeping_conf(
+      model::timestamp::min(),
+      1,
+      log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    partition->log()->housekeeping(housekeeping_conf).get();
+
+    // Wait for storage GC to remove local segments
+    RPTEST_REQUIRE_EVENTUALLY(30s, [this] {
+        auto log = dynamic_cast<storage::disk_log_impl*>(
+          partition->log().get());
+        return log->segments().size() == 1;
+    });
+
+    ss::gate g;
+
+    std::vector<ss::future<bool>> checks;
+    checks.reserve(11);
+    for (int i = 0; i < 10; i++) {
+        checks.push_back(check_consume_from_beginning(
+          std::move(make_kafka_client().get()), topic_name, g));
+    }
+    checks.emplace_back(evict_all(
+      app.cloud_storage_api.local(), app.shadow_index_cache.local(), g));
+
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+
+    ss::sleep(30s).get();
+    g.close().get();
+    for (auto& check : checks) {
+        BOOST_CHECK(check.get());
+    }
+}
+
+FIXTURE_TEST(
+  test_consume_with_random_evictions_and_tx, cloud_storage_manual_e2e_test) {
+    partition->rm_stm()->testing_only_disable_auto_abort();
+    produce_until_segments(100, 10, 10, 0.9, partition, archiver);
+
+    // Compact the local log to GC to the collectible offset.
+    ss::abort_source as;
+    storage::housekeeping_config housekeeping_conf(
+      model::timestamp::min(),
+      1,
+      log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    partition->log()->housekeeping(housekeeping_conf).get();
+
+    // Wait for storage GC to remove local segments
+    RPTEST_REQUIRE_EVENTUALLY(30s, [this] {
+        auto log = dynamic_cast<storage::disk_log_impl*>(
+          partition->log().get());
+        vlog(
+          e2e_test_log.info,
+          "Number of log segments: {}",
+          log->segments().size());
+        return log->segments().size() == 1;
+    });
+
+    ss::gate g;
+
+    std::vector<ss::future<bool>> checks;
+    checks.reserve(11);
+    for (int i = 0; i < 10; i++) {
+        checks.push_back(check_consume_from_beginning_no_check(
+          std::move(make_kafka_client().get()), topic_name, g));
+    }
+    checks.emplace_back(evict_all(
+      app.cloud_storage_api.local(), app.shadow_index_cache.local(), g));
+
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+
+    ss::sleep(30s).get();
+    g.close().get();
+    for (auto& check : checks) {
+        BOOST_CHECK(check.get());
+    }
 }
