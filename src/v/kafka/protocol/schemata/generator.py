@@ -996,17 +996,13 @@ class Field:
 
     @property
     def type_name(self):
-        name, default_value = self._redpanda_type()
+        gen = self.type_name_parts()
+        name = next(gen)
         if isinstance(self._type, ArrayType):
-            assert default_value is None  # not supported
-            if name in enable_fragmentation_resistance:
-                name = f'large_fragment_vector<{name}>'
-            else:
-                name = f'std::vector<{name}>'
+            name = f'{next(gen)}<{name}>'
         if self.nullable():
-            assert default_value is None  # not supported
-            return f"std::optional<{name}>", None
-        return name, default_value
+            return f'{next(gen)}<{name}>', None
+        return name, next(gen)
 
     def type_name_parts(self):
         """
@@ -1016,10 +1012,14 @@ class Field:
         yield name
         if isinstance(self._type, ArrayType):
             assert default_value is None  # not supported
-            yield "std::vector"
+            if name in enable_fragmentation_resistance:
+                yield "large_fragment_vector"
+            else:
+                yield "std::vector"
         if self.nullable():
             assert default_value is None  # not supported
             yield "std::optional"
+        yield default_value
 
     @property
     def value_type(self):
@@ -1255,19 +1255,10 @@ if ({{ cond }}) {
 {%- set fname = field.name %}
 {%- endif %}
 {%- if field.is_array %}
-{%- if field.nullable() %}
-{%- if flex %}
-{{ fname }} = reader.read_nullable_flex_array([version](request_reader& reader) {
-{%- else %}
-{{ fname }} = reader.read_nullable_array([version](request_reader& reader) {
-{%- endif %}
-{%- else %}
-{%- if flex %}
-{{ fname }} = reader.read_flex_array([version](request_reader& reader) {
-{%- else %}
-{{ fname }} = reader.read_array([version](request_reader& reader) {
-{%- endif %}
-{%- endif %}
+{%- set nullable = "nullable_" if field.nullable() else "" %}
+{%- set flex = "flex_" if flex else "" %}
+{%- set container = (field.type_name_parts() | list)[1] %}
+{{ fname }} = reader.read_{{nullable}}{{flex}}array<{{ container }}>([version](request_reader& reader) {
     (void)version;
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
