@@ -16,6 +16,8 @@
 #include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
+#include <seastar/core/reactor.hh>
+
 #include <absl/strings/str_cat.h>
 #include <avro/Compiler.hh>
 #include <avro/Encoder.hh>
@@ -105,4 +107,17 @@ TEST_F(WasmTestFixture, MemoryIsLimited) {
     load_wasm("dynamic.wasm");
     EXPECT_NO_THROW(execute_command("allocate", 5_KiB));
     EXPECT_THROW(execute_command("allocate", MAX_MEMORY), wasm::wasm_exception);
+}
+
+TEST_F(WasmTestFixture, CpuIsLimited) {
+    load_wasm("dynamic.wasm");
+    // In reality, we don't want this to be over a few milliseconds, but in an
+    // effort to prevent test flakiness on hosts with lots of concurrent tests
+    // on shared vCPUs, we make this much higher.
+    ss::engine().update_blocked_reactor_notify_ms(50ms);
+    bool stalled = false;
+    ss::engine().set_stall_detector_report_function(
+      [&stalled] { stalled = true; });
+    EXPECT_THROW(execute_command("loop", 0), wasm::wasm_exception);
+    EXPECT_FALSE(stalled);
 }
