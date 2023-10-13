@@ -26,6 +26,5 @@ class rm_group_frontend;
 class rm_group_proxy_impl;
 class usage_manager;
 class snc_quota_context;
-class audit_log_manager;
 
 } // namespace kafka

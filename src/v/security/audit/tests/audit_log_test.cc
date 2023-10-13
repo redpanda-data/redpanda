@@ -8,9 +8,9 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/types.h"
-#include "kafka/server/audit_log_manager.h"
 #include "kafka/types.h"
 #include "redpanda/tests/fixture.h"
+#include "security/audit/audit_log_manager.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
@@ -18,8 +18,7 @@
 
 namespace sa = security::audit;
 
-bool enqueue_random_audit_event(
-  kafka::audit_log_manager& m, kafka::audit_event_type type) {
+bool enqueue_random_audit_event(sa::audit_log_manager& m, sa::event_type type) {
     auto make_random_product = []() {
         return sa::product{
           .name = random_generators::gen_alphanum_string(10),
@@ -40,9 +39,9 @@ bool enqueue_random_audit_event(
       now);
 }
 
-ss::future<size_t> pending_audit_events(kafka::audit_log_manager& m) {
+ss::future<size_t> pending_audit_events(sa::audit_log_manager& m) {
     return m.container().map_reduce0(
-      [](const kafka::audit_log_manager& m) { return m.pending_events(); },
+      [](const sa::audit_log_manager& m) { return m.pending_events(); },
       size_t(0),
       std::plus<>());
 }
@@ -71,10 +70,10 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
 
     /// with auditing disabled, calls to enqueue should be no-ops
     audit_mgr
-      .invoke_on_all([](kafka::audit_log_manager& m) {
+      .invoke_on_all([](sa::audit_log_manager& m) {
           for (auto i = 0; i < 20; ++i) {
-              BOOST_ASSERT(enqueue_random_audit_event(
-                m, kafka::audit_event_type::management));
+              BOOST_ASSERT(
+                enqueue_random_audit_event(m, sa::event_type::management));
           }
       })
       .get0();
@@ -98,13 +97,13 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
     /// calls to enqueue return false, signifying action did not occur.
     bool success = audit_mgr
                      .map_reduce0(
-                       [](kafka::audit_log_manager& m) {
+                       [](sa::audit_log_manager& m) {
                            bool success = true;
                            for (auto i = 0; i < 20; ++i) {
                                /// Should always return true, auditing is
                                /// disabled
                                bool enqueued = enqueue_random_audit_event(
-                                 m, kafka::audit_event_type::management);
+                                 m, sa::event_type::management);
                                if (i >= 5) {
                                    /// Assert that when the max is reached data
                                    /// cannot be entered into the system
@@ -125,11 +124,11 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
 
     /// Verify auditing doesn't enqueue the non configured types
     BOOST_CHECK(enqueue_random_audit_event(
-      audit_mgr.local(), kafka::audit_event_type::authenticate));
-    BOOST_CHECK(enqueue_random_audit_event(
-      audit_mgr.local(), kafka::audit_event_type::describe));
+      audit_mgr.local(), sa::event_type::authenticate));
+    BOOST_CHECK(
+      enqueue_random_audit_event(audit_mgr.local(), sa::event_type::describe));
     BOOST_CHECK(!enqueue_random_audit_event(
-      audit_mgr.local(), kafka::audit_event_type::management));
+      audit_mgr.local(), sa::event_type::management));
 
     /// Toggle the audit switch a few times
     for (auto i = 0; i < 5; ++i) {
@@ -140,7 +139,7 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
         audit_mgr
           .invoke_on(
             0,
-            [val](kafka::audit_log_manager& m) {
+            [val](sa::audit_log_manager& m) {
                 return tests::cooperative_spin_wait_with_timeout(
                   10s, [&m, val] { return m.is_client_enabled() == val; });
             })
@@ -154,9 +153,9 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
 
     const bool enqueued = audit_mgr
                             .map_reduce0(
-                              [](kafka::audit_log_manager& m) {
+                              [](sa::audit_log_manager& m) {
                                   return enqueue_random_audit_event(
-                                    m, kafka::audit_event_type::management);
+                                    m, sa::event_type::management);
                               },
                               true,
                               std::logical_and<>())

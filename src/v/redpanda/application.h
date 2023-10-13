@@ -133,9 +133,10 @@ public:
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<kafka::snc_quota_manager> snc_quota_mgr;
-    ss::sharded<kafka::audit_log_manager> audit_mgr;
     ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
     ss::sharded<kafka::usage_manager> usage_manager;
+
+    ss::sharded<security::audit::audit_log_manager> audit_mgr;
 
     ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<raft::coordinated_recovery_throttle> recovery_throttle;

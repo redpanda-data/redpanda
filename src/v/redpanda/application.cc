@@ -62,7 +62,6 @@
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
-#include "kafka/server/audit_log_manager.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
@@ -86,6 +85,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/rpc_utils.h"
+#include "security/audit/audit_log_manager.h"
 #include "ssx/abort_source.h"
 #include "ssx/thread_worker.h"
 #include "storage/backlog_controller.h"
@@ -1792,12 +1792,12 @@ void application::wire_up_redpanda_services(
         std::ref(snc_quota_mgr),
         std::ref(group_router),
         std::ref(usage_manager),
-        std::ref(audit_mgr),
         std::ref(shard_table),
         std::ref(partition_manager),
         std::ref(id_allocator_frontend),
         std::ref(controller->get_credential_store()),
         std::ref(controller->get_authorizer()),
+        std::ref(audit_mgr),
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
@@ -2231,7 +2231,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           _schema_reg_config->schema_registry_api());
     }
 
-    audit_mgr.invoke_on_all(&kafka::audit_log_manager::start).get();
+    audit_mgr.invoke_on_all(&security::audit::audit_log_manager::start).get();
 
     start_kafka(node_id, app_signal);
     controller->set_ready().get();
