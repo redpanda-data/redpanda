@@ -9,8 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
+#include "gmock/gmock.h"
 #include "wasm/allocator.h"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <limits>
@@ -92,6 +94,74 @@ TEST(HeapAllocatorTest, CanReturnMemoryToThePool) {
     EXPECT_TRUE(mem.has_value());
     mem = allocator.allocate(req);
     EXPECT_FALSE(mem.has_value());
+}
+
+TEST(StackAllocatorParamsTest, TrackingCanBeEnabled) {
+    stack_allocator allocator(stack_allocator::config{
+      .tracking_enabled = true,
+    });
+    EXPECT_TRUE(allocator.tracking_enabled());
+    allocator = stack_allocator(stack_allocator::config{
+      .tracking_enabled = false,
+    });
+    EXPECT_FALSE(allocator.tracking_enabled());
+}
+
+TEST(StackAllocatorTest, CanAllocateOne) {
+    stack_allocator allocator(stack_allocator::config{
+      .tracking_enabled = true,
+    });
+    size_t page_size = ::getpagesize();
+    auto stack = allocator.allocate(page_size * 4);
+    EXPECT_EQ(stack.size(), page_size * 4);
+    EXPECT_EQ(stack.bounds().top - stack.bounds().bottom, page_size * 4);
+}
+
+using ::testing::Optional;
+
+TEST(StackAllocatorTest, CanLookupMemory) {
+    stack_allocator allocator(stack_allocator::config{
+      .tracking_enabled = true,
+    });
+    size_t page_size = ::getpagesize();
+    stack_memory stack = allocator.allocate(page_size * 4);
+    stack_bounds bounds = stack.bounds();
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    EXPECT_EQ(
+      allocator.stack_bounds_for_address(bounds.bottom - 1), std::nullopt);
+    EXPECT_THAT(
+      allocator.stack_bounds_for_address(bounds.bottom), Optional(bounds));
+    EXPECT_THAT(
+      allocator.stack_bounds_for_address(bounds.bottom + 1), Optional(bounds));
+    EXPECT_THAT(
+      allocator.stack_bounds_for_address(bounds.top - 1), Optional(bounds));
+    EXPECT_THAT(
+      allocator.stack_bounds_for_address(bounds.top), Optional(bounds));
+    EXPECT_EQ(allocator.stack_bounds_for_address(bounds.top + 1), std::nullopt);
+
+    allocator.deallocate(std::move(stack));
+
+    EXPECT_EQ(allocator.stack_bounds_for_address(bounds.top), std::nullopt);
+    EXPECT_EQ(allocator.stack_bounds_for_address(bounds.top - 1), std::nullopt);
+    EXPECT_EQ(allocator.stack_bounds_for_address(bounds.bottom), std::nullopt);
+    EXPECT_EQ(
+      allocator.stack_bounds_for_address(bounds.bottom + 1), std::nullopt);
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+}
+
+TEST(StackAllocatorTest, CanReturnMemoryToThePool) {
+    stack_allocator allocator(stack_allocator::config{
+      .tracking_enabled = true,
+    });
+    size_t page_size = ::getpagesize();
+    auto stack = allocator.allocate(page_size * 4);
+    auto bounds = stack.bounds();
+    allocator.deallocate(std::move(stack));
+    // Getting that stack back out of the allocator will reuse the previous
+    // stack.
+    stack = allocator.allocate(page_size * 4);
+    EXPECT_EQ(stack.bounds(), bounds);
 }
 
 } // namespace wasm

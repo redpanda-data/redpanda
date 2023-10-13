@@ -16,6 +16,8 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/util/optimized_optional.hh>
 
+#include <absl/container/btree_set.h>
+
 #include <type_traits>
 
 namespace wasm {
@@ -82,6 +84,122 @@ private:
     // We expect this list to be small, so override the chunk to be smaller too.
     static constexpr size_t items_per_chunk = 16;
     ss::chunked_fifo<heap_memory, items_per_chunk> _memory_pool;
+};
+
+/**
+ * The useable (i.e. excluding guard pages) bounds of an allocated stack.
+ */
+struct stack_bounds {
+    uint8_t* top;
+    uint8_t* bottom;
+
+    auto operator<=>(const stack_bounds&) const = default;
+    friend std::ostream& operator<<(std::ostream&, const stack_bounds&);
+};
+
+/**
+ * An owned bit of stack memory, which is aligned to page size and it's size is
+ * a multiple of the page size.
+ *
+ * Note that there is a guard page of protected memory "below" the stack to
+ * protect against stack overflow.
+ */
+class stack_memory {
+    // NOLINTNEXTLINE(*-avoid-c-arrays)
+    using allocated_memory = std::unique_ptr<uint8_t[], ss::free_deleter>;
+
+public:
+    stack_memory() = default;
+    stack_memory(stack_bounds bounds, allocated_memory data);
+    stack_memory(const stack_memory&) = delete;
+    stack_memory& operator=(const stack_memory&) = delete;
+    stack_memory(stack_memory&&) = default;
+    stack_memory& operator=(stack_memory&&) = default;
+    ~stack_memory();
+
+    stack_bounds bounds() const;
+    size_t size() const;
+
+private:
+    friend class stack_allocator;
+    stack_bounds _bounds{};
+    allocated_memory _data;
+};
+
+// The allocator for stack memory within a Wasm VM.
+//
+// We execute WebAssembly on a seperate stack because WebAssembly doesn't
+// have a notion of "async" and we need to be able to both pause the VM and
+// support host functions that need to execute asynchronously. We can pause the
+// VM to let this async operations happen by switching from the WebAssembly
+// stack back to the host stack to do other work.
+//
+// Stack memory must be page-aligned and a multiple of page size.
+// Some architectures require this alignment for stacks. Additionally, we
+// always allocate a guard page at the bottom, which is unprotected when memory
+// is "deallocated".
+//
+// The allocator also supports the ability to query if the current stack being
+// used has been allocated from this allocator and returns the bounds. This is
+// used in tests to support ensuring that we won't ever overflow the stack by
+// adjusting our host functions to run as if Wasm has taken up the maximum
+// amount stack space the VM allows.
+//
+// There are penalties for allocating the guard page on these stacks - the
+// kernel will have to break up transparent huge pages (THP) when just a single
+// 4KiB page is allocated. To mitigate this we cache stacks that are allocated.
+// Currently these are never freed. However there can still be THPs that are
+// broken up due to these stacks being scattered around in memory. A future
+// optimization may help with this by allocating larger chunks and protecting
+// neighboring (small) pages so that it's less likely THPs need to be broken up.
+//
+// Instance on every core.
+class stack_allocator {
+public:
+    struct config {
+        // If true, enable tracking, otherwise `current_stack_bounds` always
+        // returns `std::nullopt`.
+        bool tracking_enabled;
+    };
+
+    explicit stack_allocator(config);
+
+    /**
+     * Allocate stack memory. This size will be allocated plus a single guard
+     * page at the "bottom" of the stack.
+     */
+    stack_memory allocate(size_t size);
+
+    /**
+     * If tracking was enabled for this allocator.
+     */
+    bool tracking_enabled() const;
+
+    /**
+     * Return the stack bounds if the stack that contains the address has been
+     * created by this allocator.
+     *
+     * Example usage:
+     * ```
+     * uint8_t* dummy = 0;
+     * auto my_stack = stack_allocator.stack_bounds_for_address(&dummy);
+     * // do something with my_stack
+     * ```
+     */
+    std::optional<stack_bounds> stack_bounds_for_address(uint8_t*) const;
+
+    /**
+     * Deallocate stack memory.
+     */
+    void deallocate(stack_memory);
+
+private:
+    bool _tracking_enabled;
+    size_t _page_size;
+    absl::btree_set<stack_bounds> _live_stacks;
+    // We expect this list to be small, so override the chunk to be smaller too.
+    static constexpr size_t items_per_chunk = 16;
+    ss::chunked_fifo<stack_memory, items_per_chunk> _memory_pool;
 };
 
 } // namespace wasm
