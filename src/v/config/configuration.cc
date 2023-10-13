@@ -1359,7 +1359,11 @@ configuration::configuration()
       "[management, produce, consume, describe, heartbeat, authenticate]. "
       "Please refer to the documentation to know exactly which request(s) map "
       "to a particular audit event type.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {
+        .needs_restart = needs_restart::no,
+        .example = R"(["management", "describe"])",
+        .visibility = visibility::user,
+      },
       {"management"},
       validate_audit_event_types)
   , cloud_storage_enabled(
