@@ -306,6 +306,8 @@ spec:
                         required:
                         - enabled
                         type: object
+                      prefixTemplate:
+                        type: string
                       service:
                         description: ExternalService allows you to enable or disable
                           creation of external service type
@@ -436,6 +438,8 @@ spec:
                             type: string
                           port:
                             type: integer
+                          prefixTemplate:
+                            type: string
                           tls:
                             description: ListenerTLS is a top-level field of the values
                               file
@@ -479,6 +483,8 @@ spec:
                             type: object
                           port:
                             type: integer
+                          prefixTemplate:
+                            type: string
                           tls:
                             description: ListenerTLS is a top-level field of the values
                               file
