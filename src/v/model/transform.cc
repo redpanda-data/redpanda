@@ -39,4 +39,16 @@ operator<<(std::ostream& os, const transform_offsets_value& value) {
     return os;
 }
 
+std::ostream&
+operator<<(std::ostream& os, const transform_report::processor& p) {
+    fmt::print(
+      os,
+      "{{id: {}, status: {}, node: {}, core: {}}}",
+      p.id,
+      uint8_t(p.status),
+      p.node,
+      p.core);
+    return os;
+}
+
 } // namespace model
