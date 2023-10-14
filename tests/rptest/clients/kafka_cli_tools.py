@@ -86,6 +86,8 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             args += ["--config", f"retention.ms={spec.retention_ms}"]
         if spec.max_message_bytes:
             args += ["--config", f"max.message.bytes={spec.max_message_bytes}"]
+        if spec.compression_type:
+            args += ["--config", f"compression.type={spec.compression_type}"]
         return self._run("kafka-topics.sh", args)
 
     def create_topic_partitions(self, topic, partitions):
