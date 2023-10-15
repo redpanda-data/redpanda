@@ -67,6 +67,7 @@ endforeach()
 
 # libraries
 add_subdirectory(test_utils)
+add_subdirectory(io)
 add_subdirectory(ssx)
 add_subdirectory(finjector)
 add_subdirectory(hashing)
