@@ -15,7 +15,28 @@
 
 #include <boost/property_tree/xml_parser.hpp>
 
+namespace {
+
+bool is_abort_or_gate_close_exception(const std::exception_ptr& ex) {
+    try {
+        std::rethrow_exception(ex);
+    } catch (const ss::abort_requested_exception&) {
+        return true;
+    } catch (const ss::gate_closed_exception&) {
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+} // namespace
+
 namespace cloud_storage_clients::util {
+
+bool has_abort_or_gate_close_exception(const ss::nested_exception& ex) {
+    return is_abort_or_gate_close_exception(ex.inner)
+           || is_abort_or_gate_close_exception(ex.outer);
+}
 
 error_outcome handle_client_transport_error(
   std::exception_ptr current_exception, ss::logger& logger) {
@@ -67,6 +88,14 @@ error_outcome handle_client_transport_error(
     } catch (const ss::abort_requested_exception&) {
         vlog(logger.debug, "Abort requested");
         throw;
+    } catch (const ss::nested_exception& ex) {
+        if (has_abort_or_gate_close_exception(ex)) {
+            vlog(logger.debug, "Nested abort or gate closed: {}", ex);
+            throw;
+        }
+
+        vlog(logger.error, "Unexpected error {}", std::current_exception());
+        outcome = error_outcome::fail;
     } catch (...) {
         vlog(logger.error, "Unexpected error {}", std::current_exception());
         outcome = error_outcome::fail;
