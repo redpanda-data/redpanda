@@ -855,6 +855,10 @@ model::timestamp partition_manifest::last_partition_scrub() const {
     return _last_partition_scrub;
 }
 
+std::optional<model::offset> partition_manifest::last_scrubbed_offset() const {
+    return _last_scrubbed_offset;
+}
+
 const anomalies& partition_manifest::detected_anomalies() const {
     return _detected_anomalies;
 }
@@ -1122,6 +1126,7 @@ partition_manifest partition_manifest::clone() const {
       _archive_size_bytes,
       spillover,
       _last_partition_scrub,
+      _last_scrubbed_offset,
       _detected_anomalies);
     return tmp;
 }
@@ -1496,6 +1501,8 @@ struct partition_manifest_handler
                 _archive_size_bytes = u;
             } else if (_manifest_key == "last_partition_scrub") {
                 _last_partition_scrub = model::timestamp(u);
+            } else if (_manifest_key == "last_scrubbed_offset") {
+                _last_scrubbed_offset = model::offset(u);
             } else {
                 return false;
             }
@@ -1826,6 +1833,7 @@ struct partition_manifest_handler
     std::optional<kafka::offset> _start_kafka_offset;
     std::optional<size_t> _archive_size_bytes;
     std::optional<model::timestamp> _last_partition_scrub;
+    std::optional<model::offset> _last_scrubbed_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -2049,6 +2057,8 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
 
     _last_partition_scrub = handler._last_partition_scrub.value_or(
       model::timestamp::missing());
+
+    _last_scrubbed_offset = handler._last_scrubbed_offset;
 }
 
 // This object is supposed to track state of the asynchronous
@@ -2188,6 +2198,10 @@ void partition_manifest::serialize_begin(
     if (_last_partition_scrub != model::timestamp::missing()) {
         w.Key("last_partition_scrub");
         w.Int64(static_cast<int64_t>(_last_partition_scrub()));
+    }
+    if (_last_scrubbed_offset != std::nullopt) {
+        w.Key("last_scrubbed_offset");
+        w.Int64(static_cast<int64_t>(*_last_scrubbed_offset));
     }
     cursor->prologue_done = true;
 }
@@ -2564,6 +2578,7 @@ struct partition_manifest_serde
     size_t archive_size_bytes;
     iobuf _spillover_manifests_serialized;
     model::timestamp _last_partition_scrub;
+    std::optional<model::offset> _last_scrubbed_offset;
 };
 
 static_assert(

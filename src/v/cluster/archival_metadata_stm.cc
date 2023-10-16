@@ -197,6 +197,8 @@ struct archival_metadata_stm::snapshot
     fragmented_vector<segment> spillover_manifests;
     // Timestamp of last completed scrub
     model::timestamp last_partition_scrub;
+    // Offest at which the previous scrubbing stopped
+    std::optional<model::offset> last_scrubbed_offset;
     // Anomalies detected by the scrubber
     cloud_storage::anomalies detected_anomalies;
 };
@@ -952,6 +954,7 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       snap.archive_size_bytes,
       snap.spillover_manifests,
       snap.last_partition_scrub,
+      snap.last_scrubbed_offset,
       snap.detected_anomalies);
 
     vlog(
@@ -991,6 +994,7 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
       .start_kafka_offset = _manifest->get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover),
       .last_partition_scrub = _manifest->last_partition_scrub(),
+      .last_scrubbed_offset = _manifest->last_scrubbed_offset(),
       .detected_anomalies = _manifest->detected_anomalies()});
 
     vlog(

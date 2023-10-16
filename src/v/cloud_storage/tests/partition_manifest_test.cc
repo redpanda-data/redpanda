@@ -2623,7 +2623,8 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_unsafe_segment_add) {
 
 SEASTAR_THREAD_TEST_CASE(test_last_partition_scrub_json_serde) {
     /*
-     * Test that JSON ser/de works for last_partition_scrub
+     * Test that JSON ser/de works for last_partition_scrub and
+     * last_scrubbed_offset
      */
     constexpr std::string_view manifest_v3 = R"json({
     "version": 3,
@@ -2633,7 +2634,8 @@ SEASTAR_THREAD_TEST_CASE(test_last_partition_scrub_json_serde) {
     "revision": 0,
     "insync_offset": 0,
     "last_offset": 0,
-    "last_partition_scrub": 100
+    "last_partition_scrub": 100,
+    "last_scrubbed_offset": 10
 })json";
 
     partition_manifest manifest;
@@ -2641,6 +2643,8 @@ SEASTAR_THREAD_TEST_CASE(test_last_partition_scrub_json_serde) {
       .get();
 
     BOOST_REQUIRE_EQUAL(manifest.last_partition_scrub(), model::timestamp(100));
+    BOOST_REQUIRE_EQUAL(
+      manifest.last_scrubbed_offset().value(), model::offset(10));
 
     std::stringstream sstr;
     manifest.serialize_json(sstr);
