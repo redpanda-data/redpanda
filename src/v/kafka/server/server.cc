@@ -1284,8 +1284,12 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                   security::acl_operation::write,
                   transactional_id(*request.data.transactional_id))) {
                 init_producer_id_response reply;
-                reply.data.error_code
-                  = error_code::transactional_id_authorization_failed;
+                if (!ctx.audit()) {
+                    reply.data.error_code = error_code::broker_not_available;
+                } else {
+                    reply.data.error_code
+                      = error_code::transactional_id_authorization_failed;
+                }
                 return ctx.respond(reply);
             }
 
@@ -1367,15 +1371,24 @@ ss::future<response_ptr> init_producer_id_handler::handle(
             }
         }
 
+        bool cluster_authorized = false;
+
         if (!permitted) {
-            if (!ctx.authorized(
-                  security::acl_operation::idempotent_write,
-                  security::default_cluster_name)) {
-                init_producer_id_response reply;
-                reply.data.error_code
-                  = error_code::cluster_authorization_failed;
-                return ctx.respond(reply);
-            }
+            cluster_authorized = ctx.authorized(
+              security::acl_operation::idempotent_write,
+              security::default_cluster_name);
+        }
+
+        if (!ctx.audit()) {
+            init_producer_id_response reply;
+            reply.data.error_code = error_code::broker_not_available;
+            return ctx.respond(std::move(reply));
+        }
+
+        if (!permitted && !cluster_authorized) {
+            init_producer_id_response reply;
+            reply.data.error_code = error_code::cluster_authorization_failed;
+            return ctx.respond(std::move(reply));
         }
 
         return ctx.id_allocator_frontend()
