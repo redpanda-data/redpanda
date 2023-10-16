@@ -375,7 +375,15 @@ ss::future<response_ptr> heartbeat_handler::handle(
           heartbeat_response(error_code::policy_violation));
     }
 
-    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
+    auto authz = ctx.authorized(
+      security::acl_operation::read, request.data.group_id);
+
+    if (!ctx.audit()) {
+        co_return co_await ctx.respond(
+          heartbeat_response(error_code::broker_not_available));
+    }
+
+    if (!authz) {
         co_return co_await ctx.respond(
           heartbeat_response(error_code::group_authorization_failed));
     }
