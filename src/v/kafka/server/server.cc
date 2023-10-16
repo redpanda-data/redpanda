@@ -486,7 +486,15 @@ ss::future<response_ptr> leave_group_handler::handle(
           leave_group_response(error_code::policy_violation));
     }
 
-    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
+    auto authz = ctx.authorized(
+      security::acl_operation::read, request.data.group_id);
+
+    if (!ctx.audit()) {
+        co_return co_await ctx.respond(
+          leave_group_response(error_code::broker_not_available));
+    }
+
+    if (!authz) {
         co_return co_await ctx.respond(
           leave_group_response(error_code::group_authorization_failed));
     }
