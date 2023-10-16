@@ -183,7 +183,7 @@ FIXTURE_TEST(test_download_manifest_json, remote_fixture) {
       "manifest load from json");
     BOOST_CHECK(subscription.available());
     BOOST_CHECK(
-      subscription.get() == api_activity_notification::manifest_download);
+      subscription.get().type == api_activity_type::manifest_download);
 }
 
 FIXTURE_TEST(test_download_manifest_serde, remote_fixture) {
@@ -205,7 +205,7 @@ FIXTURE_TEST(test_download_manifest_serde, remote_fixture) {
 
     BOOST_CHECK(subscription.available());
     BOOST_CHECK(
-      subscription.get() == api_activity_notification::manifest_download);
+      subscription.get().type == api_activity_type::manifest_download);
 }
 
 FIXTURE_TEST(test_download_manifest_timeout, remote_fixture) { // NOLINT
@@ -222,7 +222,7 @@ FIXTURE_TEST(test_download_manifest_timeout, remote_fixture) { // NOLINT
     BOOST_REQUIRE(res == download_result::timedout);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::manifest_download);
+      subscription.get().type == api_activity_type::manifest_download);
 }
 
 FIXTURE_TEST(test_upload_segment, remote_fixture) { // NOLINT
@@ -254,8 +254,7 @@ FIXTURE_TEST(test_upload_segment, remote_fixture) { // NOLINT
     BOOST_REQUIRE_EQUAL(req.content_length, clen);
     BOOST_REQUIRE_EQUAL(req.content, ss::sstring(manifest_payload));
     BOOST_REQUIRE(subscription.available());
-    BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::segment_upload);
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::segment_upload);
 }
 
 FIXTURE_TEST(test_upload_segment_lost_leadership, remote_fixture) { // NOLINT
@@ -288,8 +287,7 @@ FIXTURE_TEST(test_upload_segment_lost_leadership, remote_fixture) { // NOLINT
     BOOST_REQUIRE_EQUAL(res, upload_result::cancelled);
     BOOST_REQUIRE(get_requests().empty());
     BOOST_REQUIRE(subscription.available());
-    BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::segment_upload);
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::segment_upload);
 }
 
 FIXTURE_TEST(test_upload_segment_timeout, remote_fixture) { // NOLINT
@@ -317,8 +315,7 @@ FIXTURE_TEST(test_upload_segment_timeout, remote_fixture) { // NOLINT
                  .get();
     BOOST_REQUIRE(res == upload_result::timedout);
     BOOST_REQUIRE(subscription.available());
-    BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::segment_upload);
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::segment_upload);
 }
 
 FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
@@ -361,8 +358,7 @@ FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
     auto actual = p.read_string(p.bytes_left());
     BOOST_REQUIRE(actual == manifest_payload);
     BOOST_REQUIRE(subscription.available());
-    BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::segment_upload);
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::segment_upload);
 }
 
 FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
@@ -382,7 +378,7 @@ FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
     BOOST_REQUIRE(dnl_res == download_result::timedout);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::segment_download);
+      subscription.get().type == api_activity_type::segment_download);
 }
 
 FIXTURE_TEST(test_download_segment_range, remote_fixture) {
@@ -447,8 +443,7 @@ FIXTURE_TEST(test_download_segment_range, remote_fixture) {
       manifest_payload.begin(),
       manifest_payload.begin() + 2);
     BOOST_REQUIRE(subscription.available());
-    BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::segment_upload);
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::segment_upload);
 
     const auto& req = get_requests()[1];
     BOOST_REQUIRE_EQUAL(req.method, "GET");
@@ -536,8 +531,7 @@ FIXTURE_TEST(test_segment_delete, remote_fixture) { // NOLINT
       = remote.local().segment_exists(bucket, path, fib).get();
     BOOST_REQUIRE(expected_notfound == download_result::notfound);
     BOOST_REQUIRE(subscription.available());
-    BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::segment_delete);
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::segment_delete);
 }
 
 FIXTURE_TEST(test_concat_segment_upload, remote_fixture) {
@@ -947,7 +941,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::manifest_download);
+      subscription.get().type == api_activity_type::manifest_download);
 
     // Reuse filter for the next event
     subscription = remote.local().subscribe(flt);
@@ -961,7 +955,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::manifest_download);
+      subscription.get().type == api_activity_type::manifest_download);
 }
 
 FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
@@ -970,8 +964,8 @@ FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
     retry_chain_node root_rtc(never_abort, 100ms, 20ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
 
-    remote::event_filter flt1({api_activity_notification::manifest_download});
-    remote::event_filter flt2({api_activity_notification::manifest_upload});
+    remote::event_filter flt1({api_activity_type::manifest_download});
+    remote::event_filter flt2({api_activity_type::manifest_upload});
     auto subscription1 = remote.local().subscribe(flt1);
     auto subscription2 = remote.local().subscribe(flt2);
 
@@ -987,7 +981,7 @@ FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
     BOOST_REQUIRE(!subscription1.available());
     BOOST_REQUIRE(subscription2.available());
     BOOST_REQUIRE(
-      subscription2.get() == api_activity_notification::manifest_download);
+      subscription2.get().type == api_activity_type::manifest_download);
 
     auto upl_res = remote.local()
                      .upload_manifest(
@@ -998,7 +992,7 @@ FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
     BOOST_REQUIRE(upl_res == upload_result::success);
     BOOST_REQUIRE(subscription1.available());
     BOOST_REQUIRE(
-      subscription1.get() == api_activity_notification::manifest_upload);
+      subscription1.get().type == api_activity_type::manifest_upload);
 }
 
 FIXTURE_TEST(test_filter_lifetime_1, remote_fixture) { // NOLINT
@@ -1024,7 +1018,7 @@ FIXTURE_TEST(test_filter_lifetime_1, remote_fixture) { // NOLINT
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(
-      subscription.get() == api_activity_notification::manifest_download);
+      subscription.get().type == api_activity_type::manifest_download);
 }
 
 FIXTURE_TEST(test_filter_lifetime_2, remote_fixture) { // NOLINT
@@ -1189,4 +1183,27 @@ FIXTURE_TEST(
                                  .get_downloads_throttled_sum();
         BOOST_REQUIRE(times_throttled == 0);
     }
+}
+
+FIXTURE_TEST(test_notification_retry_meta, remote_fixture) {
+    set_expectations_and_listen(
+      {expectation{.url = "/" + manifest_serde_url, .slowdown = true}});
+
+    retry_chain_node fib(never_abort, 500ms, 10ms);
+    partition_manifest actual(manifest_ntp, manifest_revision);
+    const auto bucket = cloud_storage_clients::bucket_name("bucket");
+    auto filter = remote::event_filter{};
+
+    auto fut = remote.local().try_download_partition_manifest(
+      bucket, actual, fib);
+
+    RPTEST_REQUIRE_EVENTUALLY(2s, [&] {
+        auto sub = remote.local().subscribe(filter);
+        return sub.then([](api_activity_notification event) {
+            return ss::make_ready_future<bool>(event.is_retry);
+        });
+    });
+
+    auto [res, fmt] = fut.get();
+    BOOST_CHECK(res == download_result::timedout);
 }

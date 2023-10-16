@@ -226,7 +226,7 @@ void s3_imposter_fixture::set_routes(
         }
 
         ss::sstring handle(const_req request, reply& repl) {
-            static const ss::sstring error_payload
+            static constexpr auto error_payload
               = R"xml(<?xml version="1.0" encoding="UTF-8"?>
                         <Error>
                             <Code>NoSuchKey</Code>
@@ -234,6 +234,14 @@ void s3_imposter_fixture::set_routes(
                             <Resource>resource</Resource>
                             <RequestId>requestid</RequestId>
                         </Error>)xml";
+            static constexpr auto slow_down_response
+              = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+                            <Error>
+                                <Code>SlowDown</Code>
+                                <Message>Object not found</Message>
+                                <Resource>resource</Resource>
+                                <RequestId>requestid</RequestId>
+                            </Error>)xml";
             http_test_utils::request_info ri(request);
 
             if (headers) {
@@ -250,6 +258,15 @@ void s3_imposter_fixture::set_routes(
               request._url,
               request.content_length,
               request._method);
+
+            auto expect_iter = expectations.find(request._url);
+            if (
+              expect_iter != expectations.end()
+              && expect_iter->second.slowdown) {
+                repl.set_status(reply::status_type::service_unavailable);
+                return slow_down_response;
+            }
+
             if (request._method == "GET") {
                 if (
                   fixture._search_on_get_list
@@ -264,15 +281,16 @@ void s3_imposter_fixture::set_routes(
                       request._method);
                     return list_objects_resp(expectations, prefix, delimiter);
                 }
-                auto it = expectations.find(request._url);
-                if (it == expectations.end() || !it->second.body.has_value()) {
+                if (
+                  expect_iter == expectations.end()
+                  || !expect_iter->second.body.has_value()) {
                     vlog(fixt_log.trace, "Reply GET request with error");
                     repl.set_status(reply::status_type::not_found);
                     return error_payload;
                 }
 
                 auto bytes_requested = request.get_header("Range");
-                const auto& body = it->second.body.value();
+                const auto& body = expect_iter->second.body.value();
                 if (!bytes_requested.empty()) {
                     auto byte_range = parse_byte_header(bytes_requested);
                     return body.substr(
@@ -294,19 +312,21 @@ void s3_imposter_fixture::set_routes(
                     return "";
                 }
 
-                auto it = expectations.find(request._url);
-                if (it == expectations.end() || !it->second.body.has_value()) {
+                if (
+                  expect_iter == expectations.end()
+                  || !expect_iter->second.body.has_value()) {
                     vlog(fixt_log.trace, "Reply DELETE request with error");
                     repl.set_status(reply::status_type::not_found);
                     return error_payload;
                 }
 
                 repl.set_status(reply::status_type::no_content);
-                it->second.body = std::nullopt;
+                expect_iter->second.body = std::nullopt;
                 return "";
             } else if (request._method == "HEAD") {
-                auto it = expectations.find(request._url);
-                if (it == expectations.end() || !it->second.body.has_value()) {
+                if (
+                  expect_iter == expectations.end()
+                  || !expect_iter->second.body.has_value()) {
                     vlog(fixt_log.trace, "Reply HEAD request with error");
                     repl.add_header("x-amz-request-id", "placeholder-id");
                     repl.set_status(reply::status_type::not_found);
@@ -314,7 +334,7 @@ void s3_imposter_fixture::set_routes(
                     repl.add_header("ETag", "placeholder-etag");
                     repl.add_header(
                       "Content-Length",
-                      ssx::sformat("{}", it->second.body->size()));
+                      ssx::sformat("{}", expect_iter->second.body->size()));
                     repl.set_status(reply::status_type::ok);
                 }
                 vlog(
@@ -326,9 +346,10 @@ void s3_imposter_fixture::set_routes(
               request._method == "POST"
               && request.query_parameters.contains("delete")) {
                 // Delete objects
-                auto it = expectations.find(request._url);
-                if (it != expectations.end() && it->second.body.has_value()) {
-                    return it->second.body.value();
+                if (
+                  expect_iter != expectations.end()
+                  && expect_iter->second.body.has_value()) {
+                    return expect_iter->second.body.value();
                 }
                 return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
             }

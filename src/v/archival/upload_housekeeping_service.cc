@@ -60,12 +60,18 @@ upload_housekeeping_service::upload_housekeeping_service(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _api_idle_threshold(
       config::shard_local_cfg().cloud_storage_idle_threshold_rps.bind())
+  , _raw_quota(
+      config::shard_local_cfg().cloud_storage_background_jobs_quota.bind())
   , _rtc(_as)
   , _ctxlog(archival_log, _rtc)
   , _filter(_rtc)
-  , _workflow(_rtc, sg, _probe)
+  , _workflow(_rtc, run_quota_t{_raw_quota()}, sg, _probe)
   , _api_utilization(
-      std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution)) {
+      std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
+  , _api_slow_downs(
+      std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
+  , _api_slow_downs_rate(std::make_unique<sliding_window_t>(
+      0.0, slow_downs_rate_window, slow_downs_rate_resolution)) {
     _idle_timer.set_callback([this] { return idle_timer_callback(); });
     _epoch_timer.set_callback([this] { return epoch_timer_callback(); });
     _idle_timeout.watch([this] {
@@ -80,6 +86,9 @@ upload_housekeeping_service::upload_housekeeping_service(
 
     _epoch_duration.watch(
       [this] { _epoch_timer.rearm_periodic(_epoch_duration()); });
+
+    _raw_quota.watch(
+      [this] { _workflow.update_quota(run_quota_t{_raw_quota()}); });
 }
 
 upload_housekeeping_service::~upload_housekeeping_service() {}
@@ -108,44 +117,67 @@ housekeeping_workflow& upload_housekeeping_service::workflow() {
 ss::future<> upload_housekeeping_service::bg_idle_loop() {
     ss::gate::holder holder(_gate);
     while (!_as.abort_requested()) {
-        auto event = co_await _remote.subscribe(_filter);
+        const auto event = co_await _remote.subscribe(_filter);
         double weight = 0;
-        switch (event) {
+        double slow_down_weight = 0;
+        switch (event.type) {
         // Write path events
-        case cloud_storage::api_activity_notification::manifest_upload:
-        case cloud_storage::api_activity_notification::segment_upload:
-        case cloud_storage::api_activity_notification::segment_delete:
+        case cloud_storage::api_activity_type::manifest_upload:
+        case cloud_storage::api_activity_type::segment_upload:
+        case cloud_storage::api_activity_type::segment_delete:
             weight = 1;
+            if (event.is_retry) {
+                slow_down_weight = 1;
+            }
             break;
         // Read path events
-        case cloud_storage::api_activity_notification::manifest_download:
-        case cloud_storage::api_activity_notification::segment_download:
+        case cloud_storage::api_activity_type::manifest_download:
+        case cloud_storage::api_activity_type::segment_download:
             weight = 1;
+            if (event.is_retry) {
+                slow_down_weight = 1;
+            }
             break;
         // Controller snapshot IO is independent of housekeeping.
-        case cloud_storage::api_activity_notification::
-          controller_snapshot_download:
-        case cloud_storage::api_activity_notification::
-          controller_snapshot_upload:
+        case cloud_storage::api_activity_type::controller_snapshot_download:
+        case cloud_storage::api_activity_type::controller_snapshot_upload:
             break;
         };
 
-        _api_utilization->update(weight, ss::lowres_clock::now());
-        if (_api_utilization->get() >= _api_idle_threshold()) {
-            // Restart the timer and delay idle timeout
+        const auto now = ss::lowres_clock::now();
+        _api_utilization->update(weight, now);
+        _api_slow_downs->update(slow_down_weight, now);
+
+        const auto avg_utilisation = _api_utilization->get();
+        const auto avg_slow_downs = _api_slow_downs->get();
+
+        if (
+          avg_utilisation
+          >= _api_idle_threshold()
+               * std::chrono::duration_cast<std::chrono::seconds>(
+                   _idle_timeout())
+                   .count()) {
+            // Not idle: restart the timer and delay idle timeout
             rearm_idle_timer();
-            if (_workflow.state() == housekeeping_state::active) {
-                // Try to pause the housekeeping workflow
-                vlog(
-                  _ctxlog.debug,
-                  "Cloud storage api utilisation greater than threshold ({} >= "
-                  "{}). Pausing housekeeping workflow.",
-                  _api_utilization->get(),
-                  _api_idle_threshold());
-                _workflow.pause();
-            }
-            // NOTE: do not pause if workflow is in housekeeping_state::draining
-            // state.
+        }
+
+        _api_slow_downs_rate->update(avg_slow_downs / avg_utilisation, now);
+        const auto slow_downs_rate = _api_slow_downs_rate->get();
+        _probe.requests_throttled_average_rate(slow_downs_rate);
+
+        // Pause the housekeeping jobs if the number of slow downs on the
+        // read and write paths exceeds the acceptable limit. Do not pause
+        // if workflow is in housekeeping_state::draining state.
+        if (
+          slow_downs_rate >= max_slow_downs_rate
+          && _workflow.state() == housekeeping_state::active) {
+            vlog(
+              _ctxlog.info,
+              "Too many cloud storage requests are being throttled ({}% >= "
+              "{}%). Pausing housekeeping workflow to get some headroom",
+              slow_downs_rate,
+              max_slow_downs_rate);
+            _workflow.pause();
         }
     }
 }
@@ -194,11 +226,13 @@ void upload_housekeeping_service::deregister_jobs(
 
 housekeeping_workflow::housekeeping_workflow(
   retry_chain_node& parent,
+  run_quota_t quota,
   ss::scheduling_group sg,
   std::optional<std::reference_wrapper<upload_housekeeping_probe>> probe)
   : _parent(parent)
   , _sg(sg)
-  , _probe(probe) {}
+  , _probe(probe)
+  , _quota(quota) {}
 
 void housekeeping_workflow::register_job(housekeeping_job& job) {
     job.acquire();
@@ -301,8 +335,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
     auto start_time = ss::lowres_clock::now();
     // Tracks job execution time
     job_exec_timer exec_timer{};
-    run_quota_t quota = run_quota_t(
-      max_reuploads_per_run * static_cast<int32_t>(_pending.size()));
+    run_quota_t quota = _quota;
     while (!_as.abort_requested()) {
         vlog(
           archival_log.debug,
@@ -409,8 +442,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             jobs_executed = 0;
             start_time = ss::lowres_clock::now();
             exec_timer.reset();
-            quota = run_quota_t(
-              max_reuploads_per_run * static_cast<int32_t>(_pending.size()));
+            quota = _quota;
             if (_probe.has_value()) {
                 _probe->get().housekeeping_rounds(1);
             }
@@ -502,5 +534,7 @@ ss::future<> housekeeping_workflow::stop() {
 housekeeping_state housekeeping_workflow::state() const { return _state; }
 
 bool housekeeping_workflow::has_active_job() const { return !_running.empty(); }
+
+void housekeeping_workflow::update_quota(run_quota_t quota) { _quota = quota; }
 
 } // namespace archival

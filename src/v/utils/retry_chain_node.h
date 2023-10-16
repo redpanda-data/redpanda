@@ -310,6 +310,8 @@ public:
     /// @return retry permit object
     retry_permit retry();
 
+    uint16_t retry_count() const { return _retry; }
+
     /// Requests abort using the abort_source set in a root node c-tor.
     ///
     /// Relatively expensive operation. Follows the links to the root.

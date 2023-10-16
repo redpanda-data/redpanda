@@ -62,6 +62,7 @@ public:
 
     explicit housekeeping_workflow(
       retry_chain_node& parent,
+      run_quota_t quota,
       ss::scheduling_group sg = ss::default_scheduling_group(),
       probe_opt_t probe = std::nullopt);
 
@@ -95,6 +96,8 @@ public:
     /// Returns true if one of the jobs is executed right now
     bool has_active_job() const;
 
+    void update_quota(run_quota_t quota);
+
 private:
     ss::future<> run_jobs_bg();
     using probe_upd_func = ss::noncopyable_function<void(
@@ -116,6 +119,8 @@ private:
     intrusive_list<housekeeping_job, &housekeeping_job::_hook> _running;
     intrusive_list<housekeeping_job, &housekeeping_job::_hook> _executed;
     ss::condition_variable _cvar;
+
+    run_quota_t _quota;
 };
 
 /// Housekeeping service is used to perform periodic
@@ -235,6 +240,9 @@ private:
     config::binding<std::chrono::milliseconds> _epoch_duration;
     /// Idle threshold
     config::binding<double> _api_idle_threshold;
+    /// Quota to be shared between jobs in one interation of the housekeeping
+    /// loop
+    config::binding<int32_t> _raw_quota;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     cloud_storage::remote::event_filter _filter;
@@ -243,6 +251,14 @@ private:
     static constexpr auto ma_resolution = 20ms;
     using sliding_window_t = timed_moving_average<double, ss::lowres_clock>;
     std::unique_ptr<sliding_window_t> _api_utilization;
+    std::unique_ptr<sliding_window_t> _api_slow_downs;
+
+    static constexpr auto slow_downs_rate_window = 2min;
+    static constexpr auto slow_downs_rate_resolution = 20s;
+    static constexpr double max_slow_downs_rate = 0.333;
+    // Tracks the rate of slow-downs for requests to cloud storage
+    // from the read and write paths.
+    std::unique_ptr<sliding_window_t> _api_slow_downs_rate;
 };
 
 } // namespace archival
