@@ -70,7 +70,9 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
     vlog(_logger.info, "Starting scrub with {} quota...", quota());
 
     retry_chain_node anomaly_detection_rtc(5min, 100ms, &rtc_node);
-    auto detect_result = co_await _detector.run(anomaly_detection_rtc, quota);
+    const auto scrub_from = _archiver.manifest().last_scrubbed_offset();
+    auto detect_result = co_await _detector.run(
+      anomaly_detection_rtc, quota, scrub_from);
 
     // The quota accounting below compensates for the fact that
     // `run_quota_t` is signed, but `result::ops` is unsigned. Avoid
@@ -112,9 +114,11 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
 
     vlog(
       _logger.info,
-      "Scrub finished with status {} and detected {}",
+      "Scrub finished at {} with status {} and detected {} and used {} quota",
+      detect_result.last_scrubbed_offset,
       detect_result.status,
-      detect_result.detected);
+      detect_result.detected,
+      detect_result.ops);
 
     auto replicate_result = co_await _archiver.process_anomalies(
       model::timestamp::now(),

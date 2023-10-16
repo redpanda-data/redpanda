@@ -37,6 +37,9 @@ constexpr std::string_view stm_manifest = R"json(
   "start_offset": 40,
   "last_offset": 59,
   "insync_offset": 100,
+  "archive_start_offset": 0,
+  "archive_start_offset_delta": 0,
+  "archive_clean_offset": 0,
   "segments": {
       "40-1-v1.log": {
           "size_bytes": 1024,
@@ -447,6 +450,7 @@ FIXTURE_TEST(test_no_anomalies, bucket_view_fixture) {
         auto result = run_detector(archival::run_quota_t{100});
         BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
         BOOST_REQUIRE(!result.detected.has_value());
+        BOOST_REQUIRE(!result.last_scrubbed_offset.has_value());
     }
 
     {
@@ -454,6 +458,14 @@ FIXTURE_TEST(test_no_anomalies, bucket_view_fixture) {
         BOOST_REQUIRE_EQUAL(
           result.status, cloud_storage::scrub_status::partial);
         BOOST_REQUIRE(!result.detected.has_value());
+
+        // We have a quota of 5 requests:
+        // * 1 download request for the partitions manifest
+        // * 2 requests to check for the existence of spill manifests
+        // * 2 requests to check for the existence of the segments in the stm
+        // manifest
+        BOOST_REQUIRE_EQUAL(
+          result.last_scrubbed_offset, get_stm_manifest().get_last_offset());
     }
 }
 
