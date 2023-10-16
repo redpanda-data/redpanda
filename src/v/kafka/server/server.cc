@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "features/feature_table.h"
+#include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/errors.h"
@@ -515,21 +516,43 @@ ss::future<response_ptr> list_groups_handler::handle(
     resp.data.error_code = error;
     resp.data.groups = std::move(groups);
 
-    if (ctx.authorized(
-          security::acl_operation::describe, security::default_cluster_name)) {
-        co_return co_await ctx.respond(std::move(resp));
+    auto cluster_authz = ctx.authorized(
+      security::acl_operation::describe, security::default_cluster_name);
+
+    if (!cluster_authz) {
+        // remove groups from response that should not be visible
+        auto non_visible_it = std::partition(
+          resp.data.groups.begin(),
+          resp.data.groups.end(),
+          [&ctx](const listed_group& group) {
+              return ctx.authorized(
+                security::acl_operation::describe, group.group_id);
+          });
+
+        resp.data.groups.erase(non_visible_it, resp.data.groups.end());
     }
 
-    // remove groups from response that should not be visible
-    auto non_visible_it = std::partition(
-      resp.data.groups.begin(),
-      resp.data.groups.end(),
-      [&ctx](const listed_group& group) {
-          return ctx.authorized(
-            security::acl_operation::describe, group.group_id);
-      });
+    auto additional_resources_func = [&resp, cluster_authz]() {
+        std::vector<kafka::group_id> groups;
+        if (!cluster_authz) {
+            return groups;
+        }
 
-    resp.data.groups.erase(non_visible_it, resp.data.groups.end());
+        groups.reserve(resp.data.groups.size());
+        std::transform(
+          resp.data.groups.begin(),
+          resp.data.groups.end(),
+          std::back_inserter(groups),
+          [](const listed_group& g) { return g.group_id; });
+
+        return groups;
+    };
+
+    if (!ctx.audit(std::move(additional_resources_func))) {
+        resp.data.groups.clear();
+        resp.data.error_code = error_code::broker_not_available;
+        co_return co_await ctx.respond(std::move(resp));
+    }
 
     co_return co_await ctx.respond(std::move(resp));
 }
