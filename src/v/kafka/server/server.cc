@@ -1286,14 +1286,8 @@ ss::future<response_ptr> create_acls_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    if (!ctx.authorized(
-          security::acl_operation::alter, security::default_cluster_name)) {
-        creatable_acl_result result;
-        result.error_code = error_code::cluster_authorization_failed;
-        create_acls_response resp;
-        resp.data.results.assign(request.data.creations.size(), result);
-        co_return co_await ctx.respond(std::move(resp));
-    }
+    bool authz = ctx.authorized(
+      security::acl_operation::alter, security::default_cluster_name);
 
     // <bindings index> | error
     std::vector<std::variant<size_t, creatable_acl_result>> result_index;
@@ -1315,6 +1309,29 @@ ss::future<response_ptr> create_acls_handler::handle(
               .error_message = e.what(),
             });
         }
+    }
+
+    // We allow for the conversion to happen before we check for audit and authz
+    // so we have access to the parsed data for auditing.  May result in
+    // unecessary cycles if auditing fails or if the operation isn't authorized.
+
+    auto get_bindings = [&bindings] { return bindings; };
+
+    if (!ctx.audit(std::move(get_bindings))) {
+        creatable_acl_result result;
+        result.error_code = error_code::broker_not_available;
+        result.error_message = "Broker not available - audit system failure";
+        create_acls_response resp;
+        resp.data.results.assign(request.data.creations.size(), result);
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
+    if (!authz) {
+        creatable_acl_result result;
+        result.error_code = error_code::cluster_authorization_failed;
+        create_acls_response resp;
+        resp.data.results.assign(request.data.creations.size(), result);
+        co_return co_await ctx.respond(std::move(resp));
     }
 
     const auto num_bindings = bindings.size();
