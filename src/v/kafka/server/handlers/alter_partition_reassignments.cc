@@ -335,8 +335,30 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
         return octx.rctx.respond(std::move(octx.response));
     }
 
-    if (!octx.rctx.authorized(
-          security::acl_operation::alter, security::default_cluster_name)) {
+    auto authz = octx.rctx.authorized(
+      security::acl_operation::alter, security::default_cluster_name);
+
+    auto additional_resources = [&octx]() {
+        std::vector<model::topic> topics;
+        topics.reserve(octx.request.data.topics.size());
+        std::transform(
+          octx.request.data.topics.begin(),
+          octx.request.data.topics.end(),
+          std::back_inserter(topics),
+          [](const reassignable_topic& t) { return t.name; });
+
+        return topics;
+    };
+
+    if (!octx.rctx.audit(std::move(additional_resources))) {
+        octx.response.data.error_code = error_code::broker_not_available;
+        octx.response.data.error_message
+          = "Broker not available - audit system failure";
+
+        return octx.rctx.respond(std::move(octx.response));
+    }
+
+    if (!authz) {
         vlog(
           klog.debug,
           "Failed cluster authorization. Requires ALTER permissions on the "
