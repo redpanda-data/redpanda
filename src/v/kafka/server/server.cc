@@ -693,6 +693,21 @@ ss::future<response_ptr> delete_groups_handler::handle(
           return ctx.authorized(security::acl_operation::remove, group);
       });
 
+    if (!ctx.audit()) {
+        std::vector<deletable_group_result> resp;
+        resp.reserve(request.data.groups_names.size());
+        std::transform(
+          request.data.groups_names.begin(),
+          request.data.groups_names.end(),
+          std::back_inserter(resp),
+          [](const kafka::group_id& g) {
+              return deletable_group_result{
+                .group_id = g, .error_code = error_code::broker_not_available};
+          });
+
+        co_return co_await ctx.respond(delete_groups_response(std::move(resp)));
+    }
+
     std::vector<kafka::group_id> unauthorized(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.groups_names.end()));
