@@ -1133,6 +1133,31 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
           return ctx.authorized(security::acl_operation::remove, topic);
       });
 
+    if (!ctx.audit()) {
+        delete_topics_response resp;
+        std::transform(
+          request.data.topic_names.begin(),
+          request.data.topic_names.end(),
+          std::back_inserter(resp.data.responses),
+          [](const model::topic& t) {
+              return deletable_topic_result{
+                .name = t, .error_code = error_code::broker_not_available};
+          });
+
+        std::transform(
+          request.data.topics.begin(),
+          request.data.topics.end(),
+          std::back_inserter(resp.data.responses),
+          [](const delete_topic_state& t) {
+              return deletable_topic_result{
+                .name = t.name,
+                .error_code = error_code::broker_not_available,
+              };
+          });
+
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
     std::vector<model::topic> unauthorized(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topic_names.end()));
