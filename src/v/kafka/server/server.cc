@@ -654,6 +654,11 @@ ss::future<response_ptr> end_txn_handler::handle(
         end_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
+        if (ctx.recovery_mode_enabled()) {
+            end_txn_response response;
+            response.data.error_code = error_code::policy_violation;
+            return ctx.respond(response);
+        }
         cluster::end_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,
@@ -704,6 +709,12 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
         add_offsets_to_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
+
+        if (unlikely(ctx.recovery_mode_enabled())) {
+            add_offsets_to_txn_response response;
+            response.data.error_code = error_code::policy_violation;
+            return ctx.respond(response);
+        }
 
         cluster::add_offsets_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
@@ -756,6 +767,23 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
         add_partitions_to_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
+
+        if (ctx.recovery_mode_enabled()) {
+            add_partitions_to_txn_response response;
+            response.data.results.reserve(request.data.topics.size());
+            for (const auto& topic : request.data.topics) {
+                add_partitions_to_txn_topic_result t_result{.name = topic.name};
+                t_result.results.reserve(topic.partitions.size());
+                for (const auto& partition : topic.partitions) {
+                    t_result.results.push_back(
+                      add_partitions_to_txn_partition_result{
+                        .partition_index = partition,
+                        .error_code = error_code::policy_violation});
+                }
+                response.data.results.push_back(std::move(t_result));
+            }
+            return ctx.respond(std::move(response));
+        }
 
         cluster::add_paritions_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
