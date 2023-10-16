@@ -77,8 +77,18 @@ ss::future<response_ptr> describe_acls_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    if (!ctx.authorized(
-          security::acl_operation::describe, security::default_cluster_name)) {
+    auto authz = ctx.authorized(
+      security::acl_operation::describe, security::default_cluster_name);
+
+    if (!ctx.audit()) {
+        describe_acls_response resp;
+        resp.data.error_code = error_code::broker_not_available;
+        resp.data.error_message = "Broker not available - audit system failure";
+
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
+    if (!authz) {
         describe_acls_response resp;
         resp.data.error_code = error_code::cluster_authorization_failed;
         co_return co_await ctx.respond(std::move(resp));
