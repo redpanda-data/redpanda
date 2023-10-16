@@ -167,10 +167,11 @@ type Auth struct {
 
 // SASL is a top-level field of the values file
 type SASL struct {
-	Enabled   bool         `json:"enabled"`
-	Mechanism *string      `json:"mechanism,omitempty"`
-	SecretRef *string      `json:"secretRef,omitempty"`
-	Users     []UsersItems `json:"users,omitempty"`
+	Enabled   bool    `json:"enabled"`
+	Mechanism *string `json:"mechanism,omitempty"`
+	SecretRef *string `json:"secretRef,omitempty"`
+	// DO NOT SET Omitempty, as empty list is a valid entry.
+	Users []UsersItems `json:"users"`
 }
 
 // UsersItems is a top-level field of the values file
