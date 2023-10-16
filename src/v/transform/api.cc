@@ -243,6 +243,7 @@ ss::future<> service::start() {
       = std::make_unique<rpc_client_factory>(&_rpc_client->local());
 
     _manager = std::make_unique<manager<ss::lowres_clock>>(
+      _self,
       std::make_unique<registry_adapter>(
         &_plugin_frontend->local(), &_partition_manager->local()),
       std::make_unique<proc_factory>(

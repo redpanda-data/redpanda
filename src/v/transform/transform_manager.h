@@ -104,7 +104,10 @@ class manager {
       "Only lowres or manual clocks are supported");
 
 public:
-    manager(std::unique_ptr<registry>, std::unique_ptr<processor_factory>);
+    manager(
+      model::node_id self,
+      std::unique_ptr<registry>,
+      std::unique_ptr<processor_factory>);
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;
@@ -145,6 +148,7 @@ private:
     ss::future<> create_processor(
       model::ntp, model::transform_id, model::transform_metadata);
 
+    model::node_id _self;
     ssx::work_queue _queue;
     std::unique_ptr<registry> _registry;
     std::unique_ptr<processor_table<ClockType>> _processors;
