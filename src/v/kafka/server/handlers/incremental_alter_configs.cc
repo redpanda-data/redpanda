@@ -473,6 +473,17 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
       incremental_alter_configs_resource,
       resp_resource_t>(ctx, groupped);
 
+    if (!ctx.audit()) {
+        auto responses = make_audit_failure_response<
+          resp_resource_t,
+          incremental_alter_configs_resource>(
+          std::move(groupped), std::move(unauthorized_responsens));
+
+        co_return co_await ctx.respond(assemble_alter_config_response<
+                                       incremental_alter_configs_response,
+                                       resp_resource_t>(std::move(responses)));
+    }
+
     std::vector<ss::future<std::vector<resp_resource_t>>> futures;
     futures.reserve(2);
     futures.push_back(alter_topic_configuration(

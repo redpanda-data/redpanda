@@ -340,6 +340,17 @@ ss::future<response_ptr> alter_configs_handler::handle(
       alter_configs_resource,
       alter_configs_resource_response>(ctx, groupped);
 
+    if (!ctx.audit()) {
+        auto responses = make_audit_failure_response<
+          alter_configs_resource_response,
+          alter_configs_resource>(
+          std::move(groupped), std::move(unauthorized_responsens));
+        co_return co_await ctx.respond(
+          assemble_alter_config_response<
+            alter_configs_response,
+            alter_configs_resource_response>(std::move(responses)));
+    }
+
     std::vector<ss::future<std::vector<alter_configs_resource_response>>>
       futures;
     futures.reserve(2);
