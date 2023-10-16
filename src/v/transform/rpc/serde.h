@@ -346,4 +346,31 @@ struct offset_fetch_response
     auto serde_fields() { return std::tie(errc, result); }
 };
 
+struct generate_report_request
+  : serde::envelope<
+      generate_report_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    generate_report_request() = default;
+
+    auto serde_fields() { return std::tie(); }
+};
+
+struct generate_report_reply
+  : serde::envelope<
+      generate_report_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    generate_report_reply() = default;
+    explicit generate_report_reply(model::cluster_transform_report r)
+      : report(std::move(r)) {}
+
+    auto serde_fields() { return std::tie(report); }
+
+    model::cluster_transform_report report;
+};
 } // namespace transform::rpc

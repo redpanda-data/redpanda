@@ -6,6 +6,11 @@
     ],
     "methods": [
         {
+            "name": "generate_report",
+            "input_type": "generate_report_request",
+            "output_type": "generate_report_reply"
+        },
+        {
             "name": "produce",
             "input_type": "produce_request",
             "output_type": "produce_reply"

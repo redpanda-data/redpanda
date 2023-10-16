@@ -126,6 +126,7 @@ static const model::topic_namespace transform_offsets_nt(
 struct transform_report
   : serde::
       envelope<transform_report, serde::version<0>, serde::compat_version<0>> {
+    transform_report() = default;
     explicit transform_report(transform_metadata meta);
 
     // The overall metadata for a transform.

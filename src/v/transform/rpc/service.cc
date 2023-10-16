@@ -449,4 +449,10 @@ ss::future<offset_commit_response> network_service::offset_commit(
     co_return co_await _service->local().offset_commit(req);
 }
 
+ss::future<generate_report_reply> network_service::generate_report(
+  generate_report_request&&, ::rpc::streaming_context&) {
+    auto report = co_await _service->local().compute_node_local_report();
+    co_return generate_report_reply(std::move(report));
+}
+
 } // namespace transform::rpc
