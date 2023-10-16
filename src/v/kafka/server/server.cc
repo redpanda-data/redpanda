@@ -1714,6 +1714,21 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
           return ctx.authorized(security::acl_operation::describe, id);
       });
 
+    if (!ctx.audit()) {
+        describe_groups_response resp;
+        resp.data.groups.reserve(request.data.groups.size());
+        std::transform(
+          request.data.groups.begin(),
+          request.data.groups.end(),
+          std::back_inserter(resp.data.groups),
+          [](const kafka::group_id& g) {
+              return described_group{
+                .error_code = error_code::broker_not_available, .group_id = g};
+          });
+
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
     std::vector<group_id> unauthorized(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.groups.end()));
