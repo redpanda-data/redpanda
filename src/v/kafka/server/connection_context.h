@@ -179,7 +179,10 @@ public:
         // authorization disabled?
         if (!_enable_authorizer) {
             return security::auth_result::authz_disabled(
-              get_principal(), security::acl_host(_client_addr), name);
+              get_principal(),
+              security::acl_host(_client_addr),
+              operation,
+              name);
         }
 
         return authorized_user(get_principal(), operation, name, quiet);

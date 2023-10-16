@@ -52,6 +52,30 @@ struct auth_result {
     security::resource_type resource_type;
     // The name of the resource
     ss::sstring resource_name;
+    // The operation request
+    security::acl_operation operation;
+
+    friend std::ostream& operator<<(std::ostream& os, const auth_result& a) {
+        fmt::print(
+          os,
+          "{{authorized:{}, authorization_disabled:{}, is_superuser:{}, "
+          "operation: {}, empty_matches:{}, principal:{}, host:{}, "
+          "resource_type:{}, "
+          "resource_name:{}, resource_pattern:{}, acl:{}}}",
+          a.authorized,
+          a.authorization_disabled,
+          a.is_superuser,
+          a.operation,
+          a.empty_matches,
+          a.principal,
+          a.host,
+          a.resource_type,
+          a.resource_name,
+          a.resource_pattern,
+          a.acl);
+
+        return os;
+    }
 
     explicit operator bool() const noexcept { return is_authorized(); }
 
@@ -61,6 +85,7 @@ struct auth_result {
     static auth_result authz_disabled(
       const security::acl_principal& principal,
       security::acl_host host,
+      security::acl_operation operation,
       const T& resource) {
         return {
           .authorized = true,
@@ -69,6 +94,7 @@ struct auth_result {
           .host = host,
           .resource_type = get_resource_type<T>(),
           .resource_name = resource(),
+          .operation = operation,
         };
     }
 
@@ -76,6 +102,7 @@ struct auth_result {
     static auth_result superuser_authorized(
       const security::acl_principal& principal,
       security::acl_host host,
+      security::acl_operation operation,
       const T& resource) {
         return {
           .authorized = true,
@@ -84,13 +111,14 @@ struct auth_result {
           .host = host,
           .resource_type = get_resource_type<T>(),
           .resource_name = resource(),
-        };
+          .operation = operation};
     }
 
     template<typename T>
     static auth_result empty_match_result(
       const security::acl_principal& principal,
       security::acl_host host,
+      security::acl_operation operation,
       const T& resource,
       bool authorized) {
         return {
@@ -100,13 +128,14 @@ struct auth_result {
           .host = host,
           .resource_type = get_resource_type<T>(),
           .resource_name = resource(),
-        };
+          .operation = operation};
     }
 
     template<typename T>
     static auth_result acl_match(
       const security::acl_principal& principal,
       security::acl_host host,
+      security::acl_operation operation,
       const T& resource,
       bool authorized,
       const acl_matches::acl_match& match) {
@@ -117,13 +146,15 @@ struct auth_result {
           .principal = principal,
           .host = host,
           .resource_type = get_resource_type<T>(),
-          .resource_name = resource()};
+          .resource_name = resource(),
+          .operation = operation};
     }
 
     template<typename T>
     static auth_result opt_acl_match(
       const security::acl_principal& principal,
       security::acl_host host,
+      security::acl_operation operation,
       const T& resource,
       const std::optional<acl_matches::acl_match>& match) {
         return {
@@ -137,7 +168,8 @@ struct auth_result {
           .principal = principal,
           .host = host,
           .resource_type = get_resource_type<T>(),
-          .resource_name = resource()};
+          .resource_name = resource(),
+          .operation = operation};
     }
 };
 
@@ -214,12 +246,16 @@ public:
 
         if (_superusers.contains(principal)) {
             return auth_result::superuser_authorized(
-              principal, host, resource_name);
+              principal, host, operation, resource_name);
         }
 
         if (acls.empty()) {
             return auth_result::empty_match_result(
-              principal, host, resource_name, bool(_allow_empty_matches));
+              principal,
+              host,
+              operation,
+              resource_name,
+              bool(_allow_empty_matches));
         }
 
         // check for deny
@@ -227,13 +263,14 @@ public:
               operation, principal, host, acl_permission::deny);
             entry.has_value()) {
             return auth_result::acl_match(
-              principal, host, resource_name, false, *entry);
+              principal, host, operation, resource_name, false, *entry);
         }
 
         // check for allow
         return auth_result::opt_acl_match(
           principal,
           host,
+          operation,
           resource_name,
           acl_any_implied_ops_allowed(acls, principal, host, operation));
     }
