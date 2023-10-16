@@ -122,6 +122,31 @@ describe_producers_handler::handle(request_context ctx, ss::smp_service_group) {
           return ctx.authorized(security::acl_operation::read, topic.name);
       });
 
+    if (!ctx.audit()) {
+        response.data.topics.reserve(request.data.topics.size());
+        std::transform(
+          request.data.topics.begin(),
+          request.data.topics.end(),
+          std::back_inserter(response.data.topics),
+          [](const topic_request& r) {
+              topic_response resp;
+              resp.name = r.name;
+              resp.partitions.reserve(r.partition_indexes.size());
+              for (const auto& part_id : r.partition_indexes) {
+                  partition_response part_resp;
+                  part_resp.partition_index = part_id;
+                  part_resp.error_code = error_code::broker_not_available;
+                  part_resp.error_message
+                    = "Broker not available - audit system failure";
+                  resp.partitions.emplace_back(std::move(part_resp));
+              }
+
+              return resp;
+          });
+
+        co_return co_await ctx.respond(std::move(response));
+    }
+
     std::vector<topic_request> unauthorized(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topics.end()));
