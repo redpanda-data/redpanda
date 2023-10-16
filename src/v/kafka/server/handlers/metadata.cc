@@ -289,6 +289,7 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
           std::move(res));
     }
 
+    std::vector<model::topic> topics_to_be_created;
     std::vector<ss::future<metadata_response::topic>> new_topics;
 
     for (auto& topic : *request.data.topics) {
@@ -326,9 +327,35 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
               std::move(topic.name), error_code::topic_authorization_failed));
             continue;
         }
-        new_topics.push_back(
-          create_topic(ctx, std::move(topic.name), is_node_isolated));
+        topics_to_be_created.emplace_back(std::move(topic.name));
     }
+
+    if (!ctx.audit()) {
+        std::for_each(res.begin(), res.end(), [](metadata_response::topic& t) {
+            t.error_code = error_code::broker_not_available;
+        });
+
+        std::transform(
+          topics_to_be_created.begin(),
+          topics_to_be_created.end(),
+          std::back_inserter(res),
+          [](model::topic& t) {
+              return metadata_response::topic{
+                .error_code = error_code::broker_not_available,
+                .name = std::move(t)};
+          });
+
+        return ss::make_ready_future<std::vector<metadata_response::topic>>(
+          std::move(res));
+    }
+
+    std::for_each(
+      topics_to_be_created.begin(),
+      topics_to_be_created.end(),
+      [&new_topics, &ctx, is_node_isolated](model::topic& t) {
+          new_topics.emplace_back(
+            create_topic(ctx, std::move(t), is_node_isolated));
+      });
 
     return ss::when_all_succeed(new_topics.begin(), new_topics.end())
       .then([res = std::move(res)](
