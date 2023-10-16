@@ -122,6 +122,7 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
 
     auto replicate_result = co_await _archiver.process_anomalies(
       model::timestamp::now(),
+      detect_result.last_scrubbed_offset,
       detect_result.status,
       std::move(detect_result.detected));
 

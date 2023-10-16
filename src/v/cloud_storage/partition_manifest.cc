@@ -2656,7 +2656,10 @@ void partition_manifest::from_iobuf(iobuf in) {
 }
 
 void partition_manifest::process_anomalies(
-  model::timestamp scrub_timestamp, scrub_status status, anomalies detected) {
+  model::timestamp scrub_timestamp,
+  std::optional<model::offset> last_scrubbed_offset,
+  scrub_status status,
+  anomalies detected) {
     // Firstly, update the in memory list of anomalies.
     // If the entires log was scrubbed, overwrite the old anomalies,
     // otherwise append to them.
@@ -2711,6 +2714,7 @@ void partition_manifest::process_anomalies(
       });
 
     _last_partition_scrub = scrub_timestamp;
+    _last_scrubbed_offset = last_scrubbed_offset;
 }
 
 } // namespace cloud_storage

@@ -550,6 +550,7 @@ public:
 
     void process_anomalies(
       model::timestamp scrub_timestamp,
+      std::optional<model::offset> last_scrubbed_offset,
       scrub_status status,
       anomalies detected);
 

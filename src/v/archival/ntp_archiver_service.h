@@ -343,6 +343,7 @@ public:
 
     ss::future<std::error_code> process_anomalies(
       model::timestamp scrub_timestamp,
+      std::optional<model::offset> last_scrubbed_offset,
       cloud_storage::scrub_status status,
       cloud_storage::anomalies detected);
 

@@ -266,17 +266,55 @@ public:
           _as);
     }
 
-    cloud_storage::anomalies_detector::result
-    run_detector(archival::run_quota_t quota) {
+    cloud_storage::anomalies_detector::result run_detector(
+      archival::run_quota_t quota,
+      std::optional<model::offset> start_from = std::nullopt) {
         BOOST_REQUIRE(_detector.has_value());
 
         retry_chain_node anomaly_detection_rtc(1min, 100ms, &_root_rtc);
-        auto res = _detector->run(anomaly_detection_rtc, quota).get();
+        auto res
+          = _detector->run(anomaly_detection_rtc, quota, start_from).get();
         vlog(
           test_logger.info,
-          "Anomalies detector run result: status={}, detected={}",
+          "Anomalies detector run result: status={}, detected={}, "
+          "last_scrubbed_offset={}",
           res.status,
-          res.detected);
+          res.detected,
+          res.last_scrubbed_offset);
+
+        return res;
+    }
+
+    std::vector<cloud_storage::anomalies_detector::result>
+    run_detector_until_log_end(archival::run_quota_t quota) {
+        BOOST_REQUIRE(_detector.has_value());
+        std::vector<cloud_storage::anomalies_detector::result> partial_results;
+
+        auto iters = 1;
+
+        auto res = run_detector(quota);
+        partial_results.push_back(res);
+
+        while (res.last_scrubbed_offset != std::nullopt) {
+            BOOST_REQUIRE_LE(iters, 100);
+
+            res = run_detector(quota, res.last_scrubbed_offset);
+            partial_results.push_back(res);
+
+            ++iters;
+        }
+
+        return partial_results;
+    }
+
+    cloud_storage::anomalies_detector::result flatten_partial_results(
+      std::vector<cloud_storage::anomalies_detector::result> partial_results) {
+        BOOST_REQUIRE(partial_results.size() > 0);
+        auto res = *partial_results.begin();
+
+        for (size_t i = 1; i < partial_results.size(); ++i) {
+            res += std::move(partial_results[i]);
+        }
 
         return res;
     }
@@ -489,6 +527,11 @@ FIXTURE_TEST(test_missing_segments, bucket_view_fixture) {
     BOOST_REQUIRE_EQUAL(missing_segs.size(), 2);
     BOOST_REQUIRE(missing_segs.contains(*stm_segment));
     BOOST_REQUIRE(missing_segs.contains(*spill_segment));
+
+    auto partial_results = run_detector_until_log_end(archival::run_quota_t{6});
+
+    BOOST_REQUIRE_EQUAL(
+      result.detected, flatten_partial_results(partial_results).detected);
 }
 
 FIXTURE_TEST(test_missing_spillover_manifest, bucket_view_fixture) {
@@ -511,6 +554,11 @@ FIXTURE_TEST(test_missing_spillover_manifest, bucket_view_fixture) {
       first_spill.get_revision_id(),
       *missing_spills.begin());
     BOOST_REQUIRE_EQUAL(first_spill.get_manifest_path(), expected_path);
+
+    auto partial_results = run_detector_until_log_end(archival::run_quota_t{6});
+
+    BOOST_REQUIRE_EQUAL(
+      result.detected, flatten_partial_results(partial_results).detected);
 }
 
 FIXTURE_TEST(test_missing_stm_manifest, bucket_view_fixture) {
@@ -524,6 +572,11 @@ FIXTURE_TEST(test_missing_stm_manifest, bucket_view_fixture) {
 
     BOOST_REQUIRE(result.detected.has_value());
     BOOST_REQUIRE_EQUAL(result.detected.missing_partition_manifest, true);
+
+    auto partial_results = run_detector_until_log_end(archival::run_quota_t{6});
+
+    BOOST_REQUIRE_EQUAL(
+      result.detected, flatten_partial_results(partial_results).detected);
 }
 
 FIXTURE_TEST(test_metadata_anomalies, bucket_view_fixture) {
@@ -695,6 +748,10 @@ FIXTURE_TEST(test_metadata_anomalies, bucket_view_fixture) {
       .previous = get_spillover_manifests().at(0).last_segment()});
 
     BOOST_REQUIRE(result.detected == expected);
+
+    auto partial_results = run_detector_until_log_end(archival::run_quota_t{6});
+    BOOST_REQUIRE_EQUAL(
+      result.detected, flatten_partial_results(partial_results).detected);
 }
 
 FIXTURE_TEST(test_filtering_of_segment_merge, bucket_view_fixture) {
@@ -789,6 +846,13 @@ FIXTURE_TEST(test_filtering_of_segment_merge, bucket_view_fixture) {
     BOOST_REQUIRE_EQUAL(result.detected.missing_segments.size(), 2);
     BOOST_REQUIRE_EQUAL(result.detected.segment_metadata_anomalies.size(), 1);
 
+    // Run the detection again but under very strict quota. A complete
+    // scrub will require multiple partial scrubs.
+    auto partial_results = run_detector_until_log_end(archival::run_quota_t{2});
+
+    BOOST_REQUIRE_EQUAL(
+      result.detected, flatten_partial_results(partial_results).detected);
+
     cloud_storage::segment_meta merged_seg{
       .is_compacted = false,
       .size_bytes = first_seg.size_bytes + last_seg.size_bytes,
@@ -804,13 +868,30 @@ FIXTURE_TEST(test_filtering_of_segment_merge, bucket_view_fixture) {
     BOOST_REQUIRE(get_stm_manifest_mut().safe_segment_meta_to_add(merged_seg));
     BOOST_REQUIRE(get_stm_manifest_mut().add(merged_seg));
 
+    auto manifest_clone = get_stm_manifest().clone();
+
     get_stm_manifest_mut().process_anomalies(
-      model::timestamp::now(), result.status, result.detected);
+      model::timestamp::now(),
+      result.last_scrubbed_offset,
+      result.status,
+      result.detected);
 
     const auto& filtered_anomalies = get_stm_manifest().detected_anomalies();
 
     BOOST_REQUIRE_EQUAL(filtered_anomalies.missing_segments.size(), 0);
     BOOST_REQUIRE(!filtered_anomalies.has_value());
+
+    for (const auto& result : partial_results) {
+        manifest_clone.process_anomalies(
+          model::timestamp::now(),
+          result.last_scrubbed_offset,
+          result.status,
+          result.detected);
+    }
+
+    const auto& filtered_from_partials = manifest_clone.detected_anomalies();
+
+    BOOST_REQUIRE_EQUAL(filtered_anomalies, filtered_from_partials);
 }
 
 BOOST_AUTO_TEST_CASE(test_offset_anomaly_detection) {
