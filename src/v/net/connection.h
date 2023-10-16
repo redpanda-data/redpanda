@@ -53,6 +53,9 @@ public:
     ss::future<> write(ss::scattered_message<char> msg);
     ss::future<> shutdown();
     void shutdown_input();
+    ss::socket_address local_address() const noexcept {
+        return _fd.local_address();
+    }
 
     // NOLINTNEXTLINE
     const ss::socket_address addr;
