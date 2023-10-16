@@ -632,6 +632,12 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request;
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
+
+    if (unlikely(ctx.recovery_mode_enabled())) {
+        return process_result_stages::single_stage(ctx.respond(
+          request.make_error_response(error_code::policy_violation)));
+    }
+
     if (ctx.metadata_cache().should_reject_writes()) {
         thread_local static ss::logger::rate_limit rate(despam_interval);
         klog.log(

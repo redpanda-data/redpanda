@@ -879,6 +879,10 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
                   octx.response.data.error_code = octx.session_ctx.error();
                   return std::move(octx).send_response();
               }
+              if (unlikely(octx.rctx.recovery_mode_enabled())) {
+                  octx.response.data.error_code = error_code::policy_violation;
+                  return std::move(octx).send_response();
+              }
               octx.response.data.error_code = error_code::none;
               // first fetch, do not wait
               return fetch_topic_partitions(octx)

@@ -106,13 +106,16 @@ bool is_internal(model::topic_namespace_view tp_ns) {
 metadata_response::topic make_topic_response_from_topic_metadata(
   const cluster::metadata_cache& md_cache,
   const cluster::topic_metadata& tp_md,
-  const is_node_isolated_or_decommissioned is_node_isolated) {
+  const is_node_isolated_or_decommissioned is_node_isolated,
+  bool recovery_mode_enabled) {
     metadata_response::topic tp;
     tp.error_code = error_code::none;
     model::topic_namespace_view tp_ns = tp_md.get_configuration().tp_ns;
     tp.name = tp_md.get_configuration().tp_ns.tp;
 
     tp.is_internal = is_internal(tp_ns);
+
+    const bool is_user_topic = model::is_user_topic(tp_ns);
 
     for (const auto& p_as : tp_md.get_assignments()) {
         std::vector<model::node_id> replicas{};
@@ -125,14 +128,17 @@ metadata_response::topic make_topic_response_from_topic_metadata(
           [](const model::broker_shard& bs) { return bs.node_id; });
         metadata_response::partition p;
         p.error_code = error_code::none;
+        if (recovery_mode_enabled && is_user_topic) {
+            p.error_code = error_code::policy_violation;
+        }
         p.partition_index = p_as.id;
         p.leader_id = no_leader;
         auto lt = get_leader_term(tp_ns, p_as.id, md_cache, replicas);
-        if (lt && !is_node_isolated) {
+        if (lt && !is_node_isolated && p.error_code == error_code::none) {
             p.leader_id = lt->leader.value_or(no_leader);
             p.leader_epoch = leader_epoch_from_term(lt->term);
         }
-        if (is_node_isolated) {
+        if (is_node_isolated && p.error_code == error_code::none) {
             auto replicas_for_sfuffle = replicas;
             std::shuffle(
               replicas_for_sfuffle.begin(),
@@ -210,7 +216,8 @@ static ss::future<metadata_response::topic> create_topic(
                 return make_topic_response_from_topic_metadata(
                   ctx.metadata_cache(),
                   tp_md.value(),
-                  is_node_isolated_or_decommissioned::no);
+                  is_node_isolated_or_decommissioned::no,
+                  ctx.recovery_mode_enabled());
             });
       })
       .handle_exception([topic = std::move(topic)](
@@ -242,7 +249,7 @@ static metadata_response::topic make_topic_response(
     }
 
     auto res = make_topic_response_from_topic_metadata(
-      ctx.metadata_cache(), md, is_node_isolated);
+      ctx.metadata_cache(), md, is_node_isolated, ctx.recovery_mode_enabled());
     res.topic_authorized_operations = auth_operations;
     return res;
 }

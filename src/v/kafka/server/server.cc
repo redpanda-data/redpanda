@@ -1088,6 +1088,12 @@ ss::future<response_ptr> init_producer_id_handler::handle(
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
 
+        if (unlikely(ctx.recovery_mode_enabled())) {
+            init_producer_id_response reply;
+            reply.data.error_code = error_code::policy_violation;
+            return ctx.respond(reply);
+        }
+
         if (request.data.transactional_id) {
             if (!ctx.authorized(
                   security::acl_operation::write,
