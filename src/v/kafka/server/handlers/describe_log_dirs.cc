@@ -139,8 +139,15 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
       .log_dir = fmt::format("remote://{}", bucket_name),
     });
 
-    if (!ctx.authorized(
-          security::acl_operation::describe, security::default_cluster_name)) {
+    auto authz = ctx.authorized(
+      security::acl_operation::describe, security::default_cluster_name);
+
+    if (!ctx.audit()) {
+        response.data.error_code = error_code::broker_not_available;
+        co_return co_await ctx.respond(std::move(response));
+    }
+
+    if (!authz) {
         // in this case kafka returns no authorization error
         co_return co_await ctx.respond(std::move(response));
     }
