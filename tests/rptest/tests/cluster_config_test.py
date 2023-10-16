@@ -606,7 +606,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # The default value is ['BASIC'], but the array cannot contain
                 # arbitrary strings because the config system validates them.
                 # Removing BASIC breaks tests that use the admin API.
-                valid_value = ['BASIC']
+                valid_value = ['BASIC', 'OIDC']
 
             if name == 'sasl_kerberos_principal_mapping':
                 # The default value is ['DEFAULT'], but the array must contain

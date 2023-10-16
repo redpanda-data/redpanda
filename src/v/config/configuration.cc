@@ -2730,7 +2730,8 @@ configuration::configuration()
   , http_authentication(
       *this,
       "http_authentication",
-      "A list of supported HTTP authentication mechanisms. `BASIC` is allowed.",
+      "A list of supported HTTP authentication mechanisms. `BASIC` and `OIDC` "
+      "are allowed.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"BASIC"},
       validate_http_authn_mechanisms) {}

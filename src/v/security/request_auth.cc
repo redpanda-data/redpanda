@@ -15,8 +15,10 @@
 #include "config/configuration.h"
 #include "seastar/http/exception.hh"
 #include "security/credential_store.h"
+#include "security/oidc_authenticator.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
+#include "security/types.h"
 #include "vlog.h"
 
 #include <seastar/core/sstring.hh>
@@ -77,8 +79,6 @@ request_auth_result request_authenticator::do_authenticate(
   ss::http::request const& req,
   security::credential_store const& cred_store,
   bool require_auth) {
-    security::credential_user username;
-
     constexpr auto supports = [](std::string_view m) {
         return absl::c_any_of(
           config::shard_local_cfg().http_authentication(),
@@ -87,6 +87,7 @@ request_auth_result request_authenticator::do_authenticate(
 
     auto auth_hdr = req.get_header("authorization");
     if (supports("BASIC") && auth_hdr.substr(0, 5) == "Basic") {
+        security::credential_user username;
         // Minimal length: Basic, a space, 1 or more bytes
         if (auth_hdr.size() < 7) {
             throw ss::httpd::bad_request_exception(
@@ -162,6 +163,29 @@ request_auth_result request_authenticator::do_authenticate(
                   request_auth_result::superuser(superuser));
             }
         }
+    } else if (supports("OIDC") && auth_hdr.substr(0, 6) == "Bearer") {
+        // Minimal length: Bearer, a space, 1 or more bytes
+        if (auth_hdr.size() < 8) {
+            throw ss::httpd::bad_request_exception(
+              "Malformed Authorization header");
+        }
+        auto auth = security::oidc::authenticator{
+          _controller->get_oidc_service().local()};
+        auto res = auth.authenticate(auth_hdr.substr(7));
+        if (res.has_error()) {
+            throw ss::httpd::base_exception(
+              "Unauthorized", ss::http::reply::status_type::unauthorized);
+        }
+        auto principal = res.assume_value().name();
+        const auto& superusers = _superusers();
+        auto found = std::find(superusers.begin(), superusers.end(), principal);
+        bool superuser = (found != superusers.end()) || (!require_auth);
+        vlog(logger.trace, "Authenticated principal {}", principal);
+        return request_auth_result{
+          security::credential_user{principal},
+          security::credential_password{auth_hdr},
+          security::oidc::sasl_authenticator::name,
+          request_auth_result::superuser{superuser}};
     } else if (!auth_hdr.empty()) {
         throw ss::httpd::bad_request_exception(
           "Unsupported Authorization method");

@@ -12,9 +12,13 @@ from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.services.redpanda import LoggingConfig, SecurityConfig, make_redpanda_service
-from rptest.services.keycloak import KeycloakService
+from rptest.services.redpanda import LoggingConfig, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
+from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.cluster import cluster
+
+import requests
+from keycloak import KeycloakOpenID
+from urllib.parse import urlparse
 
 CLIENT_ID = 'myapp'
 TOKEN_AUDIENCE = 'account'
@@ -37,6 +41,7 @@ class RedpandaOIDCTestBase(Test):
                  test_context,
                  num_nodes=4,
                  sasl_mechanisms=['SCRAM', 'OAUTHBEARER'],
+                 http_authentication=["BASIC", "OIDC"],
                  **kwargs):
         super(RedpandaOIDCTestBase, self).__init__(test_context, **kwargs)
         self.produce_messages = []
@@ -54,6 +59,13 @@ class RedpandaOIDCTestBase(Test):
         security = SecurityConfig()
         security.enable_sasl = True
         security.sasl_mechanisms = sasl_mechanisms
+        security.http_authentication = http_authentication
+
+        pandaproxy_config = PandaproxyConfig()
+        pandaproxy_config.authn_method = 'http_basic'
+
+        schema_reg_config = SchemaRegistryConfig()
+        schema_reg_config.authn_method = 'http_basic'
 
         self.redpanda = make_redpanda_service(
             test_context,
@@ -63,6 +75,8 @@ class RedpandaOIDCTestBase(Test):
                 "oidc_token_audience": TOKEN_AUDIENCE,
             },
             security=security,
+            pandaproxy_config=pandaproxy_config,
+            schema_registry_config=schema_reg_config,
             log_config=log_config)
 
         self.su_username, self.su_password, self.su_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
@@ -123,3 +137,42 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
         wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
                    == expected_topics,
                    timeout_sec=5)
+
+        token_endpoint_url = urlparse(cfg.token_endpoint)
+        openid = KeycloakOpenID(
+            server_url=
+            f'{token_endpoint_url.scheme}://{token_endpoint_url.netloc}',
+            client_id=cfg.client_id,
+            client_secret_key=cfg.client_secret,
+            realm_name=DEFAULT_REALM,
+            verify=True)
+        token = openid.token(grant_type="client_credentials")
+
+        def check_pp_topics():
+            response = requests.get(
+                url=
+                f'http://{self.redpanda.nodes[0].account.hostname}:8082/topics',
+                headers={
+                    'Accept': 'application/vnd.kafka.v2+json',
+                    'Content-Type': 'application/vnd.kafka.v2+json',
+                    'Authorization': f'Bearer {token["access_token"]}'
+                },
+                timeout=5)
+            return response.status_code == requests.codes.ok and set(
+                response.json()) == expected_topics
+
+        def check_sr_subjects():
+            response = requests.get(
+                url=
+                f'http://{self.redpanda.nodes[0].account.hostname}:8081/subjects',
+                headers={
+                    'Accept': 'application/vnd.schemaregistry.v1+json',
+                    'Authorization': f'Bearer {token["access_token"]}'
+                },
+                timeout=5)
+            return response.status_code == requests.codes.ok and response.json(
+            ) == []
+
+        wait_until(check_pp_topics, timeout_sec=5)
+
+        wait_until(check_sr_subjects, timeout_sec=5)

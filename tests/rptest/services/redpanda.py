@@ -670,6 +670,7 @@ class SecurityConfig:
         self.enable_sasl = False
         self.kafka_enable_authorization: Optional[bool] = None
         self.sasl_mechanisms: Optional[list[str]] = None
+        self.http_authentication: Optional[list[str]] = None
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
         self.require_client_auth: bool = True
@@ -3118,6 +3119,13 @@ class RedpandaService(RedpandaServiceBase):
                 f"Setting sasl_mechanisms: {self._security.sasl_mechanisms} in cluster configuration"
             )
             conf.update(dict(sasl_mechanisms=self._security.sasl_mechanisms))
+
+        if self._security.http_authentication is not None:
+            self.logger.debug(
+                f"Setting http_authentication: {self._security.http_authentication} in cluster configuration"
+            )
+            conf.update(
+                dict(http_authentication=self._security.http_authentication))
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:

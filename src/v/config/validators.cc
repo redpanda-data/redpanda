@@ -125,7 +125,8 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
 
 std::optional<ss::sstring>
 validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms) {
-    constexpr auto supported = std::to_array<std::string_view>({"BASIC"});
+    constexpr auto supported = std::to_array<std::string_view>(
+      {"BASIC", "OIDC"});
 
     // Validate results
     for (const auto& m : mechanisms) {
