@@ -1828,6 +1828,11 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
                 response.data.transaction_states.push_back(std::move(tx_state));
             }
         }
+
+        if (!ctx.audit()) {
+            response.data.transaction_states.clear();
+            response.data.error_code = error_code::broker_not_available;
+        }
     } else {
         // In this 2 errors not coordinator got request and we just return empty
         // array
