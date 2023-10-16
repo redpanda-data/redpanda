@@ -56,9 +56,14 @@ struct find_coordinator_response final {
     find_coordinator_response() = default;
 
     find_coordinator_response(
-      error_code error, model::node_id node, ss::sstring host, int32_t port)
+      error_code error,
+      std::optional<ss::sstring> error_message,
+      model::node_id node,
+      ss::sstring host,
+      int32_t port)
       : data({
         .error_code = error,
+        .error_message = std::move(error_message),
         .node_id = node,
         .host = std::move(host),
         .port = port,
@@ -67,10 +72,15 @@ struct find_coordinator_response final {
     find_coordinator_response(
       model::node_id node, ss::sstring host, int32_t port)
       : find_coordinator_response(
-        error_code::none, node, std::move(host), port) {}
+        error_code::none, std::nullopt, node, std::move(host), port) {}
+
+    find_coordinator_response(error_code error, ss::sstring error_message)
+      : find_coordinator_response(
+        error, std::move(error_message), model::node_id(-1), "", -1) {}
 
     explicit find_coordinator_response(error_code error)
-      : find_coordinator_response(error, model::node_id(-1), "", -1) {}
+      : find_coordinator_response(
+        error, std::nullopt, model::node_id(-1), "", -1) {}
 
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
