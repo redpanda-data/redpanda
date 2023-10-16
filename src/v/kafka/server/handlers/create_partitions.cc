@@ -180,6 +180,18 @@ ss::future<response_ptr> create_partitions_handler::handle(
           return ctx.authorized(security::acl_operation::alter, tp.name);
       });
 
+    if (!ctx.audit()) {
+        auto distance = std::distance(
+          request.data.topics.begin(), valid_range_end);
+
+        co_return co_await ctx.respond(create_partitions_response(
+          error_code::broker_not_available,
+          "Broker not available - audit system failure",
+          std::move(resp),
+          std::move(request),
+          distance));
+    }
+
     // check duplicates
     valid_range_end = validate_range_duplicates(
       request.data.topics.begin(),

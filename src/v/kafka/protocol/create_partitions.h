@@ -43,6 +43,39 @@ struct create_partitions_response final {
 
     create_partitions_response_data data;
 
+    create_partitions_response() = default;
+
+    create_partitions_response(
+      error_code ec,
+      std::optional<ss::sstring> error_message,
+      create_partitions_response current_resp,
+      create_partitions_request request_data,
+      std::vector<create_partitions_topic>::difference_type request_topic_end) {
+        data.results.reserve(
+          current_resp.data.results.size() + request_data.data.topics.size());
+        std::transform(
+          current_resp.data.results.begin(),
+          current_resp.data.results.end(),
+          std::back_inserter(data.results),
+          [ec, &error_message](const create_partitions_topic_result& r) {
+              return create_partitions_topic_result{
+                .name = r.name,
+                .error_code = ec,
+                .error_message = error_message,
+              };
+          });
+        std::transform(
+          request_data.data.topics.begin(),
+          request_data.data.topics.begin() + request_topic_end,
+          std::back_inserter(data.results),
+          [ec, &error_message](const create_partitions_topic& t) {
+              return create_partitions_topic_result{
+                .name = t.name,
+                .error_code = ec,
+                .error_message = error_message};
+          });
+    }
+
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
