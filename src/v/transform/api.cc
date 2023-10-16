@@ -419,6 +419,15 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     co_return ec;
 }
 
+ss::future<model::cluster_transform_report> service::list_transforms() {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return model::cluster_transform_report{};
+    }
+    auto _ = _gate.hold();
+    co_return co_await _rpc_client->local().generate_report();
+}
+
 ss::future<> service::cleanup_wasm_binary(uuid_t key) {
     // TODO(rockwood): This is a best effort cleanup, we should also have
     // some sort of GC process as well.

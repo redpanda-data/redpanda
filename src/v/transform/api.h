@@ -65,6 +65,11 @@ public:
     ss::future<cluster::errc> delete_transform(model::transform_name);
 
     /**
+     * List all transforms from the entire cluster.
+     */
+    ss::future<model::cluster_transform_report> list_transforms();
+
+    /**
      * Create a reporter of the transform subsystem.
      */
     static std::unique_ptr<rpc::reporter>
