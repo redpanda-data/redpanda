@@ -367,6 +367,11 @@ ss::future<response_ptr> heartbeat_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
+    if (unlikely(ctx.recovery_mode_enabled())) {
+        co_return co_await ctx.respond(
+          heartbeat_response(error_code::policy_violation));
+    }
+
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(
           heartbeat_response(error_code::group_authorization_failed));
@@ -427,6 +432,11 @@ process_result_stages sync_group_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
+    if (ctx.recovery_mode_enabled()) {
+        return process_result_stages::single_stage(
+          ctx.respond(sync_group_response(error_code::policy_violation)));
+    }
+
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         return process_result_stages::single_stage(ctx.respond(
           sync_group_response(error_code::group_authorization_failed)));
@@ -451,6 +461,11 @@ ss::future<response_ptr> leave_group_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     request.version = ctx.header().version;
     log_request(ctx.header(), request);
+
+    if (ctx.recovery_mode_enabled()) {
+        co_return co_await ctx.respond(
+          leave_group_response(error_code::policy_violation));
+    }
 
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(
@@ -571,6 +586,11 @@ process_result_stages join_group_handler::handle(
     request.client_host = kafka::client_host(
       fmt::format("{}", ctx.connection()->client_host()));
     log_request(ctx.header(), request);
+
+    if (ctx.recovery_mode_enabled()) {
+        return process_result_stages::single_stage(
+          ctx.respond(join_group_response(error_code::policy_violation)));
+    }
 
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         return process_result_stages::single_stage(ctx.respond(
