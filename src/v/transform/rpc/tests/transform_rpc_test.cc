@@ -31,6 +31,7 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
+#include "test_utils/randoms.h"
 #include "test_utils/test.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
@@ -232,9 +233,24 @@ private:
 };
 
 class fake_reporter : public reporter {
+public:
     ss::future<model::cluster_transform_report> compute_report() override {
-        throw std::runtime_error("unimplemented");
+        co_return _report;
     }
+
+    const model::cluster_transform_report& report() { return _report; }
+
+    void add_to_report(
+      model::transform_id id,
+      const model::transform_metadata& meta,
+      const std::vector<model::transform_report::processor>& processors) {
+        for (const auto& p : processors) {
+            _report.add(id, meta, p);
+        }
+    }
+
+private:
+    model::cluster_transform_report _report;
 };
 
 class fake_partition_manager : public partition_manager {
@@ -656,6 +672,19 @@ model::ntp make_ntp(std::string_view topic) {
       model::kafka_namespace, model::topic(topic), model::partition_id(0)};
 }
 
+model::transform_metadata make_transform_meta() {
+    return model::transform_metadata{
+      .name = tests::random_named_string<model::transform_name>(),
+      .input_topic = model::random_topic_namespace(),
+      .output_topics = {model::random_topic_namespace()},
+      .uuid = uuid_t::create(),
+      .source_ptr = model::random_offset()};
+};
+
+model::transform_report make_transform_report(model::transform_metadata meta) {
+    return model::transform_report(std::move(meta));
+};
+
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
@@ -774,5 +803,50 @@ INSTANTIATE_TEST_SUITE_P(
       .num_transform_topic_partitions = 3, .shuffle_leadership = true},
     TransformRpcTestParams{
       .num_transform_topic_partitions = 3, .shuffle_leadership = false}));
+
+TEST_F(TransformRpcTest, CanAggregateReports) {
+    using state = model::transform_report::processor::state;
+    model::transform_metadata a_meta = make_transform_meta();
+    model::transform_metadata b_meta = make_transform_meta();
+    local_reporter()->add_to_report(
+      model::transform_id(1),
+      a_meta,
+      {
+        model::transform_report::processor{
+          .id = model::partition_id(0),
+          .status = state::running,
+          .node = self_node,
+          .core = 0,
+        },
+        model::transform_report::processor{
+          .id = model::partition_id(2),
+          .status = state::inactive,
+          .node = self_node,
+          .core = 1,
+        },
+      });
+    remote_reporter()->add_to_report(
+      model::transform_id(2),
+      b_meta,
+      {model::transform_report::processor{
+        .id = model::partition_id(0),
+        .status = state::running,
+        .node = other_node,
+        .core = 2,
+      }});
+    remote_reporter()->add_to_report(
+      model::transform_id(1),
+      a_meta,
+      {model::transform_report::processor{
+        .id = model::partition_id(1),
+        .status = state::errored,
+        .node = other_node,
+        .core = 0,
+      }});
+    model::cluster_transform_report actual = client()->generate_report().get();
+    model::cluster_transform_report expected = local_reporter()->report();
+    expected.merge(remote_reporter()->report());
+    EXPECT_EQ(actual, expected);
+}
 
 } // namespace transform::rpc
