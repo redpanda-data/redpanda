@@ -157,6 +157,18 @@ ss::future<response_ptr> create_partitions_handler::handle(
 
     resp.data.results.reserve(request.data.topics.size());
 
+    if (ctx.recovery_mode_enabled()) {
+        for (const auto& t : request.data.topics) {
+            resp.data.results.push_back(create_partitions_topic_result{
+              .name = t.name,
+              .error_code = error_code::policy_violation,
+              .error_message = "Forbidden in recovery mode",
+            });
+        }
+
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
     // authorize
     auto valid_range_end = validate_range(
       request.data.topics.begin(),

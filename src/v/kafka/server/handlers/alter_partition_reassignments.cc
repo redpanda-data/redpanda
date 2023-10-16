@@ -329,6 +329,12 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
         return octx.rctx.respond(std::move(octx.response));
     }
 
+    if (octx.rctx.recovery_mode_enabled()) {
+        octx.response.data.error_code = error_code::policy_violation;
+        octx.response.data.error_message = "Forbidden in recovery mode.";
+        return octx.rctx.respond(std::move(octx.response));
+    }
+
     if (!octx.rctx.authorized(
           security::acl_operation::alter, security::default_cluster_name)) {
         vlog(
