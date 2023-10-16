@@ -945,8 +945,13 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
     log_request(ctx.header(), request);
     if (!ctx.authorized(
           security::acl_operation::describe, request.data.group_id)) {
-        co_return co_await ctx.respond(
-          offset_fetch_response(error_code::group_authorization_failed));
+        if (!ctx.audit()) {
+            co_return co_await ctx.respond(
+              offset_fetch_response(error_code::broker_not_available));
+        } else {
+            co_return co_await ctx.respond(
+              offset_fetch_response(error_code::group_authorization_failed));
+        }
     }
 
     /*
@@ -972,6 +977,13 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
                 topic.name,
                 authz_quiet{true});
           });
+
+        if (!ctx.audit()) {
+            resp.data.topics.clear();
+            resp.data.error_code = error_code::broker_not_available;
+            co_return co_await ctx.respond(std::move(resp));
+        }
+
         resp.data.topics.erase(unauthorized, resp.data.topics.end());
 
         co_return co_await ctx.respond(std::move(resp));
@@ -986,6 +998,11 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
       [&ctx](const offset_fetch_request_topic& topic) {
           return ctx.authorized(security::acl_operation::describe, topic.name);
       });
+
+    if (!ctx.audit()) {
+        co_return co_await ctx.respond(
+          offset_fetch_response(error_code::broker_not_available));
+    }
 
     std::vector<offset_fetch_request_topic> unauthorized(
       std::make_move_iterator(unauthorized_it),
