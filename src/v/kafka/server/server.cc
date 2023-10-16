@@ -654,7 +654,15 @@ process_result_stages join_group_handler::handle(
           ctx.respond(join_group_response(error_code::policy_violation)));
     }
 
-    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
+    auto authz = ctx.authorized(
+      security::acl_operation::read, request.data.group_id);
+
+    if (!ctx.audit()) {
+        return process_result_stages::single_stage(
+          ctx.respond(join_group_response(error_code::broker_not_available)));
+    }
+
+    if (!authz) {
         return process_result_stages::single_stage(ctx.respond(
           join_group_response(error_code::group_authorization_failed)));
     }
