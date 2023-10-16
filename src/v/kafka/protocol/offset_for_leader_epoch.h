@@ -43,6 +43,48 @@ struct offset_for_leader_epoch_response final {
 
     offset_for_leader_epoch_response_data data;
 
+    offset_for_leader_epoch_response() = default;
+
+    offset_for_leader_epoch_response(
+      error_code ec,
+      offset_for_leader_epoch_request current_request,
+      std::vector<offset_for_leader_topic_result> unauthorized_results) {
+        data.topics.reserve(
+          current_request.data.topics.size() + unauthorized_results.size());
+
+        std::transform(
+          current_request.data.topics.begin(),
+          current_request.data.topics.end(),
+          std::back_inserter(data.topics),
+          [ec](offset_for_leader_topic& o) {
+              std::vector<epoch_end_offset> offsets;
+              offsets.reserve(o.partitions.size());
+              std::transform(
+                o.partitions.begin(),
+                o.partitions.end(),
+                std::back_inserter(offsets),
+                [ec](const offset_for_leader_partition& ol) {
+                    return epoch_end_offset{
+                      .error_code = ec, .partition = ol.partition};
+                });
+              return offset_for_leader_topic_result{
+                .topic = std::move(o.topic), .partitions = std::move(offsets)};
+          });
+        std::for_each(
+          unauthorized_results.begin(),
+          unauthorized_results.end(),
+          [ec](offset_for_leader_topic_result& r) {
+              std::for_each(
+                r.partitions.begin(),
+                r.partitions.end(),
+                [ec](epoch_end_offset& o) { o.error_code = ec; });
+          });
+        std::move(
+          unauthorized_results.begin(),
+          unauthorized_results.end(),
+          std::back_inserter(data.topics));
+    }
+
     static epoch_end_offset make_epoch_end_offset(
       model::partition_id p_id,
       kafka::error_code ec,
