@@ -24,6 +24,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace model {
 /**
@@ -125,6 +126,8 @@ static const model::topic_namespace transform_offsets_nt(
 struct transform_report
   : serde::
       envelope<transform_report, serde::version<0>, serde::compat_version<0>> {
+    explicit transform_report(transform_metadata meta);
+
     // The overall metadata for a transform.
     transform_metadata metadata;
 
@@ -153,6 +156,9 @@ struct transform_report
       = default;
 
     auto serde_fields() { return std::tie(metadata, processors); }
+
+    // Add a processor's report to the overall transform's report.
+    void add(processor);
 };
 
 /**
@@ -170,6 +176,16 @@ struct cluster_transform_report
       = default;
 
     auto serde_fields() { return std::tie(transforms); }
+
+    // Add a processor's report for a single transform to this overall report.
+    void
+    add(transform_id, const transform_metadata&, transform_report::processor);
+
+    // Merge cluster views of transforms into this report.
+    //
+    // This is useful for aggregating multiple node's reports into a single
+    // report.
+    void merge(const cluster_transform_report&);
 };
 
 } // namespace model

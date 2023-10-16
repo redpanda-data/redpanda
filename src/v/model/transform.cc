@@ -11,6 +11,8 @@
 
 #include "model/transform.h"
 
+#include "model/fundamental.h"
+
 namespace model {
 
 std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
@@ -49,6 +51,34 @@ operator<<(std::ostream& os, const transform_report::processor& p) {
       p.node,
       p.core);
     return os;
+}
+
+transform_report::transform_report(transform_metadata meta)
+  : metadata(std::move(meta))
+  , processors() {}
+
+void transform_report::add(processor processor) {
+    processors.insert_or_assign(processor.id, processor);
+}
+
+void cluster_transform_report::add(
+  transform_id id,
+  const transform_metadata& meta,
+  transform_report::processor processor) {
+    auto it = transforms.find(id);
+    if (it == transforms.end()) {
+        auto result = transforms.emplace(id, meta);
+        it = result.first;
+    }
+    it->second.add(processor);
+}
+
+void cluster_transform_report::merge(const cluster_transform_report& other) {
+    for (const auto& [tid, treport] : other.transforms) {
+        for (const auto& [pid, preport] : treport.processors) {
+            add(tid, treport.metadata, preport);
+        }
+    }
 }
 
 } // namespace model
