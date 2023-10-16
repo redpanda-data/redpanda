@@ -135,6 +135,8 @@ public:
         bool _is_errored = true;
     };
 
+    auto range() const { return std::make_pair(_table.begin(), _table.end()); }
+
     entry_t&
     insert(std::unique_ptr<processor> processor, ss::lw_shared_ptr<probe> p) {
         auto id = processor->id();
@@ -429,6 +431,27 @@ ss::future<> manager<ClockType>::drain_queue_for_test() {
         return ss::now();
     });
     co_await std::move(f);
+}
+
+template<typename ClockType>
+model::cluster_transform_report manager<ClockType>::compute_report() const {
+    model::cluster_transform_report report;
+    for (auto [it, end] = _processors->range(); it != end; ++it) {
+        const auto& entry = it->second;
+        processor* p = entry.processor();
+        auto id = p->ntp().tp.partition;
+
+        report.add(
+          p->id(),
+          p->meta(),
+          {
+            .id = id,
+            .status = entry.compute_state(),
+            .node = _self,
+            .core = ss::this_shard_id(),
+          });
+    }
+    return report;
 }
 
 template class manager<ss::lowres_clock>;

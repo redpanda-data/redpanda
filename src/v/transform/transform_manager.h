@@ -125,6 +125,10 @@ public:
     void on_transform_error(
       model::transform_id, model::ntp, model::transform_metadata);
 
+    // Get the current state of all the transforms this manager is responsible
+    // for.
+    model::cluster_transform_report compute_report() const;
+
     // Exposed for testing, but drains all the pending operations.
     //
     // Any future here should resolve before calling `stop`.
