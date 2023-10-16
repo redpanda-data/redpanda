@@ -12,8 +12,8 @@
 #include "json/json.h"
 #include "security/audit/schemas/types.h"
 #include "security/audit/schemas/utils.h"
+#include "security/request_auth.h"
 #include "security/types.h"
-#include "utils/request_auth.h"
 
 #include <seastar/net/socket_defs.hh>
 

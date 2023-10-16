@@ -19,6 +19,7 @@ v_cc_library(
     oidc_authenticator.cc
     oidc_service.cc
     credential.cc
+    request_auth.cc
     acl.cc
     mtls.cc
     license.cc
