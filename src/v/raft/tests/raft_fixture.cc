@@ -76,10 +76,12 @@ ss::future<> channel::stop() {
     if (!_as.abort_requested()) {
         _as.request_abort();
         _new_messages.broken();
+
+        co_await _gate.close();
+
         for (auto& m : _messages) {
             m.resp_data.set_exception(ss::abort_requested_exception());
         }
-        co_await _gate.close();
     }
 }
 
