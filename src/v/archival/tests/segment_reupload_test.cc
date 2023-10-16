@@ -327,7 +327,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(!collector.should_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
     BOOST_REQUIRE_EQUAL(1, segments.size());
 
@@ -438,7 +438,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(!collector.should_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
 
     BOOST_REQUIRE_EQUAL(1, segments.size());
@@ -879,7 +879,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
 
 SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
     // 'segment_collector' should not propose the re-upload
-    // of a single segment if the compacted size is equal to
+    // of a segment if the compacted size is equal to
     // the size of the segment in the manifest. In that case,
     // the resulting addresable name in cloud storage would be the
     // same for the segment before and after compaction. This would
@@ -915,9 +915,8 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
         .delta_offset_end = model::offset_delta(0)});
 
     // Mark self compaction as complete on the segment and collect
-    // segments for re-upload. 'should_replace_manifest_segment'
-    // must return 'false' as the 'mock' self-compaction did not reduce
-    // the size.
+    // segments for re-upload. The upload candidate should be a noop
+    // since the selected reupload has the same size as the existing segment.
     b.get_segment(0).mark_as_finished_self_compaction();
 
     {
@@ -926,27 +925,37 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
 
         collector.collect_segments();
         BOOST_REQUIRE_EQUAL(collector.collected_size(), first_seg_size);
-        BOOST_REQUIRE(!collector.should_replace_manifest_segment());
+        BOOST_REQUIRE(collector.should_replace_manifest_segment());
+
+        auto noop_candidate
+          = collector.make_upload_candidate(ss::default_priority_class(), 1s)
+              .get();
+        BOOST_REQUIRE(noop_candidate.candidate.sources.empty());
+        BOOST_REQUIRE_EQUAL(
+          noop_candidate.candidate.final_offset, model::offset{1});
     }
 
-    // Add another segment to the log and partition manifest.
+    // Add another segment to the log and change the manifest to contain
+    // only one segment that maps to the two local segments. This simulates
+    // a potentila reupload after change of leadership.
     b | storage::add_segment(2) | storage::add_random_batch(2, 2);
+
+    m = cloud_storage::partition_manifest(ntp, model::initial_revision_id{1});
     auto second_seg_size = b.get_segment(1).size_bytes();
     m.add(
-      segment_name("2-1-v1.log"),
+      segment_name("0-1-v1.log"),
       cloud_storage::segment_meta{
         .is_compacted = false,
-        .size_bytes = second_seg_size,
-        .base_offset = model::offset(2),
+        .size_bytes = first_seg_size + second_seg_size,
+        .base_offset = model::offset(0),
         .committed_offset = model::offset(3),
         .delta_offset = model::offset_delta(0),
         .delta_offset_end = model::offset_delta(0)});
 
     // Mark the second segment as having completed self compaction
-    // and collect segments for re-upload again. This time,
-    // 'should_replace_manifest_segment' must return 'true',
-    // as we are not replacing a signle segment and there's no
-    // posibility for a clash (two segments get replaced with one).
+    // and collect segments for re-upload again. Again, the upload candidate
+    // should be a no-op since the reupload of the two local segments
+    // results in a segment of the same size as the one that should be replaced.
     b.get_segment(1).mark_as_finished_self_compaction();
 
     {
@@ -960,6 +969,13 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
         BOOST_REQUIRE_EQUAL(
           collector.collected_size(), first_seg_size + second_seg_size);
         BOOST_REQUIRE(collector.should_replace_manifest_segment());
+
+        auto noop_candidate
+          = collector.make_upload_candidate(ss::default_priority_class(), 1s)
+              .get();
+        BOOST_REQUIRE(noop_candidate.candidate.sources.empty());
+        BOOST_REQUIRE_EQUAL(
+          noop_candidate.candidate.final_offset, model::offset{3});
     }
 }
 
