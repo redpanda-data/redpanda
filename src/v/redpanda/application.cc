@@ -1114,6 +1114,9 @@ void application::wire_up_runtime_services(
           ss::sharded_parameter([this] {
               return transform::rpc::partition_manager::make_default(
                 &shard_table, &partition_manager);
+          }),
+          ss::sharded_parameter([this] {
+              return transform::service::create_reporter(&_transform_service);
           }))
           .get();
         construct_service(

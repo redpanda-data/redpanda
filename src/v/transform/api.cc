@@ -23,6 +23,7 @@
 #include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
+#include "transform/rpc/deps.h"
 #include "transform/transform_manager.h"
 #include "transform/transform_processor.h"
 #include "wasm/api.h"
@@ -217,6 +218,24 @@ private:
 };
 
 } // namespace
+
+class wrapped_service_reporter : public rpc::reporter {
+public:
+    explicit wrapped_service_reporter(ss::sharded<service>* service)
+      : _service(service) {}
+
+    ss::future<model::cluster_transform_report> compute_report() override {
+        if (!_service->local_is_initialized()) {
+            return ss::make_exception_future<model::cluster_transform_report>(
+              std::make_exception_ptr(
+                std::runtime_error("transforms are disabled")));
+        }
+        return _service->local().compute_node_local_report();
+    };
+
+private:
+    ss::sharded<service>* _service;
+};
 
 service::service(
   wasm::caching_runtime* runtime,
@@ -475,6 +494,11 @@ service::compute_node_local_report() {
           agg.merge(local);
           return agg;
       });
+}
+
+std::unique_ptr<rpc::reporter>
+service::create_reporter(ss::sharded<service>* s) {
+    return std::make_unique<wrapped_service_reporter>(s);
 }
 
 } // namespace transform

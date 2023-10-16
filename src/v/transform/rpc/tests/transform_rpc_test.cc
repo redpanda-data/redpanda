@@ -24,6 +24,7 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "net/server.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
@@ -228,6 +229,12 @@ private:
       _new_topic_cb;
     ss::noncopyable_function<void(const model::ntp&, model::node_id)>
       _new_ntp_cb;
+};
+
+class fake_reporter : public reporter {
+    ss::future<model::cluster_transform_report> compute_report() override {
+        throw std::runtime_error("unimplemented");
+    }
 };
 
 class fake_partition_manager : public partition_manager {
@@ -449,6 +456,11 @@ public:
                 auto fpm = std::make_unique<fake_partition_manager>();
                 _remote_fpm = fpm.get();
                 return fpm;
+            }),
+            ss::sharded_parameter([this]() {
+                auto fr = std::make_unique<fake_reporter>();
+                _remote_fr = fr.get();
+                return fr;
             }))
           .get();
 
@@ -478,6 +490,11 @@ public:
                 auto fpm = std::make_unique<fake_partition_manager>();
                 _local_fpm = fpm.get();
                 return fpm;
+            }),
+            ss::sharded_parameter([this]() {
+                auto fr = std::make_unique<fake_reporter>();
+                _local_fr = fr.get();
+                return fr;
             }))
           .get();
         _conn_cache.start(std::ref(_as), std::nullopt).get();
@@ -519,10 +536,12 @@ public:
         _local_services.stop().get();
         _remote_services.stop().get();
         _as.stop().get();
+        _local_fr = nullptr;
         _local_ftmc = nullptr;
         _local_fpm = nullptr;
         _remote_ftmc = nullptr;
         _remote_fpm = nullptr;
+        _remote_fr = nullptr;
         _fplc = nullptr;
     }
 
@@ -609,6 +628,8 @@ private:
     fake_partition_manager* _remote_fpm = nullptr;
     fake_partition_leader_cache* _fplc = nullptr;
     fake_topic_creator* _ftpc = nullptr;
+    fake_reporter* _local_fr = nullptr;
+    fake_reporter* _remote_fr = nullptr;
     ss::sharded<rpc::local_service> _local_services;
     ss::sharded<rpc::local_service> _remote_services;
     ss::sharded<::rpc::connection_cache> _conn_cache;

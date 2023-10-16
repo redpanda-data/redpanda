@@ -20,5 +20,6 @@ class probe;
 namespace rpc {
 class client;
 class local_service;
+class reporter;
 } // namespace rpc
 } // namespace transform

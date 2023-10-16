@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
+#include "model/transform.h"
 #include "transform/rpc/serde.h"
 
 #include <seastar/util/noncopyable_function.hh>
@@ -26,6 +27,21 @@
  */
 
 namespace transform::rpc {
+
+/**
+ * Able to report on the state of all transforms for this node.
+ */
+class reporter {
+public:
+    reporter() = default;
+    reporter(const reporter&) = delete;
+    reporter& operator=(const reporter&) = delete;
+    reporter(reporter&&) = delete;
+    reporter& operator=(reporter&&) = delete;
+    virtual ~reporter() = default;
+
+    virtual ss::future<model::cluster_transform_report> compute_report() = 0;
+};
 
 /**
  * A cache for which node owns a given partition leader.

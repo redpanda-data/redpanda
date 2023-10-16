@@ -64,6 +64,12 @@ public:
      */
     ss::future<cluster::errc> delete_transform(model::transform_name);
 
+    /**
+     * Create a reporter of the transform subsystem.
+     */
+    static std::unique_ptr<rpc::reporter>
+    create_reporter(ss::sharded<service>*);
+
 private:
     void register_notifications();
     void unregister_notifications();
@@ -77,6 +83,7 @@ private:
       ss::optimized_optional<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>>
       get_factory(model::transform_metadata);
 
+    friend class wrapped_service_reporter;
     ss::future<model::cluster_transform_report> compute_node_local_report();
 
     ss::gate _gate;
