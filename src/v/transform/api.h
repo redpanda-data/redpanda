@@ -77,6 +77,8 @@ private:
       ss::optimized_optional<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>>
       get_factory(model::transform_metadata);
 
+    ss::future<model::cluster_transform_report> compute_node_local_report();
+
     ss::gate _gate;
 
     wasm::caching_runtime* _runtime;

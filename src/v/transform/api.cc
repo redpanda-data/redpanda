@@ -18,6 +18,7 @@
 #include "features/feature_table.h"
 #include "kafka/server/replicated_partition.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
 #include "transform/io.h"
 #include "transform/logger.h"
@@ -461,6 +462,19 @@ service::get_factory(model::transform_metadata meta) {
     auto factory = co_await _runtime->make_factory(
       std::move(meta), std::move(result).value(), &tlog);
     co_return ss::make_foreign(factory);
+}
+
+ss::future<model::cluster_transform_report>
+service::compute_node_local_report() {
+    co_return co_await container().map_reduce0(
+      [](service& s) { return s._manager->compute_report(); },
+      model::cluster_transform_report{},
+      [](
+        model::cluster_transform_report agg,
+        const model::cluster_transform_report& local) {
+          agg.merge(local);
+          return agg;
+      });
 }
 
 } // namespace transform
