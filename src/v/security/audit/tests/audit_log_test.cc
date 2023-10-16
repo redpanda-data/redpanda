@@ -16,6 +16,8 @@
 #include "security/audit/schemas/types.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/util/log.hh>
+
 namespace sa = security::audit;
 
 sa::application_lifecycle make_random_audit_event() {
@@ -64,6 +66,9 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
           .set_value(enabled_types);
     }).get();
 
+    ss::global_logger_registry().set_logger_level(
+      "auditing", ss::log_level::trace);
+
     wait_for_controller_leadership().get0();
     auto& audit_mgr = app.audit_mgr;
 
@@ -104,7 +109,9 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
                                bool enqueued = m.enqueue_audit_event(
                                  sa::event_type::management,
                                  make_random_audit_event());
-                               if (i >= 5) {
+                               // There is already a message in there from
+                               // the topic creation from the audit log manager
+                               if (i >= 4) {
                                    /// Assert that when the max is reached data
                                    /// cannot be entered into the system
                                    enqueued = !enqueued;
@@ -166,4 +173,6 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
     BOOST_CHECK_EQUAL(
       pending_audit_events(audit_mgr.local()).get0(),
       size_t(5 * ss::smp::count));
+
+    BOOST_TEST_MESSAGE("End of test");
 }
