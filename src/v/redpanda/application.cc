@@ -1134,6 +1134,10 @@ void application::wire_up_runtime_services(
               return transform::rpc::topic_creator::make_default(
                 controller.get());
           }),
+          ss::sharded_parameter([this] {
+              return transform::rpc::cluster_members_cache::make_default(
+                &controller->get_members_table());
+          }),
           &_connection_cache,
           &_transform_rpc_service)
           .get();

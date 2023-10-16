@@ -428,6 +428,14 @@ constexpr auto test_timeout = std::chrono::seconds(10);
 constexpr model::node_id self_node = model::node_id(1);
 constexpr model::node_id other_node = model::node_id(2);
 
+namespace {
+class fake_cluster_members_cache : public cluster_members_cache {
+    std::vector<model::node_id> all_cluster_members() override {
+        return {self_node, other_node};
+    }
+};
+} // namespace
+
 struct test_parameters {
     model::node_id leader_node;
     model::node_id non_leader_node;
@@ -524,6 +532,7 @@ public:
           std::move(fplc),
           std::make_unique<delegating_fake_topic_metadata_cache>(_local_ftmc),
           std::move(ftpc),
+          std::make_unique<fake_cluster_members_cache>(),
           &_conn_cache,
           &_local_services);
     }
@@ -601,6 +610,9 @@ public:
     record_batches leader_batches(const model::ntp& ntp) {
         return batches_for(leader_node(), ntp);
     }
+
+    fake_reporter* local_reporter() { return _local_fr; }
+    fake_reporter* remote_reporter() { return _remote_fr; }
 
     // local node state
     fake_topic_metadata_cache* local_metadata_cache() { return _local_ftmc; }

@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "rpc/connection_cache.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/service.h"
@@ -44,6 +45,7 @@ public:
       std::unique_ptr<partition_leader_cache>,
       std::unique_ptr<topic_metadata_cache>,
       std::unique_ptr<topic_creator>,
+      std::unique_ptr<cluster_members_cache>,
       ss::sharded<::rpc::connection_cache>*,
       ss::sharded<local_service>*);
     client(client&&) = delete;
@@ -73,9 +75,16 @@ public:
     ss::future<cluster::errc> offset_commit(
       model::transform_offsets_key, model::transform_offsets_value);
 
+    ss::future<model::cluster_transform_report> generate_report();
+
     ss::future<> stop();
 
 private:
+    ss::future<model::cluster_transform_report>
+      generate_one_report(model::node_id);
+    ss::future<model::cluster_transform_report>
+      generate_remote_report(model::node_id);
+
     ss::future<produce_reply> do_local_produce(produce_request);
     ss::future<produce_reply>
       do_remote_produce(model::node_id, produce_request);
@@ -122,6 +131,7 @@ private:
       do_remote_offset_fetch(model::node_id, offset_fetch_request);
 
     model::node_id _self;
+    std::unique_ptr<cluster_members_cache> _cluster_members;
     // need partition_leaders_table to know which node owns the partitions
     std::unique_ptr<partition_leader_cache> _leaders;
     std::unique_ptr<topic_metadata_cache> _topic_metadata;

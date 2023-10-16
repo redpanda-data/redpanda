@@ -19,6 +19,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "raft/errc.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
@@ -33,6 +34,7 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/map_reduce.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/when_all.hh>
@@ -101,9 +103,11 @@ client::client(
   std::unique_ptr<partition_leader_cache> l,
   std::unique_ptr<topic_metadata_cache> md_cache,
   std::unique_ptr<topic_creator> t,
+  std::unique_ptr<cluster_members_cache> m,
   ss::sharded<::rpc::connection_cache>* c,
   ss::sharded<local_service>* s)
   : _self(self)
+  , _cluster_members(std::move(m))
   , _leaders(std::move(l))
   , _topic_metadata(std::move(md_cache))
   , _topic_creator(std::move(t))
@@ -557,6 +561,51 @@ ss::future<offset_fetch_response> client::do_remote_offset_fetch(
         co_return fetch_response;
     }
     co_return response.value();
+}
+
+ss::future<model::cluster_transform_report> client::generate_report() {
+    co_return co_await ss::map_reduce(
+      _cluster_members->all_cluster_members(),
+      [this](model::node_id node) { return generate_one_report(node); },
+      model::cluster_transform_report{},
+      [](
+        model::cluster_transform_report agg,
+        const model::cluster_transform_report& report) {
+          agg.merge(report);
+          return agg;
+      });
+}
+
+ss::future<model::cluster_transform_report>
+client::generate_one_report(model::node_id node) {
+    if (node == _self) {
+        return _local_service->local().compute_node_local_report();
+    }
+    return generate_remote_report(node);
+}
+
+ss::future<model::cluster_transform_report>
+client::generate_remote_report(model::node_id node) {
+    auto resp = co_await _connections->local()
+                  .with_node_client<impl::transform_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [](impl::transform_rpc_client_protocol proto) mutable {
+                        return proto.generate_report(
+                          {},
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<generate_report_reply>);
+    if (resp.has_error()) {
+        cluster::errc ec = map_errc(resp.error());
+        auto msg = cluster::error_category().message(int(ec));
+        throw std::runtime_error(ss::format(
+          "unable to generate transform report for {}: {}", node, msg));
+    }
+    co_return std::move(resp).value().report;
 }
 
 } // namespace transform::rpc
