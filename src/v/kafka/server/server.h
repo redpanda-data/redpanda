@@ -125,6 +125,7 @@ public:
     snc_quota_manager& snc_quota_mgr() { return _snc_quota_mgr.local(); }
     bool is_idempotence_enabled() const { return _is_idempotence_enabled; }
     bool are_transactions_enabled() const { return _are_transactions_enabled; }
+    bool recovery_mode_enabled() const { return _recovery_mode_enabled; }
 
     security::credential_store& credentials() { return _credentials.local(); }
 
@@ -210,6 +211,7 @@ private:
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     bool _is_idempotence_enabled{false};
     bool _are_transactions_enabled{false};
+    bool _recovery_mode_enabled{false};
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<security::audit::audit_log_manager>& _audit_mgr;

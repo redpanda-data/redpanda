@@ -124,6 +124,7 @@ server::server(
       config::shard_local_cfg().enable_idempotence.value())
   , _are_transactions_enabled(
       config::shard_local_cfg().enable_transactions.value())
+  , _recovery_mode_enabled(config::node().recovery_mode_enabled.value())
   , _credentials(credentials)
   , _authorizer(authorizer)
   , _audit_mgr(audit_mgr)
