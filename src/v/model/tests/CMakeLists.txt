@@ -37,3 +37,16 @@ rp_test(
   LABELS model
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME transform_models
+  SOURCES
+    transform_test.cc
+  LIBRARIES 
+    v::model_test_utils
+    v::gtest_main
+    v::model
+  LABELS model
+)

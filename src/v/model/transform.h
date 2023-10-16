@@ -126,12 +126,6 @@ static const model::topic_namespace transform_offsets_nt(
 struct transform_report
   : serde::
       envelope<transform_report, serde::version<0>, serde::compat_version<0>> {
-    transform_report() = default;
-    explicit transform_report(transform_metadata meta);
-
-    // The overall metadata for a transform.
-    transform_metadata metadata;
-
     struct processor
       : serde::
           envelope<processor, serde::version<0>, serde::compat_version<0>> {
@@ -146,6 +140,14 @@ struct transform_report
 
         auto serde_fields() { return std::tie(id, status, node, core); }
     };
+
+    transform_report() = default;
+    explicit transform_report(transform_metadata meta);
+    transform_report(
+      transform_metadata meta, absl::btree_map<model::partition_id, processor>);
+
+    // The overall metadata for a transform.
+    transform_metadata metadata;
 
     // The state of each processor of a transform.
     //
