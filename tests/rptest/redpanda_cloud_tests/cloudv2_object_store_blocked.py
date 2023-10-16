@@ -1,13 +1,18 @@
 from rptest.services.redpanda_cloud import CLOUD_TYPE_BYOC, CLOUD_TYPE_FMC
+from rptest.services.redpanda_cloud import PROVIDER_AWS, PROVIDER_GCP
 
 
 class cloudv2_object_store_blocked:
     def __init__(self, rp, logger):
         self.logger = logger
-        if rp._cloud_cluster.config.provider == "aws":
+        if rp._cloud_cluster.config.provider == PROVIDER_AWS:
             self._delegate = cloudv2_object_store_blocked_aws(rp, logger)
-        else:
+        elif rp._cloud_cluster.config.provider == PROVIDER_GCP:
             self._delegate = cloudv2_object_store_blocked_gcp(rp, logger)
+        else:
+            raise RuntimeError(
+                f"Given provider ({rp._cloud_cluster.config.provider}) not "
+                "supported in object storage blocking")
 
     def __enter__(self):
         """apply a blocking policy"""
