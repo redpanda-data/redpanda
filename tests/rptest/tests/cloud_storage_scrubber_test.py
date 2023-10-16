@@ -32,6 +32,7 @@ SCRUBBER_LOG_ALLOW_LIST = [
     r"cloud_storage - .* Failed to compute time-based retention",
     r"cloud_storage - .* Failed to compute size-based retention",
     r"cloud_storage - .* Failed to compute retention",
+    r"archival - .* Failed to compute archive retention",
 
     # The test removes a segment from the manifest for the scrubber to detect. A reupload
     # may be attempted somewhere after the base offset of the removed segment. The STM
@@ -42,36 +43,43 @@ SCRUBBER_LOG_ALLOW_LIST = [
 
 
 class CloudStorageScrubberTest(RedpandaTest):
-    scrub_timeout = 30
+    scrub_timeout = 90
     partition_count = 3
     message_size = 16 * 1024  # 16KiB
     segment_size = 1024 * 1024  # 1MiB
-    to_produce = 30 * 1024 * 1024  # 100MiB per partition
+    to_produce = 100 * 1024 * 1024  # 100MiB per partition
     topics = [TopicSpec(partition_count=partition_count)]
 
     def __init__(self, test_context):
         self.si_settings = SISettings(
             test_context,
             log_segment_size=self.segment_size,
-            cloud_storage_spillover_manifest_max_segments=5,
-            cloud_storage_housekeeping_interval_ms=1000 * 30,
+            cloud_storage_spillover_manifest_max_segments=10,
+            cloud_storage_housekeeping_interval_ms=1000 * 10,
             fast_uploads=True)
 
-        super().__init__(test_context=test_context,
-                         extra_rp_conf={
-                             "cloud_storage_enable_scrubbing":
-                             True,
-                             "cloud_storage_scrubbing_interval_ms":
-                             10 * 1000,
-                             "cloud_storage_scrubbing_interval_jitter_ms":
-                             5 * 1000,
-                         },
-                         si_settings=self.si_settings)
+        super().__init__(
+            test_context=test_context,
+            extra_rp_conf={
+                "cloud_storage_enable_scrubbing": True,
+                "cloud_storage_scrubbing_interval_ms": 1000,
+                "cloud_storage_scrubbing_interval_jitter_ms": 100,
+                # Small quota forces partial scrubs
+                "cloud_storage_background_jobs_quota": 30,
+                # Disable segment merging since it can reupload
+                # the deleted segment and remove the gap
+                "cloud_storage_enable_segment_merging": False
+            },
+            si_settings=self.si_settings)
 
         self.bucket_name = self.si_settings.cloud_storage_bucket
         self.rpk = RpkTool(self.redpanda)
 
     def _produce(self):
+        # Use a smaller working set for debug builds to keep the test timely
+        if self.debug_mode:
+            self.to_produce //= 2
+
         msg_count = self.to_produce * self.partition_count // self.message_size
         KgoVerifierProducer.oneshot(self.test_context,
                                     self.redpanda,
