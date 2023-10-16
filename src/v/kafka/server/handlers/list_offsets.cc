@@ -281,6 +281,27 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           return ctx.authorized(security::acl_operation::describe, topic.name);
       });
 
+    if (!ctx.audit()) {
+        list_offsets_response resp;
+        std::transform(
+          request.data.topics.begin(),
+          request.data.topics.end(),
+          std::back_inserter(resp.data.topics),
+          [](const list_offset_topic& t) {
+              std::vector<list_offset_partition_response> resp;
+              resp.reserve(t.partitions.size());
+              for (const auto& p : t.partitions) {
+                  resp.emplace_back(list_offset_partition_response{
+                    .partition_index = p.partition_index,
+                    .error_code = error_code::broker_not_available});
+              }
+
+              return list_offset_topic_response{
+                .name = t.name, .partitions = std::move(resp)};
+          });
+        return ctx.respond(std::move(resp));
+    }
+
     std::vector<list_offset_topic> unauthorized_topics(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topics.end()));
