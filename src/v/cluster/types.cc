@@ -1138,6 +1138,29 @@ std::ostream& operator<<(std::ostream& o, const nt_revision& ntr) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, reconfiguration_policy policy) {
+    switch (policy) {
+    case reconfiguration_policy::full_local_retention:
+        return o << "full_local_retention";
+    case reconfiguration_policy::target_initial_retention:
+        return o << "target_initial_retention";
+    case reconfiguration_policy::min_local_retention:
+        return o << "min_local_retention";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream&
+operator<<(std::ostream& o, const update_partition_replicas_cmd_data& data) {
+    fmt::print(
+      o,
+      "{{ntp: {}, replicas: {} policy: {}}}",
+      data.ntp,
+      data.replicas,
+      data.policy);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {

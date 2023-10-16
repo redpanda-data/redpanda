@@ -97,6 +97,7 @@ static constexpr int8_t move_topic_replicas_cmd_type = 8;
 static constexpr int8_t revert_cancel_partition_move_cmd_type = 9;
 static constexpr int8_t topic_lifecycle_transition_cmd_type = 10;
 static constexpr int8_t force_partition_reconfiguration_type = 11;
+static constexpr int8_t update_partition_replicas_cmd_type = 12;
 
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
@@ -210,6 +211,16 @@ using force_partition_reconfiguration_cmd = controller_command<
   model::ntp,
   force_partition_reconfiguration_cmd_data,
   force_partition_reconfiguration_type,
+  model::record_batch_type::topic_management_cmd,
+  serde_opts::serde_only>;
+
+/**
+ * new extendible version of move_partition_replicas command
+ */
+using update_partition_replicas_cmd = controller_command<
+  int8_t, // unused
+  update_partition_replicas_cmd_data,
+  update_topic_properties_cmd_type,
   model::record_batch_type::topic_management_cmd,
   serde_opts::serde_only>;
 
