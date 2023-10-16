@@ -1645,6 +1645,27 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         }
     }
 
+    if (!octx.rctx.audit()) {
+        offset_commit_response resp(
+          octx.request, error_code::broker_not_available);
+        for (auto& unauthorized : octx.unauthorized_tps) {
+            offset_commit_response_topic tmp;
+            tmp.name = unauthorized.first;
+            tmp.partitions = std::move(unauthorized.second);
+            resp.data.topics.emplace_back(std::move(tmp));
+        }
+
+        for (auto& nonexistent : octx.nonexistent_tps) {
+            offset_commit_response_topic tmp;
+            tmp.name = nonexistent.first;
+            tmp.partitions = std::move(nonexistent.second);
+            resp.data.topics.emplace_back(std::move(tmp));
+        }
+
+        return process_result_stages::single_stage(
+          octx.rctx.respond(std::move(resp)));
+    }
+
     // all of the topics either don't exist or failed authorization
     if (unlikely(octx.request.data.topics.empty())) {
         offset_commit_response resp;
