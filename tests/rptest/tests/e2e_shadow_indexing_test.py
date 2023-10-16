@@ -273,7 +273,8 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                     self.test_instance.topic, 0)
                 self.spillover_manifests = s3_snapshot.get_spillover_manifests(
                     NTP("kafka", self.test_instance.topic, 0))
-                if not self.spillover_manifests:
+                if not self.spillover_manifests or len(
+                        self.spillover_manifests) < 2:
                     return False
                 manifest_keys = set(self.manifest['segments'].keys())
                 spillover_keys = set()
