@@ -258,6 +258,16 @@ class HighThroughputTest(RedpandaTest):
             if item['type'] == 'topic':
                 self.rpk.delete_topic(item['spec'].name)
 
+    @cluster(num_nodes=0)
+    def test_cluster_cleanup(self):
+        """
+        This is not a test, but a cluster cleanup kicker
+        """
+        # Initiate cluster deletion
+        # Cluster will be deleted if configuration is enabled it
+        # and/or config.use_same_cluster and current.tests_finished set to True
+        self.redpanda._cloud_cluster.current.tests_finished = True
+
     def tearDown(self):
         # These tests may run on cloud ec2 instances where between each test
         # the same cluster is used. Therefore state between runs will still exist,

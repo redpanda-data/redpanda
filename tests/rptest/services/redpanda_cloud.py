@@ -298,7 +298,11 @@ class LiveClusterParams:
     rp_vpc_id: str = None
     rp_owner_id: str = None
     vpc_peering_id: str = None
-
+    # Special flag that is checked on cluster deletion
+    # last test in the list should set this to True
+    # along with 'use_same_cluster' in config
+    # this will initiane cluster deletion
+    tests_finished: bool = False
     # Can't use mutables in defaults of dataclass
     # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
     zones: list[str] = field(default_factory=list)
@@ -407,7 +411,8 @@ class CloudCluster():
 
         # prepare rpk plugin
         self.utils = CloudClusterUtils(context, self._logger,
-                                       self.provider_key, self.provider_secret)
+                                       self.provider_key, self.provider_secret,
+                                       self.config.provider)
         if self.config.type == CLOUD_TYPE_BYOC:
             # remove current plugin if any
             self.utils.rpk_plugin_uninstall('byoc', sudo=True)
@@ -504,6 +509,11 @@ class CloudCluster():
                     raise RuntimeError("Creation failed (state 'unknown') "
                                        f"for '{self.config.provider}'")
         return False
+
+    def _cluster_status(self, status):
+        _cluster = self.cloudv2._http_get(
+            endpoint=f'/api/v1/clusters/{self.config.id}')
+        return _cluster['state'] == status
 
     def _get_cluster_console_url(self):
         cluster = self.cloudv2._http_get(
@@ -851,24 +861,51 @@ class CloudCluster():
     def delete(self):
         """
         Deletes a cloud cluster and the namespace it belongs to.
+        Cluster delete is initiated via cluster nodes stop.
         """
-
         if self.config.id == '':
             self._logger.warn(f'cluster_id is empty, unable to delete cluster')
             return
-        elif not self.current.delete_cluster:
+        elif not self.config.delete_cluster:
             self._logger.warn(f'Cluster deletion skipped as configured')
             return
+        elif self.config.use_same_cluster:
+            # Check for tests finished flag only when same cluster used
+            if not self.current.tests_finished:
+                self._logger.info("Not all tests finished, skipped deletion")
+                return
+            else:
+                pass
 
+        self._logger.info("Deleting cluster")
         resp = self.cloudv2._http_get(
             endpoint=f'/api/v1/clusters/{self.config.id}')
         namespace_uuid = resp['namespaceUuid']
 
+        # For FMC, just delete the cluster and the rest will happen
+        # by itself
+
+        # For BYOC cluster deletion happens in 2 phases
+        # 1. Delete cluster
+        # 2. Wait for status "delete agent"
+        # 3. Use rpk to delete agent
+
         resp = self.cloudv2._http_delete(
             endpoint=f'/api/v1/clusters/{self.config.id}')
         self._logger.debug(f'resp: {json.dumps(resp)}')
-        self.config.id = ''
 
+        # Check if this is a BYOC and delete agent
+        if self.config.type == CLOUD_TYPE_BYOC:
+            wait_until(lambda: self._cluster_status('deleting_agent'),
+                       timeout_sec=self.CHECK_TIMEOUT_SEC,
+                       backoff_sec=self.CHECK_BACKOFF_SEC,
+                       err_msg='Timeout waiting for deletion '
+                       f'of cloud cluster {self.current.name}')
+            # Once deleted run agent delete
+            self.utils.rpk_cloud_agent_delete(self.config.id)
+
+        # This cluster is no longer available
+        self.config.id = ''
         # skip namespace deletion to avoid error because cluster delete not complete yet
         if self._delete_namespace:
             resp = self.cloudv2._http_delete(
@@ -1048,7 +1085,8 @@ class CloudCluster():
         def _route_exists(routes, _cidr):
             # Lookup CIDR and VpcId in table
             for _route in routes:
-                if _route['DestinationCidrBlock'] == _cidr and \
+                if 'DestinationCidrBlock' in _route and \
+                    _route['DestinationCidrBlock'] == _cidr and \
                     'VpcPeeringConnectionId' in _route and \
                     _route['VpcPeeringConnectionId'] == self.current.vpc_peering_id:
                     return True

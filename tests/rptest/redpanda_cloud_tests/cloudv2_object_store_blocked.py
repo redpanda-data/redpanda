@@ -1,3 +1,6 @@
+from rptest.services.redpanda_cloud import CLOUD_TYPE_BYOC, CLOUD_TYPE_FMC
+
+
 class cloudv2_object_store_blocked:
     def __init__(self, rp, logger):
         self.logger = logger
@@ -22,8 +25,15 @@ class cloudv2_object_store_blocked_aws:
         cluster_id = rp._cloud_cluster.config.id
         network_id = rp._cloud_cluster.current.network_id
         self._cloud_provider_client = rp._cloud_cluster.provider_cli
-        self._vpc_id = self._cloud_provider_client.get_vpc_by_network_id(
-            network_id)['VpcId']
+        # This is different for BYOC and FMC
+        if rp._cloud_cluster.config.type == CLOUD_TYPE_BYOC:
+            self._vpc_id = self._cloud_provider_client.get_vpc_by_network_id(
+                network_id)['VpcId']
+        elif rp._cloud_cluster.config.type == CLOUD_TYPE_FMC:
+            _net = rp._cloud_cluster._get_network()
+            _info = _net['status']['created']['providerNetworkDetails'][
+                'cloudProvider'][rp._cloud_cluster.config.provider.lower()]
+            self._vpc_id = _info['vpcId']
         self._bucket_name = f'redpanda-cloud-storage-{cluster_id}'
 
     def __enter__(self):

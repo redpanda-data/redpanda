@@ -100,7 +100,7 @@ class EC2Client:
         _resp = self._cli.describe_vpcs(Filters=_filters)
         _vpcs = _resp[VPCS_LABEL]
         # Validate connection count
-        if len(_vpcs) < 0:
+        if len(_vpcs) < 1:
             self._log.error(
                 f"No VPC connection found for 'network-{network_id}'")
             return None
