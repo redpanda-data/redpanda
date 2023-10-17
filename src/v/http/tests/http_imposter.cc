@@ -93,6 +93,9 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
           }
 
           http_test_utils::request_info ri(req);
+          for (const auto& [k, v] : req._headers) {
+              ri.headers[k] = v;
+          }
           _requests.push_back(ri);
           _targets.insert(std::make_pair(ri.url, ri));
 
@@ -122,7 +125,10 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
             req.content_length,
             req._method);
 
-          if (req._method == "PUT") {
+          if (req._method == "PUT" && req._url == imdsv2_token_url) {
+              repl.set_status(ss::http::reply::status_type::ok);
+              return "IMDSv2-TOKEN";
+          } else if (req._method == "PUT") {
               when().request(req._url).then_reply_with(req.content);
               repl.set_status(ss::http::reply::status_type::ok);
               return "";
