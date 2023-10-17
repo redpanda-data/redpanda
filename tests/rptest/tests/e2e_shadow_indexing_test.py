@@ -585,6 +585,15 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         assert response[0].error_msg == '', f"Err msg: {response[0].error_msg}"
         assert new_lwm == response[0].new_start_offset, response[
             0].new_start_offset
+
+        def topic_info_populated():
+            return len(list(rpk.describe_topic(self.topic))) == 1
+
+        wait_until(topic_info_populated,
+                   timeout_sec=60,
+                   backoff_sec=1,
+                   err_msg=f"topic info not available for {self.topic}")
+
         topics_info = list(rpk.describe_topic(self.topic))
         assert len(topics_info) == 1
         assert topics_info[0].start_offset == new_lwm, topics_info
@@ -612,6 +621,11 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         wait_until(lambda: len(set(rpk.list_topics())) == 1,
                    timeout_sec=30,
                    backoff_sec=1)
+
+        wait_until(topic_info_populated,
+                   timeout_sec=60,
+                   backoff_sec=1,
+                   err_msg=f"topic info not available for {self.topic}")
         topics_info = list(rpk.describe_topic(self.topic))
         assert len(topics_info) == 1
         assert topics_info[0].start_offset == new_lwm, topics_info
