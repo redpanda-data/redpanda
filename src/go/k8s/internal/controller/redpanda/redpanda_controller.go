@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kuberecorder "k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -185,8 +185,8 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, rp *v1alpha1.Redpand
 	isStatusConditionReady := apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition)
 	msgNotReady := fmt.Sprintf(resourceNotReadyStrFmt, resourceTypeHelmRepository, repo.GetNamespace(), repo.GetName())
 	msgReady := fmt.Sprintf(resourceReadyStrFmt, resourceTypeHelmRepository, repo.GetNamespace(), repo.GetName())
-	isStatusReadyNILorTRUE := IsBoolPointerNILorEqual(rp.Status.HelmRepositoryReady, true)
-	isStatusReadyNILorFALSE := IsBoolPointerNILorEqual(rp.Status.HelmRepositoryReady, false)
+	isStatusReadyNILorTRUE := ptr.Equal(rp.Status.HelmRepositoryReady, ptr.To(true))
+	isStatusReadyNILorFALSE := ptr.Equal(rp.Status.HelmRepositoryReady, ptr.To(false))
 
 	isResourceReady := r.checkIfResourceIsReady(log, msgNotReady, msgReady, resourceTypeHelmRepository, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
 	if !isResourceReady {
@@ -208,8 +208,8 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, rp *v1alpha1.Redpand
 	isStatusConditionReady = apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition)
 	msgNotReady = fmt.Sprintf(resourceNotReadyStrFmt, resourceTypeHelmRelease, hr.GetNamespace(), hr.GetName())
 	msgReady = fmt.Sprintf(resourceReadyStrFmt, resourceTypeHelmRelease, hr.GetNamespace(), hr.GetName())
-	isStatusReadyNILorTRUE = IsBoolPointerNILorEqual(rp.Status.HelmReleaseReady, true)
-	isStatusReadyNILorFALSE = IsBoolPointerNILorEqual(rp.Status.HelmReleaseReady, false)
+	isStatusReadyNILorTRUE = ptr.Equal(rp.Status.HelmReleaseReady, ptr.To(true))
+	isStatusReadyNILorFALSE = ptr.Equal(rp.Status.HelmReleaseReady, ptr.To(false))
 
 	isResourceReady = r.checkIfResourceIsReady(log, msgNotReady, msgReady, resourceTypeHelmRelease, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
 	if !isResourceReady {
@@ -229,9 +229,9 @@ func (r *RedpandaReconciler) checkIfResourceIsReady(log logr.Logger, msgNotReady
 
 		switch kind {
 		case resourceTypeHelmRepository:
-			rp.Status.HelmRepositoryReady = pointer.Bool(false)
+			rp.Status.HelmRepositoryReady = ptr.To(false)
 		case resourceTypeHelmRelease:
-			rp.Status.HelmReleaseReady = pointer.Bool(false)
+			rp.Status.HelmReleaseReady = ptr.To(false)
 		}
 
 		log.Info(msgNotReady)
@@ -241,9 +241,9 @@ func (r *RedpandaReconciler) checkIfResourceIsReady(log logr.Logger, msgNotReady
 		// be true, and send an event
 		switch kind {
 		case resourceTypeHelmRepository:
-			rp.Status.HelmRepositoryReady = pointer.Bool(true)
+			rp.Status.HelmRepositoryReady = ptr.To(true)
 		case resourceTypeHelmRelease:
-			rp.Status.HelmReleaseReady = pointer.Bool(true)
+			rp.Status.HelmReleaseReady = ptr.To(true)
 		}
 
 		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, msgReady)
@@ -411,13 +411,13 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 	helmUpgrade := rp.Spec.ChartRef.Upgrade
 	if rp.Spec.ChartRef.Upgrade != nil {
 		if helmUpgrade.Force != nil {
-			upgrade.Force = pointer.BoolDeref(helmUpgrade.Force, false)
+			upgrade.Force = ptr.Deref(helmUpgrade.Force, false)
 		}
 		if helmUpgrade.CleanupOnFail != nil {
-			upgrade.CleanupOnFail = pointer.BoolDeref(helmUpgrade.CleanupOnFail, false)
+			upgrade.CleanupOnFail = ptr.Deref(helmUpgrade.CleanupOnFail, false)
 		}
 		if helmUpgrade.PreserveValues != nil {
-			upgrade.PreserveValues = pointer.BoolDeref(helmUpgrade.PreserveValues, false)
+			upgrade.PreserveValues = ptr.Deref(helmUpgrade.PreserveValues, false)
 		}
 		if helmUpgrade.Remediation != nil {
 			upgrade.Remediation = helmUpgrade.Remediation

@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -95,7 +95,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32(replicas),
+					Replicas: ptr.To(int32(replicas)),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{Port: kafkaPort},
@@ -290,7 +290,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32(replicas),
+					Replicas: ptr.To(int32(replicas)),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -392,7 +392,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32(replicas),
+					Replicas: ptr.To(int32(replicas)),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -469,7 +469,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32(replicas),
+					Replicas: ptr.To(int32(replicas)),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -542,7 +542,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32(replicas),
+					Replicas: ptr.To(int32(replicas)),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -636,7 +636,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32(replicas),
+					Replicas: ptr.To(int32(replicas)),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -735,7 +735,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32(replicas),
+					Replicas: ptr.To(int32(replicas)),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -972,7 +972,7 @@ func getVersionedRedpanda(
 		Spec: v1alpha1.ClusterSpec{
 			Image:         "vectorized/redpanda",
 			Version:       version,
-			Replicas:      pointer.Int32(1),
+			Replicas:      ptr.To(int32(1)),
 			Configuration: config,
 			Resources:     rpresources,
 		},

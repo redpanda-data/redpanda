@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
@@ -82,7 +82,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Scaling up when replicas increase")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(5)
+				cluster.Spec.Replicas = ptr.To(int32(5))
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
@@ -114,7 +114,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Decommissioning the last node when scaling down by 2")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(1)
+				cluster.Spec.Replicas = ptr.To(int32(1))
 			}), timeout, interval).Should(Succeed())
 
 			By("Start decommissioning node with ordinal 2")
@@ -172,7 +172,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Start decommissioning node 2")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(2)
+				cluster.Spec.Replicas = ptr.To(int32(2))
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
 				if redpandaCluster.GetDecommissionBrokerID() == nil {
@@ -184,13 +184,13 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Recommissioning the node by restoring replicas")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(3)
+				cluster.Spec.Replicas = ptr.To(int32(3))
 			}), timeout, interval).Should(Succeed())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusActive))
 
 			By("Start decommissioning node 2 again")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(2)
+				cluster.Spec.Replicas = ptr.To(int32(2))
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
 				if redpandaCluster.GetDecommissionBrokerID() == nil {
@@ -202,7 +202,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Recommissioning the node also when scaling to more replicas")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(4)
+				cluster.Spec.Replicas = ptr.To(int32(4))
 			}), timeout, interval).Should(Succeed())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusActive))
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
@@ -231,7 +231,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Doing direct scale down of node 2")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(2)
+				cluster.Spec.Replicas = ptr.To(int32(2))
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
@@ -263,7 +263,7 @@ func getClusterWithReplicas(
 		Spec: vectorizedv1alpha1.ClusterSpec{
 			Image:    "vectorized/redpanda",
 			Version:  "dev",
-			Replicas: pointer.Int32(replicas),
+			Replicas: ptr.To(replicas),
 			Configuration: vectorizedv1alpha1.RedpandaConfig{
 				KafkaAPI: []vectorizedv1alpha1.KafkaAPI{
 					{
