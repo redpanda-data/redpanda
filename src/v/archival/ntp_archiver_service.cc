@@ -271,10 +271,30 @@ const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
 
 ss::future<> ntp_archiver::start() {
     if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
-        ssx::spawn_with_gate(
-          _gate, [this] { return sync_manifest_until_abort(); });
+        ssx::spawn_with_gate(_gate, [this] {
+            return sync_manifest_until_abort().then([this] {
+                if (!_as.abort_requested()) {
+                    vlog(
+                      _rtclog.error,
+                      "Sync loop stopped without an abort being requested. "
+                      "Please disable and re-enable "
+                      "redpanda.remote.readreplica "
+                      "the topic in order to restart it.");
+                }
+            });
+        });
     } else {
-        ssx::spawn_with_gate(_gate, [this] { return upload_until_abort(); });
+        ssx::spawn_with_gate(_gate, [this] {
+            return upload_until_abort().then([this]() {
+                if (!_as.abort_requested()) {
+                    vlog(
+                      _rtclog.error,
+                      "Upload loop stopped without an abort being requested. "
+                      "Please disable and re-enable redpanda.remote.write "
+                      "the topic in order to restart it.");
+                }
+            });
+        });
     }
 
     return ss::now();
@@ -341,7 +361,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
         bool is_synced = co_await _parent.archival_meta_stm()->sync(
           sync_timeout);
         if (!is_synced) {
-            co_return;
+            continue;
         }
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
 
