@@ -34,6 +34,7 @@
 
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/http/field.hpp>
+#include <boost/beast/http/status.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <gnutls/crypto.h>
@@ -41,6 +42,7 @@
 #include <bit>
 #include <exception>
 #include <utility>
+#include <variant>
 
 namespace cloud_storage_clients {
 
@@ -859,10 +861,22 @@ ss::future<> s3_client::do_delete_object(
       });
 }
 
-static auto iobuf_to_delete_objects_result(iobuf&& buf) {
+static std::variant<client::delete_objects_result, rest_error_response>
+iobuf_to_delete_objects_result(iobuf&& buf) {
     auto root = util::iobuf_to_ptree(std::move(buf), s3_log);
     auto result = client::delete_objects_result{};
     try {
+        if (root.count("Error.Code") > 0) {
+            // This is an error response. S3 can reply with 200 error code and
+            // error response in the body.
+            constexpr const char* empty = "";
+            auto code = root.get<ss::sstring>("Error.Code", empty);
+            auto msg = root.get<ss::sstring>("Error.Message", empty);
+            auto rid = root.get<ss::sstring>("Error.RequestId", empty);
+            auto res = root.get<ss::sstring>("Error.Resource", empty);
+            rest_error_response err(code, msg, rid, res);
+            return err;
+        }
         for (auto const& [tag, value] : root.get_child("DeleteResult")) {
             if (tag != "Error") {
                 continue;
@@ -927,8 +941,15 @@ auto s3_client::do_delete_objects(
                     return parse_rest_error_response<delete_objects_result>(
                       status, std::move(res));
                 }
-                return ss::make_ready_future<delete_objects_result>(
-                  iobuf_to_delete_objects_result(std::move(res)));
+                auto parse_result = iobuf_to_delete_objects_result(
+                  std::move(res));
+                if (std::holds_alternative<client::delete_objects_result>(
+                      parse_result)) {
+                    return ss::make_ready_future<delete_objects_result>(
+                      std::get<client::delete_objects_result>(parse_result));
+                }
+                return ss::make_exception_future<delete_objects_result>(
+                  std::get<rest_error_response>(parse_result));
             });
       });
 }
