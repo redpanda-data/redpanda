@@ -602,8 +602,8 @@ func (cc *ClusterCertificates) Volumes() (
 		mountPoints.AdminAPI.NodeCertMountDir,
 		adminAPIClientCAVolName,
 		mountPoints.AdminAPI.ClientCAMountDir,
-		false,
-		false,
+		true,
+		true,
 	)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
@@ -704,7 +704,6 @@ func secretVolumesForTLS(
 		clientCACertVolume.VolumeSource.Secret.Items = append(clientCACertVolume.VolumeSource.Secret.Items, caPath)
 	}
 
-	// Why do we need to mount the client certificate and key in RP? SEEMS NOT NEEDED.
 	if len(clientCertificates) > 0 && shouldIncludeClientCert {
 		clientCACertVolume.VolumeSource.Secret.Items = append(
 			clientCACertVolume.VolumeSource.Secret.Items,
