@@ -16,7 +16,21 @@
 #include "security/fwd.h"
 #include "security/types.h"
 
+#include <seastar/http/exception.hh>
 #include <seastar/http/request.hh>
+
+class unauthorized_user_exception : public ss::httpd::base_exception {
+public:
+    unauthorized_user_exception(
+      security::credential_user username, const std::string& msg)
+      : ss::httpd::base_exception(
+        msg, ss::http::reply::status_type::unauthorized)
+      , _username(std::move(username)) {}
+    const security::credential_user& get_username() const { return _username; }
+
+private:
+    security::credential_user _username;
+};
 
 /**
  * Helper for HTTP request handlers that would like to enforce
@@ -32,6 +46,7 @@ class [[nodiscard]] request_auth_result {
 public:
     using authenticated = ss::bool_class<struct authenticated_tag>;
     using superuser = ss::bool_class<struct superuser_tag>;
+    using auth_required = ss::bool_class<struct auth_required_tag>;
 
     /**
      * Authenticated user.  They have passed authentication so we know
@@ -49,16 +64,21 @@ public:
       , _password(std::move(password))
       , _sasl_mechanism(std::move(sasl_mechanism))
       , _authenticated(true)
-      , _superuser(is_superuser){};
+      , _superuser(is_superuser)
+      , _auth_required(true){};
 
     /**
      * Anonymous user.  They may still be considered authenticated/superuser
      * if the global require_auth property is set to false (i.e. anonymous
      * users have all powers)
      */
-    request_auth_result(authenticated is_authenticated, superuser is_superuser)
+    request_auth_result(
+      authenticated is_authenticated,
+      superuser is_superuser,
+      auth_required is_auth_required)
       : _authenticated(is_authenticated)
-      , _superuser(is_superuser){};
+      , _superuser(is_superuser)
+      , _auth_required(is_auth_required){};
 
     ~request_auth_result() noexcept(false);
 
@@ -81,12 +101,17 @@ public:
     ss::sstring const& get_password() const { return _password; }
     ss::sstring const& get_sasl_mechanism() const { return _sasl_mechanism; }
 
+    bool is_authenticated() const { return _authenticated; };
+    bool is_superuser() const { return _superuser; }
+    bool is_auth_required() const { return _auth_required; }
+
 private:
     security::credential_user _username;
     security::credential_password _password;
     ss::sstring _sasl_mechanism;
     bool _authenticated{false};
     bool _superuser{false};
+    bool _auth_required{false};
     bool _checked{false};
 };
 

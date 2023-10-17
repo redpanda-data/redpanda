@@ -47,7 +47,8 @@ request_authenticator::authenticate(const ss::http::request& req) {
         // a unit test or a standalone pandaproxy/schema_registry
         return request_auth_result(
           request_auth_result::authenticated::yes,
-          request_auth_result::superuser::yes);
+          request_auth_result::superuser::yes,
+          request_auth_result::auth_required::no);
     }
 
     const auto& cred_store = _controller->get_credential_store().local();
@@ -62,7 +63,8 @@ request_authenticator::authenticate(const ss::http::request& req) {
                 // treat them as anonymous.
                 return request_auth_result(
                   request_auth_result::authenticated::yes,
-                  request_auth_result::superuser::yes);
+                  request_auth_result::superuser::yes,
+                  request_auth_result::auth_required::no);
             }
         } else {
             throw;
@@ -111,8 +113,8 @@ request_auth_result request_authenticator::do_authenticate(
               logger.warn,
               "Client auth failure: user '{}' not found",
               username);
-            throw ss::httpd::base_exception(
-              "Unauthorized", ss::http::reply::status_type::unauthorized);
+            throw unauthorized_user_exception(
+              std::move(username), "Unauthorized");
         } else {
             const auto& cred = cred_opt.value();
             ss::sstring sasl_mechanism;
@@ -138,8 +140,8 @@ request_auth_result request_authenticator::do_authenticate(
                   logger.warn,
                   "Client auth failure: user '{}' wrong password",
                   username);
-                throw ss::httpd::base_exception(
-                  "Unauthorized", ss::http::reply::status_type::unauthorized);
+                throw unauthorized_user_exception(
+                  std::move(username), "Unauthorized");
             } else {
                 vlog(logger.trace, "Authenticated user {}", username);
                 const auto& superusers = _superusers();
@@ -161,11 +163,13 @@ request_auth_result request_authenticator::do_authenticate(
         if (require_auth) {
             return request_auth_result(
               request_auth_result::authenticated::no,
-              request_auth_result::superuser::no);
+              request_auth_result::superuser::no,
+              request_auth_result::auth_required::yes);
         } else {
             return request_auth_result(
               request_auth_result::authenticated::yes,
-              request_auth_result::superuser::yes);
+              request_auth_result::superuser::yes,
+              request_auth_result::auth_required::no);
         }
     }
 }
