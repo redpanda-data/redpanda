@@ -25,7 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -190,7 +190,7 @@ func (r *DecommissionReconciler) verifyIfNeedDecommission(ctx context.Context, s
 		releaseName = val
 	}
 
-	requestedReplicas := pointer.Int32Deref(sts.Spec.Replicas, 0)
+	requestedReplicas := ptr.Deref(sts.Spec.Replicas, 0)
 
 	valuesMap, err := getHelmValues(log, releaseName, namespace)
 	if err != nil {
@@ -286,7 +286,7 @@ func (r *DecommissionReconciler) reconcileDecommission(ctx context.Context, sts 
 		return ctrl.Result{}, nil
 	}
 
-	requestedReplicas := pointer.Int32Deref(sts.Spec.Replicas, 0)
+	requestedReplicas := ptr.Deref(sts.Spec.Replicas, 0)
 	statusReplicas := sts.Status.Replicas
 	availableReplicas := sts.Status.AvailableReplicas
 
@@ -492,7 +492,7 @@ func (r *DecommissionReconciler) reconcilePVCs(log logr.Logger, ctx context.Cont
 
 	Infof(log, "pvc name list, binding processed: %+v", pvcsBound)
 
-	if pvcErrorList := r.tryToDeletePVC(log, ctx, pointer.Int32Deref(sts.Spec.Replicas, 0), pvcsBound, pvcList); pvcErrorList != nil {
+	if pvcErrorList := r.tryToDeletePVC(log, ctx, ptr.Deref(sts.Spec.Replicas, 0), pvcsBound, pvcList); pvcErrorList != nil {
 		return fmt.Errorf("errors found: %w", pvcErrorList)
 	}
 

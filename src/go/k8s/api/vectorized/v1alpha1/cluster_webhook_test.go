@@ -25,11 +25,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
-
-	fake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var fakeK8sClient = fake.NewClientBuilder().Build()
@@ -70,7 +69,7 @@ func TestDefault(t *testing.T) {
 						Namespace: "",
 					},
 					Spec: v1alpha1.ClusterSpec{
-						Replicas:      pointer.Int32(tt.replicas),
+						Replicas:      ptr.To(tt.replicas),
 						Configuration: v1alpha1.RedpandaConfig{},
 					},
 				}
@@ -96,7 +95,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas:      pointer.Int32(1),
+				Replicas:      ptr.To(int32(1)),
 				Configuration: v1alpha1.RedpandaConfig{},
 				Resources: v1alpha1.RedpandaResourceRequirements{
 					ResourceRequirements: corev1.ResourceRequirements{
@@ -119,7 +118,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32(1),
+				Replicas: ptr.To(int32(1)),
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{},
 				},
@@ -144,7 +143,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32(1),
+				Replicas: ptr.To(int32(1)),
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
 						Port: 999,
@@ -171,7 +170,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32(1),
+				Replicas: ptr.To(int32(1)),
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
 						External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
@@ -200,7 +199,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32(1),
+				Replicas: ptr.To(int32(1)),
 			},
 		}
 		redpandaCluster.Default()
@@ -214,7 +213,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32(1),
+				Replicas: ptr.To(int32(1)),
 				LicenseRef: &v1alpha1.SecretKeyRef{
 					Name:      "test",
 					Namespace: "",
@@ -249,7 +248,7 @@ func TestValidateUpdate(t *testing.T) {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:      pointer.Int32(replicas3),
+			Replicas:      ptr.To(replicas3),
 			Configuration: v1alpha1.RedpandaConfig{},
 			Resources: v1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{
@@ -331,7 +330,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas: pointer.Int32(replicas2),
+			Replicas: ptr.To(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124, AuthenticationMethod: "none"}},
 				AdminAPI:       []v1alpha1.AdminAPI{{Port: 125}},
@@ -1643,7 +1642,7 @@ func validRedpandaCluster() *v1alpha1.Cluster {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas: pointer.Int32(1),
+			Replicas: ptr.To(int32(1)),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124, AuthenticationMethod: "none"}},
 				AdminAPI:       []v1alpha1.AdminAPI{{Port: 126}},
