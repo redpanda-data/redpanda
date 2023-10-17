@@ -59,7 +59,7 @@ type TransformMetadata struct {
 	InputTopic   string                     `json:"input_topic"`
 	OutputTopics []string                   `json:"output_topics"`
 	Status       []PartitionTransformStatus `json:"status,omitempty"`
-	Environment  []EnvironmentVariable      `json:"environment"`
+	Environment  []EnvironmentVariable      `json:"environment,omitempty"`
 }
 
 // ListWasmTransforms lists the transforms that are running on a cluster.
