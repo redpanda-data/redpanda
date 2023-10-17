@@ -158,3 +158,5 @@ using hmac_sha512 = internal::hmac<GNUTLS_MAC_SHA512, 64>; // NOLINT
 
 using hash_sha256 = internal::hash<GNUTLS_DIG_SHA256, 32>; // NOLINT
 using hash_sha512 = internal::hash<GNUTLS_DIG_SHA512, 64>; // NOLINT
+
+using hash_md5 = internal::hash<GNUTLS_DIG_MD5, 16>; // NOLINT
