@@ -231,9 +231,7 @@ ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
             /*type_filter=*/std::nullopt,
             /*time=*/std::nullopt,
             /*as=*/std::nullopt);
-          model::timeout_clock::time_point deadline
-            = model::timeout_clock::now() + timeout;
-          return partition->make_reader(reader_config, deadline)
+          return partition->make_reader(reader_config)
             .then([this, timeout](storage::translating_reader rdr) {
                 return consume_wasm_binary_reader(
                   std::move(rdr.reader), timeout);
