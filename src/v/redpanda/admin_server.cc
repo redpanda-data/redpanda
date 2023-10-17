@@ -90,6 +90,9 @@
 #include "rpc/rpc_utils.h"
 #include "security/acl.h"
 #include "security/audit/audit_log_manager.h"
+#include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/utils.h"
+#include "security/audit/types.h"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
@@ -116,6 +119,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
@@ -583,6 +587,25 @@ ss::future<> admin_server::configure_listeners() {
           "`admin_api_require_auth`",
           ep.address.host(),
           ep.address.port());
+    }
+}
+
+void admin_server::audit_authz(
+  ss::httpd::const_req req,
+  const request_auth_result& auth_result,
+  httpd_authorized authorized,
+  std::optional<std::string_view> reason) {
+    auto api_event = security::audit::make_api_activity_event(
+      req, auth_result, bool(authorized), reason);
+    auto success = _audit_mgr.local().enqueue_audit_event(
+      security::audit::event_type::management, std::move(api_event));
+    if (!success) {
+        vlog(
+          logger.error,
+          "Failed to audit authorization request for endpoint: {}",
+          req.format_url());
+        throw ss::httpd::server_error_exception(
+          "Failed to audit authorization request");
     }
 }
 

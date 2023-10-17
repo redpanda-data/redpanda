@@ -39,6 +39,7 @@
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
 #include <seastar/json/json_elements.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -105,6 +106,13 @@ private:
     static constexpr auth_level user = auth_level::user;
     static constexpr auth_level superuser = auth_level::superuser;
 
+    using httpd_authorized = ss::bool_class<struct httpd_authorized>;
+    void audit_authz(
+      ss::httpd::const_req req,
+      const request_auth_result& auth_result,
+      httpd_authorized authorized,
+      std::optional<std::string_view> reason = std::nullopt);
+
     /**
      * Authenticate, and raise if `required_auth` is not met by
      * the credential (or pass if authentication is disabled).
@@ -112,17 +120,25 @@ private:
     template<auth_level required_auth>
     request_auth_result apply_auth(ss::httpd::const_req req) {
         auto auth_state = _auth.authenticate(req);
-        if constexpr (required_auth == auth_level::superuser) {
-            auth_state.require_superuser();
-        } else if constexpr (required_auth == auth_level::user) {
-            auth_state.require_authenticated();
-        } else if constexpr (required_auth == auth_level::publik) {
-            auth_state.pass();
-        } else {
-            static_assert(
-              utils::unsupported_value<required_auth>::value,
-              "Invalid auth_level");
+        try {
+            if constexpr (required_auth == auth_level::superuser) {
+                auth_state.require_superuser();
+            } else if constexpr (required_auth == auth_level::user) {
+                auth_state.require_authenticated();
+            } else if constexpr (required_auth == auth_level::publik) {
+                auth_state.pass();
+            } else {
+                static_assert(
+                  utils::unsupported_value<required_auth>::value,
+                  "Invalid auth_level");
+            }
+
+        } catch (const ss::httpd::base_exception& ex) {
+            audit_authz(req, auth_state, httpd_authorized::no, ex.what());
+            throw;
         }
+
+        audit_authz(req, auth_state, httpd_authorized::yes);
 
         return auth_state;
     }
