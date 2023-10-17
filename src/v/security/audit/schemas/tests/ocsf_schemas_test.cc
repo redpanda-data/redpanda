@@ -103,7 +103,6 @@ static const ss::sstring client_kafka_endpoint_ser{
 )"};
 
 static const sa::api_activity_unmapped unmapped {
-  .shard_id = ss::shard_id{1},
   .authorization_metadata = sa::authorization_metadata {
     .acl_authorization = {
       .host = "*",
@@ -122,7 +121,6 @@ static const sa::api_activity_unmapped unmapped {
 static const ss::sstring unmapped_ser{
   R"(
 {
-  "shard_id": 1,
   "authorization_metadata": {
     "acl_authorization": {
       "host": "*",

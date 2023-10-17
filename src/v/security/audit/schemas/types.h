@@ -210,12 +210,9 @@ struct authorization_metadata {
 };
 
 struct api_activity_unmapped {
-    ss::shard_id shard_id;
     std::optional<authorization_metadata> authorization_metadata;
 
-    auto equality_fields() const {
-        return std::tie(shard_id, authorization_metadata);
-    }
+    auto equality_fields() const { return std::tie(authorization_metadata); }
 };
 
 struct http_header {
@@ -393,8 +390,6 @@ rjson_serialize(Writer<StringBuffer>& w, const sa::authorization_metadata& m) {
 inline void
 rjson_serialize(Writer<StringBuffer>& w, const sa::api_activity_unmapped& u) {
     w.StartObject();
-    w.Key("shard_id");
-    ::json::rjson_serialize(w, u.shard_id);
     if (u.authorization_metadata) {
         w.Key("authorization_metadata");
         ::json::rjson_serialize(w, u.authorization_metadata.value());
