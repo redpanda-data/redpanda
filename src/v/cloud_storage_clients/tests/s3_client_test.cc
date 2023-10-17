@@ -206,7 +206,7 @@ void set_routes(ss::httpd::routes& r) {
 
           if (auto computed_md5base64 =
                 [&] {
-                    auto hash = internal::hash<GNUTLS_DIG_MD5, 16>{};
+                    auto hash = hash_md5{};
                     hash.update(req.content);
                     auto digest = hash.reset();
 

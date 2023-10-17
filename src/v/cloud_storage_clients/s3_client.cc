@@ -308,7 +308,7 @@ request_creator::make_delete_objects_request(
 
     auto body_md5 = [&] {
         // compute md5 and produce a base64 encoded signature for body
-        auto hash = internal::hash<GNUTLS_DIG_MD5, 16>{};
+        auto hash = hash_md5{};
         hash.update(body);
         auto bin_digest = hash.reset();
         return bytes_to_base64(to_bytes_view(bin_digest));
