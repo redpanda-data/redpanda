@@ -49,6 +49,7 @@
 #include "cluster_config_schema_util.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
+#include "config/node_config.h"
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "finjector/stress_fiber.h"
@@ -4475,8 +4476,8 @@ void admin_server::register_debug_routes() {
                 value));
           }
 
-          return ss::smp::invoke_on_all([value] {
-                     config::node().storage_failure_injection_enabled.set_value(
+          return config::mutate_node_configs([value](config::node_config& cfg) {
+                     cfg.storage_failure_injection_enabled.set_value(
                        value == "true");
                  })
             .then([] {
