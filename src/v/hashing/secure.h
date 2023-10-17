@@ -153,10 +153,10 @@ private:
 
 } // namespace internal
 
-using hmac_sha256 = internal::hmac<GNUTLS_MAC_SHA256, 32>; // NOLINT
-using hmac_sha512 = internal::hmac<GNUTLS_MAC_SHA512, 64>; // NOLINT
-
-using hash_sha256 = internal::hash<GNUTLS_DIG_SHA256, 32>; // NOLINT
-using hash_sha512 = internal::hash<GNUTLS_DIG_SHA512, 64>; // NOLINT
-
-using hash_md5 = internal::hash<GNUTLS_DIG_MD5, 16>; // NOLINT
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
+using hmac_sha256 = internal::hmac<GNUTLS_MAC_SHA256, 32>;
+using hmac_sha512 = internal::hmac<GNUTLS_MAC_SHA512, 64>;
+using hash_sha256 = internal::hash<GNUTLS_DIG_SHA256, 32>;
+using hash_sha512 = internal::hash<GNUTLS_DIG_SHA512, 64>;
+using hash_md5 = internal::hash<GNUTLS_DIG_MD5, 16>;
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
