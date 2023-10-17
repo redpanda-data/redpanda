@@ -5884,8 +5884,8 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
         output_topics.push_back(output_nt);
     }
     absl::flat_hash_map<ss::sstring, ss::sstring> env;
-    if (doc.HasMember("env")) {
-        for (const auto& e : doc["env"].GetArray()) {
+    if (doc.HasMember("environment")) {
+        for (const auto& e : doc["environment"].GetArray()) {
             auto v = e.GetObject();
             env.insert_or_assign(v["key"].GetString(), v["value"].GetString());
         }

@@ -61,7 +61,7 @@ The --env-var can be repeated to specify multiple variables.
 			fileConfig, err := project.LoadCfg(fs)
 			// We allow users to deploy if they aren't in a directory with transform.yaml
 			// in that case all config needs to be specified on the command line.
-			if err != nil {
+			if err == nil {
 				cfg = mergeProjectConfigs(fileConfig, cfg)
 			}
 			err = validateProjectConfig(cfg, err)
@@ -192,7 +192,7 @@ func isEmptyProjectConfig(cfg project.Config) bool {
 func validateProjectConfig(cfg project.Config, fileConfigErr error) error {
 	// If the user just typed `rpk transform deploy` then we assume they expected to take the configuration values from
 	// the file, so print out that error.
-	if isEmptyProjectConfig(cfg) && fileConfigErr == nil {
+	if isEmptyProjectConfig(cfg) && fileConfigErr != nil {
 		return fmt.Errorf("unable to find %q: %v", project.ConfigFileName, fileConfigErr)
 	}
 	if cfg.Name == "" {
