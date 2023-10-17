@@ -12,6 +12,7 @@ from ducktape.utils.util import wait_until
 from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients import make_provider_client
 from rptest.services.provider_clients.ec2_client import RTBS_LABEL
+from urllib.parse import urlparse
 
 rp_profiles_path = os.path.join(os.path.dirname(__file__),
                                 "rp_config_profiles")
@@ -410,9 +411,13 @@ class CloudCluster():
                                    f"for '{self.config.provider}'")
 
         # prepare rpk plugin
+        o = urlparse(self.config.oauth_url)
+        oauth_url_origin = f'{o.scheme}://{o.hostname}'
         self.utils = CloudClusterUtils(context, self._logger,
                                        self.provider_key, self.provider_secret,
-                                       self.config.provider)
+                                       self.config.provider,
+                                       self.config.api_url, oauth_url_origin,
+                                       self.config.oauth_audience)
         if self.config.type == CLOUD_TYPE_BYOC:
             # remove current plugin if any
             self.utils.rpk_plugin_uninstall('byoc', sudo=True)

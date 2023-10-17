@@ -10,7 +10,21 @@ class FakePanda:
 
 
 class CloudClusterUtils:
-    def __init__(self, context, logger, infra_id, infra_secret, provider):
+    def __init__(self, context, logger, infra_id, infra_secret, provider,
+                 cloud_url_origin, oauth_url_origin, oauth_audience):
+        """
+        Initialize CloudClusterUtils.
+
+        :param logger: logging object
+        :param cluster_config: dict object loaded from
+               context.globals["cloud_cluster"]
+        :param infra_id: access key id
+        :param infra_secret: access key secret
+        :param provider: cloud provider, e.g. AWS
+        :param cloud_url_origin: just scheme and hostname
+        :param oauth_url_origin: just scheme and hostname
+        :param oauth_audience: audience for issued token
+        """
         # Create fake redpanda class with logger only
         self.fake_panda = FakePanda(context, logger)
         # Create rpk to use several functions that is isolated
@@ -19,11 +33,11 @@ class CloudClusterUtils:
         self.logger = logger
         self.provider = provider.lower()
         self.env = {
-            "RPK_CLOUD_SKIP_VERSION_CHECK": "True",
-            "RPK_CLOUD_URL": "https://cloud-api.ppd.cloud.redpanda.com",
-            "RPK_CLOUD_AUTH_URL": "https://preprod-cloudv2.us.auth0.com",
-            "RPK_CLOUD_AUTH_AUDIENCE": "cloudv2-preprod.redpanda.cloud",
-            "CLOUD_URL": "https://cloud-api.ppd.cloud.redpanda.com/api/v1",
+            'RPK_CLOUD_SKIP_VERSION_CHECK': 'True',
+            'RPK_CLOUD_URL': cloud_url_origin,
+            'RPK_CLOUD_AUTH_URL': oauth_url_origin,
+            'RPK_CLOUD_AUTH_AUDIENCE': oauth_audience,
+            'CLOUD_URL': f'{cloud_url_origin}/api/v1'
         }
         if self.provider == 'aws':
             self.env.update({
