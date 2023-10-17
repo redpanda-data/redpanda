@@ -4475,11 +4475,14 @@ void admin_server::register_debug_routes() {
                 value));
           }
 
-          config::node().storage_failure_injection_enabled.set_value(
-            value == "true");
-
-          return ss::make_ready_future<ss::json::json_return_type>(
-            ss::json::json_void());
+          return ss::smp::invoke_on_all([value] {
+                     config::node().storage_failure_injection_enabled.set_value(
+                       value == "true");
+                 })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
       });
 
     register_route<user>(
