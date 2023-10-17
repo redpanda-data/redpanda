@@ -16,6 +16,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import CloudStorageType, RedpandaService, MetricsEndpoint, SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until
+from ducktape.mark import parametrize
 
 LOCAL_CONFIGURATION = {
     "partition_amount": 3,
