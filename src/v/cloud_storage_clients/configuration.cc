@@ -13,11 +13,15 @@
 #include "cloud_storage_clients/logger.h"
 #include "config/configuration.h"
 #include "net/tls.h"
+#include "net/tls_certificate_probe.h"
+
+#include <seastar/net/tls.hh>
 
 namespace {
 
 ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
 build_tls_credentials(
+  ss::sstring name,
   std::optional<cloud_storage_clients::ca_trust_file> trust_file,
   ss::logger& log) {
     ss::tls::credentials_builder cred_builder;
@@ -49,7 +53,9 @@ build_tls_credentials(
             co_await cred_builder.set_system_trust();
         }
     }
-    co_return co_await cred_builder.build_reloadable_certificate_credentials();
+    co_return co_await net::build_reloadable_credentials_with_probe<
+      ss::tls::certificate_credentials>(
+      std::move(cred_builder), "cloud_storage_client", std::move(name));
 };
 
 } // namespace
@@ -87,7 +93,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.uri = access_point_uri(endpoint_uri);
     if (overrides.disable_tls == false) {
         client_cfg.credentials = co_await build_tls_credentials(
-          overrides.trust_file, s3_log);
+          "s3", overrides.trust_file, s3_log);
     }
 
     client_cfg.server_addr = net::unresolved_address(
@@ -147,7 +153,7 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
     client_cfg.uri = access_point_uri{endpoint_uri};
     if (overrides.disable_tls == false) {
         client_cfg.credentials = co_await build_tls_credentials(
-          overrides.trust_file, abs_log);
+          "abs", overrides.trust_file, abs_log);
     }
 
     client_cfg.server_addr = net::unresolved_address(
