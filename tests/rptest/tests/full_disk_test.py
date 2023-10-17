@@ -651,39 +651,11 @@ class LogStorageMaxSizeSI(RedpandaTest):
                 )
             return below
 
-        # In the case of the `cleanup.policy=compact` We want to assert a "safety property,"
-        # which means proving that nothing bad happens. The best mechanism we have for doing
-        # this here is to run the system for some time and periodically check the invariant(s).
-        # The informal guarantee that this correctly tests the behavior we're interesting in
-        # is given by the fact that the `cleanup.policy=delete` hits the same invariants within
-        # the same timeout.
-        timeout_sec = 120
-
-        if cleanup_policy == TopicSpec.CLEANUP_COMPACT:
-            # For `cleanup.policy=compat` we don't expect any removal. Wait for timeout.
-            with expect_exception(TimeoutError, bool):
-                wait_until(target_size_reached,
-                           timeout_sec=timeout_sec,
-                           backoff_sec=5)
-            assert max_local_start_offset(
-                self.redpanda, topic_name
-            ) == 0, "not expecting local offsets to advance when `cleanup.policy=compact`"
-        else:
-            # give it plenty of time. on debug it is hella slow
-            wait_until(target_size_reached,
-                       timeout_sec=timeout_sec,
-                       backoff_sec=5)
-            assert min_local_start_offset(
-                self.redpanda, topic_name
-            ) > 0, "expecting disk storage to be reduced by advancing local offsets (local log prefix trim)"
-
-
-def max_local_start_offset(redpanda: RedpandaService, topic: str):
-    max_offset = 0
-    for node in redpanda.nodes:
-        for p in local_start_offsets(redpanda, node, topic):
-            max_offset = max(max_offset, p['start offset'])
-    return max_offset
+        # give it plenty of time. on debug it is hella slow
+        wait_until(target_size_reached, timeout_sec=120, backoff_sec=5)
+        assert min_local_start_offset(
+            self.redpanda, topic_name
+        ) > 0, "expecting disk storage to be reduced by advancing local offsets (local log prefix trim)"
 
 
 def min_local_start_offset(redpanda: RedpandaService, topic: str):
