@@ -18,7 +18,7 @@ require (
 	github.com/go-logr/logr v1.2.4
 	github.com/jcmturner/gokrb5/v8 v8.4.3
 	github.com/json-iterator/go v1.1.12
-	github.com/moby/moby v24.0.5+incompatible
+	github.com/moby/moby v24.0.6+incompatible
 	github.com/moby/sys/mountinfo v0.6.2
 	github.com/onsi/ginkgo/v2 v2.12.0
 	github.com/onsi/gomega v1.27.10
