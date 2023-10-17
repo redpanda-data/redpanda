@@ -301,7 +301,7 @@ ss::future<bool> client::try_create_wasm_binary_ntp() {
     auto fut = co_await ss::coroutine::as_future<cluster::errc>(
       _topic_creator->create_topic(
         model::topic_namespace_view(model::wasm_binaries_internal_ntp),
-        1,
+        /*partition_count=*/1,
         topic_props));
     if (fut.failed()) {
         vlog(
