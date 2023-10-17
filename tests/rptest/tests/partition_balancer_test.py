@@ -777,7 +777,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         node_id = self.redpanda.idx(node)
 
         rpk = RpkTool(self.redpanda)
-        admin = Admin(self.redpanda)
+        admin = Admin(self.redpanda, retry_codes=[503, 504])
 
         rpk.cluster_maintenance_enable(node, wait=True)
         # the node should now report itself in maintenance mode
