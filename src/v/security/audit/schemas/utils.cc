@@ -12,6 +12,7 @@
 #include "security/audit/schemas/utils.h"
 
 #include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
 #include "utils/request_auth.h"
 
@@ -149,6 +150,45 @@ api_activity make_api_activity_event(
                  : api_activity::status_id::failure,
       create_timestamp_t<std::chrono::system_clock>(),
       unmapped_data()};
+}
+
+authentication make_authentication_event(
+  ss::httpd::const_req req, const request_auth_result& r) {
+    return {
+      authentication::activity_id::logon,
+      r.get_sasl_mechanism(),
+      from_ss_endpoint(req.get_server_address()),
+      boost::iequals(req.get_protocol_name(), "https")
+        ? authentication::used_cleartext::no
+        : authentication::used_cleartext::yes, // If HTTPS then not cleartext
+      authentication::used_mfa::no,
+      from_ss_endpoint(req.get_client_address()),
+      severity_id::informational,
+      r.is_authenticated() ? authentication::status_id::success
+                           : authentication::status_id::failure,
+      std::nullopt,
+      create_timestamp_t<std::chrono::system_clock>(),
+      user_from_request_auth_result(r)};
+}
+
+authentication make_authentication_failure_event(
+  ss::httpd::const_req req,
+  const security::credential_user& r,
+  const ss::sstring& reason) {
+    return {
+      authentication::activity_id::logon,
+      authentication::auth_protocol_id::unknown,
+      from_ss_endpoint(req.get_server_address()),
+      boost::iequals(req.get_protocol_name(), "https")
+        ? authentication::used_cleartext::no
+        : authentication::used_cleartext::yes, // If HTTPS then not cleartext
+      authentication::used_mfa::no,
+      from_ss_endpoint(req.get_client_address()),
+      severity_id::informational,
+      authentication::status_id::failure,
+      reason,
+      create_timestamp_t<std::chrono::system_clock>(),
+      user{.name = r, .type_id = user::type::unknown}};
 }
 
 } // namespace security::audit

@@ -12,7 +12,9 @@
 #pragma once
 #include "net/unresolved_address.h"
 #include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
+#include "security/types.h"
 #include "utils/request_auth.h"
 #include "utils/string_switch.h"
 
@@ -26,5 +28,13 @@ api_activity make_api_activity_event(
   const request_auth_result& auth_result,
   bool authorized,
   const std::optional<std::string_view>& reason);
+
+authentication make_authentication_event(
+  ss::httpd::const_req req, const request_auth_result& r);
+
+authentication make_authentication_failure_event(
+  ss::httpd::const_req req,
+  const security::credential_user& r,
+  const ss::sstring& reason);
 
 } // namespace security::audit
