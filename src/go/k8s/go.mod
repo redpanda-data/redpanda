@@ -22,7 +22,7 @@ require (
 	github.com/moby/sys/mountinfo v0.6.2
 	github.com/onsi/ginkgo/v2 v2.12.1
 	github.com/onsi/gomega v1.28.0
-	github.com/prometheus/client_golang v1.16.0
+	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/common v0.44.0
 	github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524
 	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230511045643-19a90983809d
@@ -279,8 +279,8 @@ require (
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.4.0 // indirect
-	github.com/prometheus/procfs v0.10.1 // indirect
+	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16 // indirect
+	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/rivo/uniseg v0.4.3 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/rubenv/sql-migrate v1.3.1 // indirect
