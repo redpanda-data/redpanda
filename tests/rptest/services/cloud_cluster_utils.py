@@ -24,9 +24,14 @@ class CloudClusterUtils:
             "RPK_CLOUD_AUTH_URL": "https://preprod-cloudv2.us.auth0.com",
             "RPK_CLOUD_AUTH_AUDIENCE": "cloudv2-preprod.redpanda.cloud",
             "CLOUD_URL": "https://cloud-api.ppd.cloud.redpanda.com/api/v1",
-            "AWS_ACCESS_KEY_ID": infra_id,
-            "AWS_SECRET_ACCESS_KEY": infra_secret
         }
+        if self.provider == 'aws':
+            self.env.update({
+                "AWS_ACCESS_KEY_ID": infra_id,
+                "AWS_SECRET_ACCESS_KEY": infra_secret
+            })
+        elif self.provider == 'gcp':
+            self.env.update({"GOOGLE_APPLICATION_CREDENTIALS": infra_id})
 
     def _parse_plugin_list(self, plist):
         """
@@ -87,6 +92,9 @@ class CloudClusterUtils:
         self.logger.info("Deploying cluster agent")
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", self.provider, "apply", f"--redpanda-id={cluster_id}"]
+        if self.provider == 'gcp':
+            # TODO: Research a way to get project-id from key file
+            cmd += ["--project-id=devprod-cicd-infra"]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
         return out

@@ -822,6 +822,8 @@ class CloudCluster():
                                            self.config.oauth_client_secret)
                 # Install proper plugin
                 self.utils.rpk_cloud_byoc_install(_cluster_id)
+                # save cluster id so we can delete it in case of failure
+                self.config.id = _cluster_id
                 # Kick off cluster creation
                 # Timeout for this is half an hour as this is only agent
                 self.utils.rpk_cloud_apply(_cluster_id)
