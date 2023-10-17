@@ -121,6 +121,7 @@
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
+#include <seastar/http/json_path.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
@@ -595,17 +596,45 @@ void admin_server::audit_authz(
   const request_auth_result& auth_result,
   httpd_authorized authorized,
   std::optional<std::string_view> reason) {
+    vlog(logger.trace, "Attempting to audit authz for {}", req.format_url());
     auto api_event = security::audit::make_api_activity_event(
       req, auth_result, bool(authorized), reason);
     auto success = _audit_mgr.local().enqueue_audit_event(
       security::audit::event_type::management, std::move(api_event));
     if (!success) {
+        ///
+        /// The following "break glass" mechanism allows the cluster config
+        /// API to be hit in the case the user desires to disable auditing
+        /// so the cluster can continue to make progress in the event auditing
+        /// is not working as expected.
+        static const auto allowed_requests = std::to_array(
+          {ss::httpd::cluster_config_json::get_cluster_config_status,
+           ss::httpd::cluster_config_json::get_cluster_config_schema,
+           ss::httpd::cluster_config_json::patch_cluster_config});
+
+        bool is_allowed = std::any_of(
+          allowed_requests.cbegin(),
+          allowed_requests.cend(),
+          [method = req._method,
+           url = req.get_url()](const ss::httpd::path_description& d) {
+              return d.path == url
+                     && d.operations.method == ss::httpd::str2type(method);
+          });
+
+        if (!is_allowed) {
+            vlog(
+              logger.error,
+              "Failed to audit authorization request for endpoint: {}",
+              req.format_url());
+            throw ss::httpd::base_exception(
+              "Failed to audit authorization request",
+              ss::http::reply::status_type::service_unavailable);
+        }
+
         vlog(
           logger.error,
-          "Failed to audit authorization request for endpoint: {}",
-          req.format_url());
-        throw ss::httpd::server_error_exception(
-          "Failed to audit authorization request");
+          "Request to modify or view cluster configuration was not audited due "
+          "to audit queues being full");
     }
 }
 
