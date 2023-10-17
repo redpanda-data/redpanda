@@ -34,7 +34,16 @@ protected:
     /// Fetches the IAM role name from EC2 instance metadata API. This should
     /// only be required once , we can then cache the role name and use it for
     /// the duration of the application run
-    ss::future<api_response> fetch_role_name();
+    ss::future<api_response> fetch_role_name(std::string_view token);
+
+    /// Fetches the IMDSv2 instance metadata API token by issuing a PUT request.
+    /// This token is fetched for each fetch credential attempt.
+    ss::future<api_response> fetch_instance_metadata_token();
+
+    /// Issues request to instance metadata API with a token injected as a
+    /// header.
+    ss::future<api_response> make_request_with_token(
+      http::client::request_header req, std::string_view token);
 
 private:
     std::optional<ss::sstring> _role;

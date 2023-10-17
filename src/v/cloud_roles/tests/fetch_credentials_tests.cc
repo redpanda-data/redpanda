@@ -168,7 +168,21 @@ FIXTURE_TEST(test_aws_credentials, fixture) {
     BOOST_REQUIRE_EQUAL("my-token", aws_creds.session_token.value());
 
     BOOST_REQUIRE(has_calls_in_order(
-      cloud_role_tests::aws_role_query_url, cloud_role_tests::aws_creds_url));
+      imdsv2_token_url,
+      cloud_role_tests::aws_role_query_url,
+      cloud_role_tests::aws_creds_url));
+    BOOST_REQUIRE_EQUAL(
+      get_latest_request(cloud_role_tests::aws_role_query_url)
+        .value()
+        .get()
+        .header("X-aws-ec2-metadata-token"),
+      "IMDSv2-TOKEN");
+    BOOST_REQUIRE_EQUAL(
+      get_latest_request(cloud_role_tests::aws_creds_url)
+        .value()
+        .get()
+        .header("X-aws-ec2-metadata-token"),
+      "IMDSv2-TOKEN");
 }
 
 FIXTURE_TEST(test_short_lived_aws_credentials, fixture) {
@@ -225,10 +239,12 @@ FIXTURE_TEST(test_short_lived_aws_credentials, fixture) {
     BOOST_REQUIRE_EQUAL("my-secret", aws_creds.secret_access_key());
     BOOST_REQUIRE_EQUAL("my-token", aws_creds.session_token.value());
 
-    BOOST_REQUIRE(has_calls_in_order(
-      cloud_role_tests::aws_role_query_url,
-      cloud_role_tests::aws_creds_url,
-      cloud_role_tests::aws_creds_url));
+    const auto& requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests[0].url, imdsv2_token_url);
+    BOOST_REQUIRE_EQUAL(requests[1].url, cloud_role_tests::aws_role_query_url);
+    BOOST_REQUIRE_EQUAL(requests[2].url, cloud_role_tests::aws_creds_url);
+    BOOST_REQUIRE_EQUAL(requests[3].url, imdsv2_token_url);
+    BOOST_REQUIRE_EQUAL(requests[4].url, cloud_role_tests::aws_creds_url);
 }
 
 FIXTURE_TEST(test_sts_credentials, fixture) {
