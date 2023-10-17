@@ -314,10 +314,10 @@ class HighThroughputTest(PreallocNodesTest):
 
     LEADER_BALANCER_PERIOD_MS = 30000
     topic_name = "tiered_storage_topic"
-    small_segment_size = 4 * KiB
+    small_segment_size = 4 * kiB
     num_segments_per_partition = 1000
     unavailable_timeout = 60
-    msg_size = 128 * KiB
+    msg_size = 128 * kiB
 
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
@@ -1049,8 +1049,8 @@ class HighThroughputTest(PreallocNodesTest):
             "subscriptions_per_topic": 1,
             "consumer_per_subscription": 2,
             "producers_per_topic": 2,
-            "producer_rate": int(produce_bps / (4 * KiB)),
-            "message_size": 4 * KiB,
+            "producer_rate": int(produce_bps / (4 * kiB)),
+            "message_size": 4 * kiB,
             "payload_file": "payload/payload-4Kb.data",
             "consumer_backlog_size_GB": 0,
             "test_duration_minutes": 3,
