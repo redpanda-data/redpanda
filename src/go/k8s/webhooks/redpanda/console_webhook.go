@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 )
 
@@ -27,7 +27,7 @@ var validHostnameSegment = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0
 // ConsoleValidator validates Consoles
 type ConsoleValidator struct {
 	Client  client.Client
-	decoder *admission.Decoder
+	Decoder *admission.Decoder
 }
 
 // Handle processes admission for Console
@@ -37,7 +37,7 @@ func (v *ConsoleValidator) Handle(
 ) admission.Response {
 	console := &vectorizedv1alpha1.Console{}
 
-	err := v.decoder.Decode(req, console)
+	err := v.Decoder.Decode(req, console)
 	if err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
@@ -97,21 +97,12 @@ func (v *ConsoleValidator) Handle(
 	return admission.Allowed("")
 }
 
-// ConsoleValidator implements admission.DecoderInjector.
-// A decoder will be automatically injected.
-
-// InjectDecoder injects the decoder.
-func (v *ConsoleValidator) InjectDecoder(d *admission.Decoder) error {
-	v.decoder = d
-	return nil
-}
-
 // +kubebuilder:webhook:path=/mutate-redpanda-vectorized-io-v1alpha1-console,mutating=true,failurePolicy=fail,sideEffects=None,groups="redpanda.vectorized.io",resources=consoles,verbs=create;update,versions=v1alpha1,name=mconsole.kb.io,admissionReviewVersions=v1
 
 // ConsoleDefaulter mutates Consoles
 type ConsoleDefaulter struct {
 	Client  client.Client
-	decoder *admission.Decoder
+	Decoder *admission.Decoder
 }
 
 // Handle processes admission for Console
@@ -121,7 +112,7 @@ func (m *ConsoleDefaulter) Handle(
 ) admission.Response {
 	console := &vectorizedv1alpha1.Console{}
 
-	err := m.decoder.Decode(req, console)
+	err := m.Decoder.Decode(req, console)
 	if err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
@@ -167,13 +158,4 @@ func (m *ConsoleDefaulter) Default(
 	}
 	response := admission.PatchResponseFromRaw(original, current)
 	return &response, nil
-}
-
-// ConsoleDefaulter implements admission.DecoderInjector.
-// A decoder will be automatically injected.
-
-// InjectDecoder injects the decoder.
-func (m *ConsoleDefaulter) InjectDecoder(d *admission.Decoder) error {
-	m.decoder = d
-	return nil
 }
