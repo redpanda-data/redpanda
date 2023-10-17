@@ -269,6 +269,8 @@ BOOST_AUTO_TEST_CASE(validate_authentication_sasl_scram) {
       sa::authentication::used_mfa ::yes,
       std::move(src_endpoint),
       sa::severity_id::informational,
+      sa::authentication::status_id::success,
+      std::nullopt,
       now,
       sa::user{default_user});
 
@@ -294,6 +296,7 @@ BOOST_AUTO_TEST_CASE(validate_authentication_sasl_scram) {
 "mfa": true,
 "src_endpoint": )"
       + client_kafka_endpoint_ser + R"(,
+"status_id": 1,
 "user": )"
       + default_user_ser + R"(
 }
@@ -317,6 +320,8 @@ BOOST_AUTO_TEST_CASE(validate_authentication_kerberos) {
       sa::authentication::used_mfa ::no,
       std::move(src_endpoint),
       sa::severity_id::informational,
+      sa::authentication::status_id::failure,
+      "Failure",
       now,
       sa::user{default_user});
 
@@ -341,6 +346,8 @@ BOOST_AUTO_TEST_CASE(validate_authentication_kerberos) {
 "mfa": false,
 "src_endpoint": )"
       + client_kafka_endpoint_ser + R"(,
+"status_id": 2,
+"status_detail": "Failure",
 "user": )"
       + default_user_ser + R"(
 }
@@ -579,6 +586,8 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::success,
+          std::nullopt,
           sa::timestamp_t{1},
           sa::user{default_user});
         auto authn2 = sa::authentication(
@@ -589,6 +598,8 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::success,
+          std::nullopt,
           sa::timestamp_t{2},
           sa::user{default_user});
 
@@ -612,6 +623,8 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::failure,
+          "Failure",
           sa::timestamp_t{1},
           sa::user{default_user});
         auto authn2 = sa::authentication(
@@ -622,6 +635,8 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::failure,
+          "Failure",
           sa::timestamp_t{2},
           sa::user{default_user});
 

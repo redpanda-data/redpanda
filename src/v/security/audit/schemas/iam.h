@@ -59,6 +59,8 @@ public:
       used_mfa mfa,
       network_endpoint src_endpoint,
       severity_id severity_id,
+      status_id status_id,
+      std::optional<ss::sstring> status_detail,
       timestamp_t time,
       user user)
       : ocsf_base_event(
@@ -72,6 +74,8 @@ public:
       , _is_cleartext(is_cleartext)
       , _mfa(mfa)
       , _src_endpoint(std::move(src_endpoint))
+      , _status_id(status_id)
+      , _status_detail(std::move(status_detail))
       , _user(std::move(user)) {
         ss::visit(
           auth_protocol,
@@ -94,6 +98,8 @@ public:
           _is_cleartext,
           _mfa,
           _src_endpoint.addr.host(),
+          _status_id,
+          _status_detail,
           _user);
     }
 
@@ -105,6 +111,8 @@ private:
     used_cleartext _is_cleartext;
     used_mfa _mfa;
     network_endpoint _src_endpoint;
+    status_id _status_id;
+    std::optional<ss::sstring> _status_detail;
     user _user;
 
     size_t hash() const final { return std::hash<authentication>()(*this); }
@@ -129,6 +137,12 @@ private:
         ::json::rjson_serialize(w, bool(a._mfa));
         w.Key("src_endpoint");
         ::json::rjson_serialize(w, a._src_endpoint);
+        w.Key("status_id");
+        ::json::rjson_serialize(w, a._status_id);
+        if (a._status_detail.has_value()) {
+            w.Key("status_detail");
+            ::json::rjson_serialize(w, a._status_detail.value());
+        }
         w.Key("user");
         ::json::rjson_serialize(w, a._user);
         w.EndObject();
