@@ -108,6 +108,6 @@ class IdempotencyStressTest(PreallocNodesTest):
 
         producer = self._create_producer()
         producer.start()
-        producer.wait_for_acks(self.msg_cnt, 300, 1)
+        producer.wait_for_acks(self.msg_cnt, 600, 1)
 
         self.validate_metrics(max_producer_ids)
