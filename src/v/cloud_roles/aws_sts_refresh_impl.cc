@@ -142,7 +142,7 @@ ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
     }
 
     co_return co_await request_with_payload(
-      co_await make_api_client(tls_enabled),
+      co_await make_api_client("aws_sts", tls_enabled),
       std::move(assume_req),
       std::move(body));
 }

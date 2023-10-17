@@ -52,7 +52,7 @@ ss::future<api_response> gcp_refresh_impl::fetch_credentials() {
       metadata_flavor::header_name.data(), metadata_flavor::value.data());
 
     co_return co_await make_request(
-      co_await make_api_client(), std::move(oauth_req));
+      co_await make_api_client("gcp"), std::move(oauth_req));
 }
 
 api_response_parse_result gcp_refresh_impl::parse_response(iobuf response) {
