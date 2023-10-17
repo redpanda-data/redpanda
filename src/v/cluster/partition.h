@@ -89,8 +89,9 @@ public:
      */
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config config,
-      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
-        return _raft->make_reader(std::move(config), deadline);
+      std::optional<model::timeout_clock::time_point> debounce_deadline
+      = std::nullopt) {
+        return _raft->make_reader(std::move(config), debounce_deadline);
     }
 
     ss::future<result<model::offset, std::error_code>>

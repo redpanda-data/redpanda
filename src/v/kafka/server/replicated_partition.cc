@@ -41,7 +41,7 @@ replicated_partition::replicated_partition(
 // TODO: use previous translation speed up lookup
 ss::future<storage::translating_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  std::optional<model::timeout_clock::time_point> debounce_deadline) {
     if (
       _partition->is_read_replica_mode_enabled()
       && _partition->cloud_data_available()) {
@@ -55,7 +55,8 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
       may_read_from_cloud(model::offset_cast(cfg.start_offset))
       && cfg.start_offset >= _partition->start_cloud_offset()) {
         cfg.type_filter = {model::record_batch_type::raft_data};
-        co_return co_await _partition->make_cloud_reader(cfg, deadline);
+        co_return co_await _partition->make_cloud_reader(
+          cfg, debounce_deadline);
     }
 
     cfg.start_offset = _translator->to_log_offset(cfg.start_offset);
@@ -107,7 +108,7 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
         std::unique_ptr<model::record_batch_reader::impl> _underlying;
         ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     };
-    auto rdr = co_await _partition->make_reader(cfg, deadline);
+    auto rdr = co_await _partition->make_reader(cfg, debounce_deadline);
     co_return storage::translating_reader(
       model::make_record_batch_reader<reader>(
         std::move(rdr).release(), _translator),
