@@ -107,6 +107,8 @@ class hash {
     static_assert(DigestSize > 0, "digest cannot be zero length");
 
 public:
+    using digest_type = std::array<char, DigestSize>;
+
     // silence clang-tidy about _handle being uninitialized
     // NOLINTNEXTLINE(hicpp-member-init, cppcoreguidelines-pro-type-member-init)
     hash() {
@@ -134,7 +136,7 @@ public:
     /**
      * Return the current output and reset.
      */
-    std::array<char, DigestSize> reset() {
+    digest_type reset() {
         std::array<char, DigestSize> digest;
         gnutls_hash_output(_handle, digest.data());
         return digest;
