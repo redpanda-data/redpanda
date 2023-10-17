@@ -301,18 +301,13 @@ purger::global_position purger::get_global_position() {
     const auto& nodes = _members_table.local().nodes();
     auto self = config::node().node_id();
 
-    // members_table doesn't store nodes in sorted container, so
-    // we compose a sorted order first.
-    auto node_ids = _members_table.local().node_ids();
-    std::sort(node_ids.begin(), node_ids.end());
-
     uint32_t result = 0;
     uint32_t total = 0;
 
     // Iterate over node IDs earlier than ours, sum their core counts
-    for (auto i : node_ids) {
-        const auto cores = nodes.at(i).broker.properties().cores;
-        if (i < self) {
+    for (auto const& [id, node] : nodes) {
+        const auto cores = node.broker.properties().cores;
+        if (id < self) {
             result += cores;
         }
         total += cores;
