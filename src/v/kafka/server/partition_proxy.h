@@ -117,8 +117,9 @@ public:
 
     ss::future<storage::translating_reader> make_reader(
       storage::log_reader_config cfg,
-      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
-        return _impl->make_reader(cfg, deadline);
+      std::optional<model::timeout_clock::time_point> debounce_deadline
+      = std::nullopt) {
+        return _impl->make_reader(cfg, debounce_deadline);
     }
 
     ss::future<std::optional<storage::timequery_result>>
