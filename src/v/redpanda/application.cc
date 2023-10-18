@@ -1124,6 +1124,10 @@ void application::wire_up_runtime_services(
                 &controller->get_partition_leaders());
           }),
           ss::sharded_parameter([this] {
+              return transform::rpc::topic_metadata_cache::make_default(
+                &metadata_cache);
+          }),
+          ss::sharded_parameter([this] {
               return transform::rpc::topic_creator::make_default(
                 controller.get());
           }),

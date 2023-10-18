@@ -42,6 +42,7 @@ public:
     client(
       model::node_id self,
       std::unique_ptr<partition_leader_cache>,
+      std::unique_ptr<topic_metadata_cache>,
       std::unique_ptr<topic_creator>,
       ss::sharded<::rpc::connection_cache>*,
       ss::sharded<local_service>*);
@@ -62,6 +63,15 @@ public:
 
     ss::future<result<iobuf, cluster::errc>>
     load_wasm_binary(model::offset, model::timeout_clock::duration timeout);
+
+    ss::future<result<model::partition_id>>
+      find_coordinator(model::transform_offsets_key);
+
+    ss::future<result<model::transform_offsets_value>>
+      offset_fetch(model::transform_offsets_key);
+
+    ss::future<cluster::errc> offset_commit(
+      model::transform_offsets_key, model::transform_offsets_value);
 
     ss::future<> stop();
 
@@ -88,10 +98,33 @@ private:
 
     ss::future<std::optional<model::node_id>> compute_wasm_binary_ntp_leader();
     ss::future<bool> try_create_wasm_binary_ntp();
+    ss::future<> try_create_transform_offsets_topic();
+
+    ss::future<result<model::partition_id>>
+      find_coordinator_once(model::transform_offsets_key);
+    ss::future<cluster::errc> offset_commit_once(
+      model::transform_offsets_key, model::transform_offsets_value);
+    ss::future<result<model::transform_offsets_value>>
+      offset_fetch_once(model::transform_offsets_key);
+
+    ss::future<find_coordinator_response>
+      do_local_find_coordinator(find_coordinator_request);
+    ss::future<offset_commit_response>
+      do_local_offset_commit(offset_commit_request);
+    ss::future<offset_fetch_response>
+      do_local_offset_fetch(offset_fetch_request);
+
+    ss::future<find_coordinator_response>
+      do_remote_find_coordinator(model::node_id, find_coordinator_request);
+    ss::future<offset_commit_response>
+      do_remote_offset_commit(model::node_id, offset_commit_request);
+    ss::future<offset_fetch_response>
+      do_remote_offset_fetch(model::node_id, offset_fetch_request);
 
     model::node_id _self;
     // need partition_leaders_table to know which node owns the partitions
     std::unique_ptr<partition_leader_cache> _leaders;
+    std::unique_ptr<topic_metadata_cache> _topic_metadata;
     std::unique_ptr<topic_creator> _topic_creator;
     ss::sharded<::rpc::connection_cache>* _connections;
     ss::sharded<local_service>* _local_service;

@@ -12,6 +12,7 @@
 #include "transform/rpc/serde.h"
 
 #include "model/record.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
@@ -44,5 +45,32 @@ produce_request produce_request::share() {
         shared.push_back(data.share());
     }
     return {std::move(shared), timeout};
+}
+
+std::ostream& operator<<(std::ostream& os, const offset_commit_request& req) {
+    fmt::print(
+      os, "{{ kvs: {}, coordinator: {} }}", req.kvs.size(), req.coordinator);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const offset_commit_response& resp) {
+    fmt::print(os, "{{ errc: {} }}", resp.errc);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const find_coordinator_request& req) {
+    fmt::print(os, "{{ num_keys: {} }}", req.keys.size());
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const find_coordinator_response& resp) {
+    fmt::print(
+      os,
+      "{{ coordinators: {}, errc: {} }}",
+      resp.coordinators.size(),
+      resp.ec);
+    return os;
 }
 } // namespace transform::rpc

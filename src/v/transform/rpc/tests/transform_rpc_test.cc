@@ -30,10 +30,12 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
+#include "test_utils/test.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/logger.h"
 #include "transform/rpc/service.h"
+#include "transform/tests/cluster_fixture.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -162,6 +164,25 @@ private:
       _topic_cfgs;
 };
 
+class delegating_fake_topic_metadata_cache : public topic_metadata_cache {
+public:
+    explicit delegating_fake_topic_metadata_cache(
+      fake_topic_metadata_cache* cache)
+      : _delegator(cache) {}
+
+    std::optional<cluster::topic_configuration>
+    find_topic_cfg(model::topic_namespace_view tp_ns) const final {
+        return _delegator->find_topic_cfg(tp_ns);
+    }
+
+    uint32_t get_default_batch_max_bytes() const final {
+        return _delegator->get_default_batch_max_bytes();
+    };
+
+private:
+    fake_topic_metadata_cache* _delegator;
+};
+
 struct produced_batch {
     model::ntp ntp;
     model::record_batch batch;
@@ -248,6 +269,27 @@ public:
         auto pp = kafka::partition_proxy(
           std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
         co_return co_await fn(&pp);
+    }
+
+    ss::future<find_coordinator_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<ss::future<find_coordinator_response>(
+        cluster::partition_manager&)>) override final {
+        return ss::make_exception_future<find_coordinator_response>({});
+    }
+
+    ss::future<offset_commit_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<ss::future<offset_commit_response>(
+        cluster::partition_manager&)>) override final {
+        return ss::make_exception_future<offset_commit_response>({});
+    }
+
+    ss::future<offset_fetch_response> invoke_on_shard(
+      ss::shard_id,
+      ss::noncopyable_function<ss::future<offset_fetch_response>(
+        cluster::partition_manager&)>) override final {
+        return ss::make_exception_future<offset_fetch_response>({});
     }
 
 private:
@@ -463,6 +505,7 @@ public:
         _client = std::make_unique<rpc::client>(
           self_node,
           std::move(fplc),
+          std::make_unique<delegating_fake_topic_metadata_cache>(_local_ftmc),
           std::move(ftpc),
           &_conn_cache,
           &_local_services);
@@ -621,11 +664,82 @@ TEST_P(TransformRpcTest, WasmBinaryCrud) {
       << cluster::error_category().message(int(ec));
 }
 
+struct TransformRpcTestParams {
+    int num_transform_topic_partitions;
+    bool shuffle_leadership;
+    friend std::ostream&
+    operator<<(std::ostream& os, const TransformRpcTestParams& tp) {
+        return os << "{partitions: " << tp.num_transform_topic_partitions
+                  << " shuffle_leadership: " << tp.shuffle_leadership << "}";
+    }
+};
+
+class TransformRpcTestFixture
+  : public WasmClusterFixture
+  , public ::testing::TestWithParam<TransformRpcTestParams> {
+public:
+    void shuffle_transform_offsets_leaders() {
+        for (auto id = 0; id < GetParam().num_transform_topic_partitions;
+             id++) {
+            shuffle_leadership(
+              {model::kafka_internal_namespace,
+               model::transform_offsets_topic,
+               id});
+        }
+    }
+};
+
+TEST_P(TransformRpcTestFixture, TestTransformOffsetRPCs) {
+    constexpr size_t num_brokers = 3;
+    for (int i = 0; i < num_brokers; i++) {
+        create_node_application(model::node_id{i});
+    }
+    wait_for_all_members(5s).get();
+    create_transform_offsets_topic(GetParam().num_transform_topic_partitions);
+    constexpr size_t num_transforms = 50;
+    constexpr size_t num_src_partitions = 100;
+
+    auto& client = transforms_client(model::node_id{0}).local();
+    for (int i = 0; i < num_transforms; i++) {
+        auto request_key = model::transform_offsets_key{};
+        request_key.id = model::transform_id{i};
+        for (int32_t j = 0; j < num_src_partitions; j++) {
+            request_key.partition = model::partition_id{j};
+            auto request_val = model::transform_offsets_value{
+              .offset = kafka::offset{j}};
+            auto result = client.offset_commit(request_key, request_val).get();
+            ASSERT_EQ(result, cluster::errc::success)
+              << "request (" << i << "," << j << ")";
+            // issue occastional leadership changes and ensure fetch sees a
+            // consistent state.
+            if (
+              GetParam().shuffle_leadership
+              && random_generators::get_int(100) <= 10) {
+                shuffle_transform_offsets_leaders();
+            }
+            auto read_result = client.offset_fetch(request_key).get();
+            ASSERT_TRUE(!read_result.has_error());
+            ASSERT_EQ(read_result.value().offset, request_val.offset);
+        }
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(
   WorksLocallyAndRemotely,
   TransformRpcTest,
   ::testing::Values(
     test_parameters{.leader_node = self_node, .non_leader_node = other_node},
     test_parameters{.leader_node = other_node, .non_leader_node = self_node}));
+
+INSTANTIATE_TEST_SUITE_P(
+  TransformRpcSingleAndMultiPartitions,
+  TransformRpcTestFixture,
+  ::testing::Values(
+    TransformRpcTestParams{
+      .num_transform_topic_partitions = 1, .shuffle_leadership = false},
+    TransformRpcTestParams{
+      .num_transform_topic_partitions = 3, .shuffle_leadership = true},
+    TransformRpcTestParams{
+      .num_transform_topic_partitions = 3, .shuffle_leadership = false}));
 
 } // namespace transform::rpc

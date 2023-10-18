@@ -26,4 +26,17 @@ std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
       meta.source_ptr);
     return os;
 }
+
+std::ostream& operator<<(std::ostream& os, const transform_offsets_key& key) {
+    fmt::print(
+      os, "{{ transform id: {}, partition: {} }}", key.id, key.partition);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const transform_offsets_value& value) {
+    fmt::print(os, "{{ offset: {} }}", value.offset);
+    return os;
+}
+
 } // namespace model
