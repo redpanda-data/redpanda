@@ -72,7 +72,12 @@ pandaproxy:
   {% endif %}
 
   advertised_pandaproxy_api:
+    {% if pandaproxy_config.advertised_api_host is none %}
     address: "{{node.account.hostname}}"
+    {% endif %}
+    {% if pandaproxy_config.advertised_api_host is not none %}
+    address: "{{pandaproxy_config.advertised_api_host}}"
+    {% endif %}
     port: 8082
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
