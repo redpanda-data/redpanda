@@ -324,9 +324,9 @@ class ScramLiveUpdateTest(RedpandaTest):
 class ScramBootstrapUserTest(RedpandaTest):
     BOOTSTRAP_USERNAME = 'bob'
     BOOTSTRAP_PASSWORD = 'sekrit'
-    BOOTSTRAP_MECHANISM = 'SCRAM-SHA-512'
+    # BOOTSTRAP_MECHANISM = 'SCRAM-SHA-512'
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, test_context, *args, **kwargs):
         # Configure the cluster as a user might configure it for secure
         # bootstrap: i.e. all auth turned on from moment of creation.
 
@@ -334,10 +334,11 @@ class ScramBootstrapUserTest(RedpandaTest):
         security_config.enable_sasl = True
 
         super().__init__(
+            test_context,
             *args,
             environment={
                 'RP_BOOTSTRAP_USER':
-                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}:{self.BOOTSTRAP_MECHANISM}'
+                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}:{test_context.mechanism}'
             },
             extra_rp_conf={
                 'enable_sasl': True,
@@ -347,7 +348,7 @@ class ScramBootstrapUserTest(RedpandaTest):
             security=security_config,
             superuser=SaslCredentials(self.BOOTSTRAP_USERNAME,
                                       self.BOOTSTRAP_PASSWORD,
-                                      self.BOOTSTRAP_MECHANISM),
+                                      test_context.mechanism),
             **kwargs)
 
     def _check_http_status_everywhere(self, expect_status, callable):
@@ -371,7 +372,10 @@ class ScramBootstrapUserTest(RedpandaTest):
         return True
 
     @cluster(num_nodes=3)
-    def test_bootstrap_user(self):
+    @parametrize(mechanism='SCRAM-SHA-512')
+    @parametrize(mechanism='SCRAM-SHA-256')
+    @parametrize(mechanism='sCrAm-ShA-512', expected_error='A WELL CHOSEN MESSAGE')
+    def test_bootstrap_user(self, mechanism):
         # Anonymous access should be refused
         admin = Admin(self.redpanda)
         with expect_http_error(403):
