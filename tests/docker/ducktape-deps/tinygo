@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+mkdir -p /usr/local/tinygo/
+if [ $(uname -m) = "aarch64" ]; then
+  export ARCHID="arm64"
+else
+  export ARCHID="amd64"
+fi
+curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 "https://github.com/redpanda-data/tinygo/releases/download/v0.30.0-rpk1/tinygo-linux-${ARCHID}.tar.gz" | tar -xz -C usr/local/tinygo/ --strip 1

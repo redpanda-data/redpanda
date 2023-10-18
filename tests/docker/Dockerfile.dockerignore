@@ -1,4 +1,5 @@
 **
+!src/go/transform-sdk
 !tests/java
 !tests/docker/ssh
 !tests/setup.py
