@@ -7,24 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
-import functools
-import json
-
+from ducktape.tests.test import Test
+from rptest.clients.rpk import RpkTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.services.redpanda import SecurityConfig, make_redpanda_service
+from rptest.services.redpanda import LoggingConfig, SecurityConfig, make_redpanda_service
 from rptest.services.keycloak import KeycloakService
 from rptest.services.cluster import cluster
-
-from ducktape.tests.test import Test
-from rptest.services.redpanda import make_redpanda_service
-from rptest.clients.rpk import RpkTool
 from rptest.util import expect_exception
-
 from confluent_kafka import KafkaException
 
 CLIENT_ID = 'myapp'
+TOKEN_AUDIENCE = 'account'
 EXAMPLE_TOPIC = 'foo'
+
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'security': 'trace',
+                               'pandaproxy': 'trace',
+                               'kafka/client': 'trace',
+                               'http': 'trace'
+                           })
 
 
 class RedpandaOIDCTestBase(Test):
@@ -33,7 +35,7 @@ class RedpandaOIDCTestBase(Test):
     """
     def __init__(self,
                  test_context,
-                 num_nodes=5,
+                 num_nodes=4,
                  sasl_mechanisms=['SCRAM', 'OAUTHBEARER'],
                  **kwargs):
         super(RedpandaOIDCTestBase, self).__init__(test_context, **kwargs)
@@ -41,13 +43,22 @@ class RedpandaOIDCTestBase(Test):
         self.produce_errors = []
         num_brokers = num_nodes - 1
         self.keycloak = KeycloakService(test_context)
+        kc_node = self.keycloak.nodes[0]
+        try:
+            self.keycloak.start_node(kc_node)
+        except Exception as e:
+            self.logger.error(f"{e}")
+            self.keycloak.clean_node(kc_node)
+            assert False, "Keycloak failed to start"
 
         security = SecurityConfig()
         security.enable_sasl = True
         security.sasl_mechanisms = sasl_mechanisms
 
-        self.redpanda = make_redpanda_service(test_context, num_brokers)
-        self.redpanda.set_security_settings(security)
+        self.redpanda = make_redpanda_service(test_context,
+                                              num_brokers,
+                                              security=security,
+                                              log_config=log_config)
 
         self.su_username, self.su_password, self.su_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
@@ -64,15 +75,9 @@ class RedpandaOIDCTestBase(Test):
 
 
 class RedpandaOIDCTest(RedpandaOIDCTestBase):
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_init(self):
         kc_node = self.keycloak.nodes[0]
-        try:
-            self.keycloak.start_node(kc_node)
-        except Exception as e:
-            self.logger.error(f"{e}")
-            self.keycloak.clean_node(kc_node)
-            assert False, "Keycloak failed to start"
 
         self.keycloak.admin.create_user('norma',
                                         'desmond',
@@ -103,7 +108,7 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
                                     oauth_config=cfg)
         producer = k_client.get_producer()
 
-        # Expclicit poll triggers OIDC token flow. Required for librdkafka
+        # Explicit poll triggers OIDC token flow. Required for librdkafka
         # metadata requests to behave nicely.
         producer.poll(0.0)
 
