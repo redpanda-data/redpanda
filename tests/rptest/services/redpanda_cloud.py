@@ -60,11 +60,32 @@ class CloudTierName(Enum):
     AWS_3 = 'tier-3-aws'
     AWS_4 = 'tier-4-aws'
     AWS_5 = 'tier-5-aws'
+    AWS_1_P5 = 'tco-p5-tier-1-aws'
+    AWS_2_P5 = 'tco-p5-tier-2-aws'
+    AWS_3_P5 = 'tco-p5-tier-3-aws'
+    AWS_4_P5 = 'tco-p5-tier-4-aws'
+    AWS_5_P5 = 'tco-p5-tier-5-aws'
+    AWS_6_P5 = 'tco-p5-tier-6-aws'
+    AWS_7_P5 = 'tco-p5-tier-7-aws'
+    AWS_1_P5_ARM = 'tco-p5-tier-1-aws-arm'
+    AWS_2_P5_ARM = 'tco-p5-tier-2-aws-arm'
+    AWS_3_P5_ARM = 'tco-p5-tier-3-aws-arm'
+    AWS_4_P5_ARM = 'tco-p5-tier-4-aws-arm'
+    AWS_5_P5_ARM = 'tco-p5-tier-5-aws-arm'
+    AWS_6_P5_ARM = 'tco-p5-tier-6-aws-arm'
+    AWS_7_P5_ARM = 'tco-p5-tier-7-aws-arm'
     GCP_1 = 'tier-1-gcp'
     GCP_2 = 'tier-2-gcp'
     GCP_3 = 'tier-3-gcp'
     GCP_4 = 'tier-4-gcp'
     GCP_5 = 'tier-5-gcp'
+    GCP_1_P5 = 'tco-p5-tier-1-gcp'
+    GCP_2_P5 = 'tco-p5-tier-2-gcp'
+    GCP_3_P5 = 'tco-p5-tier-3-gcp'
+    GCP_4_P5 = 'tco-p5-tier-4-gcp'
+    GCP_5_P5 = 'tco-p5-tier-5-gcp'
+    GCP_6_P5 = 'tco-p5-tier-6-gcp'
+    GCP_7_P5 = 'tco-p5-tier-7-gcp'
 
     @classmethod
     def list(cls):
@@ -133,6 +154,48 @@ AdvertisedTierConfigs = {
     CloudTierName.AWS_5: AdvertisedTierConfig(
         400*MiB, 800*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
     ),
+    CloudTierName.AWS_1_P5: AdvertisedTierConfig(
+         20*MiB,  60*MiB,  3,  512*MiB,  300*GiB,   20, 1000,  1500, 32*GiB
+    ),
+    CloudTierName.AWS_2_P5: AdvertisedTierConfig(
+         50*MiB, 150*MiB,  3,  512*MiB,  500*GiB,   50, 2000,  3750, 64*GiB
+    ),
+    CloudTierName.AWS_3_P5: AdvertisedTierConfig(
+        100*MiB, 200*MiB,  6,  512*MiB,  500*GiB,  100, 5000,  7500, 64*GiB
+    ),
+    CloudTierName.AWS_4_P5: AdvertisedTierConfig(
+        200*MiB, 400*MiB,  6,    1*GiB, 1000*GiB,  100, 5000, 15000, 96*GiB
+    ),
+    CloudTierName.AWS_5_P5: AdvertisedTierConfig(
+        400*MiB, 800*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
+    ),
+    CloudTierName.AWS_6_P5: AdvertisedTierConfig(
+        800*MiB, 1600*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
+    ),
+    CloudTierName.AWS_7_P5: AdvertisedTierConfig(
+        1200*MiB, 2400*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
+    ),
+    CloudTierName.AWS_1_P5_ARM: AdvertisedTierConfig(
+         20*MiB,  60*MiB,  3,  512*MiB,  300*GiB,   20, 1000,  1500, 32*GiB
+    ),
+    CloudTierName.AWS_2_P5_ARM: AdvertisedTierConfig(
+         50*MiB, 150*MiB,  3,  512*MiB,  500*GiB,   50, 2000,  3750, 64*GiB
+    ),
+    CloudTierName.AWS_3_P5_ARM: AdvertisedTierConfig(
+        100*MiB, 200*MiB,  6,  512*MiB,  500*GiB,  100, 5000,  7500, 64*GiB
+    ),
+    CloudTierName.AWS_4_P5_ARM: AdvertisedTierConfig(
+        200*MiB, 400*MiB,  6,    1*GiB, 1000*GiB,  100, 5000, 15000, 96*GiB
+    ),
+    CloudTierName.AWS_5_P5_ARM: AdvertisedTierConfig(
+        400*MiB, 800*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
+    ),
+    CloudTierName.AWS_6_P5_ARM: AdvertisedTierConfig(
+        800*MiB, 1600*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
+    ),
+    CloudTierName.AWS_7_P5_ARM: AdvertisedTierConfig(
+        1200*MiB, 2400*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 30000, 96*GiB
+    ),
     CloudTierName.GCP_1: AdvertisedTierConfig(
          20*MiB,  60*MiB,  3,  512*MiB,  150*GiB,   20,  500,  1500,  16*GiB
     ),
@@ -147,6 +210,27 @@ AdvertisedTierConfigs = {
     ),
     CloudTierName.GCP_5: AdvertisedTierConfig(
         400*MiB, 600*MiB, 12,    1*GiB,  750*GiB,  100, 7500, 22500, 32*GiB
+    ),
+    CloudTierName.GCP_1_P5: AdvertisedTierConfig(
+         20*MiB,  60*MiB,  3,  512*MiB,  150*GiB,   20,  500,  1500,  16*GiB
+    ),
+    CloudTierName.GCP_2_P5: AdvertisedTierConfig(
+         50*MiB, 150*MiB,  3,  512*MiB,  300*GiB,   50, 1000,  3750, 32*GiB
+    ),
+    CloudTierName.GCP_3_P5: AdvertisedTierConfig(
+        100*MiB, 200*MiB,  6,  512*MiB,  320*GiB,  100, 3000,  7500, 32*GiB
+    ),
+    CloudTierName.GCP_4_P5: AdvertisedTierConfig(
+        200*MiB, 400*MiB,  9,  512*MiB,  350*GiB,  100, 5000, 15000, 32*GiB
+    ),
+    CloudTierName.GCP_5_P5: AdvertisedTierConfig(
+        400*MiB, 600*MiB, 12,    1*GiB,  750*GiB,  100, 7500, 22500, 32*GiB
+    ),
+    CloudTierName.GCP_6_P5: AdvertisedTierConfig(
+        800*MiB, 1600*MiB, 12,    1*GiB,  750*GiB,  100, 7500, 22500, 32*GiB
+    ),
+    CloudTierName.GCP_7_P5: AdvertisedTierConfig(
+        1200*MiB, 2400*MiB, 12,    1*GiB,  750*GiB,  100, 7500, 22500, 32*GiB
     ),
     CloudTierName.DOCKER: AdvertisedTierConfig(
         3*MiB,   9*MiB,   3,   128*MiB,  20*GiB,   1,   25,   100,   2*GiB
