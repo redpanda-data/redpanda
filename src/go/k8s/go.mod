@@ -13,7 +13,7 @@ require (
 	github.com/fluxcd/helm-controller/shim v0.0.0-00010101000000-000000000000
 	github.com/fluxcd/pkg/apis/meta v1.1.2
 	github.com/fluxcd/pkg/runtime v0.42.0
-	github.com/fluxcd/source-controller/api v1.1.1
+	github.com/fluxcd/source-controller/api v1.1.2
 	github.com/fluxcd/source-controller/shim v0.0.0-00010101000000-000000000000
 	github.com/go-logr/logr v1.2.4
 	github.com/jcmturner/gokrb5/v8 v8.4.3
