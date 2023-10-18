@@ -91,6 +91,7 @@
 #include "security/acl.h"
 #include "security/audit/audit_log_manager.h"
 #include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
 #include "security/credential_store.h"
@@ -635,6 +636,44 @@ void admin_server::audit_authz(
           logger.error,
           "Request to modify or view cluster configuration was not audited due "
           "to audit queues being full");
+    }
+}
+
+void admin_server::audit_authn(
+  ss::httpd::const_req req, const request_auth_result& auth_result) {
+    auto authentication_event = security::audit::make_authentication_event(
+      req, auth_result);
+
+    do_audit_authn(req, std::move(authentication_event));
+}
+
+void admin_server::audit_authn_failure(
+  ss::httpd::const_req req,
+  const security::credential_user& username,
+  const ss::sstring& reason) {
+    auto authentication_event
+      = security::audit::make_authentication_failure_event(
+        req, username, reason);
+
+    do_audit_authn(req, std::move(authentication_event));
+}
+
+void admin_server::do_audit_authn(
+  ss::httpd::const_req req,
+  security::audit::authentication authentication_event) {
+    vlog(logger.trace, "Attempting to audit authn for {}", req.format_url());
+    auto success = _audit_mgr.local().enqueue_audit_event(
+      security::audit::event_type::authenticate,
+      std::move(authentication_event));
+
+    if (!success) {
+        vlog(
+          logger.error,
+          "Failed to audit authentication request for endpoint: {}",
+          req.format_url());
+        throw ss::httpd::base_exception(
+          "Failed to audit authentication request",
+          ss::http::reply::status_type::service_unavailable);
     }
 }
 

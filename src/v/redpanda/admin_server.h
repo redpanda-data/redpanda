@@ -24,7 +24,9 @@
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
+#include "security/audit/schemas/iam.h"
 #include "security/fwd.h"
+#include "security/types.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
 #include "utils/request_auth.h"
@@ -113,13 +115,39 @@ private:
       httpd_authorized authorized,
       std::optional<std::string_view> reason = std::nullopt);
 
+    void audit_authn(
+      ss::httpd::const_req req, const request_auth_result& auth_result);
+
+    void audit_authn_failure(
+      ss::httpd::const_req req,
+      const security::credential_user& username,
+      const ss::sstring& reason);
+
+    void do_audit_authn(
+      ss::httpd::const_req req,
+      security::audit::authentication authentication_event);
+
     /**
      * Authenticate, and raise if `required_auth` is not met by
      * the credential (or pass if authentication is disabled).
      */
     template<auth_level required_auth>
     request_auth_result apply_auth(ss::httpd::const_req req) {
-        auto auth_state = _auth.authenticate(req);
+        auto auth_state = [this, &req]() -> request_auth_result {
+            try {
+                return _auth.authenticate(req);
+            } catch (unauthorized_user_exception& e) {
+                audit_authn_failure(req, e.get_username(), e.what());
+                throw;
+            } catch (const ss::httpd::base_exception& e) {
+                audit_authn_failure(
+                  req, security::credential_user{"{{unknown}}"}, e.what());
+                throw;
+            }
+        }();
+
+        audit_authn(req, auth_state);
+
         try {
             if constexpr (required_auth == auth_level::superuser) {
                 auth_state.require_superuser();
