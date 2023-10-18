@@ -224,6 +224,13 @@ void validate_multi_node_property_config(
             errors.emplace("advertised_kafka_api", ssx::sformat("{}", *err));
         }
     }
+
+    auto rpc_err = model::broker_endpoint::validate_not_is_addr_any(
+      model::broker_endpoint{"", cfg.advertised_rpc_api()});
+
+    if (rpc_err) {
+        errors.emplace("advertised_rpc_api", ssx::sformat("{}", *rpc_err));
+    }
 }
 
 node_config::error_map_t node_config::load(const YAML::Node& root_node) {
