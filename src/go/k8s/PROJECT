@@ -3,7 +3,7 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 layout:
-- go.kubebuilder.io/v3
+- go.kubebuilder.io/v4
 multigroup: true
 projectName: redpanda-operator
 repo: github.com/redpanda-data/redpanda/src/go/k8s
@@ -15,7 +15,7 @@ resources:
   domain: vectorized.io
   group: redpanda
   kind: Cluster
-  path: github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1
+  path: github.com/redpanda-data/redpanda/src/go/k8s/api/redpanda/v1alpha1
   version: v1alpha1
   webhooks:
     webhookVersion: v1
@@ -26,7 +26,7 @@ resources:
   domain: vectorized.io
   group: redpanda
   kind: Console
-  path: github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1
+  path: github.com/redpanda-data/redpanda/src/go/k8s/api/redpanda/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -35,7 +35,8 @@ resources:
   domain: redpanda.com
   group: cluster
   kind: Redpanda
-  path: github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1
+  path: github.com/redpanda-data/redpanda/src/go/k8s/api/redpanda/v1alpha1
+  plural: redpandas
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -43,6 +44,6 @@ resources:
   controller: true
   group: cluster.redpanda.com
   kind: Topic
-  path: github.com/redpanda-data/redpanda/src/go/k8s/apis/cluster.redpanda.com/v1alpha1
+  path: github.com/redpanda-data/redpanda/src/go/k8s/api/cluster.redpanda.com/v1alpha1
   version: v1alpha1
 version: "3"

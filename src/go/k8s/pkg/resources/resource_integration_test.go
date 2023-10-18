@@ -14,7 +14,6 @@ import (
 	"crypto/tls"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,9 +29,9 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -44,11 +43,9 @@ const hash = "hash"
 func TestMain(m *testing.M) {
 	var err error
 
-	testEnv := &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
-	}
+	testEnv := &testutils.RedpandaTestEnv{}
 
-	cfg, err := testEnv.Start()
+	cfg, err := testEnv.StartRedpandaTestEnv(false)
 	if err != nil {
 		log.Fatal(err)
 	}

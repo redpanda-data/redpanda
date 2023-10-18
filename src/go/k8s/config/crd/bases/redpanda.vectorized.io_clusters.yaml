@@ -1,11 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.13.0
   name: clusters.redpanda.vectorized.io
 spec:
   group: redpanda.vectorized.io
@@ -42,9 +40,9 @@ spec:
                 description: "For configuration parameters not exposed, a map can
                   be provided for string values. Such values are passed transparently
                   to Redpanda. The key format is \"<subsystem>.field\", e.g., \n additionalConfiguration:
-                  \  redpanda.enable_idempotence: \"true\"   redpanda.default_topic_partitions:
-                  \"3\"   pandaproxy_client.produce_batch_size_bytes: \"2097152\"
-                  \n Notes: 1. versioning is not supported for map keys 2. key names
+                  redpanda.enable_idempotence: \"true\" redpanda.default_topic_partitions:
+                  \"3\" pandaproxy_client.produce_batch_size_bytes: \"2097152\" \n
+                  Notes: 1. versioning is not supported for map keys 2. key names
                   not supported by Redpanda will lead to failure on start up 3. updating
                   this map requires a manual restart of the Redpanda pods. Please
                   be aware of sync period when one Redpanda POD is restarted 4. cannot
@@ -149,6 +147,7 @@ spec:
                         description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                         type: string
                     type: object
+                    x-kubernetes-map-type: atomic
                   trustfile:
                     description: Path to certificate that should be used to validate
                       server certificate
@@ -396,6 +395,7 @@ spec:
                                   description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                                   type: string
                               type: object
+                              x-kubernetes-map-type: atomic
                             requireClientAuth:
                               description: Enables two-way verification on the server
                                 side. If enabled, all Kafka API clients are required
@@ -522,6 +522,7 @@ spec:
                               - kind
                               - name
                               type: object
+                              x-kubernetes-map-type: atomic
                             enabled:
                               type: boolean
                             issuerRef:
@@ -593,6 +594,7 @@ spec:
                                   description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                                   type: string
                               type: object
+                              x-kubernetes-map-type: atomic
                             requireClientAuth:
                               description: Enables two-way verification on the server
                                 side. If enabled, all Pandaproxy API clients are required
@@ -714,6 +716,7 @@ spec:
                             - kind
                             - name
                             type: object
+                            x-kubernetes-map-type: atomic
                           enabled:
                             type: boolean
                           issuerRef:
@@ -781,6 +784,7 @@ spec:
                                 description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                                 type: string
                             type: object
+                            x-kubernetes-map-type: atomic
                           requireClientAuth:
                             description: Enables two-way verification on the server
                               side. If enabled, all SchemaRegistry clients are required
@@ -884,7 +888,8 @@ spec:
                     description: "Claims lists the names of resources, defined in
                       spec.resourceClaims, that are used by this container. \n This
                       is an alpha field and requires enabling the DynamicResourceAllocation
-                      feature gate. \n This field is immutable."
+                      feature gate. \n This field is immutable. It can only be set
+                      for containers."
                     items:
                       description: ResourceClaim references one entry in PodSpec.ResourceClaims.
                       properties:
@@ -930,7 +935,8 @@ spec:
                     description: 'Requests describes the minimum amount of compute
                       resources required. If Requests is omitted for a container,
                       it defaults to Limits if that is explicitly specified, otherwise
-                      to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                      to an implementation-defined value. Requests cannot exceed Limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                     type: object
                 type: object
               restartConfig:
@@ -948,15 +954,14 @@ spec:
                       be described as follows: \n 1. Rolling update checks if Pod
                       specification needs to be replaced and deletes it 2. Deleted
                       Redpanda Pod is put into maintenance mode (postStart hook will
-                      disable    maintenance mode when new Pod starts) 3. Rolling
-                      update waits for Pod to be in Ready state 4. Rolling update
-                      checks if cluster is in healthy state 5. Rolling update checks
-                      if restarted Redpanda Pod admin API Ready endpoint returns HTTP
-                      200 response 6. Using UnderReplicatedPartitionThreshold each
-                      under replicated partition metric is compared with the threshold
-                      7. Rolling update moves to the next Redpanda pod \n The metric
-                      `vectorized_cluster_partition_under_replicated_replicas` is
-                      used in the comparison \n Mentioned metrics has the following
+                      disable maintenance mode when new Pod starts) 3. Rolling update
+                      waits for Pod to be in Ready state 4. Rolling update checks
+                      if cluster is in healthy state 5. Rolling update checks if restarted
+                      Redpanda Pod admin API Ready endpoint returns HTTP 200 response
+                      6. Using UnderReplicatedPartitionThreshold each under replicated
+                      partition metric is compared with the threshold 7. Rolling update
+                      moves to the next Redpanda pod \n The metric `vectorized_cluster_partition_under_replicated_replicas`
+                      is used in the comparison \n Mentioned metrics has the following
                       help description: `vectorized_cluster_partition_under_replicated_replicas`
                       Number of under replicated replicas \n By default, the UnderReplicatedPartitionThreshold
                       will be 0, which means all partitions needs to catch up without
@@ -988,7 +993,7 @@ spec:
                               in spec.resourceClaims, that are used by this container.
                               \n This is an alpha field and requires enabling the
                               DynamicResourceAllocation feature gate. \n This field
-                              is immutable."
+                              is immutable. It can only be set for containers."
                             items:
                               description: ResourceClaim references one entry in PodSpec.ResourceClaims.
                               properties:
@@ -1026,7 +1031,7 @@ spec:
                               compute resources required. If Requests is omitted for
                               a container, it defaults to Limits if that is explicitly
                               specified, otherwise to an implementation-defined value.
-                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                              Requests cannot exceed Limits. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             type: object
                         type: object
                     type: object
@@ -1190,9 +1195,9 @@ spec:
                                       the service port The format of the error shall
                                       comply with the following rules: - built-in
                                       error values shall be specified in this file
-                                      and those shall use   CamelCase names - cloud
+                                      and those shall use CamelCase names - cloud
                                       provider specific error values must have names
-                                      that comply with the   format foo.example.com/CamelCase.
+                                      that comply with the format foo.example.com/CamelCase.
                                       --- The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)'
                                     maxLength: 316
                                     pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
@@ -1276,9 +1281,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
