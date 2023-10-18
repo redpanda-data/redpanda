@@ -111,7 +111,7 @@ std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
 std::optional<ss::sstring>
 validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
     constexpr auto supported = std::to_array<std::string_view>(
-      {"GSSAPI", "SCRAM"});
+      {"GSSAPI", "SCRAM", "OAUTHBEARER"});
 
     // Validate results
     for (const auto& m : mechanisms) {

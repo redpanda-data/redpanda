@@ -1112,7 +1112,8 @@ configuration::configuration()
   , sasl_mechanisms(
       *this,
       "sasl_mechanisms",
-      "A list of supported SASL mechanisms. `SCRAM` and `GSSAPI` are allowed.",
+      "A list of supported SASL mechanisms. `SCRAM`, `GSSAPI`, and "
+      "`OAUTHBEARER` are allowed.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"SCRAM"},
       validate_sasl_mechanisms)

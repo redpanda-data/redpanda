@@ -8,13 +8,13 @@
 # by the Apache License, Version 2.0
 
 from ducktape.tests.test import Test
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.redpanda import LoggingConfig, SecurityConfig, make_redpanda_service
 from rptest.services.keycloak import KeycloakService
 from rptest.services.cluster import cluster
-from rptest.util import expect_exception
-from confluent_kafka import KafkaException
 
 CLIENT_ID = 'myapp'
 TOKEN_AUDIENCE = 'account'
@@ -55,10 +55,15 @@ class RedpandaOIDCTestBase(Test):
         security.enable_sasl = True
         security.sasl_mechanisms = sasl_mechanisms
 
-        self.redpanda = make_redpanda_service(test_context,
-                                              num_brokers,
-                                              security=security,
-                                              log_config=log_config)
+        self.redpanda = make_redpanda_service(
+            test_context,
+            num_brokers,
+            extra_rp_conf={
+                "oidc_discovery_url": self.keycloak.get_discovery_url(kc_node),
+                "oidc_token_audience": TOKEN_AUDIENCE,
+            },
+            security=security,
+            log_config=log_config)
 
         self.su_username, self.su_password, self.su_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
@@ -112,5 +117,9 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
         # metadata requests to behave nicely.
         producer.poll(0.0)
 
-        with expect_exception(KafkaException, lambda _: True):
-            producer.list_topics(timeout=5)
+        expected_topics = set([EXAMPLE_TOPIC])
+        print(f'expected_topics: {expected_topics}')
+
+        wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
+                   == expected_topics,
+                   timeout_sec=5)

@@ -600,7 +600,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             if name == 'sasl_mechanisms':
                 # The default value is ['SCRAM'], but the array cannot contain
                 # arbitrary strings because the config system validates them.
-                valid_value = ['SCRAM', 'GSSAPI']
+                valid_value = ['SCRAM', 'GSSAPI', 'OAUTHBEARER']
 
             if name == 'http_authentication':
                 # The default value is ['BASIC'], but the array cannot contain
