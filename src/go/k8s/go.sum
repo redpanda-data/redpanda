@@ -1054,8 +1054,8 @@ github.com/fluxcd/pkg/version v0.2.2 h1:ZpVXECeLA5hIQMft11iLp6gN3cKcz6UNuVTQPw/b
 github.com/fluxcd/pkg/version v0.2.2/go.mod h1:NGnh/no8S6PyfCDxRFrPY3T5BUnqP48MxfxNRU0z8C0=
 github.com/fluxcd/source-controller v1.1.1 h1:UvORS2QJi5c8TjcYhVHmPwebm6LxHNTebNTql0gOR1Y=
 github.com/fluxcd/source-controller v1.1.1/go.mod h1:wR/653NUjkThlM88evJEaqx7nC1G/0hSRTPBpAFtig8=
-github.com/fluxcd/source-controller/api v1.1.1 h1:0KQTEnLxBRrovISc5JeovTfyTjhh4vwodNnYyD6XD/Q=
-github.com/fluxcd/source-controller/api v1.1.1/go.mod h1:ZLkaUd1KQIjtLPCvO63Ni5zpnSTVBAkeRgFBzMItbDQ=
+github.com/fluxcd/source-controller/api v1.1.2 h1:FfKDKVWnopo+Q2pOAxgHEjrtr4MP41L8aapR4mqBhBk=
+github.com/fluxcd/source-controller/api v1.1.2/go.mod h1:ZLkaUd1KQIjtLPCvO63Ni5zpnSTVBAkeRgFBzMItbDQ=
 github.com/fogleman/gg v1.2.1-0.20190220221249-0403632d5b90/go.mod h1:R/bRT+9gY/C5z7JzPU0zXsXHKM4/ayA+zqcVNZzPa1k=
 github.com/fogleman/gg v1.3.0/go.mod h1:R/bRT+9gY/C5z7JzPU0zXsXHKM4/ayA+zqcVNZzPa1k=
 github.com/foxcpp/go-mockdns v1.0.0 h1:7jBqxd3WDWwi/6WhDvacvH1XsN3rOLXyHM1uhvIx6FI=
