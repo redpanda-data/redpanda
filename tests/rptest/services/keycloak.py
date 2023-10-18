@@ -15,7 +15,7 @@ KC = os.path.join(KC_BIN_DIR, 'kc.sh')
 KCADM = os.path.join(KC_BIN_DIR, 'kcadm.sh')
 KC_ADMIN = 'admin'
 KC_ADMIN_PASSWORD = 'admin'
-KC_ROOT_LOG_LEVEL = 'INFO'
+KC_ROOT_LOG_LEVEL = 'TRACE'
 KC_LOG_HANDLER = 'console,file'
 KC_LOG_FILE = '/var/log/kc.log'
 KC_PORT = 8080
@@ -26,7 +26,7 @@ START_CMD_TMPL = """
 LAUNCH_JBOSS_IN_BACKGROUND=1 \
 KEYCLOAK_ADMIN={admin} \
 KEYCLOAK_ADMIN_PASSWORD={pw} \
-{kc} start-dev --http-port={port} \
+{kc} start-dev --http-port={port} --hostname-port={port} \
 --log="{log_handler}" --log-file="{logfile}" --log-level="{log_level}" &
 """
 
@@ -171,11 +171,13 @@ class KeycloakService(Service):
     def host(self, node):
         return node.account.hostname
 
+    def get_discovery_url(self, node):
+        return OIDC_CONFIG_TMPL.format(host=self.host(node),
+                                       port=self.http_port,
+                                       realm=self.realm)
+
     def get_token_endpoint(self, node):
-        oidc_config = requests.get(
-            OIDC_CONFIG_TMPL.format(host=self.host(node),
-                                    port=self.http_port,
-                                    realm=self.realm)).json()
+        oidc_config = requests.get(self.get_discovery_url(node=node)).json()
         return oidc_config['token_endpoint']
 
     def login_admin_user(self, node, username, password):
