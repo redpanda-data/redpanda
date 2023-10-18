@@ -86,6 +86,7 @@ func makeEnvMap(env []adminapi.EnvironmentVariable) map[string]string {
 }
 
 func summarizedView(metadata []adminapi.TransformMetadata) (resp []summarizedTransformMetadata) {
+	resp = make([]summarizedTransformMetadata, 0, len(metadata))
 	for _, meta := range metadata {
 		total := len(meta.Status)
 		running := 0
@@ -119,6 +120,7 @@ func printSummary(f config.OutFormatter, s []summarizedTransformMetadata, w io.W
 }
 
 func detailView(metadata []adminapi.TransformMetadata) (resp []detailedTransformMetadata) {
+	resp = make([]detailedTransformMetadata, 0, len(metadata))
 	for _, meta := range metadata {
 		resp = append(resp, detailedTransformMetadata{
 			Name:         meta.Name,
