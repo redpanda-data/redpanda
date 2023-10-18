@@ -41,6 +41,11 @@ struct configuration final : public config::config_store {
 
     configuration();
     explicit configuration(const YAML::Node& cfg);
+
+    const error_map_t& errors() const { return _config_errors; }
+
+private:
+    error_map_t _config_errors;
 };
 
 } // namespace pandaproxy::rest

@@ -22,7 +22,7 @@ using namespace std::chrono_literals;
 
 configuration::configuration(const YAML::Node& cfg)
   : configuration() {
-    read_yaml(cfg);
+    _config_errors = read_yaml(cfg);
 }
 
 configuration::configuration()
@@ -44,7 +44,10 @@ configuration::configuration()
   , advertised_pandaproxy_api(
       *this,
       "advertised_pandaproxy_api",
-      "Rest API address and port to publish to client")
+      "Rest API address and port to publish to client",
+      {},
+      {},
+      model::broker_endpoint::validate_many)
   , api_doc_dir(
       *this,
       "api_doc_dir",
