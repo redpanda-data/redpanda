@@ -160,6 +160,7 @@ struct configuration final : public config_store {
     retention_duration_property log_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
     property<bool> log_disable_housekeeping_for_tests;
+    property<bool> log_compaction_use_sliding_window;
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;
