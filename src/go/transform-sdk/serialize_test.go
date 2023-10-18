@@ -72,9 +72,13 @@ func makeRandomRecord() Record {
 func TestRoundTrip(t *testing.T) {
 	r := makeRandomRecord()
 	b := rwbuf.New(0)
-	r.serialize(b)
-	output := Record{}
-	err := output.deserialize(b)
+	r.serializePayload(b)
+	output := Record{
+		Attrs:     r.Attrs,
+		Timestamp: r.Timestamp,
+		Offset:    r.Offset,
+	}
+	err := output.deserializePayload(b)
 	if err != nil {
 		t.Fatal(err)
 	}
