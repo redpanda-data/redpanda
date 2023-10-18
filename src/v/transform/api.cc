@@ -225,6 +225,9 @@ public:
       : _service(service) {}
 
     ss::future<model::cluster_transform_report> compute_report() override {
+        // It's the RPC server is started before the transform subsystem boots
+        // up, so we need to check for initialization here.
+        // TODO(rockwood): Fix the bootup sequence so this doesn't happen.
         if (!_service->local_is_initialized()) {
             return ss::make_exception_future<model::cluster_transform_report>(
               std::make_exception_ptr(
