@@ -66,6 +66,8 @@ public:
           *(static_cast<const Derived*>(this)));
     }
 
+    timestamp_t get_time() const { return _time; }
+
     ocsf_base_event(const ocsf_base_event&) = delete;
     ocsf_base_event& operator=(const ocsf_base_event&) = delete;
     ocsf_base_event(ocsf_base_event&&) = default;
