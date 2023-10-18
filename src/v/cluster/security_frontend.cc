@@ -336,15 +336,17 @@ security_frontend::get_bootstrap_user_creds_from_env() {
         // but it is still a secret.
         vlog(
           clusterlog.warn,
-          "Invalid value of {} (expected \"username:password:mechanism\")",
+          "Invalid value of {} (expected \"username:password:[mechanism]\")",
           bootstrap_user_env_key);
         return {};
     }
     std::variant<security::scram_sha256, security::scram_sha512> scram;
-    if (
-      parts.size() == 3
-      && parts[2] == security::scram_sha512_authenticator::name) {
+    if (parts.size() == 3) {
+      if (parts[2] == security::scram_sha512_authenticator::name) {
         scram = security::scram_sha512{};
+      } else if (parts[2] != security::scram_sha256_authenticator::name) {
+        throw std::invalid_argument("A WELL CHOSEN MESSAGE");
+      }
     }
     return std::optional<user_and_credential>(
       std::in_place,
