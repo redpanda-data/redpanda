@@ -448,7 +448,6 @@ model::cluster_transform_report manager<ClockType>::compute_report() const {
             .id = id,
             .status = entry.compute_state(),
             .node = _self,
-            .core = ss::this_shard_id(),
           });
     }
     return report;

@@ -44,12 +44,7 @@ operator<<(std::ostream& os, const transform_offsets_value& value) {
 std::ostream&
 operator<<(std::ostream& os, const transform_report::processor& p) {
     fmt::print(
-      os,
-      "{{id: {}, status: {}, node: {}, core: {}}}",
-      p.id,
-      uint8_t(p.status),
-      p.node,
-      p.core);
+      os, "{{id: {}, status: {}, node: {}}}", p.id, uint8_t(p.status), p.node);
     return os;
 }
 

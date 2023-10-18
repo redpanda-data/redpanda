@@ -15,8 +15,6 @@
 #include "random/generators.h"
 #include "test_utils/randoms.h"
 
-#include <seastar/core/smp.hh>
-
 #include <gtest/gtest.h>
 
 #include <initializer_list>
@@ -45,7 +43,6 @@ model::transform_report::processor make_processor_report(int id) {
         state::errored,
       }),
       .node = tests::random_named_int<model::node_id>(),
-      .core = random_generators::get_int<ss::shard_id>(0, 64),
     };
 }
 

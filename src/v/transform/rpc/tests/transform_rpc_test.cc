@@ -816,13 +816,11 @@ TEST_F(TransformRpcTest, CanAggregateReports) {
           .id = model::partition_id(0),
           .status = state::running,
           .node = self_node,
-          .core = 0,
         },
         model::transform_report::processor{
           .id = model::partition_id(2),
           .status = state::inactive,
           .node = self_node,
-          .core = 1,
         },
       });
     remote_reporter()->add_to_report(
@@ -832,7 +830,6 @@ TEST_F(TransformRpcTest, CanAggregateReports) {
         .id = model::partition_id(0),
         .status = state::running,
         .node = other_node,
-        .core = 2,
       }});
     remote_reporter()->add_to_report(
       model::transform_id(1),
@@ -841,7 +838,6 @@ TEST_F(TransformRpcTest, CanAggregateReports) {
         .id = model::partition_id(1),
         .status = state::errored,
         .node = other_node,
-        .core = 0,
       }});
     model::cluster_transform_report actual = client()->generate_report().get();
     model::cluster_transform_report expected = local_reporter()->report();

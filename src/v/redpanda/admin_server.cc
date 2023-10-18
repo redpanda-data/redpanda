@@ -5846,7 +5846,6 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
           for (const auto& [_, processor] : t.processors) {
               ss::httpd::transform_json::partition_transform_status s;
               s.partition = processor.id();
-              s.core = processor.core;
               s.node_id = processor.node();
               s.status = convert_transform_status(processor.status);
               meta.status.push(s);

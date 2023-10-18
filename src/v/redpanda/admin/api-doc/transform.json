@@ -130,10 +130,6 @@
           "type": "int",
           "description": "partition in the input topic"
         },
-        "core": {
-          "type": "int",
-          "description": "id of a core on a given node"
-        },
         "status": {
           "type": "string",
           "enum": [

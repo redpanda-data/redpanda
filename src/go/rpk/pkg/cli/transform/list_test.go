@@ -25,19 +25,16 @@ func setupTestData() []adminapi.TransformMetadata {
 				{
 					NodeID:    0,
 					Partition: 1,
-					Core:      0,
 					Status:    "running",
 				},
 				{
 					NodeID:    0,
 					Partition: 2,
-					Core:      1,
 					Status:    "running",
 				},
 				{
 					NodeID:    1,
 					Partition: 3,
-					Core:      4,
 					Status:    "inactive",
 				},
 			},
@@ -53,7 +50,6 @@ func setupTestData() []adminapi.TransformMetadata {
 				{
 					NodeID:    0,
 					Partition: 1,
-					Core:      0,
 					Status:    "errored",
 				},
 			},
@@ -107,14 +103,14 @@ func TestPrintDetailView(t *testing.T) {
 	cases := []testCase{
 		Text(`
 foo2bar, foo → bar
-      PARTITION  NODE  CORE  STATUS
-      1          0     0     running
-      2          0     1     running
-      3          1     4     inactive
+      PARTITION  NODE  STATUS
+      1          0     running
+      2          0     running
+      3          1     inactive
 
 scrubber, pii → cleaned, munged
-      PARTITION  NODE  CORE  STATUS
-      1          0     0     errored
+      PARTITION  NODE  STATUS
+      1          0     errored
 `),
 		JSON(t, d),
 		YAML(t, d),

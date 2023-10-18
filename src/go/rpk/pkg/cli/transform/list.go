@@ -145,9 +145,9 @@ func printDetailed(f config.OutFormatter, d []detailedTransformMetadata, w io.Wr
 		}
 		tw.Print(fmt.Sprintf("%s, %s → %s", m.Name, m.InputTopic, strings.Join(m.OutputTopics, ", ")))
 		// add an empty column to provide an indent
-		tw.Print("", "PARTITION", "NODE", "CORE", "STATUS")
+		tw.Print("", "PARTITION", "NODE", "STATUS")
 		for _, p := range m.Status {
-			tw.Print("", p.Partition, p.NodeID, p.Core, p.Status)
+			tw.Print("", p.Partition, p.NodeID, p.Status)
 		}
 	}
 }
