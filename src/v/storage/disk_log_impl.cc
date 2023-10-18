@@ -16,8 +16,13 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "storage/chunk_cache.h"
+#include "storage/compacted_index_reader.h"
+#include "storage/compacted_offset_list.h"
+#include "storage/compaction_reducers.h"
 #include "storage/disk_log_appender.h"
 #include "storage/fwd.h"
+#include "storage/key_offset_map.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/logger.h"
@@ -38,11 +43,13 @@
 #include <seastar/core/fair_queue.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <fmt/format.h>
+#include <roaring/roaring.hh>
 
 #include <exception>
 #include <iterator>
@@ -457,6 +464,304 @@ ss::future<> disk_log_impl::do_compact(
             _compaction_ratio.update(r.compaction_ratio());
         }
     }
+}
+
+ss::future<bool> disk_log_impl::build_offset_map_for_segment(
+  compacted_index_reader& rdr, key_offset_map& m) {
+    rdr.reset();
+    co_await rdr.for_each(
+      [&m](compacted_index::entry&& idx_entry) {
+          vlog(gclog.debug, "Considering entry offset {}", idx_entry.offset);
+          auto offset = idx_entry.offset + model::offset_delta(idx_entry.delta);
+          auto full = m.put(idx_entry.key, offset);
+          return full ? ss::stop_iteration::yes : ss::stop_iteration::no;
+      },
+      model::no_timeout);
+    co_return m.is_full();
+}
+
+ss::future<model::offset> disk_log_impl::build_offset_map(
+  const compaction_config& cfg, key_offset_map& m) {
+    // If there is new uncompacted data, start a window from there.
+    // XXX(awong): before getting here, make sure we do an earlier sweep before
+    // self-compacting.
+    vassert(!_segs.empty(), "No segments!");
+
+    // Otherwise, look for where our last deduping window was, and start from
+    // there.
+    std::optional<model::offset> last_window_start_offset;
+    segment_set::iterator iter = _segs.begin();
+    if (last_window_start_offset.has_value()) {
+        iter = _segs.lower_bound(last_window_start_offset.value());
+    } else {
+        // Look for the first segment eligible for compaction.
+        std::optional<segment_set::iterator> highest_stable_iter;
+        while (iter != _segs.end()) {
+            auto* seg = iter->get();
+            if (seg->has_appender() || !seg->has_compactible_offsets(cfg)) {
+                vlog(
+                  gclog.debug,
+                  "Seg {} has_appender: {}, stable offset {} vs {}",
+                  seg->path(),
+                  seg->has_appender(),
+                  seg->offsets().stable_offset,
+                  cfg.max_collectible_offset);
+                // Found the first unstable segment.
+                break;
+            }
+            highest_stable_iter = iter;
+            iter++;
+            vlog(gclog.debug, "Seg {} is stable", seg->path());
+        }
+        if (!highest_stable_iter.has_value()) {
+            // Even the first segment is not stable; presumably the rest are
+            // too. Give up on compaction.
+            vlog(gclog.debug, "First segment isn't stable");
+            co_return model::offset{};
+        }
+        iter = highest_stable_iter.value();
+        auto* seg = iter->get();
+        vlog(
+          gclog.debug,
+          "Using segment {} start {} has_appender: {}, stable offset {} vs {}",
+          seg->path(),
+          seg->offsets().base_offset,
+          seg->has_appender(),
+          seg->offsets().stable_offset,
+          cfg.max_collectible_offset);
+    }
+    auto* seg = iter->get();
+    vlog(
+      gclog.debug,
+      "Using segment {} start {} has_appender: {}, stable offset {} vs {}",
+      seg->path(),
+      seg->offsets().base_offset,
+      seg->has_appender(),
+      seg->offsets().stable_offset,
+      cfg.max_collectible_offset);
+    vlog(
+      gclog.debug,
+      "Index window end is at {}",
+      iter->get()->offsets().stable_offset);
+    // Incrementally build the index with older and older data.
+    model::offset min_segment_fully_indexed{};
+    while (iter != _segs.begin()) {
+        auto compaction_idx_path = iter->get()->path().to_compacted_index();
+        auto compaction_idx_file = co_await internal::make_reader_handle(
+          compaction_idx_path, cfg.sanitizer_config);
+        std::exception_ptr eptr;
+        auto idx_reader = make_file_backed_compacted_reader(
+          compaction_idx_path, compaction_idx_file, cfg.iopc, 64_KiB);
+        try {
+            auto idx_footer = co_await idx_reader.load_footer();
+            if (!bool(
+                  idx_footer.flags
+                  & compacted_index::footer_flags::self_compaction)) {
+                // The segment isn't compacted!
+                // XXX(awong): throw?
+                vlog(
+                  gclog.debug,
+                  "{} is not self compacted!",
+                  iter->get()->path());
+                break;
+            }
+            vlog(
+              gclog.debug,
+              "Index {} has {} keys",
+              compaction_idx_path,
+              idx_footer.keys);
+            auto full = co_await build_offset_map_for_segment(idx_reader, m);
+            if (full) {
+                // The offset map is full. Note that we may have only partially
+                // indexed a segmet, but it's safe to use this index. If no new
+                // segments come in, the next time we compact, we need to start
+                // from this segment for completeness.
+                vlog(gclog.debug, "Index is full");
+                break;
+            }
+            vlog(gclog.debug, "Indexed segment {}", iter->get()->path());
+            min_segment_fully_indexed = iter->get()->offsets().base_offset;
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        if (eptr) {
+            co_await idx_reader.close();
+            std::rethrow_exception(eptr);
+        }
+        iter--;
+    }
+    co_return min_segment_fully_indexed;
+}
+
+ss::future<compaction_result>
+disk_log_impl::compact(const compaction_config& cfg) {
+    std::optional<model::offset> new_start_offset{};
+    // create a logging predicate for offsets..
+    auto offsets_compactible = [&cfg, &new_start_offset, this](segment& s) {
+        if (new_start_offset && s.offsets().base_offset < *new_start_offset) {
+            vlog(
+              gclog.debug,
+              "[{}] segment {} base offs {}, new start offset {}, "
+              "skipping self compaction.",
+              config().ntp(),
+              s.reader().filename(),
+              s.offsets().base_offset,
+              *new_start_offset);
+            return false;
+        }
+
+        if (s.has_compactible_offsets(cfg)) {
+            vlog(
+              gclog.debug,
+              "[{}] segment {} stable offs {}, max compactible {}, "
+              "compacting.",
+              config().ntp(),
+              s.reader().filename(),
+              s.offsets().stable_offset,
+              cfg.max_collectible_offset);
+            return true;
+        } else {
+            vlog(
+              gclog.trace,
+              "[{}] segment {} stable offs {} > max compactible offs {}, "
+              "skipping self compaction.",
+              config().ntp(),
+              s.reader().filename(),
+              s.offsets().stable_offset,
+              cfg.max_collectible_offset);
+            return false;
+        }
+    };
+
+    for (auto& seg : _segs) {
+        if (seg->has_appender() || !seg->has_compactible_offsets(cfg)) {
+            break;
+        }
+        const auto end_it = std::prev(_segs.end());
+        auto seg_it = std::find_if(
+          _segs.begin(),
+          end_it,
+          [offsets_compactible](ss::lw_shared_ptr<segment>& s) {
+              return !s->has_appender() && s->is_compacted_segment()
+                     && !s->finished_self_compaction()
+                     && offsets_compactible(*s);
+          });
+        // nothing to compact
+        if (seg_it == end_it) {
+            break;
+        }
+
+        auto segment = *seg_it;
+        auto result = co_await storage::internal::self_compact_segment(
+          segment,
+          _stm_manager,
+          cfg,
+          *_probe,
+          *_readers_cache,
+          _manager.resources(),
+          storage::internal::should_apply_delta_time_offset(_feature_table));
+
+        vlog(
+          gclog.debug,
+          "[{}] segment {} compaction result: {}",
+          config().ntp(),
+          segment->reader().filename(),
+          result);
+    }
+
+    simple_key_offset_map map;
+    auto idx_start_offset = co_await build_offset_map(cfg, map);
+    vlog(gclog.info, "Built offset map with {} keys", map.num_keys());
+    if (idx_start_offset == model::offset{}) {
+        vlog(gclog.info, "Bad map");
+        co_return compaction_result{0};
+    }
+
+    for (auto& seg : _segs) {
+        if (seg->offsets().base_offset > map.max_offset()) {
+            break;
+        }
+        auto compaction_idx_path = seg->path().to_compacted_index();
+        auto compaction_idx_file = co_await internal::make_reader_handle(
+          compaction_idx_path, cfg.sanitizer_config);
+        std::exception_ptr eptr;
+
+        // Read the compaction indices to check if any keys would be removed.
+        vlog(gclog.info, "Examining compacted index {}", compaction_idx_path);
+        auto idx_reader = make_file_backed_compacted_reader(
+          compaction_idx_path, compaction_idx_file, cfg.iopc, 64_KiB);
+        try {
+            co_await idx_reader.verify_integrity();
+            auto idx_footer = co_await idx_reader.load_footer();
+            if (!bool(
+                  idx_footer.flags
+                  & compacted_index::footer_flags::self_compaction)) {
+                // The segment isn't compacted!
+                // XXX(awong): throw?
+                co_return compaction_result{0};
+            }
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        if (eptr) {
+            co_await idx_reader.close();
+            std::rethrow_exception(eptr);
+        }
+        auto tmpname = seg->reader().path().to_staging();
+        auto appender = co_await internal::make_segment_appender(
+          tmpname,
+          segment_appender::write_behind_memory
+            / internal::chunks().chunk_size(),
+          std::nullopt,
+          cfg.iopc,
+          resources(),
+          cfg.sanitizer_config);
+        vlog(gclog.info, "Taking read lock on {}", seg->path());
+        auto read_holder = co_await seg->read_lock();
+        vlog(gclog.info, "Took read lock on {}", seg->path());
+
+        auto rdr = internal::create_segment_full_reader(
+          seg, cfg, *_probe, std::move(read_holder));
+
+        vlog(
+          gclog.info,
+          "Deduping data from segment {} to {}",
+          seg->path(),
+          tmpname);
+        auto copy_reducer = internal::copy_data_segment_reducer(
+          internal::compacted_offset_list(model::offset{}, roaring::Roaring{}),
+          appender.get(),
+          seg->path().is_internal_topic(),
+          storage::internal::should_apply_delta_time_offset(_feature_table),
+          &map,
+          seg->offsets().stable_offset);
+
+        auto new_idx = co_await rdr.consume(
+          std::move(copy_reducer), model::no_timeout);
+        vlog(gclog.info, "Consumed {} to {}", seg->path(), tmpname);
+        co_await appender->close();
+
+        // Swap the guts of this segment.
+        // XXX(awong): clean up
+        read_holder.release();
+
+        vlog(gclog.info, "Taking write lock on {}", seg->path());
+        vlog(gclog.info, "Took write lock on {}", seg->path());
+        co_await seg->index().drop_all_data();
+
+        auto compacted_file = seg->reader().path().to_staging();
+        co_await internal::do_swap_data_file_handles(
+          compacted_file, seg, cfg, *_probe);
+
+        vlog(gclog.info, "New index {}", new_idx);
+
+        seg->index().swap_index_state(std::move(new_idx));
+        seg->force_set_commit_offset_from_index();
+        seg->release_batch_cache_index();
+        co_await seg->index().flush();
+        seg->advance_generation();
+    }
+    co_return compaction_result{0};
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>

@@ -19,6 +19,7 @@
 #include "storage/compacted_offset_list.h"
 #include "storage/fwd.h"
 #include "storage/index_state.h"
+#include "storage/key_offset_map.h"
 #include "storage/logger.h"
 #include "units.h"
 #include "utils/fragmented_vector.h"
@@ -119,8 +120,12 @@ public:
       compacted_offset_list l,
       segment_appender* a,
       bool internal_topic,
-      offset_delta_time apply_offset)
+      offset_delta_time apply_offset,
+      const key_offset_map* offset_map = nullptr,
+      model::offset force_kept_offset = model::offset{})
       : _list(std::move(l))
+      , _offset_map(offset_map)
+      , _force_kept_offset(force_kept_offset)
       , _appender(a)
       , _idx(index_state::make_empty_index(apply_offset))
       , _internal_topic(internal_topic) {}
@@ -139,6 +144,8 @@ private:
     std::optional<model::record_batch> filter(model::record_batch&&);
 
     compacted_offset_list _list;
+    const key_offset_map* _offset_map;
+    model::offset _force_kept_offset;
     segment_appender* _appender;
     index_state _idx;
     size_t _acc{0};
