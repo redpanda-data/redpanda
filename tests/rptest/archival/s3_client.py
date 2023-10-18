@@ -458,3 +458,26 @@ class S3Client:
         except Exception as ex:
             self.logger.error(f'Error listing buckets: {ex}')
             raise
+
+    @retry_on_slowdown()
+    def create_expiration_lifecycle(self, bucket: str, days: int):
+        try:
+            self._cli.put_bucket_lifecycle_configuration(
+                Bucket=bucket,
+                LifecycleConfiguration={
+                    "Rules": [{
+                        "Expiration": {
+                            "Days": days
+                        },
+                        "Filter": {},
+                        "ID": f"{bucket}-one-day-expiration",
+                        "Status": "Enabled"
+                    }]
+                })
+        except ClientError as err:
+            if err.response['Error']['Code'] == 'SlowDown':
+                raise SlowDown()
+
+            self.logger.info(
+                f"Failed to set lifecycle configuration for {bucket}: {err}")
+            raise err

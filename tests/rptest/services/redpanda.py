@@ -390,6 +390,7 @@ class SISettings:
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False,
+                 skip_bucket_deletion: bool = False,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None,
                  cloud_storage_spillover_manifest_max_segments: Optional[
                      int] = None,
@@ -442,6 +443,7 @@ class SISettings:
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
+        self.skip_bucket_deletion = skip_bucket_deletion
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
         self.cloud_storage_spillover_manifest_max_segments = cloud_storage_spillover_manifest_max_segments
         self.retention_local_strict = retention_local_strict
@@ -675,8 +677,8 @@ class SecurityConfig:
     # sasl is required
     def sasl_enabled(self):
         return (self.kafka_enable_authorization is None and self.enable_sasl
-                and self.endpoint_authn_method
-                is None) or self.endpoint_authn_method == "sasl"
+                and self.endpoint_authn_method is None
+                ) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
     def mtls_identity_enabled(self):
@@ -2362,7 +2364,23 @@ class RedpandaService(RedpandaServiceBase):
             self.cloud_storage_client.create_bucket(
                 self._si_settings.cloud_storage_bucket)
 
+            # If the test has requested for the bucket not to be deleted
+            # at the end and we running in AWS, then attempt to set a
+            # lifecycle policy which will remove everything from the bucket
+            # after one day.
+            if (self._si_settings.skip_bucket_deletion
+                    and self._si_settings.cloud_storage_type
+                    == CloudStorageType.S3):
+                self.cloud_storage_client.create_expiration_lifecycle(
+                    bucket=self._si_settings.cloud_storage_bucket, days=1)
+
     def delete_bucket_from_si(self):
+        if self._si_settings.skip_bucket_deletion:
+            self.logger.info(
+                f"Skipping deletiong of bucket/container: {self._si_settings.cloud_storage_bucket}. Please delete it manually"
+            )
+            return
+
         self.logger.debug(
             f"Deleting bucket/container: {self._si_settings.cloud_storage_bucket}"
         )
@@ -2407,10 +2425,8 @@ class RedpandaService(RedpandaServiceBase):
             admin_client = self._admin
 
         patch_result = admin_client.patch_cluster_config(
-            upsert={
-                k: v
-                for k, v in values.items() if v is not None
-            },
+            upsert={k: v
+                    for k, v in values.items() if v is not None},
             remove=[k for k, v in values.items() if v is None])
         new_version = patch_result['config_version']
 
