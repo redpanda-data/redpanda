@@ -123,9 +123,10 @@ type (
 	// BACKCOMPAT 23-05-01: The CA used to be "truststore_file" in yaml; we
 	// deserialize truststore_file AND ca_file. See weak.go.
 	TLS struct {
-		KeyFile        string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
-		CertFile       string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
-		TruststoreFile string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
+		KeyFile            string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
+		CertFile           string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
+		TruststoreFile     string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
+		InsecureSkipVerify bool   `yaml:"insecure_skip_verify,omitempty" json:"insecure_skip_verify,omitempty"`
 	}
 
 	ServerTLS struct {
@@ -200,7 +201,7 @@ func (t *TLS) Config(fs afero.Fs) (*tls.Config, error) {
 	if t == nil {
 		return nil, nil
 	}
-	return tlscfg.New(
+	tc, err := tlscfg.New(
 		tlscfg.WithFS(
 			tlscfg.FuncFS(func(path string) ([]byte, error) {
 				return afero.ReadFile(fs, path)
@@ -215,6 +216,11 @@ func (t *TLS) Config(fs afero.Fs) (*tls.Config, error) {
 			t.KeyFile,
 		),
 	)
+	if err != nil {
+		return nil, err
+	}
+	tc.InsecureSkipVerify = t.InsecureSkipVerify
+	return tc, nil
 }
 
 func namedAuthnToNamed(src []NamedAuthNSocketAddress) []NamedSocketAddress {

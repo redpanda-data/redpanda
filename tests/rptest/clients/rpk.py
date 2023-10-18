@@ -158,7 +158,10 @@ class RpkTable:
 
 def parse_rpk_table(out):
     lines = out.splitlines()
+    return parse_rpk_table_lines(lines)
 
+
+def parse_rpk_table_lines(lines):
     h_idx = 0
     for line in lines:
         m = re.match("^\(.+\)$", line)
@@ -579,15 +582,6 @@ class RpkTool:
             assert m is not None, f"Field string '{string}' does not match the pattern"
             return m['value']
 
-        static_member_pattern = re.compile("^([^\s]+\s+){8}[^\s]+$")
-
-        partition_pattern_static_member = re.compile(
-            "(?P<topic>[^\s]+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<instance_id>[^\s]*) *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
-        )
-        partition_pattern_dynamic_member = re.compile(
-            "(?P<topic>[^\s]+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
-        )
-
         def check_lines(lines):
             for line in lines:
                 # UNKNOWN_TOPIC_OR_PARTITION: This server doesn't contain this partition or topic.
@@ -607,37 +601,6 @@ class RpkTool:
                     return False
 
             return True
-
-        def parse_partition(string):
-
-            pattern = partition_pattern_dynamic_member
-            if static_member_pattern.match(string):
-                pattern = partition_pattern_static_member
-            m = pattern.match(string)
-
-            # Check to see if info for the partition was queried during a change in leadership.
-            # if it was we'd expect to see a partition string ending in;
-            # NOT_LEADER_FOR_PARTITION: This server is not the leader for that topic-partition.
-            if m is None and string.find('NOT_LEADER_FOR_PARTITION') != -1:
-                return None
-
-            # Account for negative numbers and '-' value
-            all_digits = lambda x: x.lstrip('-').isdigit()
-
-            offset = int(m['offset']) if all_digits(m['offset']) else None
-            log_end = int(m['log_end']) if all_digits(m['log_end']) else None
-            lag = int(m['lag']) if all_digits(m['lag']) else None
-
-            return RpkGroupPartition(topic=m['topic'],
-                                     partition=int(m['partition']),
-                                     current_offset=offset,
-                                     log_end_offset=log_end,
-                                     lag=lag,
-                                     member_id=m['member_id'],
-                                     instance_id=m.groupdict().get(
-                                         'instance_id', None),
-                                     client_id=m['client_id'],
-                                     host=m['host'])
 
         def try_describe_group(group):
             if summary:
@@ -676,17 +639,57 @@ class RpkTool:
             balancer = parse_field("BALANCER", lines[3])
             members = parse_field("MEMBERS", lines[4])
             total_lag = parse_field("TOTAL-LAG", lines[5])
-            partitions = []
-            for l in lines[6:]:
-                #skip header line
-                if l.startswith("TOPIC") or len(l) < 2:
-                    continue
-                p = parse_partition(l)
-                # p is None if the leader of the partition has changed.
-                if p is None:
-                    return None
 
-                partitions.append(p)
+            # lines[6] can be empty or the ERROR field, skip it either way.
+            partition_lines = [l for l in lines[7:] if len(l) > 0]
+            partitions = []
+            if len(partition_lines) > 0:
+                table = parse_rpk_table_lines(partition_lines)
+
+                received_columns = set(c.name for c in table.columns)
+                required_columns = set([
+                    "TOPIC", "PARTITION", "CURRENT-OFFSET", "LOG-END-OFFSET",
+                    "LAG", "MEMBER-ID", "CLIENT-ID", "HOST"
+                ])
+                optional_columns = set(["INSTANCE-ID", "ERROR"])
+
+                missing_columns = required_columns - received_columns
+                if len(missing_columns) > 0:
+                    raise RpkException(f"Missing columns: {missing_columns}")
+
+                unexpected_columns = received_columns - required_columns - optional_columns
+                if len(unexpected_columns) > 0:
+                    raise RpkException(
+                        f"Unexpected columns: {unexpected_columns}")
+
+                for row in table.rows:
+                    obj = dict((table.columns[i].name, row[i])
+                               for i in range(len(table.columns)))
+
+                    # Check to see if info for the partition was queried during a change in leadership.
+                    error = obj.get("ERROR", "")
+                    if "NOT_LEADER_FOR_PARTITION" in error:
+                        return None
+
+                    def maybe_parse_int(field):
+                        # Account for negative numbers and '-' value
+                        if field.lstrip('-').isdigit():
+                            return int(field)
+                        return None
+
+                    partition = RpkGroupPartition(
+                        topic=obj["TOPIC"],
+                        partition=int(obj["PARTITION"]),
+                        current_offset=maybe_parse_int(obj["CURRENT-OFFSET"]),
+                        log_end_offset=maybe_parse_int(obj["LOG-END-OFFSET"]),
+                        lag=maybe_parse_int(obj["LAG"]),
+                        member_id=obj["MEMBER-ID"],
+                        instance_id=obj.get("INSTANCE-ID"),
+                        client_id=obj["CLIENT-ID"],
+                        host=obj["HOST"],
+                    )
+
+                    partitions.append(partition)
 
             return RpkGroup(name=group_name,
                             coordinator=int(coordinator),

@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -42,7 +41,7 @@ information about the members.
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), p.Defaults().GetCommandTimeout())
 			defer cancel()
 
 			lags, err := adm.Lag(ctx, groups...)
@@ -84,7 +83,7 @@ type describeRow struct {
 	instanceID    *string
 	clientID      string
 	host          string
-	err           error
+	err           string
 }
 
 func printDescribed(commits bool, lags kadm.DescribedGroupLags) {
@@ -93,14 +92,15 @@ func printDescribed(commits bool, lags kadm.DescribedGroupLags) {
 		var useInstanceID, useErr bool
 		for _, l := range group.Lag.Sorted() {
 			row := describeRow{
-				topic:     l.End.Topic,
-				partition: l.End.Partition,
+				topic:     l.Topic,
+				partition: l.Partition,
 
 				currentOffset: strconv.FormatInt(l.Commit.At, 10),
 				logEndOffset:  l.End.Offset,
 				lag:           strconv.FormatInt(l.Lag, 10),
-
-				err: l.Err,
+			}
+			if l.Err != nil {
+				row.err = l.Err.Error()
 			}
 
 			if !l.IsEmpty() {
@@ -118,7 +118,7 @@ func printDescribed(commits bool, lags kadm.DescribedGroupLags) {
 			}
 
 			useInstanceID = useInstanceID || row.instanceID != nil
-			useErr = useErr || row.err != nil
+			useErr = useErr || row.err != ""
 
 			rows = append(rows, row)
 		}

@@ -103,6 +103,10 @@ type (
 		// profile when no other is selected.
 		NoDefaultCluster bool `json:"no_default_cluster" yaml:"no_default_cluster"`
 
+		// CommandTimeout is how long to allow commands to run, for
+		// certain potentially-slow commands.
+		CommandTimeout Duration `json:"command_timeout" yaml:"command_timeout"`
+
 		// DialTimeout is how long we allow for initiating a connection
 		// to brokers for the Admin API and Kafka API.
 		DialTimeout Duration `json:"dial_timeout" yaml:"dial_timeout"`
@@ -341,3 +345,15 @@ func (d *Duration) UnmarshalText(text []byte) error {
 }
 
 func (*Duration) YamlTypeNameForTest() string { return "duration" }
+
+/////////////////////
+// GLOBALS GETTERS //
+/////////////////////
+
+// GetCommandTimeout returns the command timeout, or 10s if none is set.
+func (g *RpkGlobals) GetCommandTimeout() time.Duration {
+	if g.CommandTimeout.Duration == 0 {
+		return 10 * time.Second
+	}
+	return g.CommandTimeout.Duration
+}

@@ -51,26 +51,29 @@ const (
 
 	// This block contains names X flags that are used for backcompat.
 	// All new X flags are defined directly into the xflags slice.
-	xKafkaBrokers             = "brokers"
-	xKafkaTLSEnabled          = "tls.enabled"
-	xKafkaCACert              = "tls.ca"
-	xKafkaClientCert          = "tls.cert"
-	xKafkaClientKey           = "tls.key"
-	xKafkaSASLMechanism       = "sasl.mechanism"
-	xKafkaSASLUser            = "user"
-	xKafkaSASLPass            = "pass"
-	xAdminHosts               = "admin.hosts"
-	xAdminTLSEnabled          = "admin.tls.enabled"
-	xAdminCACert              = "admin.tls.ca"
-	xAdminClientCert          = "admin.tls.cert"
-	xAdminClientKey           = "admin.tls.key"
-	xCloudClientID            = "cloud.client_id"
-	xCloudClientSecret        = "cloud.client_secret"
-	xSchemaRegistryHosts      = "registry.hosts"
-	xSchemaRegistryTLSEnabled = "registry.tls.enabled"
-	xSchemaRegistryCACert     = "registry.tls.ca"
-	xSchemaRegistryClientCert = "registry.tls.cert"
-	xSchemaRegistryClientKey  = "registry.tls.key"
+	xKafkaBrokers              = "brokers"
+	xKafkaTLSEnabled           = "tls.enabled"
+	xKafkaTLSInsecure          = "tls.insecure_skip_verify"
+	xKafkaCACert               = "tls.ca"
+	xKafkaClientCert           = "tls.cert"
+	xKafkaClientKey            = "tls.key"
+	xKafkaSASLMechanism        = "sasl.mechanism"
+	xKafkaSASLUser             = "user"
+	xKafkaSASLPass             = "pass"
+	xAdminHosts                = "admin.hosts"
+	xAdminTLSEnabled           = "admin.tls.enabled"
+	xAdminTLSInsecure          = "admin.tls.insecure_skip_verify"
+	xAdminCACert               = "admin.tls.ca"
+	xAdminClientCert           = "admin.tls.cert"
+	xAdminClientKey            = "admin.tls.key"
+	xCloudClientID             = "cloud.client_id"
+	xCloudClientSecret         = "cloud.client_secret"
+	xSchemaRegistryHosts       = "registry.hosts"
+	xSchemaRegistryTLSEnabled  = "registry.tls.enabled"
+	xSchemaRegistryTLSInsecure = "registry.tls.insecure_skip_verify"
+	xSchemaRegistryCACert      = "registry.tls.ca"
+	xSchemaRegistryClientCert  = "registry.tls.cert"
+	xSchemaRegistryClientKey   = "registry.tls.key"
 )
 
 const (
@@ -146,6 +149,20 @@ var xflags = map[string]xflag{
 		func(v string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
 			mkKafkaTLS(&p.KafkaAPI)
+			return nil
+		},
+	},
+	xKafkaTLSInsecure: {
+		"kafka_api.tls.insecure_skip_verify",
+		"false",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			mkKafkaTLS(&p.KafkaAPI).InsecureSkipVerify = b
 			return nil
 		},
 	},
@@ -230,6 +247,20 @@ var xflags = map[string]xflag{
 			return nil
 		},
 	},
+	xAdminTLSInsecure: {
+		"admin_api.tls.insecure_skip_verify",
+		"false",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			mkAdminTLS(&p.AdminAPI).InsecureSkipVerify = b
+			return nil
+		},
+	},
 	xAdminCACert: {
 		"admin_api.tls.ca_file",
 		"noextension",
@@ -273,9 +304,23 @@ var xflags = map[string]xflag{
 		"schema_registry.tls.enabled",
 		"false",
 		xkindProfile,
-		func(_ string, y *RpkYaml) error {
+		func(v string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
 			mkSchemaRegistryTLS(&p.SR)
+			return nil
+		},
+	},
+	xSchemaRegistryTLSInsecure: {
+		"schema_registry.tls.insecure_skip_verify",
+		"false",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			mkSchemaRegistryTLS(&p.SR).InsecureSkipVerify = b
 			return nil
 		},
 	},
@@ -348,6 +393,15 @@ var xflags = map[string]xflag{
 			b, err := strconv.ParseBool(v)
 			y.Globals.NoDefaultCluster = b
 			return err
+		},
+	},
+
+	"globals.command_timeout": {
+		"globals.command_timeout",
+		"30s",
+		xkindGlobal,
+		func(v string, y *RpkYaml) error {
+			return y.Globals.CommandTimeout.UnmarshalText([]byte(v))
 		},
 	},
 
@@ -510,6 +564,9 @@ tls.enabled=true
   If you use mTLS, specifying mTLS certificate filepaths automatically opts
   into TLS enabled.
 
+tls.insecure_skip_verify=false
+  A boolean that disables rpk from verifying the broker's certificate chain.
+
 tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
   Kafka API listeners with mTLS. You may also need this if your listeners are
@@ -548,6 +605,9 @@ admin.tls.enabled=false
   If you use mTLS, specifying mTLS certificate filepaths automatically opts
   into TLS enabled.
 
+admin.tls.insecure_skip_verify=false
+  A boolean that disables rpk from verifying the broker's certificate chain.
+
 admin.tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
   Admin API listeners with mTLS. You may also need this if your listeners are
@@ -571,6 +631,9 @@ registry.tls.enabled=false
   listeners. You can use this if you have well known certificates setup on your 
   schema registry API. If you use mTLS, specifying mTLS certificate filepaths 
   automatically opts into TLS enabled.
+
+registry.tls.insecure_skip_verify=false
+  A boolean that disables rpk from verifying the broker's certificate chain.
 
 registry.tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
@@ -599,6 +662,10 @@ globals.prompt="%n"
 globals.no_default_cluster=false
   A boolean that disables rpk from talking to localhost:9092 if no other
   cluster is specified.
+
+globals.command_timeout=30s
+  A duration that rpk will wait for a command to complete before timing out,
+  for certain commands.
 
 globals.dial_timeout=3s
   A duration that rpk will wait for a connection to be established before
@@ -633,6 +700,7 @@ globals.kafka_protocol_request_client_id=rpk
 func ParamsList() string {
 	return `brokers=comma,delimited,host:ports
 tls.enabled=boolean
+tls.insecure_skip_verify=boolean
 tls.ca=/path/to/ca.pem
 tls.cert=/path/to/cert.pem
 tls.key=/path/to/key.pem
@@ -641,11 +709,13 @@ user=username
 pass=password
 admin.hosts=comma,delimited,host:ports
 admin.tls.enabled=boolean
+admin.tls.insecure_skip_verify=boolean
 admin.tls.ca=/path/to/ca.pem
 admin.tls.cert=/path/to/cert.pem
 admin.tls.key=/path/to/key.pem
 registry.hosts=comma,delimited,host:ports
 registry.tls.enabled=boolean
+registry.tls.insecure_skip_verify=boolean
 registry.tls.ca=/path/to/ca.pem
 registry.tls.cert=/path/to/cert.pem
 registry.tls.key=/path/to/key.pem
@@ -653,6 +723,7 @@ cloud.client_id=somestring
 cloud.client_secret=somelongerstring
 globals.prompt="%n"
 globals.no_default_cluster=boolean
+globals.command_timeout=(30s,1m)
 globals.dial_timeout=duration(3s,1m,2h)
 globals.request_timeout_overhead=duration(10s,1m,2h)
 globals.retry_timeout=duration(30s,1m,2h)
