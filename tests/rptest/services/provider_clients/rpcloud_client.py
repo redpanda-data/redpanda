@@ -153,10 +153,8 @@ class RpCloudApiClient(object):
         return _ret
 
     def list_network_peerings(self, network_id, ns_uuid=None):
-        _ret = self._http_get(
-            self.network_peering_endpoint(id=network_id),
-            params=self._prepare_params(ns_uuid=ns_uuid)
-        )
+        _ret = self._http_get(self.network_peering_endpoint(id=network_id),
+                              params=self._prepare_params(ns_uuid=ns_uuid))
         return _ret
 
     def get_network(self, network_id):
