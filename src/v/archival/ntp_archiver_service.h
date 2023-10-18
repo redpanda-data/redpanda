@@ -347,6 +347,8 @@ public:
       cloud_storage::scrub_status status,
       cloud_storage::anomalies detected);
 
+    ss::future<std::error_code> reset_scrubbing_metadata();
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";

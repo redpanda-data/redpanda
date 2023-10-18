@@ -465,6 +465,8 @@ public:
 
     const anomalies& detected_anomalies() const;
 
+    void reset_scrubbing_metadata();
+
     /// Removes all replaced segments from the manifest.
     /// Method 'replaced_segments' will return empty value
     /// after the call.

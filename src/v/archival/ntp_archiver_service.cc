@@ -581,6 +581,24 @@ ss::future<std::error_code> ntp_archiver::process_anomalies(
     co_return error;
 }
 
+ss::future<std::error_code> ntp_archiver::reset_scrubbing_metadata() {
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+    auto deadline = ss::lowres_clock::now() + sync_timeout;
+    auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    batch.reset_scrubbing_metadata();
+    auto error = co_await batch.replicate();
+
+    if (error != cluster::errc::success) {
+        vlog(
+          _rtclog.warn,
+          "Failed to replicate reset scrubbing metadata command: {}",
+          error.message());
+    }
+
+    co_return error;
+}
+
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 

@@ -863,6 +863,12 @@ const anomalies& partition_manifest::detected_anomalies() const {
     return _detected_anomalies;
 }
 
+void partition_manifest::reset_scrubbing_metadata() {
+    _detected_anomalies = {};
+    _last_partition_scrub = model::timestamp::missing();
+    _last_scrubbed_offset = std::nullopt;
+}
+
 std::optional<size_t> partition_manifest::move_aligned_offset_range(
   const segment_meta& replacing_segment) {
     size_t total_replaced_size = 0;

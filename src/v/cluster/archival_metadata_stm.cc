@@ -165,6 +165,10 @@ struct archival_metadata_stm::process_anomalies_cmd {
     };
 };
 
+struct archival_metadata_stm::reset_scrubbing_metadata {
+    static constexpr cmd_key key{12};
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<4>, serde::compat_version<0>> {
@@ -289,6 +293,13 @@ command_batch_builder& command_batch_builder::process_anomalies(
       .detected = std::move(detected)};
     _builder.add_raw_kv(
       std::move(key_buf), serde::to_iobuf(std::move(record_val)));
+    return *this;
+}
+
+command_batch_builder& command_batch_builder::reset_scrubbing_metadata() {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::reset_scrubbing_metadata::key);
+    _builder.add_raw_kv(std::move(key_buf), std::nullopt);
     return *this;
 }
 
@@ -998,6 +1009,9 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
             case process_anomalies_cmd::key:
                 apply_process_anomalies(r.release_value());
                 break;
+            case reset_scrubbing_metadata::key:
+                apply_reset_scrubbing_metadata();
+                break;
             default:
                 throw std::runtime_error(fmt_with_ctx(
                   fmt::format,
@@ -1383,6 +1397,11 @@ void archival_metadata_stm::apply_process_anomalies(iobuf buf) {
           "Failed to apply process anomalies command: {}",
           std::current_exception());
     }
+}
+
+void archival_metadata_stm::apply_reset_scrubbing_metadata() {
+    vlog(_logger.info, "Resetting scrubbing metadata");
+    _manifest->reset_scrubbing_metadata();
 }
 
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>
