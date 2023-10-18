@@ -106,6 +106,40 @@ struct broker_endpoint final
     bool operator==(const broker_endpoint&) const = default;
     friend std::ostream& operator<<(std::ostream&, const broker_endpoint&);
 
+    static std::optional<ss::sstring>
+    validate_not_is_addr_any(const broker_endpoint& ep) {
+        bool is_any = [](const broker_endpoint& ep) {
+            try {
+                // Try a numerical parse of the hostname and check whether it is
+                // ADDR_ANY
+                return ss::net::inet_address{ep.address.host()}.is_addr_any();
+            } catch (...) {
+                // Parse failed, so probably a DNS name or invalid. Either way,
+                // not ADDR_ANY
+                return false;
+            }
+        }(ep);
+
+        if (is_any) {
+            return ssx::sformat(
+              "listener '{}' improperly configured with ADDR_ANY ({})",
+              ep.name,
+              ep.address.host());
+        }
+        return std::nullopt;
+    }
+
+    static std::optional<ss::sstring>
+    validate_many(const std::vector<broker_endpoint>& v) {
+        for (const auto& ep : v) {
+            auto err = broker_endpoint::validate_not_is_addr_any(ep);
+            if (err) {
+                return err;
+            }
+        }
+        return std::nullopt;
+    }
+
     auto serde_fields() { return std::tie(name, address); }
 };
 
