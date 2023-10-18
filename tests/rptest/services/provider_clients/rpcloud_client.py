@@ -90,3 +90,85 @@ class RpCloudApiClient(object):
                                **kwargs)
         _r = self._handle_error(resp)
         return _r if _r is None else _r.json()
+
+    @staticmethod
+    def namespace_endpoint(uuid=None):
+        _e = "/api/v1/namespaces"
+        if uuid:
+            _e += f"/{uuid}"
+        return _e
+
+    @staticmethod
+    def cluster_endpoint(id=None):
+        _e = "/api/v1/clusters"
+        if id:
+            _e += f"/{id}"
+        return _e
+
+    @staticmethod
+    def network_endpoint(id=None):
+        _e = "/api/v1/networks"
+        if id:
+            _e += f"/{id}"
+        return _e
+
+    @staticmethod
+    def network_peering_endpoint(id=None, peering_id=None):
+        _e = "/api/v1/networks"
+        if id:
+            _e += f"/{id}/network-peerings"
+            if peering_id:
+                _e += f"/{peering_id}"
+        return _e
+
+    def _prepare_params(self, ns_uuid=None):
+        params = {}
+        if ns_uuid:
+            params['namespaceUuid'] = ns_uuid
+        return params
+
+    def list_namespaces(self, include_deleted=False):
+        # Use local var to manupulate output
+        _ret = self._http_get(self.namespace_endpoint())
+        # Filter out deleted ones
+        if include_deleted:
+            _namespaces = _ret
+        else:
+            _namespaces = [n for n in _ret if not n['deleted']]
+        # return it
+        return _namespaces
+
+    def list_networks(self, ns_uuid=None):
+        # get networks for a namespace
+        _ret = self._http_get(self.network_endpoint(),
+                              params=self._prepare_params(ns_uuid))
+        # return it
+        return _ret
+
+    def list_clusters(self, ns_uuid=None):
+        # get networks for a namespace
+        _ret = self._http_get(self.cluster_endpoint(),
+                              params=self._prepare_params(ns_uuid))
+        # return it
+        return _ret
+
+    def list_network_peerings(self, network_id, ns_uuid=None):
+        _ret = self._http_get(
+            self.network_peering_endpoint(id=network_id),
+            params=self._prepare_params(ns_uuid=ns_uuid)
+        )
+        return _ret
+
+    def get_network(self, network_id):
+        _network = self._http_get(self.network_endpoint(id=network_id))
+        return _network
+
+    def delete_namespace(self, uuid):
+        _r = self._http_delete(endpoint=self.namespace_endpoint(uuid=uuid))
+        # Check status
+        return _r
+
+    def delete_resource(self, resource_handle):
+        _r = self._http_delete(endpoint=resource_handle)
+        self._logger.debug(f"...delete requested for '{resource_handle}'")
+        return _r
