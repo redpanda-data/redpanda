@@ -4,6 +4,6 @@ rp_test(
     SOURCES
       ocsf_schemas_test.cc
     DEFINITIONS BOOST_TEST_DYN_LINK
-    LIBRARIES Boost::unit_test_framework v::json v::version
+    LIBRARIES Boost::unit_test_framework v::json v::version v::security_audit
     LABELS audit
 )
