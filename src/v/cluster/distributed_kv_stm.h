@@ -15,6 +15,8 @@
 #include "cluster/persisted_stm.h"
 #include "distributed_kv_stm_types.h"
 
+#include <type_traits>
+
 namespace cluster {
 
 using namespace distributed_kv_stm_types;
@@ -55,6 +57,9 @@ using namespace distributed_kv_stm_types;
  *
  * For a reference client implementation, look at transforms_offsets topic
  * that uses this KV store to track consumption offsets for transforms.
+ *
+ * Currently we require constant memory usage, which is enforced by ensuring the
+ * types are trivially copyable.
  */
 
 template<class T>
@@ -65,7 +70,12 @@ concept SerdeSerializable = requires(T t, iobuf buf, iobuf_parser parser) {
     serde::to_iobuf(t);
 };
 
-template<SerdeSerializable Key, SerdeSerializable Value>
+template<
+  SerdeSerializable Key,
+  SerdeSerializable Value,
+  size_t MaxMemoryUsage = 1_MiB>
+requires std::is_trivially_copyable_v<Key>
+         && std::is_trivially_copyable_v<Value>
 class distributed_kv_stm final : public persisted_stm<> {
 public:
     explicit distributed_kv_stm(
@@ -263,9 +273,15 @@ public:
 private:
     static constexpr model::partition_id routing_partition{0};
     static constexpr std::chrono::seconds sync_timeout{5};
+    static constexpr size_t data_entry_memory_usage = sizeof(Key)
+                                                      + sizeof(Value);
+    static constexpr size_t coordinator_entry_memory_usage
+      = sizeof(Key) + sizeof(coordinator_assignment_data);
     // a guardrail until an inactivity based expiration is
     // implemented.
-    static constexpr size_t keys_limit = 10000;
+    static constexpr size_t keys_limit
+      = MaxMemoryUsage
+        / (data_entry_memory_usage + coordinator_entry_memory_usage);
 
     void do_apply_repartition(iobuf buf) {
         auto data = serde::from_iobuf<repartitioning_record_data>(
