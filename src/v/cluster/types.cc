@@ -1064,6 +1064,17 @@ operator<<(std::ostream& o, const force_partition_reconfiguration_cmd_data& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const set_topic_partitions_disabled_cmd_data& r) {
+    fmt::print(
+      o,
+      "{{topic: {}, partition_id: {}, disabled: {}}}",
+      r.ns_tp,
+      r.partition_id,
+      r.disabled);
+    return o;
+}
+
 std::ostream& operator<<(
   std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
     fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);

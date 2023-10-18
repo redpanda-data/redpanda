@@ -2891,6 +2891,27 @@ struct move_topic_replicas_data
     operator<<(std::ostream&, const move_topic_replicas_data&);
 };
 
+struct set_topic_partitions_disabled_cmd_data
+  : serde::envelope<
+      set_topic_partitions_disabled_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::topic_namespace ns_tp;
+    // if nullopt, applies to all partitions of the topic.
+    std::optional<model::partition_id> partition_id;
+    bool disabled = false;
+
+    auto serde_fields() { return std::tie(ns_tp, partition_id, disabled); }
+
+    friend bool operator==(
+      const set_topic_partitions_disabled_cmd_data&,
+      const set_topic_partitions_disabled_cmd_data&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const set_topic_partitions_disabled_cmd_data&);
+};
+
 struct feature_update_license_update_cmd_data
   : serde::envelope<
       feature_update_license_update_cmd_data,
