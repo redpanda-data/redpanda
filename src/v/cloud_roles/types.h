@@ -44,15 +44,18 @@ enum class api_request_error_kind { failed_abort, failed_retryable };
 std::ostream& operator<<(std::ostream& os, api_request_error_kind kind);
 
 struct api_request_error {
+    boost::beast::http::status status{boost::beast::http::status::ok};
     ss::sstring reason;
     api_request_error_kind error_kind;
 };
 
 api_request_error make_abort_error(const std::exception& ex);
-api_request_error make_abort_error(ss::sstring reason);
+api_request_error
+make_abort_error(ss::sstring reason, boost::beast::http::status status);
 
 api_request_error make_retryable_error(const std::exception& ex);
-api_request_error make_retryable_error(ss::sstring reason);
+api_request_error
+make_retryable_error(ss::sstring reason, boost::beast::http::status status);
 
 std::ostream&
 operator<<(std::ostream& os, const api_request_error& request_error);

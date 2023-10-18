@@ -92,9 +92,13 @@ api_request_error make_abort_error(const std::exception& ex) {
     };
 }
 
-api_request_error make_abort_error(ss::sstring reason) {
+api_request_error
+make_abort_error(ss::sstring reason, boost::beast::http::status status) {
     return api_request_error{
-      .reason = reason, .error_kind = api_request_error_kind::failed_abort};
+      .status = status,
+      .reason = reason,
+      .error_kind = api_request_error_kind::failed_abort,
+    };
 }
 
 api_request_error make_retryable_error(const std::exception& ex) {
@@ -104,9 +108,12 @@ api_request_error make_retryable_error(const std::exception& ex) {
     };
 }
 
-api_request_error make_retryable_error(ss::sstring reason) {
+api_request_error
+make_retryable_error(ss::sstring reason, boost::beast::http::status status) {
     return api_request_error{
-      .reason = reason, .error_kind = api_request_error_kind::failed_retryable};
+      .status = status,
+      .reason = reason,
+      .error_kind = api_request_error_kind::failed_retryable};
 }
 
 } // namespace cloud_roles
