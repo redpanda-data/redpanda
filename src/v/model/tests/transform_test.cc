@@ -10,10 +10,13 @@
  */
 
 #include "model/fundamental.h"
+#include "model/record_utils.h"
+#include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/transform.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
+#include "units.h"
 
 #include <gtest/gtest.h>
 
@@ -130,6 +133,41 @@ TEST(ClusterTransformReportTest, Merge) {
     node_one.merge(node_two);
 
     EXPECT_EQ(node_one, expected);
+}
+
+namespace {
+void append_vint_to_iobuf(iobuf& b, int64_t v) {
+    auto vb = vint::to_bytes(v);
+    b.append(vb.data(), vb.size());
+}
+} // namespace
+
+TEST(TransformedDataTest, Serialize) {
+    auto src = model::test::make_random_record(
+      0, random_generators::make_iobuf());
+    iobuf payload;
+    append_vint_to_iobuf(payload, src.key_size());
+    payload.append(src.key().copy());
+    append_vint_to_iobuf(payload, src.value_size());
+    payload.append(src.value().copy());
+    append_vint_to_iobuf(payload, int64_t(src.headers().size()));
+    for (const auto& header : src.headers()) {
+        append_vint_to_iobuf(payload, header.key_size());
+        payload.append(header.key().copy());
+        append_vint_to_iobuf(payload, header.value_size());
+        payload.append(header.value().copy());
+    }
+    auto validated = model::transformed_data::create_validated(
+      std::move(payload));
+    ASSERT_TRUE(validated.has_value());
+    auto got = std::move(validated.value())
+                 .to_serialized_record(
+                   src.attributes(), src.timestamp_delta(), src.offset_delta());
+    iobuf want;
+    model::append_record_to_buffer(want, src);
+    EXPECT_EQ(got, want) << "GOT:\n"
+                         << got.hexdump(1_KiB) << "\n\nWANT:\n"
+                         << want.hexdump(1_KiB);
 }
 
 } // namespace model
