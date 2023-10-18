@@ -1983,8 +1983,8 @@ github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1
 github.com/transparency-dev/merkle v0.0.2 h1:Q9nBoQcZcgPamMkGn7ghV8XiTZ/kRxn1yCG81+twTK4=
 github.com/transparency-dev/merkle v0.0.2/go.mod h1:pqSy+OXefQ1EDUVmAJ8MUhHB9TXGuzVAT58PqBoHz1A=
 github.com/twmb/franz-go v1.7.0/go.mod h1:PMze0jNfNghhih2XHbkmTFykbMF5sJqmNJB31DOOzro=
-github.com/twmb/franz-go v1.14.3 h1:cq8rxAnVYU1uF3SRVn8eEaUf+AaXKWlB0Cl3Ca7JSa4=
-github.com/twmb/franz-go v1.14.3/go.mod h1:nMAvTC2kHtK+ceaSHeHm4dlxC78389M/1DjpOswEgu4=
+github.com/twmb/franz-go v1.15.0 h1:bw5n1COKJzWpkCXG/kMtHrurcS9HSWV6e3If5CUdc+M=
+github.com/twmb/franz-go v1.15.0/go.mod h1:nMAvTC2kHtK+ceaSHeHm4dlxC78389M/1DjpOswEgu4=
 github.com/twmb/franz-go/pkg/kadm v1.9.0 h1:UgwBu0YCd6P8HLdg6ZRA4v9W6/zoI1042fOd2CvvLBE=
 github.com/twmb/franz-go/pkg/kadm v1.9.0/go.mod h1:eG3f+GHUndq1CUSVvjp+WdNq5zePeJi3tEHzyTkao6g=
 github.com/twmb/franz-go/pkg/kmsg v1.2.0/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
