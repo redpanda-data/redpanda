@@ -141,7 +141,7 @@ ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
         tls_enabled = refresh_credentials::client_tls_enabled::no;
     }
 
-    co_return co_await post_request(
+    co_return co_await request_with_payload(
       co_await make_api_client(tls_enabled),
       std::move(assume_req),
       std::move(body));

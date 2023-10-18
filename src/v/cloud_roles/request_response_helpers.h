@@ -21,13 +21,13 @@ ss::future<api_response> make_request(
   http::client::request_header req,
   std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
-ss::future<api_response> post_request(
+ss::future<api_response> request_with_payload(
   http::client client,
   http::client::request_header req,
   iobuf content,
   std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
-ss::future<api_response> post_request(
+ss::future<api_response> request_with_payload(
   http::client client,
   http::client::request_header req,
   ss::sstring content,
