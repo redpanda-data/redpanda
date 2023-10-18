@@ -98,13 +98,13 @@ static ss::future<api_response> make_get_request(
     if (is_retryable(status)) {
         co_await log_error_response(response_stream);
         co_return make_retryable_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
 
     if (status != boost::beast::http::status::ok) {
         co_await log_error_response(response_stream);
         co_return make_abort_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
     co_return co_await drain_response_stream(std::move(response_stream));
 }
@@ -150,13 +150,13 @@ static ss::future<api_response> make_post_request(
     if (is_retryable(status)) {
         co_await log_error_response(response);
         co_return make_retryable_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
 
     if (status != boost::beast::http::status::ok) {
         co_await log_error_response(response);
         co_return make_abort_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
     auto data = co_await drain_response_stream(std::move(response));
     co_await stream.close();
