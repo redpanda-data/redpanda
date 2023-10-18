@@ -44,7 +44,8 @@ public:
       cloud_storage::remote& remote,
       features::feature_table& feature_table,
       config::binding<bool> config_enabled,
-      config::binding<std::chrono::milliseconds> interval,
+      config::binding<std::chrono::milliseconds> partial_interval,
+      config::binding<std::chrono::milliseconds> full_interval,
       config::binding<std::chrono::milliseconds> jitter);
 
     ss::future<> await_feature_enabled();

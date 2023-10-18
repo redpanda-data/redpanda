@@ -187,7 +187,9 @@ static std::unique_ptr<scrubber> maybe_make_scrubber(
           remote,
           feature_table,
           config::shard_local_cfg().cloud_storage_enable_scrubbing.bind(),
-          config::shard_local_cfg().cloud_storage_scrubbing_interval_ms.bind(),
+          config::shard_local_cfg()
+            .cloud_storage_partial_scrub_interval_ms.bind(),
+          config::shard_local_cfg().cloud_storage_full_scrub_interval_ms.bind(),
           config::shard_local_cfg()
             .cloud_storage_scrubbing_interval_jitter_ms.bind());
         result->set_enabled(am_leader);

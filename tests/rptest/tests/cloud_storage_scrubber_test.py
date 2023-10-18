@@ -62,7 +62,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             test_context=test_context,
             extra_rp_conf={
                 "cloud_storage_enable_scrubbing": True,
-                "cloud_storage_scrubbing_interval_ms": 1000,
+                "cloud_storage_partial_scrub_interval_ms": 1000,
+                "cloud_storage_full_scrub_interval_ms": 1000,
                 "cloud_storage_scrubbing_interval_jitter_ms": 100,
                 # Small quota forces partial scrubs
                 "cloud_storage_background_jobs_quota": 30,

@@ -16,16 +16,39 @@
 #include <boost/test/unit_test.hpp>
 
 using namespace std::chrono_literals;
+using cloud_storage::scrub_status;
 
 BOOST_AUTO_TEST_CASE(test_scrubber_scheduling) {
-    auto interval
-      = config::shard_local_cfg().cloud_storage_scrubbing_interval_ms.bind();
-    auto jitter = config::shard_local_cfg()
-                    .cloud_storage_scrubbing_interval_jitter_ms.bind();
+    auto& partial_interval
+      = config::shard_local_cfg().cloud_storage_partial_scrub_interval_ms;
+    auto& full_interval
+      = config::shard_local_cfg().cloud_storage_full_scrub_interval_ms;
+    auto& jitter
+      = config::shard_local_cfg().cloud_storage_scrubbing_interval_jitter_ms;
+
+    partial_interval.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(1h));
+    full_interval.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(2h));
+    jitter.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(10min));
+
+    auto reset_configs = ss::defer(
+      [&partial_interval, &full_interval, &jitter] {
+          partial_interval.reset();
+          full_interval.reset();
+          jitter.reset();
+      });
 
     model::timestamp last_scrub_time;
+    scrub_status last_status{scrub_status::full};
     archival::scrubber_scheduler<ss::manual_clock> sched{
-      [&last_scrub_time] { return last_scrub_time; }, interval, jitter};
+      [&last_scrub_time, &last_status] {
+          return std::make_tuple(last_scrub_time, last_status);
+      },
+      partial_interval,
+      full_interval,
+      jitter};
 
     // Test that the first scrub happens after the jitter
     {
@@ -42,59 +65,98 @@ BOOST_AUTO_TEST_CASE(test_scrubber_scheduling) {
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+        last_status = scrub_status::partial;
     }
 
-    // Test that the second scrub happens after interval + jitter
+    // Test that the second scrub happens after partial interval + jitter
     {
         sched.pick_next_scrub_time();
         const auto until_next = sched.until_next_scrub();
         BOOST_REQUIRE(until_next.has_value());
 
-        BOOST_REQUIRE_GE(until_next, interval());
-        BOOST_REQUIRE_LE(until_next, interval() + jitter());
+        BOOST_REQUIRE_GE(until_next, partial_interval());
+        BOOST_REQUIRE_LE(until_next, partial_interval() + jitter());
         BOOST_REQUIRE(!sched.should_scrub());
 
         ss::manual_clock::advance(*until_next);
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+        last_status = scrub_status::full;
+    }
+
+    // Test that the second scrub happens after full interval + jitter.
+    // We expect full interval, since the previous simulated scrub resulted
+    // in scrub_status::full.
+    {
+        sched.pick_next_scrub_time();
+        const auto until_next = sched.until_next_scrub();
+        BOOST_REQUIRE(until_next.has_value());
+
+        BOOST_REQUIRE_GE(until_next, full_interval());
+        BOOST_REQUIRE_LE(until_next, full_interval() + jitter());
+        BOOST_REQUIRE(!sched.should_scrub());
+
+        ss::manual_clock::advance(*until_next);
+        BOOST_REQUIRE(sched.should_scrub());
+
+        last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+        last_status = scrub_status::partial;
     }
 }
 
 BOOST_AUTO_TEST_CASE(test_no_scrub_scheduled) {
-    auto interval
-      = config::shard_local_cfg().cloud_storage_scrubbing_interval_ms.bind();
+    auto partial_interval = config::shard_local_cfg()
+                              .cloud_storage_partial_scrub_interval_ms.bind();
+    auto full_interval
+      = config::shard_local_cfg().cloud_storage_full_scrub_interval_ms.bind();
     auto jitter = config::shard_local_cfg()
                     .cloud_storage_scrubbing_interval_jitter_ms.bind();
 
     model::timestamp last_scrub_time;
+    scrub_status last_status{scrub_status::full};
     archival::scrubber_scheduler<ss::manual_clock> sched{
-      [&last_scrub_time] { return last_scrub_time; }, interval, jitter};
+      [&last_scrub_time, &last_status] {
+          return std::make_tuple(last_scrub_time, last_status);
+      },
+      partial_interval,
+      full_interval,
+      jitter};
 
     BOOST_REQUIRE(!sched.should_scrub());
     BOOST_REQUIRE(!sched.until_next_scrub().has_value());
 }
 
 BOOST_AUTO_TEST_CASE(test_update_jitter) {
-    auto& interval
-      = config::shard_local_cfg().cloud_storage_scrubbing_interval_ms;
+    auto& partial_interval
+      = config::shard_local_cfg().cloud_storage_partial_scrub_interval_ms;
+    auto& full_interval
+      = config::shard_local_cfg().cloud_storage_full_scrub_interval_ms;
     auto& jitter
       = config::shard_local_cfg().cloud_storage_scrubbing_interval_jitter_ms;
 
-    interval.set_value(
+    partial_interval.set_value(
       std::chrono::duration_cast<std::chrono::milliseconds>(30min));
+    full_interval.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(1h));
     jitter.set_value(
       std::chrono::duration_cast<std::chrono::milliseconds>(1min));
 
-    auto reset_configs = ss::defer([&interval, &jitter] {
-        interval.reset();
-        jitter.reset();
-    });
+    auto reset_configs = ss::defer(
+      [&partial_interval, &full_interval, &jitter] {
+          partial_interval.reset();
+          full_interval.reset();
+          jitter.reset();
+      });
 
     model::timestamp last_scrub_time;
+    scrub_status last_status;
     archival::scrubber_scheduler<ss::manual_clock> sched{
-      [&last_scrub_time] { return last_scrub_time; },
-      interval.bind(),
+      [&last_scrub_time, &last_status] {
+          return std::make_tuple(last_scrub_time, last_status);
+      },
+      partial_interval.bind(),
+      full_interval.bind(),
       jitter.bind()};
 
     const auto updated_jitter = 10s;
@@ -116,46 +178,76 @@ BOOST_AUTO_TEST_CASE(test_update_jitter) {
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+        last_status = scrub_status::partial;
     }
 
     // Test that the next schedulling call uses the new jitter value and old
-    // duration
+    // partial duration
     {
         sched.pick_next_scrub_time();
         const auto until_next = sched.until_next_scrub();
         BOOST_REQUIRE(until_next.has_value());
 
-        BOOST_REQUIRE_GE(until_next, interval());
-        BOOST_REQUIRE_LE(until_next, interval() + updated_jitter);
+        BOOST_REQUIRE_GE(until_next, partial_interval());
+        BOOST_REQUIRE_LE(until_next, partial_interval() + updated_jitter);
         BOOST_REQUIRE(!sched.should_scrub());
 
         ss::manual_clock::advance(*until_next);
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+        last_status = scrub_status::full;
+    }
+
+    // Test that the next schedulling call uses the new jitter value and old
+    // full duration
+    {
+        sched.pick_next_scrub_time();
+        const auto until_next = sched.until_next_scrub();
+        BOOST_REQUIRE(until_next.has_value());
+
+        BOOST_REQUIRE_GE(until_next, full_interval());
+        BOOST_REQUIRE_LE(until_next, full_interval() + updated_jitter);
+        BOOST_REQUIRE(!sched.should_scrub());
+
+        ss::manual_clock::advance(*until_next);
+        BOOST_REQUIRE(sched.should_scrub());
+
+        last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+        last_status = scrub_status::full;
     }
 }
 
 BOOST_AUTO_TEST_CASE(test_update_interval) {
-    auto& interval
-      = config::shard_local_cfg().cloud_storage_scrubbing_interval_ms;
+    auto& partial_interval
+      = config::shard_local_cfg().cloud_storage_partial_scrub_interval_ms;
+    auto& full_interval
+      = config::shard_local_cfg().cloud_storage_full_scrub_interval_ms;
     auto& jitter
       = config::shard_local_cfg().cloud_storage_scrubbing_interval_jitter_ms;
 
-    interval.set_value(
+    partial_interval.set_value(
       std::chrono::duration_cast<std::chrono::milliseconds>(30min));
+    full_interval.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(1h));
     jitter.set_value(
       std::chrono::duration_cast<std::chrono::milliseconds>(1min));
 
-    auto reset_configs = ss::defer([&interval, &jitter] {
-        interval.reset();
-        jitter.reset();
-    });
+    auto reset_configs = ss::defer(
+      [&partial_interval, &full_interval, &jitter] {
+          partial_interval.reset();
+          full_interval.reset();
+          jitter.reset();
+      });
 
     model::timestamp last_scrub_time;
+    scrub_status last_status{scrub_status::full};
     archival::scrubber_scheduler<ss::manual_clock> sched{
-      [&last_scrub_time] { return last_scrub_time; },
-      interval.bind(),
+      [&last_scrub_time, &last_status] {
+          return std::make_tuple(last_scrub_time, last_status);
+      },
+      partial_interval.bind(),
+      full_interval.bind(),
       jitter.bind()};
 
     // Test that updating the interval before the first scrub reschedules.
@@ -165,7 +257,7 @@ BOOST_AUTO_TEST_CASE(test_update_interval) {
         sched.pick_next_scrub_time();
 
         const auto updated_interval = 10min;
-        interval.set_value(
+        partial_interval.set_value(
           std::chrono::duration_cast<std::chrono::milliseconds>(
             updated_interval));
 
@@ -179,6 +271,7 @@ BOOST_AUTO_TEST_CASE(test_update_interval) {
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+        last_status = scrub_status::partial;
     }
 
     // Test that updating the interval after the first job instance triggers
@@ -187,7 +280,7 @@ BOOST_AUTO_TEST_CASE(test_update_interval) {
         sched.pick_next_scrub_time();
 
         const auto updated_interval = 5min;
-        interval.set_value(
+        partial_interval.set_value(
           std::chrono::duration_cast<std::chrono::milliseconds>(
             updated_interval));
 

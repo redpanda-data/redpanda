@@ -1637,10 +1637,16 @@ configuration::configuration()
       "the integrity of data and metadata uploaded to cloud storage",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
-  , cloud_storage_scrubbing_interval_ms(
+  , cloud_storage_partial_scrub_interval_ms(
       *this,
-      "cloud_storage_scrubbing_interval_ms",
-      "Time interval between scrubs of the same partition",
+      "cloud_storage_partial_scrub_interval_ms",
+      "Time interval between two partial scrubs of the same partition",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1h)
+  , cloud_storage_full_scrub_interval_ms(
+      *this,
+      "cloud_storage_full_scrub_interval_ms",
+      "Time interval between a final scrub and thte next scrub",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1h)
   , cloud_storage_scrubbing_interval_jitter_ms(

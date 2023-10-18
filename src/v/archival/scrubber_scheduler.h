@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/types.h"
 #include "config/property.h"
 #include "random/simple_time_jitter.h"
 
@@ -37,25 +38,41 @@ namespace archival {
 template<typename Clock = std::chrono::system_clock>
 class scrubber_scheduler {
 public:
-    using last_scrub_type = std::function<model::timestamp()>;
+    using last_scrub_type = std::function<
+      std::tuple<model::timestamp, cloud_storage::scrub_status>()>;
 
     scrubber_scheduler(
       last_scrub_type get_last_scrub_time,
-      config::binding<std::chrono::milliseconds> interval,
+      config::binding<std::chrono::milliseconds> partial_scrub_interval,
+      config::binding<std::chrono::milliseconds> full_scrub_interval,
       config::binding<std::chrono::milliseconds> jitter)
       : _get_last_scrub_time(std::move(get_last_scrub_time))
-      , _interval(std::move(interval))
+      , _partial_scrub_interval(std::move(partial_scrub_interval))
+      , _full_scrub_interval(std::move(full_scrub_interval))
       , _jitter(std::move(jitter))
-      , _jittery_timer(_interval(), _jitter()) {
-        _interval.watch([this]() {
-            _jittery_timer = simple_time_jitter<model::timestamp_clock>(
-              _interval(), _jitter());
+      , _jittery_partial_scrub_timer(_partial_scrub_interval(), _jitter())
+      , _jittery_full_scrub_timer(_full_scrub_interval(), _jitter()) {
+        _partial_scrub_interval.watch([this]() {
+            _jittery_partial_scrub_timer
+              = simple_time_jitter<model::timestamp_clock>(
+                _partial_scrub_interval(), _jitter());
+            pick_next_scrub_time();
+        });
+
+        _full_scrub_interval.watch([this]() {
+            _jittery_full_scrub_timer
+              = simple_time_jitter<model::timestamp_clock>(
+                _full_scrub_interval(), _jitter());
             pick_next_scrub_time();
         });
 
         _jitter.watch([this]() {
-            _jittery_timer = simple_time_jitter<model::timestamp_clock>(
-              _interval(), _jitter());
+            _jittery_partial_scrub_timer
+              = simple_time_jitter<model::timestamp_clock>(
+                _partial_scrub_interval(), _jitter());
+            _jittery_full_scrub_timer
+              = simple_time_jitter<model::timestamp_clock>(
+                _full_scrub_interval(), _jitter());
             pick_next_scrub_time();
         });
     }
@@ -70,18 +87,22 @@ public:
     }
 
     void pick_next_scrub_time() {
-        const auto last_scrub_time = _get_last_scrub_time();
-        const auto first_scrub = last_scrub_time == model::timestamp::missing();
+        const auto [at, status] = _get_last_scrub_time();
+        const auto first_scrub = at == model::timestamp::missing();
+
+        auto& timer = status == cloud_storage::scrub_status::full
+                        ? _jittery_full_scrub_timer
+                        : _jittery_partial_scrub_timer;
 
         if (first_scrub) {
             const auto now = Clock::now();
             _next_scrub_at = model::to_timestamp(
-              now + _jittery_timer.next_jitter_duration());
+              now + timer.next_jitter_duration());
         } else {
             _next_scrub_at = model::timestamp{
-              last_scrub_time()
+              at()
               + std::chrono::duration_cast<std::chrono::milliseconds>(
-                  _jittery_timer.next_duration())
+                  timer.next_duration())
                   .count()};
         }
     }
@@ -101,10 +122,12 @@ public:
 
 private:
     last_scrub_type _get_last_scrub_time;
-    config::binding<std::chrono::milliseconds> _interval;
+    config::binding<std::chrono::milliseconds> _partial_scrub_interval;
+    config::binding<std::chrono::milliseconds> _full_scrub_interval;
     config::binding<std::chrono::milliseconds> _jitter;
 
-    simple_time_jitter<model::timestamp_clock> _jittery_timer;
+    simple_time_jitter<model::timestamp_clock> _jittery_partial_scrub_timer;
+    simple_time_jitter<model::timestamp_clock> _jittery_full_scrub_timer;
     model::timestamp _next_scrub_at;
 };
 
