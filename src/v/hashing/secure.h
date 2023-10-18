@@ -107,6 +107,8 @@ class hash {
     static_assert(DigestSize > 0, "digest cannot be zero length");
 
 public:
+    using digest_type = std::array<char, DigestSize>;
+
     // silence clang-tidy about _handle being uninitialized
     // NOLINTNEXTLINE(hicpp-member-init, cppcoreguidelines-pro-type-member-init)
     hash() {
@@ -134,7 +136,7 @@ public:
     /**
      * Return the current output and reset.
      */
-    std::array<char, DigestSize> reset() {
+    digest_type reset() {
         std::array<char, DigestSize> digest;
         gnutls_hash_output(_handle, digest.data());
         return digest;
@@ -153,8 +155,10 @@ private:
 
 } // namespace internal
 
-using hmac_sha256 = internal::hmac<GNUTLS_MAC_SHA256, 32>; // NOLINT
-using hmac_sha512 = internal::hmac<GNUTLS_MAC_SHA512, 64>; // NOLINT
-
-using hash_sha256 = internal::hash<GNUTLS_DIG_SHA256, 32>; // NOLINT
-using hash_sha512 = internal::hash<GNUTLS_DIG_SHA512, 64>; // NOLINT
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
+using hmac_sha256 = internal::hmac<GNUTLS_MAC_SHA256, 32>;
+using hmac_sha512 = internal::hmac<GNUTLS_MAC_SHA512, 64>;
+using hash_sha256 = internal::hash<GNUTLS_DIG_SHA256, 32>;
+using hash_sha512 = internal::hash<GNUTLS_DIG_SHA512, 64>;
+using hash_md5 = internal::hash<GNUTLS_DIG_MD5, 16>;
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
