@@ -37,6 +37,7 @@ BIG_FETCH = 104857600
 # This limit represents bottlenecks in central controller/health
 # functions.
 HARD_PARTITION_LIMIT = 50000
+HARD_TS_PARTITION_LIMIT = 25000
 
 # How many partitions we will create per shard: this is the primary scaling
 # factor that controls how many partitions a given cluster will get.
@@ -58,7 +59,14 @@ STRESS_DATA_SIZE = 1024 * 1024 * 1024 * 100
 
 # When running with tiered storage, it's been observed that shutdown can take
 # on the order of a few minutes.
-STOP_TIMEOUT = 60 * 5
+STOP_TIMEOUT = 60 * 10
+
+
+def get_hard_partition_limit(tiered_storage_enabled: bool):
+    if tiered_storage_enabled:
+        return HARD_TS_PARTITION_LIMIT
+    else:
+        return HARD_PARTITION_LIMIT
 
 
 class ScaleParameters:
@@ -104,7 +112,9 @@ class ScaleParameters:
         if shard0_reserve:
             self.partition_limit -= node_count * shard0_reserve
 
-        self.partition_limit = min(HARD_PARTITION_LIMIT, self.partition_limit)
+        self.partition_limit = min(
+            get_hard_partition_limit(tiered_storage_enabled),
+            self.partition_limit)
 
         if not self.redpanda.dedicated_nodes:
             self.partition_limit = min(DOCKER_PARTITION_LIMIT,
@@ -172,7 +182,7 @@ class ScaleParameters:
                 cloud_storage_segment_max_upload_interval_sec,
                 cloud_storage_housekeeping_interval_ms=
                 cloud_storage_housekeeping_interval_ms,
-            )
+                skip_bucket_deletion=True)
         else:
             self.si_settings = None
 
@@ -263,6 +273,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             *args,
             num_brokers=9,
             node_prealloc_count=3,
+            disable_cloud_storage_diagnostics=True,
             extra_rp_conf={
                 # Disable leader balancer initially, to enable us to check for
                 # stable leadership during initial elections and post-restart
@@ -454,8 +465,12 @@ class ManyPartitionsTest(PreallocNodesTest):
     def _repeater_worker_count(self, scale):
         workers = 32 * scale.node_cpus
         if self.redpanda.dedicated_nodes:
-            # 768 workers on a 24 core node has been seen to work well.
-            return workers
+            # 768 workers on a 24 core node has been seen to work well
+            # on non-tiered storage workloads
+            if scale.tiered_storage_enabled:
+                return workers / 2
+            else:
+                return workers
         else:
             return min(workers, 4)
 
@@ -886,11 +901,10 @@ class ManyPartitionsTest(PreallocNodesTest):
     def test_many_partitions(self):
         self._test_many_partitions(compacted=False)
 
-    # TODO: re-enable once infra has stabilitized
-    # https://github.com/redpanda-data/redpanda/issues/9569
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
-    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(compacted=[False])  # FIXME: run with compaction
+    @cluster(num_nodes=12,
+             log_allow_list=RESTART_LOG_ALLOW_LIST +
+             ['unexpected REST API error "Slow Down" detected'])
+    @matrix(compacted=[False, True])
     def test_many_partitions_tiered_storage(self, compacted):
         self._test_many_partitions(compacted=compacted,
                                    tiered_storage_enabled=True)
