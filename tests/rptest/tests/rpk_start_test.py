@@ -11,6 +11,7 @@ from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.services.redpanda import RedpandaService
 from rptest.services import tls
@@ -19,6 +20,12 @@ import json
 import os
 import yaml
 import tempfile
+
+DEFAULT_RPK_ARGS_T = "--rpc-addr={hn} --kafka-addr=dnslistener://{hn}"
+
+
+def rpk_base_args(node: ClusterNode):
+    return DEFAULT_RPK_ARGS_T.format(hn=node.account.hostname)
 
 
 class RpkRedpandaStartTest(RedpandaTest):
@@ -69,7 +76,7 @@ class RpkRedpandaStartTest(RedpandaTest):
         Validate simple start using rpk, no additional flags.
         """
         node = self.redpanda.nodes[0]
-        self.redpanda.start_node_with_rpk(node)
+        self.redpanda.start_node_with_rpk(node, rpk_base_args(node))
 
         # By default we start with developer_mode: true.
         assert self.redpanda.search_log_any(
@@ -89,7 +96,7 @@ class RpkRedpandaStartTest(RedpandaTest):
         def start_with_rpk(node):
             seeds_arg = f"--seeds={seeds_str}"
             bootstrap_arg = "--set redpanda.empty_seed_starts_cluster=false"
-            args = f"{seeds_arg} {bootstrap_arg} --rpc-addr={node.account.hostname}"
+            args = f"{seeds_arg} {bootstrap_arg} {rpk_base_args(node)}"
             self.redpanda.start_node_with_rpk(node, args)
 
         # Seed nodes need to be started in parallel because they need to be
@@ -128,8 +135,8 @@ class RpkRedpandaStartTest(RedpandaTest):
         # Run a start with no arguments, as is done when Redpanda is run by a
         # systemd service.
         self.redpanda.for_nodes(
-            self.redpanda.nodes,
-            lambda n: self.redpanda.start_node_with_rpk(n, clean_node=False))
+            self.redpanda.nodes, lambda n: self.redpanda.start_node_with_rpk(
+                n, rpk_base_args(n), clean_node=False))
         node_ids = set()
         for node in self.redpanda.nodes:
             node_ids.add(self.redpanda.node_id(node))
@@ -149,7 +156,7 @@ class RpkRedpandaStartTest(RedpandaTest):
             seeds_arg = f"--seeds={seeds_str}"
             if self.redpanda.idx(node) == 1:
                 seeds_arg = ""
-            args = f"{seeds_arg} --rpc-addr={node.account.hostname}"
+            args = f"{seeds_arg} {rpk_base_args(node)}"
             self.redpanda.start_node_with_rpk(node, args)
             node_ids.add(self.redpanda.node_id(node))
         assert len(node_ids) == 3, f"Node IDs: {node_ids}"
@@ -162,7 +169,8 @@ class RpkRedpandaStartTest(RedpandaTest):
         of using admin endpoint directly.
         """
         node = self.redpanda.nodes[0]
-        self.redpanda.start_node_with_rpk(node, "--mode dev-container")
+        self.redpanda.start_node_with_rpk(
+            node, f"--mode dev-container {rpk_base_args(node)}")
 
         expected_cluster_properties = {
             "auto_create_topics_enabled": "true",
@@ -201,7 +209,9 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # Avoid cleaning, that will delete the config files and we
         # already cleaned the node above.
-        self.redpanda.start_node_with_rpk(node, clean_node=False)
+        self.redpanda.start_node_with_rpk(node,
+                                          rpk_base_args(node),
+                                          clean_node=False)
 
         # First we check that we don't modify redpanda.developer_mode
         # on the first start.
@@ -228,7 +238,8 @@ class RpkRedpandaStartTest(RedpandaTest):
         node = self.redpanda.nodes[0]
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
-        self.redpanda.start_node_with_rpk(node, "--abort-on-seastar-bad-alloc")
+        self.redpanda.start_node_with_rpk(
+            node, f"--abort-on-seastar-bad-alloc {rpk_base_args(node)}")
 
         # This was the original issue:
         assert not self.redpanda.search_log_any(
@@ -267,11 +278,10 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # We start a 3 nodes cluster using the flags for rpk redpanda start.
         def start_cluster(node):
-            base_args = f"--rpc-addr={node.account.hostname} --kafka-addr=dnslistener://{node.account.hostname}"
             seeds_arg = f"--seeds={seeds_str}"
             if self.redpanda.idx(node) == 1:
                 seeds_arg = ""
-            args = f"{base_args} {seeds_arg}"
+            args = f"{seeds_arg} {rpk_base_args(node)}"
             self.redpanda.start_node_with_rpk(node, args, clean_node=False)
 
             # We check that rpc_server_tls is enabled on start:
@@ -323,8 +333,9 @@ class RpkRedpandaStartTest(RedpandaTest):
             # We add [] so rpk picks it up as a list.
             rpk.config_set("redpanda.rpc_server_tls",
                            f"[{self.rpc_server_tls()}]")
-
-            self.redpanda.start_node_with_rpk(node, clean_node=False)
+            self.redpanda.start_node_with_rpk(node,
+                                              rpk_base_args(node),
+                                              clean_node=False)
 
         self.redpanda.for_nodes(self.redpanda.nodes, setup_and_start)
 
@@ -361,11 +372,10 @@ class RpkRedpandaStartTest(RedpandaTest):
             [f"{n.account.hostname}" for n in self.redpanda.nodes])
 
         def start_cluster(node):
-            base_args = f"--rpc-addr={node.account.hostname} --kafka-addr=dnslistener://{node.account.hostname}"
             seeds_arg = f"--seeds={seeds_str}"
             if self.redpanda.idx(node) == 1:
                 seeds_arg = ""
-            args = f"{base_args} {seeds_arg}"
+            args = f"{seeds_arg} {rpk_base_args(node)}"
             self.redpanda.start_node_with_rpk(node, args, clean_node=False)
 
         # On first start we validate that TLS is disabled and produce

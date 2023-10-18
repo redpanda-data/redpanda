@@ -10,6 +10,7 @@
 #include "node_config.h"
 
 #include "config/configuration.h"
+#include "net/unresolved_address.h"
 
 namespace config {
 
@@ -214,6 +215,13 @@ void validate_multi_node_property_config(
                         to_string_view(*authn_method)));
                 }
             }
+        }
+    }
+
+    for (auto const& ep : cfg.advertised_kafka_api()) {
+        auto err = model::broker_endpoint::validate_not_is_addr_any(ep);
+        if (err) {
+            errors.emplace("advertised_kafka_api", ssx::sformat("{}", *err));
         }
     }
 }
