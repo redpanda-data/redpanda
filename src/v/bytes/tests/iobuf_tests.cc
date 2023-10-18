@@ -103,6 +103,22 @@ SEASTAR_THREAD_TEST_CASE(test_writing_placeholders) {
     BOOST_REQUIRE_EQUAL(buf.size_bytes(), 15);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_writing_placeholders_at_end) {
+    iobuf buf;
+    ss::sstring s = "hello world";
+    const int32_t val = 55;
+
+    auto ph = buf.reserve(sizeof(val) * 2);
+    buf.append(s.data(), s.size());
+    ph.write_end(reinterpret_cast<const uint8_t*>(&val), sizeof(val));
+    buf.trim_front(sizeof(val));
+
+    const auto& in = *buf.begin();
+    const int32_t copy = *reinterpret_cast<const int32_t*>(in.get());
+    BOOST_REQUIRE_EQUAL(copy, val);
+    BOOST_REQUIRE_EQUAL(buf.size_bytes(), 15);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_temporary_buffs) {
     iobuf buf;
     ss::temporary_buffer<char> x(55);
