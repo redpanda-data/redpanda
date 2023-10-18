@@ -89,14 +89,14 @@ fetch_dep(hdrhistogram
   REPO https://github.com/HdrHistogram/HdrHistogram_c
   TAG 0.11.5)
 
+list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --no-default-features)
+list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --features=async)
+
 # We need submodules for wasmtime to compile
 FetchContent_Declare(
   wasmtime
   GIT_REPOSITORY https://github.com/bytecodealliance/wasmtime
-  GIT_TAG b77b407b25c3c158be209b8df6d9054ac6e43203
-  # Remove the features we don't use.
-  PATCH_COMMAND
-    sed -i "s/default \\\\= \\\\['jitdump', 'wat', 'wasi', 'cache', 'parallel\\\\-compilation', 'async'\\\\]/default = ['async']/g" crates/c-api/Cargo.toml
+  GIT_TAG 81b14a50431104631023fb5723041667fd141efb
   GIT_PROGRESS TRUE
   USES_TERMINAL_DOWNLOAD TRUE
   OVERRIDE_FIND_PACKAGE

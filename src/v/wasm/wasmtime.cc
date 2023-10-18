@@ -14,6 +14,7 @@
 #include "model/transform.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
+#include "utils/human.h"
 #include "utils/type_traits.h"
 #include "vassert.h"
 #include "wasm/allocator.h"
@@ -34,9 +35,12 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/backtrace.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
+#include <seastar/util/optimized_optional.hh>
 
+#include <alloca.h>
 #include <cmath>
 #include <csignal>
 #include <memory>
@@ -49,8 +53,18 @@
 namespace wasm::wasmtime {
 
 namespace {
-
-constexpr uint64_t wasmtime_fuel_amount = 1'000'000'000;
+// Our guidelines recommend allocating max 128KB at once. Since we also need to
+// allocate a guard page, allocate 128KB-4KB of usable stack space.
+constexpr size_t vm_stack_size = 124_KiB;
+// The WebAssembly code gets at half the stack space for it's own work.
+constexpr size_t max_vm_guest_stack_usage = 64_KiB;
+// We allow for half the stack for host functions,
+// plus a little wiggle room to not get too close
+// to the guard page.
+constexpr size_t max_host_function_stack_usage = vm_stack_size
+                                                 - max_vm_guest_stack_usage
+                                                 - 4_KiB;
+constexpr uint64_t fuel_amount = 1'000'000'000;
 
 template<typename T, auto fn>
 struct deleter {
@@ -350,7 +364,7 @@ private:
         uint64_t fuel = 0;
         wasmtime_context_fuel_remaining(ctx, &fuel);
         handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_context_add_fuel(ctx, wasmtime_fuel_amount - fuel));
+          wasmtime_context_add_fuel(ctx, fuel_amount - fuel));
         check_error(error.get());
     }
 
@@ -526,6 +540,17 @@ private:
     std::optional<ss::future<>> _pending_host_function;
 };
 
+// If strict stack checking is configured
+//
+// Strict stack checking ensures that our host functions don't use too much
+// stack, even if in our tests they leave plenty of extra stack space (not
+// all VM guest programs will be so nice).
+struct strict_stack_config {
+    ss::sharded<stack_allocator>* allocator;
+
+    bool enabled() const { return allocator != nullptr; }
+};
+
 template<auto value>
 struct host_function;
 
@@ -540,7 +565,10 @@ public:
      * Register a host function such that it can be invoked from the Wasmtime
      * VM.
      */
-    static void reg(wasmtime_linker_t* linker, std::string_view function_name) {
+    static void reg(
+      wasmtime_linker_t* linker,
+      std::string_view function_name,
+      const strict_stack_config& ssc) {
         std::vector<ffi::val_type> ffi_inputs;
         ffi::transform_types<ArgTypes...>(ffi_inputs);
         std::vector<ffi::val_type> ffi_outputs;
@@ -550,6 +578,37 @@ public:
         // Takes ownership of inputs and outputs
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
+
+        if (ssc.enabled()) {
+            if constexpr (ss::is_future<ReturnType>::value) {
+                handle<wasmtime_error_t, wasmtime_error_delete> error(
+                  wasmtime_linker_define_async_func(
+                    linker,
+                    Module::name.data(),
+                    Module::name.size(),
+                    function_name.data(),
+                    function_name.size(),
+                    functype.get(),
+                    &invoke_async_host_fn_with_strict_stack_checking,
+                    /*data=*/ssc.allocator,
+                    /*finalizer=*/nullptr));
+                check_error(error.get());
+            } else {
+                handle<wasmtime_error_t, wasmtime_error_delete> error(
+                  wasmtime_linker_define_func(
+                    linker,
+                    Module::name.data(),
+                    Module::name.size(),
+                    function_name.data(),
+                    function_name.size(),
+                    functype.get(),
+                    &invoke_sync_host_fn_with_strict_stack_checking,
+                    /*data=*/ssc.allocator,
+                    /*finalizer=*/nullptr));
+                check_error(error.get());
+            }
+            return;
+        }
 
         if constexpr (ss::is_future<ReturnType>::value) {
             handle<wasmtime_error_t, wasmtime_error_delete> error(
@@ -763,12 +822,96 @@ private:
         mem->set_underlying_memory(&extern_item.of.memory);
         return nullptr;
     }
+
+    static wasm_trap_t* invoke_sync_host_fn_with_strict_stack_checking(
+      void* env,
+      wasmtime_caller_t* caller,
+      const wasmtime_val_t* args,
+      size_t nargs,
+      wasmtime_val_t* results,
+      size_t nresults) {
+        auto* allocator = static_cast<ss::sharded<stack_allocator>*>(env);
+        uint8_t dummy_stack_var = 0;
+        auto bounds = allocator->local().stack_bounds_for_address(
+          &dummy_stack_var);
+        if (!bounds) {
+            vlog(wasm_log.warn, "can't find vm stack!");
+            return invoke_sync_host_fn(
+              nullptr, caller, args, nargs, results, nresults);
+        }
+        // Ensure that we only use `max_host_function_stack_usage` by
+        // allocing enough to call the host function with only that much
+        // stack space left.
+        std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds->bottom;
+        void* stack_ptr = ::alloca(stack_left - max_host_function_stack_usage);
+        // Prevent the alloca from being optimized away by logging the result.
+        vlog(
+          wasm_log.trace,
+          "alloca-ing {}, stack left: {}, alloca address: {}, stack bounds: {}",
+          human::bytes(stack_left - max_host_function_stack_usage),
+          human::bytes(stack_left),
+          stack_ptr,
+          bounds);
+        return invoke_sync_host_fn(
+          nullptr, caller, args, nargs, results, nresults);
+    }
+
+    static void invoke_async_host_fn_with_strict_stack_checking(
+      void* env,
+      wasmtime_caller_t* caller,
+      const wasmtime_val_t* args,
+      size_t nargs,
+      wasmtime_val_t* results,
+      size_t nresults,
+      wasm_trap_t** trap_ret,
+      wasmtime_async_continuation_t* continuation) {
+        auto* allocator = static_cast<ss::sharded<stack_allocator>*>(env);
+        uint8_t dummy_stack_var = 0;
+        auto bounds = allocator->local().stack_bounds_for_address(
+          &dummy_stack_var);
+        if (!bounds) {
+            vlog(wasm_log.warn, "can't find vm stack!");
+            invoke_async_host_fn(
+              nullptr,
+              caller,
+              args,
+              nargs,
+              results,
+              nresults,
+              trap_ret,
+              continuation);
+            return;
+        }
+        // Ensure that we only use `max_host_function_stack_usage` by
+        // allocing enough to call the host function with only that much
+        // stack space left.
+        std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds->bottom;
+        void* stack_ptr = ::alloca(stack_left - max_host_function_stack_usage);
+        // Prevent the alloca from being optimized away by logging the result.
+        vlog(
+          wasm_log.trace,
+          "alloca-ing {}, stack left: {}, alloca address: {}, stack bounds: {}",
+          human::bytes(stack_left - max_host_function_stack_usage),
+          human::bytes(stack_left),
+          stack_ptr,
+          bounds);
+        invoke_async_host_fn(
+          nullptr,
+          caller,
+          args,
+          nargs,
+          results,
+          nresults,
+          trap_ret,
+          continuation);
+    }
 };
 
-void register_wasi_module(wasmtime_linker_t* linker) {
+void register_wasi_module(
+  wasmtime_linker_t* linker, const strict_stack_config& ssc) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&wasi::preview1_module::name>::reg(linker, #name)
+    host_function<&wasi::preview1_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(args_get);
     REG_HOST_FN(args_sizes_get);
     REG_HOST_FN(environ_get);
@@ -816,19 +959,21 @@ void register_wasi_module(wasmtime_linker_t* linker) {
 #undef REG_HOST_FN
 }
 
-void register_transform_module(wasmtime_linker_t* linker) {
+void register_transform_module(
+  wasmtime_linker_t* linker, const strict_stack_config& ssc) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&transform_module::name>::reg(linker, #name)
+    host_function<&transform_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_record);
     REG_HOST_FN(write_record);
 #undef REG_HOST_FN
 }
-void register_sr_module(wasmtime_linker_t* linker) {
+void register_sr_module(
+  wasmtime_linker_t* linker, const strict_stack_config& ssc) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&schema_registry_module::name>::reg(linker, #name)
+    host_function<&schema_registry_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
     REG_HOST_FN(get_subject_schema);
@@ -892,15 +1037,11 @@ public:
         wasmtime_config_async_support_set(config, true);
         // Set max stack size to generally be as big as a contiguous memory
         // region we're willing to allocate in Redpanda.
-        //
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-        wasmtime_config_async_stack_size_set(config, 128_KiB);
+        wasmtime_config_async_stack_size_set(config, vm_stack_size);
         // The stack size needs to be less than the async stack size, and
         // whatever is difference between the two is how much host functions can
         // get, make sure to leave our own functions some room to execute.
-        //
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-        wasmtime_config_max_wasm_stack_set(config, 64_KiB);
+        wasmtime_config_max_wasm_stack_set(config, max_vm_guest_stack_usage);
         // This disables static memory, see:
         // https://docs.wasmtime.dev/contributing-architecture.html#linear-memory
         wasmtime_config_static_memory_maximum_size_set(config, 0_KiB);
@@ -917,6 +1058,13 @@ public:
           .finalizer = nullptr,
         };
         wasmtime_config_host_memory_creator_set(config, &memory_creator);
+
+        wasmtime_stack_creator_t stack_creator = {
+          .env = this,
+          .new_stack = &wasmtime_runtime::allocate_stack_memory,
+          .finalizer = nullptr,
+        };
+        wasmtime_config_host_stack_creator_set(config, &stack_creator);
 
         _engine.reset(wasm_engine_new_with_config(config));
     }
@@ -950,6 +1098,9 @@ public:
           .heap_memory_size = aligned_instance_limit,
           .num_heaps = num_heaps,
         });
+        co_await _stack_allocator.start(stack_allocator::config{
+          .tracking_enabled = c.stack_memory.debug_host_stack_usage,
+        });
         co_await _alien_thread.start({.name = "wasm"});
         co_await ss::smp::invoke_on_all([] {
             // wasmtime needs some signals for it's handling, make sure we
@@ -966,38 +1117,50 @@ public:
     ss::future<> stop() override {
         co_await _alien_thread.stop();
         co_await _heap_allocator.stop();
+        co_await _stack_allocator.stop();
     }
 
     ss::future<ss::shared_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override {
         auto preinitialized = ss::make_lw_shared<preinitialized_instance>();
-        co_await _alien_thread.submit([this, &meta, &buf, &preinitialized] {
-            vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
-            // This can be a large contiguous allocation, however it happens
-            // on an alien thread so it bypasses the seastar allocator.
-            bytes b = iobuf_to_bytes(buf);
-            wasmtime_module_t* user_module_ptr = nullptr;
-            handle<wasmtime_error_t, wasmtime_error_delete> error{
-              wasmtime_module_new(
-                _engine.get(), b.data(), b.size(), &user_module_ptr)};
-            check_error(error.get());
-            handle<wasmtime_module_t, wasmtime_module_delete> user_module{
-              user_module_ptr};
-            wasm_log.info("Finished compiling wasm module {}", meta.name);
 
-            handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
-              wasmtime_linker_new(_engine.get())};
+        // Enable strict stack checking only if tracking is enabled.
+        //
+        // (strict stack checking ensures our host functions don't use too much
+        // stack space, even when guests leave extra stack).
+        strict_stack_config ssc = {
+          .allocator = _stack_allocator.local().tracking_enabled()
+                         ? &_stack_allocator
+                         : nullptr,
+        };
+        co_await _alien_thread.submit(
+          [this, &meta, &buf, &preinitialized, &ssc] {
+              vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
+              // This can be a large contiguous allocation, however it happens
+              // on an alien thread so it bypasses the seastar allocator.
+              bytes b = iobuf_to_bytes(buf);
+              wasmtime_module_t* user_module_ptr = nullptr;
+              handle<wasmtime_error_t, wasmtime_error_delete> error{
+                wasmtime_module_new(
+                  _engine.get(), b.data(), b.size(), &user_module_ptr)};
+              check_error(error.get());
+              handle<wasmtime_module_t, wasmtime_module_delete> user_module{
+                user_module_ptr};
+              wasm_log.info("Finished compiling wasm module {}", meta.name);
 
-            register_transform_module(linker.get());
-            register_sr_module(linker.get());
-            register_wasi_module(linker.get());
+              handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
+                wasmtime_linker_new(_engine.get())};
 
-            wasmtime_instance_pre_t* preinitialized_ptr = nullptr;
-            error.reset(wasmtime_linker_instantiate_pre(
-              linker.get(), user_module.get(), &preinitialized_ptr));
-            preinitialized->underlying.reset(preinitialized_ptr);
-            check_error(error.get());
-        });
+              register_transform_module(linker.get(), ssc);
+              register_sr_module(linker.get(), ssc);
+              register_wasi_module(linker.get(), ssc);
+
+              wasmtime_instance_pre_t* preinitialized_ptr = nullptr;
+              error.reset(wasmtime_linker_instantiate_pre(
+                linker.get(), user_module.get(), &preinitialized_ptr));
+              preinitialized->underlying.reset(preinitialized_ptr);
+              check_error(error.get());
+          });
         co_return ss::make_shared<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
@@ -1007,6 +1170,41 @@ public:
     }
 
 private:
+    static wasmtime_error_t* allocate_stack_memory(
+      void* env, size_t size, wasmtime_stack_memory_t* memory_ret) {
+        auto* runtime = static_cast<wasmtime_runtime*>(env);
+        return runtime->allocate_stack_memory(size, memory_ret);
+    }
+
+    wasmtime_error_t*
+    allocate_stack_memory(size_t size, wasmtime_stack_memory_t* memory_ret) {
+        auto stack = _stack_allocator.local().allocate(size);
+        struct vm_stack {
+            stack_memory underlying;
+            ss::noncopyable_function<void(stack_memory)> reclaimer;
+        };
+        memory_ret->env = new vm_stack{
+          .underlying = std::move(stack),
+          .reclaimer =
+            [this](stack_memory mem) {
+                _stack_allocator.local().deallocate(std::move(mem));
+            },
+        };
+        memory_ret->get_stack_memory =
+          [](void* env, size_t* len_ret) -> uint8_t* {
+            auto* mem = static_cast<vm_stack*>(env);
+            *len_ret = mem->underlying.size();
+            return mem->underlying.bounds().top;
+        };
+        memory_ret->finalizer = [](void* env) {
+            auto* mem = static_cast<vm_stack*>(env);
+            mem->reclaimer(std::move(mem->underlying));
+            // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+            delete mem;
+        };
+        return nullptr;
+    }
+
     // We don't have control over this API.
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     static wasmtime_error_t* allocate_heap_memory(
@@ -1083,6 +1281,7 @@ private:
     std::unique_ptr<schema_registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
     ss::sharded<heap_allocator> _heap_allocator;
+    ss::sharded<stack_allocator> _stack_allocator;
 };
 
 } // namespace

@@ -138,6 +138,18 @@ void WasmTestFixture::SetUp() {
           .per_core_pool_size_bytes = MAX_MEMORY * 4,
           .per_engine_memory_limit = MAX_MEMORY,
         },
+        .stack_memory = {
+#ifdef NDEBUG
+          // Only turn this on if ASAN is off.
+          // With ASAN on, we get issues because we haven't told
+          // ASAN that the stack has switched (as this happens within
+          // wasmtime and we don't have the ability to instrument rust 
+          // with ASAN checks).
+          .debug_host_stack_usage = true,
+#else
+          .debug_host_stack_usage = false,
+#endif
+        },
     };
     _runtime->start(wasm_runtime_config).get();
     _meta = {
