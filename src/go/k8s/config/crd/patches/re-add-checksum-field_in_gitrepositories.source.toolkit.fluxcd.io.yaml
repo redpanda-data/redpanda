@@ -1,0 +1,14 @@
+---
+# The following patch adds the spec.versions.v1beta2.schema.openAPIV3Schema.properties.status.properties.artifact.properties.checksum property
+# and the spec.versions.v1beta2.schema.openAPIV3Schema.properties.status.properties.includedArtifacts.items.properties.checksum property
+# that was removed
+- op: add
+  path: /spec/versions/1/schema/openAPIV3Schema/properties/status/properties/artifact/properties/checksum
+  value:
+    type: string
+    description: Checksum is the SHA256 checksum of the Artifact file (obsolete)
+- op: add
+  path: /spec/versions/1/schema/openAPIV3Schema/properties/status/properties/includedArtifacts/items/properties/checksum
+  value:
+    type: string
+    description: Checksum is the SHA256 checksum of the Artifact file (obsolete)
