@@ -29,6 +29,8 @@ class OMBSampleConfigurations:
     E2E_LATENCY_50PCT = "aggregatedEndToEndLatency50pct"
     E2E_LATENCY_75PCT = "aggregatedEndToEndLatency75pct"
     E2E_LATENCY_95PCT = "aggregatedEndToEndLatency95pct"
+    E2E_LATENCY_99PCT = "aggregatedEndToEndLatency99pct"
+    E2E_LATENCY_999PCT = "aggregatedEndToEndLatency999pct"
     E2E_LATENCY_MAX = "aggregatedEndToEndLatencyMax"
     AVG_THROUGHPUT_MBPS = "throughputMBps"
 
