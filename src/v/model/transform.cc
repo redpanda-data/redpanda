@@ -70,11 +70,7 @@ void cluster_transform_report::add(
   transform_id id,
   const transform_metadata& meta,
   transform_report::processor processor) {
-    auto it = transforms.find(id);
-    if (it == transforms.end()) {
-        auto result = transforms.emplace(id, meta);
-        it = result.first;
-    }
+    auto [it, _] = transforms.try_emplace(id, meta);
     it->second.add(processor);
 }
 
