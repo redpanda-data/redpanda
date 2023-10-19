@@ -2774,6 +2774,10 @@ void partition_manifest::process_anomalies(
     _last_partition_scrub = scrub_timestamp;
     _last_scrubbed_offset = last_scrubbed_offset;
 
+    if (!_last_scrubbed_offset) {
+        _detected_anomalies.last_complete_scrub = scrub_timestamp;
+    }
+
     vlog(
       cst_log.debug,
       "[{}] Anomalies processed: {{ detected: {}, last_partition_scrub: {}, "

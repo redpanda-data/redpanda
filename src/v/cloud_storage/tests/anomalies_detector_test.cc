@@ -23,6 +23,19 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+namespace cloud_storage {
+
+bool operator==(const anomalies& lhs, const anomalies& rhs) {
+    return lhs.missing_partition_manifest == rhs.missing_partition_manifest
+           && lhs.missing_spillover_manifests == rhs.missing_spillover_manifests
+           && lhs.missing_segments == rhs.missing_segments
+           && lhs.segment_metadata_anomalies == rhs.segment_metadata_anomalies;
+
+    // anomalies::last_complete_scrub is intentionally omitted
+}
+
+} // namespace cloud_storage
+
 namespace {
 
 ss::logger test_logger{"anomaly_detection_test"};

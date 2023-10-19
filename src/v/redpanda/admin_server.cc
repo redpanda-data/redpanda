@@ -5401,6 +5401,10 @@ map_anomalies_to_json(
     json.partition = ntp.tp.partition();
     json.revision_id = initial_rev();
 
+    if (detected.last_complete_scrub) {
+        json.last_complete_scrub_at = detected.last_complete_scrub->value();
+    }
+
     if (detected.missing_partition_manifest) {
         json.missing_partition_manifest = true;
     }

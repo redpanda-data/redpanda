@@ -391,20 +391,24 @@ struct anomalies
     absl::node_hash_set<segment_meta> missing_segments;
     // Segments that have metadata anomalies (e.g. gaps or overlaps)
     segment_meta_anomalies segment_metadata_anomalies;
+    // Optional timestamp indicating the last time point at which
+    // the scrub of the full log completed.
+    std::optional<model::timestamp> last_complete_scrub;
 
     auto serde_fields() {
         return std::tie(
           missing_partition_manifest,
           missing_spillover_manifests,
           missing_segments,
-          segment_metadata_anomalies);
+          segment_metadata_anomalies,
+          last_complete_scrub);
     }
 
     bool has_value() const;
 
     anomalies& operator+=(anomalies&&);
 
-    bool operator==(anomalies const&) const = default;
+    friend bool operator==(const anomalies& lhs, const anomalies& rhs);
 };
 
 std::ostream& operator<<(std::ostream& o, const anomalies& a);

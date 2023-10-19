@@ -264,6 +264,9 @@ anomalies& anomalies::operator+=(anomalies&& other) {
       std::make_move_iterator(other.segment_metadata_anomalies.begin()),
       std::make_move_iterator(other.segment_metadata_anomalies.end()));
 
+    last_complete_scrub = std::max(
+      last_complete_scrub, other.last_complete_scrub);
+
     return *this;
 }
 

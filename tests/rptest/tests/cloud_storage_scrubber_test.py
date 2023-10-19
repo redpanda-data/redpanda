@@ -118,6 +118,8 @@ class CloudStorageScrubberTest(RedpandaTest):
                                                           topic=self.topic,
                                                           partition=pid)
 
+            anomalies.pop("last_complete_scrub_at", None)
+
             ntpr = NTPR(ns=anomalies["ns"],
                         topic=anomalies["topic"],
                         partition=anomalies["partition"],

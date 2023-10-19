@@ -561,6 +561,10 @@
           "type": "array",
           "items": {"type": "metadata_anomaly"},
           "nullable": true
+        },
+        "last_complete_scrub_at": {
+          "type": "long",
+          "nullable": true
         }
       }
     }
