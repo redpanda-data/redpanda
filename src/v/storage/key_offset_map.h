@@ -47,6 +47,11 @@ public:
      * Return the highest inserted offset.
      */
     virtual model::offset max_offset() const = 0;
+
+    /**
+     * Return the number of keys in the map.
+     */
+    virtual size_t size() const = 0;
 };
 
 /**
@@ -69,6 +74,8 @@ public:
     get(const compaction_key& key) const override;
 
     model::offset max_offset() const override;
+
+    size_t size() const override;
 
 private:
     ss::shared_ptr<util::mem_tracker> _memory_tracker;
