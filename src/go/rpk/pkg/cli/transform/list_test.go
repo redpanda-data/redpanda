@@ -9,6 +9,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,6 +78,13 @@ func YAML(t *testing.T, o any) testCase {
 func Text(s string) testCase {
 	s = strings.TrimSpace(s)
 	return testCase{Kind: "text", Output: s + "\n"}
+}
+
+func TestHandleEmptyInput(t *testing.T) {
+	s := summarizedView([]adminapi.TransformMetadata{})
+	assert.NotNil(t, s)
+	d := detailView([]adminapi.TransformMetadata{})
+	assert.NotNil(t, d)
 }
 
 func TestPrintSummaryView(t *testing.T) {
