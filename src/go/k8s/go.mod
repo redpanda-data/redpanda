@@ -8,7 +8,7 @@ require (
 	github.com/cert-manager/cert-manager v1.11.0
 	github.com/cisco-open/k8s-objectmatcher v1.9.0
 	github.com/cloudhut/common v0.7.0
-	github.com/docker/distribution v2.8.2+incompatible
+	github.com/distribution/reference v0.5.0
 	github.com/fluxcd/helm-controller/api v0.36.0
 	github.com/fluxcd/helm-controller/shim v0.0.0-00010101000000-000000000000
 	github.com/fluxcd/pkg/apis/meta v1.1.2
@@ -128,6 +128,7 @@ require (
 	github.com/digitorus/timestamp v0.0.0-20221019182153-ef3b63b79b31 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/cli v24.0.5+incompatible // indirect
+	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker v24.0.0+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
