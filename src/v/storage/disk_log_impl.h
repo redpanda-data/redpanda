@@ -168,6 +168,13 @@ private:
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
     find_compaction_range(const compaction_config&);
+
+    // Collects an iterable list of segments over which to perform sliding
+    // window compaction.
+    segment_set find_sliding_range(
+      const compaction_config& cfg,
+      std::optional<model::offset> new_start_offset = std::nullopt);
+
     ss::future<std::optional<model::offset>> do_gc(gc_config);
 
     ss::future<> remove_empty_segments();
@@ -291,6 +298,7 @@ private:
     mutex _segments_rolling_lock;
 
     std::optional<model::offset> _cloud_gc_offset;
+    std::optional<model::offset> _last_compaction_window_start_offset;
     size_t _reclaimable_local_size_bytes{0};
 };
 
