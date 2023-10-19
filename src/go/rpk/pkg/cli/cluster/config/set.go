@@ -12,6 +12,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
@@ -79,8 +80,18 @@ If an empty string is given as the value, the property is reset to its default.`
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			meta, ok := schema[key]
+
 			if !ok {
-				out.Die("Unknown property %q", key)
+				// loop over schema, try to find key in the Aliases,
+				for _, v := range schema {
+					if slices.Contains(v.Aliases, key) {
+						meta, ok = v, true
+						break
+					}
+				}
+				if !ok {
+					out.Die("Unknown property %q", key)
+				}
 			}
 
 			upsert := make(map[string]interface{})
