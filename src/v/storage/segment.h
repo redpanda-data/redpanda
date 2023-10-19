@@ -68,6 +68,7 @@ public:
         finished_self_compaction = 1U << 1U,
         mark_tombstone = 1U << 2U,
         closed = 1U << 3U,
+        finished_windowed_compaction = 1U << 4U,
     };
 
 public:
@@ -119,6 +120,8 @@ public:
     bool is_compacted_segment() const;
     void mark_as_finished_self_compaction();
     bool finished_self_compaction() const;
+    void mark_as_finished_windowed_compaction();
+    bool finished_windowed_compaction() const;
     /// \brief used for compaction, to reset the tracker from index
     void force_set_commit_offset_from_index();
     // low level api's are discouraged and might be deprecated
@@ -376,6 +379,13 @@ inline void segment::mark_as_finished_self_compaction() {
 inline bool segment::finished_self_compaction() const {
     return (_flags & bitflags::finished_self_compaction)
            == bitflags::finished_self_compaction;
+}
+inline void segment::mark_as_finished_windowed_compaction() {
+    _flags |= bitflags::finished_windowed_compaction;
+}
+inline bool segment::finished_windowed_compaction() const {
+    return (_flags & bitflags::finished_windowed_compaction)
+           == bitflags::finished_windowed_compaction;
 }
 inline std::optional<std::reference_wrapper<batch_cache_index>>
 segment::cache() {
