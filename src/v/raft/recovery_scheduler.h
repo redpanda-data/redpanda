@@ -10,6 +10,7 @@
 #pragma once
 
 #include "config/property.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "raft/logger.h"
@@ -17,7 +18,6 @@
 #include "seastar/core/lowres_clock.hh"
 #include "seastar/core/timer.hh"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <fmt/core.h>
@@ -149,10 +149,8 @@ private:
 
     int64_t _offsets_pending = 0;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 /**

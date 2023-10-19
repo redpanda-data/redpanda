@@ -11,6 +11,7 @@
 
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus.h"
+#include "raft/types.h"
 #include "seastar/core/coroutine.hh"
 #include "vassert.h"
 
@@ -362,8 +363,9 @@ recovery_status recovery_scheduler_base::get_status() {
 void recovery_scheduler_base::setup_metrics() {
     namespace sm = ss::metrics;
 
-    auto setup = [this](const std::vector<sm::label>& aggregate_labels) {
-        std::vector<ss::metrics::metric_definition> defs;
+    auto setup = [this]<typename MetricDef>(
+                   const std::vector<sm::label>& aggregate_labels) {
+        std::vector<MetricDef> defs;
         defs.emplace_back(
           sm::make_gauge(
             "partitions_to_recover",
@@ -392,14 +394,19 @@ void recovery_scheduler_base::setup_metrics() {
     auto group_name = prometheus_sanitize::metrics_name("raft:recovery");
 
     if (!config::shard_local_cfg().disable_metrics()) {
-        auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                                  ? std::vector<sm::label>{sm::shard_label}
-                                  : std::vector<sm::label>{};
-        _metrics.add_group(group_name, setup(aggregate_labels));
+        _metrics.add_group(
+          group_name,
+          setup.template operator()<ss::metrics::impl::metric_definition_impl>(
+            {}),
+          {},
+          {sm::shard_label});
     }
 
     if (!config::shard_local_cfg().disable_public_metrics()) {
-        _public_metrics.add_group(group_name, setup({sm::shard_label}));
+        _public_metrics.add_group(
+          group_name,
+          setup.template operator()<ss::metrics::metric_definition>(
+            {sm::shard_label}));
     }
 }
 
