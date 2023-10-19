@@ -71,10 +71,7 @@ void snc_quotas_probe::setup_metrics() {
         return;
     }
 
-    const auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                                    ? std::vector<sm::label>{sm::shard_label}
-                                    : std::vector<sm::label>{};
-    std::vector<ss::metrics::metric_definition> metric_defs;
+    std::vector<ss::metrics::impl::metric_definition_impl> metric_defs;
     static const auto direction_label = ss::metrics::label("direction");
     static const auto label_ingress = direction_label("ingress");
     static const auto label_egress = direction_label("egress");
@@ -90,25 +87,22 @@ void snc_quotas_probe::setup_metrics() {
         static const char* name = "quota_effective";
         static const auto desc = sm::description(
           "Currently effective quota, in bytes/s");
-        metric_defs.emplace_back(
-          sm::make_counter(
-            name, [this] { return _qm.get_quota().in; }, desc, {label_ingress})
-            .aggregate(aggregate_labels));
-        metric_defs.emplace_back(
-          sm::make_counter(
-            name, [this] { return _qm.get_quota().eg; }, desc, {label_egress})
-            .aggregate(aggregate_labels));
+        metric_defs.emplace_back(sm::make_counter(
+          name, [this] { return _qm.get_quota().in; }, desc, {label_ingress}));
+        metric_defs.emplace_back(sm::make_counter(
+          name, [this] { return _qm.get_quota().eg; }, desc, {label_egress}));
     }
-    metric_defs.emplace_back(
-      sm::make_counter(
-        "traffic_intake",
-        _traffic_in,
-        sm::description("Amount of Kafka traffic received from the clients "
-                        "that is taken into processing, in bytes"))
-        .aggregate(aggregate_labels));
+    metric_defs.emplace_back(sm::make_counter(
+      "traffic_intake",
+      _traffic_in,
+      sm::description("Amount of Kafka traffic received from the clients "
+                      "that is taken into processing, in bytes")));
 
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("kafka:quotas"), metric_defs);
+      prometheus_sanitize::metrics_name("kafka:quotas"),
+      metric_defs,
+      {},
+      {sm::shard_label});
 }
 
 namespace {

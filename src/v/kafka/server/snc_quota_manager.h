@@ -12,8 +12,8 @@
 #pragma once
 #include "config/property.h"
 #include "config/throughput_control_group.h"
+#include "metrics/metrics.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/mutex.h"
 
@@ -56,8 +56,7 @@ public:
 
 private:
     class snc_quota_manager& _qm;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
     uint64_t _balancer_runs = 0;
     size_t _traffic_in = 0;
 };
