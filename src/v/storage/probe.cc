@@ -183,10 +183,6 @@ void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
-    auto aggregate_labels
-      = config::shard_local_cfg().aggregate_metrics()
-          ? std::vector<sm::label>{sm::shard_label, partition_label}
-          : std::vector<sm::label>{};
 
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),
@@ -201,26 +197,24 @@ void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
           "readers_added",
           [this] { return _readers_added; },
           sm::description("Number of readers added to cache"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "readers_evicted",
           [this] { return _readers_evicted; },
           sm::description("Number of readers evicted from cache"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "cache_hits",
           [this] { return _cache_hits; },
           sm::description("Reader cache hits"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "cache_misses",
           [this] { return _cache_misses; },
           sm::description("Reader cache misses"),
-          labels)
-          .aggregate(aggregate_labels),
-      });
+          labels),
+      },
+      {},
+      {sm::shard_label, partition_label});
 }
 } // namespace storage
