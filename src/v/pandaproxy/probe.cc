@@ -10,8 +10,8 @@
 #include "pandaproxy/probe.h"
 
 #include "config/configuration.h"
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
@@ -40,24 +40,17 @@ void probe::setup_metrics() {
     std::vector<sm::label_instance> labels{
       operation_label(_path.operations.nickname)};
 
-    auto aggregate_labels = std::vector<sm::label>{
-      sm::shard_label, operation_label};
-
-    auto internal_aggregate_labels
-      = config::shard_local_cfg().aggregate_metrics()
-          ? aggregate_labels
-          : std::vector<sm::label>{};
-
     _metrics.add_group(
       "pandaproxy",
       {sm::make_histogram(
-         "request_latency",
-         sm::description("Request latency"),
-         labels,
-         [this] {
-             return _request_metrics.hist().internal_histogram_logform();
-         })
-         .aggregate(internal_aggregate_labels)});
+        "request_latency",
+        sm::description("Request latency"),
+        labels,
+        [this] {
+            return _request_metrics.hist().internal_histogram_logform();
+        })},
+      {},
+      {sm::shard_label, operation_label});
 }
 
 void probe::setup_public_metrics() {
@@ -67,8 +60,8 @@ void probe::setup_public_metrics() {
         return;
     }
 
-    auto operation_label = ssx::metrics::make_namespaced_label("operation");
-    auto status_label = ssx::metrics::make_namespaced_label("status");
+    auto operation_label = metrics::make_namespaced_label("operation");
+    auto status_label = metrics::make_namespaced_label("status");
 
     std::vector<sm::label_instance> labels{
       operation_label(_path.operations.nickname)};
