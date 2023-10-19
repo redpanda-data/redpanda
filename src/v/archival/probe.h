@@ -11,9 +11,9 @@
 #pragma once
 
 #include "archival/types.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -76,10 +76,8 @@ private:
     /// Number of segments awaiting deletion
     int64_t _segments_to_delete = 0;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 /// Metrics probe for upload housekeeping service
@@ -159,10 +157,8 @@ private:
     uint64_t _segment_deletions{0};
     uint64_t _metadata_syncs{0};
 
-    ssx::metrics::metric_groups _service_metrics
-      = ssx::metrics::metric_groups::make_public();
-    ssx::metrics::metric_groups _jobs_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _service_metrics;
+    metrics::public_metric_groups _jobs_metrics;
 };
 
 } // namespace archival

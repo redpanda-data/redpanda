@@ -43,9 +43,6 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
       topic_label(ntp.tp.topic()),
       partition_label(ntp.tp.partition()),
     };
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("ntp_archiver"),
@@ -54,27 +51,25 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
           "uploaded",
           [this] { return _uploaded; },
           sm::description("Uploaded offsets"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_total_bytes(
           "uploaded_bytes",
           [this] { return _uploaded_bytes; },
           sm::description("Total number of uploaded bytes"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "missing",
           [this] { return _missing; },
           sm::description("Missing offsets due to gaps"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "pending",
           [this] { return _pending; },
           sm::description("Pending offsets"),
-          labels)
-          .aggregate(aggregate_labels),
-      });
+          labels),
+      },
+      {},
+      std::vector<sm::label>{sm::shard_label});
 }
 
 void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
@@ -83,9 +78,9 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
         return;
     }
 
-    auto ns_label = ssx::metrics::make_namespaced_label("namespace");
-    auto topic_label = ssx::metrics::make_namespaced_label("topic");
-    auto partition_label = ssx::metrics::make_namespaced_label("partition");
+    auto ns_label = metrics::make_namespaced_label("namespace");
+    auto topic_label = metrics::make_namespaced_label("topic");
+    auto partition_label = metrics::make_namespaced_label("partition");
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),
       topic_label(ntp.tp.topic()),
