@@ -90,8 +90,8 @@ type LicenseSecretRef struct {
 
 // RackAwareness is a top-level field of the values file
 type RackAwareness struct {
-	Enabled        bool   `json:"enabled"`
-	NodeAnnotation string `json:"nodeAnnotation"`
+	Enabled        bool    `json:"enabled"`
+	NodeAnnotation *string `json:"nodeAnnotation,omitempty"`
 }
 
 type RedpandaConsole struct {
