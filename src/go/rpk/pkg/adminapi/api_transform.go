@@ -42,7 +42,6 @@ func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, name string) error {
 type PartitionTransformStatus struct {
 	NodeID    int `json:"node_id"`
 	Partition int `json:"partition"`
-	Core      int `json:"core"`
 	// Status is an enum of: ["running", "inactive", "errored", "unknown"].
 	Status string `json:"status"`
 }

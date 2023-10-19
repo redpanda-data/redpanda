@@ -104,7 +104,10 @@ class manager {
       "Only lowres or manual clocks are supported");
 
 public:
-    manager(std::unique_ptr<registry>, std::unique_ptr<processor_factory>);
+    manager(
+      model::node_id self,
+      std::unique_ptr<registry>,
+      std::unique_ptr<processor_factory>);
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;
@@ -121,6 +124,10 @@ public:
     // Called when processors have errors
     void on_transform_error(
       model::transform_id, model::ntp, model::transform_metadata);
+
+    // Get the current state of all the transforms this manager is responsible
+    // for.
+    model::cluster_transform_report compute_report() const;
 
     // Exposed for testing, but drains all the pending operations.
     //
@@ -145,6 +152,7 @@ private:
     ss::future<> create_processor(
       model::ntp, model::transform_id, model::transform_metadata);
 
+    model::node_id _self;
     ssx::work_queue _queue;
     std::unique_ptr<registry> _registry;
     std::unique_ptr<processor_table<ClockType>> _processors;

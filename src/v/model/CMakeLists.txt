@@ -15,5 +15,7 @@ v_cc_library(
     v::rphashing
     v::reflection
     Seastar::seastar
+    absl::btree
+    absl::flat_hash_map
   )
 add_subdirectory(tests)

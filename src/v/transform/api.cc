@@ -18,10 +18,12 @@
 #include "features/feature_table.h"
 #include "kafka/server/replicated_partition.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
 #include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
+#include "transform/rpc/deps.h"
 #include "transform/transform_manager.h"
 #include "transform/transform_processor.h"
 #include "wasm/api.h"
@@ -217,6 +219,27 @@ private:
 
 } // namespace
 
+class wrapped_service_reporter : public rpc::reporter {
+public:
+    explicit wrapped_service_reporter(ss::sharded<service>* service)
+      : _service(service) {}
+
+    ss::future<model::cluster_transform_report> compute_report() override {
+        // It's the RPC server is started before the transform subsystem boots
+        // up, so we need to check for initialization here.
+        // TODO(rockwood): Fix the bootup sequence so this doesn't happen.
+        if (!_service->local_is_initialized()) {
+            return ss::make_exception_future<model::cluster_transform_report>(
+              std::make_exception_ptr(
+                std::runtime_error("transforms are disabled")));
+        }
+        return _service->local().compute_node_local_report();
+    };
+
+private:
+    ss::sharded<service>* _service;
+};
+
 service::service(
   wasm::caching_runtime* runtime,
   model::node_id self,
@@ -243,6 +266,7 @@ ss::future<> service::start() {
       = std::make_unique<rpc_client_factory>(&_rpc_client->local());
 
     _manager = std::make_unique<manager<ss::lowres_clock>>(
+      _self,
       std::make_unique<registry_adapter>(
         &_plugin_frontend->local(), &_partition_manager->local()),
       std::make_unique<proc_factory>(
@@ -398,6 +422,15 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     co_return ec;
 }
 
+ss::future<model::cluster_transform_report> service::list_transforms() {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return model::cluster_transform_report{};
+    }
+    auto _ = _gate.hold();
+    co_return co_await _rpc_client->local().generate_report();
+}
+
 ss::future<> service::cleanup_wasm_binary(uuid_t key) {
     // TODO(rockwood): This is a best effort cleanup, we should also have
     // some sort of GC process as well.
@@ -460,6 +493,24 @@ service::get_factory(model::transform_metadata meta) {
     auto factory = co_await _runtime->make_factory(
       std::move(meta), std::move(result).value(), &tlog);
     co_return ss::make_foreign(factory);
+}
+
+ss::future<model::cluster_transform_report>
+service::compute_node_local_report() {
+    co_return co_await container().map_reduce0(
+      [](service& s) { return s._manager->compute_report(); },
+      model::cluster_transform_report{},
+      [](
+        model::cluster_transform_report agg,
+        const model::cluster_transform_report& local) {
+          agg.merge(local);
+          return agg;
+      });
+}
+
+std::unique_ptr<rpc::reporter>
+service::create_reporter(ss::sharded<service>* s) {
+    return std::make_unique<wrapped_service_reporter>(s);
 }
 
 } // namespace transform

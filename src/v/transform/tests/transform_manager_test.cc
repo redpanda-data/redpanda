@@ -288,7 +288,7 @@ public:
         auto t = std::make_unique<processor_tracker>();
         _tracker = t.get();
         _manager = std::make_unique<manager<ss::manual_clock>>(
-          std::move(r), std::move(t));
+          /*self=*/model::node_id(0), std::move(r), std::move(t));
         _manager->start().get();
         // This allows us to wait for the seastar queue to be drained.
         //

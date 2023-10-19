@@ -31,7 +31,8 @@ class local_service {
 public:
     local_service(
       std::unique_ptr<topic_metadata_cache> metadata_cache,
-      std::unique_ptr<partition_manager> partition_manager);
+      std::unique_ptr<partition_manager> partition_manager,
+      std::unique_ptr<reporter>);
 
     ss::future<ss::chunked_fifo<transformed_topic_data_result>> produce(
       ss::chunked_fifo<transformed_topic_data> topic_data,
@@ -50,6 +51,8 @@ public:
     find_coordinator(find_coordinator_request&&);
     ss::future<offset_commit_response> offset_commit(offset_commit_request);
     ss::future<offset_fetch_response> offset_fetch(offset_fetch_request);
+
+    ss::future<model::cluster_transform_report> compute_node_local_report();
 
 private:
     ss::future<transformed_topic_data_result>
@@ -71,6 +74,7 @@ private:
       ss::lw_shared_ptr<cluster::partition>, offset_fetch_request);
     std::unique_ptr<topic_metadata_cache> _metadata_cache;
     std::unique_ptr<partition_manager> _partition_manager;
+    std::unique_ptr<reporter> _reporter;
 };
 
 /**
@@ -105,6 +109,9 @@ public:
 
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&&, ::rpc::streaming_context&) override;
+
+    ss::future<generate_report_reply> generate_report(
+      generate_report_request&&, ::rpc::streaming_context&) override;
 
 private:
     ss::sharded<local_service>* _service;

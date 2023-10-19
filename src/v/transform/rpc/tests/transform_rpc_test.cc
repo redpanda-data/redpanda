@@ -24,12 +24,14 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "net/server.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
+#include "test_utils/randoms.h"
 #include "test_utils/test.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
@@ -230,6 +232,27 @@ private:
       _new_ntp_cb;
 };
 
+class fake_reporter : public reporter {
+public:
+    ss::future<model::cluster_transform_report> compute_report() override {
+        co_return _report;
+    }
+
+    const model::cluster_transform_report& report() { return _report; }
+
+    void add_to_report(
+      model::transform_id id,
+      const model::transform_metadata& meta,
+      const std::vector<model::transform_report::processor>& processors) {
+        for (const auto& p : processors) {
+            _report.add(id, meta, p);
+        }
+    }
+
+private:
+    model::cluster_transform_report _report;
+};
+
 class fake_partition_manager : public partition_manager {
 public:
     std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) final {
@@ -421,6 +444,14 @@ constexpr auto test_timeout = std::chrono::seconds(10);
 constexpr model::node_id self_node = model::node_id(1);
 constexpr model::node_id other_node = model::node_id(2);
 
+namespace {
+class fake_cluster_members_cache : public cluster_members_cache {
+    std::vector<model::node_id> all_cluster_members() override {
+        return {self_node, other_node};
+    }
+};
+} // namespace
+
 struct test_parameters {
     model::node_id leader_node;
     model::node_id non_leader_node;
@@ -449,6 +480,11 @@ public:
                 auto fpm = std::make_unique<fake_partition_manager>();
                 _remote_fpm = fpm.get();
                 return fpm;
+            }),
+            ss::sharded_parameter([this]() {
+                auto fr = std::make_unique<fake_reporter>();
+                _remote_fr = fr.get();
+                return fr;
             }))
           .get();
 
@@ -478,6 +514,11 @@ public:
                 auto fpm = std::make_unique<fake_partition_manager>();
                 _local_fpm = fpm.get();
                 return fpm;
+            }),
+            ss::sharded_parameter([this]() {
+                auto fr = std::make_unique<fake_reporter>();
+                _local_fr = fr.get();
+                return fr;
             }))
           .get();
         _conn_cache.start(std::ref(_as), std::nullopt).get();
@@ -507,6 +548,7 @@ public:
           std::move(fplc),
           std::make_unique<delegating_fake_topic_metadata_cache>(_local_ftmc),
           std::move(ftpc),
+          std::make_unique<fake_cluster_members_cache>(),
           &_conn_cache,
           &_local_services);
     }
@@ -519,10 +561,12 @@ public:
         _local_services.stop().get();
         _remote_services.stop().get();
         _as.stop().get();
+        _local_fr = nullptr;
         _local_ftmc = nullptr;
         _local_fpm = nullptr;
         _remote_ftmc = nullptr;
         _remote_fpm = nullptr;
+        _remote_fr = nullptr;
         _fplc = nullptr;
     }
 
@@ -583,6 +627,9 @@ public:
         return batches_for(leader_node(), ntp);
     }
 
+    fake_reporter* local_reporter() { return _local_fr; }
+    fake_reporter* remote_reporter() { return _remote_fr; }
+
     // local node state
     fake_topic_metadata_cache* local_metadata_cache() { return _local_ftmc; }
     fake_partition_manager* local_partition_manager() { return _local_fpm; }
@@ -609,6 +656,8 @@ private:
     fake_partition_manager* _remote_fpm = nullptr;
     fake_partition_leader_cache* _fplc = nullptr;
     fake_topic_creator* _ftpc = nullptr;
+    fake_reporter* _local_fr = nullptr;
+    fake_reporter* _remote_fr = nullptr;
     ss::sharded<rpc::local_service> _local_services;
     ss::sharded<rpc::local_service> _remote_services;
     ss::sharded<::rpc::connection_cache> _conn_cache;
@@ -622,6 +671,19 @@ model::ntp make_ntp(std::string_view topic) {
     return {
       model::kafka_namespace, model::topic(topic), model::partition_id(0)};
 }
+
+model::transform_metadata make_transform_meta() {
+    return model::transform_metadata{
+      .name = tests::random_named_string<model::transform_name>(),
+      .input_topic = model::random_topic_namespace(),
+      .output_topics = {model::random_topic_namespace()},
+      .uuid = uuid_t::create(),
+      .source_ptr = model::random_offset()};
+};
+
+model::transform_report make_transform_report(model::transform_metadata meta) {
+    return model::transform_report(std::move(meta));
+};
 
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
@@ -741,5 +803,46 @@ INSTANTIATE_TEST_SUITE_P(
       .num_transform_topic_partitions = 3, .shuffle_leadership = true},
     TransformRpcTestParams{
       .num_transform_topic_partitions = 3, .shuffle_leadership = false}));
+
+TEST_F(TransformRpcTest, CanAggregateReports) {
+    using state = model::transform_report::processor::state;
+    model::transform_metadata a_meta = make_transform_meta();
+    model::transform_metadata b_meta = make_transform_meta();
+    local_reporter()->add_to_report(
+      model::transform_id(1),
+      a_meta,
+      {
+        model::transform_report::processor{
+          .id = model::partition_id(0),
+          .status = state::running,
+          .node = self_node,
+        },
+        model::transform_report::processor{
+          .id = model::partition_id(2),
+          .status = state::inactive,
+          .node = self_node,
+        },
+      });
+    remote_reporter()->add_to_report(
+      model::transform_id(2),
+      b_meta,
+      {model::transform_report::processor{
+        .id = model::partition_id(0),
+        .status = state::running,
+        .node = other_node,
+      }});
+    remote_reporter()->add_to_report(
+      model::transform_id(1),
+      a_meta,
+      {model::transform_report::processor{
+        .id = model::partition_id(1),
+        .status = state::errored,
+        .node = other_node,
+      }});
+    model::cluster_transform_report actual = client()->generate_report().get();
+    model::cluster_transform_report expected = local_reporter()->report();
+    expected.merge(remote_reporter()->report());
+    EXPECT_EQ(actual, expected);
+}
 
 } // namespace transform::rpc

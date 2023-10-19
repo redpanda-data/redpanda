@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "seastarx.h"
@@ -19,9 +20,11 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace model {
 /**
@@ -113,5 +116,78 @@ struct transform_offsets_value
 static const model::topic transform_offsets_topic("transform_offsets");
 static const model::topic_namespace transform_offsets_nt(
   model::kafka_internal_namespace, transform_offsets_topic);
+
+/**
+ * A (possibly inconsistent) snapshot of a transform.
+ *
+ * We capture the metadata associated with the transform for as well as the
+ * state for each processor.
+ */
+struct transform_report
+  : serde::
+      envelope<transform_report, serde::version<0>, serde::compat_version<0>> {
+    struct processor
+      : serde::
+          envelope<processor, serde::version<0>, serde::compat_version<0>> {
+        enum class state : uint8_t { unknown, inactive, running, errored };
+        model::partition_id id;
+        state status;
+        model::node_id node;
+        friend bool operator==(const processor&, const processor&) = default;
+
+        friend std::ostream& operator<<(std::ostream&, const processor&);
+
+        auto serde_fields() { return std::tie(id, status, node); }
+    };
+
+    transform_report() = default;
+    explicit transform_report(transform_metadata meta);
+    transform_report(
+      transform_metadata meta, absl::btree_map<model::partition_id, processor>);
+
+    // The overall metadata for a transform.
+    transform_metadata metadata;
+
+    // The state of each processor of a transform.
+    //
+    // Currently, there should be a single processor for each partition on the
+    // input topic.
+    absl::btree_map<model::partition_id, processor> processors;
+
+    friend bool operator==(const transform_report&, const transform_report&)
+      = default;
+
+    auto serde_fields() { return std::tie(metadata, processors); }
+
+    // Add a processor's report to the overall transform's report.
+    void add(processor);
+};
+
+/**
+ * A cluster wide view of all the currently running transforms.
+ */
+struct cluster_transform_report
+  : serde::envelope<
+      cluster_transform_report,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    absl::btree_map<model::transform_id, transform_report> transforms;
+
+    friend bool
+    operator==(const cluster_transform_report&, const cluster_transform_report&)
+      = default;
+
+    auto serde_fields() { return std::tie(transforms); }
+
+    // Add a processor's report for a single transform to this overall report.
+    void
+    add(transform_id, const transform_metadata&, transform_report::processor);
+
+    // Merge cluster views of transforms into this report.
+    //
+    // This is useful for aggregating multiple node's reports into a single
+    // report.
+    void merge(const cluster_transform_report&);
+};
 
 } // namespace model

@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
+#include "model/transform.h"
 #include "transform/rpc/serde.h"
 
 #include <seastar/util/noncopyable_function.hh>
@@ -26,6 +27,42 @@
  */
 
 namespace transform::rpc {
+
+/**
+ * Able to report on the state of all transforms for this node.
+ */
+class reporter {
+public:
+    reporter() = default;
+    reporter(const reporter&) = delete;
+    reporter& operator=(const reporter&) = delete;
+    reporter(reporter&&) = delete;
+    reporter& operator=(reporter&&) = delete;
+    virtual ~reporter() = default;
+
+    virtual ss::future<model::cluster_transform_report> compute_report() = 0;
+};
+
+/**
+ * A cache for all the nodes that exist in the cluster.
+ */
+class cluster_members_cache {
+public:
+    cluster_members_cache() = default;
+    cluster_members_cache(const cluster_members_cache&) = delete;
+    cluster_members_cache& operator=(const cluster_members_cache&) = delete;
+    cluster_members_cache(cluster_members_cache&&) = delete;
+    cluster_members_cache& operator=(cluster_members_cache&&) = delete;
+    virtual ~cluster_members_cache() = default;
+
+    static std::unique_ptr<cluster_members_cache>
+    make_default(ss::sharded<cluster::members_table>*);
+
+    /**
+     * A list of all the nodes in the cluster, including the local node.
+     */
+    virtual std::vector<model::node_id> all_cluster_members() = 0;
+};
 
 /**
  * A cache for which node owns a given partition leader.

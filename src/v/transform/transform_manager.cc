@@ -99,19 +99,50 @@ const static model::ntp min_ntp = model::ntp(
 // complicated table of indexes.
 template<typename ClockType>
 class processor_table {
-    struct entry_t {
-        std::unique_ptr<transform::processor> processor;
-        ss::lw_shared_ptr<transform::probe> probe;
-        processor_backoff<ClockType> backoff;
+public:
+    class entry_t {
+    public:
+        entry_t(
+          std::unique_ptr<transform::processor> processor,
+          ss::lw_shared_ptr<transform::probe> probe)
+          : _processor(std::move(processor))
+          , _probe(std::move(probe)) {}
+
+        transform::processor* processor() const { return _processor.get(); }
+        ss::lw_shared_ptr<transform::probe> probe() const { return _probe; }
+
+        ClockType::duration next_backoff_duration() {
+            _is_errored = true;
+            return _backoff.next_backoff_duration();
+        }
+        void mark_start_attempt() {
+            _is_errored = false;
+            _backoff.mark_start_attempt();
+        }
+
+        model::transform_report::processor::state compute_state() const {
+            using state = model::transform_report::processor::state;
+            if (_processor->is_running()) {
+                return state::running;
+            }
+            return _is_errored ? state::errored : state::inactive;
+        }
+
+    private:
+        std::unique_ptr<transform::processor> _processor;
+        ss::lw_shared_ptr<transform::probe> _probe;
+        processor_backoff<ClockType> _backoff;
+        bool _is_errored = true;
     };
 
-public:
+    auto range() const { return std::make_pair(_table.begin(), _table.end()); }
+
     entry_t&
     insert(std::unique_ptr<processor> processor, ss::lw_shared_ptr<probe> p) {
         auto id = processor->id();
         auto ntp = processor->ntp();
         auto [table_it, table_inserted] = _table.emplace(
-          std::make_pair(id, ntp), entry_t{std::move(processor), std::move(p)});
+          std::make_pair(id, ntp), entry_t(std::move(processor), std::move(p)));
         vassert(table_inserted, "invalid transform processor management");
         auto [index_it, index_inserted] = _ntp_index.emplace(
           std::make_pair(ntp, id));
@@ -123,7 +154,7 @@ public:
       model::transform_id id, const model::transform_metadata& meta) {
         auto it = _table.lower_bound(std::make_pair(id, min_ntp));
         if (it != _table.end() && it->first.first == id) {
-            return it->second.probe;
+            return it->second.probe();
         }
         auto probe = ss::make_lw_shared<transform::probe>();
         probe->setup_metrics(meta.name());
@@ -147,7 +178,7 @@ public:
           _table.begin(),
           _table.end(),
           // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-          [](auto& e) { return e.second.processor->stop(); });
+          [](auto& e) { return e.second.processor()->stop(); });
         _table.clear();
         _ntp_index.clear();
     }
@@ -164,7 +195,7 @@ public:
             if (id != target_id) {
                 break;
             }
-            stop_futures.push_back(it->second.processor->stop());
+            stop_futures.push_back(it->second.processor()->stop());
             vassert(
               _ntp_index.erase(std::make_pair(ntp, id)) > 0,
               "inconsistent index");
@@ -188,7 +219,7 @@ public:
                 break;
             }
             auto node = _table.extract(std::make_pair(id, ntp));
-            stop_futures.push_back(node.mapped().processor->stop());
+            stop_futures.push_back(node.mapped().processor()->stop());
             // delay destroying the processor until after it's stopped.
             entries.push_back(std::move(node.mapped()));
             it = _ntp_index.erase(it);
@@ -206,8 +237,11 @@ private:
 
 template<typename ClockType>
 manager<ClockType>::manager(
-  std::unique_ptr<registry> r, std::unique_ptr<processor_factory> f)
-  : _queue([](const std::exception_ptr& ex) {
+  model::node_id self,
+  std::unique_ptr<registry> r,
+  std::unique_ptr<processor_factory> f)
+  : _self(self)
+  , _queue([](const std::exception_ptr& ex) {
       vlog(tlog.error, "unexpected transform manager error: {}", ex);
   })
   , _registry(std::move(r))
@@ -305,8 +339,8 @@ ss::future<> manager<ClockType>::handle_transform_error(
     if (!entry) {
         co_return;
     }
-    co_await entry->processor->stop();
-    auto delay = entry->backoff.next_backoff_duration();
+    co_await entry->processor()->stop();
+    auto delay = entry->next_backoff_duration();
     vlog(
       tlog.info,
       "transform {} errored on partition {}, delaying for {} then restarting",
@@ -324,7 +358,7 @@ manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
     auto* entry = _processors->get_or_null(id, ntp);
     // It's possible something else came along and kicked this processor and
     // that worked.
-    if (entry && entry->processor->is_running()) {
+    if (entry && entry->processor()->is_running()) {
         co_return;
     }
     auto transform = _registry->lookup_by_id(id);
@@ -342,8 +376,8 @@ manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
         co_return;
     }
     if (entry) {
-        entry->backoff.mark_start_attempt();
-        co_await entry->processor->start();
+        entry->mark_start_attempt();
+        co_await entry->processor()->start();
     } else {
         co_await create_processor(ntp, id, *std::move(transform));
     }
@@ -381,8 +415,8 @@ ss::future<> manager<ClockType>::create_processor(
         // we properly know that it's in flight.
         auto& entry = _processors->insert(std::move(fut).get(), std::move(p));
         vlog(tlog.info, "starting transform {} on {}", meta.name, ntp);
-        entry.backoff.mark_start_attempt();
-        co_await entry.processor->start();
+        entry.mark_start_attempt();
+        co_await entry.processor()->start();
     }
 }
 
@@ -397,6 +431,26 @@ ss::future<> manager<ClockType>::drain_queue_for_test() {
         return ss::now();
     });
     co_await std::move(f);
+}
+
+template<typename ClockType>
+model::cluster_transform_report manager<ClockType>::compute_report() const {
+    model::cluster_transform_report report;
+    for (auto [it, end] = _processors->range(); it != end; ++it) {
+        const auto& entry = it->second;
+        processor* p = entry.processor();
+        auto id = p->ntp().tp.partition;
+
+        report.add(
+          p->id(),
+          p->meta(),
+          {
+            .id = id,
+            .status = entry.compute_state(),
+            .node = _self,
+          });
+    }
+    return report;
 }
 
 template class manager<ss::lowres_clock>;

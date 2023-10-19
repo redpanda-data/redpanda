@@ -38,6 +38,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -93,9 +94,11 @@ model::record_header make_header(ss::sstring k, ss::sstring v) {
 
 local_service::local_service(
   std::unique_ptr<topic_metadata_cache> metadata_cache,
-  std::unique_ptr<partition_manager> partition_manager)
+  std::unique_ptr<partition_manager> partition_manager,
+  std::unique_ptr<reporter> reporter)
   : _metadata_cache(std::move(metadata_cache))
-  , _partition_manager(std::move(partition_manager)) {}
+  , _partition_manager(std::move(partition_manager))
+  , _reporter(std::move(reporter)) {}
 
 ss::future<ss::chunked_fifo<transformed_topic_data_result>>
 local_service::produce(
@@ -250,6 +253,11 @@ ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
         co_return ec;
     }
     co_return data;
+}
+
+ss::future<model::cluster_transform_report>
+local_service::compute_node_local_report() {
+    return _reporter->compute_report();
 }
 
 ss::future<result<iobuf, cluster::errc>>
@@ -439,6 +447,12 @@ ss::future<offset_fetch_response> network_service::offset_fetch(
 ss::future<offset_commit_response> network_service::offset_commit(
   offset_commit_request&& req, ::rpc::streaming_context&) {
     co_return co_await _service->local().offset_commit(req);
+}
+
+ss::future<generate_report_reply> network_service::generate_report(
+  generate_report_request&&, ::rpc::streaming_context&) {
+    auto report = co_await _service->local().compute_node_local_report();
+    co_return generate_report_reply(std::move(report));
 }
 
 } // namespace transform::rpc

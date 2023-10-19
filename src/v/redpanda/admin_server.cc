@@ -65,6 +65,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "net/dns.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
@@ -5795,12 +5796,62 @@ admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
     co_return ss::json::json_void();
 }
 
+namespace {
+ss::httpd::transform_json::partition_transform_status::
+  partition_transform_status_status
+  convert_transform_status(
+    model::transform_report::processor::state model_state) {
+    using model_status = model::transform_report::processor::state;
+    using json_status = ss::httpd::transform_json::partition_transform_status::
+      partition_transform_status_status;
+    switch (model_state) {
+    case model_status::inactive:
+        return json_status::inactive;
+    case model_status::running:
+        return json_status::running;
+    case model_status::errored:
+        return json_status::errored;
+    case model_status::unknown:
+        return json_status::unknown;
+    }
+    vlog(logger.error, "unknown transform status: {}", uint8_t(model_state));
+    return json_status::unknown;
+}
+} // namespace
+
 ss::future<ss::json::json_return_type>
 admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
     if (!_transform_service->local_is_initialized()) {
         throw ss::httpd::bad_request_exception("data transforms not enabled");
     }
-    throw ss::httpd::server_error_exception("unimplemented");
+    auto report = co_await _transform_service->local().list_transforms();
+    ss::json::json_list<ss::httpd::transform_json::transform_metadata>
+      list_result;
+
+    co_return ss::json::json_return_type(
+      ss::json::stream_range_as_array(report.transforms, [](const auto& entry) {
+          const model::transform_report& t = entry.second;
+          ss::httpd::transform_json::transform_metadata meta;
+          meta.name = t.metadata.name();
+          meta.input_topic = t.metadata.input_topic.tp();
+          for (const auto& output_topic : t.metadata.output_topics) {
+              meta.output_topics.push(output_topic.tp());
+          }
+          for (const auto& [k, v] : t.metadata.environment) {
+              ss::httpd::transform_json::environment_variable var;
+              var.key = k;
+              var.value = v;
+              meta.environment.push(var);
+          }
+          for (const auto& [_, processor] : t.processors) {
+              ss::httpd::transform_json::partition_transform_status s;
+              s.partition = processor.id();
+              s.node_id = processor.node();
+              s.status = convert_transform_status(processor.status);
+              meta.status.push(s);
+          }
+          return meta;
+      }));
 }
 
 namespace {

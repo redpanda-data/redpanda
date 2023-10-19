@@ -180,6 +180,21 @@ public:
 private:
     cluster::controller* _controller;
 };
+
+class cluster_members_cache_impl : public cluster_members_cache {
+public:
+    explicit cluster_members_cache_impl(
+      ss::sharded<cluster::members_table>* table)
+      : _table(table) {}
+
+    std::vector<model::node_id> all_cluster_members() override {
+        return _table->local().node_ids();
+    }
+
+private:
+    ss::sharded<cluster::members_table>* _table;
+};
+
 } // namespace
 
 std::unique_ptr<partition_leader_cache>
@@ -224,4 +239,10 @@ std::unique_ptr<topic_creator>
 topic_creator::make_default(cluster::controller* controller) {
     return std::make_unique<topic_creator_impl>(controller);
 }
+
+std::unique_ptr<cluster_members_cache>
+cluster_members_cache::make_default(ss::sharded<cluster::members_table>* m) {
+    return std::make_unique<cluster_members_cache_impl>(m);
+}
+
 } // namespace transform::rpc
