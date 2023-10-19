@@ -213,6 +213,16 @@ std::pair<uint64_t, uint64_t> partition_balancer_planner::get_node_bytes_info(
             }
         }
 
+        /**
+         * In the initial phase reported space may be incorrect as not all
+         * partition storage information are reported. Clamp down to actual
+         * disk free space + reclaimable size. This way we will never go beyond
+         * the actual free space but when all reported values are up to date
+         * the calculated free space should always be smaller then or equal to
+         * free space to reclaimable space.
+         */
+        total_free = std::min(
+          reclaimable_size + node_state.data_disk.free, total_free);
         // Clamp to total available target size.
         total_free = std::min(target_size, total_free);
         return std::make_pair(target_size, total_free);
