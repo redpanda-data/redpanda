@@ -3,6 +3,7 @@ v_cc_library(
   NAME storage
   SRCS
     segment_reader.cc
+    segment_deduplication_utils.cc
     log_manager.cc
     disk_log_impl.cc
     disk_log_appender.cc
