@@ -121,3 +121,15 @@ rp_test(
   LABELS storage
 )
 
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME key_offset_map
+  SOURCES
+    key_offset_map_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::storage
+  ARGS "-- -c 1"
+  LABELS storage
+)
