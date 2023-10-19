@@ -99,6 +99,8 @@ rp_test(
   LABELS wasm
 )
 
+# TODO(rockwood): Enable on CI when we determine why the module
+# OOMs in this environment
 rp_test(
   BENCHMARK_TEST
   BINARY_NAME wasm_transform
@@ -112,5 +114,7 @@ rp_test(
     wasm_testdata_identity
   INPUT_FILES
     "${TESTDATA_DIR}/identity.wasm"
-  LABELS wasm
+  LABELS
+    wasm 
+    disable_on_ci
 )

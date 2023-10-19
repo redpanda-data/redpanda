@@ -45,6 +45,13 @@
 
 namespace wasm::wasi {
 
+exit_exception::exit_exception(int32_t exit_code)
+  : _code(exit_code)
+  , _msg(ss::format("exited with code: {}", exit_code)) {}
+
+const char* exit_exception::what() const noexcept { return _msg.c_str(); }
+int32_t exit_exception::code() const noexcept { return _code; }
+
 log_writer::log_writer(ss::sstring name, bool is_guest_stdout, ss::logger* l)
   : _is_guest_stdout(is_guest_stdout)
   , _name(std::move(name))
@@ -414,7 +421,7 @@ preview1_module::sock_send(fd_t, ffi::array<iovec_t>, uint16_t, uint32_t*) {
 }
 errno_t preview1_module::sock_shutdown(fd_t, uint8_t) { return ERRNO_NOSYS; }
 void preview1_module::proc_exit(int32_t exit_code) {
-    throw std::runtime_error(ss::format("Exiting: {}", exit_code));
+    throw exit_exception(exit_code);
 }
 ss::future<errno_t> preview1_module::sched_yield() {
     co_await ss::yield();
