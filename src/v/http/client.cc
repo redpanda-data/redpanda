@@ -39,16 +39,15 @@
 #include <limits>
 #include <stdexcept>
 
-namespace {
-using field_type = std::variant<boost::beast::http::field, std::string>;
-
-const std::unordered_set<field_type> redacted_fields{
-  boost::beast::http::field::authorization,
-  "x-amz-content-sha256",
-  "x-amz-security-token"};
-} // namespace
-
 namespace http {
+
+const std::unordered_set<std::variant<boost::beast::http::field, std::string>>
+redacted_fields() {
+    return {
+      boost::beast::http::field::authorization,
+      "x-amz-content-sha256",
+      "x-amz-security-token"};
+}
 
 // client implementation //
 static constexpr ss::lowres_clock::duration default_max_idle_time = 1s;
@@ -627,7 +626,7 @@ ss::input_stream<char> client::response_stream::as_input_stream() {
 
 client::request_header redacted_header(client::request_header original) {
     auto h{std::move(original)};
-    for (const auto& field : redacted_fields) {
+    for (const auto& field : redacted_fields()) {
         std::visit(
           [&h](const auto& f) {
               if (h.find(f) != h.end()) {
