@@ -219,9 +219,18 @@ API_ACTIVITY_SCHEMA = {
             'properties': {
                 'operation': {
                     'type': 'string'
+                },
+                'service': {
+                    'type': 'object',
+                    'properties': {
+                        'name': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': ['name']
                 }
             },
-            'required': ['operation'],
+            'required': ['operation', 'service'],
             'additionalProperties': False
         },
         'dst_endpoint': ENDPOINT_SCHEMA,
@@ -286,16 +295,19 @@ API_ACTIVITY_SCHEMA = {
             False
         },
         'resources': {
-            'type': 'object',
-            'properties': {
-                'name': {
-                    'type': 'string'
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'name': {
+                        'type': 'string'
+                    },
+                    'type': {
+                        'type': 'string'
+                    }
                 },
-                'type': {
-                    'type': 'string'
-                }
+                'required': ['name', 'type'],
             },
-            'required': ['name', 'type'],
             'additionalProperties': False
         },
         'src_endpoint': ENDPOINT_SCHEMA,

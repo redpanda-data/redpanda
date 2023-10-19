@@ -26,15 +26,19 @@ namespace security::audit {
 api_activity make_api_activity_event(
   ss::httpd::const_req req,
   const request_auth_result& auth_result,
+  const ss::sstring& svc_name,
   bool authorized,
   const std::optional<std::string_view>& reason);
 
 authentication make_authentication_event(
-  ss::httpd::const_req req, const request_auth_result& r);
+  ss::httpd::const_req req,
+  const request_auth_result& r,
+  const ss::sstring& svc_name);
 
 authentication make_authentication_failure_event(
   ss::httpd::const_req req,
   const security::credential_user& r,
+  const ss::sstring& svc_name,
   const ss::sstring& reason);
 
 } // namespace security::audit

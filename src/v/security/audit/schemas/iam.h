@@ -58,6 +58,7 @@ public:
       used_cleartext is_cleartext,
       used_mfa mfa,
       network_endpoint src_endpoint,
+      service service,
       severity_id severity_id,
       status_id status_id,
       std::optional<ss::sstring> status_detail,
@@ -73,6 +74,7 @@ public:
       , _dst_endpoint(std::move(dst_endpoint))
       , _is_cleartext(is_cleartext)
       , _mfa(mfa)
+      , _service(std::move(service))
       , _src_endpoint(std::move(src_endpoint))
       , _status_id(status_id)
       , _status_detail(std::move(status_detail))
@@ -97,6 +99,7 @@ public:
           _dst_endpoint.addr.host(),
           _is_cleartext,
           _mfa,
+          _service,
           _src_endpoint.addr.host(),
           _status_id,
           _status_detail,
@@ -110,6 +113,7 @@ private:
     network_endpoint _dst_endpoint;
     used_cleartext _is_cleartext;
     used_mfa _mfa;
+    service _service;
     network_endpoint _src_endpoint;
     status_id _status_id;
     std::optional<ss::sstring> _status_detail;
@@ -133,8 +137,10 @@ private:
         ::json::rjson_serialize(w, a._dst_endpoint);
         w.Key("is_cleartext");
         ::json::rjson_serialize(w, bool(a._is_cleartext));
-        w.Key("mfa");
+        w.Key("is_mfa");
         ::json::rjson_serialize(w, bool(a._mfa));
+        w.Key("service");
+        ::json::rjson_serialize(w, a._service);
         w.Key("src_endpoint");
         ::json::rjson_serialize(w, a._src_endpoint);
         w.Key("status_id");

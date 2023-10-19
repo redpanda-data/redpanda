@@ -94,10 +94,17 @@ enum class severity_id : uint8_t {
     other = 99,
 };
 
+struct service {
+    ss::sstring name;
+
+    auto equality_fields() const { return std::tie(name); }
+};
+
 struct api {
     ss::sstring operation;
+    service service;
 
-    auto equality_fields() const { return std::tie(operation); }
+    auto equality_fields() const { return std::tie(operation, service); }
 };
 
 struct product {
@@ -254,10 +261,20 @@ struct http_request {
 namespace json {
 namespace sa = security::audit;
 
+inline void
+rjson_serialize(Writer<StringBuffer>& w, const sa::service& service) {
+    w.StartObject();
+    w.Key("name");
+    rjson_serialize(w, service.name);
+    w.EndObject();
+}
+
 inline void rjson_serialize(Writer<StringBuffer>& w, const sa::api& api) {
     w.StartObject();
     w.Key("operation");
     rjson_serialize(w, api.operation);
+    w.Key("service");
+    rjson_serialize(w, api.service);
     w.EndObject();
 }
 

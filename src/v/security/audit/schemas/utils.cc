@@ -83,10 +83,13 @@ http_request from_ss_http_request(const ss::http::request& req) {
       .version = req._version};
 }
 
-network_endpoint from_ss_endpoint(const ss::socket_address& sa) {
+network_endpoint from_ss_endpoint(
+  const ss::socket_address& sa,
+  std::optional<std::string_view> svc_name = std::nullopt) {
     return network_endpoint{
       .addr = net::unresolved_address(
-        fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family())};
+        fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family()),
+      .svc_name = ss::sstring{svc_name.value_or("")}};
 }
 
 /// TODO: Via ACLs metadata return correct response
@@ -227,14 +230,15 @@ std::ostream& operator<<(std::ostream& os, const ocsf_base_impl& impl) {
 api_activity make_api_activity_event(
   ss::httpd::const_req req,
   const request_auth_result& auth_result,
+  const ss::sstring& svc_name,
   bool authorized,
   const std::optional<std::string_view>& reason) {
     auto act = actor_from_request_auth_result(auth_result, authorized, reason);
     return {
       http_method_to_activity_id(req._method),
       std::move(act),
-      api{.operation = req._method},
-      from_ss_endpoint(req.get_server_address()),
+      api{.operation = req._method, .service = {.name = svc_name}},
+      from_ss_endpoint(req.get_server_address(), svc_name),
       from_ss_http_request(req),
       {},
       severity_id::informational,
@@ -246,16 +250,19 @@ api_activity make_api_activity_event(
 }
 
 authentication make_authentication_event(
-  ss::httpd::const_req req, const request_auth_result& r) {
+  ss::httpd::const_req req,
+  const request_auth_result& r,
+  const ss::sstring& svc_name) {
     return {
       authentication::activity_id::logon,
       r.get_sasl_mechanism(),
-      from_ss_endpoint(req.get_server_address()),
+      from_ss_endpoint(req.get_server_address(), svc_name),
       boost::iequals(req.get_protocol_name(), "https")
         ? authentication::used_cleartext::no
         : authentication::used_cleartext::yes, // If HTTPS then not cleartext
       authentication::used_mfa::no,
       from_ss_endpoint(req.get_client_address()),
+      service{.name = svc_name},
       severity_id::informational,
       r.is_authenticated() ? authentication::status_id::success
                            : authentication::status_id::failure,
@@ -267,16 +274,18 @@ authentication make_authentication_event(
 authentication make_authentication_failure_event(
   ss::httpd::const_req req,
   const security::credential_user& r,
+  const ss::sstring& svc_name,
   const ss::sstring& reason) {
     return {
       authentication::activity_id::logon,
       authentication::auth_protocol_id::unknown,
-      from_ss_endpoint(req.get_server_address()),
+      from_ss_endpoint(req.get_server_address(), svc_name),
       boost::iequals(req.get_protocol_name(), "https")
         ? authentication::used_cleartext::no
         : authentication::used_cleartext::yes, // If HTTPS then not cleartext
       authentication::used_mfa::no,
       from_ss_endpoint(req.get_client_address()),
+      service{.name = svc_name},
       severity_id::informational,
       authentication::status_id::failure,
       reason,
