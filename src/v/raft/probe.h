@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -84,9 +84,7 @@ private:
     uint64_t _full_heartbeat_requests = 0;
     uint64_t _lw_heartbeat_requests = 0;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 } // namespace raft
