@@ -18,22 +18,25 @@ simple_key_offset_map::simple_key_offset_map(size_t max_keys)
       _memory_tracker))
   , _max_keys(max_keys) {}
 
-bool simple_key_offset_map::put(const compaction_key& key, model::offset o) {
+seastar::future<bool>
+simple_key_offset_map::put(const compaction_key& key, model::offset o) {
     if (_map.size() >= _max_keys) {
-        return false;
+        return seastar::make_ready_future<bool>(false);
     }
     _map[key] = std::max(o, _map[key]);
     _max_offset = std::max(_max_offset, o);
-    return true;
+    return seastar::make_ready_future<bool>(true);
 }
 
-std::optional<model::offset>
+seastar::future<std::optional<model::offset>>
 simple_key_offset_map::get(const compaction_key& key) const {
     auto iter = _map.find(key);
     if (iter == _map.end()) {
-        return std::nullopt;
+        return seastar::make_ready_future<std::optional<model::offset>>(
+          std::nullopt);
     }
-    return iter->second;
+    return seastar::make_ready_future<std::optional<model::offset>>(
+      iter->second);
 }
 
 model::offset simple_key_offset_map::max_offset() const { return _max_offset; }

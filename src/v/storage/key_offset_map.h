@@ -10,7 +10,8 @@
 
 #include "storage/compacted_index.h"
 #include "utils/tracking_allocator.h"
-#include "vlog.h"
+
+#include <seastar/core/future.hh>
 
 #include <absl/container/btree_map.h>
 
@@ -33,12 +34,13 @@ public:
      * the new mapping with override the existing mapping provided that \p
      * offset is larger than the existing offset associated with the key.
      */
-    virtual bool put(const compaction_key& key, model::offset offset) = 0;
+    virtual seastar::future<bool>
+    put(const compaction_key& key, model::offset offset) = 0;
 
     /**
      * Return the offset for the given \p key.
      */
-    virtual std::optional<model::offset>
+    virtual seastar::future<std::optional<model::offset>>
     get(const compaction_key& key) const = 0;
 
     /**
@@ -60,9 +62,11 @@ public:
      */
     explicit simple_key_offset_map(size_t max_keys = default_key_limit);
 
-    bool put(const compaction_key& key, model::offset offset) override;
+    seastar::future<bool>
+    put(const compaction_key& key, model::offset offset) override;
 
-    std::optional<model::offset> get(const compaction_key& key) const override;
+    seastar::future<std::optional<model::offset>>
+    get(const compaction_key& key) const override;
 
     model::offset max_offset() const override;
 
