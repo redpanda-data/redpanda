@@ -182,11 +182,11 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
           [shard](controller_backend::delta_metadata& m) {
               return backend_operation{
                 .source_shard = shard,
-                .p_as = std::move(m.delta.new_assignment),
-                .type = m.delta.type,
+                .p_as = std::move(m.delta.new_assignment()),
+                .type = m.delta.type(),
                 .current_retry = m.retries,
                 .last_operation_result = m.last_error,
-                .revision_of_operation = model::revision_id(m.delta.offset),
+                .revision_of_operation = model::revision_id(m.delta.offset()),
               };
           });
     }

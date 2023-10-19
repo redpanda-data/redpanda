@@ -36,7 +36,7 @@ class topic_table;
 class plugin_frontend;
 class plugin_table;
 class plugin_backend;
-struct topic_table_delta;
+class topic_table_delta;
 class topic_table_partition_generator;
 class cloud_storage_size_reducer;
 class members_manager;

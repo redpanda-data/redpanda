@@ -276,22 +276,24 @@ topic_table_delta::topic_table_delta(
   partition_operation_type tp,
   std::optional<std::vector<model::broker_shard>> previous,
   std::optional<replicas_revision_map> replica_revisions)
-  : ntp(std::move(ntp))
-  , new_assignment(std::move(new_assignment))
-  , offset(o)
-  , type(tp)
-  , previous_replica_set(std::move(previous))
-  , replica_revisions(std::move(replica_revisions)) {}
+  : _ntp(std::move(ntp))
+  , _new_assignment(std::move(new_assignment))
+  , _offset(o)
+  , _type(tp)
+  , _previous_replica_set(std::move(previous))
+  , _replica_revisions(std::move(replica_revisions)) {}
 
 model::revision_id
 topic_table_delta::get_replica_revision(model::node_id replica) const {
     vassert(
-      replica_revisions, "ntp {}: replica_revisions map must be present", ntp);
-    auto rev_it = replica_revisions->find(replica);
+      _replica_revisions,
+      "ntp {}: replica_revisions map must be present",
+      _ntp);
+    auto rev_it = _replica_revisions->find(replica);
     vassert(
-      rev_it != replica_revisions->end(),
+      rev_it != _replica_revisions->end(),
       "ntp {}: node {} must be present in the replica_revisions map",
-      ntp,
+      _ntp,
       replica);
     return rev_it->second;
 }
@@ -479,12 +481,12 @@ std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
       o,
       "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
       "previous_replica_set: {}, replica_revisions: {}}}",
-      d.type,
-      d.ntp,
-      d.offset,
-      d.new_assignment,
-      d.previous_replica_set,
-      d.replica_revisions);
+      d._type,
+      d._ntp,
+      d._offset,
+      d._new_assignment,
+      d._previous_replica_set,
+      d._replica_revisions);
 
     return o;
 }

@@ -2325,7 +2325,8 @@ enum class partition_operation_type {
 };
 std::ostream& operator<<(std::ostream&, const partition_operation_type&);
 // delta propagated to backend
-struct topic_table_delta {
+class topic_table_delta {
+public:
     topic_table_delta(
       model::ntp,
       cluster::partition_assignment,
@@ -2334,22 +2335,33 @@ struct topic_table_delta {
       std::optional<std::vector<model::broker_shard>> previous = std::nullopt,
       std::optional<replicas_revision_map> = std::nullopt);
 
-    model::ntp ntp;
-    cluster::partition_assignment new_assignment;
-    model::offset offset;
-    partition_operation_type type;
-    std::optional<std::vector<model::broker_shard>> previous_replica_set;
-    std::optional<replicas_revision_map> replica_revisions;
-
     model::topic_namespace_view tp_ns() const {
-        return model::topic_namespace_view(ntp);
+        return model::topic_namespace_view(_ntp);
     }
 
     bool is_reconfiguration_operation() const {
-        return type == partition_operation_type::update
-               || type == partition_operation_type::force_update
-               || type == partition_operation_type::cancel_update
-               || type == partition_operation_type::force_cancel_update;
+        return _type == partition_operation_type::update
+               || _type == partition_operation_type::force_update
+               || _type == partition_operation_type::cancel_update
+               || _type == partition_operation_type::force_cancel_update;
+    }
+
+    const model::ntp& ntp() const { return _ntp; }
+
+    const cluster::partition_assignment& new_assignment() const {
+        return _new_assignment;
+    }
+    model::offset offset() const { return _offset; }
+
+    partition_operation_type type() const { return _type; }
+
+    const std::optional<std::vector<model::broker_shard>>&
+    previous_replica_set() const {
+        return _previous_replica_set;
+    }
+
+    const std::optional<replicas_revision_map>& replica_revisions() const {
+        return _replica_revisions;
     }
 
     /// Preconditions: delta is of type that has replica_revisions and the node
@@ -2357,6 +2369,14 @@ struct topic_table_delta {
     model::revision_id get_replica_revision(model::node_id) const;
 
     friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
+
+private:
+    model::ntp _ntp;
+    cluster::partition_assignment _new_assignment;
+    model::offset _offset;
+    partition_operation_type _type;
+    std::optional<std::vector<model::broker_shard>> _previous_replica_set;
+    std::optional<replicas_revision_map> _replica_revisions;
 };
 
 struct create_acls_cmd_data
