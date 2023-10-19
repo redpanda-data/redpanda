@@ -10,8 +10,8 @@
 
 #include "cloud_storage_clients/client_probe.h"
 
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_types.hh>
@@ -220,8 +220,7 @@ void client_probe::setup_public_metrics(
       raw_labels.end(),
       std::back_inserter(labels),
       [](const raw_label& rl) {
-          return sm::label(ssx::metrics::make_namespaced_label(rl.key))(
-            rl.value);
+          return sm::label(metrics::make_namespaced_label(rl.key))(rl.value);
       });
 
     _public_metrics.add_group(

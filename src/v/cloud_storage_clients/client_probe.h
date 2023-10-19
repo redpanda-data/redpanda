@@ -15,9 +15,9 @@
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/types.h"
 #include "http/probe.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "net/types.h"
-#include "ssx/metrics.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -114,10 +114,8 @@ private:
     hist_t _lease_duration;
     /// Current utilization of the client pool
     uint64_t _pool_utilization;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace cloud_storage_clients
