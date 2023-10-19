@@ -26,6 +26,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
+func norm(header string) string { return strings.TrimSpace(strings.ToUpper(header)) }
+
 // CheckExitCloudAdmin exits if the profile has FromCloud=true and no
 // ALLOW_RPK_CLOUD_ADMIN override.
 func CheckExitCloudAdmin(p *config.RpkProfile) {
@@ -44,19 +46,61 @@ func Confirm(msg string, args ...interface{}) (bool, error) {
 	}, &confirmation)
 }
 
-// Header prints a header section with a given name and executes a callback
-// function (fn).
-// If 'b' is false, nothing is printed.
-// If 'withSection' is true, the section name is printed before executing 'fn'.
-func Header(name string, b, withSection bool, fn func()) {
-	if !b {
+// Sections is a helper to print separate sections out output.
+type Sections struct {
+	m          map[string]struct{}
+	skipHeader bool
+}
+
+// NewMaybeHeaderSections returns a Sections that only includes the headers if
+// there is more than one header.
+func NewMaybeHeaderSections(headers ...string) *Sections {
+	s := NewSections(headers...)
+	s.skipHeader = len(s.m) <= 1
+	return s
+}
+
+// NewSections returns a Sections that always prints headers.
+func NewSections(headers ...string) *Sections {
+	s := &Sections{
+		m: make(map[string]struct{}),
+	}
+	for _, h := range headers {
+		s.m[norm(h)] = struct{}{}
+	}
+	return s
+}
+
+// ConditionalSectionHeaders is a helper to return section headers given a
+// condition -- this is meant to be used as a helper with boolean flags.
+func ConditionalSectionHeaders(m map[string]bool) []string {
+	var s []string
+	for k, v := range m {
+		if v {
+			s = append(s, k)
+		}
+	}
+	return s
+}
+
+// Add calls fn for the given header. If the header does not exist, this
+// is a no-op.
+//
+// A header cannot be added twice. Newlines are added between headers,
+// a newline is not printed after the last header has been added.
+func (s *Sections) Add(header string, fn func()) {
+	header = norm(header)
+	if _, ok := s.m[header]; !ok {
 		return
 	}
-	if withSection {
-		Section(name)
-		defer fmt.Println()
+	if !s.skipHeader {
+		Section(header)
 	}
 	fn()
+	if len(s.m) > 1 {
+		fmt.Println()
+	}
+	delete(s.m, header)
 }
 
 // Pick prompts the user to pick one of many options, returning the selected
@@ -177,15 +221,8 @@ func args2strings(args []interface{}) []string {
 
 // Section prints header in uppercase, followed by a line of =.
 func Section(header string) {
-	fmt.Println(strings.ToUpper(header))
+	fmt.Println(norm(header))
 	fmt.Println(strings.Repeat("=", len(header)))
-}
-
-// SectionFn prints header in uppercase, followed by a line of = as long as the
-// header, and then calls fn.
-func SectionFn(header string, fn func()) {
-	Section(header)
-	fn()
 }
 
 // TabWriter writes tab delimited output.
@@ -204,7 +241,7 @@ func NewTable(headers ...string) *TabWriter {
 func NewTableTo(w io.Writer, headers ...string) *TabWriter {
 	var iheaders []interface{}
 	for _, header := range headers {
-		iheaders = append(iheaders, strings.ToUpper(header))
+		iheaders = append(iheaders, norm(header))
 	}
 	t := NewTabWriterTo(w)
 	if len(iheaders) > 0 {
@@ -265,7 +302,7 @@ func (t *TabWriter) PrintStructFields(s interface{}) {
 // PrintColumn is the same as Print, but prints header uppercased as the first
 // argument.
 func (t *TabWriter) PrintColumn(header string, args ...interface{}) {
-	header = strings.ToUpper(header)
+	header = norm(header)
 	t.Print(append([]interface{}{header}, args...)...)
 }
 

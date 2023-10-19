@@ -63,13 +63,6 @@ partitions section. By default, the summary and configs sections are printed.
 			if all {
 				summary, configs, partitions = true, true, true
 			}
-			var sections int
-			for _, b := range []bool{summary, configs, partitions} {
-				if b {
-					sections++
-				}
-			}
-			withSection := sections > 1
 
 			var t kmsg.MetadataResponseTopic
 			{
@@ -86,7 +79,21 @@ partitions section. By default, the summary and configs sections are printed.
 				t = resp.Topics[0]
 			}
 
-			out.Header("SUMMARY", summary, withSection, func() {
+			const (
+				secSummary = "summary"
+				secConfigs = "configs"
+				secPart    = "partitions"
+			)
+
+			sections := out.NewMaybeHeaderSections(
+				out.ConditionalSectionHeaders(map[string]bool{
+					secSummary: summary,
+					secConfigs: configs,
+					secPart:    partitions,
+				})...,
+			)
+
+			sections.Add(secSummary, func() {
 				tw := out.NewTabWriter()
 				defer tw.Flush()
 				tw.PrintColumn("NAME", *t.Topic)
@@ -103,7 +110,7 @@ partitions section. By default, the summary and configs sections are printed.
 				}
 			})
 
-			out.Header("CONFIGS", configs, withSection, func() {
+			sections.Add(secConfigs, func() {
 				req := kmsg.NewPtrDescribeConfigsRequest()
 				reqResource := kmsg.NewDescribeConfigsRequestResource()
 				reqResource.ResourceType = kmsg.ConfigResourceTypeTopic
@@ -132,14 +139,7 @@ partitions section. By default, the summary and configs sections are printed.
 				}
 			})
 
-			// Everything below here is related to partitions: we
-			// list start, stable, and end offsets, and then we
-			// format everything.
-			if !partitions {
-				return
-			}
-
-			out.Header("PARTITIONS", partitions, withSection, func() {
+			sections.Add(secPart, func() {
 				offsets := listStartEndOffsets(cl, topic, len(t.Partitions), stable)
 
 				tw := out.NewTable(describePartitionsHeaders(
