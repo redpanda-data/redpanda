@@ -891,7 +891,16 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
                       [&octx] { return octx.should_stop_fetch(); },
                       [&octx] { return fetch_topic_partitions(octx); });
                 })
-                .then([&octx] { return std::move(octx).send_response(); });
+                .then([&octx] {
+                    // NOTE: Audit call doesn't happen until _after_ the fetch
+                    // is done. This was done for the sake of simplicity and
+                    // because fetch doesn't alter the state of the broker
+                    if (!octx.rctx.audit()) {
+                        return std::move(octx).send_error_response(
+                          error_code::broker_not_available);
+                    }
+                    return std::move(octx).send_response();
+                });
           });
       });
 }
@@ -1078,6 +1087,19 @@ ss::future<response_ptr> op_context::send_response() && {
     }
 
     return rctx.respond(std::move(final_response));
+}
+
+ss::future<response_ptr> op_context::send_error_response(error_code ec) && {
+    fetch_response resp;
+    resp.data.error_code = ec;
+
+    if (session_ctx.is_sessionless()) {
+        resp.data.session_id = invalid_fetch_session_id;
+    } else {
+        resp.data.session_id = session_ctx.session()->id();
+    }
+
+    return rctx.respond(std::move(resp));
 }
 
 op_context::response_placeholder::response_placeholder(

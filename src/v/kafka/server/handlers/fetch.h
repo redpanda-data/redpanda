@@ -120,6 +120,8 @@ struct op_context {
 
     ss::future<response_ptr> send_response() &&;
 
+    ss::future<response_ptr> send_error_response(error_code ec) &&;
+
     response_iterator response_begin() { return iteration_order.begin(); }
 
     response_iterator response_end() { return iteration_order.end(); }
