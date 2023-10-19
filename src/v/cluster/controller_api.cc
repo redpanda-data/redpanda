@@ -186,7 +186,7 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
                 .type = m.delta.type(),
                 .current_retry = m.retries,
                 .last_operation_result = m.last_error,
-                .revision_of_operation = model::revision_id(m.delta.offset()),
+                .revision_of_operation = m.delta.revision(),
               };
           });
     }

@@ -272,13 +272,13 @@ storage::ntp_config topic_configuration::make_ntp_config(
 topic_table_delta::topic_table_delta(
   model::ntp ntp,
   cluster::partition_assignment new_assignment,
-  model::offset o,
+  model::revision_id revision,
   partition_operation_type tp,
   std::optional<std::vector<model::broker_shard>> previous,
   std::optional<replicas_revision_map> replica_revisions)
   : _ntp(std::move(ntp))
   , _new_assignment(std::move(new_assignment))
-  , _offset(o)
+  , _revision(revision)
   , _type(tp)
   , _previous_replica_set(std::move(previous))
   , _replica_revisions(std::move(replica_revisions)) {}
@@ -479,11 +479,11 @@ std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
 std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
     fmt::print(
       o,
-      "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
+      "{{type: {}, ntp: {}, revision: {}, new_assignment: {}, "
       "previous_replica_set: {}, replica_revisions: {}}}",
       d._type,
       d._ntp,
-      d._offset,
+      d._revision,
       d._new_assignment,
       d._previous_replica_set,
       d._replica_revisions);

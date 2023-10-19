@@ -892,7 +892,7 @@ controller_backend::reconcile_ntp(const model::ntp& ntp, deltas_t& deltas) {
                   it->retries,
                   ec.message(),
                   it->delta.type(),
-                  it->delta.offset(),
+                  it->delta.revision(),
                   it->delta.new_assignment(),
                   it->delta.previous_replica_set());
 
@@ -913,7 +913,7 @@ controller_backend::reconcile_ntp(const model::ntp& ntp, deltas_t& deltas) {
               it->delta.ntp(),
               it->retries,
               it->delta.type(),
-              it->delta.offset(),
+              it->delta.revision(),
               it->delta.new_assignment(),
               it->delta.previous_replica_set());
         } catch (ss::gate_closed_exception const&) {
@@ -980,7 +980,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
       delta.ntp(),
       metadata.retries,
       delta);
-    const model::revision_id cmd_rev(delta.offset()());
+
     // new partitions
 
     // only create partitions for this backend
@@ -995,7 +995,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           delta.ntp(),
           delta.new_assignment().group,
           delta.get_replica_revision(_self),
-          cmd_rev,
+          delta.revision(),
           create_brokers_set(
             delta.new_assignment().replicas, _members_table.local()));
     case op_t::add_non_replicable:
@@ -1007,7 +1007,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           "be handled by coproc::reconciliation_backend");
     case op_t::remove:
         return delete_partition(
-                 delta.ntp(), cmd_rev, partition_removal_mode::global)
+                 delta.ntp(), delta.revision(), partition_removal_mode::global)
           .then([] { return std::error_code(errc::success); });
     case op_t::reset:
         vassert(
@@ -1025,7 +1025,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           delta.new_assignment(),
           *delta.previous_replica_set(),
           *delta.replica_revisions(),
-          cmd_rev);
+          delta.revision());
     case op_t::update:
     case op_t::force_update:
     case op_t::force_cancel_update:
@@ -1047,10 +1047,10 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           delta.new_assignment(),
           *delta.previous_replica_set(),
           *delta.replica_revisions(),
-          cmd_rev);
+          delta.revision());
     case op_t::finish_update:
         return finish_partition_update(
-                 delta.ntp(), delta.new_assignment(), cmd_rev)
+                 delta.ntp(), delta.new_assignment(), delta.revision())
           .then([] { return std::error_code(errc::success); });
     case op_t::update_properties:
         return process_partition_properties_update(

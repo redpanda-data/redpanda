@@ -2330,7 +2330,7 @@ public:
     topic_table_delta(
       model::ntp,
       cluster::partition_assignment,
-      model::offset,
+      model::revision_id,
       partition_operation_type,
       std::optional<std::vector<model::broker_shard>> previous = std::nullopt,
       std::optional<replicas_revision_map> = std::nullopt);
@@ -2351,7 +2351,7 @@ public:
     const cluster::partition_assignment& new_assignment() const {
         return _new_assignment;
     }
-    model::offset offset() const { return _offset; }
+    model::revision_id revision() const { return _revision; }
 
     partition_operation_type type() const { return _type; }
 
@@ -2373,7 +2373,7 @@ public:
 private:
     model::ntp _ntp;
     cluster::partition_assignment _new_assignment;
-    model::offset _offset;
+    model::revision_id _revision;
     partition_operation_type _type;
     std::optional<std::vector<model::broker_shard>> _previous_replica_set;
     std::optional<replicas_revision_map> _replica_revisions;

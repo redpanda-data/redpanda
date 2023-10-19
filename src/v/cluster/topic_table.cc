@@ -86,7 +86,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         _pending_deltas.emplace_back(
           std::move(ntp),
           pas,
-          offset,
+          model::revision_id(offset),
           partition_operation_type::add,
           std::nullopt,
           std::move(replica_revisions));
@@ -126,7 +126,7 @@ topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
             auto ntp = model::ntp(nt.ns, nt.tp, p_as.id);
             _updates_in_progress.erase(ntp);
             _pending_deltas.emplace_back(
-              std::move(ntp), p_as, offset, delete_type);
+              std::move(ntp), p_as, model::revision_id(offset), delete_type);
         }
 
         _topics.erase(tp);
@@ -229,7 +229,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
         _pending_deltas.emplace_back(
           std::move(ntp),
           std::move(p_as),
-          offset,
+          model::revision_id(offset),
           partition_operation_type::add,
           std::nullopt,
           std::move(replicas_revisions));
@@ -343,7 +343,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     _pending_deltas.emplace_back(
       std::move(cmd.key),
       std::move(delta_assignment),
-      o,
+      model::revision_id(o),
       partition_operation_type::finish_update);
 
     notify_waiters();
@@ -426,7 +426,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         current_assignment_it->group,
         current_assignment_it->id,
         in_progress_it->second.get_previous_replicas()},
-      o,
+      model::revision_id(o),
       cmd.value.force ? partition_operation_type::force_cancel_update
                       : partition_operation_type::cancel_update,
       std::move(replicas),
@@ -504,7 +504,7 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
     _pending_deltas.emplace_back(
       ntp,
       std::move(delta_assignment),
-      o,
+      model::revision_id(o),
       partition_operation_type::finish_update);
 
     notify_waiters();
@@ -765,7 +765,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
         _pending_deltas.emplace_back(
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
           p_as,
-          o,
+          model::revision_id(o),
           partition_operation_type::update_properties);
     }
 
@@ -863,7 +863,7 @@ public:
         _pending_deltas.emplace_back(
           std::move(ntp),
           std::move(p_as),
-          model::offset{cmd_rev},
+          cmd_rev,
           partition_operation_type::remove);
         // partition_assignment object is supposed to be removed from the
         // assignments set by the caller
@@ -952,7 +952,7 @@ public:
             _pending_deltas.emplace_back(
               ntp,
               cur_assignment,
-              model::offset{partition.last_update_finished_revision},
+              partition.last_update_finished_revision,
               partition_operation_type::add,
               std::nullopt,
               partition.replicas_revisions);
@@ -965,7 +965,7 @@ public:
                 _pending_deltas.emplace_back(
                   ntp,
                   cur_assignment,
-                  model::offset{partition.last_update_finished_revision},
+                  partition.last_update_finished_revision,
                   partition_operation_type::reset,
                   prev_assignment->replicas,
                   partition.replicas_revisions);
@@ -975,7 +975,7 @@ public:
                 _pending_deltas.emplace_back(
                   ntp,
                   cur_assignment,
-                  model::offset{partition.last_update_finished_revision},
+                  partition.last_update_finished_revision,
                   partition_operation_type::update_properties);
             }
         }
@@ -1049,7 +1049,7 @@ public:
                         partition.group,
                         p_id,
                         update_it->second.target_assignment),
-                      model::offset{update.revision},
+                      update.revision,
                       op_type,
                       partition.replicas,
                       update_replicas_revisions(
@@ -1062,7 +1062,7 @@ public:
                     _pending_deltas.emplace_back(
                       ntp,
                       cur_assignment,
-                      model::offset{update.last_cmd_revision},
+                      update.last_cmd_revision,
                       op,
                       update.target_assignment,
                       partition.replicas_revisions);
@@ -1543,7 +1543,7 @@ void topic_table::change_partition_replicas(
     _pending_deltas.emplace_back(
       std::move(ntp),
       current_assignment,
-      o,
+      model::revision_id(o),
       move_type,
       std::move(previous_assignment),
       update_replicas_revisions(

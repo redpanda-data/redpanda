@@ -41,7 +41,7 @@ meta_t make_delta(
     return meta_t(cluster::topic_table::delta(
       test_ntp,
       make_assignment(std::move(replicas)),
-      model::offset(o),
+      model::revision_id(o),
       type,
       previous.empty() ? std::nullopt : std::make_optional(previous)));
 };
@@ -100,7 +100,7 @@ SEASTAR_THREAD_TEST_CASE(test_simple_bootstrap) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 1);
     BOOST_REQUIRE_EQUAL(
-      deltas.back().delta.offset(), add_current.delta.offset());
+      deltas.back().delta.revision(), add_current.delta.revision());
 
     // add topic on different node, should not include this
     deltas_t d_2{add_different};
@@ -120,7 +120,7 @@ SEASTAR_THREAD_TEST_CASE(test_simple_bootstrap) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 1);
     BOOST_REQUIRE_EQUAL(
-      deltas.back().delta.offset(), recreate_current.delta.offset());
+      deltas.back().delta.revision(), recreate_current.delta.revision());
 
     // recreate topic on different node
     deltas_t d_5{add_current, delete_current, recreate_different};
@@ -144,13 +144,13 @@ SEASTAR_THREAD_TEST_CASE(update_including_current_node) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 3);
     BOOST_REQUIRE_EQUAL(
-      deltas.begin()->delta.offset(), recreate_current.delta.offset());
+      deltas.begin()->delta.revision(), recreate_current.delta.revision());
     BOOST_REQUIRE_EQUAL(
-      std::next(deltas.begin())->delta.offset(),
-      update_with_current.delta.offset());
+      std::next(deltas.begin())->delta.revision(),
+      update_with_current.delta.revision());
     BOOST_REQUIRE_EQUAL(
-      std::next(deltas.begin(), 2)->delta.offset(),
-      finish_update_with_current.delta.offset());
+      std::next(deltas.begin(), 2)->delta.revision(),
+      finish_update_with_current.delta.revision());
 }
 
 SEASTAR_THREAD_TEST_CASE(update_excluding_current_node) {
@@ -200,10 +200,10 @@ SEASTAR_THREAD_TEST_CASE(move_back_to_current_node) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 2);
     BOOST_REQUIRE_EQUAL(
-      deltas.begin()->delta.offset(), update_with_current_2.delta.offset());
+      deltas.begin()->delta.revision(), update_with_current_2.delta.revision());
     BOOST_REQUIRE_EQUAL(
-      std::next(deltas.begin())->delta.offset(),
-      finish_update_with_current_2.delta.offset());
+      std::next(deltas.begin())->delta.revision(),
+      finish_update_with_current_2.delta.revision());
 }
 
 SEASTAR_THREAD_TEST_CASE(move_back_to_current_node_not_finished) {
@@ -223,5 +223,5 @@ SEASTAR_THREAD_TEST_CASE(move_back_to_current_node_not_finished) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 1);
     BOOST_REQUIRE_EQUAL(
-      deltas.begin()->delta.offset(), update_with_current_2.delta.offset());
+      deltas.begin()->delta.revision(), update_with_current_2.delta.revision());
 }
