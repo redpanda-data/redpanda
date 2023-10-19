@@ -11,10 +11,10 @@
 
 #include "cluster/partition.h"
 #include "config/configuration.h"
+#include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -52,9 +52,6 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
 
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),
@@ -70,41 +67,35 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           [this] { return _partition.is_elected_leader() ? 1 : 0; },
           sm::description(
             "Flag indicating if this partition instance is a leader"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "start_offset",
           [this] { return _partition.raft_start_offset(); },
           sm::description("start offset"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "last_stable_offset",
           [this] { return _partition.last_stable_offset(); },
           sm::description("Last stable offset"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "committed_offset",
           [this] { return _partition.committed_offset(); },
           sm::description("Partition commited offset. i.e. safely persisted on "
                           "majority of replicas"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "end_offset",
           [this] { return _partition.dirty_offset(); },
           sm::description(
             "Last offset stored by current partition on this node"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "high_watermark",
           [this] { return _partition.high_watermark(); },
           sm::description(
             "Partion high watermark i.e. highest consumable offset"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "leader_id",
           [this] {
@@ -112,40 +103,34 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
                 model::node_id(-1));
           },
           sm::description("Id of current partition leader"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "under_replicated_replicas",
           [this] {
               return _partition.raft()->get_under_replicated().value_or(0);
           },
           sm::description("Number of under replicated replicas"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "records_produced",
           [this] { return _records_produced; },
           sm::description("Total number of records produced"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "records_fetched",
           [this] { return _records_fetched; },
           sm::description("Total number of records fetched"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_total_bytes(
           "bytes_produced_total",
           [this] { return _bytes_produced; },
           sm::description("Total number of bytes produced"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_total_bytes(
           "bytes_fetched_total",
           [this] { return _bytes_fetched; },
           sm::description("Total number of bytes fetched"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_total_bytes(
           "cloud_storage_segments_metadata_bytes",
           [this] {
@@ -157,9 +142,10 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           },
           sm::description("Current number of bytes consumed by remote segments "
                           "managed for this partition"),
-          labels)
-          .aggregate(aggregate_labels),
-      });
+          labels),
+      },
+      {},
+      {sm::shard_label});
 
     if (
       config::shard_local_cfg().enable_schema_id_validation()
@@ -185,10 +171,10 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
         return;
     }
 
-    auto request_label = ssx::metrics::make_namespaced_label("request");
-    auto ns_label = ssx::metrics::make_namespaced_label("namespace");
-    auto topic_label = ssx::metrics::make_namespaced_label("topic");
-    auto partition_label = ssx::metrics::make_namespaced_label("partition");
+    auto request_label = metrics::make_namespaced_label("request");
+    auto ns_label = metrics::make_namespaced_label("namespace");
+    auto topic_label = metrics::make_namespaced_label("topic");
+    auto partition_label = metrics::make_namespaced_label("partition");
 
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),
