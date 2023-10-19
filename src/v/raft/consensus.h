@@ -14,6 +14,7 @@
 #include "features/feature_table.h"
 #include "hashing/crc32c.h"
 #include "likely.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/append_entries_buffer.h"
@@ -36,7 +37,6 @@
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
@@ -834,8 +834,7 @@ private:
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
     size_t _heartbeat_disconnect_failures;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
     ss::abort_source _as;
     storage::api& _storage;
     std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
