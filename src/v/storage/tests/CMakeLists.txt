@@ -143,3 +143,13 @@ rp_test(
   LABELS storage
   ARGS "-- -c 1"
 )
+
+rp_test(
+  FIXTURE_TEST
+  GTEST
+  BINARY_NAME gtest_storage_e2e
+  SOURCES compaction_e2e_test.cc
+  LIBRARIES  v::application v::features v::gtest_main v::kafka_test_utils
+  LABELS storage
+  ARGS "-- -c 1"
+)
