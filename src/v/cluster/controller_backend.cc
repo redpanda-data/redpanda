@@ -436,7 +436,7 @@ bool is_interrupting_operation(
         return current.type == partition_operation_type::update
                && candidate.new_assignment.replicas
                     == current.previous_replica_set;
-    case partition_operation_type::force_abort_update:
+    case partition_operation_type::force_cancel_update:
         return (
                 current.type == partition_operation_type::update
 
@@ -519,7 +519,7 @@ ss::future<std::error_code> revert_configuration_update(
 
 bool is_finishing_operation(
   const topic_table::delta& operation, const topic_table::delta& candidate) {
-    if (candidate.type != partition_operation_type::update_finished) {
+    if (candidate.type != partition_operation_type::finish_update) {
         return false;
     }
 
@@ -528,7 +528,7 @@ bool is_finishing_operation(
     }
     if (
       operation.type == partition_operation_type::cancel_update
-      || operation.type == partition_operation_type::force_abort_update) {
+      || operation.type == partition_operation_type::force_cancel_update) {
         return operation.previous_replica_set
                == candidate.new_assignment.replicas;
     }
@@ -563,13 +563,13 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
         switch (delta.type) {
         case op_t::add:
         case op_t::add_non_replicable:
-        case op_t::update_finished:
+        case op_t::finish_update:
         case op_t::reset:
             return has_local_replicas(self, delta.new_assignment.replicas);
         case op_t::update:
         case op_t::force_update:
         case op_t::cancel_update:
-        case op_t::force_abort_update:
+        case op_t::force_cancel_update:
             vassert(
               delta.previous_replica_set,
               "previous replica set must be present for delta {}",
@@ -871,7 +871,7 @@ controller_backend::reconcile_ntp(const model::ntp& ntp, deltas_t& deltas) {
                                    == partition_operation_type::cancel_update
                               || it->delta.type
                                    == partition_operation_type::
-                                     force_abort_update) {
+                                     force_cancel_update) {
                                 break;
                             } else {
                                 vassert(
@@ -1027,7 +1027,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           cmd_rev);
     case op_t::update:
     case op_t::force_update:
-    case op_t::force_abort_update:
+    case op_t::force_cancel_update:
     case op_t::cancel_update:
         vassert(
           metadata.delta.previous_replica_set,
@@ -1047,7 +1047,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           *delta.previous_replica_set,
           *delta.replica_revisions,
           cmd_rev);
-    case op_t::update_finished:
+    case op_t::finish_update:
         return finish_partition_update(delta.ntp, delta.new_assignment, cmd_rev)
           .then([] { return std::error_code(errc::success); });
     case op_t::update_properties:
@@ -1339,7 +1339,7 @@ bool controller_backend::can_finish_update(
   const std::vector<model::broker_shard>& current_replicas) {
     if (
       update_type == partition_operation_type::force_update
-      || update_type == partition_operation_type::force_abort_update) {
+      || update_type == partition_operation_type::force_cancel_update) {
         // Wait for the leader to be elected in the new replica set.
         return current_leader == _self;
     }
@@ -1496,7 +1496,7 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
     case partition_operation_type::cancel_update:
         co_return co_await cancel_replica_set_update(
           ntp, replica_set, replica_revisions, previous_replica_set, revision);
-    case partition_operation_type::force_abort_update:
+    case partition_operation_type::force_cancel_update:
         co_return co_await force_abort_replica_set_update(
           ntp, replica_set, replica_revisions, previous_replica_set, revision);
     default:

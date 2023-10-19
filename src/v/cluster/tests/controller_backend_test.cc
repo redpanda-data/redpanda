@@ -66,7 +66,7 @@ meta_t update_with_current = make_delta(
   {make_bs(9, 0), make_bs(10, 0)});
 
 meta_t finish_update_with_current = make_delta(
-  7, op_t::update_finished, {make_bs(0, 0), make_bs(10, 0)});
+  7, op_t::finish_update, {make_bs(0, 0), make_bs(10, 0)});
 
 meta_t update_without_current = make_delta(
   8,
@@ -75,19 +75,19 @@ meta_t update_without_current = make_delta(
   {make_bs(9, 0), make_bs(10, 0)});
 
 meta_t finish_update_without_current = make_delta(
-  9, op_t::update_finished, {make_bs(1, 0), make_bs(10, 0)});
+  9, op_t::finish_update, {make_bs(1, 0), make_bs(10, 0)});
 
 meta_t update_without_current_2 = make_delta(
   10, op_t::update, {make_bs(10, 0)}, {make_bs(9, 0)});
 
 meta_t finish_update_without_current_2 = make_delta(
-  11, op_t::update_finished, {make_bs(10, 0)});
+  11, op_t::finish_update, {make_bs(10, 0)});
 
 meta_t update_with_current_2 = make_delta(
   12, op_t::update, {make_bs(0, 0)}, {make_bs(1, 0)});
 
 meta_t finish_update_with_current_2 = make_delta(
-  13, op_t::update_finished, {make_bs(0, 0)});
+  13, op_t::finish_update, {make_bs(0, 0)});
 
 meta_t final_delete = make_delta(
   100, op_t::remove, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});

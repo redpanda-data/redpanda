@@ -2312,15 +2312,15 @@ using replicas_revision_map
 
 enum class partition_operation_type {
     add,
-    del,
+    remove,
     update,
     force_update,
-    update_finished,
+    finish_update,
     update_properties,
     add_non_replicable,
     del_non_replicable,
     cancel_update,
-    force_abort_update,
+    force_cancel_update,
     reset,
 };
 std::ostream& operator<<(std::ostream&, const partition_operation_type&);
@@ -2349,7 +2349,7 @@ struct topic_table_delta {
         return type == partition_operation_type::update
                || type == partition_operation_type::force_update
                || type == partition_operation_type::cancel_update
-               || type == partition_operation_type::force_abort_update;
+               || type == partition_operation_type::force_cancel_update;
     }
 
     /// Preconditions: delta is of type that has replica_revisions and the node

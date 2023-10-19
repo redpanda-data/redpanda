@@ -458,7 +458,7 @@ std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
         return o << "update";
     case partition_operation_type::force_update:
         return o << "force_update";
-    case partition_operation_type::update_finished:
+    case partition_operation_type::finish_update:
         return o << "update_finished";
     case partition_operation_type::update_properties:
         return o << "update_properties";
@@ -468,7 +468,7 @@ std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
         return o << "del_non_replicable_deletion";
     case partition_operation_type::cancel_update:
         return o << "cancel_update";
-    case partition_operation_type::force_abort_update:
+    case partition_operation_type::force_cancel_update:
         return o << "force_abort_update";
     }
     __builtin_unreachable();

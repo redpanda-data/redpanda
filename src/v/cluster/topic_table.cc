@@ -344,7 +344,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
       std::move(cmd.key),
       std::move(delta_assignment),
       o,
-      partition_operation_type::update_finished);
+      partition_operation_type::finish_update);
 
     notify_waiters();
 
@@ -427,7 +427,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         current_assignment_it->id,
         in_progress_it->second.get_previous_replicas()},
       o,
-      cmd.value.force ? partition_operation_type::force_abort_update
+      cmd.value.force ? partition_operation_type::force_cancel_update
                       : partition_operation_type::cancel_update,
       std::move(replicas),
       // this replica revisions map reflects the state right before the update
@@ -505,7 +505,7 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
       ntp,
       std::move(delta_assignment),
       o,
-      partition_operation_type::update_finished);
+      partition_operation_type::finish_update);
 
     notify_waiters();
 
@@ -1077,7 +1077,7 @@ public:
                     break;
                 case reconfiguration_state::force_cancelled:
                     add_cancel_delta(
-                      partition_operation_type::force_abort_update);
+                      partition_operation_type::force_cancel_update);
                     break;
                 }
             }
