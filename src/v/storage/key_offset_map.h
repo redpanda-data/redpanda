@@ -10,56 +10,65 @@
 
 #include "storage/compacted_index.h"
 #include "utils/tracking_allocator.h"
-#include "vlog.h"
+
+#include <seastar/core/future.hh>
 
 #include <absl/container/btree_map.h>
 
 namespace storage {
 
-// Map containing the latest offsets of each key.
+/**
+ * Map containing the latest offsets of each key.
+ */
 class key_offset_map {
 public:
-    // Returns true if the put was successful.
-    virtual bool put(compaction_key key, model::offset o) = 0;
+    key_offset_map() = default;
+    key_offset_map(const key_offset_map&) = delete;
+    key_offset_map& operator=(const key_offset_map&) = delete;
+    key_offset_map(key_offset_map&&) noexcept = default;
+    key_offset_map& operator=(key_offset_map&&) noexcept = default;
+    virtual ~key_offset_map() = default;
 
-    // Returns the latest offset for the given key put into the map.
-    virtual std::optional<model::offset>
+    /**
+     * Associate \p offset with the given \p key. If \p key already exists then
+     * the new mapping with override the existing mapping provided that \p
+     * offset is larger than the existing offset associated with the key.
+     */
+    virtual seastar::future<bool>
+    put(const compaction_key& key, model::offset offset) = 0;
+
+    /**
+     * Return the offset for the given \p key.
+     */
+    virtual seastar::future<std::optional<model::offset>>
     get(const compaction_key& key) const = 0;
 
-    // Returns the highest offset indexed by this map.
+    /**
+     * Return the highest inserted offset.
+     */
     virtual model::offset max_offset() const = 0;
 };
 
-class simple_key_offset_map : public key_offset_map {
+/**
+ * A key_offset_map that stores the entire key.
+ */
+class simple_key_offset_map final : public key_offset_map {
 public:
     static constexpr size_t default_key_limit = 1000;
 
-    simple_key_offset_map(size_t max_keys = default_key_limit)
-      : _memory_tracker(
-        ss::make_shared<util::mem_tracker>("simple_key_offset_map"))
-      , _map(util::mem_tracked::
-               map<absl::btree_map, compaction_key, model::offset>(
-                 _memory_tracker))
-      , _max_keys(max_keys) {}
+    /**
+     * Construct a new simple_key_offset_map with \p max_key maximum number of
+     * keys.
+     */
+    explicit simple_key_offset_map(size_t max_keys = default_key_limit);
 
-    bool put(compaction_key key, model::offset o) override {
-        if (_map.size() >= _max_keys) {
-            return false;
-        }
-        _map[key] = std::max(o, _map[key]);
-        _max_offset = std::max(_max_offset, o);
-        return true;
-    }
+    seastar::future<bool>
+    put(const compaction_key& key, model::offset offset) override;
 
-    std::optional<model::offset> get(const compaction_key& key) const override {
-        auto iter = _map.find(key);
-        if (iter == _map.end()) {
-            return std::nullopt;
-        }
-        return iter->second;
-    }
+    seastar::future<std::optional<model::offset>>
+    get(const compaction_key& key) const override;
 
-    model::offset max_offset() const override { return _max_offset; }
+    model::offset max_offset() const override;
 
 private:
     ss::shared_ptr<util::mem_tracker> _memory_tracker;

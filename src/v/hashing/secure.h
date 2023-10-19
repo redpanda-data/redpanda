@@ -107,6 +107,7 @@ class hash {
     static_assert(DigestSize > 0, "digest cannot be zero length");
 
 public:
+    static constexpr auto digest_size = DigestSize;
     using digest_type = std::array<char, DigestSize>;
 
     // silence clang-tidy about _handle being uninitialized

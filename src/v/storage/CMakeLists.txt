@@ -38,6 +38,7 @@ v_cc_library(
     file_sanitizer_types.cc
     api.cc
     node.cc
+    key_offset_map.cc
   DEPS
     Seastar::seastar
     v::bytes
