@@ -11,12 +11,17 @@
 
 #pragma once
 
+#include "config/configuration.h"
+#include "metrics/metrics_registry.h"
 #include "ssx/sformat.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/sstring.hh>
+
+#include <unordered_set>
 
 namespace ssx::metrics {
 
@@ -26,28 +31,26 @@ const auto public_metrics_handle = ss::metrics::default_handle() + 1;
 
 // A thin wrapper around ss::metrics::metric_groups that isn't moveable.
 //
-// The standard usage pattern for metric_groups is as a member of a class, then
-// various additional members on that class are the metrics. As part of
-// registration, a lambda captures [this], which means that the holder class of
-// the metric_groups should not be moved without updating the metrics.
+// The standard usage pattern for metric_groups_base (and children) is as a
+// member of a class, then various additional members on that class are the
+// metrics. As part of registration, a lambda captures [this], which means that
+// the holder class of the metric_groups_base should not be moved without
+// updating the metrics.
 //
 // Instead of explicitly supporting moves (they're easy to forget when the
 // compiler generates them for you) we mark this class as not moveable.
-class metric_groups {
+class metric_groups_base {
 public:
-    metric_groups() = default;
-    explicit metric_groups(int handle)
+    explicit metric_groups_base(int handle)
       : _underlying(handle) {}
-    metric_groups(const metric_groups&) = delete;
-    metric_groups& operator=(const metric_groups&) = delete;
-    metric_groups(metric_groups&&) = delete;
-    metric_groups& operator=(metric_groups&&) = delete;
-    ~metric_groups() = default;
+    metric_groups_base(const metric_groups_base&) = delete;
+    metric_groups_base& operator=(const metric_groups_base&) = delete;
+    metric_groups_base(metric_groups_base&&) = delete;
+    metric_groups_base& operator=(metric_groups_base&&) = delete;
+    ~metric_groups_base() = default;
 
-    static metric_groups make_internal() { return {}; }
-    static metric_groups make_public() {
-        return metric_groups(public_metrics_handle);
-    }
+    // Clear all metric registrations.
+    void clear() { _underlying.clear(); }
 
     // Add metrics belonging to the same group.
     //
@@ -71,7 +74,7 @@ public:
     //     description("my gauge description")
     //   ),
     //  });
-    metric_groups& add_group(
+    metric_groups_base& add_group(
       const ss::metrics::group_name_type& name,
       const std::initializer_list<ss::metrics::metric_definition>& l) {
         _underlying.add_group(name, l);
@@ -81,18 +84,126 @@ public:
     // Add metrics belonging to the same group.
     //
     // This is the same method as above but using an explicit vector.
-    metric_groups& add_group(
+    metric_groups_base& add_group(
       const ss::metrics::group_name_type& name,
       const std::vector<ss::metrics::metric_definition>& l) {
         _underlying.add_group(name, l);
         return *this;
     }
 
-    // Clear all metric registrations.
-    void clear() { _underlying.clear(); }
-
-private:
+protected:
     ss::metrics::metric_groups _underlying;
+};
+
+/**
+ * @brief Used to (de-)register "internal" metrics on the /metrics admin
+ * endpoint.
+ *
+ * Internal metrics are our default metrics group for all metrics. See also
+ * public_metric_groups.
+ *
+ * To reduce cardinality internal metrics are supposed to obey the
+ * `aggregate_metrics` config flag in scenarios where the full cardinality would
+ * otherwise create thousands of metrics series. The `add_group` overload from
+ * this class simplifies the aggregate_metrics usage.
+ */
+class internal_metric_groups : public metric_groups_base {
+public:
+    internal_metric_groups()
+      : metric_groups_base(ss::metrics::default_handle()) {}
+
+    using metric_groups_base::add_group;
+
+    /**
+     * @brief Extension to metric_groups_base::add_group. When registering
+     * metrics with label aggregation prefer to use this method. It will make
+     * the metrics automatically obey the current state of the
+     * `aggregate_metrics` config flag
+     *
+     * @param name The name of the metric group.
+     * @param metrics The metrics to register.
+     * @param non_aggregated_labels The aggregation labels to use when
+     * `aggregate_metrics=false`.
+     * @param aggregated_labels The aggregation labels to use when
+     * `aggregate_metrics=true`.
+     *
+     * The specified labels will be used for all the specified metrics in
+     * the group. Specifying individual labels for each metric is not
+     * allowed (use multiple `add_group` calls for that).
+     *
+     * Example:
+     *
+     * metrics.add_group(
+     *  prometheus_sanitize::metrics_name("foo"),
+     *  {
+     *    sm::make_counter(...),
+     *    sm::make_counter(...),
+     *    sm::make_histogram(...),
+     *  },
+     *  {},
+     *  {seastar::metrics::shard_label});
+     *
+     */
+    internal_metric_groups& add_group(
+      const ss::metrics::group_name_type& name,
+      std::vector<ss::metrics::impl::metric_definition_impl> metrics,
+      const std::vector<ss::metrics::label>& non_aggregated_labels,
+      const std::vector<ss::metrics::label>& aggregated_labels) {
+        /*
+         * We use the `metrics_registry` under the hood such that the
+         * aggregation labels will be automatically updated when the config flag
+         * changes.
+         *
+         * Implementation note: Taking `impl::metric_definition_impl` isn't
+         * great but that's a consequence of how the seastar metrics API works.
+         * `ss::metrics::metric_definition` is just a thin wrapper around
+         * `impl::metric_definition_impl` which doesn't expose any of the
+         * members (why?). Further it actually takes a
+         * `impl::metric_definition_impl` as its main constructor argument which
+         * is returned by all the `make_` functions. Hence we are forced to use
+         * the `impl` type here as well as we need access to the metric names.
+         */
+
+        std::vector<ss::metrics::metric_definition> transformed;
+        transformed.reserve(metrics.size());
+        for (auto& metric : metrics) {
+            vassert(
+              metric.aggregate_labels.empty(),
+              "Must not use individual aggregation labels when using the "
+              "aggregation label per group overload");
+
+            metric.aggregate(
+              config::shard_local_cfg().aggregate_metrics()
+                ? aggregated_labels
+                : non_aggregated_labels);
+            transformed.emplace_back(metric);
+
+            metrics_registry::local().register_metric(
+              name, metric.name, non_aggregated_labels, aggregated_labels);
+        }
+        _underlying.add_group(name, transformed);
+        return *this;
+    }
+};
+
+/**
+ * @brief Used to (de-)register "public" metrics on the /public_metrics admin
+ * API endpoint
+ *
+ * In contrast to internal metrics public metrics are supposed to have a many
+ * orders of magnitude smaller cardinality. Hence, you should always
+ * unconditionally aggregate as many labels as possible (e.g.: shard).
+ *
+ * Public metrics are also thought to be for customer consumption (in cloudv2
+ * customers do have access to public metrics). Consider whether a metric needs
+ * to be on public metrics at all. If it is of no use for the customer then
+ * probably that metric should only go on internal metrics (for example an
+ * internal buffer consumption metric).
+ */
+class public_metric_groups : public metric_groups_base {
+public:
+    public_metric_groups()
+      : metric_groups_base(public_metrics_handle) {}
 };
 
 // Convert an HDR histogram to a seastar histogram for reporting.
@@ -114,8 +225,8 @@ inline ss::metrics::label make_namespaced_label(const seastar::sstring& name) {
     return ss::metrics::label(ssx::sformat("{}_{}", label_namespace, name));
 }
 
-struct public_metrics_group {
-    metric_groups groups = metric_groups::make_public();
+struct public_metrics_group_service {
+    public_metric_groups groups;
     ss::future<> stop() {
         groups.clear();
         return ss::make_ready_future<>();
@@ -130,8 +241,8 @@ struct public_metrics_group {
  * and /public_metrics (aka "public") metrics endpoint.
  */
 class all_metrics_groups {
-    metric_groups _public = metric_groups::make_public();
-    metric_groups _internal = metric_groups::make_internal();
+    public_metric_groups _public;
+    internal_metric_groups _internal;
 
 public:
     /**

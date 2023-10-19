@@ -50,6 +50,7 @@ v_cc_library(
     v::cluster
     v::finjector
     v::kafka
+    v::metrics
     v::migrations
     v::pandaproxy_rest
     v::pandaproxy_schema_registry
