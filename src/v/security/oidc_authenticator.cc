@@ -137,4 +137,54 @@ authenticator::authenticate(std::string_view bearer_token) {
     return _impl->authenticate(bearer_token);
 }
 
+std::ostream& operator<<(std::ostream& os, sasl_authenticator::state const s) {
+    using state = sasl_authenticator::state;
+    switch (s) {
+    case state::init:
+        return os << "init";
+    case state::complete:
+        return os << "complete";
+    case state::failed:
+        return os << "failed";
+    }
+}
+
+sasl_authenticator::sasl_authenticator(service& service)
+  : _authenticator{service} {}
+
+sasl_authenticator::~sasl_authenticator() = default;
+
+ss::future<result<bytes>> sasl_authenticator::authenticate(bytes auth_bytes) {
+    if (_state != state::init) {
+        vlog(seclog.warn, "invalid oidc state: {}", _state);
+        co_return security::errc::invalid_oidc_state;
+    }
+
+    auto auth_str = std::string_view(
+      reinterpret_cast<char*>(auth_bytes.data()), auth_bytes.size());
+
+    constexpr std::string_view sasl_header{"n,,\1auth=Bearer "};
+    if (!auth_str.starts_with(sasl_header)) {
+        vlog(seclog.warn, "invalid sasl_header");
+        co_return security::errc::invalid_credentials;
+    }
+    auth_str = auth_str.substr(sasl_header.length());
+    if (!auth_str.ends_with("\1\1")) {
+        vlog(seclog.warn, "invalid sasl_header");
+        co_return security::errc::invalid_credentials;
+    }
+    auth_str = auth_str.substr(0, auth_str.length() - 2);
+
+    auto principal_res = _authenticator.authenticate(auth_str);
+    if (principal_res.has_error()) {
+        vlog(seclog.warn, "{}", principal_res.error());
+        co_return security::errc::invalid_credentials;
+    }
+
+    _principal = principal_res.assume_value();
+    _state = state::complete;
+
+    co_return bytes{};
+}
+
 } // namespace security::oidc

@@ -50,4 +50,34 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
+class sasl_authenticator final : public sasl_mechanism {
+public:
+    enum class state { init = 0, complete, failed };
+    static constexpr const char* name = "OAUTHBEARER";
+
+    explicit sasl_authenticator(oidc::service& service);
+    sasl_authenticator(sasl_authenticator&&) = default;
+    sasl_authenticator(sasl_authenticator const&) = delete;
+    sasl_authenticator& operator=(sasl_authenticator&&) = delete;
+    sasl_authenticator& operator=(sasl_authenticator const&) = delete;
+    ~sasl_authenticator() override;
+
+    ss::future<result<bytes>> authenticate(bytes) override;
+
+    bool complete() const override { return _state == state::complete; }
+    bool failed() const override { return _state == state::failed; }
+
+    const security::acl_principal& principal() const override {
+        return _principal;
+    }
+
+private:
+    friend std::ostream&
+    operator<<(std::ostream& os, sasl_authenticator::state const s);
+
+    authenticator _authenticator;
+    security::acl_principal _principal;
+    state _state{state::init};
+};
+
 } // namespace security::oidc
