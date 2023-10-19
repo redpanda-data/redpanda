@@ -29,6 +29,7 @@
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/server.h"
+#include "metrics/aggregate_metrics_watcher.h"
 #include "net/conn_quota.h"
 #include "net/fwd.h"
 #include "pandaproxy/fwd.h"
@@ -302,6 +303,8 @@ private:
 
     // run these first on destruction
     deferred_actions _deferred;
+
+    ss::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
 
     ss::sharded<ss::abort_source> _as;
 };

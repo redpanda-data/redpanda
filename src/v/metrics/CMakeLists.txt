@@ -4,6 +4,7 @@ v_cc_library(
   HDRS
     "metrics.h"
     "metrics_registry.h"
+    "aggregate_metrics_watcher.h"
   SRCS
     metrics.cc
     metrics_registry.cc

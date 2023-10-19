@@ -2297,6 +2297,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         _transform_service.invoke_on_all(&transform::service::start).get();
     }
 
+    construct_service(_aggregate_metrics_watcher).get();
+
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
     _monitor_unsafe_log_flag->start().get();
 
