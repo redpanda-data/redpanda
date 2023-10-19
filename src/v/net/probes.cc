@@ -8,10 +8,10 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "metrics/metrics.h"
 #include "net/client_probe.h"
 #include "net/server_probe.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
@@ -21,11 +21,8 @@
 
 namespace net {
 void server_probe::setup_metrics(
-  ssx::metrics::metric_groups& mgs, std::string_view proto) {
+  metrics::internal_metric_groups& mgs, std::string_view proto) {
     namespace sm = ss::metrics;
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
     mgs.add_group(
       prometheus_sanitize::metrics_name(ss::sstring{proto}),
       {
@@ -33,99 +30,88 @@ void server_probe::setup_metrics(
           "active_connections",
           [this] { return _connections; },
           sm::description(
-            ssx::sformat("{}: Currently active connections", proto)))
-          .aggregate(aggregate_labels),
+            ssx::sformat("{}: Currently active connections", proto))),
         sm::make_counter(
           "connects",
           [this] { return _connects; },
           sm::description(
-            ssx::sformat("{}: Number of accepted connections", proto)))
-          .aggregate(aggregate_labels),
+            ssx::sformat("{}: Number of accepted connections", proto))),
         sm::make_counter(
           "connection_close_errors",
           [this] { return _connection_close_error; },
           sm::description(ssx::sformat(
-            "{}: Number of errors when shutting down the connection", proto)))
-          .aggregate(aggregate_labels),
+            "{}: Number of errors when shutting down the connection", proto))),
         sm::make_counter(
           "connections_rejected",
           [this] { return _connections_rejected; },
           sm::description(ssx::sformat(
             "{}: Number of connections rejected for hitting connection limits",
-            proto)))
-          .aggregate(aggregate_labels),
+            proto))),
         sm::make_counter(
           "requests_completed",
           [this] { return _requests_completed; },
           sm::description(
-            ssx::sformat("{}: Number of successful requests", proto)))
-          .aggregate(aggregate_labels),
+            ssx::sformat("{}: Number of successful requests", proto))),
         sm::make_total_bytes(
           "received_bytes",
           [this] { return _in_bytes; },
           sm::description(ssx::sformat(
             "{}: Number of bytes received from the clients in valid requests",
-            proto)))
-          .aggregate(aggregate_labels),
+            proto))),
         sm::make_total_bytes(
           "sent_bytes",
           [this] { return _out_bytes; },
           sm::description(
-            ssx::sformat("{}: Number of bytes sent to clients", proto)))
-          .aggregate(aggregate_labels),
+            ssx::sformat("{}: Number of bytes sent to clients", proto))),
         sm::make_counter(
           "method_not_found_errors",
           [this] { return _method_not_found_errors; },
           sm::description(ssx::sformat(
-            "{}: Number of requests with not available RPC method", proto)))
-          .aggregate(aggregate_labels),
+            "{}: Number of requests with not available RPC method", proto))),
         sm::make_counter(
           "corrupted_headers",
           [this] { return _corrupted_headers; },
           sm::description(ssx::sformat(
-            "{}: Number of requests with corrupted headers", proto)))
-          .aggregate(aggregate_labels),
+            "{}: Number of requests with corrupted headers", proto))),
         sm::make_counter(
           "service_errors",
           [this] { return _service_errors; },
-          sm::description(ssx::sformat("{}: Number of service errors", proto)))
-          .aggregate(aggregate_labels),
+          sm::description(ssx::sformat("{}: Number of service errors", proto))),
         sm::make_counter(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
           sm::description(ssx::sformat(
-            "{}: Number of requests blocked in memory backpressure", proto)))
-          .aggregate(aggregate_labels),
+            "{}: Number of requests blocked in memory backpressure", proto))),
         sm::make_gauge(
           "requests_pending",
           [this] { return _requests_received - _requests_completed; },
-          sm::description(
-            ssx::sformat("{}: Number of requests pending in the queue", proto)))
-          .aggregate(aggregate_labels),
+          sm::description(ssx::sformat(
+            "{}: Number of requests pending in the queue", proto))),
         sm::make_counter(
           "connections_wait_rate",
           [this] { return _connections_wait_rate; },
           sm::description(ssx::sformat(
-            "{}: Number of connections are blocked by connection rate", proto)))
-          .aggregate(aggregate_labels),
+            "{}: Number of connections are blocked by connection rate",
+            proto))),
         sm::make_counter(
           "produce_bad_create_time",
           [this] { return _produce_bad_create_time; },
           sm::description("number of produce requests with timestamps too far "
-                          "in the future or in the past"))
-          .aggregate(aggregate_labels),
-      });
+                          "in the future or in the past")),
+      },
+      {},
+      {sm::shard_label});
 }
 
 void server_probe::setup_public_metrics(
-  ssx::metrics::metric_groups& mgs, std::string_view proto) {
+  metrics::public_metric_groups& mgs, std::string_view proto) {
     namespace sm = ss::metrics;
 
     if (proto.ends_with("_rpc")) {
         proto.remove_suffix(4);
     }
 
-    auto server_label = ssx::metrics::make_namespaced_label("server");
+    auto server_label = metrics::make_namespaced_label("server");
 
     mgs.add_group(
       "rpc",
@@ -167,7 +153,7 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
 }
 
 void client_probe::setup_metrics(
-  ssx::metrics::metric_groups& mgs,
+  metrics::internal_metric_groups& mgs,
   const std::optional<rpc::connection_cache_label>& label,
   const std::optional<model::node_id>& node_id,
   const net::unresolved_address& target_addr) {

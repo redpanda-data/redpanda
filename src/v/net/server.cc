@@ -11,10 +11,10 @@
 
 #include "config/configuration.h"
 #include "likely.h"
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
-#include "ssx/metrics.h"
 #include "ssx/semaphore.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
@@ -352,7 +352,7 @@ void server::setup_public_metrics() {
         server_name.remove_suffix(4);
     }
 
-    auto server_label = ssx::metrics::make_namespaced_label("server");
+    auto server_label = metrics::make_namespaced_label("server");
 
     _public_metrics.add_group(
       prometheus_sanitize::metrics_name("rpc:request"),

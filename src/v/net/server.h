@@ -12,11 +12,11 @@
 #pragma once
 
 #include "config/property.h"
+#include "metrics/metrics.h"
 #include "net/conn_quota.h"
 #include "net/connection.h"
 #include "net/connection_rate.h"
 #include "net/types.h"
-#include "ssx/metrics.h"
 #include "ssx/semaphore.h"
 #include "utils/log_hist.h"
 
@@ -175,10 +175,8 @@ private:
     ss::gate _conn_gate;
     hist_t _hist;
     std::unique_ptr<server_probe> _probe;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
     std::optional<connection_rate<>> _connection_rates;
