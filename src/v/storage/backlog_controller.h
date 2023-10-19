@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #pragma once
+#include "metrics/metrics.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
@@ -126,7 +126,6 @@ private:
     int _min_shares;
     int _max_shares;
     ss::gate _gate;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 } // namespace storage

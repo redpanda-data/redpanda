@@ -1,7 +1,7 @@
 #pragma once
 
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -25,7 +25,6 @@ private:
     uint64_t _cache_misses{0};
     uint64_t _cache_hits{0};
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 } // namespace storage
