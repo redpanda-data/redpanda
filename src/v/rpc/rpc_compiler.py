@@ -25,6 +25,7 @@ RPC_TEMPLATE = """
 #pragma once
 
 #include "config/configuration.h"
+#include "metrics/metrics.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "rpc/parse_utils.h"
@@ -36,7 +37,6 @@ RPC_TEMPLATE = """
 #include "outcome.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 // extra includes
 {%- for include in includes %}
@@ -89,18 +89,14 @@ public:
             std::vector<ss::metrics::label_instance> labels{
               service_label("{{service_name}}"),
               method_label("{{method.name}}")};
-                auto aggregate_labels
-                  = config::shard_local_cfg().aggregate_metrics()
-                      ? std::vector<sm::label>{sm::shard_label, method_label}
-                      : std::vector<sm::label>{};
             _metrics.add_group(
               prometheus_sanitize::metrics_name("internal_rpc"),
               {sm::make_histogram(
                 "latency",
                 [this] { return _methods[{{loop.index-1}}].probes.latency_hist().internal_histogram_logform(); },
                 sm::description("Internal RPC service latency"),
-                labels)
-                .aggregate(aggregate_labels)});
+                labels),
+                }, {}, {sm::shard_label, method_label});
         }
       {%- endfor %}
     }
@@ -148,7 +144,7 @@ private:
       }){{ "," if not loop.last }}
       {%- endfor %}
     {% raw %}}}{% endraw %};
-    ssx::metrics::metric_groups _metrics;
+    metrics::internal_metric_groups _metrics;
 };
 
 using {{service_name}}_service = {{service_name}}_service_base<::rpc::default_message_codec>;
