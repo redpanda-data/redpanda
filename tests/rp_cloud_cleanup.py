@@ -1,9 +1,10 @@
 import json
 import logging
+import re
 import os
 import sys
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
 from rptest.services.redpanda_cloud import CloudClusterConfig
 
@@ -30,6 +31,11 @@ class CloudCleanup():
     delete_peerings = False
     delete_networks = False
     delete_namespaces = True
+
+    ns_regex = re.compile("^(?P<prefix>rp-ducktape-ns-)"
+                          "(?P<date>\d{4}-\d{2}-\d{2}-\d{6}-)?"
+                          "(?P<id>[a-zA-Z0-9]{8})$")
+    ns_date_fmt = "%Y-%m-%d-%H%M%S"
 
     def __init__(self, log_level=logging.INFO):
         self.log = setupLogger(log_level)
@@ -152,6 +158,18 @@ class CloudCleanup():
                     for net in networks:
                         net_queue += [self.cloudv2.network_endpoint(net['id'])]
             else:
+                # Detect date
+                ns_match = self.ns_regex.match(ns['name'])
+                date = ns_match['date']
+                if date is not None:
+                    # Fugure out which time was 36h back
+                    back_36h = datetime.now() - timedelta(hours=36)
+                    ns_creation_date = datetime.strptime(
+                        date, self.ns_date_fmt)
+                    if ns_creation_date > back_36h:
+                        self.log.info(f"# Skipped '{ns['name']}', "
+                                      "36h delay not passed")
+                        continue
                 # Add delete handle to the list
                 ns_queue += [self.cloudv2.namespace_endpoint(uuid=ns['id'])]
                 # #### debug purposes while in draft mode
