@@ -81,8 +81,7 @@ get_node_metadata(const members_table& members, model::node_id id) {
 }
 
 std::vector<model::broker> create_brokers_set(
-  const std::vector<model::broker_shard>& replicas,
-  cluster::members_table& members) {
+  const replicas_t& replicas, cluster::members_table& members) {
     std::vector<model::broker> brokers;
     brokers.reserve(replicas.size());
     std::transform(
@@ -96,7 +95,7 @@ std::vector<model::broker> create_brokers_set(
 }
 
 std::vector<raft::broker_revision> create_brokers_set(
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const absl::flat_hash_map<model::node_id, model::revision_id>&
     replica_revisions,
   cluster::members_table& members) {
@@ -123,7 +122,7 @@ std::vector<raft::broker_revision> create_brokers_set(
 }
 
 static std::vector<raft::vnode> create_vnode_set(
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const absl::flat_hash_map<model::node_id, model::revision_id>&
     replica_revisions) {
     std::vector<raft::vnode> nodes;
@@ -146,8 +145,8 @@ static std::vector<raft::vnode> create_vnode_set(
     return nodes;
 }
 
-std::optional<ss::shard_id> get_target_shard(
-  model::node_id id, const std::vector<model::broker_shard>& replicas) {
+std::optional<ss::shard_id>
+get_target_shard(model::node_id id, const replicas_t& replicas) {
     auto it = std::find_if(
       replicas.cbegin(), replicas.cend(), [id](const model::broker_shard& bs) {
           return bs.node_id == id;
@@ -158,14 +157,12 @@ std::optional<ss::shard_id> get_target_shard(
 }
 
 bool are_assignments_equal(
-  const partition_assignment& requested,
-  const std::vector<model::broker_shard>& previous) {
+  const partition_assignment& requested, const replicas_t& previous) {
     return are_replica_sets_equal(requested.replicas, previous);
 }
 
 bool are_configuration_replicas_up_to_date(
-  const raft::group_configuration& cfg,
-  const std::vector<model::broker_shard>& requested_replicas) {
+  const raft::group_configuration& cfg, const replicas_t& requested_replicas) {
     absl::flat_hash_set<model::node_id> all_ids;
     all_ids.reserve(requested_replicas.size());
 
@@ -189,7 +186,7 @@ bool are_configuration_replicas_up_to_date(
 std::error_code check_configuration_update(
   model::node_id self,
   const ss::lw_shared_ptr<partition>& partition,
-  const std::vector<model::broker_shard>& bs,
+  const replicas_t& bs,
   model::revision_id change_revision) {
     auto group_cfg = partition->group_configuration();
     vlog(
@@ -467,7 +464,7 @@ find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
 
 ss::future<std::error_code> do_update_replica_set(
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id rev,
   ss::lw_shared_ptr<partition> p,
@@ -494,7 +491,7 @@ ss::future<std::error_code> do_update_replica_set(
 }
 ss::future<std::error_code> revert_configuration_update(
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id rev,
   ss::lw_shared_ptr<partition> p,
@@ -653,7 +650,7 @@ ss::future<> controller_backend::fetch_deltas() {
 
 ss::future<std::error_code> controller_backend::force_replica_set_update(
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id rev) {
     if (!has_local_replicas(_self, replicas)) {
@@ -1094,7 +1091,7 @@ controller_backend::process_partition_reconfiguration(
   partition_operation_type type,
   model::ntp ntp,
   const partition_assignment& target_assignment,
-  const std::vector<model::broker_shard>& previous_replicas,
+  const replicas_t& previous_replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id command_rev) {
     vlog(
@@ -1268,7 +1265,7 @@ controller_backend::process_partition_reconfiguration(
 ss::future<std::error_code> controller_backend::reset_partition(
   model::ntp ntp,
   const partition_assignment& target_assignment,
-  const std::vector<model::broker_shard>& prev_replicas,
+  const replicas_t& prev_replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id cmd_revision) {
     vlog(
@@ -1338,7 +1335,7 @@ bool controller_backend::can_finish_update(
   std::optional<model::node_id> current_leader,
   uint64_t current_retry,
   partition_operation_type update_type,
-  const std::vector<model::broker_shard>& current_replicas) {
+  const replicas_t& current_replicas) {
     if (
       update_type == partition_operation_type::force_update
       || update_type == partition_operation_type::force_cancel_update) {
@@ -1484,23 +1481,31 @@ controller_backend::create_partition_from_remote_shard(
 ss::future<std::error_code> controller_backend::execute_reconfiguration(
   partition_operation_type type,
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replica_set,
+  const replicas_t& target_replicas,
   const replicas_revision_map& replica_revisions,
-  const std::vector<model::broker_shard>& previous_replica_set,
+  const replicas_t& previous_replica_set,
   model::revision_id revision) {
     switch (type) {
     case partition_operation_type::update:
         co_return co_await update_partition_replica_set(
-          ntp, replica_set, replica_revisions, revision);
+          ntp, target_replicas, replica_revisions, revision);
     case partition_operation_type::force_update:
         co_return co_await force_replica_set_update(
-          ntp, replica_set, replica_revisions, revision);
+          ntp, target_replicas, replica_revisions, revision);
     case partition_operation_type::cancel_update:
         co_return co_await cancel_replica_set_update(
-          ntp, replica_set, replica_revisions, previous_replica_set, revision);
+          ntp,
+          target_replicas,
+          replica_revisions,
+          previous_replica_set,
+          revision);
     case partition_operation_type::force_cancel_update:
         co_return co_await force_abort_replica_set_update(
-          ntp, replica_set, replica_revisions, previous_replica_set, revision);
+          ntp,
+          target_replicas,
+          replica_revisions,
+          previous_replica_set,
+          revision);
     default:
         vassert(
           false, "delta of type {} is not partition reconfiguration", type);
@@ -1591,7 +1596,7 @@ template<typename Func>
 ss::future<std::error_code>
 controller_backend::apply_configuration_change_on_leader(
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   model::revision_id rev,
   Func&& func) {
     auto partition = _partition_manager.local().get(ntp);
@@ -1628,9 +1633,9 @@ controller_backend::apply_configuration_change_on_leader(
 
 ss::future<std::error_code> controller_backend::cancel_replica_set_update(
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
-  const std::vector<model::broker_shard>& previous_replicas,
+  const replicas_t& previous_replicas,
   model::revision_id rev) {
     /**
      * Following scenarios can happen in here:
@@ -1725,9 +1730,9 @@ controller_backend::dispatch_revert_cancel_move(model::ntp ntp) {
 
 ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
-  const std::vector<model::broker_shard>& previous_replicas,
+  const replicas_t& previous_replicas,
   model::revision_id rev) {
     /**
      * Force abort configuration change for each of the partition replicas.
@@ -1808,7 +1813,7 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
 
 ss::future<std::error_code> controller_backend::update_partition_replica_set(
   const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
+  const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id rev) {
     /**

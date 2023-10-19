@@ -274,7 +274,7 @@ topic_table_delta::topic_table_delta(
   cluster::partition_assignment new_assignment,
   model::revision_id revision,
   partition_operation_type tp,
-  std::optional<std::vector<model::broker_shard>> previous,
+  std::optional<replicas_t> previous,
   std::optional<replicas_revision_map> replica_revisions)
   : _ntp(std::move(ntp))
   , _new_assignment(std::move(new_assignment))
@@ -2004,8 +2004,7 @@ cluster::partition_assignment
 adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
     auto group = reflection::adl<raft::group_id>{}.from(parser);
     auto id = reflection::adl<model::partition_id>{}.from(parser);
-    auto replicas = reflection::adl<std::vector<model::broker_shard>>{}.from(
-      parser);
+    auto replicas = reflection::adl<cluster::replicas_t>{}.from(parser);
 
     return {group, id, std::move(replicas)};
 }

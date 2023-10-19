@@ -302,16 +302,16 @@ private:
       partition_operation_type,
       model::ntp,
       const partition_assignment& requested_assignment,
-      const std::vector<model::broker_shard>& previous_replica_set,
+      const replicas_t& previous_replica_set,
       const replicas_revision_map&,
       model::revision_id);
 
     ss::future<std::error_code> execute_reconfiguration(
       partition_operation_type,
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       const replicas_revision_map&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       model::revision_id);
 
     ss::future<> finish_partition_update(
@@ -341,37 +341,34 @@ private:
     ss::future<std::error_code> reset_partition(
       model::ntp,
       const partition_assignment& target_assignment,
-      const std::vector<model::broker_shard>& prev_replicas,
+      const replicas_t& prev_replicas,
       const replicas_revision_map&,
       model::revision_id cmd_revision);
     template<typename Func>
     ss::future<std::error_code> apply_configuration_change_on_leader(
-      const model::ntp&,
-      const std::vector<model::broker_shard>&,
-      model::revision_id,
-      Func&& f);
+      const model::ntp&, const replicas_t&, model::revision_id, Func&& f);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       const replicas_revision_map&,
       model::revision_id);
     ss::future<std::error_code> cancel_replica_set_update(
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       const replicas_revision_map&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       model::revision_id);
 
     ss::future<std::error_code> force_abort_replica_set_update(
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       const replicas_revision_map&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       model::revision_id);
 
     ss::future<std::error_code> force_replica_set_update(
       const model::ntp&,
-      const std::vector<model::broker_shard>& /*new replicas*/,
+      const replicas_t& /*new replicas*/,
       const replicas_revision_map&,
       model::revision_id);
 
@@ -399,7 +396,7 @@ private:
       std::optional<model::node_id> current_leader,
       uint64_t current_retry,
       partition_operation_type operation_type,
-      const std::vector<model::broker_shard>& requested_replicas);
+      const replicas_t& requested_replicas);
 
     void housekeeping();
     void setup_metrics();

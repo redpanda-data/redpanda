@@ -267,7 +267,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
 
 static replicas_revision_map update_replicas_revisions(
   replicas_revision_map revisions,
-  const std::vector<model::broker_shard>& new_assignment,
+  const replicas_t& new_assignment,
   model::revision_id update_revision) {
     // remove replicas not present in the new assignment
     for (auto it = revisions.begin(); it != revisions.end();) {
@@ -788,7 +788,7 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
           updates;
 
         for (const auto& p_as : md_item.get_assignments()) {
-            std::vector<model::broker_shard> replicas;
+            replicas_t replicas;
             model::ntp ntp(ns_tp.ns, ns_tp.tp, p_as.id);
             if (auto upd_it = _updates_in_progress.find(ntp);
                 upd_it != _updates_in_progress.end()) {
@@ -1414,7 +1414,7 @@ topic_table::get_initial_revision(const model::ntp& ntp) const {
     return get_initial_revision(model::topic_namespace_view(ntp));
 }
 
-std::optional<std::vector<model::broker_shard>>
+std::optional<replicas_t>
 topic_table::get_previous_replica_set(const model::ntp& ntp) const {
     if (auto it = _updates_in_progress.find(ntp);
         it != _updates_in_progress.end()) {
@@ -1422,7 +1422,7 @@ topic_table::get_previous_replica_set(const model::ntp& ntp) const {
     }
     return std::nullopt;
 }
-std::optional<std::vector<model::broker_shard>>
+std::optional<replicas_t>
 topic_table::get_target_replica_set(const model::ntp& ntp) const {
     if (auto it = _updates_in_progress.find(ntp);
         it != _updates_in_progress.end()) {
@@ -1504,7 +1504,7 @@ std::vector<model::ntp> topic_table::all_updates_in_progress() const {
 
 void topic_table::change_partition_replicas(
   model::ntp ntp,
-  const std::vector<model::broker_shard>& new_assignment,
+  const replicas_t& new_assignment,
   topic_metadata_item& metadata,
   partition_assignment& current_assignment,
   model::offset o,

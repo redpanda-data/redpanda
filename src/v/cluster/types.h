@@ -47,6 +47,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
@@ -61,6 +62,7 @@ using transfer_leadership_reply = raft::transfer_leadership_reply;
 using cluster_version = named_type<int64_t, struct cluster_version_tag>;
 constexpr cluster_version invalid_version = cluster_version{-1};
 
+using replicas_t = std::vector<model::broker_shard>;
 struct allocate_id_request
   : serde::envelope<
       allocate_id_request,
@@ -1350,16 +1352,14 @@ struct partition_assignment
       serde::compat_version<0>> {
     partition_assignment() noexcept = default;
     partition_assignment(
-      raft::group_id group,
-      model::partition_id id,
-      std::vector<model::broker_shard> replicas)
+      raft::group_id group, model::partition_id id, replicas_t replicas)
       : group(group)
       , id(id)
       , replicas(std::move(replicas)) {}
 
     raft::group_id group;
     model::partition_id id;
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
 
     model::partition_metadata create_partition_metadata() const {
         auto p_md = model::partition_metadata(id);
@@ -2199,7 +2199,7 @@ struct finish_partition_update_request
       serde::version<0>,
       serde::compat_version<0>> {
     model::ntp ntp;
-    std::vector<model::broker_shard> new_replica_set;
+    replicas_t new_replica_set;
 
     friend bool operator==(
       const finish_partition_update_request&,
@@ -2332,7 +2332,7 @@ public:
       cluster::partition_assignment,
       model::revision_id,
       partition_operation_type,
-      std::optional<std::vector<model::broker_shard>> previous = std::nullopt,
+      std::optional<replicas_t> previous = std::nullopt,
       std::optional<replicas_revision_map> = std::nullopt);
 
     model::topic_namespace_view tp_ns() const {
@@ -2355,8 +2355,7 @@ public:
 
     partition_operation_type type() const { return _type; }
 
-    const std::optional<std::vector<model::broker_shard>>&
-    previous_replica_set() const {
+    const std::optional<replicas_t>& previous_replica_set() const {
         return _previous_replica_set;
     }
 
@@ -2375,7 +2374,7 @@ private:
     cluster::partition_assignment _new_assignment;
     model::revision_id _revision;
     partition_operation_type _type;
-    std::optional<std::vector<model::broker_shard>> _previous_replica_set;
+    std::optional<replicas_t> _previous_replica_set;
     std::optional<replicas_revision_map> _replica_revisions;
 };
 
@@ -2726,11 +2725,10 @@ struct force_partition_reconfiguration_cmd_data
       serde::version<0>,
       serde::compat_version<0>> {
     force_partition_reconfiguration_cmd_data() noexcept = default;
-    explicit force_partition_reconfiguration_cmd_data(
-      std::vector<model::broker_shard> replicas)
+    explicit force_partition_reconfiguration_cmd_data(replicas_t replicas)
       : replicas(std::move(replicas)) {}
 
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
 
     auto serde_fields() { return std::tie(replicas); }
 
@@ -2750,12 +2748,12 @@ struct move_topic_replicas_data
       serde::compat_version<0>> {
     move_topic_replicas_data() noexcept = default;
     explicit move_topic_replicas_data(
-      model::partition_id partition, std::vector<model::broker_shard> replicas)
+      model::partition_id partition, replicas_t replicas)
       : partition(partition)
       , replicas(std::move(replicas)) {}
 
     model::partition_id partition;
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
 
     auto serde_fields() { return std::tie(partition, replicas); }
 
@@ -4002,8 +4000,8 @@ struct replica_bytes {
 struct partition_reconfiguration_state {
     model::ntp ntp;
     // assignments
-    std::vector<model::broker_shard> previous_assignment;
-    std::vector<model::broker_shard> current_assignment;
+    replicas_t previous_assignment;
+    replicas_t current_assignment;
     // state indicating if reconfiguration was cancelled or requested
     reconfiguration_state state;
     // amount of bytes already transferred to new replicas
@@ -4238,7 +4236,7 @@ struct update_partition_replicas_cmd_data
       serde::version<0>,
       serde::compat_version<0>> {
     model::ntp ntp;
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
     reconfiguration_policy policy;
 
     friend bool operator==(
@@ -4791,7 +4789,7 @@ struct adl<cluster::finish_partition_update_request> {
     }
     cluster::finish_partition_update_request from(iobuf_parser& in) {
         auto ntp = adl<model::ntp>{}.from(in);
-        auto new_replica_set = adl<std::vector<model::broker_shard>>{}.from(in);
+        auto new_replica_set = adl<cluster::replicas_t>{}.from(in);
         return {
           .ntp = std::move(ntp),
           .new_replica_set = std::move(new_replica_set),
