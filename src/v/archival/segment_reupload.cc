@@ -11,6 +11,7 @@
 #include "segment_reupload.h"
 
 #include "cloud_storage/partition_manifest.h"
+#include "config/configuration.h"
 #include "logger.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
@@ -300,7 +301,8 @@ segment_collector::lookup_result segment_collector::find_next_segment(
     }
 
     const auto& segment = *it;
-    auto segment_is_compacted = segment->finished_self_compaction();
+    auto segment_is_compacted
+      = archival_policy::eligible_for_compacted_reupload(*segment);
     auto compacted_segment_expected
       = mode == segment_collector_mode::collect_compacted;
     if (segment_is_compacted == compacted_segment_expected) {

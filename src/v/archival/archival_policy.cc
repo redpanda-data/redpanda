@@ -12,6 +12,7 @@
 
 #include "archival/logger.h"
 #include "archival/segment_reupload.h"
+#include "config/configuration.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_to_filepos.h"
@@ -35,6 +36,14 @@ constexpr size_t compacted_segment_size_multiplier{3};
 namespace archival {
 
 using namespace std::chrono_literals;
+
+bool archival_policy::eligible_for_compacted_reupload(
+  const storage::segment& s) {
+    if (config::shard_local_cfg().log_compaction_use_sliding_window) {
+        return s.finished_windowed_compaction();
+    }
+    return s.finished_self_compaction();
+}
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
     vassert(
@@ -123,7 +132,7 @@ archival_policy::lookup_result archival_policy::find_segment(
     const auto& set = log->segments();
     const auto& ntp_conf = log->config();
     auto it = set.lower_bound(start_offset);
-    if (it == set.end() || (*it)->finished_self_compaction()) {
+    if (it == set.end() || eligible_for_compacted_reupload(**it)) {
         // Skip forward if we hit a gap or compacted segment
         for (auto i = set.begin(); i != set.end(); i++) {
             const auto& sg = *i;

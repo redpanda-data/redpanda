@@ -75,6 +75,8 @@ public:
       const cloud_storage::partition_manifest& manifest,
       ss::lowres_clock::duration segment_lock_duration);
 
+    static bool eligible_for_compacted_reupload(const storage::segment&);
+
 private:
     /// Check if the upload have to be forced due to timeout
     ///
