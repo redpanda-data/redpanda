@@ -486,7 +486,7 @@ void group_manager::handle_topic_delta(
     std::vector<model::topic_partition> tps;
     for (const auto& delta : deltas) {
         if (
-          delta.type == cluster::topic_table_delta::op_type::del
+          delta.type == cluster::partition_operation_type::remove
           && delta.ntp.ns == model::kafka_namespace) {
             tps.emplace_back(delta.ntp.tp);
         }

@@ -28,14 +28,14 @@ make_assignment(std::vector<model::broker_shard> replicas) {
       raft::group_id(1), model::partition_id(1), std::move(replicas)};
 }
 
-using op_t = cluster::topic_table::delta::op_type;
+using op_t = cluster::partition_operation_type;
 using delta_t = cluster::topic_table::delta;
 using meta_t = cluster::controller_backend::delta_metadata;
 using deltas_t = std::deque<meta_t>;
 
 meta_t make_delta(
   int64_t o,
-  cluster::topic_table::delta::op_type type,
+  op_t type,
   std::vector<model::broker_shard> replicas,
   std::vector<model::broker_shard> previous = {}) {
     return meta_t(cluster::topic_table::delta(
@@ -53,7 +53,7 @@ meta_t add_different = make_delta(
   2, op_t::add, {make_bs(3, 0), make_bs(2, 1), make_bs(1, 0)});
 
 meta_t delete_current = make_delta(
-  3, op_t::del, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
+  3, op_t::remove, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
 
 meta_t recreate_different = make_delta(4, op_t::add, {make_bs(3, 0)});
 
@@ -90,7 +90,7 @@ meta_t finish_update_with_current_2 = make_delta(
   13, op_t::update_finished, {make_bs(0, 0)});
 
 meta_t final_delete = make_delta(
-  100, op_t::del, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
+  100, op_t::remove, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
 
 SEASTAR_THREAD_TEST_CASE(test_simple_bootstrap) {
     // add topic on current node

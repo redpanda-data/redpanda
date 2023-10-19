@@ -429,20 +429,20 @@ bool is_interrupting_operation(
      *
      */
     switch (candidate.type) {
-    case topic_table::delta::op_type::del:
-    case topic_table::delta::op_type::reset:
+    case partition_operation_type::remove:
+    case partition_operation_type::reset:
         return true;
-    case topic_table::delta::op_type::cancel_update:
-        return current.type == topic_table::delta::op_type::update
+    case partition_operation_type::cancel_update:
+        return current.type == partition_operation_type::update
                && candidate.new_assignment.replicas
                     == current.previous_replica_set;
-    case topic_table::delta::op_type::force_abort_update:
+    case partition_operation_type::force_abort_update:
         return (
-                current.type == topic_table::delta::op_type::update
+                current.type == partition_operation_type::update
 
                 && candidate.new_assignment.replicas
                      == current.previous_replica_set) || (
-                current.type == topic_table::delta::op_type::cancel_update
+                current.type == partition_operation_type::cancel_update
                 && candidate.new_assignment.replicas
                      == current.new_assignment.replicas);
     default:
@@ -519,7 +519,7 @@ ss::future<std::error_code> revert_configuration_update(
 
 bool is_finishing_operation(
   const topic_table::delta& operation, const topic_table::delta& candidate) {
-    if (candidate.type != topic_table_delta::op_type::update_finished) {
+    if (candidate.type != partition_operation_type::update_finished) {
         return false;
     }
 
@@ -527,8 +527,8 @@ bool is_finishing_operation(
         return true;
     }
     if (
-      operation.type == topic_table_delta::op_type::cancel_update
-      || operation.type == topic_table_delta::op_type::force_abort_update) {
+      operation.type == partition_operation_type::cancel_update
+      || operation.type == partition_operation_type::force_abort_update) {
         return operation.previous_replica_set
                == candidate.new_assignment.replicas;
     }
@@ -556,7 +556,7 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
         return result_delta;
     }
 
-    using op_t = topic_table::delta::op_type;
+    using op_t = partition_operation_type;
     auto it = deltas.rbegin();
 
     auto related_to_cur_shard = [self](const topic_table::delta& delta) {
@@ -578,7 +578,7 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
                    || has_local_replicas(self, *delta.previous_replica_set);
         case op_t::update_properties:
             return true;
-        case op_t::del:
+        case op_t::remove:
         case op_t::del_non_replicable:
             return false;
         }
@@ -819,8 +819,7 @@ controller_backend::reconcile_ntp(const model::ntp& ntp, deltas_t& deltas) {
                         while (it != interrupt_it) {
                             if (
                               it->delta.type
-                              == topic_table_delta::op_type::
-                                update_properties) {
+                              == partition_operation_type::update_properties) {
                                 co_await process_partition_properties_update(
                                   it->delta.ntp, it->delta.new_assignment);
                             }
@@ -863,16 +862,15 @@ controller_backend::reconcile_ntp(const model::ntp& ntp, deltas_t& deltas) {
                               *it);
                             if (
                               it->delta.type
-                              == topic_table_delta::op_type::
-                                update_properties) {
+                              == partition_operation_type::update_properties) {
                                 co_await process_partition_properties_update(
                                   it->delta.ntp, it->delta.new_assignment);
                             } else if (
-                              it->delta.type == topic_table_delta::op_type::del
+                              it->delta.type == partition_operation_type::remove
                               || it->delta.type
-                                   == topic_table_delta::op_type::cancel_update
+                                   == partition_operation_type::cancel_update
                               || it->delta.type
-                                   == topic_table_delta::op_type::
+                                   == partition_operation_type::
                                      force_abort_update) {
                                 break;
                             } else {
@@ -973,7 +971,7 @@ ss::future<> controller_backend::reconcile_topics() {
 
 ss::future<std::error_code>
 controller_backend::execute_partition_op(const delta_metadata& metadata) {
-    using op_t = topic_table::delta::op_type;
+    using op_t = partition_operation_type;
     const topic_table_delta& delta = metadata.delta;
     vlog(
       clusterlog.trace,
@@ -1006,7 +1004,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           false,
           "controller_backend attempted to process an event that should only "
           "be handled by coproc::reconciliation_backend");
-    case op_t::del:
+    case op_t::remove:
         return delete_partition(
                  delta.ntp, cmd_rev, partition_removal_mode::global)
           .then([] { return std::error_code(errc::success); });
@@ -1091,7 +1089,7 @@ ss::future<> controller_backend::release_cross_shard_move_request(
 ss::future<std::error_code>
 controller_backend::process_partition_reconfiguration(
   uint64_t current_retry,
-  topic_table_delta::op_type type,
+  partition_operation_type type,
   model::ntp ntp,
   const partition_assignment& target_assignment,
   const std::vector<model::broker_shard>& previous_replicas,
@@ -1242,8 +1240,8 @@ controller_backend::process_partition_reconfiguration(
      * created with cancel/abort type of deltas.
      */
     vassert(
-      type == topic_table_delta::op_type::update
-        || type == topic_table_delta::op_type::force_update,
+      type == partition_operation_type::update
+        || type == partition_operation_type::force_update,
       "Invalid reconciliation loop state. Partition replicas should not be "
       "removed before finishing update, ntp: {}, current operation: {}, "
       "target_assignment: {}",
@@ -1337,11 +1335,11 @@ ss::future<std::error_code> controller_backend::reset_partition(
 bool controller_backend::can_finish_update(
   std::optional<model::node_id> current_leader,
   uint64_t current_retry,
-  topic_table_delta::op_type update_type,
+  partition_operation_type update_type,
   const std::vector<model::broker_shard>& current_replicas) {
     if (
-      update_type == topic_table_delta::op_type::force_update
-      || update_type == topic_table_delta::op_type::force_abort_update) {
+      update_type == partition_operation_type::force_update
+      || update_type == partition_operation_type::force_abort_update) {
         // Wait for the leader to be elected in the new replica set.
         return current_leader == _self;
     }
@@ -1482,23 +1480,23 @@ controller_backend::create_partition_from_remote_shard(
 }
 
 ss::future<std::error_code> controller_backend::execute_reconfiguration(
-  topic_table_delta::op_type type,
+  partition_operation_type type,
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replica_set,
   const replicas_revision_map& replica_revisions,
   const std::vector<model::broker_shard>& previous_replica_set,
   model::revision_id revision) {
     switch (type) {
-    case topic_table_delta::op_type::update:
+    case partition_operation_type::update:
         co_return co_await update_partition_replica_set(
           ntp, replica_set, replica_revisions, revision);
-    case topic_table_delta::op_type::force_update:
+    case partition_operation_type::force_update:
         co_return co_await force_replica_set_update(
           ntp, replica_set, replica_revisions, revision);
-    case topic_table_delta::op_type::cancel_update:
+    case partition_operation_type::cancel_update:
         co_return co_await cancel_replica_set_update(
           ntp, replica_set, replica_revisions, previous_replica_set, revision);
-    case topic_table_delta::op_type::force_abort_update:
+    case partition_operation_type::force_abort_update:
         co_return co_await force_abort_replica_set_update(
           ntp, replica_set, replica_revisions, previous_replica_set, revision);
     default:

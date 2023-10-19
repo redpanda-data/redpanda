@@ -2310,34 +2310,34 @@ private:
 using replicas_revision_map
   = absl::flat_hash_map<model::node_id, model::revision_id>;
 
+enum class partition_operation_type {
+    add,
+    del,
+    update,
+    force_update,
+    update_finished,
+    update_properties,
+    add_non_replicable,
+    del_non_replicable,
+    cancel_update,
+    force_abort_update,
+    reset,
+};
+std::ostream& operator<<(std::ostream&, const partition_operation_type&);
 // delta propagated to backend
 struct topic_table_delta {
-    enum class op_type {
-        add,
-        del,
-        update,
-        force_update,
-        update_finished,
-        update_properties,
-        add_non_replicable,
-        del_non_replicable,
-        cancel_update,
-        force_abort_update,
-        reset,
-    };
-
     topic_table_delta(
       model::ntp,
       cluster::partition_assignment,
       model::offset,
-      op_type,
+      partition_operation_type,
       std::optional<std::vector<model::broker_shard>> previous = std::nullopt,
       std::optional<replicas_revision_map> = std::nullopt);
 
     model::ntp ntp;
     cluster::partition_assignment new_assignment;
     model::offset offset;
-    op_type type;
+    partition_operation_type type;
     std::optional<std::vector<model::broker_shard>> previous_replica_set;
     std::optional<replicas_revision_map> replica_revisions;
 
@@ -2346,9 +2346,10 @@ struct topic_table_delta {
     }
 
     bool is_reconfiguration_operation() const {
-        return type == op_type::update || type == op_type::force_update
-               || type == op_type::cancel_update
-               || type == op_type::force_abort_update;
+        return type == partition_operation_type::update
+               || type == partition_operation_type::force_update
+               || type == partition_operation_type::cancel_update
+               || type == partition_operation_type::force_abort_update;
     }
 
     /// Preconditions: delta is of type that has replica_revisions and the node
@@ -2356,7 +2357,6 @@ struct topic_table_delta {
     model::revision_id get_replica_revision(model::node_id) const;
 
     friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
-    friend std::ostream& operator<<(std::ostream&, const op_type&);
 };
 
 struct create_acls_cmd_data
@@ -2515,7 +2515,7 @@ struct backend_operation
       envelope<backend_operation, serde::version<1>, serde::compat_version<0>> {
     ss::shard_id source_shard;
     partition_assignment p_as;
-    topic_table_delta::op_type type;
+    partition_operation_type type;
 
     uint64_t current_retry;
     cluster::errc last_operation_result;
@@ -4832,7 +4832,7 @@ struct adl<cluster::backend_operation> {
     cluster::backend_operation from(iobuf_parser& in) {
         auto source_shard = adl<ss::shard_id>{}.from(in);
         auto p_as = adl<cluster::partition_assignment>{}.from(in);
-        auto type = adl<cluster::topic_table_delta::op_type>{}.from(in);
+        auto type = adl<cluster::partition_operation_type>{}.from(in);
         return {
           .source_shard = source_shard,
           .p_as = std::move(p_as),

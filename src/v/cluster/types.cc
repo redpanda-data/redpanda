@@ -273,7 +273,7 @@ topic_table_delta::topic_table_delta(
   model::ntp ntp,
   cluster::partition_assignment new_assignment,
   model::offset o,
-  op_type tp,
+  partition_operation_type tp,
   std::optional<std::vector<model::broker_shard>> previous,
   std::optional<replicas_revision_map> replica_revisions)
   : ntp(std::move(ntp))
@@ -446,30 +446,29 @@ std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
     return o;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
+std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
     switch (tp) {
-    case topic_table_delta::op_type::add:
+    case partition_operation_type::add:
         return o << "addition";
-    case topic_table_delta::op_type::del:
+    case partition_operation_type::remove:
         return o << "deletion";
-    case topic_table_delta::op_type::reset:
+    case partition_operation_type::reset:
         return o << "reset";
-    case topic_table_delta::op_type::update:
+    case partition_operation_type::update:
         return o << "update";
-    case topic_table_delta::op_type::force_update:
+    case partition_operation_type::force_update:
         return o << "force_update";
-    case topic_table_delta::op_type::update_finished:
+    case partition_operation_type::update_finished:
         return o << "update_finished";
-    case topic_table_delta::op_type::update_properties:
+    case partition_operation_type::update_properties:
         return o << "update_properties";
-    case topic_table_delta::op_type::add_non_replicable:
+    case partition_operation_type::add_non_replicable:
         return o << "add_non_replicable_addition";
-    case topic_table_delta::op_type::del_non_replicable:
+    case partition_operation_type::del_non_replicable:
         return o << "del_non_replicable_deletion";
-    case topic_table_delta::op_type::cancel_update:
+    case partition_operation_type::cancel_update:
         return o << "cancel_update";
-    case topic_table_delta::op_type::force_abort_update:
+    case partition_operation_type::force_abort_update:
         return o << "force_abort_update";
     }
     __builtin_unreachable();

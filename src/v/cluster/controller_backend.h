@@ -299,7 +299,7 @@ private:
     ss::future<std::error_code> execute_partition_op(const delta_metadata&);
     ss::future<std::error_code> process_partition_reconfiguration(
       uint64_t current_retry,
-      topic_table_delta::op_type,
+      partition_operation_type,
       model::ntp,
       const partition_assignment& requested_assignment,
       const std::vector<model::broker_shard>& previous_replica_set,
@@ -307,7 +307,7 @@ private:
       model::revision_id);
 
     ss::future<std::error_code> execute_reconfiguration(
-      topic_table_delta::op_type,
+      partition_operation_type,
       const model::ntp&,
       const std::vector<model::broker_shard>&,
       const replicas_revision_map&,
@@ -398,7 +398,7 @@ private:
     bool can_finish_update(
       std::optional<model::node_id> current_leader,
       uint64_t current_retry,
-      topic_table_delta::op_type operation_type,
+      partition_operation_type operation_type,
       const std::vector<model::broker_shard>& requested_replicas);
 
     void housekeeping();

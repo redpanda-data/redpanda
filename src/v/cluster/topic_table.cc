@@ -87,7 +87,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           std::move(ntp),
           pas,
           offset,
-          delta::op_type::add,
+          partition_operation_type::add,
           std::nullopt,
           std::move(replica_revisions));
     }
@@ -119,7 +119,7 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 
 std::error_code
 topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
-    auto delete_type = delta::op_type::del;
+    auto delete_type = partition_operation_type::remove;
     if (auto tp = _topics.find(nt); tp != _topics.end()) {
         for (auto& p_as : tp->second.get_assignments()) {
             _partition_count--;
@@ -230,7 +230,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
           std::move(ntp),
           std::move(p_as),
           offset,
-          delta::op_type::add,
+          partition_operation_type::add,
           std::nullopt,
           std::move(replicas_revisions));
     }
@@ -344,7 +344,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
       std::move(cmd.key),
       std::move(delta_assignment),
       o,
-      delta::op_type::update_finished);
+      partition_operation_type::update_finished);
 
     notify_waiters();
 
@@ -427,8 +427,8 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         current_assignment_it->id,
         in_progress_it->second.get_previous_replicas()},
       o,
-      cmd.value.force ? delta::op_type::force_abort_update
-                      : delta::op_type::cancel_update,
+      cmd.value.force ? partition_operation_type::force_abort_update
+                      : partition_operation_type::cancel_update,
       std::move(replicas),
       // this replica revisions map reflects the state right before the update
       // (i.e. the state we are trying to return to by cancelling)
@@ -502,7 +502,10 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
 
     // notify backend about finished update
     _pending_deltas.emplace_back(
-      ntp, std::move(delta_assignment), o, delta::op_type::update_finished);
+      ntp,
+      std::move(delta_assignment),
+      o,
+      partition_operation_type::update_finished);
 
     notify_waiters();
 
@@ -763,7 +766,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
           p_as,
           o,
-          delta::op_type::update_properties);
+          partition_operation_type::update_properties);
     }
 
     notify_waiters();
@@ -861,7 +864,7 @@ public:
           std::move(ntp),
           std::move(p_as),
           model::offset{cmd_rev},
-          delta::op_type::del);
+          partition_operation_type::remove);
         // partition_assignment object is supposed to be removed from the
         // assignments set by the caller
     }
@@ -950,7 +953,7 @@ public:
               ntp,
               cur_assignment,
               model::offset{partition.last_update_finished_revision},
-              delta::op_type::add,
+              partition_operation_type::add,
               std::nullopt,
               partition.replicas_revisions);
         } else {
@@ -963,7 +966,7 @@ public:
                   ntp,
                   cur_assignment,
                   model::offset{partition.last_update_finished_revision},
-                  delta::op_type::reset,
+                  partition_operation_type::reset,
                   prev_assignment->replicas,
                   partition.replicas_revisions);
             }
@@ -973,7 +976,7 @@ public:
                   ntp,
                   cur_assignment,
                   model::offset{partition.last_update_finished_revision},
-                  delta::op_type::update_properties);
+                  partition_operation_type::update_properties);
             }
         }
 
@@ -1038,8 +1041,8 @@ public:
                     // delta to make progress.
                     auto op_type = update.state
                                        == reconfiguration_state::force_update
-                                     ? delta::op_type::force_update
-                                     : delta::op_type::update;
+                                     ? partition_operation_type::force_update
+                                     : partition_operation_type::update;
                     _pending_deltas.emplace_back(
                       ntp,
                       partition_assignment(
@@ -1055,7 +1058,7 @@ public:
                         update.revision));
                 }
 
-                auto add_cancel_delta = [&](topic_table_delta::op_type op) {
+                auto add_cancel_delta = [&](partition_operation_type op) {
                     _pending_deltas.emplace_back(
                       ntp,
                       cur_assignment,
@@ -1070,11 +1073,11 @@ public:
                 case reconfiguration_state::force_update:
                     break;
                 case reconfiguration_state::cancelled:
-                    add_cancel_delta(topic_table_delta::op_type::cancel_update);
+                    add_cancel_delta(partition_operation_type::cancel_update);
                     break;
                 case reconfiguration_state::force_cancelled:
                     add_cancel_delta(
-                      topic_table_delta::op_type::force_abort_update);
+                      partition_operation_type::force_abort_update);
                     break;
                 }
             }
@@ -1533,8 +1536,9 @@ void topic_table::change_partition_replicas(
       "partition {} must exist in the partition map",
       ntp);
 
-    delta::op_type move_type = is_forced ? delta::op_type::force_update
-                                         : delta::op_type::update;
+    partition_operation_type move_type
+      = is_forced ? partition_operation_type::force_update
+                  : partition_operation_type::update;
 
     _pending_deltas.emplace_back(
       std::move(ntp),
