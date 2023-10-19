@@ -33,7 +33,7 @@ public:
      * the new mapping with override the existing mapping provided that \p
      * offset is larger than the existing offset associated with the key.
      */
-    virtual bool put(compaction_key key, model::offset offset) = 0;
+    virtual bool put(const compaction_key& key, model::offset offset) = 0;
 
     /**
      * Return the offset for the given \p key.
@@ -60,7 +60,7 @@ public:
      */
     explicit simple_key_offset_map(size_t max_keys = default_key_limit);
 
-    bool put(compaction_key key, model::offset offset) override;
+    bool put(const compaction_key& key, model::offset offset) override;
 
     std::optional<model::offset> get(const compaction_key& key) const override;
 

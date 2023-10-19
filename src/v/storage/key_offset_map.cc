@@ -18,7 +18,7 @@ simple_key_offset_map::simple_key_offset_map(size_t max_keys)
       _memory_tracker))
   , _max_keys(max_keys) {}
 
-bool simple_key_offset_map::put(compaction_key key, model::offset o) {
+bool simple_key_offset_map::put(const compaction_key& key, model::offset o) {
     if (_map.size() >= _max_keys) {
         return false;
     }
