@@ -24,7 +24,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <cstdint>
-#include <utility>
+#include <type_traits>
 
 namespace model {
 /**
