@@ -12,6 +12,7 @@
 
 #include "bytes/bytes.h"
 #include "cloud_roles/logger.h"
+#include "config/base_property.h"
 #include "hashing/secure.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
@@ -20,6 +21,8 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 
+#include <absl/strings/str_join.h>
+#include <absl/strings/str_split.h>
 #include <boost/algorithm/string/compare.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -372,6 +375,33 @@ ss::sstring signature_v4::sha256_hexdigest(std::string_view payload) {
     return sha_256(payload);
 }
 
+ss::sstring redact_headers_from_string(const std::string_view original) {
+    std::set<boost::core::string_view> redacted{};
+    const auto redacted_fields = http::redacted_fields();
+    for (const auto& rf : redacted_fields) {
+        redacted.insert(ss::visit(
+          rf,
+          [](const boost::beast::http::field& f) { return to_string(f); },
+          [](const std::string& s) { return boost::core::string_view{s}; }));
+    }
+
+    const auto lines = absl::StrSplit(original, "\n");
+    std::vector<ss::sstring> result{};
+    for (const auto& line : lines) {
+        if (line.find(':') != std::string_view::npos) {
+            const auto tokens = absl::StrSplit(line, ":");
+            const auto key = *tokens.begin();
+            if (redacted.contains(key)) {
+                result.emplace_back(fmt::format(
+                  "{}:{}", *tokens.begin(), config::secret_placeholder));
+                continue;
+            }
+        }
+        result.emplace_back(line.data(), line.size());
+    }
+    return absl::StrJoin(result, "\n");
+}
+
 std::error_code signature_v4::sign_header(
   http::client::request_header& header, std::string_view sha256) const {
     ss::sstring date_str = _sig_time.format_date();
@@ -392,7 +422,14 @@ std::error_code signature_v4::sign_header(
     if (!canonical_req) {
         return canonical_req.error();
     }
-    vlog(clrl_log.trace, "\n[canonical-request]\n{}\n", canonical_req.value());
+
+    if (clrl_log.is_enabled(seastar::log_level::trace)) {
+        vlog(
+          clrl_log.trace,
+          "\n[canonical-request]\n{}\n",
+          redact_headers_from_string(canonical_req.value()));
+    }
+
     auto str_to_sign = get_string_to_sign(
       amz_date, cred_scope, canonical_req.value());
     auto digest = hmac(sign_key, str_to_sign);

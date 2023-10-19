@@ -14,6 +14,8 @@
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/strings/str_join.h>
+#include <absl/strings/str_split.h>
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
@@ -236,4 +238,28 @@ SEASTAR_THREAD_TEST_CASE(test_gnutls) {
     BOOST_REQUIRE_EQUAL(
       to_hex(bytes_view{result.data(), 32}),
       "c4afb1cc5771d871763a393e44b703571b55cc28424d1a5e86da6ed3c154a4b9");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_redact_headers_from_string) {
+    std::vector<ss::sstring> lines{};
+    lines.emplace_back(fmt::format("{}:{}", "x-amz-security-token", "abcd"));
+    lines.emplace_back(fmt::format("{}:{}", "x-amz-content-sha256", "secret"));
+    lines.emplace_back(
+      fmt::format("{}:{}", "x-amz-security-token111", "abcd111"));
+    lines.emplace_back(
+      fmt::format("{}:{}", "x-amz-security-token222", "abcd222"));
+    lines.emplace_back(
+      fmt::format("{}:{}", "x-amz-security-token", "abcdabcd"));
+
+    const std::string redacted = cloud_roles::redact_headers_from_string(
+      absl::StrJoin(lines, "\n"));
+
+    const auto redacted_lines = absl::StrSplit(redacted, "\n");
+    auto it = redacted_lines.begin();
+
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token:[secret]");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-content-sha256:[secret]");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token111:abcd111");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token222:abcd222");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token:[secret]");
 }
