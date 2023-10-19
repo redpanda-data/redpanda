@@ -29,6 +29,8 @@ from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoi
 class AuditLogTests(RedpandaTest):
     audit_log = "__audit_log"
 
+    admin_audit_svc_name = "Redpanda Admin HTTP Server"
+
     def __init__(self, test_context):
         self._extra_conf = {
             'audit_enabled': True,
@@ -112,7 +114,8 @@ class AuditLogTests(RedpandaTest):
         """
         def is_api_match(matches, record):
             self.logger.debug(f'{record}')
-            if record['class_uid'] == 6003:
+            if record['class_uid'] == 6003 and record['dst_endpoint'][
+                    'svc_name'] == self.admin_audit_svc_name:
                 regex = re.compile(
                     "http:\/\/(?P<address>.*):(?P<port>\d+)\/v1\/(?P<handler>.*)"
                 )
