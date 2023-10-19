@@ -243,6 +243,24 @@ ss::future<response_ptr> create_partitions_handler::handle(
           return !tp.assignments.has_value();
       });
 
+    // check for inprogress reassignments
+    valid_range_end = validate_range(
+      request.data.topics.begin(),
+      valid_range_end,
+      std::back_inserter(resp.data.results),
+      error_code::reassignment_in_progress,
+      "A partition reassignment is in progress.",
+      [&ctx](const create_partitions_topic& tp) {
+          const auto& updates_in_progress
+            = ctx.metadata_cache().updates_in_progress();
+          return std::none_of(
+            updates_in_progress.begin(),
+            updates_in_progress.end(),
+            [name{tp.name}](auto& iter) {
+                return iter.first.tp.topic == name;
+            });
+      });
+
     if (request.data.validate_only) {
         std::transform(
           request.data.topics.begin(),
