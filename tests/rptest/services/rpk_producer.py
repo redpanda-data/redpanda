@@ -1,3 +1,4 @@
+import time
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from threading import Event
@@ -41,6 +42,7 @@ class RpkProducer(BackgroundThreadService):
         if produce_timeout is None:
             produce_timeout = 10
         self._produce_timeout = produce_timeout
+        self._elapsed = 0
 
     def _worker(self, _idx, node):
         # NOTE: since this runs on separate nodes from the service, the binary
@@ -74,6 +76,7 @@ class RpkProducer(BackgroundThreadService):
             cmd += f" --user '{self._sasl_cred[0]}' --password '{self._sasl_cred[1]}'"
 
         self._stopping.clear()
+        start = time.time()
         try:
             for line in node.account.ssh_capture(
                     cmd, timeout_sec=self._produce_timeout):
@@ -84,9 +87,10 @@ class RpkProducer(BackgroundThreadService):
                 pass
             else:
                 raise
+        self._elapsed = time.time() - start
 
         self._redpanda.logger.debug(
-            f"Finished sending {self._msg_count} messages")
+            f"{self.service_id}: Finished sending {self._msg_count} messages")
 
     @property
     def output_line_count(self):
@@ -99,3 +103,7 @@ class RpkProducer(BackgroundThreadService):
     def is_running(self) -> bool:
         return any(worker.is_alive()
                    for worker in self.worker_threads.values())
+
+    @property
+    def time_elapsed(self):
+        return self._elapsed

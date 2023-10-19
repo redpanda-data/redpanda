@@ -80,6 +80,7 @@ class ThroughputLimitsSnc(RedpandaTest):
         "sasl_handshake", "sync_group", "txn_offset_commit"
     ]
 
+    # Returns a random value distributed base-2 exponentially between `min` and `max`
     def binexp_random(self, min: int, max: int):
         min_exp = min.bit_length() - 1
         max_exp = max.bit_length() - 1
@@ -181,6 +182,7 @@ class ThroughputLimitsSnc(RedpandaTest):
 
         raise Exception(f"Unsupported ConfigProp: {prop}")
 
+    # Returns effective node quota reported via metrics
     def current_effective_node_quota(self) -> Tuple[int, int]:
         metrics = self.redpanda.metrics_sample(
             "quotas_quota_effective", metrics_endpoint=MetricsEndpoint.METRICS)
