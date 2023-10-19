@@ -1020,7 +1020,11 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
-        co_await adjacent_merge_compact(cfg.compact, new_start_offset);
+        if (config::shard_local_cfg().log_compaction_use_sliding_window()) {
+            co_await sliding_window_compact(cfg.compact, new_start_offset);
+        } else {
+            co_await adjacent_merge_compact(cfg.compact, new_start_offset);
+        }
     }
 
     _probe->set_compaction_ratio(_compaction_ratio.get());
