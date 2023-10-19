@@ -287,6 +287,19 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
     if (to_copy == std::nullopt) {
         co_return stop_t::no;
     }
+    if (_compacted_idx && is_compactible(to_copy.value())) {
+        co_await model::for_each_record(
+          to_copy.value(),
+          [&batch = to_copy.value(), this](const model::record& r) {
+              auto& hdr = batch.header();
+              return _compacted_idx->index(
+                hdr.type,
+                hdr.attrs.is_control(),
+                r.key(),
+                batch.base_offset(),
+                r.offset_delta());
+          });
+    }
     auto batch = co_await compress_batch(original, std::move(to_copy.value()));
     auto const start_offset = _appender->file_byte_offset();
     auto const header_size = batch.header().size_bytes;

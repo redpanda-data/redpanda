@@ -124,10 +124,12 @@ public:
       segment_appender* a,
       bool internal_topic,
       offset_delta_time apply_offset,
-      model::offset segment_last_offset = model::offset{})
+      model::offset segment_last_offset = model::offset{},
+      compacted_index_writer* cidx = nullptr)
       : _should_keep_fn(std::move(f))
       , _segment_last_offset(segment_last_offset)
       , _appender(a)
+      , _compacted_idx(cidx)
       , _idx(index_state::make_empty_index(apply_offset))
       , _internal_topic(internal_topic) {}
 
@@ -148,6 +150,11 @@ private:
     // Offset to keep in case the index is empty as of getting to this offset.
     model::offset _segment_last_offset;
     segment_appender* _appender;
+
+    // Compacted index writer for the newly written segment. May not be
+    // supplied if the compacted index isn't expected to change, e.g. when
+    // rewriting a single segment filtering with its own compacted index.
+    compacted_index_writer* _compacted_idx;
     index_state _idx;
     size_t _acc{0};
 
