@@ -14,6 +14,8 @@
 #define RPTEST_FAIL(m) BOOST_FAIL(m)
 #define RPTEST_FAIL_CORO(m) BOOST_FAIL(m)
 #else
+#include "test_utils/test.h"
+
 #define RPTEST_FAIL(m) FAIL() << (m)
 #define RPTEST_FAIL_CORO(m) ASSERT_TRUE_CORO(false) << (m)
 #endif
