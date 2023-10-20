@@ -89,6 +89,8 @@ public:
 
     wasm_engine_t* engine() const;
 
+    const heap_allocator* heap_allocator() const;
+
 private:
     void register_metrics();
 
@@ -116,7 +118,7 @@ private:
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
-    ss::sharded<heap_allocator> _heap_allocator;
+    ss::sharded<wasm::heap_allocator> _heap_allocator;
     ss::sharded<stack_allocator> _stack_allocator;
     size_t _total_executable_memory = 0;
     ssx::metrics::metric_groups _public_metrics
@@ -447,7 +449,7 @@ private:
         // instance declared.
         wasmtime_store_limiter(
           store.get(),
-          /*memory_size=*/std::numeric_limits<int64_t>::max(),
+          /*memory_size=*/int64_t(_runtime->heap_allocator()->max_size()),
           /*table_elements=*/max_table_elements,
           /*instances=*/1,
           /*tables=*/1,
@@ -1268,6 +1270,9 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
 }
 
 wasm_engine_t* wasmtime_runtime::engine() const { return _engine.get(); }
+const heap_allocator* wasmtime_runtime::heap_allocator() const {
+    return &_heap_allocator.local();
+}
 
 wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(
   void* env, size_t size, wasmtime_stack_memory_t* memory_ret) {
@@ -1377,4 +1382,5 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
 std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
     return std::make_unique<wasmtime_runtime>(std::move(sr));
 }
+
 } // namespace wasm::wasmtime
