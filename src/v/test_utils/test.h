@@ -145,6 +145,16 @@ private:
     GTEST_PRED_FORMAT2_(pred_format, v1, v2, GTEST_FATAL_FAILURE_CORO_)
 #define GTEST_ASSERT_EQ_CORO(val1, val2)                                       \
     ASSERT_PRED_FORMAT2_CORO(::testing::internal::EqHelper::Compare, val1, val2)
+#define GTEST_ASSERT_GT_CORO(val1, val2)                                       \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperGT, val1, val2)
+#define GTEST_ASSERT_GE_CORO(val1, val2)                                       \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperGE, val1, val2)
+#define GTEST_ASSERT_LT_CORO(val1, val2)                                       \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperLT, val1, val2)
+#define GTEST_ASSERT_LE_CORO(val1, val2)                                       \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperLE, val1, val2)
+#define GTEST_ASSERT_NE_CORO(val1, val2)                                       \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperNE, val1, val2)
 
 /*
  * Coroutine safe assertions
@@ -157,3 +167,8 @@ private:
       !(condition), #condition, true, false, GTEST_FATAL_FAILURE_CORO_)
 
 #define ASSERT_EQ_CORO(val1, val2) GTEST_ASSERT_EQ_CORO(val1, val2)
+#define ASSERT_GT_CORO(val1, val2) GTEST_ASSERT_GT_CORO(val1, val2)
+#define ASSERT_GE_CORO(val1, val2) GTEST_ASSERT_GE_CORO(val1, val2)
+#define ASSERT_LT_CORO(val1, val2) GTEST_ASSERT_LT_CORO(val1, val2)
+#define ASSERT_LE_CORO(val1, val2) GTEST_ASSERT_LE_CORO(val1, val2)
+#define ASSERT_NE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
