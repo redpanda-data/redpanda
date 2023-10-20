@@ -87,6 +87,8 @@ public:
     ss::future<ss::shared_ptr<factory>> make_factory(
       model::transform_metadata meta, iobuf buf, ss::logger* logger) override;
 
+    wasm_engine_t* engine() const;
+
 private:
     void register_metrics();
 
@@ -329,13 +331,13 @@ make_environment_vars(const model::transform_metadata& meta) {
 class wasmtime_engine : public engine {
 public:
     wasmtime_engine(
-      wasm_engine_t* engine,
+      wasmtime_runtime* runtime,
       model::transform_metadata metadata,
       ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>>
         preinitialized,
       schema_registry* sr,
       ss::logger* logger)
-      : _engine(engine)
+      : _runtime(runtime)
       , _meta(std::move(metadata))
       , _preinitialized(std::move(preinitialized))
       , _sr_module(sr)
@@ -434,7 +436,8 @@ private:
         // allows our host functions to access the actual module for that host
         // function.
         handle<wasmtime_store_t, wasmtime_store_delete> store{
-          wasmtime_store_new(_engine, /*data=*/this, /*finalizer=*/nullptr)};
+          wasmtime_store_new(
+            _runtime->engine(), /*data=*/this, /*finalizer=*/nullptr)};
         // Tables are backed by a vector holding pointers, so ensure the maximum
         // allocation is under our recommended limit.
         constexpr size_t table_element_size = sizeof(void*);
@@ -601,7 +604,7 @@ private:
           });
     }
 
-    wasm_engine_t* _engine;
+    wasmtime_runtime* _runtime;
     model::transform_metadata _meta;
     ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>> _preinitialized;
 
@@ -1060,13 +1063,13 @@ void register_sr_module(
 class wasmtime_engine_factory : public factory {
 public:
     wasmtime_engine_factory(
-      wasm_engine_t* engine,
+      wasmtime_runtime* runtime,
       model::transform_metadata meta,
       ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>>
         preinitialized,
       schema_registry* sr,
       ss::logger* l)
-      : _engine(engine)
+      : _runtime(runtime)
       , _preinitialized(std::move(preinitialized))
       , _meta(std::move(meta))
       , _sr(sr)
@@ -1076,11 +1079,11 @@ public:
     ss::future<ss::shared_ptr<engine>> make_engine() final {
         auto copy = co_await _preinitialized.copy();
         co_return ss::make_shared<wasmtime_engine>(
-          _engine, _meta, std::move(copy), _sr, _logger);
+          _runtime, _meta, std::move(copy), _sr, _logger);
     }
 
 private:
-    wasm_engine_t* _engine;
+    wasmtime_runtime* _runtime;
     ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>> _preinitialized;
     model::transform_metadata _meta;
     schema_registry* _sr;
@@ -1257,12 +1260,14 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
         _total_executable_memory -= memory_usage_size;
     };
     co_return ss::make_shared<wasmtime_engine_factory>(
-      _engine.get(),
+      this,
       std::move(meta),
       ss::make_foreign(std::move(preinitialized)),
       _sr.get(),
       logger);
 }
+
+wasm_engine_t* wasmtime_runtime::engine() const { return _engine.get(); }
 
 wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(
   void* env, size_t size, wasmtime_stack_memory_t* memory_ret) {
