@@ -268,6 +268,9 @@ auto with_client(client&& cl, Func func) {
       });
 }
 
+const std::unordered_set<std::variant<boost::beast::http::field, std::string>>
+redacted_fields();
+
 } // namespace http
 
 template<>
