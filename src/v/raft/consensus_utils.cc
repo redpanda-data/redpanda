@@ -23,6 +23,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "resource_mgmt/io_priority.h"
+#include "serde/rw/rw.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/fs_utils.h"
@@ -167,23 +168,26 @@ ss::future<configuration_bootstrap_state> read_bootstrap_state(
       });
 }
 
+iobuf serialize_configuration(group_configuration cfg) {
+    if (likely(cfg.version() >= raft::group_configuration::v_6)) {
+        return serde::to_iobuf(std::move(cfg));
+    }
+
+    return reflection::to_iobuf(std::move(cfg));
+}
+
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg) {
-    auto batch = std::move(
-                   storage::record_batch_builder(
-                     model::record_batch_type::raft_configuration,
-                     model::offset(0))
-                     .add_raw_kv(iobuf(), reflection::to_iobuf(std::move(cfg))))
-                   .build();
+    auto batch
+      = std::move(
+          storage::record_batch_builder(
+            model::record_batch_type::raft_configuration, model::offset(0))
+            .add_raw_kv(iobuf(), serialize_configuration(std::move(cfg))))
+          .build();
     ss::circular_buffer<model::record_batch> batches;
     batches.reserve(1);
     batches.push_back(std::move(batch));
     return batches;
-}
-
-model::record_batch_reader serialize_configuration(group_configuration cfg) {
-    return model::make_memory_record_batch_reader(
-      serialize_configuration_as_batches(std::move(cfg)));
 }
 
 model::record_batch make_ghost_batch(
@@ -276,11 +280,11 @@ ss::future<> persist_snapshot(
   iobuf&& data) {
     return snapshot_manager.start_snapshot().then(
       [&snapshot_manager, md = std::move(md), data = std::move(data)](
-        storage::snapshot_writer writer) mutable {
+        storage::file_snapshot_writer writer) mutable {
           return ss::do_with(
             std::move(writer),
             [&snapshot_manager, md = std::move(md), data = std::move(data)](
-              storage::snapshot_writer& writer) mutable {
+              storage::file_snapshot_writer& writer) mutable {
                 return writer
                   .write_metadata(reflection::to_iobuf(std::move(md)))
                   .then([&writer, data = std::move(data)]() mutable {
@@ -293,6 +297,22 @@ ss::future<> persist_snapshot(
                   });
             });
       });
+}
+group_configuration deserialize_configuration(iobuf_parser& parser) {
+    const auto version = serde::peek_version(parser);
+    if (likely(version >= group_configuration::v_6)) {
+        return serde::read<group_configuration>(parser);
+    }
+
+    return reflection::adl<group_configuration>{}.from(parser);
+}
+group_configuration deserialize_nested_configuration(iobuf_parser& parser) {
+    const auto version = serde::peek_version(parser);
+    if (likely(version >= group_configuration::v_6)) {
+        return serde::read_nested<group_configuration>(parser, 0UL);
+    }
+
+    return reflection::adl<group_configuration>{}.from(parser);
 }
 
 model::record_batch_reader make_config_extracting_reader(
@@ -357,9 +377,9 @@ model::record_batch_reader make_config_extracting_reader(
         }
 
         void extract_configuration(model::record_batch& batch) {
-            auto cfg = reflection::from_iobuf<group_configuration>(
-              batch.copy_records().begin()->value().copy());
-            _configurations.emplace_back(_next_offset, std::move(cfg));
+            iobuf_parser parser(batch.copy_records().begin()->release_value());
+            _configurations.emplace_back(
+              _next_offset, deserialize_configuration(parser));
         }
 
     private:

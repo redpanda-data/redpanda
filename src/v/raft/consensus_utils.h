@@ -39,8 +39,8 @@ foreign_share_n(model::record_batch_reader&&, std::size_t);
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg);
 
-/// serialize group configuration to the record_batch_reader
-model::record_batch_reader serialize_configuration(group_configuration cfg);
+iobuf serialize_configuration(group_configuration cfg);
+void write_configuration(group_configuration cfg, iobuf& out);
 
 /// returns a fully parsed config state from a given storage log, starting at
 /// given offset
@@ -55,6 +55,10 @@ fragmented_vector<model::record_batch> make_ghost_batches_in_gaps(
 /// writes snapshot with given data to disk
 ss::future<>
 persist_snapshot(storage::simple_snapshot_manager&, snapshot_metadata, iobuf&&);
+
+group_configuration deserialize_configuration(iobuf_parser&);
+
+group_configuration deserialize_nested_configuration(iobuf_parser&);
 
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>

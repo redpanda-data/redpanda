@@ -67,6 +67,7 @@ enum class feature : std::uint64_t {
     enhanced_force_reconfiguration = 1ULL << 33U,
     broker_time_based_retention = 1ULL << 34U,
     wasm_transforms = 1ULL << 35U,
+    raft_config_serde = 1ULL << 36U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -321,7 +322,12 @@ constexpr static std::array feature_schema{
     feature::wasm_transforms,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
-};
+  feature_spec{
+    cluster::cluster_version{11},
+    "raft_config_serde",
+    feature::raft_config_serde,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always}};
 
 std::string_view to_string_view(feature);
 std::string_view to_string_view(feature_state::state);

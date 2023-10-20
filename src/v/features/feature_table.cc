@@ -85,6 +85,8 @@ std::string_view to_string_view(feature f) {
         return "broker_time_based_retention";
     case feature::wasm_transforms:
         return "wasm_transforms";
+    case feature::raft_config_serde:
+        return "raft_config_serde";
 
     /*
      * testing features

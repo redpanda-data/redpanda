@@ -15,9 +15,13 @@
 #include "bytes/iobuf.h"
 #include "config/property.h"
 #include "features/feature_table.h"
+#include "model/fundamental.h"
+#include "model/metadata.h"
+#include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/coordinated_recovery_throttle.h"
+#include "raft/errc.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/heartbeat_manager.h"
@@ -175,6 +179,10 @@ public:
 
     ss::future<ss::circular_buffer<model::record_batch>>
     read_all_data_batches();
+    ss::future<ss::circular_buffer<model::record_batch>>
+    read_batches_in_range(model::offset min, model::offset max);
+
+    ss::future<model::offset> random_batch_base_offset(model::offset max);
 
 private:
     model::node_id _id;
@@ -199,6 +207,8 @@ class raft_fixture
   : public seastar_test
   , public raft_node_map {
 public:
+    raft_fixture()
+      : _logger("raft-fixture") {}
     using raft_nodes_t = absl::
       flat_hash_map<model::node_id, std::unique_ptr<raft_node_instance>>;
     static constexpr raft::group_id group_id = raft::group_id(123);
@@ -221,6 +231,8 @@ public:
     std::optional<model::node_id> get_leader() const;
 
     ss::future<model::node_id> wait_for_leader(std::chrono::milliseconds);
+    ss::future<model::node_id>
+      wait_for_leader(model::timeout_clock::time_point);
     seastar::future<> TearDownAsync() override;
     seastar::future<> SetUpAsync() override;
 
@@ -247,14 +259,24 @@ public:
 
     model::record_batch_reader
     make_batches(std::vector<std::pair<ss::sstring, ss::sstring>> batch_spec) {
-        ss::circular_buffer<model::record_batch> batches;
-        batches.reserve(batch_spec.size());
-        for (auto& [k, v] : batch_spec) {
+        const auto sz = batch_spec.size();
+        return make_batches(sz, [spec = std::move(batch_spec)](size_t idx) {
+            auto [k, v] = spec[idx];
             storage::record_batch_builder builder(
               model::record_batch_type::raft_data, model::offset(0));
             builder.add_raw_kv(
               serde::to_iobuf(std::move(k)), serde::to_iobuf(std::move(v)));
-            batches.push_back(std::move(builder).build());
+            return std::move(builder).build();
+        });
+    }
+
+    template<typename Generator>
+    model::record_batch_reader
+    make_batches(size_t batch_count, Generator&& generator) {
+        ss::circular_buffer<model::record_batch> batches;
+        batches.reserve(batch_count);
+        for (auto b_idx : boost::irange(batch_count)) {
+            batches.push_back(generator(b_idx));
         }
 
         return model::make_memory_record_batch_reader(std::move(batches));
@@ -280,10 +302,15 @@ public:
         return model::make_memory_record_batch_reader(std::move(batches));
     }
 
-    ss::future<> assert_logs_equal() {
+    ss::future<>
+    assert_logs_equal(model::offset start_offset = model::offset{}) {
         std::vector<ss::circular_buffer<model::record_batch>> node_batches;
         for (auto& [id, n] : _nodes) {
-            node_batches.push_back(co_await n->read_all_data_batches());
+            auto read_from = start_offset == model::offset{}
+                               ? n->raft()->start_offset()
+                               : start_offset;
+            node_batches.push_back(co_await n->read_batches_in_range(
+              read_from, model::offset::max()));
         }
         ASSERT_TRUE_CORO(std::all_of(
           node_batches.begin(),
@@ -296,6 +323,9 @@ public:
     }
 
     ss::future<> wait_for_committed_offset(
+      model::offset offset, std::chrono::milliseconds timeout);
+
+    ss::future<> wait_for_visible_offset(
       model::offset offset, std::chrono::milliseconds timeout);
 
     template<typename Func>
@@ -313,10 +343,67 @@ public:
           [f = std::forward<Func>(f)](auto& pair) { return f(*pair.second); });
     }
 
+    template<typename Func>
+    auto retry_with_leader(
+      int retry_count, model::timeout_clock::time_point deadline, Func&& f) {
+        using futurator
+          = ss::futurize<std::invoke_result_t<Func, raft_node_instance&>>;
+        using ret_t = futurator::value_type;
+        struct retry_state {
+            ret_t result = errc::timeout;
+            int retries_left;
+        };
+        return ss::do_with(
+          retry_state{.retries_left = retry_count},
+          [this, deadline, f = std::forward<Func>(f), retry_count](
+            retry_state& state) mutable {
+              return ss::do_until(
+                       [&state] { return state.retries_left <= 0; },
+                       [this,
+                        &state,
+                        f = std::forward<Func>(f),
+                        deadline,
+                        retry_count]() mutable {
+                           vlog(
+                             _logger.info,
+                             "Executing action with leader, retries left {}/{}",
+                             state.retries_left,
+                             retry_count);
+                           if (model::timeout_clock::now() > deadline) {
+                               state.retries_left = 0;
+                               return ss::now();
+                           }
+
+                           return wait_for_leader(deadline).then(
+                             [this, f = std::forward<Func>(f), &state](
+                               model::node_id leader_id) {
+                                 return ss::futurize_invoke(f, node(leader_id))
+                                   .then([this, &state](auto result) mutable {
+                                       // success
+                                       if (result) {
+                                           state.result = std::move(result);
+                                           state.retries_left = 0;
+                                           return ss::now();
+                                       }
+                                       vlog(
+                                         _logger.info,
+                                         "Leader action returned an error: {}",
+                                         result.error());
+                                       state.retries_left--;
+
+                                       return ss::sleep(100ms);
+                                   });
+                             });
+                       })
+                .then([&state] { return state.result; });
+          });
+    }
+
 private:
     void validate_leaders();
 
     raft_nodes_t _nodes;
+    ss::logger _logger;
 
     absl::flat_hash_map<model::node_id, leadership_status> _leaders_view;
 };

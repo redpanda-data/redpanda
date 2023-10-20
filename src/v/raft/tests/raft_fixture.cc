@@ -370,8 +370,9 @@ ss::future<> raft_node_instance::start(
     co_await _hb_manager->start();
 
     co_await _recovery_throttle.start(
-      config::mock_binding<size_t>(10 * 1024 * 1024),
-      config::mock_binding<bool>(false));
+      config::mock_binding<size_t>(100_MiB), config::mock_binding<bool>(false));
+    co_await _recovery_throttle.invoke_on_all(
+      &coordinated_recovery_throttle::start);
 
     co_await _storage.start(
       [this]() {
@@ -451,16 +452,33 @@ void raft_node_instance::leadership_notification_callback(
 
 ss::future<ss::circular_buffer<model::record_batch>>
 raft_node_instance::read_all_data_batches() {
-    storage::log_reader_config cfg(
-      _raft->start_offset(),
-      model::offset::max(),
-      ss::default_priority_class());
+    return read_batches_in_range(_raft->start_offset(), model::offset::max());
+}
+
+ss::future<ss::circular_buffer<model::record_batch>>
+raft_node_instance::read_batches_in_range(
+  model::offset min, model::offset max) {
+    storage::log_reader_config cfg(min, max, ss::default_priority_class());
     cfg.type_filter = model::record_batch_type::raft_data;
 
     auto rdr = co_await _raft->make_reader(cfg);
 
     co_return co_await model::consume_reader_to_memory(
       std::move(rdr), model::no_timeout);
+}
+
+ss::future<model::offset>
+raft_node_instance::random_batch_base_offset(model::offset max) {
+    model::offset read_start(
+      random_generators::get_int<int64_t>(_raft->start_offset(), max));
+    model::offset last = model::next_offset(read_start);
+    ss::circular_buffer<model::record_batch> batches;
+    while (batches.empty()) {
+        batches = co_await read_batches_in_range(read_start, last);
+        last++;
+    }
+
+    co_return batches.front().base_offset();
 }
 
 seastar::future<> raft_fixture::TearDownAsync() {
@@ -502,13 +520,12 @@ raft_node_instance& raft_fixture::node(model::node_id id) {
 }
 
 ss::future<model::node_id>
-raft_fixture::wait_for_leader(std::chrono::milliseconds timeout) {
+raft_fixture::wait_for_leader(model::timeout_clock::time_point deadline) {
     auto has_stable_leader = [this] {
         auto leader_id = get_leader();
         return leader_id && _nodes.contains(*leader_id)
                && node(*leader_id).raft()->is_leader();
     };
-    const auto deadline = model::timeout_clock::now() + timeout;
     while (!has_stable_leader()) {
         if (model::timeout_clock::now() > deadline) {
             throw std::runtime_error("Timeout waiting for leader");
@@ -517,6 +534,10 @@ raft_fixture::wait_for_leader(std::chrono::milliseconds timeout) {
     }
 
     co_return get_leader().value();
+}
+ss::future<model::node_id>
+raft_fixture::wait_for_leader(std::chrono::milliseconds timeout) {
+    return wait_for_leader(timeout + model::timeout_clock::now());
 }
 
 std::optional<model::node_id> raft_fixture::get_leader() const {
@@ -543,10 +564,19 @@ ss::future<> raft_fixture::create_simple_group(size_t number_of_nodes) {
 
 ss::future<> raft_fixture::wait_for_committed_offset(
   model::offset offset, std::chrono::milliseconds timeout) {
-    return tests::cooperative_spin_wait_with_timeout(timeout, [this, offset] {
+    RPTEST_REQUIRE_EVENTUALLY_CORO(timeout, [this, offset] {
         return std::all_of(
           nodes().begin(), nodes().end(), [offset](auto& pair) {
               return pair.second->raft()->committed_offset() >= offset;
+          });
+    });
+}
+ss::future<> raft_fixture::wait_for_visible_offset(
+  model::offset offset, std::chrono::milliseconds timeout) {
+    RPTEST_REQUIRE_EVENTUALLY_CORO(timeout, [this, offset] {
+        return std::all_of(
+          nodes().begin(), nodes().end(), [offset](auto& pair) {
+              return pair.second->raft()->last_visible_index() >= offset;
           });
     });
 }

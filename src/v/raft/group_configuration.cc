@@ -11,6 +11,7 @@
 
 #include "config/config_store.h"
 #include "model/adl_serde.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -41,12 +42,15 @@ public:
     void
       replace_brokers(std::vector<broker_revision>, model::revision_id) final;
 
-    void add(vnode, model::revision_id) final {
+    void add(vnode, model::revision_id, std::optional<model::offset>) final {
         vassert(
           false,
           "node id based api is not supported in v3 configuration version");
     }
-    void replace(std::vector<vnode>, model::revision_id) final {
+    void replace(
+      std::vector<vnode>,
+      model::revision_id,
+      std::optional<model::offset>) final {
         vassert(
           false,
           "node id based api is not supported in v3 configuration version");
@@ -76,12 +80,15 @@ public:
     void
       replace_brokers(std::vector<broker_revision>, model::revision_id) final;
 
-    void add(vnode, model::revision_id) final {
+    void add(vnode, model::revision_id, std::optional<model::offset>) final {
         vassert(
           false,
           "node id based api is not supported in v4 configuration version");
     }
-    void replace(std::vector<vnode>, model::revision_id) final {
+    void replace(
+      std::vector<vnode>,
+      model::revision_id,
+      std::optional<model::offset>) final {
         vassert(
           false,
           "node id based api is not supported in v4 configuration version");
@@ -125,8 +132,11 @@ public:
           "broker based api is not supported in configuration version 5");
     }
 
-    void add(vnode, model::revision_id) final;
-    void replace(std::vector<vnode>, model::revision_id) final;
+    void add(vnode, model::revision_id, std::optional<model::offset>) final;
+    void replace(
+      std::vector<vnode>,
+      model::revision_id,
+      std::optional<model::offset>) final;
     void remove(vnode, model::revision_id) final;
 
     void discard_old_config() final;
@@ -278,8 +288,9 @@ group_configuration::group_configuration(
   group_nodes current,
   model::revision_id revision,
   std::optional<configuration_update> update,
-  std::optional<group_nodes> old)
-  : _version(current_version)
+  std::optional<group_nodes> old,
+  version_t version)
+  : _version(version)
   , _current(std::move(current))
   , _configuration_update(std::move(update))
   , _old(std::move(old))
@@ -440,13 +451,16 @@ void group_configuration::replace_brokers(
     make_change_strategy()->replace_brokers(std::move(brokers), rev);
 }
 
-void group_configuration::add(vnode node, model::revision_id rev) {
+void group_configuration::add(
+  vnode node,
+  model::revision_id rev,
+  std::optional<model::offset> learner_start_offset) {
     vassert(
       get_state() == configuration_state::simple,
       "can not add node to configuration when update is in progress - {}",
       *this);
 
-    make_change_strategy()->add(node, rev);
+    make_change_strategy()->add(node, rev, learner_start_offset);
 }
 
 void group_configuration::remove(vnode node, model::revision_id rev) {
@@ -458,12 +472,15 @@ void group_configuration::remove(vnode node, model::revision_id rev) {
 }
 
 void group_configuration::replace(
-  std::vector<vnode> nodes, model::revision_id rev) {
+  std::vector<vnode> nodes,
+  model::revision_id rev,
+  std::optional<model::offset> learner_start_offset) {
     vassert(
       get_state() == configuration_state::simple,
       "can not replace configuration when update is in progress - {}",
       *this);
-    make_change_strategy()->replace(std::move(nodes), rev);
+    make_change_strategy()->replace(
+      std::move(nodes), rev, learner_start_offset);
 }
 
 void group_configuration::discard_old_config() {
@@ -1037,7 +1054,10 @@ void configuration_change_strategy_v4::discard_old_config() {
  * Update strategy for v5 configuration
  */
 
-void configuration_change_strategy_v5::add(vnode node, model::revision_id rev) {
+void configuration_change_strategy_v5::add(
+  vnode node,
+  model::revision_id rev,
+  std::optional<model::offset> learner_start_offset) {
     _cfg._revision = rev;
 
     if (unlikely(_cfg.contains(node))) {
@@ -1049,6 +1069,7 @@ void configuration_change_strategy_v5::add(vnode node, model::revision_id rev) {
 
     _cfg._current.learners.push_back(node);
     _cfg._configuration_update->replicas_to_add.push_back(node);
+    _cfg._configuration_update->learner_start_offset = learner_start_offset;
 }
 
 void configuration_change_strategy_v5::remove(
@@ -1084,7 +1105,9 @@ void configuration_change_strategy_v5::remove(
 }
 
 void configuration_change_strategy_v5::replace(
-  std::vector<vnode> nodes, model::revision_id rev) {
+  std::vector<vnode> nodes,
+  model::revision_id rev,
+  std::optional<model::offset> learner_start_offset) {
     _cfg._revision = rev;
 
     /**
@@ -1104,6 +1127,8 @@ void configuration_change_strategy_v5::replace(
     // calculate configuration update
     _cfg._configuration_update = calculate_configuration_update(
       _cfg._current.voters, nodes);
+    // set learner start offset
+    _cfg._configuration_update->learner_start_offset = learner_start_offset;
 
     // add replicas to current configuration
     for (auto& vn : nodes) {
@@ -1235,10 +1260,28 @@ std::ostream& operator<<(std::ostream& o, configuration_state t) {
 std::ostream& operator<<(std::ostream& o, const configuration_update& u) {
     fmt::print(
       o,
-      "{{to_add: {}, to_remove: {}}}",
+      "{{to_add: {}, to_remove: {}, learner_start_offset: {}}}",
       u.replicas_to_add,
-      u.replicas_to_remove);
+      u.replicas_to_remove,
+      u.learner_start_offset);
     return o;
+}
+group_configuration group_configuration::serde_direct_read(
+  iobuf_parser& p, const serde::header& h) {
+    auto current = serde::read_nested<group_nodes>(p, h._bytes_left_limit);
+    auto update = serde::read_nested<std::optional<configuration_update>>(
+      p, h._bytes_left_limit);
+    auto old = serde::read_nested<std::optional<group_nodes>>(
+      p, h._bytes_left_limit);
+    auto rev = serde::read_nested<model::revision_id>(p, h._bytes_left_limit);
+    return {std::move(current), rev, std::move(update), std::move(old)};
+}
+void group_configuration::serde_write(iobuf& out) {
+    using serde::write;
+    write(out, _current);
+    write(out, _configuration_update);
+    write(out, _old);
+    write(out, _revision);
 }
 } // namespace raft
 
@@ -1312,6 +1355,7 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
      * version 3 - model::broker with multiple endpoints
      * version 4 - persist configuration update request
      * version 5 - no brokers
+     * version 6 - serde
      */
 
     std::vector<model::broker> brokers;
@@ -1357,7 +1401,12 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
     }
     if (likely(version >= raft::group_configuration::v_5)) {
         return {
-          std::move(current), revision, std::move(update), std::move(old)};
+          std::move(current),
+          revision,
+          std::move(update),
+          std::move(old),
+          // adl configuration is limited to v_5
+          raft::group_configuration::v_5};
     } else {
         raft::group_configuration cfg{
           std::move(brokers),
@@ -1396,6 +1445,16 @@ adl<raft::configuration_update>::from(iobuf_parser& in) {
       .replicas_to_add = std::move(to_add),
       .replicas_to_remove = std::move(to_remove),
     };
+}
+
+void adl<raft::group_nodes>::to(iobuf& buffer, raft::group_nodes n) {
+    reflection::serialize(buffer, n.voters, n.learners);
+}
+raft::group_nodes adl<raft::group_nodes>::from(iobuf_parser& p) {
+    auto voters = adl<std::vector<raft::vnode>>{}.from(p);
+    auto learners = adl<std::vector<raft::vnode>>{}.from(p);
+    return raft::group_nodes{
+      .voters = std::move(voters), .learners = std::move(learners)};
 }
 
 } // namespace reflection

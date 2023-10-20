@@ -303,3 +303,20 @@ FIXTURE_TEST(test_assigning_initial_revision, config_manager_fixture) {
     BOOST_REQUIRE(
       mgr.get_latest().contains(raft::vnode(model::node_id(1), new_revision)));
 }
+
+FIXTURE_TEST(test_mixed_configuration_versions, config_manager_fixture) {
+    auto cfg = random_configuration();
+    cfg.set_version(raft::group_configuration::v_5);
+    _cfg_mgr.add(model::offset(0), cfg).get0();
+    cfg = random_configuration();
+    cfg.set_version(raft::group_configuration::v_6);
+    _cfg_mgr.add(model::offset(1), cfg).get0();
+    cfg = random_configuration();
+    cfg.set_version(raft::group_configuration::v_6);
+    _cfg_mgr.add(model::offset(2), cfg).get0();
+    cfg = random_configuration();
+    cfg.set_version(raft::group_configuration::v_5);
+    _cfg_mgr.add(model::offset(3), cfg).get0();
+
+    validate_recovery();
+}

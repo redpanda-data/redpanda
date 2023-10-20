@@ -146,10 +146,15 @@ public:
      * New simplified configuration change API, accepting only vnode instead of
      * full broker object
      */
-    ss::future<std::error_code> add_group_member(vnode, model::revision_id);
+    ss::future<std::error_code> add_group_member(
+      vnode node_to_add,
+      model::revision_id new_configuration_revision,
+      std::optional<model::offset> learner_start_offset = std::nullopt);
     ss::future<std::error_code> remove_member(vnode, model::revision_id);
-    ss::future<std::error_code>
-      replace_configuration(std::vector<vnode>, model::revision_id);
+    ss::future<std::error_code> replace_configuration(
+      std::vector<vnode> new_nodes,
+      model::revision_id new_configuration_revision,
+      std::optional<model::offset> learner_start_offset = std::nullopt);
 
     /**
      * Force appends a new configuration to the local log with provided
@@ -753,6 +758,12 @@ private:
       model::offset leader_last_offset,
       bool already_recovering);
 
+    std::optional<model::offset> get_learner_start_offset() const;
+
+    bool use_serde_configuration() const {
+        return _features.is_active(features::feature::raft_config_serde);
+    }
+
     // args
     vnode _self;
     raft::group_id _group;
@@ -834,7 +845,7 @@ private:
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     uint64_t _snapshot_size{0};
-    std::optional<storage::snapshot_writer> _snapshot_writer;
+    std::optional<storage::file_snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;
     configuration_manager _configuration_manager;

@@ -25,6 +25,7 @@
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
+#include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/types.h"
@@ -603,9 +604,8 @@ members_manager::apply_raft_configuration_batch(model::record_batch b) {
       "raft configuration batches are expected to have exactly one record. "
       "Current batch contains {} records",
       b.record_count());
-
-    auto cfg = reflection::from_iobuf<raft::group_configuration>(
-      b.copy_records().front().release_value());
+    iobuf_parser parser(b.copy_records().front().release_value());
+    auto cfg = raft::details::deserialize_configuration(parser);
 
     co_await handle_raft0_cfg_update(std::move(cfg), b.base_offset());
 

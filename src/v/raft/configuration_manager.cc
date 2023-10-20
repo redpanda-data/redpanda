@@ -10,10 +10,12 @@
 #include "raft/configuration_manager.h"
 
 #include "bytes/iobuf_parser.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "raft/consensus_utils.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
+#include "serde/rw/rw.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "vlog.h"
@@ -249,7 +251,12 @@ serialize_configurations(const configuration_manager::underlying_t& cfgs) {
                  cfgs.cbegin(),
                  cfgs.cend(),
                  [&ret](const auto& p) mutable {
-                     reflection::serialize(ret, p.first, p.second.cfg);
+                     reflection::serialize(ret, p.first);
+                     if (p.second.cfg.version() >= group_configuration::v_6) {
+                         serde::write(ret, p.second.cfg);
+                     } else {
+                         reflection::serialize(ret, p.second.cfg);
+                     }
                  })
           .then([&ret] { return std::move(ret); });
     });
@@ -272,8 +279,10 @@ ss::future<configuration_manager::underlying_t> deserialize_configurations(
                          [&parser, &configs, initial](uint64_t i) mutable {
                              auto key = reflection::adl<model::offset>{}.from(
                                parser);
-                             auto value = reflection::adl<group_configuration>{}
-                                            .from(parser);
+
+                             auto value
+                               = details::deserialize_nested_configuration(
+                                 parser);
                              auto [_, success] = configs.try_emplace(
                                key,
                                configuration_manager::indexed_configuration(
@@ -316,60 +325,47 @@ ss::future<>
 configuration_manager::start(bool reset, model::revision_id initial_revision) {
     _initial_revision = initial_revision;
     if (reset) {
-        return _storage.kvs()
-          .remove(
-            storage::kvstore::key_space::consensus, configurations_map_key())
-          .then([this] {
-              return _storage.kvs().remove(
-                storage::kvstore::key_space::consensus,
-                highest_known_offset_key());
-          });
+        co_await _storage.kvs().remove(
+          storage::kvstore::key_space::consensus, configurations_map_key());
+
+        co_return co_await _storage.kvs().remove(
+          storage::kvstore::key_space::consensus, highest_known_offset_key());
     }
 
     auto map_buf = _storage.kvs().get(
       storage::kvstore::key_space::consensus, configurations_map_key());
     auto idx_buf = _storage.kvs().get(
       storage::kvstore::key_space::consensus, next_configuration_idx_key());
-    return _lock.with([this,
-                       map_buf = std::move(map_buf),
-                       idx_buf = std::move(idx_buf)]() mutable {
-        auto f = ss::now();
+    auto u = co_await _lock.get_units();
 
-        if (map_buf) {
-            _next_index = configuration_idx(0);
-            if (idx_buf) {
-                _next_index = reflection::from_iobuf<configuration_idx>(
-                  std::move(*idx_buf));
-            }
-            f = deserialize_configurations(_next_index, std::move(*map_buf))
-                  .then([this](underlying_t cfgs) {
-                      _configurations = std::move(cfgs);
-                      if (!_configurations.empty()) {
-                          _highest_known_offset
-                            = _configurations.rbegin()->first;
-                          _next_index = _configurations.rbegin()->second.idx
-                                        + configuration_idx(1);
-                      }
-                  });
+    if (map_buf) {
+        _next_index = configuration_idx(0);
+        if (idx_buf) {
+            _next_index = reflection::from_iobuf<configuration_idx>(
+              std::move(*idx_buf));
         }
+        _configurations = co_await deserialize_configurations(
+          _next_index, std::move(*map_buf));
 
-        auto offset_buf = _storage.kvs().get(
-          storage::kvstore::key_space::consensus, highest_known_offset_key());
-        if (offset_buf) {
-            f = f.then([this, buf = std::move(*offset_buf)]() mutable {
-                auto offset = reflection::from_iobuf<model::offset>(
-                  std::move(buf));
-
-                _highest_known_offset = std::max(_highest_known_offset, offset);
-            });
+        if (!_configurations.empty()) {
+            _highest_known_offset = _configurations.rbegin()->first;
+            _next_index = _configurations.rbegin()->second.idx
+                          + configuration_idx(1);
         }
+    }
 
-        return f.then([this] {
-            for (auto& [o, icfg] : _configurations) {
-                icfg.cfg.maybe_set_initial_revision(_initial_revision);
-            }
-        });
-    });
+    auto offset_buf = _storage.kvs().get(
+      storage::kvstore::key_space::consensus, highest_known_offset_key());
+    if (offset_buf) {
+        auto offset = reflection::from_iobuf<model::offset>(
+          std::move(*offset_buf));
+
+        _highest_known_offset = std::max(_highest_known_offset, offset);
+    }
+
+    for (auto& [o, icfg] : _configurations) {
+        icfg.cfg.maybe_set_initial_revision(_initial_revision);
+    }
 }
 
 void configuration_manager::maybe_store_highest_known_offset_in_background(
