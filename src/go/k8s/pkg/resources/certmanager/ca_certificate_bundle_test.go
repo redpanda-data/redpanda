@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
@@ -46,7 +46,7 @@ func TestCreateCACertBundle(t *testing.T) {
 			Name: clusterName,
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:      pointer.Int32(1),
+			Replicas:      ptr.To(int32(1)),
 			Configuration: v1alpha1.RedpandaConfig{},
 		},
 	}
@@ -120,7 +120,7 @@ func TestUpdateCACertBundle(t *testing.T) {
 			UID:       "ff2770aa-c919-43f0-8b4a-30cb7cfdaf79",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:      pointer.Int32(1),
+			Replicas:      ptr.To(int32(1)),
 			Configuration: v1alpha1.RedpandaConfig{},
 		},
 	}
@@ -180,7 +180,7 @@ func TestCACertBundleFailures(t *testing.T) {
 			UID:       "ff2770aa-c919-43f0-8b4a-30cb7cfdaf79",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:      pointer.Int32(1),
+			Replicas:      ptr.To(int32(1)),
 			Configuration: v1alpha1.RedpandaConfig{},
 		},
 	}

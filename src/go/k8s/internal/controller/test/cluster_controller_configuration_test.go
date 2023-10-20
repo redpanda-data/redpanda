@@ -26,14 +26,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/api/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 const (
@@ -915,7 +914,7 @@ func getInitialTestCluster(
 		Spec: v1alpha1.ClusterSpec{
 			Image:    "vectorized/redpanda",
 			Version:  versionWithCentralizedConfiguration,
-			Replicas: pointer.Int32(1),
+			Replicas: ptr.To(int32(1)),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI: []v1alpha1.KafkaAPI{
 					{

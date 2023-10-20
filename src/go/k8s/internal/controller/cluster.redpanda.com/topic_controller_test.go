@@ -17,7 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -91,8 +91,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(3),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(3),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig:  nil,
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -156,8 +156,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 			},
 			Spec: v1alpha1.TopicSpec{
 				OverwriteTopicName: &differentName,
-				Partitions:         pointer.Int(3),
-				ReplicationFactor:  pointer.Int(1),
+				Partitions:         ptr.To(3),
+				ReplicationFactor:  ptr.To(1),
 				AdditionalConfig:   nil,
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -222,8 +222,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(1),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(1),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig:  nil,
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -285,10 +285,10 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(3),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(3),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig: map[string]*string{
-					"segment.bytes": pointer.String("7654321"),
+					"segment.bytes": ptr.To("7654321"),
 				},
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -314,7 +314,7 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		}, &partitionCountChange)
 		require.NoError(t, err)
 
-		partitionCountChange.Spec.Partitions = pointer.Int(6)
+		partitionCountChange.Spec.Partitions = ptr.To(6)
 
 		err = c.Update(ctx, &partitionCountChange)
 		require.NoError(t, err)
@@ -356,10 +356,10 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(6),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(6),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig: map[string]*string{
-					"segment.bytes": pointer.String("7654321"),
+					"segment.bytes": ptr.To("7654321"),
 				},
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -385,7 +385,7 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		}, &partitionCountChange)
 		require.NoError(t, err)
 
-		partitionCountChange.Spec.Partitions = pointer.Int(3)
+		partitionCountChange.Spec.Partitions = ptr.To(3)
 
 		err = c.Update(ctx, &partitionCountChange)
 		require.NoError(t, err)
@@ -417,8 +417,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(6),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(6),
+				ReplicationFactor: ptr.To(1),
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
 				},
@@ -443,7 +443,7 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		}, &replicationFactorChange)
 		require.NoError(t, err)
 
-		replicationFactorChange.Spec.ReplicationFactor = pointer.Int(3)
+		replicationFactorChange.Spec.ReplicationFactor = ptr.To(3)
 
 		err = c.Update(ctx, &replicationFactorChange)
 		require.NoError(t, err)
@@ -477,11 +477,11 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(3),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(3),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig: map[string]*string{
-					testPropertyKey: pointer.String(testPropertyValue),
-					"segment.bytes": pointer.String("7654321"),
+					testPropertyKey: ptr.To(testPropertyValue),
+					"segment.bytes": ptr.To("7654321"),
 				},
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -565,12 +565,12 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(3),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(3),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig: map[string]*string{
-					"redpanda.remote.read":  pointer.String("true"),
-					"redpanda.remote.write": pointer.String("true"),
-					"segment.bytes":         pointer.String("7654321"),
+					"redpanda.remote.read":  ptr.To("true"),
+					"redpanda.remote.write": ptr.To("true"),
+					"segment.bytes":         ptr.To("7654321"),
 				},
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -614,8 +614,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 		}, &tieredStorageConf)
 		require.NoError(t, err)
 
-		tieredStorageConf.Spec.AdditionalConfig["redpanda.remote.read"] = pointer.String("false")
-		tieredStorageConf.Spec.AdditionalConfig["redpanda.remote.write"] = pointer.String("false")
+		tieredStorageConf.Spec.AdditionalConfig["redpanda.remote.read"] = ptr.To("false")
+		tieredStorageConf.Spec.AdditionalConfig["redpanda.remote.write"] = ptr.To("false")
 
 		err = c.Update(ctx, &tieredStorageConf)
 		require.NoError(t, err)
@@ -664,8 +664,8 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Generation: 1,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(3),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(3),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig:  nil,
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},
@@ -714,11 +714,11 @@ func TestReconcile(t *testing.T) { // nolint:funlen // These tests have clear su
 				Namespace: testNamespace,
 			},
 			Spec: v1alpha1.TopicSpec{
-				Partitions:        pointer.Int(3),
-				ReplicationFactor: pointer.Int(1),
+				Partitions:        ptr.To(3),
+				ReplicationFactor: ptr.To(1),
 				AdditionalConfig: map[string]*string{
-					"redpanda.remote.read": pointer.String("true"),
-					"segment.bytes":        pointer.String("7654321"),
+					"redpanda.remote.read": ptr.To("true"),
+					"segment.bytes":        ptr.To("7654321"),
 				},
 				KafkaAPISpec: &v1alpha1.KafkaAPISpec{
 					Brokers: []string{seedBroker},

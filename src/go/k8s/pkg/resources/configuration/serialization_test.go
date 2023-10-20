@@ -15,7 +15,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 )
@@ -24,7 +24,7 @@ func TestSerde(t *testing.T) {
 	conf := configuration.GlobalConfiguration{
 		NodeConfiguration: config.Config{
 			Redpanda: config.RedpandaNodeConfig{
-				ID: pointer.Int(3),
+				ID: ptr.To(3),
 			},
 		},
 		ClusterConfiguration: map[string]interface{}{

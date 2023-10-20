@@ -20,7 +20,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -194,10 +193,6 @@ func StartFileServer(path, address string, l logr.Logger) {
 	if err != nil {
 		l.Error(err, "file server error")
 	}
-}
-
-func IsBoolPointerNILorEqual(a *bool, b bool) bool {
-	return a == nil || pointer.BoolEqual(a, pointer.Bool(b))
 }
 
 func Infof(log logr.Logger, format string, a ...interface{}) {
