@@ -20,10 +20,15 @@ simple_key_offset_map::simple_key_offset_map(size_t max_keys)
 
 seastar::future<bool>
 simple_key_offset_map::put(const compaction_key& key, model::offset o) {
-    if (_map.size() >= _max_keys) {
-        return seastar::make_ready_future<bool>(false);
+    auto iter = _map.find(key);
+    if (iter == _map.end()) {
+        if (_map.size() >= _max_keys) {
+            return seastar::make_ready_future<bool>(false);
+        }
+        _map[key] = o;
+    } else {
+        _map[key] = std::max(o, iter->second);
     }
-    _map[key] = std::max(o, _map[key]);
     _max_offset = std::max(_max_offset, o);
     return seastar::make_ready_future<bool>(true);
 }
