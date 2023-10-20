@@ -20,6 +20,7 @@
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
+#include "vlog.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -187,6 +188,11 @@ private:
 std::pair<uint64_t, uint64_t> partition_balancer_planner::get_node_bytes_info(
   const node::local_state& node_state) {
     const auto& state = node_state.log_data_size;
+    vlog(
+      clusterlog.debug,
+      "getting node disk information from node: {}",
+      node_state);
+
     if (likely(state)) {
         // It is okay to account reclaimable space as free space even through
         // the space is not readily available. During the partition move if the
@@ -206,9 +212,17 @@ std::pair<uint64_t, uint64_t> partition_balancer_planner::get_node_bytes_info(
                 total_free = reclaimable_size - overage;
             }
         }
-        // Clamp the free space to be conservative and account for any error
-        // from space monitoring logic.
-        total_free = std::min(total_free, node_state.data_disk.free);
+
+        /**
+         * In the initial phase reported space may be incorrect as not all
+         * partition storage information are reported. Clamp down to actual
+         * disk free space + reclaimable size. This way we will never go beyond
+         * the actual free space but when all reported values are up to date
+         * the calculated free space should always be smaller then or equal to
+         * free space to reclaimable space.
+         */
+        total_free = std::min(
+          reclaimable_size + node_state.data_disk.free, total_free);
         // Clamp to total available target size.
         total_free = std::min(target_size, total_free);
         return std::make_pair(target_size, total_free);
