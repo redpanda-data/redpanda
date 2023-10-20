@@ -319,6 +319,20 @@ func (r *StatefulSetResource) obj(
 
 	tlsVolumes, tlsVolumeMounts := r.volumeProvider.Volumes()
 
+	rpkFlags := []string{}
+	u := fmt.Sprintf("%s://${POD_NAME}.%s:%d", r.pandaCluster.AdminAPIInternal().GetHTTPScheme(), r.serviceFQDN, r.pandaCluster.AdminAPIInternal().GetPort())
+	rpkFlags = append(rpkFlags, fmt.Sprintf("--api-urls %q", u))
+	if r.pandaCluster.AdminAPIInternal().GetTLS().Enabled {
+		rpkFlags = append(rpkFlags,
+			"--admin-api-tls-enabled",
+			fmt.Sprintf("--admin-api-tls-truststore %q", path.Join(resourcetypes.GetTLSMountPoints().AdminAPI.NodeCertMountDir, "ca.crt")))
+	}
+	if r.pandaCluster.AdminAPIInternal().GetTLS().RequireClientAuth {
+		rpkFlags = append(rpkFlags,
+			fmt.Sprintf("--admin-api-tls-cert %q", path.Join(resourcetypes.GetTLSMountPoints().AdminAPI.ClientCAMountDir, "tls.crt")),
+			fmt.Sprintf("--admin-api-tls-key %q", path.Join(resourcetypes.GetTLSMountPoints().AdminAPI.ClientCAMountDir, "tls.key")))
+	}
+
 	// We set statefulset replicas via status.currentReplicas in order to control it from the handleScaling function
 	replicas := r.pandaCluster.GetCurrentReplicas()
 
@@ -526,6 +540,13 @@ func (r *StatefulSetResource) obj(
 									ContainerPort: int32(r.pandaCluster.Spec.Configuration.RPCServer.Port),
 								},
 							}, r.getPorts()...),
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"bash", "-xc", fmt.Sprintf("rpk cluster health %s| grep 'Healthy:.*true'", strings.Join(rpkFlags, " "))},
+									},
+								},
+							},
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser:  ptr.To(int64(userID)),
 								RunAsGroup: ptr.To(int64(groupID)),
