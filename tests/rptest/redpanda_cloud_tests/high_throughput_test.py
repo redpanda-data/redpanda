@@ -190,9 +190,11 @@ def get_cloud_globals(globals):
 
 
 class HighThroughputTest(RedpandaTest):
-    small_segment_size = 4 * KiB
+    msg_size = 256 * KiB
+    # Min segment size across all tiers
+    small_segment_size = 16 * MiB
     unavailable_timeout = 60
-    msg_size = 128 * KiB
+    
 
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
@@ -281,14 +283,18 @@ class HighThroughputTest(RedpandaTest):
         small segments to bootstrap a test enviornment that would stress
         the tiered storage subsytem.
         """
-        cloud_segment_size = self.msg_size * 4
-        num_segments_per_partition = 1000
+        cloud_segment_size = self.small_segment_size
+        # Original value is 1000
+        # which results in 1016 hours of data preload at tier1 ingress speed
+        #     at '2' metric shows for 100% produced
+        #     [INFO  - 2023-10-20 22:34:52,258 - si_utils - nodes_report_cloud_segments - lineno:539]: Cluster metrics report 315 / 800 cloud segments
+        num_segments_per_partition = 2
         target_cloud_segments = num_segments_per_partition * self.tier_config.partitions_upper_limit
         total_bytes_to_produce = target_cloud_segments * cloud_segment_size
         total_messages = int((total_bytes_to_produce / self.msg_size) * 1.2)
-        self.redpanda.logger.info(
-            f"Total bytes: {total_bytes_to_produce} total messages: {total_messages}"
-        )
+        self.redpanda.logger.info(f"Total bytes: {total_bytes_to_produce}, "
+                                  f"total messages: {total_messages}, "
+                                  f"target segments: {target_cloud_segments}")
         assert cloud_segment_size >= self.msg_size
         producer = KgoVerifierProducer(self.test_context, self.redpanda,
                                        self.topic, self.msg_size,
@@ -788,7 +794,6 @@ class HighThroughputTest(RedpandaTest):
                 consumer.stop()
                 consumer.wait(timeout_sec=600)
 
-    @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
         # create default topics
