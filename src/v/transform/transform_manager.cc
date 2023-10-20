@@ -132,7 +132,7 @@ public:
         std::unique_ptr<transform::processor> _processor;
         ss::lw_shared_ptr<transform::probe> _probe;
         processor_backoff<ClockType> _backoff;
-        bool _is_errored = true;
+        bool _is_errored = false;
     };
 
     auto range() const { return std::make_pair(_table.begin(), _table.end()); }
