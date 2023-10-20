@@ -110,6 +110,7 @@ class RpkGroupPartition(typing.NamedTuple):
     instance_id: str
     client_id: str
     host: str
+    error: str
 
 
 class RpkGroup(typing.NamedTuple):
@@ -591,32 +592,12 @@ class RpkTool:
         cmd = ["seek", group, "--to", to]
         self._run_group(cmd)
 
-    def group_describe(self, group, summary=False):
+    def group_describe(self, group, summary=False, tolerant=False):
         def parse_field(field_name, string):
             pattern = re.compile(f" *{field_name} +(?P<value>.+)")
             m = pattern.match(string)
             assert m is not None, f"Field string '{string}' does not match the pattern"
             return m['value']
-
-        def check_lines(lines):
-            for line in lines:
-                # UNKNOWN_TOPIC_OR_PARTITION: This server doesn't contain this partition or topic.
-                # We should wait until server will get information about it.
-                if line.find('UNKNOWN_TOPIC_OR_PARTITION') != -1:
-                    return False
-
-                # Leadership movements are underway
-                if 'NOT_LEADER_FOR_PARTITION' in line:
-                    return False
-
-                # Cluster not ready yet
-                if 'unknown broker' in line:
-                    return False
-
-                if "missing from list offsets" in line:
-                    return False
-
-            return True
 
         def try_describe_group(group):
             if summary:
@@ -645,9 +626,6 @@ class RpkTool:
                     raise
 
             lines = out.splitlines()
-
-            if not check_lines(lines):
-                return None
 
             group_name = parse_field("GROUP", lines[0])
             coordinator = parse_field("COORDINATOR", lines[1])
@@ -683,9 +661,21 @@ class RpkTool:
                                for i in range(len(table.columns)))
 
                     # Check to see if info for the partition was queried during a change in leadership.
-                    error = obj.get("ERROR", "")
-                    if "NOT_LEADER_FOR_PARTITION" in error:
-                        return None
+                    error = obj.get("ERROR")
+                    if not tolerant and error:
+                        error_strs = [
+                            # UNKNOWN_TOPIC_OR_PARTITION: This server doesn't contain this partition
+                            # or topic. We should wait until server will get information about it.
+                            "UNKNOWN_TOPIC_OR_PARTITION",
+                            # Leadership movements are underway
+                            "NOT_LEADER_FOR_PARTITION",
+                            # Cluster not ready yet
+                            "unknown broker",
+                            # ListOffsets request (needed to calculate lag) errored or was incomplete
+                            "missing from list offsets",
+                        ]
+                        if any(e in error for e in error_strs):
+                            return None
 
                     def maybe_parse_int(field):
                         # Account for negative numbers and '-' value
@@ -703,6 +693,7 @@ class RpkTool:
                         instance_id=obj.get("INSTANCE-ID"),
                         client_id=obj["CLIENT-ID"],
                         host=obj["HOST"],
+                        error=error,
                     )
 
                     partitions.append(partition)
