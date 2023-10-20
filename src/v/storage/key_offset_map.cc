@@ -12,11 +12,11 @@
 
 namespace storage {
 
-simple_key_offset_map::simple_key_offset_map(size_t max_keys)
+simple_key_offset_map::simple_key_offset_map(std::optional<size_t> max_keys)
   : _memory_tracker(ss::make_shared<util::mem_tracker>("simple_key_offset_map"))
   , _map(util::mem_tracked::map<absl::btree_map, compaction_key, model::offset>(
       _memory_tracker))
-  , _max_keys(max_keys) {}
+  , _max_keys(max_keys ? *max_keys : default_key_limit) {}
 
 seastar::future<bool>
 simple_key_offset_map::put(const compaction_key& key, model::offset o) {
