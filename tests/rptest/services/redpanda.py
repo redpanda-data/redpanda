@@ -371,6 +371,7 @@ class SISettings:
                  test_context,
                  *,
                  log_segment_size: int = 16 * 1000000,
+                 cloud_storage_cache_chunk_size: Optional[int] = None,
                  cloud_storage_credentials_source: str = 'config_file',
                  cloud_storage_access_key: str = 'panda-user',
                  cloud_storage_secret_key: str = 'panda-secret',
@@ -431,6 +432,7 @@ class SISettings:
             assert False, f"Unexpected value provided for 'cloud_storage_type' injected arg: {self.cloud_storage_type}"
 
         self.log_segment_size = log_segment_size
+        self.cloud_storage_cache_chunk_size = cloud_storage_cache_chunk_size
         self.cloud_storage_cache_size = cloud_storage_cache_size
         self.cloud_storage_cache_max_objects = cloud_storage_cache_max_objects
         self.cloud_storage_enable_remote_read = cloud_storage_enable_remote_read
@@ -538,6 +540,10 @@ class SISettings:
                 'cloud_storage_azure_shared_key'] = self.cloud_storage_azure_shared_key
 
         conf["log_segment_size"] = self.log_segment_size
+        if (self.cloud_storage_cache_chunk_size):
+            conf[
+                "cloud_storage_cache_chunk_size"] = self.cloud_storage_cache_chunk_size
+
         conf["cloud_storage_enabled"] = True
         if self.cloud_storage_cache_size is None:
             # Default cache size for testing: large enough to enable streaming throughput up to 100MB/s, but no
