@@ -459,6 +459,8 @@ private:
       get_partition_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       get_topic_partitions_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      get_majority_lost_partitions(std::unique_ptr<ss::http::request>);
 
     ss::future<ss::json::json_return_type>
       get_transactions_handler(std::unique_ptr<ss::http::request>);

@@ -356,6 +356,28 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/partitions/majority_lost",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "List of partitions with lost majority given an input set of defunct nodes.",
+                    "type": "void",
+                    "nickname": "majority_lost",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "defunct_nodes",
+                            "in": "query",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -642,6 +664,52 @@
                 "result": {
                     "type": "string",
                     "description": "Status of operation"
+                }
+            }
+        },
+        "ntp": {
+            "id": "ntp",
+            "description": "Partition metadata",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "Namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Topic"
+                },
+                "partition": {
+                    "type": "long",
+                    "description": "Partition id"
+                }
+            }
+        },
+        "ntp_with_majority_loss": {
+            "id": "ntp_with_majority_loss",
+            "description": "ntp instance with lost majority due to defunct nodes.",
+            "properties": {
+                "ntp": {
+                    "type": "ntp",
+                    "description": "partition"
+                },
+                "topic_revision": {
+                    "type": "long",
+                    "description": "Revision of the topic this ntp is a part of."
+                },
+                "replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "assignment"
+                    },
+                    "description": "Replica assignments"
+                },
+                "defunct_nodes" : {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    },
+                    "description:": "Nodes that are no longer functional and irrecoverable. Such nodes are explicitly marked defunct by the user."
                 }
             }
         }
