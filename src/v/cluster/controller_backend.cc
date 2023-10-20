@@ -489,7 +489,8 @@ ss::future<std::error_code> do_update_replica_set(
     // only vnodes to update raft replica set
     if (likely(command_based_members_update)) {
         auto nodes = create_vnode_set(replicas, replica_revisions);
-        co_return co_await p->update_replica_set(std::move(nodes), rev);
+        co_return co_await p->update_replica_set(
+          std::move(nodes), rev, std::nullopt);
     }
 
     auto brokers = create_brokers_set(replicas, replica_revisions, members);
