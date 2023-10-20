@@ -89,6 +89,8 @@ std::string_view to_string_view(feature f) {
         return "raft_config_serde";
     case feature::idempotency_v2:
         return "idempotency_v2";
+    case feature::fast_partition_reconfiguration:
+        return "fast_partition_reconfiguration";
 
     /*
      * testing features

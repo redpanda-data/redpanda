@@ -69,6 +69,7 @@ enum class feature : std::uint64_t {
     wasm_transforms = 1ULL << 35U,
     raft_config_serde = 1ULL << 36U,
     idempotency_v2 = 1ULL << 37U,
+    fast_partition_reconfiguration = 1ULL << 38U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -334,6 +335,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{11},
     "idempotency_v2",
     feature::idempotency_v2,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{11},
+    "fast_partition_reconfiguration",
+    feature::fast_partition_reconfiguration,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always}};
 
