@@ -570,6 +570,10 @@
                         "type": "partition_reconciliation_status"
                     },
                     "description": "list of reconciliation statuses per node"
+                },
+                "reconfiguration_policy": {
+                    "type": "string",
+                    "description": "Reconfiguration policy used to perform this update"
                 }
             }
         },

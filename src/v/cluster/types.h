@@ -4138,6 +4138,8 @@ struct partition_reconfiguration_state {
     std::vector<replica_bytes> already_transferred_bytes;
     // current size of partition
     size_t current_partition_size{0};
+    // policy used to execute an update
+    reconfiguration_policy policy;
 };
 
 struct node_decommission_progress {

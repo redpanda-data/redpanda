@@ -336,6 +336,7 @@ controller_api::get_partitions_reconfiguration_state(
         state.current_assignment = std::move(p_as->replicas);
         state.previous_assignment = progress_it->second.get_previous_replicas();
         state.state = progress_it->second.get_state();
+        state.policy = progress_it->second.get_reconfiguration_policy();
         states.emplace(ntp, std::move(state));
 
         auto [tp_it, _] = partitions_filter.namespaces.try_emplace(
