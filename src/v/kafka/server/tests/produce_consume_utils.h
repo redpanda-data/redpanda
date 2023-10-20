@@ -25,6 +25,10 @@ struct kv_t {
       : key(std::move(k))
       , val(std::move(v)) {}
 
+    friend bool operator==(const kv_t& l, const kv_t& r) {
+        return std::tie(l.key, l.val) == std::tie(r.key, r.val);
+    }
+
     static std::vector<kv_t> sequence(
       size_t start,
       size_t num_records,
