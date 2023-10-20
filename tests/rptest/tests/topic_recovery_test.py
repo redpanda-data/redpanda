@@ -1489,7 +1489,11 @@ class TopicRecoveryTest(RedpandaTest):
                                        self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
+    @cluster(
+        num_nodes=4,
+        log_allow_list=TRANSIENT_ERRORS + [
+            r'unexpected REST API error "" detected, code: AccessDenied, .* resource: /recovery_state/kafka/.*'
+        ])
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_admin_api_recovery(self, cloud_storage_type):
         topics = [
