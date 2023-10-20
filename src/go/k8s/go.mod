@@ -16,7 +16,7 @@ require (
 	github.com/fluxcd/source-controller/api v1.1.2
 	github.com/fluxcd/source-controller/shim v0.0.0-00010101000000-000000000000
 	github.com/go-logr/logr v1.2.4
-	github.com/jcmturner/gokrb5/v8 v8.4.3
+	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/json-iterator/go v1.1.12
 	github.com/moby/moby v24.0.6+incompatible
 	github.com/moby/sys/mountinfo v0.6.2
