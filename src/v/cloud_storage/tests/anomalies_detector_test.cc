@@ -894,6 +894,59 @@ FIXTURE_TEST(test_filtering_of_segment_merge, bucket_view_fixture) {
     BOOST_REQUIRE_EQUAL(filtered_anomalies, filtered_from_partials);
 }
 
+FIXTURE_TEST(test_filtering_of_archive_segments, bucket_view_fixture) {
+    /*
+     * This test deletes two segment objects from the cloud: one in the STM
+     * region region and another one in the archive region. Verify that the
+     * filtering logic keeps the missing segment from the archive.
+     */
+
+    init_view(
+      stm_manifest, {spillover_manifest_at_0, spillover_manifest_at_20});
+
+    remove_segment(get_stm_manifest(), *get_stm_manifest().begin());
+    remove_segment(
+      get_spillover_manifests().at(0),
+      *get_spillover_manifests().at(0).begin());
+
+    const auto result = run_detector(archival::run_quota_t{100});
+    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+    BOOST_REQUIRE(result.detected.has_value());
+    BOOST_REQUIRE_EQUAL(result.detected.missing_segments.size(), 2);
+
+    // Run the detection again but under very strict quota. A complete
+    // scrub will require multiple partial scrubs.
+    auto partial_results = run_detector_until_log_end(archival::run_quota_t{2});
+
+    BOOST_REQUIRE_EQUAL(
+      result.detected, flatten_partial_results(partial_results).detected);
+
+    auto manifest_updated_by_full_scrub = get_stm_manifest().clone();
+    auto manifest_updated_by_partial_scrubs = get_stm_manifest().clone();
+
+    manifest_updated_by_full_scrub.process_anomalies(
+      model::timestamp::now(),
+      result.last_scrubbed_offset,
+      result.status,
+      result.detected);
+
+    for (const auto& result : partial_results) {
+        manifest_updated_by_partial_scrubs.process_anomalies(
+          model::timestamp::now(),
+          result.last_scrubbed_offset,
+          result.status,
+          result.detected);
+    }
+
+    const auto& filtered_from_partials
+      = manifest_updated_by_full_scrub.detected_anomalies();
+    const auto& filtered_from_full
+      = manifest_updated_by_partial_scrubs.detected_anomalies();
+
+    BOOST_REQUIRE_EQUAL(filtered_from_partials, filtered_from_full);
+    BOOST_REQUIRE_EQUAL(filtered_from_partials.missing_segments.size(), 2);
+}
+
 BOOST_AUTO_TEST_CASE(test_offset_anomaly_detection) {
     using namespace cloud_storage;
 

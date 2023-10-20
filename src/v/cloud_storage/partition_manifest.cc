@@ -2691,11 +2691,17 @@ void partition_manifest::process_anomalies(
             return true;
         }
 
-        // The segment might have been missing because it was merged with
-        // something else. If the offset range doesn't match a segment exactly,
-        // discard the anomaly.
-        return !segment_with_offset_range_exists(
-          meta.base_offset, meta.committed_offset);
+        if (meta.committed_offset >= get_start_offset()) {
+            // The segment might have been missing because it was merged with
+            // something else. If the offset range doesn't match a segment
+            // exactly, discard the anomaly. Only segments from the STM manifest
+            // may be merged/reuploaded.
+            return !segment_with_offset_range_exists(
+              meta.base_offset, meta.committed_offset);
+        } else {
+            // Segment belongs to the archive. No reuploads are done here.
+            return false;
+        }
     });
 
     auto& segment_meta_anomalies
@@ -2707,10 +2713,14 @@ void partition_manifest::process_anomalies(
               return true;
           }
 
-          // Similarly to the missing segment case, if the boundaries of the
-          // segment where the anomaly was detected changed, drop it.
-          return !segment_with_offset_range_exists(
-            anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
+          if (anomaly_meta.at.committed_offset >= get_start_offset()) {
+              // Similarly to the missing segment case, if the boundaries of the
+              // segment where the anomaly was detected changed, drop it.
+              return !segment_with_offset_range_exists(
+                anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
+          } else {
+              return false;
+          }
       });
 
     _last_partition_scrub = scrub_timestamp;
