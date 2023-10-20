@@ -45,6 +45,7 @@
 #include <algorithm>
 #include <exception>
 #include <iterator>
+#include <utility>
 
 namespace cluster {
 
@@ -59,7 +60,7 @@ partition_manager::partition_manager(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
-  config::binding<uint64_t> max_concurrent_producer_ids)
+  ss::sharded<producer_state_manager>& producer_state_manager)
   : _storage(storage.local())
   , _raft_manager(raft)
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -70,7 +71,7 @@ partition_manager::partition_manager(
   , _feature_table(feature_table)
   , _tm_stm_cache_manager(tm_stm_cache_manager)
   , _upload_hks(upload_hks)
-  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
+  , _producer_state_manager(producer_state_manager) {
     _leader_notify_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -236,8 +237,8 @@ ss::future<consensus_ptr> partition_manager::manage(
       _feature_table,
       _tm_stm_cache_manager,
       _upload_hks,
+      _producer_state_manager,
       _storage.kvs(),
-      _max_concurrent_producer_ids,
       read_replica_bucket);
 
     _ntp_table.emplace(log->config().ntp(), p);

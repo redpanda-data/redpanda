@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/persisted_stm.h"
+#include "cluster/producer_state.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -45,6 +46,8 @@
 #include <system_error>
 
 namespace mt = util::mem_tracked;
+
+struct rm_stm_test_fixture;
 
 namespace cluster {
 
@@ -86,106 +89,6 @@ public:
         bool operator==(const prepare_marker&) const = default;
     };
 
-    struct seq_cache_entry {
-        int32_t seq{-1};
-        kafka::offset offset;
-
-        bool operator==(const seq_cache_entry&) const = default;
-    };
-
-    struct seq_entry {
-        static const int seq_cache_size = 5;
-        model::producer_identity pid;
-        int32_t seq{-1};
-        kafka::offset last_offset{-1};
-        ss::circular_buffer<seq_cache_entry> seq_cache;
-        model::timestamp::type last_write_timestamp;
-
-        seq_entry copy() const {
-            seq_entry ret;
-            ret.pid = pid;
-            ret.seq = seq;
-            ret.last_offset = last_offset;
-            ret.seq_cache.reserve(seq_cache.size());
-            std::copy(
-              seq_cache.cbegin(),
-              seq_cache.cend(),
-              std::back_inserter(ret.seq_cache));
-            ret.last_write_timestamp = last_write_timestamp;
-            return ret;
-        }
-
-        void update(int32_t new_seq, kafka::offset new_offset) {
-            if (new_seq < seq) {
-                return;
-            }
-
-            if (seq == new_seq) {
-                last_offset = new_offset;
-                return;
-            }
-
-            if (seq >= 0 && last_offset >= kafka::offset{0}) {
-                auto entry = seq_cache_entry{.seq = seq, .offset = last_offset};
-                seq_cache.push_back(entry);
-                while (seq_cache.size() >= seq_entry::seq_cache_size) {
-                    seq_cache.pop_front();
-                }
-            }
-
-            seq = new_seq;
-            last_offset = new_offset;
-        }
-
-        bool operator==(const seq_entry& other) const {
-            if (this == &other) {
-                return true;
-            }
-            return pid == other.pid && seq == other.seq
-                   && last_offset == other.last_offset
-                   && last_write_timestamp == other.last_write_timestamp
-                   && std::equal(
-                     seq_cache.begin(),
-                     seq_cache.end(),
-                     other.seq_cache.begin(),
-                     other.seq_cache.end());
-        }
-    };
-
-    // note: support for tx_snapshot::version[0-2] was dropped
-    // in v23.3.x
-    struct tx_snapshot {
-        static constexpr uint8_t version = 4;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<tx_range> ongoing;
-        fragmented_vector<prepare_marker> prepared;
-        fragmented_vector<tx_range> aborted;
-        fragmented_vector<abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<seq_entry> seqs;
-
-        struct tx_data_snapshot {
-            model::producer_identity pid;
-            model::tx_seq tx_seq;
-            model::partition_id tm;
-
-            bool operator==(const tx_data_snapshot&) const = default;
-        };
-
-        struct expiration_snapshot {
-            model::producer_identity pid;
-            duration_type timeout;
-
-            bool operator==(const expiration_snapshot&) const = default;
-        };
-
-        fragmented_vector<tx_data_snapshot> tx_data;
-        fragmented_vector<expiration_snapshot> expiration;
-
-        bool operator==(const tx_snapshot&) const = default;
-    };
-
     struct abort_snapshot {
         model::offset first;
         model::offset last;
@@ -209,7 +112,7 @@ public:
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<features::feature_table>&,
-      config::binding<uint64_t> max_concurrent_producer_ids);
+      ss::sharded<producer_state_manager>&);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
       model::producer_identity,
@@ -333,29 +236,6 @@ public:
         }
     };
 
-    struct tx_snapshot_v3 {
-        static constexpr uint8_t version = 3;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<rm_stm::seq_entry> seqs;
-
-        struct tx_seqs_snapshot {
-            model::producer_identity pid;
-            model::tx_seq tx_seq;
-            bool operator==(const tx_seqs_snapshot&) const = default;
-        };
-
-        fragmented_vector<tx_seqs_snapshot> tx_seqs;
-        fragmented_vector<rm_stm::tx_snapshot::expiration_snapshot> expiration;
-
-        bool operator==(const tx_snapshot_v3&) const = default;
-    };
-
     using transaction_set
       = absl::btree_map<model::producer_identity, rm_stm::transaction_info>;
     ss::future<result<transaction_set>> get_transactions();
@@ -377,6 +257,9 @@ private:
     ss::future<> do_remove_persistent_state();
     ss::future<fragmented_vector<rm_stm::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
+    producer_ptr maybe_create_producer(model::producer_identity);
+    void cleanup_producer_state(model::producer_identity);
+    ss::future<> reset_producers();
     model::record_batch make_fence_batch(
       model::producer_identity,
       model::tx_seq,
@@ -395,14 +278,9 @@ private:
       model::timeout_clock::duration);
     ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_local_snapshot() override;
+    ss::future<stm_snapshot> do_take_local_snapshot(uint8_t version);
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
-
-    bool check_seq(model::batch_identity, model::term_id);
-    std::optional<kafka::offset> known_seq(model::batch_identity) const;
-    void set_seq(model::batch_identity, kafka::offset);
-    void reset_seq(model::batch_identity, model::term_id);
-    std::optional<int32_t> tail_seq(model::producer_identity) const;
 
     ss::future<result<kafka_result>> do_replicate(
       model::batch_identity,
@@ -410,21 +288,48 @@ private:
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
-    ss::future<result<kafka_result>>
-      replicate_tx(model::batch_identity, model::record_batch_reader);
+    ss::future<result<kafka_result>> transactional_replicate(
+      model::batch_identity, model::record_batch_reader);
 
-    ss::future<result<kafka_result>> replicate_seq(
+    ss::future<result<kafka_result>> do_sync_and_transactional_replicate(
+      producer_ptr,
+      model::batch_identity,
+      model::record_batch_reader,
+      ssx::semaphore_units);
+
+    ss::future<result<kafka_result>> do_transactional_replicate(
+      model::term_id,
+      producer_ptr,
+      model::batch_identity,
+      model::record_batch_reader);
+
+    ss::future<result<kafka_result>> idempotent_replicate(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
+    ss::future<result<kafka_result>> do_idempotent_replicate(
+      model::term_id,
+      producer_ptr,
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>,
+      ssx::semaphore_units&);
+
+    ss::future<result<kafka_result>> do_sync_and_idempotent_replicate(
+      producer_ptr,
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>,
+      ssx::semaphore_units);
+
     ss::future<result<kafka_result>> replicate_msg(
       model::record_batch_reader,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
-
-    void compact_snapshot();
 
     ss::future<bool> sync(model::timeout_clock::duration);
     constexpr bool check_tx_permitted() { return true; }
@@ -475,12 +380,6 @@ private:
      */
     ss::future<model::offset> bootstrap_committed_offset();
 
-    struct seq_entry_wrapper {
-        seq_entry entry;
-        model::term_id term;
-        safe_intrusive_list_hook _hook;
-    };
-
     util::mem_tracker _tx_root_tracker{"tx-mem-root"};
     // The state of this state machine maybe change via two paths
     //
@@ -516,10 +415,6 @@ private:
                      absl::flat_hash_map,
                      model::producer_identity,
                      prepare_marker>(_tracker))
-          , seq_table(mt::map<
-                      absl::node_hash_map,
-                      model::producer_identity,
-                      seq_entry_wrapper>(_tracker))
           , current_txes(
               mt::map<absl::flat_hash_map, model::producer_identity, tx_data>(
                 _tracker))
@@ -558,22 +453,6 @@ private:
         fragmented_vector<tx_range> aborted;
         fragmented_vector<abort_index> abort_indexes;
         abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
-        // the only piece of data which we update on replay and before
-        // replicating the command. we use the highest seq number to resolve
-        // conflicts. if the replication fails we reject a command but clients
-        // by spec should be ready for thier commands being rejected so it's
-        // ok by design to have false rejects
-        using seq_map = mt::unordered_map_t<
-          absl::node_hash_map,
-          model::producer_identity,
-          seq_entry_wrapper>;
-        // Note: When erasing entries from this map, use the the helper
-        // 'erase_pid_from_seq_table' that also unlinks the entry from the
-        // intrusive list that tracks the LRU order. Not doing so can cause
-        // crashes.
-        // TODO: Enforce this constraint by hiding seq_table as a private
-        // member.
-        seq_map seq_table;
         mt::unordered_map_t<
           absl::flat_hash_map,
           model::producer_identity,
@@ -585,64 +464,15 @@ private:
           expiration_info>
           expiration;
 
-        // Tracks the LRU order of the pids with idempotent/non-transactional
-        // requests. When the count exceeds _max_concurrent_producer_ids, we
-        // schedule a cleanup fiber that removes pids in the LRU order.
-        using idempotent_pids_replicate_order = counted_intrusive_list<
-          seq_entry_wrapper,
-          &seq_entry_wrapper::_hook>;
-        idempotent_pids_replicate_order lru_idempotent_pids;
-
-        void unlink_lru_pid(const seq_entry_wrapper& entry) {
-            if (entry._hook.is_linked()) {
-                lru_idempotent_pids.erase(
-                  lru_idempotent_pids.iterator_to(entry));
-            }
-        }
-
-        // Additionally unlinks from the LRU list before erasing from
-        // the map.
-        void erase_pid_from_seq_table(const model::producer_identity& pid) {
-            auto it = seq_table.find(pid);
-            if (it == seq_table.end()) {
-                return;
-            }
-            erase_seq(it);
-        }
-
-        void erase_seq(seq_map::const_iterator it) {
-            unlink_lru_pid(it->second);
-            seq_table.erase(it);
-        }
-
-        /// It is important that we unlink entries from seq_table before
-        /// destroying the entries themselves so that the safe link does not
-        /// assert.
-        void clear_seq_table() {
-            for (const auto& entry : seq_table) {
-                unlink_lru_pid(entry.second);
-            }
-            seq_table.clear();
-            // Checks the 1:1 invariant between seq_table entries and
-            // lru_idempotent_pids If every element from seq_table is unlinked,
-            // the resulting intrusive list should be empty.
-            vassert(
-              lru_idempotent_pids.size() == 0,
-              "Unexpected entries in the lru pid list {}",
-              lru_idempotent_pids.size());
-        }
-
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
             ongoing_map.erase(pid);
             prepared.erase(pid);
-            erase_pid_from_seq_table(pid);
             current_txes.erase(pid);
             expiration.erase(pid);
         }
 
         void reset() {
-            clear_seq_table();
             fence_pid_epoch.clear();
             ongoing_map.clear();
             ongoing_set.clear();
@@ -735,75 +565,6 @@ private:
         }
     };
 
-    enum class clear_type : int8_t {
-        tx_pids,
-        idempotent_pids,
-    };
-
-    void spawn_background_clean_for_pids(clear_type type);
-
-    ss::future<> clear_old_pids(clear_type type);
-    ss::future<> clear_old_tx_pids();
-    ss::future<> clear_old_idempotent_pids();
-
-    // When a request is retried while the first appempt is still
-    // being replicated the retried request is parked until the
-    // original request is replicated.
-    struct inflight_request {
-        int32_t last_seq{-1};
-        result<kafka_result> r = errc::success;
-        bool is_processing;
-        fragmented_vector<
-          ss::lw_shared_ptr<available_promise<result<kafka_result>>>>
-          parked;
-    };
-
-    // Redpanda uses optimistic replication to implement pipelining of
-    // idempotent replication requests. Just like with non-idempotent
-    // requests redpanda doesn't wait until previous request is replicated
-    // before processing the next.
-    //
-    // However with idempotency the requests are causally related: seq
-    // numbers should increase without gaps. So we need to prevent a
-    // case when a request A's replication starts before a request's B
-    // replication but then it fails while B's replication passes.
-    //
-    // We reply on conditional replication to guarantee that A and B
-    // share the same term and then on ours Raft's guarantees about order
-    // if A was enqueued before B within the same term then if A fails
-    // then B should fail too.
-    //
-    // inflight_requests hosts inflight requests before they are resolved
-    // and form a monotonicly increasing continuation without gaps of
-    // log_state's seq_table
-    struct inflight_requests {
-        mutex lock;
-        int32_t tail_seq{-1};
-        model::term_id term;
-        ss::circular_buffer<ss::lw_shared_ptr<inflight_request>> cache;
-
-        void forget() {
-            for (auto& inflight : cache) {
-                if (inflight->is_processing) {
-                    for (auto& pending : inflight->parked) {
-                        pending->set_value(errc::generic_tx_error);
-                    }
-                }
-            }
-            cache.clear();
-            tail_seq = -1;
-        }
-
-        std::optional<result<kafka_result>> known_seq(int32_t last_seq) const {
-            for (auto& seq : cache) {
-                if (seq->last_seq == last_seq && !seq->is_processing) {
-                    return seq->r;
-                }
-            }
-            return std::nullopt;
-        }
-    };
-
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
@@ -812,14 +573,6 @@ private:
             lock_it = new_it;
         }
         return lock_it->second;
-    }
-
-    ss::lw_shared_ptr<ss::basic_rwlock<>>
-    get_idempotent_producer_lock(model::producer_identity pid) {
-        auto [it, _] = _idempotent_producer_locks.try_emplace(
-          pid, ss::make_lw_shared<ss::basic_rwlock<>>());
-
-        return it->second;
     }
 
     kafka::offset from_log_offset(model::offset old_offset) const;
@@ -841,12 +594,8 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const mem_state&);
     friend std::ostream& operator<<(std::ostream&, const log_state&);
-    friend std::ostream& operator<<(std::ostream&, const inflight_requests&);
     ss::future<> maybe_log_tx_stats();
     void log_tx_stats();
-
-    bool
-    is_producer_expired(model::timestamp now, const seq_entry& entry) const;
 
     // Defines the commit offset range for the stm bootstrap.
     // Set on first apply upcall and used to identify if the
@@ -859,25 +608,13 @@ private:
       model::producer_id,
       ss::lw_shared_ptr<mutex>>
       _tx_locks;
-    mt::unordered_map_t<
-      absl::flat_hash_map,
-      model::producer_identity,
-      ss::lw_shared_ptr<inflight_requests>>
-      _inflight_requests;
-    mt::map_t<
-      absl::btree_map,
-      model::producer_identity,
-      ss::lw_shared_ptr<ss::basic_rwlock<>>>
-      _idempotent_producer_locks;
     log_state _log_state;
     mem_state _mem_state;
     ss::timer<clock_type> auto_abort_timer;
-    model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
     std::chrono::milliseconds _abort_interval_ms;
     uint32_t _abort_index_segment_size;
-    std::chrono::milliseconds _transactional_id_expiration;
     bool _is_autoabort_enabled{true};
     bool _is_autoabort_active{false};
     bool _is_tx_enabled{false};
@@ -889,11 +626,15 @@ private:
     config::binding<std::chrono::seconds> _log_stats_interval_s;
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
-    config::binding<uint64_t> _max_concurrent_producer_ids;
-    mutex _clean_old_pids_mtx;
+    ss::sharded<producer_state_manager>& _producer_state_manager;
+    using producers_t = mt::
+      map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>;
+    producers_t _producers;
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
     ss::abort_source _as;
+    ss::gate _gate;
+    friend struct ::rm_stm_test_fixture;
 };
 
 struct fence_batch_data {

@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/partition_balancer_types.h"
+#include "cluster/producer_state.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "random/generators.h"
@@ -78,12 +79,15 @@ inline auto random_vector(Fn&& gen, size_t size = 20) -> std::vector<T> {
     return v;
 }
 
-template<typename Fn, typename T = std::invoke_result_t<Fn>>
-inline auto random_frag_vector(Fn&& gen, size_t size = 20)
+template<
+  typename Fn,
+  typename... Args,
+  typename T = std::invoke_result_t<Fn, Args...>>
+inline auto random_frag_vector(Fn&& gen, size_t size = 20, Args&&... args)
   -> fragmented_vector<T> {
     fragmented_vector<T> v;
     while (size-- > 0) {
-        v.push_back(gen());
+        v.push_back(gen(std::forward<Args>(args)...));
     }
     return v;
 }
@@ -147,6 +151,17 @@ random_node_hash_set(Fn&& gen, size_t size = 20) {
     }
 
     return hs;
+}
+
+inline cluster::producer_ptr
+random_producer_state(cluster::producer_state_manager& psm) {
+    return ss::make_lw_shared<cluster::producer_state>(
+      psm,
+      model::producer_identity{
+        random_generators::get_int<int64_t>(),
+        random_generators::get_int<int16_t>()},
+      random_named_int<raft::group_id>(),
+      ss::noncopyable_function<void()>{});
 }
 
 /*

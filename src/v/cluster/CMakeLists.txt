@@ -86,6 +86,7 @@ v_cc_library(
     tx_registry_frontend.cc
     tx_gateway_frontend.cc
     tx_gateway.cc
+    tx_snapshot_utils.cc
     service.cc
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
@@ -146,6 +147,8 @@ v_cc_library(
     partition_balancer_backend.cc
     partition_balancer_state.cc
     partition_balancer_rpc_handler.cc
+    producer_state.cc
+    producer_state_manager.cc
     node_status_backend.cc
     node_status_rpc_handler.cc
     self_test_backend.cc

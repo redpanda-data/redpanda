@@ -47,7 +47,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
       ss::sharded<archival::upload_housekeeping_service>&,
-      config::binding<uint64_t>);
+      ss::sharded<producer_state_manager>&);
 
     ~partition_manager();
 
@@ -248,7 +248,7 @@ private:
 
     bool _block_new_leadership{false};
 
-    config::binding<uint64_t> _max_concurrent_producer_ids;
+    ss::sharded<producer_state_manager>& _producer_state_manager;
 
     // Our handle from registering for leadership notifications on group_manager
     std::optional<cluster::notification_id_type> _leader_notify_handle;

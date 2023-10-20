@@ -39,6 +39,7 @@
 #include "cluster/partition_balancer_rpc_handler.h"
 #include "cluster/partition_manager.h"
 #include "cluster/partition_recovery_manager.h"
+#include "cluster/producer_state_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_rpc_handler.h"
@@ -1308,6 +1309,18 @@ void application::wire_up_redpanda_services(
       config::shard_local_cfg().transaction_coordinator_partitions())
       .get();
 
+    syschecks::systemd_message("Initializing producer state manager").get();
+    construct_service(
+      producer_manager,
+      ss::sharded_parameter([]() {
+          return config::shard_local_cfg().max_concurrent_producer_ids.bind();
+      }),
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+      .get();
+
+    producer_manager.invoke_on_all(&cluster::producer_state_manager::start)
+      .get();
+
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -1332,9 +1345,7 @@ void application::wire_up_redpanda_services(
       std::ref(feature_table),
       std::ref(tm_stm_cache_manager),
       std::ref(_archival_upload_housekeeping),
-      ss::sharded_parameter([] {
-          return config::shard_local_cfg().max_concurrent_producer_ids.bind();
-      }))
+      std::ref(producer_manager))
       .get();
     vlog(_log.info, "Partition manager started");
 

@@ -68,6 +68,7 @@ enum class feature : std::uint64_t {
     broker_time_based_retention = 1ULL << 34U,
     wasm_transforms = 1ULL << 35U,
     raft_config_serde = 1ULL << 36U,
+    idempotency_v2 = 1ULL << 37U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -89,6 +90,7 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "maintenance_mode",
   "mtls_authentication",
   "rm_stm_kafka_cache",
+  "transaction_ga",
 };
 
 /**
@@ -326,6 +328,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{11},
     "raft_config_serde",
     feature::raft_config_serde,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{11},
+    "idempotency_v2",
+    feature::idempotency_v2,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always}};
 
