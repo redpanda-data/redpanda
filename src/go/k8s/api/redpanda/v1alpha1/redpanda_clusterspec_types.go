@@ -207,6 +207,7 @@ type SecretRef struct {
 type ListenerTLS struct {
 	Cert              *string `json:"cert,omitempty"`
 	Enabled           *bool   `json:"enabled,omitempty"`
+	SecretRef         *string `json:"secretRef,omitempty"`
 	RequireClientAuth *bool   `json:"requireClientAuth,omitempty"`
 }
 
