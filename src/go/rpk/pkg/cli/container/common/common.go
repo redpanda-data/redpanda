@@ -258,7 +258,7 @@ func CreateNode(
 	if err != nil {
 		return nil, err
 	}
-	kPort, err := nat.NewPort( //nolint:revive // var-naming diff here is intended kPort = kafkaPort.
+	kPort, err := nat.NewPort(
 		"tcp",
 		strconv.Itoa(int(externalKafkaPort)),
 	)

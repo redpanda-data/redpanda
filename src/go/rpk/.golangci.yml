@@ -13,15 +13,12 @@ linters:
   disable-all: true
   enable:
   # Enabled by default linters:
-    - deadcode
     - gosimple
     - govet
     - ineffassign
     - staticcheck
-    - structcheck
     - typecheck
     - unused
-    - varcheck
   # Disabled by default
     - asciicheck
     - bidichk
