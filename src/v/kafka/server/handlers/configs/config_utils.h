@@ -238,11 +238,14 @@ private:
 
 template<typename T>
 struct noop_validator {
-    std::optional<ss::sstring> operator()(const T&) { return std::nullopt; }
+    std::optional<ss::sstring> operator()(const ss::sstring&, const T&) {
+        return std::nullopt;
+    }
 };
 
 struct segment_size_validator {
-    std::optional<ss::sstring> operator()(const size_t& value) {
+    std::optional<ss::sstring>
+    operator()(const ss::sstring&, const size_t& value) {
         // use reasonable defaults even if they are not set in configuration
         size_t min
           = config::shard_local_cfg().log_segment_size_min.value().value_or(1);
@@ -261,10 +264,59 @@ struct segment_size_validator {
     }
 };
 
+struct replication_factor_must_be_positive {
+    std::optional<ss::sstring>
+    operator()(const ss::sstring& raw, const cluster::replication_factor&) {
+        static_assert(sizeof(int) > sizeof(cluster::replication_factor::type));
+        auto value = boost::lexical_cast<int>(raw);
+        if (value <= 0) {
+            return fmt::format("replication factor {} must be positive", value);
+        }
+        return std::nullopt;
+    }
+};
+
+struct replication_factor_must_be_odd {
+    std::optional<ss::sstring>
+    operator()(const ss::sstring&, const cluster::replication_factor& value) {
+        if (value % 2 == 0) {
+            return fmt::format("replication factor {} must be odd", value);
+        }
+        return std::nullopt;
+    }
+};
+
+template<typename T, typename... ValidatorTypes>
+requires requires(
+  const ss::sstring& s, const T& value, ValidatorTypes... validators) {
+    {
+        std::get<0>(std::tuple{validators...})(s, value)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
+    (std::is_same_v<
+       decltype(std::get<0>(std::tuple{validators...})(s, value)),
+       decltype(validators)>
+     && ...);
+}
+struct config_validator_list {
+    std::optional<ss::sstring>
+    operator()(const ss::sstring& raw, const T& value) {
+        std::optional<ss::sstring> result;
+        ((result = ValidatorTypes{}(raw, value)) || ...);
+        return result;
+    }
+};
+
+using replication_factor_validator = config_validator_list<
+  cluster::replication_factor,
+  replication_factor_must_be_positive,
+  replication_factor_must_be_odd>;
+
 template<typename T, typename Validator = noop_validator<T>>
 requires requires(const T& value, const ss::sstring& str, Validator validator) {
     { boost::lexical_cast<T>(str) } -> std::convertible_to<T>;
-    { validator(value) } -> std::convertible_to<std::optional<ss::sstring>>;
+    {
+        validator(str, value)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
 }
 void parse_and_set_optional(
   cluster::property_update<std::optional<T>>& property,
@@ -279,7 +331,7 @@ void parse_and_set_optional(
     // set property value if preset, otherwise do nothing
     if (op == config_resource_operation::set && value) {
         auto v = boost::lexical_cast<T>(*value);
-        auto v_error = validator(v);
+        auto v_error = validator(*value, v);
         if (v_error) {
             throw validation_error(*v_error);
         }
@@ -366,16 +418,31 @@ void parse_and_set_tristate(
     }
 }
 
+template<typename Validator = noop_validator<cluster::replication_factor>>
+requires requires(
+  const ss::sstring& raw,
+  const cluster::replication_factor& value,
+  Validator validator) {
+    {
+        validator(raw, value)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
+}
 inline void parse_and_set_topic_replication_factor(
   cluster::property_update<std::optional<cluster::replication_factor>>&
     property,
   const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
+  config_resource_operation op,
+  Validator validator = noop_validator<cluster::replication_factor>{}) {
     // set property value
     if (op == config_resource_operation::set) {
         property.value = std::nullopt;
         if (value) {
-            property.value = cluster::parsing_replication_factor(*value);
+            auto v = cluster::parsing_replication_factor(*value);
+            auto v_error = validator(*value, v);
+            if (v_error) {
+                throw validation_error(*v_error);
+            }
+            property.value = v;
         }
         property.op = cluster::incremental_update_operation::set;
     }

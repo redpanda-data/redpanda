@@ -233,7 +233,10 @@ create_topic_properties_update(
             }
             if (cfg.name == topic_property_replication_factor) {
                 parse_and_set_topic_replication_factor(
-                  update.custom_properties.replication_factor, cfg.value, op);
+                  update.custom_properties.replication_factor,
+                  cfg.value,
+                  op,
+                  replication_factor_validator{});
                 continue;
             }
             if (cfg.name == topic_property_segment_ms) {

@@ -229,7 +229,8 @@ create_topic_properties_update(
                 parse_and_set_topic_replication_factor(
                   update.custom_properties.replication_factor,
                   cfg.value,
-                  kafka::config_resource_operation::set);
+                  kafka::config_resource_operation::set,
+                  replication_factor_validator{});
                 continue;
             }
             if (cfg.name == topic_property_initial_retention_local_target_ms) {

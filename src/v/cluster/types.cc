@@ -707,9 +707,8 @@ std::istream& operator>>(std::istream& i, replication_factor& cs) {
 replication_factor parsing_replication_factor(const ss::sstring& value) {
     auto raw_value = boost::lexical_cast<int32_t>(value);
     if (
-      raw_value <= 0
-      || raw_value
-           > std::numeric_limits<cluster::replication_factor::type>::max()) {
+      raw_value
+      > std::numeric_limits<cluster::replication_factor::type>::max()) {
         throw boost::bad_lexical_cast();
     }
 
