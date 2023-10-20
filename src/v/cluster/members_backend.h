@@ -139,6 +139,7 @@ private:
 
     ss::future<> reconcile_raft0_updates();
     ss::future<std::error_code> do_remove_node(model::node_id);
+    ss::future<> maybe_finish_decommissioning(update_meta&);
 
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
