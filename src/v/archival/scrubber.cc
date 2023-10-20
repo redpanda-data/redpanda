@@ -67,10 +67,14 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
           .remaining = quota};
     }
 
-    vlog(_logger.info, "Starting scrub with {} quota...", quota());
+    const auto scrub_from = _archiver.manifest().last_scrubbed_offset();
+    vlog(
+      _logger.info,
+      "Starting scrub with {} quota from offset {}",
+      quota(),
+      scrub_from);
 
     retry_chain_node anomaly_detection_rtc(5min, 100ms, &rtc_node);
-    const auto scrub_from = _archiver.manifest().last_scrubbed_offset();
     auto detect_result = co_await _detector.run(
       anomaly_detection_rtc, quota, scrub_from);
 
@@ -114,7 +118,9 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
 
     vlog(
       _logger.info,
-      "Scrub finished at {} with status {} and detected {} and used {} quota",
+      "Scrub which started at {} finished at {} with status {} and detected {} "
+      "and used {} quota",
+      scrub_from,
       detect_result.last_scrubbed_offset,
       detect_result.status,
       detect_result.detected,

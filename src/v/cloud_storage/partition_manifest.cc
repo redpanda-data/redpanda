@@ -2725,6 +2725,15 @@ void partition_manifest::process_anomalies(
 
     _last_partition_scrub = scrub_timestamp;
     _last_scrubbed_offset = last_scrubbed_offset;
+
+    vlog(
+      cst_log.debug,
+      "[{}] Anomalies processed: {{ detected: {}, last_partition_scrub: {}, "
+      "last_scrubbed_offset: {} }}",
+      _ntp,
+      _detected_anomalies,
+      _last_partition_scrub,
+      _last_scrubbed_offset);
 }
 
 } // namespace cloud_storage
