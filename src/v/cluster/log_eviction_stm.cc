@@ -143,14 +143,6 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
     while (!_as.abort_requested()) {
         try {
             auto eviction_offset = co_await storage_eviction_event();
-            if (!_raft->log()->config().is_collectable()) {
-                vlog(
-                  _log.error,
-                  "Ignoring unexpected storage eviction event for a "
-                  "non-collectable NTP: {}",
-                  _raft->ntp());
-                continue;
-            }
             if (eviction_offset > _storage_eviction_offset) {
                 _storage_eviction_offset = eviction_offset;
                 _has_pending_truncation.signal();
