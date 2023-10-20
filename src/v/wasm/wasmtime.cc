@@ -44,6 +44,7 @@
 #include <alloca.h>
 #include <cmath>
 #include <csignal>
+#include <limits>
 #include <memory>
 #include <pthread.h>
 #include <span>
@@ -388,6 +389,20 @@ private:
         // function.
         handle<wasmtime_store_t, wasmtime_store_delete> store{
           wasmtime_store_new(_engine, /*data=*/this, /*finalizer=*/nullptr)};
+        // Tables are backed by a vector holding pointers, so ensure the maximum
+        // allocation is under our recommended limit.
+        constexpr size_t table_element_size = sizeof(void*);
+        constexpr size_t max_table_elements = 128_KiB / table_element_size;
+        // We only ever create a single instance within this store, and we
+        // expect that modules only have a single table and a single memory
+        // instance declared.
+        wasmtime_store_limiter(
+          store.get(),
+          /*memory_size=*/std::numeric_limits<int64_t>::max(),
+          /*table_elements=*/max_table_elements,
+          /*instances=*/1,
+          /*tables=*/1,
+          /*memories=*/1);
         auto* context = wasmtime_store_context(store.get());
         reset_fuel(context);
 
