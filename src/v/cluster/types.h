@@ -2375,6 +2375,7 @@ struct delta_reconfiguration_data {
     partition_assignment target_assignment;
     replicas_t previous_replica_set;
     replicas_revision_map replica_revisions;
+    reconfiguration_policy policy;
 
     model::revision_id get_replica_revision(model::node_id) const;
     friend std::ostream&
@@ -2469,7 +2470,8 @@ public:
       is_forced,
       partition_assignment,
       replicas_t,
-      replicas_revision_map);
+      replicas_revision_map,
+      reconfiguration_policy);
 
     static topic_table_delta create_finish_update_delta(
       model::ntp, model::revision_id, partition_assignment);

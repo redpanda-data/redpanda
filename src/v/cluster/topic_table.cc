@@ -236,26 +236,48 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
 
 ss::future<std::error_code>
 topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
+    return do_apply(
+      update_partition_replicas_cmd_data{
+        .ntp = std::move(cmd.key),
+        .replicas = std::move(cmd.value),
+        // default policy for legacy partition move
+        .policy = reconfiguration_policy::full_local_retention},
+      o);
+}
+
+ss::future<std::error_code>
+topic_table::apply(update_partition_replicas_cmd cmd, model::offset o) {
+    return do_apply(std::move(cmd.value), o);
+}
+ss::future<std::error_code> topic_table::do_apply(
+  update_partition_replicas_cmd_data cmd_data, model::offset o) {
     _last_applied_revision_id = model::revision_id(o);
-    auto tp = _topics.find(model::topic_namespace_view(cmd.key));
+
+    auto tp = _topics.find(model::topic_namespace_view(cmd_data.ntp));
     if (tp == _topics.end()) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
     }
 
     auto current_assignment_it = tp->second.get_assignments().find(
-      cmd.key.tp.partition);
+      cmd_data.ntp.tp.partition);
 
     if (current_assignment_it == tp->second.get_assignments().end()) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
     }
 
-    if (_updates_in_progress.contains(cmd.key)) {
+    if (_updates_in_progress.contains(cmd_data.ntp)) {
         return ss::make_ready_future<std::error_code>(errc::update_in_progress);
     }
 
     change_partition_replicas(
-      cmd.key, cmd.value, tp->second, *current_assignment_it, o, false);
+      std::move(cmd_data.ntp),
+      cmd_data.replicas,
+      tp->second,
+      *current_assignment_it,
+      o,
+      false,
+      cmd_data.policy);
     notify_waiters();
 
     return ss::make_ready_future<std::error_code>(errc::success);
@@ -549,7 +571,9 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
           tp->second,
           *assignment,
           o,
-          false);
+          false,
+          // for up replication we use a default reconfiguration policy
+          reconfiguration_policy::full_local_retention);
     }
 
     notify_waiters();
@@ -580,7 +604,17 @@ topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
     }
 
     change_partition_replicas(
-      cmd.key, cmd.value.replicas, tp->second, *current_assignment_it, o, true);
+      cmd.key,
+      cmd.value.replicas,
+      tp->second,
+      *current_assignment_it,
+      o,
+      true,
+      /**
+       * For now use default full local retention policy when force
+       * reconfiguring partition.
+       */
+      reconfiguration_policy::full_local_retention);
     notify_waiters();
 
     return ss::make_ready_future<std::error_code>(errc::success);
@@ -998,6 +1032,7 @@ public:
               update.target_assignment,
               initial_state,
               update.revision,
+              update.policy,
               _probe,
             };
             inp_update.set_state(update.state, update.last_cmd_revision);
@@ -1037,7 +1072,8 @@ public:
                         update_replicas_revisions(
                           partition.replicas_revisions,
                           update.target_assignment,
-                          update.revision)));
+                          update.revision),
+                        update.policy));
                 }
 
                 auto add_cancel_delta = [&](is_forced forced) {
@@ -1490,7 +1526,8 @@ void topic_table::change_partition_replicas(
   topic_metadata_item& metadata,
   partition_assignment& current_assignment,
   model::offset o,
-  bool is_forced) {
+  bool is_forced,
+  reconfiguration_policy policy) {
     if (are_replica_sets_equal(current_assignment.replicas, new_assignment)) {
         return;
     }
@@ -1505,6 +1542,7 @@ void topic_table::change_partition_replicas(
         is_forced ? reconfiguration_state::force_update
                   : reconfiguration_state::in_progress,
         update_revision,
+        policy,
         _probe));
     auto previous_assignment = current_assignment.replicas;
     // replace partition replica set
@@ -1527,7 +1565,8 @@ void topic_table::change_partition_replicas(
       update_replicas_revisions(
         partition_it->second.replicas_revisions,
         new_assignment,
-        update_revision)));
+        update_revision),
+      policy));
 }
 
 size_t topic_table::get_node_partition_count(model::node_id id) const {

@@ -309,7 +309,8 @@ topic_table_delta topic_table_delta::create_update_delta(
   is_forced forced,
   partition_assignment target_assignment,
   replicas_t previous_replicas,
-  replicas_revision_map replica_revisions) {
+  replicas_revision_map replica_revisions,
+  reconfiguration_policy policy) {
     return topic_table_delta(
       std::move(ntp),
       rev,
@@ -319,6 +320,7 @@ topic_table_delta topic_table_delta::create_update_delta(
         .target_assignment = std::move(target_assignment),
         .previous_replica_set = std::move(previous_replicas),
         .replica_revisions = std::move(replica_revisions),
+        .policy = policy,
       });
 }
 
@@ -350,6 +352,10 @@ topic_table_delta topic_table_delta::create_cancel_update_delta(
         .target_assignment = std::move(target_assignment),
         .previous_replica_set = std::move(previous_replicas),
         .replica_revisions = std::move(replica_revisions),
+        /**
+         * Default policy for reconfigurations that are cancelled
+         */
+        .policy = reconfiguration_policy::full_local_retention,
       });
 }
 

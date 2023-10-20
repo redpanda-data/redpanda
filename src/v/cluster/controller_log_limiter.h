@@ -20,6 +20,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <optional>
+#include <type_traits>
 
 namespace cluster {
 
@@ -79,8 +80,9 @@ public:
           std::is_same_v<Cmd, create_partition_cmd>) {
             return _topic_operations_limiter.try_throttle();
         } else if constexpr (
-          std::is_same_v<Cmd, move_partition_replicas_cmd> || //
-          std::is_same_v<Cmd, cancel_moving_partition_replicas_cmd>) {
+          std::is_same_v<Cmd, move_partition_replicas_cmd> ||          //
+          std::is_same_v<Cmd, cancel_moving_partition_replicas_cmd> || //
+          std::is_same_v<Cmd, update_partition_replicas_cmd>) {
             return _move_operations_limiter.try_throttle();
         } else if constexpr (
           std::is_same_v<Cmd, create_user_cmd> || //
