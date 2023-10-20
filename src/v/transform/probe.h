@@ -27,10 +27,12 @@ public:
 
     void increment_read_bytes(uint64_t bytes);
     void increment_write_bytes(uint64_t bytes);
+    void increment_failure();
 
 private:
     uint64_t _read_bytes = 0;
     uint64_t _write_bytes = 0;
+    uint64_t _failures = 0;
 };
 
 } // namespace transform

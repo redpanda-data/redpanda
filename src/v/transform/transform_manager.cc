@@ -106,7 +106,9 @@ public:
           , _probe(std::move(probe)) {}
 
         transform::processor* processor() const { return _processor.get(); }
-        ss::lw_shared_ptr<transform::probe> probe() const { return _probe; }
+        const ss::lw_shared_ptr<transform::probe>& probe() const {
+            return _probe;
+        }
 
         ClockType::duration next_backoff_duration() {
             _is_errored = true;
@@ -345,6 +347,7 @@ ss::future<> manager<ClockType>::handle_transform_error(
     if (!entry) {
         co_return;
     }
+    entry->probe()->increment_failure();
     co_await entry->processor()->stop();
     auto delay = entry->next_backoff_duration();
     vlog(

@@ -42,6 +42,14 @@ void probe::setup_metrics(ss::sstring transform_name, probe_gauges gauges) {
                         "from a transform"),
         labels)
         .aggregate({sm::shard_label}));
+    metric_defs.emplace_back(
+      sm::make_counter(
+        "processor_failures",
+        [this] { return _failures; },
+        sm::description(
+          "A counter for each time that a processor encounters a failure"),
+        labels)
+        .aggregate({sm::shard_label}));
 
     auto state_label = sm::label("state");
     using state = model::transform_report::processor::state;
@@ -63,4 +71,5 @@ void probe::setup_metrics(ss::sstring transform_name, probe_gauges gauges) {
 }
 void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
 void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
+void probe::increment_failure() { ++_failures; }
 } // namespace transform
