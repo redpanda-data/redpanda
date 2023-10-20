@@ -301,24 +301,19 @@ private:
       uint64_t current_retry,
       partition_operation_type,
       model::ntp,
-      const partition_assignment& requested_assignment,
-      const replicas_t& previous_replica_set,
-      const replicas_revision_map&,
+      const delta_reconfiguration_data&,
       model::revision_id);
 
     ss::future<std::error_code> execute_reconfiguration(
       partition_operation_type,
       const model::ntp&,
-      const replicas_t&,
-      const replicas_revision_map&,
-      const replicas_t&,
+      const delta_reconfiguration_data&,
       model::revision_id);
 
     ss::future<> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);
 
-    ss::future<>
-      process_partition_properties_update(model::ntp, partition_assignment);
+    ss::future<> process_partition_properties_update(model::ntp);
 
     ss::future<std::error_code> create_partition(
       model::ntp,

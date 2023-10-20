@@ -38,12 +38,43 @@ meta_t make_delta(
   op_t type,
   std::vector<model::broker_shard> replicas,
   std::vector<model::broker_shard> previous = {}) {
-    return meta_t(cluster::topic_table::delta(
-      test_ntp,
-      make_assignment(std::move(replicas)),
-      model::revision_id(o),
-      type,
-      previous.empty() ? std::nullopt : std::make_optional(previous)));
+    switch (type) {
+    case op_t::update:
+    case op_t::force_update:
+        return meta_t(cluster::topic_table_delta::create_cancel_update_delta(
+          test_ntp,
+          model::revision_id(o),
+          cluster::is_forced(type == op_t::force_update),
+          make_assignment(std::move(replicas)),
+          std::move(previous),
+          cluster::replicas_revision_map{}));
+    case op_t::cancel_update:
+    case op_t::force_cancel_update:
+        return meta_t(cluster::topic_table_delta::create_cancel_update_delta(
+          test_ntp,
+          model::revision_id(o),
+          cluster::is_forced(type == op_t::force_cancel_update),
+          make_assignment(std::move(replicas)),
+          std::move(previous),
+          cluster::replicas_revision_map{}));
+    case op_t::finish_update:
+        return meta_t(cluster::topic_table_delta::create_finish_update_delta(
+          test_ntp,
+          model::revision_id(o),
+          make_assignment(std::move(replicas))));
+    case op_t::remove:
+        return meta_t(cluster::topic_table_delta::create_remove_partition_delta(
+          test_ntp, model::revision_id(o)));
+    case op_t::add:
+        return meta_t(cluster::topic_table_delta::create_add_partition_delta(
+          test_ntp,
+          model::revision_id(o),
+          make_assignment(std::move(replicas)),
+          cluster::replicas_revision_map{}));
+    default:
+        vassert(false, "not supported operation type: {}", type);
+    }
+    __builtin_unreachable();
 };
 
 meta_t add_current = make_delta(
