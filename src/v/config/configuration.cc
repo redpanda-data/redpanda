@@ -1995,6 +1995,22 @@ configuration::configuration()
        .visibility = visibility::tunable},
       10,
       {.min = 1})
+  , initial_retention_local_target_bytes_default(
+      *this,
+      "initial_retention_local_target_bytes_default",
+      "Initial local retention size target for partitions of topics with cloud "
+      "storage "
+      "write enabled",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
+  , initial_retention_local_target_ms_default(
+      *this,
+      "initial_retention_local_target_ms_default",
+      "Initial local retention time target for partitions of topics with cloud "
+      "storage "
+      "write enabled",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      24h)
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",

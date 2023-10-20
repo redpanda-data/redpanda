@@ -94,6 +94,13 @@ static constexpr std::string_view
   topic_property_record_value_subject_name_strategy_compat
   = "confluent.value.subject.name.strategy";
 
+static constexpr std::string_view
+  topic_property_initial_retention_local_target_bytes
+  = "initial.retention.local.target.bytes";
+static constexpr std::string_view
+  topic_property_initial_retention_local_target_ms
+  = "initial.retention.local.target.ms";
+
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
 static constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {

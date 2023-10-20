@@ -373,6 +373,10 @@ struct configuration final : public config_store {
     bounded_property<double, numeric_bounds> disk_reservation_percent;
     bounded_property<uint16_t> space_management_max_log_concurrency;
     bounded_property<uint16_t> space_management_max_segment_concurrency;
+    property<std::optional<size_t>>
+      initial_retention_local_target_bytes_default;
+    property<std::chrono::milliseconds>
+      initial_retention_local_target_ms_default;
 
     // Archival cache
     property<uint64_t> cloud_storage_cache_size;

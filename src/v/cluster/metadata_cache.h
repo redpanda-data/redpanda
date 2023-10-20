@@ -178,6 +178,10 @@ public:
     get_default_retention_duration() const;
     std::optional<size_t> get_default_retention_local_target_bytes() const;
     std::chrono::milliseconds get_default_retention_local_target_ms() const;
+    std::optional<size_t>
+    get_default_initial_retention_local_target_bytes() const;
+    std::chrono::milliseconds
+    get_default_initial_retention_local_target_ms() const;
     model::shadow_indexing_mode get_default_shadow_indexing_mode() const;
     uint32_t get_default_batch_max_bytes() const;
     std::optional<std::chrono::milliseconds> get_default_segment_ms() const;

@@ -272,6 +272,16 @@ std::chrono::milliseconds
 metadata_cache::get_default_retention_local_target_ms() const {
     return config::shard_local_cfg().retention_local_target_ms_default();
 }
+std::optional<size_t>
+metadata_cache::get_default_initial_retention_local_target_bytes() const {
+    return config::shard_local_cfg()
+      .initial_retention_local_target_bytes_default();
+}
+std::chrono::milliseconds
+metadata_cache::get_default_initial_retention_local_target_ms() const {
+    return config::shard_local_cfg()
+      .initial_retention_local_target_ms_default();
+}
 
 uint32_t metadata_cache::get_default_batch_max_bytes() const {
     return config::shard_local_cfg().kafka_batch_max_bytes();

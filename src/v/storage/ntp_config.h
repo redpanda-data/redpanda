@@ -67,6 +67,10 @@ public:
         // time before rolling a segment, from first write
         tristate<std::chrono::milliseconds> segment_ms{std::nullopt};
 
+        tristate<size_t> initial_retention_local_target_bytes{std::nullopt};
+        tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
+          std::nullopt};
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };

@@ -425,7 +425,9 @@ class CreateSITopicsTest(RedpandaTest):
             'redpanda.remote.write': 'true',
             'redpanda.remote.read': 'true',
             'retention.local.target.bytes': '123456',
-            'retention.local.target.ms': '123456'
+            'retention.local.target.ms': '123456',
+            'initial.retention.local.target.bytes': '123456',
+            'initial.retention.local.target.ms': '123456'
         }
 
         for k, v in examples.items():

@@ -1411,7 +1411,7 @@ struct remote_topic_properties
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<5>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<6>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -1442,7 +1442,9 @@ struct topic_properties
       std::optional<pandaproxy::schema_registry::subject_name_strategy>
         record_value_subject_name_strategy,
       std::optional<pandaproxy::schema_registry::subject_name_strategy>
-        record_value_subject_name_strategy_compat)
+        record_value_subject_name_strategy_compat,
+      tristate<size_t> initial_retention_local_target_bytes,
+      tristate<std::chrono::milliseconds> initial_retention_local_target_ms)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1471,7 +1473,10 @@ struct topic_properties
           record_value_schema_id_validation_compat)
       , record_value_subject_name_strategy(record_value_subject_name_strategy)
       , record_value_subject_name_strategy_compat(
-          record_value_subject_name_strategy_compat) {}
+          record_value_subject_name_strategy_compat)
+      , initial_retention_local_target_bytes(
+          initial_retention_local_target_bytes)
+      , initial_retention_local_target_ms(initial_retention_local_target_ms) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1510,6 +1515,10 @@ struct topic_properties
     std::optional<pandaproxy::schema_registry::subject_name_strategy>
       record_value_subject_name_strategy_compat;
 
+    tristate<size_t> initial_retention_local_target_bytes{std::nullopt};
+    tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
+      std::nullopt};
+
     bool is_compacted() const;
     bool has_overrides() const;
     bool requires_remote_erase() const;
@@ -1543,7 +1552,9 @@ struct topic_properties
           record_value_schema_id_validation,
           record_value_schema_id_validation_compat,
           record_value_subject_name_strategy,
-          record_value_subject_name_strategy_compat);
+          record_value_subject_name_strategy_compat,
+          initial_retention_local_target_bytes,
+          initial_retention_local_target_ms);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1631,7 +1642,7 @@ struct property_update<tristate<T>>
 struct incremental_topic_updates
   : serde::envelope<
       incremental_topic_updates,
-      serde::version<4>,
+      serde::version<5>,
       serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
@@ -1639,13 +1650,15 @@ struct incremental_topic_updates
       = -4;
     static constexpr int8_t version_with_segment_ms = -5;
     static constexpr int8_t version_with_schema_id_validation = -6;
+    static constexpr int8_t version_with_initial_retention = -7;
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
     // -3 - topic_updates with shadow_indexing
     // -4 - topic update with batch_max_bytes and retention.local.target
     // -6 - topic updates with schema id validation
-    static constexpr int8_t version = version_with_schema_id_validation;
+    // -7 - topic updates with initial retention
+    static constexpr int8_t version = version_with_initial_retention;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -1680,6 +1693,9 @@ struct incremental_topic_updates
     property_update<
       std::optional<pandaproxy::schema_registry::subject_name_strategy>>
       record_value_subject_name_strategy_compat;
+    property_update<tristate<size_t>> initial_retention_local_target_bytes;
+    property_update<tristate<std::chrono::milliseconds>>
+      initial_retention_local_target_ms;
 
     auto serde_fields() {
         return std::tie(
@@ -1703,7 +1719,9 @@ struct incremental_topic_updates
           record_value_schema_id_validation,
           record_value_schema_id_validation_compat,
           record_value_subject_name_strategy,
-          record_value_subject_name_strategy_compat);
+          record_value_subject_name_strategy_compat,
+          initial_retention_local_target_bytes,
+          initial_retention_local_target_ms);
     }
 
     friend std::ostream&

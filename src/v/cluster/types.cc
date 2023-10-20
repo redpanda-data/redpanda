@@ -192,7 +192,9 @@ bool topic_properties::has_overrides() const {
            || record_value_schema_id_validation.has_value()
            || record_value_schema_id_validation_compat.has_value()
            || record_value_subject_name_strategy.has_value()
-           || record_value_subject_name_strategy_compat.has_value();
+           || record_value_subject_name_strategy_compat.has_value()
+           || initial_retention_local_target_bytes.is_engaged()
+           || initial_retention_local_target_ms.is_engaged();
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -219,6 +221,9 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_local_target_ms = retention_local_target_ms;
     ret.remote_delete = remote_delete;
     ret.segment_ms = segment_ms;
+    ret.initial_retention_local_target_bytes
+      = initial_retention_local_target_bytes;
+    ret.initial_retention_local_target_ms = initial_retention_local_target_ms;
     return ret;
 }
 
@@ -250,6 +255,10 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .retention_local_target_ms = properties.retention_local_target_ms,
             .remote_delete = properties.remote_delete,
             .segment_ms = properties.segment_ms,
+            .initial_retention_local_target_bytes
+            = properties.initial_retention_local_target_bytes,
+            .initial_retention_local_target_ms
+            = properties.initial_retention_local_target_ms,
           });
     }
     return {
@@ -366,7 +375,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "record_value_schema_id_validation: {},  "
       "record_value_schema_id_validation_compat: {}, "
       "record_value_subject_name_strategy: {}, "
-      "record_value_subject_name_strategy_compat: {}}}",
+      "record_value_subject_name_strategy_compat: {}, "
+      "initial_retention_local_target_bytes: {}, "
+      "initial_retention_local_target_ms: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -391,7 +402,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.record_value_schema_id_validation,
       properties.record_value_schema_id_validation_compat,
       properties.record_value_subject_name_strategy,
-      properties.record_value_subject_name_strategy_compat);
+      properties.record_value_subject_name_strategy_compat,
+      properties.initial_retention_local_target_bytes,
+      properties.initial_retention_local_target_ms);
 
     return o;
 }
@@ -655,7 +668,9 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "record_value_schema_id_validation: {}"
       "record_value_schema_id_validation_compat: {}"
       "record_value_subject_name_strategy: {}"
-      "record_value_subject_name_strategy_compat: {}",
+      "record_value_subject_name_strategy_compat: {}, "
+      "initial_retention_local_target_bytes: {}, "
+      "initial_retention_local_target_ms: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -676,7 +691,9 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.record_value_schema_id_validation,
       i.record_value_schema_id_validation_compat,
       i.record_value_subject_name_strategy,
-      i.record_value_subject_name_strategy_compat);
+      i.record_value_subject_name_strategy_compat,
+      i.initial_retention_local_target_bytes,
+      i.initial_retention_local_target_ms);
     return o;
 }
 
@@ -1693,7 +1710,9 @@ void adl<cluster::incremental_topic_updates>::to(
       t.record_value_schema_id_validation,
       t.record_value_schema_id_validation_compat,
       t.record_value_subject_name_strategy,
-      t.record_value_subject_name_strategy_compat);
+      t.record_value_subject_name_strategy_compat,
+      t.initial_retention_local_target_bytes,
+      t.initial_retention_local_target_ms);
 }
 
 cluster::incremental_topic_updates
@@ -1802,6 +1821,16 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         updates.record_value_subject_name_strategy_compat
           = adl<cluster::property_update<std::optional<
             pandaproxy::schema_registry::subject_name_strategy>>>{}
+              .from(in);
+    }
+
+    if (
+      version
+      <= cluster::incremental_topic_updates::version_with_initial_retention) {
+        updates.initial_retention_local_target_bytes
+          = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+        updates.initial_retention_local_target_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
               .from(in);
     }
 
@@ -1995,6 +2024,7 @@ adl<cluster::remote_topic_properties>::from(iobuf_parser& parser) {
     return {remote_revision, remote_partition_count};
 }
 
+// adl is no longer used for serializing new topic properties
 void adl<cluster::topic_properties>::to(
   iobuf& out, cluster::topic_properties&& p) {
     reflection::serialize(
@@ -2067,7 +2097,9 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       std::nullopt,
       std::nullopt,
-      std::nullopt};
+      std::nullopt,
+      tristate<size_t>{std::nullopt},
+      tristate<std::chrono::milliseconds>{std::nullopt}};
 }
 
 void adl<cluster::cluster_property_kv>::to(

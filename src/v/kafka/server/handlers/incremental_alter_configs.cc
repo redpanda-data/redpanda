@@ -242,6 +242,21 @@ create_topic_properties_update(
                 continue;
             }
             if (
+              cfg.name == topic_property_initial_retention_local_target_bytes) {
+                parse_and_set_tristate(
+                  update.properties.initial_retention_local_target_bytes,
+                  cfg.value,
+                  op);
+                continue;
+            }
+            if (cfg.name == topic_property_initial_retention_local_target_ms) {
+                parse_and_set_tristate(
+                  update.properties.initial_retention_local_target_ms,
+                  cfg.value,
+                  op);
+                continue;
+            }
+            if (
               config::shard_local_cfg().enable_schema_id_validation()
               != pandaproxy::schema_registry::schema_id_validation_mode::none) {
                 if (schema_id_validation_config_parser(cfg, op)) {
@@ -322,6 +337,15 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
 
         bool errored = false;
         for (const auto& c : resource.configs) {
+            // mapping looks sane for kafka's properties
+            //   compression.type=producer sensitive=false
+            //   synonyms={DEFAULT_CONFIG:log_compression_type=producer}
+            // (configuration.cc doesn't know `compression.type` but known
+            // `log_compression_type`) but for redpanda's properties it returns
+            //   redpanda.remote.read=false sensitive=false
+            //   synonyms={DEFAULT_CONFIG:redpanda.remote.read=false}
+            // which looks wrong because configuration.cc doesn't know
+            // `redpanda.remote.read`
             auto mapped_name = map_config_name(c.name);
 
             // Validate int8_t is within range of config_resource_operation

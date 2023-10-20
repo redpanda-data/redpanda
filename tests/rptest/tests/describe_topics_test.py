@@ -202,7 +202,21 @@ class DescribeTopicsTest(RedpandaTest):
                 "io.confluent.kafka.serializers.subject.TopicNameStrategy",
                 doc_string=
                 "The subject name strategy for values if confluent.value.schema.validation is enabled"
-            )
+            ),
+            "initial.retention.local.target.bytes":
+            ConfigProperty(
+                config_type="LONG",
+                value="-1",
+                doc_string=
+                "Initial local retention size target for partitions of topics with cloud storage write enabled"
+            ),
+            "initial.retention.local.target.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="86400000",
+                doc_string=
+                "Initial local retention time target for partitions of topics with cloud storage write enabled"
+            ),
         }
 
         tp_spec = TopicSpec()

@@ -348,6 +348,8 @@ struct compat_check<cluster::topic_properties> {
         json_write(record_value_schema_id_validation_compat);
         json_write(record_value_subject_name_strategy);
         json_write(record_value_subject_name_strategy_compat);
+        json_write(initial_retention_local_target_bytes);
+        json_write(initial_retention_local_target_ms);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -377,6 +379,8 @@ struct compat_check<cluster::topic_properties> {
         json_read(record_value_schema_id_validation_compat);
         json_read(record_value_subject_name_strategy);
         json_read(record_value_subject_name_strategy_compat);
+        json_read(initial_retention_local_target_bytes);
+        json_read(initial_retention_local_target_ms);
         return obj;
     }
 
@@ -399,6 +403,10 @@ struct compat_check<cluster::topic_properties> {
           std::nullopt};
 
         obj.segment_ms = tristate<std::chrono::milliseconds>{std::nullopt};
+        obj.initial_retention_local_target_bytes = tristate<size_t>{
+          std::nullopt};
+        obj.initial_retention_local_target_ms
+          = tristate<std::chrono::milliseconds>{std::nullopt};
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -469,6 +477,11 @@ struct compat_check<cluster::topic_configuration> {
         obj.properties.segment_ms = tristate<std::chrono::milliseconds>{
           std::nullopt};
 
+        obj.properties.initial_retention_local_target_bytes = tristate<size_t>{
+          std::nullopt};
+        obj.properties.initial_retention_local_target_ms
+          = tristate<std::chrono::milliseconds>{std::nullopt};
+
         if (cfg != obj) {
             throw compat_error(fmt::format(
               "Verify of {{cluster::topic_property}} decoding "
@@ -526,6 +539,11 @@ struct compat_check<cluster::create_topics_request> {
 
             topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
               std::nullopt};
+
+            topic.properties.initial_retention_local_target_bytes
+              = tristate<size_t>{std::nullopt};
+            topic.properties.initial_retention_local_target_ms
+              = tristate<std::chrono::milliseconds>{std::nullopt};
         }
         if (req != obj) {
             throw compat_error(fmt::format(
@@ -584,6 +602,10 @@ struct compat_check<cluster::create_topics_reply> {
               = tristate<std::chrono::milliseconds>{std::nullopt};
             topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
               std::nullopt};
+            topic.properties.initial_retention_local_target_bytes
+              = tristate<size_t>{std::nullopt};
+            topic.properties.initial_retention_local_target_ms
+              = tristate<std::chrono::milliseconds>{std::nullopt};
         }
         if (reply != obj) {
             throw compat_error(fmt::format(

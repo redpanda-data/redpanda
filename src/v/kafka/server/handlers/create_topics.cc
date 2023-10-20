@@ -59,7 +59,9 @@ static constexpr auto supported_configs = std::to_array(
    topic_property_record_value_schema_id_validation,
    topic_property_record_value_schema_id_validation_compat,
    topic_property_record_value_subject_name_strategy,
-   topic_property_record_value_subject_name_strategy_compat});
+   topic_property_record_value_subject_name_strategy_compat,
+   topic_property_initial_retention_local_target_bytes,
+   topic_property_initial_retention_local_target_ms});
 
 bool is_supported(std::string_view name) {
     return std::any_of(
@@ -210,6 +212,10 @@ ss::future<response_ptr> create_topics_handler::handle(
           [&ctx](const creatable_topic& t) {
               auto result = generate_successfull_result(t);
               if (ctx.header().version >= api_version(5)) {
+                  // TODO(Rob): it looks like get_default_properties is used
+                  // only there so there is a high chance of diverging
+                  // dry run's default_properties upposed to be used on
+                  // topic creation and the real deal
                   auto default_properties
                     = ctx.metadata_cache().get_default_properties();
                   result.configs = {properties_to_result_configs(

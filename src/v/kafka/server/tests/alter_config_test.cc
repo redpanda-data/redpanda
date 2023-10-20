@@ -364,7 +364,9 @@ FIXTURE_TEST(
       "redpanda.value.schema.id.validation",
       "confluent.value.schema.validation",
       "redpanda.value.subject.name.strategy",
-      "confluent.value.subject.name.strategy"};
+      "confluent.value.subject.name.strategy",
+      "initial.retention.local.target.bytes",
+      "initial.retention.local.target.ms"};
 
     // All properties_request
     auto all_describe_resp = describe_configs(test_tp);

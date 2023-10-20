@@ -50,6 +50,9 @@ ss::future<> cloud_storage_config::do_mutate() {
               model::shadow_indexing_mode::disabled))
             || config::shard_local_cfg().cloud_storage_enable_remote_write();
 
+        // This is a migration from retention_bytes to
+        // retention_local_target_bytes so we don't need to handle
+        // initial_retention_local_target_bytes
         if (
           props.retention_local_target_bytes.has_optional_value()
           || props.retention_local_target_ms.has_optional_value()) {

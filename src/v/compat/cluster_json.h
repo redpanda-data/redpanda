@@ -564,6 +564,46 @@ inline void rjson_serialize(
     write_member(w, "retention_local_target_ms", tps.retention_local_target_ms);
     write_member(w, "remote_delete", tps.remote_delete);
     write_member(w, "segment_ms", tps.segment_ms);
+    write_member(
+      w,
+      "record_key_schema_id_validation",
+      tps.record_key_schema_id_validation);
+    write_member(
+      w,
+      "record_key_schema_id_validation_compat",
+      tps.record_key_schema_id_validation_compat);
+    write_member(
+      w,
+      "record_key_subject_name_strategy",
+      tps.record_key_subject_name_strategy);
+    write_member(
+      w,
+      "record_key_subject_name_strategy_compat",
+      tps.record_key_subject_name_strategy_compat);
+    write_member(
+      w,
+      "record_value_schema_id_validation",
+      tps.record_value_schema_id_validation);
+    write_member(
+      w,
+      "record_value_schema_id_validation_compat",
+      tps.record_value_schema_id_validation_compat);
+    write_member(
+      w,
+      "record_value_subject_name_strategy",
+      tps.record_value_subject_name_strategy);
+    write_member(
+      w,
+      "record_value_subject_name_strategy_compat",
+      tps.record_value_subject_name_strategy_compat);
+    write_member(
+      w,
+      "initial_retention_local_target_bytes",
+      tps.initial_retention_local_target_bytes);
+    write_member(
+      w,
+      "initial_retention_local_target_ms",
+      tps.initial_retention_local_target_ms);
     w.EndObject();
 }
 
@@ -586,6 +626,46 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "retention_local_target_ms", obj.retention_local_target_ms);
     read_member(rd, "remote_delete", obj.remote_delete);
     read_member(rd, "segment_ms", obj.segment_ms);
+    read_member(
+      rd,
+      "record_key_schema_id_validation",
+      obj.record_key_schema_id_validation);
+    read_member(
+      rd,
+      "record_key_schema_id_validation_compat",
+      obj.record_key_schema_id_validation_compat);
+    read_member(
+      rd,
+      "record_key_subject_name_strategy",
+      obj.record_key_subject_name_strategy);
+    read_member(
+      rd,
+      "record_key_subject_name_strategy_compat",
+      obj.record_key_subject_name_strategy_compat);
+    read_member(
+      rd,
+      "record_value_schema_id_validation",
+      obj.record_value_schema_id_validation);
+    read_member(
+      rd,
+      "record_value_schema_id_validation_compat",
+      obj.record_value_schema_id_validation_compat);
+    read_member(
+      rd,
+      "record_value_subject_name_strategy",
+      obj.record_value_subject_name_strategy);
+    read_member(
+      rd,
+      "record_value_subject_name_strategy_compat",
+      obj.record_value_subject_name_strategy_compat);
+    read_member(
+      rd,
+      "initial_retention_local_target_bytes",
+      obj.initial_retention_local_target_bytes);
+    read_member(
+      rd,
+      "initial_retention_local_target_ms",
+      obj.initial_retention_local_target_ms);
 }
 
 inline void rjson_serialize(

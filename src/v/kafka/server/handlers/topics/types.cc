@@ -187,6 +187,13 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.segment_ms = get_tristate_value<std::chrono::milliseconds>(
       config_entries, topic_property_segment_ms);
 
+    cfg.properties.initial_retention_local_target_bytes
+      = get_tristate_value<size_t>(
+        config_entries, topic_property_initial_retention_local_target_bytes);
+    cfg.properties.initial_retention_local_target_ms
+      = get_tristate_value<std::chrono::milliseconds>(
+        config_entries, topic_property_initial_retention_local_target_ms);
+
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 
@@ -346,6 +353,14 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
         config_entries[topic_property_record_value_subject_name_strategy_compat]
           = from_config_type(
             properties.record_value_subject_name_strategy_compat);
+    }
+    if (properties.initial_retention_local_target_bytes.has_optional_value()) {
+        config_entries[topic_property_initial_retention_local_target_bytes]
+          = from_config_type(*properties.initial_retention_local_target_bytes);
+    }
+    if (properties.initial_retention_local_target_ms.has_optional_value()) {
+        config_entries[topic_property_initial_retention_local_target_ms]
+          = from_config_type(*properties.initial_retention_local_target_ms);
     }
 
     /// Final topic_property not encoded here is \ref remote_topic_properties,

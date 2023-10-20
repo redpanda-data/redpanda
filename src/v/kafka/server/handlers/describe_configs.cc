@@ -962,6 +962,35 @@ ss::future<response_ptr> describe_configs_handler::handle(
             }
             }
 
+            add_topic_config_if_requested(
+              resource,
+              result,
+              topic_property_initial_retention_local_target_bytes,
+              ctx.metadata_cache()
+                .get_default_initial_retention_local_target_bytes(),
+              topic_property_initial_retention_local_target_bytes,
+              topic_config->properties.initial_retention_local_target_bytes,
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .initial_retention_local_target_bytes_default.desc()));
+
+            add_topic_config_if_requested(
+              resource,
+              result,
+              topic_property_initial_retention_local_target_ms,
+              std::make_optional(
+                ctx.metadata_cache()
+                  .get_default_initial_retention_local_target_ms()),
+              topic_property_initial_retention_local_target_ms,
+              topic_config->properties.initial_retention_local_target_ms,
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .initial_retention_local_target_ms_default.desc()));
+
             break;
         }
 
