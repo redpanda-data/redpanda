@@ -163,6 +163,12 @@ struct transform_report
     void add(processor);
 };
 
+std::string_view
+processor_state_to_string(transform_report::processor::state state);
+
+std::ostream&
+operator<<(std::ostream& os, transform_report::processor::state s);
+
 /**
  * A cluster wide view of all the currently running transforms.
  */
