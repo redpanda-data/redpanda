@@ -3184,6 +3184,32 @@ struct ntp_with_majority_loss
     }
 };
 
+struct defunct_node_cmd_data
+  : serde::envelope<
+      defunct_node_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    defunct_node_cmd_data() = default;
+    ~defunct_node_cmd_data() noexcept = default;
+    defunct_node_cmd_data(defunct_node_cmd_data&&) = default;
+    defunct_node_cmd_data(const defunct_node_cmd_data&);
+    defunct_node_cmd_data& operator=(defunct_node_cmd_data&&) = default;
+    defunct_node_cmd_data& operator=(const defunct_node_cmd_data&);
+    friend bool
+    operator==(const defunct_node_cmd_data&, const defunct_node_cmd_data&)
+      = default;
+
+    std::vector<model::node_id> defunct_nodes;
+    fragmented_vector<ntp_with_majority_loss>
+      user_approved_force_recovery_partitions;
+
+    auto serde_fields() {
+        return std::tie(defunct_nodes, user_approved_force_recovery_partitions);
+    }
+};
+
 struct reconciliation_state_reply
   : serde::envelope<
       reconciliation_state_reply,
@@ -4080,7 +4106,7 @@ struct revert_cancel_partition_move_reply
  */
 class broker_state
   : public serde::
-      envelope<broker_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<broker_state, serde::version<1>, serde::compat_version<0>> {
 public:
     model::membership_state get_membership_state() const {
         return _membership_state;
@@ -4095,18 +4121,23 @@ public:
     void set_maintenance_state(model::maintenance_state st) {
         _maintenance_state = st;
     }
+
+    model::liveness_state get_liveness_state() const { return _liveness_state; }
+    void set_liveness_state(model::liveness_state st) { _liveness_state = st; }
+
     friend bool operator==(const broker_state&, const broker_state&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const broker_state&);
 
     auto serde_fields() {
-        return std::tie(_membership_state, _maintenance_state);
+        return std::tie(_membership_state, _maintenance_state, _liveness_state);
     }
 
 private:
     model::membership_state _membership_state = model::membership_state::active;
     model::maintenance_state _maintenance_state
       = model::maintenance_state::inactive;
+    model::liveness_state _liveness_state = model::liveness_state::functional;
 };
 
 /**

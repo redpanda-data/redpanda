@@ -119,6 +119,7 @@ static constexpr int8_t register_node_uuid_cmd_type = 4;
 static constexpr int8_t add_node_cmd_type = 5;
 static constexpr int8_t update_node_cmd_type = 6;
 static constexpr int8_t remove_node_cmd_type = 7;
+static constexpr int8_t defunct_nodes_cmd_type = 8;
 
 // cluster config commands
 static constexpr int8_t cluster_config_delta_cmd_type = 0;
@@ -280,6 +281,14 @@ using delete_data_policy_cmd = controller_command<
   delete_data_policy_cmd_type,
   model::record_batch_type::data_policy_management_cmd,
   serde_opts::adl_and_serde>;
+
+// command to mark a list of node_ids as defunct
+using defunct_nodes_cmd = controller_command<
+  int8_t, // unused
+  defunct_node_cmd_data,
+  defunct_nodes_cmd_type,
+  model::record_batch_type::node_management_cmd,
+  serde_opts::serde_only>;
 
 using decommission_node_cmd = controller_command<
   model::node_id,

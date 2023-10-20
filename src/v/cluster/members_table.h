@@ -32,6 +32,7 @@ public:
     size_t node_count() const;
 
     std::vector<model::node_id> node_ids() const;
+    std::vector<model::node_id> defunct_nodes() const;
 
     /// Returns single broker if exists in cache
     std::optional<std::reference_wrapper<const node_metadata>>
@@ -48,6 +49,7 @@ public:
 
     bool contains(model::node_id) const;
 
+    std::error_code apply(model::offset, defunct_nodes_cmd);
     std::error_code apply(model::offset, decommission_node_cmd);
     std::error_code apply(model::offset, recommission_node_cmd);
     std::error_code apply(model::offset, maintenance_mode_cmd);
@@ -69,6 +71,10 @@ public:
             return ss::now();
         }
     }
+
+    std::error_code validate_defunct_nodes(
+      const std::vector<model::node_id>& input,
+      bool ignore_existing_defunct_nodes) const;
 
     // NOTE: these are level-triggered (as opposed to edge-triggered)
     // notifications. So for example if you get a members_updated notification

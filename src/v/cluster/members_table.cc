@@ -141,6 +141,31 @@ std::error_code members_table::apply(model::offset o, remove_node_cmd cmd) {
 }
 
 std::error_code
+members_table::apply(model::offset version, defunct_nodes_cmd cmd) {
+    _version = model::revision_id(version());
+    auto error = validate_defunct_nodes(cmd.value.defunct_nodes, false);
+    if (error) {
+        return error;
+    }
+    for (auto& node : cmd.value.defunct_nodes) {
+        auto it = _nodes.find(node);
+        vassert(
+          it != _nodes.end(),
+          "inconsistent state of members table, node: {} not found, this is an "
+          "implmentation bug.",
+          node);
+        auto& [id, metadata] = *it;
+        vlog(
+          clusterlog.info,
+          "changing node {} liveness state to: {}",
+          id,
+          model::liveness_state::defunct);
+        metadata.state.set_liveness_state(model::liveness_state::defunct);
+    }
+    return errc::success;
+}
+
+std::error_code
 members_table::apply(model::offset version, decommission_node_cmd cmd) {
     _version = model::revision_id(version());
 
@@ -174,6 +199,11 @@ members_table::apply(model::offset version, recommission_node_cmd cmd) {
           != model::membership_state::draining) {
             return errc::invalid_node_operation;
         }
+        if (
+          metadata.state.get_liveness_state()
+          == model::liveness_state::defunct) {
+            return errc::nodes_already_defunct;
+        }
         vlog(
           clusterlog.info,
           "changing node {} membership state to: {}",
@@ -195,6 +225,14 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
         return errc::node_does_not_exists;
     }
     auto& [id, metadata] = *target;
+
+    if (metadata.state.get_liveness_state() == model::liveness_state::defunct) {
+        vlog(
+          clusterlog.debug,
+          "node {} already defunct, cannot be put in maintenance model",
+          id);
+        return errc::nodes_already_defunct;
+    }
 
     // no rules to enforce when disabling maintenance mode
     const auto enable = cmd.value;
@@ -379,6 +417,64 @@ void members_table::notify_member_updated(
     for (const auto& [id, cb] : _members_updated_notifications) {
         cb(n, new_state);
     }
+}
+
+std::vector<model::node_id> members_table::defunct_nodes() const {
+    std::vector<model::node_id> ids;
+    ids.reserve(_nodes.size());
+    for (const auto& node : _nodes) {
+        if (
+          node.second.state.get_liveness_state()
+          == model::liveness_state::defunct) {
+            ids.push_back(node.first);
+        }
+    }
+    return ids;
+}
+
+std::error_code members_table::validate_defunct_nodes(
+  const std::vector<model::node_id>& input,
+  bool ignore_existing_defunct_nodes) const {
+    if (input.empty()) {
+        return errc::invalid_request;
+    }
+    auto existing_defunct_nodes = defunct_nodes();
+    // Check if there are any non existent nodes in the input.
+    std::vector<model::node_id> missing_nodes;
+    std::vector<model::node_id> already_defunct_nodes;
+    missing_nodes.reserve(input.size());
+    already_defunct_nodes.reserve(input.size());
+    for (const auto& defunct_node : input) {
+        if (!contains(defunct_node)) {
+            missing_nodes.push_back(defunct_node);
+        }
+        if (
+          !ignore_existing_defunct_nodes
+          && std::find(
+               existing_defunct_nodes.begin(),
+               existing_defunct_nodes.end(),
+               defunct_node)
+               != existing_defunct_nodes.end()) {
+            already_defunct_nodes.push_back(defunct_node);
+        }
+    }
+    if (!missing_nodes.empty()) {
+        vlog(
+          clusterlog.debug,
+          "Invalid request, defunct nodes refer to non existent nodes : {}",
+          missing_nodes);
+        return errc::node_does_not_exists;
+    }
+    if (!already_defunct_nodes.empty()) {
+        vlog(
+          clusterlog.debug,
+          "Attempt to mark already defunct nodes: {} as defunct, invalid "
+          "request, existing defunct nodes: {}",
+          already_defunct_nodes,
+          existing_defunct_nodes);
+        return errc::nodes_already_defunct;
+    }
+    return errc::success;
 }
 
 } // namespace cluster

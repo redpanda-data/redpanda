@@ -484,6 +484,35 @@ members_manager::apply_update(model::record_batch b) {
           vlog(
             clusterlog.info, "Node UUID {} has node ID {}", node_uuid, node_id);
           return ss::make_ready_future<std::error_code>(errc::success);
+      },
+      [this, update_offset](defunct_nodes_cmd cmd) {
+          vlog(
+            clusterlog.info,
+            "processing defunct nodes, ntps to force reconfigure: {}, offset: "
+            "{}",
+            cmd.value.user_approved_force_recovery_partitions.size(),
+            update_offset);
+          _first_node_operation_command_offset = std::min(
+            update_offset, _first_node_operation_command_offset);
+          return dispatch_updates_to_cores(update_offset, cmd)
+            .then([this, cmd](std::error_code error) {
+                auto f = ss::now();
+                if (!error) {
+                    for (auto& ntp :
+                         cmd.value.user_approved_force_recovery_partitions) {
+                        vlog(
+                          clusterlog.debug,
+                          "Adding to list of partitions to force reconfigure: "
+                          "{}",
+                          ntp);
+                        _pb_state.local().add_partition_to_force_reconfigure(
+                          ntp);
+                    }
+                }
+                return f.then([error] { return error; });
+            });
+
+          return ss::make_ready_future<std::error_code>(errc::success);
       });
 }
 
@@ -634,6 +663,9 @@ members_manager::fill_snapshot(controller_snapshot& controller_snap) const {
 
     snap.first_node_operation_command_offset
       = _first_node_operation_command_offset;
+
+    snap.partitions_to_force_recover
+      = _pb_state.local().partitions_to_force_reconfigure();
 
     co_return;
 }
@@ -810,6 +842,10 @@ ss::future<> members_manager::apply_snapshot(
                   _self.id(), _connection_cache, id);
             }
         }
+
+        // 8. reset force recovery partitions in balancer.
+        _pb_state.local().partitions_to_force_reconfigure()
+          = snap.partitions_to_force_recover;
 
         _last_connection_update_offset = snap_offset;
     }

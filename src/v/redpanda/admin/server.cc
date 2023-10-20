@@ -1044,6 +1044,8 @@ get_brokers(cluster::controller* const controller) {
               }
               b.membership_status = fmt::format(
                 "{}", nm.state.get_membership_state());
+              b.liveness_status = fmt::format(
+                "{}", nm.state.get_liveness_state());
 
               // These fields are defaults that will be overwritten with
               // data from the health report.
