@@ -6,6 +6,7 @@ import requests
 import uuid
 import yaml
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 from ducktape.utils.util import wait_until
@@ -19,6 +20,8 @@ rp_profiles_path = os.path.join(os.path.dirname(__file__),
                                 "rp_config_profiles")
 tiers_config_filename = os.path.join(rp_profiles_path,
                                      "redpanda.cloud-tiers-config.yml")
+ns_name_prefix = "rp-ducktape-ns-"
+ns_name_date_fmt = "%Y-%m-%d-%H%M%S-"
 
 
 def load_tier_profiles():
@@ -399,9 +402,15 @@ class CloudCluster():
         else:
             return False if username not in _users else True
 
+    def _format_namespace_name(self):
+        # format namespace name as 'rp-ducktape-ns-YYYY-MM-DD-HHMMSS-3b36f516'
+        _date = datetime.now().strftime(ns_name_date_fmt)
+        # For easier regex parsing, date format has second dash inside
+        return f'{ns_name_prefix}{_date}{self._unique_id}'
+
     def _create_namespace(self):
-        # format namespace name as 'rp-ducktape-ns-3b36f516
-        name = f'rp-ducktape-ns-{self._unique_id}'
+        # fetch namespace name
+        name = self._format_namespace_name()
         self._logger.debug(f'creating namespace name {name}')
         body = {'name': name}
         r = self.cloudv2._http_post(endpoint='/api/v1/namespaces', json=body)
