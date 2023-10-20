@@ -748,6 +748,11 @@ func (in *ListenerTLS) DeepCopyInto(out *ListenerTLS) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.SecretRef != nil {
+		in, out := &in.SecretRef, &out.SecretRef
+		*out = new(string)
+		**out = **in
+	}
 	if in.RequireClientAuth != nil {
 		in, out := &in.RequireClientAuth, &out.RequireClientAuth
 		*out = new(bool)
