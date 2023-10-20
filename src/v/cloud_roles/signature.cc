@@ -376,13 +376,16 @@ ss::sstring signature_v4::sha256_hexdigest(std::string_view payload) {
 }
 
 ss::sstring redact_headers_from_string(const std::string_view original) {
-    std::set<boost::core::string_view> redacted{};
+    std::set<std::string_view> redacted{};
     const auto redacted_fields = http::redacted_fields();
     for (const auto& rf : redacted_fields) {
         redacted.insert(ss::visit(
           rf,
-          [](const boost::beast::http::field& f) { return to_string(f); },
-          [](const std::string& s) { return boost::core::string_view{s}; }));
+          [](const boost::beast::http::field& f) {
+              const auto view = to_string(f);
+              return std::string_view{view.data(), view.size()};
+          },
+          [](const std::string& s) { return std::string_view{s}; }));
     }
 
     const auto lines = absl::StrSplit(original, "\n");
