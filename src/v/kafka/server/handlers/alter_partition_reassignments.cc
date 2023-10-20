@@ -242,6 +242,7 @@ ss::future<std::error_code> handle_partition(
         return octx.rctx.topics_frontend().move_partition_replicas(
           ntp,
           std::move(*partition.replicas),
+          cluster::reconfiguration_policy::full_local_retention,
           model::timeout_clock::now() + octx.request.data.timeout_ms);
 
     } else {

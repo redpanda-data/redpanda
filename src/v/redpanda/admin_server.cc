@@ -3177,6 +3177,7 @@ admin_server::set_partition_replicas_handler(
                  .move_partition_replicas(
                    ntp,
                    replicas,
+                   cluster::reconfiguration_policy::full_local_retention,
                    model::timeout_clock::now()
                      + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
 
