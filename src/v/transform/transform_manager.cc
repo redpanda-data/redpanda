@@ -32,10 +32,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/log.hh>
 
-#include <boost/multi_index/composite_key.hpp>
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/mem_fun.hpp>
-#include <boost/multi_index_container.hpp>
+#include <absl/algorithm/container.h>
 
 #include <algorithm>
 #include <chrono>
@@ -157,7 +154,16 @@ public:
             return it->second.probe();
         }
         auto probe = ss::make_lw_shared<transform::probe>();
-        probe->setup_metrics(meta.name());
+        probe->setup_metrics(
+          meta.name(),
+          {
+            .num_processors =
+              [this](auto state) {
+                  return absl::c_count_if(_table, [state](const auto& entry) {
+                      return entry.second.compute_state() == state;
+                  });
+              },
+          });
         return probe;
     }
 
