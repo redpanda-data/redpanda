@@ -123,8 +123,10 @@ public:
       filter_t f,
       segment_appender* a,
       bool internal_topic,
-      offset_delta_time apply_offset)
+      offset_delta_time apply_offset,
+      model::offset segment_last_offset = model::offset{})
       : _should_keep_fn(std::move(f))
+      , _segment_last_offset(segment_last_offset)
       , _appender(a)
       , _idx(index_state::make_empty_index(apply_offset))
       , _internal_topic(internal_topic) {}
@@ -143,6 +145,8 @@ private:
 
     filter_t _should_keep_fn;
 
+    // Offset to keep in case the index is empty as of getting to this offset.
+    model::offset _segment_last_offset;
     segment_appender* _appender;
     index_state _idx;
     size_t _acc{0};

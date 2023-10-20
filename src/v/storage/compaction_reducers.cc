@@ -124,8 +124,14 @@ ss::future<> copy_data_segment_reducer::maybe_keep_offset(
   std::vector<int32_t>& offset_deltas) {
     if (co_await _should_keep_fn(batch, r)) {
         offset_deltas.push_back(r.offset_delta());
+        co_return;
     }
-    co_return;
+    // Keep the last record to ensure the bounds of the segment remain.
+    auto o = batch.base_offset() + model::offset_delta(r.offset_delta());
+    if (o == _segment_last_offset) {
+        offset_deltas.push_back(r.offset_delta());
+        co_return;
+    }
 }
 
 ss::future<std::optional<model::record_batch>>
