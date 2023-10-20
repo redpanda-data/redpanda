@@ -146,6 +146,7 @@ server::server(
         * config::shard_local_cfg().kafka_memory_share_for_fetch()),
       "kafka/server-mem-fetch")
   , _probe(std::make_unique<class latency_probe>())
+  , _sasl_probe(std::make_unique<class sasl_probe>())
   , _thread_worker(tw)
   , _replica_selector(
       std::make_unique<rack_aware_replica_selector>(_metadata_cache.local()))
@@ -160,6 +161,8 @@ server::server(
     setup_metrics();
     _probe->setup_metrics();
     _probe->setup_public_metrics();
+
+    _sasl_probe->setup_metrics(cfg->local().name);
 }
 
 void server::setup_metrics() {

@@ -135,6 +135,7 @@ ss::future<> connection_context::process_one_request() {
     } catch (const sasl_session_expired_exception& e) {
         vlog(
           klog.warn, "SASL session expired for {} - {}", conn->addr, e.what());
+        _server.sasl_probe().session_expired();
         conn->shutdown_input();
     } catch (const std::bad_alloc&) {
         // In general, dispatch_method_once does not throw, but bad_allocs are

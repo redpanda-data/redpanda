@@ -258,6 +258,7 @@ process_result_stages process_request(
         vlog(
           klog.debug,
           "SASL reauthentication detected - resetting authn server");
+        ctx.sasl_probe().session_reauth();
         ctx.sasl()->reset();
     }
     /*
