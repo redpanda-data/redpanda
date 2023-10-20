@@ -252,7 +252,10 @@ bool anomalies_detector::should_stop() const {
     }
 
     if (archival::run_quota_t{_result.ops} > _received_quota) {
-        return true;
+        // Allow the scrubbing of one segment even if that means
+        // going above the quota in order to ensure some forward
+        // progress in all quota cases.
+        return _result.last_scrubbed_offset.has_value();
     }
 
     return false;
