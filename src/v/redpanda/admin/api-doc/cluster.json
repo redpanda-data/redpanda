@@ -66,6 +66,68 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/cluster/partitions/{namespace}/{topic}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Disable/enable all partitions of a topic",
+                    "nickname": "post_cluster_partitions_topic",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/cluster/partitions/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Disable/enable a single partition",
+                    "nickname": "post_cluster_partitions_topic_partition",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

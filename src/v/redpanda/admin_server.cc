@@ -4931,6 +4931,84 @@ admin_server::cancel_all_partitions_reconfigs_handler(
     co_return ss::json::json_return_type(
       co_await map_partition_results(std::move(res.value())));
 }
+
+static json::validator make_post_cluster_partitions_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "disabled": {
+            "type": "boolean"
+        }
+    },
+    "additionalProperties": false,
+    "required": ["disabled"]
+}
+)";
+    return json::validator(schema);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::post_cluster_partitions_topic_handler(
+  std::unique_ptr<ss::http::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
+    auto ns_tp = model::topic_namespace{
+      model::ns{req->param["namespace"]}, model::topic{req->param["topic"]}};
+
+    static thread_local auto body_validator(
+      make_post_cluster_partitions_validator());
+    auto doc = co_await parse_json_body(req.get());
+    apply_validator(body_validator, doc);
+    bool disabled = doc["disabled"].GetBool();
+
+    std::error_code err
+      = co_await _controller->get_topics_frontend()
+          .local()
+          .set_topic_partitions_disabled(
+            ns_tp, std::nullopt, disabled, model::timeout_clock::now() + 5s);
+    if (err) {
+        co_await throw_on_error(*req, err, model::controller_ntp);
+    }
+
+    co_return ss::json::json_void();
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::post_cluster_partitions_topic_partition_handler(
+  std::unique_ptr<ss::http::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
+    auto ntp = parse_ntp_from_request(req->param);
+
+    static thread_local auto body_validator(
+      make_post_cluster_partitions_validator());
+    auto doc = co_await parse_json_body(req.get());
+    apply_validator(body_validator, doc);
+    bool disabled = doc["disabled"].GetBool();
+
+    std::error_code err = co_await _controller->get_topics_frontend()
+                            .local()
+                            .set_topic_partitions_disabled(
+                              model::topic_namespace_view{ntp},
+                              ntp.tp.partition,
+                              disabled,
+                              model::timeout_clock::now() + 5s);
+    if (err) {
+        co_await throw_on_error(*req, err, model::controller_ntp);
+    }
+
+    co_return ss::json::json_void();
+}
+
 void admin_server::register_cluster_routes() {
     register_route<publik>(
       ss::httpd::cluster_json::get_cluster_health_overview,
@@ -5008,6 +5086,22 @@ void admin_server::register_cluster_routes() {
               return ss::json::json_return_type(std::move(ret));
           }
           return ss::json::json_return_type(ss::json::json_void());
+      });
+
+    register_cluster_partitions_routes();
+}
+
+void admin_server::register_cluster_partitions_routes() {
+    register_route<superuser>(
+      ss::httpd::cluster_json::post_cluster_partitions_topic,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return post_cluster_partitions_topic_handler(std::move(req));
+      });
+    register_route<superuser>(
+      ss::httpd::cluster_json::post_cluster_partitions_topic_partition,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return post_cluster_partitions_topic_partition_handler(
+            std::move(req));
       });
 }
 
