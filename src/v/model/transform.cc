@@ -43,8 +43,7 @@ operator<<(std::ostream& os, const transform_offsets_value& value) {
 
 std::ostream&
 operator<<(std::ostream& os, const transform_report::processor& p) {
-    fmt::print(
-      os, "{{id: {}, status: {}, node: {}}}", p.id, uint8_t(p.status), p.node);
+    fmt::print(os, "{{id: {}, status: {}, node: {}}}", p.id, p.status, p.node);
     return os;
 }
 
@@ -77,4 +76,22 @@ void cluster_transform_report::merge(const cluster_transform_report& other) {
     }
 }
 
+std::ostream&
+operator<<(std::ostream& os, transform_report::processor::state s) {
+    return os << processor_state_to_string(s);
+}
+std::string_view
+processor_state_to_string(transform_report::processor::state state) {
+    switch (state) {
+    case transform_report::processor::state::inactive:
+        return "inactive";
+    case transform_report::processor::state::running:
+        return "running";
+    case transform_report::processor::state::errored:
+        return "errored";
+    case transform_report::processor::state::unknown:
+        break;
+    }
+    return "unknown";
+}
 } // namespace model

@@ -17,7 +17,7 @@
 
 namespace transform {
 
-void probe::setup_metrics(ss::sstring transform_name) {
+void probe::setup_metrics(ss::sstring transform_name, probe_gauges gauges) {
     wasm::transform_probe::setup_metrics(transform_name);
     namespace sm = ss::metrics;
 
@@ -25,25 +25,51 @@ void probe::setup_metrics(ss::sstring transform_name) {
     const std::vector<sm::label_instance> labels = {
       name_label(std::move(transform_name)),
     };
+    std::vector<sm::metric_definition> metric_defs;
+    metric_defs.emplace_back(
+      sm::make_counter(
+        "processor_read_bytes",
+        [this] { return _read_bytes; },
+        sm::description(
+          "A counter for all the bytes that has been input to a transform"),
+        labels)
+        .aggregate({sm::shard_label}));
+    metric_defs.emplace_back(
+      sm::make_counter(
+        "processor_write_bytes",
+        [this] { return _write_bytes; },
+        sm::description("A counter for all the bytes that has been output "
+                        "from a transform"),
+        labels)
+        .aggregate({sm::shard_label}));
+    metric_defs.emplace_back(
+      sm::make_counter(
+        "processor_failures",
+        [this] { return _failures; },
+        sm::description(
+          "A counter for each time that a processor encounters a failure"),
+        labels)
+        .aggregate({sm::shard_label}));
+
+    auto state_label = sm::label("state");
+    using state = model::transform_report::processor::state;
+    for (const auto& s : {state::running, state::inactive, state::errored}) {
+        std::vector<sm::label_instance> state_labels = labels;
+        state_labels.push_back(
+          state_label(model::processor_state_to_string(s)));
+        metric_defs.emplace_back(
+          sm::make_gauge(
+            "processor_state",
+            [s, cb = gauges.num_processors] { return cb(s); },
+            sm::description(
+              "The count of transform processors in a certain state"),
+            state_labels)
+            .aggregate({sm::shard_label}));
+    }
     _public_metrics.add_group(
-      prometheus_sanitize::metrics_name("transform"),
-      {
-        sm::make_counter(
-          "processor_read_bytes",
-          [this] { return _read_bytes; },
-          sm::description(
-            "A counter for all the bytes that has been input to a transform"),
-          labels)
-          .aggregate({ss::metrics::shard_label}),
-        sm::make_counter(
-          "processor_write_bytes",
-          [this] { return _write_bytes; },
-          sm::description("A counter for all the bytes that has been output "
-                          "from a transform"),
-          labels)
-          .aggregate({ss::metrics::shard_label}),
-      });
+      prometheus_sanitize::metrics_name("transform"), metric_defs);
 }
 void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
 void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
+void probe::increment_failure() { ++_failures; }
 } // namespace transform
