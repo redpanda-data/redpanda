@@ -25,13 +25,21 @@ struct kv_t {
       : key(std::move(k))
       , val(std::move(v)) {}
 
-    static std::vector<kv_t> sequence(size_t start, size_t num_records) {
+    friend bool operator==(const kv_t& l, const kv_t& r) {
+        return std::tie(l.key, l.val) == std::tie(r.key, r.val);
+    }
+
+    static std::vector<kv_t> sequence(
+      size_t start,
+      size_t num_records,
+      std::optional<size_t> val_start = std::nullopt) {
+        size_t vstart = val_start.value_or(start);
         std::vector<kv_t> records;
         records.reserve(num_records);
         for (size_t i = 0; i < num_records; i++) {
             records.emplace_back(
               ssx::sformat("key{}", start + i),
-              ssx::sformat("val{}", start + i));
+              ssx::sformat("val{}", vstart + i));
         }
         return records;
     }

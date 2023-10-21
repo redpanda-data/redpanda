@@ -85,6 +85,7 @@ public:
     void initial_segments_count(size_t cnt) { _log_segments_active = cnt; }
 
     void segment_compacted() { ++_segment_compacted; }
+    auto get_segments_compacted() const { return _segment_compacted; }
 
     void batch_write_error(const std::exception_ptr& e) {
         stlog.error("Error writing record batch {}", e);
