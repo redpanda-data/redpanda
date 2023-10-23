@@ -220,7 +220,7 @@ using force_partition_reconfiguration_cmd = controller_command<
 using update_partition_replicas_cmd = controller_command<
   int8_t, // unused
   update_partition_replicas_cmd_data,
-  update_topic_properties_cmd_type,
+  update_partition_replicas_cmd_type,
   model::record_batch_type::topic_management_cmd,
   serde_opts::serde_only>;
 
