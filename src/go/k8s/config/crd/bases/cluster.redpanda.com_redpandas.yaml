@@ -120,8 +120,6 @@ spec:
                           secretRef:
                             type: string
                           users:
-                            description: DO NOT SET Omitempty, as empty list is a
-                              valid entry.
                             items:
                               description: UsersItems is a top-level field of the
                                 values file
