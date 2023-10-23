@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from rptest.services.cluster import cluster
 
 from rptest.clients.types import TopicSpec
@@ -57,18 +59,23 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
         self.start_consumer()
         self.run_validation()
 
-        # each broker makes two requests to server, one to get role and one for credentials
-        assert self.num_brokers * 2 == len(
+        assert self.num_brokers * 3 == len(
             self.iam_server.requests
         ), f'{self.num_brokers} and {len(self.iam_server.requests)}'
+        calls = defaultdict(lambda: 0)
         for request in self.iam_server.requests:
             # We do not know the order of requests, but they will be one of the two paths allowed
             assert request['path'] in {
+                '/latest/api/token',
                 '/latest/meta-data/iam/security-credentials/',
                 '/latest/meta-data/iam/security-credentials/tomato'
-            }
-            assert request['method'] == 'GET'
-            assert request['response_code'] == 200
+            }, f'unexpected path for {request}'
+            calls[request['method']] += 1
+            assert request[
+                'response_code'] == 200, f'unexpected status for {request}'
+        assert calls[
+            'GET'] == self.num_brokers * 2, f'unexpected calls {calls}'
+        assert calls['PUT'] == self.num_brokers, f'unexpected calls {calls}'
 
 
 class STSRoleFetchTests(EndToEndShadowIndexingBase):

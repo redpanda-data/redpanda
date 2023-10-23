@@ -18,7 +18,18 @@
 
 namespace cloud_roles {
 
-static ss::future<iobuf>
+ss::future<boost::beast::http::status>
+get_status(http::client::response_stream_ref& resp) {
+    co_await resp->prefetch_headers();
+    co_return resp->get_headers().result();
+}
+
+using http_call = ss::noncopyable_function<ss::future<api_response>(
+  http::client::request_header&)>;
+
+namespace {
+
+ss::future<iobuf>
 drain_response_stream(http::client::response_stream_ref resp) {
     return ss::do_with(
       iobuf(), [resp = std::move(resp)](iobuf& outbuf) mutable {
@@ -35,19 +46,10 @@ drain_response_stream(http::client::response_stream_ref resp) {
       });
 }
 
-ss::future<boost::beast::http::status>
-get_status(http::client::response_stream_ref& resp) {
-    co_await resp->prefetch_headers();
-    co_return resp->get_headers().result();
-}
-
-using http_call = ss::noncopyable_function<ss::future<api_response>(
-  http::client::request_header&)>;
-
 /// Helper function to catch and log common HTTP errors around user supplied
 /// operation.
-ss::future<api_response> static do_request(
-  http::client::request_header req, http_call func) {
+ss::future<api_response>
+do_request(http::client::request_header req, http_call func) {
     try {
         co_return co_await func(req);
     } catch (const std::system_error& ec) {
@@ -76,8 +78,7 @@ ss::future<api_response> static do_request(
     }
 }
 
-static ss::future<>
-log_error_response(http::client::response_stream_ref stream) {
+ss::future<> log_error_response(http::client::response_stream_ref stream) {
     auto buf = co_await drain_response_stream(stream);
     iobuf_parser p{std::move(buf)};
     auto response_string = p.read_string(p.bytes_left());
@@ -87,7 +88,7 @@ log_error_response(http::client::response_stream_ref stream) {
       response_string);
 }
 
-static ss::future<api_response> make_get_request(
+ss::future<api_response> make_request_without_payload(
   http::client& client,
   http::client::request_header req,
   std::optional<std::chrono::milliseconds> timeout) {
@@ -98,41 +99,18 @@ static ss::future<api_response> make_get_request(
     if (is_retryable(status)) {
         co_await log_error_response(response_stream);
         co_return make_retryable_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
 
     if (status != boost::beast::http::status::ok) {
         co_await log_error_response(response_stream);
         co_return make_abort_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
     co_return co_await drain_response_stream(std::move(response_stream));
 }
 
-ss::future<api_response> make_request(
-  http::client client,
-  http::client::request_header req,
-  std::optional<std::chrono::milliseconds> timeout) {
-    auto tout = timeout.value_or(
-      config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
-    return http::with_client(
-      std::move(client), [req = std::move(req), tout](auto& client) mutable {
-          return do_request(req, [&client, tout](auto& req) mutable {
-              return make_get_request(client, req, tout);
-          });
-      });
-}
-
-json::Document parse_json_response(iobuf resp) {
-    iobuf_istreambuf ibuf{resp};
-    std::istream stream{&ibuf};
-    json::Document doc;
-    json::IStreamWrapper wrapper(stream);
-    doc.ParseStream(wrapper);
-    return doc;
-}
-
-static ss::future<api_response> make_post_request(
+ss::future<api_response> make_request_with_payload(
   http::client& client,
   http::client::request_header& req,
   iobuf content,
@@ -150,20 +128,45 @@ static ss::future<api_response> make_post_request(
     if (is_retryable(status)) {
         co_await log_error_response(response);
         co_return make_retryable_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
 
     if (status != boost::beast::http::status::ok) {
         co_await log_error_response(response);
         co_return make_abort_error(
-          fmt::format("http request failed:{}", status));
+          fmt::format("http request failed:{}", status), status);
     }
     auto data = co_await drain_response_stream(std::move(response));
     co_await stream.close();
     co_return data;
 }
 
-ss::future<api_response> post_request(
+} // namespace
+
+ss::future<api_response> make_request(
+  http::client client,
+  http::client::request_header req,
+  std::optional<std::chrono::milliseconds> timeout) {
+    auto tout = timeout.value_or(
+      config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
+    return http::with_client(
+      std::move(client), [req = std::move(req), tout](auto& client) mutable {
+          return do_request(req, [&client, tout](auto& req) mutable {
+              return make_request_without_payload(client, req, tout);
+          });
+      });
+}
+
+json::Document parse_json_response(iobuf resp) {
+    iobuf_istreambuf ibuf{resp};
+    std::istream stream{&ibuf};
+    json::Document doc;
+    json::IStreamWrapper wrapper(stream);
+    doc.ParseStream(wrapper);
+    return doc;
+}
+
+ss::future<api_response> request_with_payload(
   http::client client,
   http::client::request_header req,
   iobuf content,
@@ -178,12 +181,13 @@ ss::future<api_response> post_request(
           return do_request(
             req,
             [&client, content = std::move(content), tout](auto& req) mutable {
-                return make_post_request(client, req, std::move(content), tout);
+                return make_request_with_payload(
+                  client, req, std::move(content), tout);
             });
       });
 }
 
-ss::future<api_response> post_request(
+ss::future<api_response> request_with_payload(
   http::client client,
   http::client::request_header req,
   seastar::sstring content,
@@ -192,7 +196,8 @@ ss::future<api_response> post_request(
     b.append(content.data(), content.size());
     auto tout = timeout.value_or(
       config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
-    return post_request(std::move(client), std::move(req), std::move(b), tout);
+    return request_with_payload(
+      std::move(client), std::move(req), std::move(b), tout);
 }
 
 std::chrono::system_clock::time_point parse_timestamp(std::string_view sv) {

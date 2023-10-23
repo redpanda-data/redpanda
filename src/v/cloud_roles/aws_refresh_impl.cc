@@ -15,6 +15,39 @@
 
 namespace cloud_roles {
 
+struct instance_metadata_token_headers {
+    static constexpr auto key = "X-aws-ec2-metadata-token";
+    static constexpr auto ttl_key = "X-aws-ec2-metadata-token-ttl-seconds";
+    static constexpr auto ttl_value = "21600";
+};
+
+} // namespace cloud_roles
+namespace {
+
+ss::sstring read_string_from_response(cloud_roles::api_response response) {
+    vassert(
+      std::holds_alternative<iobuf>(response),
+      "response does not contain iobuf");
+    iobuf_const_parser parser(std::get<iobuf>(response));
+    return parser.read_string(parser.bytes_left());
+}
+
+void add_metadata_token_to_request(
+  http::client::request_header& req, std::string_view token) {
+    req.insert(
+      cloud_roles::instance_metadata_token_headers::key,
+      {token.data(), token.size()});
+}
+
+constexpr auto fallback_status_codes = std::to_array(
+  {boost::beast::http::status::not_found,
+   boost::beast::http::status::forbidden,
+   boost::beast::http::status::method_not_allowed});
+
+} // namespace
+
+namespace cloud_roles {
+
 struct ec2_response_schema {
     static constexpr std::string_view expiry = "Expiration";
     static constexpr std::string_view access_key_id = "AccessKeyId";
@@ -30,17 +63,57 @@ aws_refresh_impl::aws_refresh_impl(
   : refresh_credentials::impl(
     std::move(address), std::move(region), as, retry_params) {}
 
+bool aws_refresh_impl::is_fallback_required(const api_request_error& response) {
+    return std::find(
+             fallback_status_codes.cbegin(),
+             fallback_status_codes.cend(),
+             response.status)
+           != fallback_status_codes.cend();
+}
+
 ss::future<api_response> aws_refresh_impl::fetch_credentials() {
+    std::optional<ss::sstring> token = std::nullopt;
+    if (likely(_fallback_engaged == fallback_engaged::no)) {
+        // Although this token is valid for 6 hours, we always create a new one
+        // for each fetch cycle. This removes the need to manage expiry of an
+        // extra token. Since our credentials also live for multiple hours, we
+        // do not need to make many extra calls to the instance metadata API,
+        // except in cases where we need to retry on transient failures.
+        auto token_response = co_await fetch_instance_metadata_token();
+        if (std::holds_alternative<api_request_error>(token_response)) {
+            const auto& error_response = std::get<api_request_error>(
+              token_response);
+            if (is_fallback_required(error_response)) {
+                // If the request to get a token fails due to missing IMDSv2, we
+                // fallback to v1 permanently for the lifetime of this
+                // aws_refresh_impl, this is the behavior used by AWS SDKs.
+                vlog(
+                  clrl_log.warn,
+                  "Failed to get IMDSv2 token, engaging fallback mode. "
+                  "Response received for token request: {}",
+                  error_response);
+                _fallback_engaged = fallback_engaged::yes;
+            } else {
+                vlog(
+                  clrl_log.error,
+                  "Failed to get IMDSv2 token: {}",
+                  error_response);
+                co_return token_response;
+            }
+        } else {
+            token = read_string_from_response(std::move(token_response));
+        }
+    }
+
     if (unlikely(!_role)) {
         vlog(clrl_log.info, "initializing role name");
-        auto response = co_await fetch_role_name();
+        auto response = co_await fetch_role_name(token);
         // error while fetching the role, make caller handle it
         if (std::holds_alternative<api_request_error>(response)) {
             co_return response;
         }
 
-        iobuf_const_parser parser(std::get<iobuf>(response));
-        _role.emplace(parser.read_string(parser.bytes_left()));
+        _role.emplace(read_string_from_response(std::move(response)));
 
         vlog(clrl_log.info, "fetched iam role name [{}]", *_role);
         if (_role->empty()) {
@@ -68,8 +141,7 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
     creds_req.method(boost::beast::http::verb::get);
     creds_req.target(
       fmt::format("/latest/meta-data/iam/security-credentials/{}", *_role));
-    co_return co_await make_request(
-      co_await make_api_client(), std::move(creds_req));
+    co_return co_await make_request_with_token(std::move(creds_req), token);
 }
 
 api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
@@ -107,15 +179,38 @@ api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
     };
 }
 
-ss::future<api_response> aws_refresh_impl::fetch_role_name() {
+ss::future<api_response>
+aws_refresh_impl::fetch_role_name(std::optional<std::string_view> token) {
     http::client::request_header role_req;
     auto host = address().host();
     role_req.insert(
       boost::beast::http::field::host, {host.data(), host.size()});
     role_req.method(boost::beast::http::verb::get);
     role_req.target("/latest/meta-data/iam/security-credentials/");
+    co_return co_await make_request_with_token(std::move(role_req), token);
+}
+
+ss::future<api_response> aws_refresh_impl::fetch_instance_metadata_token() {
+    http::client::request_header token_request;
+    auto host = address().host();
+    token_request.insert(
+      boost::beast::http::field::host, {host.data(), host.size()});
+    token_request.insert(
+      instance_metadata_token_headers::ttl_key,
+      instance_metadata_token_headers::ttl_value);
+    token_request.method(boost::beast::http::verb::put);
+    token_request.target("/latest/api/token");
+
     co_return co_await make_request(
-      co_await make_api_client(), std::move(role_req));
+      co_await make_api_client(), std::move(token_request));
+}
+
+ss::future<api_response> aws_refresh_impl::make_request_with_token(
+  http::client::request_header req, std::optional<std::string_view> token) {
+    if (token.has_value()) {
+        add_metadata_token_to_request(req, token.value());
+    }
+    co_return co_await make_request(co_await make_api_client(), std::move(req));
 }
 
 std::ostream& aws_refresh_impl::print(std::ostream& os) const {

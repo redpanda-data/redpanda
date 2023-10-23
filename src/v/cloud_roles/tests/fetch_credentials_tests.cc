@@ -168,7 +168,21 @@ FIXTURE_TEST(test_aws_credentials, fixture) {
     BOOST_REQUIRE_EQUAL("my-token", aws_creds.session_token.value());
 
     BOOST_REQUIRE(has_calls_in_order(
-      cloud_role_tests::aws_role_query_url, cloud_role_tests::aws_creds_url));
+      imdsv2_token_url,
+      cloud_role_tests::aws_role_query_url,
+      cloud_role_tests::aws_creds_url));
+    BOOST_REQUIRE_EQUAL(
+      get_latest_request(cloud_role_tests::aws_role_query_url)
+        .value()
+        .get()
+        .header("X-aws-ec2-metadata-token"),
+      "IMDSv2-TOKEN");
+    BOOST_REQUIRE_EQUAL(
+      get_latest_request(cloud_role_tests::aws_creds_url)
+        .value()
+        .get()
+        .header("X-aws-ec2-metadata-token"),
+      "IMDSv2-TOKEN");
 }
 
 FIXTURE_TEST(test_short_lived_aws_credentials, fixture) {
@@ -225,10 +239,12 @@ FIXTURE_TEST(test_short_lived_aws_credentials, fixture) {
     BOOST_REQUIRE_EQUAL("my-secret", aws_creds.secret_access_key());
     BOOST_REQUIRE_EQUAL("my-token", aws_creds.session_token.value());
 
-    BOOST_REQUIRE(has_calls_in_order(
-      cloud_role_tests::aws_role_query_url,
-      cloud_role_tests::aws_creds_url,
-      cloud_role_tests::aws_creds_url));
+    const auto& requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests[0].url, imdsv2_token_url);
+    BOOST_REQUIRE_EQUAL(requests[1].url, cloud_role_tests::aws_role_query_url);
+    BOOST_REQUIRE_EQUAL(requests[2].url, cloud_role_tests::aws_creds_url);
+    BOOST_REQUIRE_EQUAL(requests[3].url, imdsv2_token_url);
+    BOOST_REQUIRE_EQUAL(requests[4].url, cloud_role_tests::aws_creds_url);
 }
 
 FIXTURE_TEST(test_sts_credentials, fixture) {
@@ -505,4 +521,108 @@ FIXTURE_TEST(test_intermittent_error, fixture) {
 
     auto aws_creds = std::get<cloud_roles::aws_credentials>(c.value());
     BOOST_REQUIRE_EQUAL(aws_creds.access_key_id, "my-key");
+}
+
+FIXTURE_TEST(test_imdsv2_fallback, fixture) {
+    tee_wrapper wrapper(cloud_roles::clrl_log);
+
+    fail_request_if(
+      [](const auto& req) {
+          return req._url == imdsv2_token_url && req._method == "PUT";
+      },
+      http_test_utils::response{
+        .body = "not found",
+        .status = ss::http::reply::status_type::not_found});
+
+    when()
+      .request(cloud_role_tests::aws_role_query_url)
+      .then_reply_with(cloud_role_tests::aws_role);
+
+    when()
+      .request(cloud_role_tests::aws_creds_url)
+      .then_reply_with(cloud_role_tests::aws_creds);
+
+    listen();
+
+    ss::abort_source as;
+    std::optional<cloud_roles::credentials> c;
+
+    one_shot_fetch s(c);
+
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::aws_instance_metadata,
+      as,
+      s,
+      cloud_roles::aws_region_name{""},
+      address());
+
+    refresh.start();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&c] { return c.has_value(); });
+
+    auto aws_creds = std::get<cloud_roles::aws_credentials>(c.value());
+    BOOST_REQUIRE_EQUAL("my-key", aws_creds.access_key_id());
+    BOOST_REQUIRE_EQUAL("my-secret", aws_creds.secret_access_key());
+    BOOST_REQUIRE_EQUAL("my-token", aws_creds.session_token.value());
+
+    const auto& requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests[0].url, imdsv2_token_url);
+    BOOST_REQUIRE_EQUAL(requests[1].url, cloud_role_tests::aws_role_query_url);
+    BOOST_REQUIRE_EQUAL(requests[2].url, cloud_role_tests::aws_creds_url);
+
+    const auto& role_q = get_latest_request(
+      cloud_role_tests::aws_role_query_url);
+    BOOST_REQUIRE(role_q.has_value());
+    BOOST_REQUIRE(
+      !role_q->get().header("X-aws-ec2-metadata-token").has_value());
+
+    auto log = wrapper.string();
+
+    BOOST_REQUIRE(
+      log.find("Failed to get IMDSv2 token, engaging fallback mode. ")
+      != log.npos);
+}
+
+FIXTURE_TEST(test_imdsv2_fallback_not_triggered_unless_error_matches, fixture) {
+    tee_wrapper wrapper(cloud_roles::clrl_log);
+
+    fail_request_if(
+      [](const auto& req) {
+          return req._url == imdsv2_token_url && req._method == "PUT";
+      },
+      http_test_utils::response{
+        .body = "X",
+        .status = ss::http::reply::status_type::internal_server_error});
+
+    listen();
+
+    ss::abort_source as;
+    std::optional<cloud_roles::credentials> c;
+
+    one_shot_fetch s(c);
+
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::aws_instance_metadata,
+      as,
+      s,
+      cloud_roles::aws_region_name{""},
+      address());
+
+    refresh.start();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    RPTEST_REQUIRE_EVENTUALLY(
+      10s, [this] { return has_call(imdsv2_token_url); });
+
+    BOOST_REQUIRE(!c.has_value());
+
+    const auto& requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests[0].url, imdsv2_token_url);
+
+    auto log = wrapper.string();
+
+    BOOST_REQUIRE(
+      log.find("Failed to get IMDSv2 token, engaging fallback mode. ")
+      == log.npos);
 }

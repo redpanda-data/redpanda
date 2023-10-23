@@ -25,6 +25,7 @@ public:
     uint16_t httpd_port_number();
 
 public:
+    static constexpr auto imdsv2_token_url = "/latest/api/token";
     using request_predicate
       = ss::noncopyable_function<bool(const ss::http::request&)>;
 
