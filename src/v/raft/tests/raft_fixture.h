@@ -90,9 +90,16 @@ struct raft_node_map {
       node_for(model::node_id) = 0;
 };
 
+struct response_delay {
+    std::chrono::milliseconds length;
+    std::optional<ss::promise<>> on_applied;
+};
+
+using failure_t = std::variant<response_delay>;
+
 class in_memory_test_protocol : public consensus_client_protocol::impl {
 public:
-    explicit in_memory_test_protocol(raft_node_map&);
+    explicit in_memory_test_protocol(raft_node_map&, prefix_logger&);
 
     ss::future<result<vote_reply>>
     vote(model::node_id, vote_request&&, rpc::client_opts) final;
@@ -127,6 +134,9 @@ public:
 
     channel& get_channel(model::node_id id);
 
+    void inject_failure(msg_type type, failure_t failure);
+    void remove_failure(msg_type type);
+
     ss::future<> stop();
 
 private:
@@ -134,7 +144,9 @@ private:
     ss::future<result<RespT>> dispatch(model::node_id, ReqT req);
     ss::gate _gate;
     absl::flat_hash_map<model::node_id, std::unique_ptr<channel>> _channels;
+    absl::flat_hash_map<msg_type, failure_t> _failures;
     raft_node_map& _nodes;
+    prefix_logger& _logger;
 };
 
 /**
@@ -148,6 +160,7 @@ public:
       model::node_id id,
       model::revision_id revision,
       raft_node_map& node_map,
+      ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb);
 
     raft_node_instance(const raft_node_instance&) = delete;
@@ -158,10 +171,23 @@ public:
 
     ss::lw_shared_ptr<consensus> raft() { return _raft; }
 
-    ss::future<> start(
+    ss::sharded<features::feature_table>& get_feature_table() {
+        return _features;
+    }
+
+    // Initialise the node instance and create the consensus instance
+    ss::future<> initialise(std::vector<raft::vnode> initial_nodes);
+
+    // Start the node instance with an optionally provided state machine builder
+    ss::future<>
+    start(std::optional<raft::state_machine_manager_builder> builder);
+
+    // Initialise and start the node instance
+    ss::future<> init_and_start(
       std::vector<raft::vnode> initial_nodes,
       std::optional<raft::state_machine_manager_builder> builder
       = std::nullopt);
+
     ss::future<> stop();
 
     ss::future<> remove_data();
@@ -184,21 +210,24 @@ public:
 
     ss::future<model::offset> random_batch_base_offset(model::offset max);
 
+    void inject_failure(msg_type type, failure_t failure);
+    void remove_failure(msg_type type);
+
 private:
     model::node_id _id;
     model::revision_id _revision;
+    prefix_logger _logger;
     ss::sstring _base_directory;
     ss::shared_ptr<in_memory_test_protocol> _protocol;
     ss::sharded<storage::api> _storage;
     config::binding<std::chrono::milliseconds> _election_timeout
       = config::mock_binding(500ms);
-    ss::sharded<features::feature_table> _features;
+    ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
     recovery_scheduler _recovery_scheduler;
     std::unique_ptr<heartbeat_manager> _hb_manager;
     leader_update_clb_t _leader_clb;
-    prefix_logger _logger;
     ss::lw_shared_ptr<consensus> _raft;
     bool started = false;
 };
@@ -406,6 +435,8 @@ private:
     ss::logger _logger;
 
     absl::flat_hash_map<model::node_id, leadership_status> _leaders_view;
+
+    ss::sharded<features::feature_table> _features;
 };
 
 std::ostream& operator<<(std::ostream& o, msg_type type);

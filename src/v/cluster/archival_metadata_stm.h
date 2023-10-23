@@ -203,7 +203,10 @@ public:
       model::term_id term,
       const cloud_storage::partition_manifest& manifest);
 
-    using persisted_stm::sync;
+    // Attempts to bring the archival STM in sync with the log.
+    // Returns "true" if it has synced succesfully *and* the replica
+    // is still the leader with the correct term.
+    ss::future<bool> sync(model::timeout_clock::duration timeout);
 
     model::offset get_start_offset() const;
     model::offset get_last_offset() const;
@@ -246,6 +249,8 @@ private:
       ss::lowres_clock::time_point deadline,
       ss::abort_source&);
 
+    // Replicate commands in a batch and wait for their application.
+    // Should be called under _lock to ensure linearisability
     ss::future<std::error_code>
     do_replicate_commands(model::record_batch, ss::abort_source&);
 
@@ -310,6 +315,9 @@ private:
 
     // The offset of the last record that modified this stm
     model::offset _last_dirty_at;
+
+    // The last replication future
+    std::optional<ss::future<result<raft::replicate_result>>> _last_replicate;
 
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;

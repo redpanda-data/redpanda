@@ -76,10 +76,12 @@ ss::future<> channel::stop() {
     if (!_as.abort_requested()) {
         _as.request_abort();
         _new_messages.broken();
+
+        co_await _gate.close();
+
         for (auto& m : _messages) {
             m.resp_data.set_exception(ss::abort_requested_exception());
         }
-        co_await _gate.close();
     }
 }
 
@@ -212,8 +214,10 @@ ss::future<> channel::dispatch_loop() {
     }
 }
 
-in_memory_test_protocol::in_memory_test_protocol(raft_node_map& node_map)
-  : _nodes(node_map) {}
+in_memory_test_protocol::in_memory_test_protocol(
+  raft_node_map& node_map, prefix_logger& logger)
+  : _nodes(node_map)
+  , _logger(logger) {}
 
 channel& in_memory_test_protocol::get_channel(model::node_id id) {
     auto it = _channels.find(id);
@@ -230,6 +234,15 @@ channel& in_memory_test_protocol::get_channel(model::node_id id) {
     }
     return *it->second;
 }
+
+void in_memory_test_protocol::inject_failure(msg_type type, failure_t failure) {
+    _failures.emplace(type, std::move(failure));
+}
+
+void in_memory_test_protocol::remove_failure(msg_type type) {
+    _failures.erase(type);
+}
+
 ss::future<> in_memory_test_protocol::stop() {
     for (auto& [_, ch] : _channels) {
         co_await ch->stop();
@@ -281,8 +294,24 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
     iobuf buffer;
     co_await serde::write_async(buffer, std::move(req));
     try {
-        auto resp = co_await node_channel.exchange(
-          map_msg_type<ReqT>(), std::move(buffer));
+        const auto msg_type = map_msg_type<ReqT>();
+
+        if (auto iter = _failures.find(msg_type); iter != _failures.end()) {
+            auto& fail = iter->second;
+            co_await ss::visit(fail, [this, msg_type](response_delay& f) {
+                vlog(
+                  _logger.info,
+                  "Injecting response delay of length {} for {}",
+                  f.length,
+                  msg_type);
+                if (f.on_applied) {
+                    f.on_applied->set_value();
+                }
+                return ss::sleep(f.length);
+            });
+        }
+
+        auto resp = co_await node_channel.exchange(msg_type, std::move(buffer));
         iobuf_parser parser(std::move(resp));
         co_return co_await serde::read_async<RespT>(parser);
     } catch (const seastar::gate_closed_exception&) {
@@ -291,7 +320,7 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
 }
 
 ss::future<result<vote_reply>> in_memory_test_protocol::vote(
-  model::node_id id, vote_request&& req, rpc::client_opts opts) {
+  model::node_id id, vote_request&& req, rpc::client_opts) {
     return dispatch<vote_request, vote_reply>(id, req);
 };
 
@@ -336,12 +365,15 @@ raft_node_instance::raft_node_instance(
   model::node_id id,
   model::revision_id revision,
   raft_node_map& node_map,
+  ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb)
   : _id(id)
   , _revision(revision)
+  , _logger(test_log, fmt::format("[node: {}]", _id))
   , _base_directory(fmt::format(
       "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)))
-  , _protocol(ss::make_shared<in_memory_test_protocol>(node_map))
+  , _protocol(ss::make_shared<in_memory_test_protocol>(node_map, _logger))
+  , _features(feature_table)
   , _recovery_mem_quota([] {
       return raft::recovery_memory_quota::configuration{
         .max_recovery_memory = config::mock_binding<std::optional<size_t>>(
@@ -351,15 +383,12 @@ raft_node_instance::raft_node_instance(
   })
   , _recovery_scheduler(
       config::mock_binding<size_t>(64), config::mock_binding(10ms))
-  , _leader_clb(std::move(leader_update_clb))
-  , _logger(test_log, fmt::format("[node: {}]", _id)) {
+  , _leader_clb(std::move(leader_update_clb)) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
-ss::future<> raft_node_instance::start(
-  std::vector<vnode> initial_nodes,
-  std::optional<raft::state_machine_manager_builder> builder) {
-    co_await _features.start();
+ss::future<>
+raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     _hb_manager = std::make_unique<heartbeat_manager>(
       config::mock_binding<std::chrono::milliseconds>(50ms),
       consensus_client_protocol(_protocol),
@@ -389,9 +418,6 @@ ss::future<> raft_node_instance::start(
 
     auto log = co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
 
-    co_await _features.invoke_on_all(
-      [](features::feature_table& ft) { return ft.testing_activate_all(); });
-
     _raft = ss::make_lw_shared<consensus>(
       _id,
       test_group,
@@ -409,6 +435,17 @@ ss::future<> raft_node_instance::start(
       _recovery_scheduler,
       _features.local());
     co_await _hb_manager->register_group(_raft);
+}
+
+ss::future<> raft_node_instance::init_and_start(
+  std::vector<vnode> initial_nodes,
+  std::optional<raft::state_machine_manager_builder> builder) {
+    co_await initialise(std::move(initial_nodes));
+    co_await start(std::move(builder));
+}
+
+ss::future<> raft_node_instance::start(
+  std::optional<raft::state_machine_manager_builder> builder) {
     co_await _raft->start(std::move(builder));
     started = true;
 }
@@ -428,7 +465,6 @@ ss::future<> raft_node_instance::stop() {
         vlog(_logger.debug, "stopping heartbeat manager");
         co_await _hb_manager->stop();
         vlog(_logger.debug, "stopping feature table");
-        co_await _features.stop();
         _raft = nullptr;
         vlog(_logger.debug, "stopping storage");
         co_await _storage.stop();
@@ -481,9 +517,19 @@ raft_node_instance::random_batch_base_offset(model::offset max) {
     co_return batches.front().base_offset();
 }
 
+void raft_node_instance::inject_failure(msg_type type, failure_t failure) {
+    _protocol->inject_failure(type, std::move(failure));
+}
+
+void raft_node_instance::remove_failure(msg_type type) {
+    _protocol->remove_failure(type);
+}
+
 seastar::future<> raft_fixture::TearDownAsync() {
     co_await seastar::coroutine::parallel_for_each(
       _nodes, [](auto& pair) { return pair.second->stop(); });
+
+    co_await _features.stop();
 }
 seastar::future<> raft_fixture::SetUpAsync() {
     for (auto cpu : ss::smp::all_cpus()) {
@@ -492,12 +538,16 @@ seastar::future<> raft_fixture::SetUpAsync() {
             config::shard_local_cfg().disable_public_metrics.set_value(true);
         });
     }
+
+    co_await _features.start();
+    co_await _features.invoke_on_all(
+      [](features::feature_table& ft) { return ft.testing_activate_all(); });
 }
 
 raft_node_instance&
 raft_fixture::add_node(model::node_id id, model::revision_id rev) {
     auto instance = std::make_unique<raft_node_instance>(
-      id, rev, *this, [id, this](leadership_status lst) {
+      id, rev, *this, _features, [id, this](leadership_status lst) {
           _leaders_view[id] = lst;
       });
 
@@ -554,12 +604,14 @@ std::optional<model::node_id> raft_fixture::get_leader() const {
 }
 
 ss::future<> raft_fixture::create_simple_group(size_t number_of_nodes) {
-    for (auto id = 0; id < number_of_nodes; ++id) {
-        add_node(model::node_id(id), model::revision_id{0});
+    for (size_t id = 0; id < number_of_nodes; ++id) {
+        add_node(
+          model::node_id(static_cast<int32_t>(id)), model::revision_id{0});
     }
 
-    co_await ss::coroutine::parallel_for_each(
-      _nodes, [this](auto& pair) { return pair.second->start(all_vnodes()); });
+    co_await ss::coroutine::parallel_for_each(_nodes, [this](auto& pair) {
+        return pair.second->init_and_start(all_vnodes());
+    });
 }
 
 ss::future<> raft_fixture::wait_for_committed_offset(

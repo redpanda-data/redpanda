@@ -40,4 +40,21 @@ else()
       ARGS "-- -c 1"
       LABELS archival
     )
+
+    rp_test(
+      UNIT_TEST
+      GTEST
+      BINARY_NAME gtest_archival
+      SOURCES
+        archival_metadata_stm_gtest.cc
+      LIBRARIES
+        v::raft
+        v::raft_fixture
+        v::cluster
+        v::cloud_roles
+        v::http_test_utils
+        v::gtest_main
+      LABELS archival
+      ARGS "-- -c 1"
+    )
 endif()

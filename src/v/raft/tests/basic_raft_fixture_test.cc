@@ -29,7 +29,7 @@ using namespace raft;
 
 TEST_F_CORO(raft_fixture, test_single_node_can_elect_leader) {
     auto& n0 = add_node(model::node_id(0), model::revision_id(0));
-    co_await n0.start({n0.get_vnode()});
+    co_await n0.init_and_start({n0.get_vnode()});
     auto leader = co_await wait_for_leader(10s);
 
     ASSERT_EQ_CORO(leader, model::node_id(0));
@@ -90,7 +90,7 @@ TEST_F_CORO(raft_fixture, validate_recovery) {
     ASSERT_TRUE_CORO(result.has_value());
 
     auto& new_n3 = add_node(model::node_id(3), model::revision_id(0));
-    co_await new_n3.start(all_vnodes());
+    co_await new_n3.init_and_start(all_vnodes());
 
     // wait for committed offset to propagate
     auto committed_offset = leader_node.raft()->committed_offset();
@@ -119,8 +119,8 @@ TEST_F_CORO(raft_fixture, validate_adding_nodes_to_cluster) {
     auto& n1 = add_node(model::node_id(1), model::revision_id(0));
     auto& n2 = add_node(model::node_id(2), model::revision_id(0));
     // start other two nodes with empty configuration
-    co_await n1.start({});
-    co_await n2.start({});
+    co_await n1.init_and_start({});
+    co_await n2.init_and_start({});
 
     // update group configuration
     co_await leader_node.raft()->replace_configuration(
