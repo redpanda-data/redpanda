@@ -11,8 +11,11 @@ import json
 import time
 import threading
 
+from typing import Optional
+
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from rptest.services import tls
 
 # What we use as an output marker when not recording messages
 MSG_TOKEN = "_"
@@ -31,7 +34,12 @@ class RpkConsumer(BackgroundThreadService):
                  save_msgs=True,
                  fetch_max_bytes=None,
                  num_msgs=None,
-                 retry_sec=5):
+                 retry_sec=5,
+                 username=None,
+                 password=None,
+                 mechanism=None,
+                 tls_cert: Optional[tls.Certificate] = None,
+                 tls_enabled: Optional[bool] = None):
         super(RpkConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -50,10 +58,11 @@ class RpkConsumer(BackgroundThreadService):
         self._fetch_max_bytes = fetch_max_bytes
         self._num_msgs = num_msgs
         self._retry_sec = retry_sec
-        self._mechanism = None
-        self._user = None
-        self._pass = None
-        self._tls_enabled = False
+        self._mechanism = mechanism
+        self._user = username
+        self._pass = password
+        self._tls_cert = tls_cert
+        self._tls_enabled = False if tls_enabled is None else tls_enabled
 
         # if testing redpanda cloud, override with default superuser
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
@@ -139,6 +148,9 @@ class RpkConsumer(BackgroundThreadService):
             cmd += f' -X user={self._user}'
             cmd += f' -X pass={self._pass}'
             cmd += f' -X sasl.mechanism={self._mechanism}'
+
+        if self._tls_cert:
+            cmd += f' -X tls.key={self._tls_cert.key} -X tls.cert={self._tls_cert.crt} -X tls.ca={self._tls_cert.ca.crt}'
 
         if self._tls_enabled:
             cmd += f' -X tls.enabled={str(self._tls_enabled)}'

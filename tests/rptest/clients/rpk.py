@@ -328,6 +328,36 @@ class RpkTool:
         ]
         return self._run(cmd)
 
+    def allow_principal(self, principal, operations, resource, resource_name):
+        if resource == "topic":
+            resource = "--topic"
+        elif resource == "transactional-id":
+            resource = "--transactional-id"
+        else:
+            raise Exception(f"unknown resource: {resource}")
+
+        cmd = [
+            "acl", "create", "--allow-principal", principal, "--operation",
+            ",".join(operations), resource, resource_name, "--brokers",
+            self._redpanda.brokers()
+        ]
+        return self._run(cmd)
+
+    def delete_principal(self, principal, operations, resource, resource_name):
+        if resource == "topic":
+            resource = "--topic"
+        elif resource == "transactional-id":
+            resource = "--transactional-id"
+        else:
+            raise Exception(f"unknown resource: {resource}")
+
+        cmd = [
+            "acl", "delete", "--allow-principal", principal, "--operation",
+            ",".join(operations), resource, resource_name, "--brokers",
+            self._redpanda.brokers(), "--no-confirm"
+        ]
+        return self._run(cmd)
+
     def _sasl_create_user_cmd(self, new_username, new_password, mechanism):
         cmd = ["acl", "user", "create", new_username]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
