@@ -52,6 +52,7 @@
 #include <memory>
 #include <stdexcept>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -96,6 +97,46 @@ cluster::errc map_errc(std::error_code ec) {
     }
     return cluster::errc::timeout;
 }
+
+template<typename Func>
+std::invoke_result_t<Func> retry(Func func) {
+    int attempts = 0;
+    while (true) {
+        ++attempts;
+        auto fut = co_await ss::coroutine::as_future<
+          typename std::invoke_result_t<Func>::value_type>(func());
+        if (fut.failed()) {
+            if (attempts < max_client_retries) {
+                co_return co_await std::move(fut);
+            }
+            continue;
+        }
+        auto r = fut.get();
+        cluster::errc ec = cluster::errc::success;
+        if constexpr (std::is_same_v<cluster::errc, decltype(r)>) {
+            ec = r;
+        } else if constexpr (outcome::is_basic_result_v<decltype(r)>) {
+            ec = r.has_error() ? r.error() : cluster::errc::success;
+        } else {
+            ec = r.ec;
+        }
+        switch (ec) {
+        case cluster::errc::not_leader:
+        case cluster::errc::timeout:
+            // We've ran out of retries, return our error
+            if (attempts >= max_client_retries) {
+                co_return r;
+            }
+            break;
+        case cluster::errc::success:
+        // Don't retry arbitrary error codes.
+        default:
+            co_return r;
+        }
+    }
+    __builtin_unreachable();
+}
+
 } // namespace
 
 client::client(
