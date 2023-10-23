@@ -52,6 +52,11 @@ public:
      * Return the number of keys in the map.
      */
     virtual size_t size() const = 0;
+
+    /**
+     * Returns the number of entries the map has space allocated for.
+     */
+    virtual size_t capacity() const = 0;
 };
 
 /**
@@ -76,6 +81,7 @@ public:
     model::offset max_offset() const override;
 
     size_t size() const override;
+    size_t capacity() const override;
 
 private:
     ss::shared_ptr<util::mem_tracker> _memory_tracker;

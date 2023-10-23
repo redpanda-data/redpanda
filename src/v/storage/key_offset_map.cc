@@ -47,5 +47,6 @@ simple_key_offset_map::get(const compaction_key& key) const {
 model::offset simple_key_offset_map::max_offset() const { return _max_offset; }
 
 size_t simple_key_offset_map::size() const { return _map.size(); }
+size_t simple_key_offset_map::capacity() const { return _max_keys; }
 
 } // namespace storage
