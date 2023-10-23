@@ -79,6 +79,7 @@ public:
     std::vector<model::node_id> all_nodes;
     absl::flat_hash_set<model::node_id> all_unavailable_nodes;
     absl::flat_hash_set<model::node_id> timed_out_unavailable_nodes;
+    absl::flat_hash_set<model::node_id> defunct_nodes;
     absl::flat_hash_set<model::node_id> decommissioning_nodes;
     absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
 
@@ -288,6 +289,12 @@ void partition_balancer_planner::init_per_node_state(
         }
 
         ctx.all_nodes.push_back(id);
+
+        if (
+          broker.state.get_liveness_state() == model::liveness_state::defunct) {
+            vlog(clusterlog.debug, "node {}: defunct", id);
+            ctx.defunct_nodes.insert(id);
+        }
 
         if (
           broker.state.get_membership_state()
@@ -979,6 +986,12 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
 
     // Add constraint on unavailable nodes
     constraints.add(distinct_from(_ctx.timed_out_unavailable_nodes));
+
+    if (!_ctx.defunct_nodes.empty()) {
+        // defunct nodes are explicitly marked dead by the operator
+        // add a constraint to move replicas away from these nodes.
+        constraints.add(distinct_from(_ctx.defunct_nodes));
+    }
 
     // Add constraint on decommissioning nodes
     if (!_ctx.decommissioning_nodes.empty()) {
@@ -1683,10 +1696,13 @@ partition_balancer_planner::plan_actions(
       ctx, ctx.decommissioning_nodes, change_reason::node_decommissioning);
 
     if (ctx.config().mode == model::partition_autobalancing_mode::continuous) {
+        auto unavailable_nodes = ctx.timed_out_unavailable_nodes;
+        if (!ctx.defunct_nodes.empty()) {
+            unavailable_nodes.insert(
+              ctx.defunct_nodes.begin(), ctx.defunct_nodes.end());
+        }
         co_await get_node_drain_actions(
-          ctx,
-          ctx.timed_out_unavailable_nodes,
-          change_reason::node_unavailable);
+          ctx, unavailable_nodes, change_reason::node_unavailable);
         co_await get_rack_constraint_repair_actions(ctx);
         co_await get_full_node_actions(ctx);
     }
