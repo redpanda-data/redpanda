@@ -367,5 +367,7 @@ class CloudStorageScrubberTest(RedpandaTest):
         # This test deletes segments, spillover manifests
         # and fudges the manifest. rp-storage-tool also picks
         # up on some of these things.
-        self.redpanda.si_settings.set_expected_damage(
-            {"missing_segments", "metadata_offset_gaps"})
+        self.redpanda.si_settings.set_expected_damage({
+            "missing_segments", "metadata_offset_gaps",
+            "missing_spillover_manifests"
+        })

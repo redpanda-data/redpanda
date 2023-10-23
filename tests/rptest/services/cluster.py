@@ -156,6 +156,7 @@ def cluster(log_allow_list=None,
 
                 if self.redpanda.si_settings is not None:
                     try:
+                        self.redpanda.maybe_do_internal_scrub()
                         self.redpanda.stop_and_scrub_object_storage()
                     except:
                         self.redpanda.cloud_storage_diagnostics()
