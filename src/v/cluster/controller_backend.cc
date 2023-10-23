@@ -280,6 +280,9 @@ controller_backend::controller_backend(
   ss::sharded<topics_frontend>& frontend,
   ss::sharded<storage::api>& storage,
   ss::sharded<features::feature_table>& features,
+  config::binding<std::optional<size_t>> initial_retention_local_target_bytes,
+  config::binding<std::optional<std::chrono::milliseconds>>
+    initial_retention_local_target_ms,
   ss::sharded<ss::abort_source>& as)
   : _topics(tp_state)
   , _shard_table(st)
@@ -293,6 +296,10 @@ controller_backend::controller_backend(
   , _data_directory(config::node().data_directory().as_sstring())
   , _housekeeping_timer_interval(
       config::shard_local_cfg().controller_backend_housekeeping_interval_ms())
+  , _initial_retention_local_target_bytes(
+      std::move(initial_retention_local_target_bytes))
+  , _initial_retention_local_target_ms(
+      std::move(initial_retention_local_target_ms))
   , _as(as) {}
 
 bool controller_backend::command_based_membership_active() const {
@@ -475,27 +482,30 @@ ss::future<std::error_code> do_update_replica_set(
   model::revision_id rev,
   ss::lw_shared_ptr<partition> p,
   members_table& members,
-  bool command_based_members_update) {
+  bool command_based_members_update,
+  std::optional<model::offset> learner_initial_offset) {
     vlog(
       clusterlog.debug,
       "[{}] updating partition replicas. revision: {}, replicas: {}, using "
-      "vnodes: {}",
+      "vnodes: {}, learner initial offset: {}",
       ntp,
       rev,
       replicas,
-      command_based_members_update);
+      command_based_members_update,
+      learner_initial_offset);
 
     // when cluster membership updates are driven by controller commands, use
     // only vnodes to update raft replica set
     if (likely(command_based_members_update)) {
         auto nodes = create_vnode_set(replicas, replica_revisions);
         co_return co_await p->update_replica_set(
-          std::move(nodes), rev, std::nullopt);
+          std::move(nodes), rev, learner_initial_offset);
     }
 
     auto brokers = create_brokers_set(replicas, replica_revisions, members);
     co_return co_await p->update_replica_set(std::move(brokers), rev);
 }
+
 ss::future<std::error_code> revert_configuration_update(
   const model::ntp& ntp,
   const replicas_t& replicas,
@@ -518,7 +528,8 @@ ss::future<std::error_code> revert_configuration_update(
       rev,
       p,
       members,
-      command_based_members_update);
+      command_based_members_update,
+      std::nullopt);
 }
 
 bool is_finishing_operation(
@@ -545,7 +556,101 @@ bool is_finishing_operation(
       [](const auto&) { return false; });
 }
 
+/**
+ * Retrieve topic property based on the following logic
+ *
+ *
+ * +---------------------------------+---------------+----------+-------------+
+ * |Cluster(optional)\Topic(tristate)|     Empty     | Disabled |    Value    |
+ * +---------------------------------+---------------+----------+-------------+
+ * |Empty                            | OFF           | OFF      | Topic Value |
+ * |Value                            | Cluster Value | OFF      | Topic Value |
+ * +---------------------------------+---------------+----------+-------------+
+ *
+ */
+template<typename T>
+std::optional<T> get_topic_property(
+  std::optional<T> cluster_level_property, tristate<T> topic_property) {
+    // disabled
+    if (topic_property.is_disabled()) {
+        return std::nullopt;
+    }
+    // has value
+    if (topic_property.has_optional_value()) {
+        return *topic_property;
+    }
+    return cluster_level_property;
+}
+
 } // namespace
+
+std::optional<model::offset>
+controller_backend::calculate_learner_initial_offset(
+  const ss::lw_shared_ptr<partition>& p) const {
+    /**
+     * Initial learner start offset only makes sense for partitions with cloud
+     * storage data
+     */
+    if (!p->cloud_data_available()) {
+        vlog(clusterlog.trace, "no cloud data available for: {}", p->ntp());
+        return std::nullopt;
+    }
+
+    auto log = p->log();
+    /**
+     * Calculate retention targets based on cluster and topic configuration
+     */
+    const auto initial_retention_bytes = get_topic_property(
+      _initial_retention_local_target_bytes(),
+      log->config().has_overrides()
+        ? log->config().get_overrides().initial_retention_local_target_bytes
+        : tristate<size_t>{std::nullopt});
+
+    const auto initial_retention_ms = get_topic_property(
+      _initial_retention_local_target_ms(),
+      log->config().has_overrides()
+        ? log->config().get_overrides().initial_retention_local_target_ms
+        : tristate<std::chrono::milliseconds>{std::nullopt});
+    /**
+     * Initial target retention disabled
+     */
+    if (
+      !initial_retention_bytes.has_value()
+      && !initial_retention_ms.has_value()) {
+        return std::nullopt;
+    }
+
+    model::timestamp retention_timestamp_threshold(0);
+    if (initial_retention_ms) {
+        retention_timestamp_threshold = model::timestamp(
+          model::timestamp::now().value() - initial_retention_ms->count());
+    }
+
+    auto retention_offset = log->retention_offset(storage::gc_config(
+      retention_timestamp_threshold, initial_retention_bytes));
+
+    if (!retention_offset) {
+        return std::nullopt;
+    }
+
+    const auto last_uploaded_to_cloud
+      = p->archival_meta_stm()->manifest().get_last_offset();
+
+    /**
+     * Last offset uploaded to the cloud is target learner retention upper
+     * bound. We can not start retention recover from the point which is not yet
+     * uploaded to Cloud Storage.
+     */
+    vlog(
+      clusterlog.trace,
+      "[{}] calculated retention offset: {}, last uploaded to cloud: {}",
+      p->ntp(),
+      *retention_offset,
+      last_uploaded_to_cloud);
+
+    return model::next_offset(
+      std::min(last_uploaded_to_cloud, *retention_offset));
+}
 
 ss::future<> controller_backend::do_bootstrap() {
     return ss::max_concurrent_for_each(
@@ -1444,7 +1549,8 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
           ntp,
           data.target_assignment.replicas,
           data.replica_revisions,
-          revision);
+          revision,
+          data.policy);
     case partition_operation_type::force_update:
         co_return co_await force_replica_set_update(
           ntp,
@@ -1650,7 +1756,8 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
                     rev,
                     std::move(p),
                     _members_table.local(),
-                    command_based_membership_active());
+                    command_based_membership_active(),
+                    std::nullopt);
               } else if (already_moved) {
                   if (likely(_features.local().is_active(
                         features::feature::partition_move_revert_cancel))) {
@@ -1730,7 +1837,11 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
             // just update configuration revision
 
             co_return co_await update_partition_replica_set(
-              ntp, replicas, replica_revisions, rev);
+              ntp,
+              replicas,
+              replica_revisions,
+              rev,
+              reconfiguration_policy::full_local_retention);
         } else if (already_moved) {
             if (likely(_features.local().is_active(
                   features::feature::partition_move_revert_cancel))) {
@@ -1774,7 +1885,8 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
   const model::ntp& ntp,
   const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
-  model::revision_id rev) {
+  model::revision_id rev,
+  reconfiguration_policy policy) {
     /**
      * Following scenarios can happen in here:
      * - node is a leader for current partition => just update config
@@ -1785,13 +1897,21 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
       ntp,
       replicas,
       rev,
-      [this, rev, &replicas, &ntp, &replica_revisions](
+      [this, rev, &replicas, &ntp, &replica_revisions, policy](
         ss::lw_shared_ptr<partition> p) {
           auto it = _topics.local().all_topics_metadata().find(
             model::topic_namespace_view(ntp));
           // no longer in progress
           if (it == _topics.local().all_topics_metadata().end()) {
               return ss::make_ready_future<std::error_code>(errc::success);
+          }
+          /**
+           * We want to keep full local retention on the learner, do not return
+           * initial offset override
+           */
+          std::optional<model::offset> learner_initial_offset;
+          if (policy == reconfiguration_policy::target_initial_retention) {
+              learner_initial_offset = calculate_learner_initial_offset(p);
           }
 
           return do_update_replica_set(
@@ -1801,7 +1921,8 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
             rev,
             std::move(p),
             _members_table.local(),
-            command_based_membership_active());
+            command_based_membership_active(),
+            learner_initial_offset);
       });
 }
 

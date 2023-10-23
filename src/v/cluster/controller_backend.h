@@ -15,6 +15,7 @@
 #include "cluster/fwd.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -244,6 +245,10 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<storage::api>&,
       ss::sharded<features::feature_table>&,
+      config::binding<std::optional<size_t>>
+        initial_retention_local_target_bytes,
+      config::binding<std::optional<std::chrono::milliseconds>>
+        initial_retention_local_target_ms,
       ss::sharded<seastar::abort_source>&);
 
     ss::future<> stop();
@@ -346,7 +351,8 @@ private:
       const model::ntp&,
       const replicas_t&,
       const replicas_revision_map&,
-      model::revision_id);
+      model::revision_id,
+      reconfiguration_policy);
     ss::future<std::error_code> cancel_replica_set_update(
       const model::ntp&,
       const replicas_t&,
@@ -400,6 +406,9 @@ private:
 
     bool should_skip(const model::ntp&) const;
 
+    std::optional<model::offset> calculate_learner_initial_offset(
+      const ss::lw_shared_ptr<partition>& partition) const;
+
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
@@ -411,6 +420,10 @@ private:
     model::node_id _self;
     ss::sstring _data_directory;
     std::chrono::milliseconds _housekeeping_timer_interval;
+    config::binding<std::optional<size_t>>
+      _initial_retention_local_target_bytes;
+    config::binding<std::optional<std::chrono::milliseconds>>
+      _initial_retention_local_target_ms;
     ss::sharded<ss::abort_source>& _as;
     underlying_t _topic_deltas;
     ss::timer<> _housekeeping_timer;

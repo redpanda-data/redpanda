@@ -355,6 +355,14 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_tp_frontend),
             std::ref(_storage),
             std::ref(_feature_table),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .initial_retention_local_target_bytes_default.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .initial_retention_local_target_ms_default.bind();
+            }),
             std::ref(_as));
       })
       .then(
