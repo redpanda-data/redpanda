@@ -117,15 +117,24 @@ client::client(
 ss::future<cluster::errc> client::produce(
   model::topic_partition tp, ss::chunked_fifo<model::record_batch> batches) {
     vlog(log.trace, "producing {} batches to {}", batches.size(), tp);
+    produce_request req;
+    req.topic_data.emplace_back(std::move(tp), std::move(batches));
+    req.timeout = timeout;
+    co_return co_await do_produce_once(std::move(req));
+}
+
+ss::future<cluster::errc> client::do_produce_once(produce_request req) {
+    vassert(
+      req.topic_data.size() == 1,
+      "expected a single batch: {}",
+      req.topic_data.size());
+    const auto& tp = req.topic_data.front().tp;
     auto leader = _leaders->get_leader_node(
       model::topic_namespace_view(model::kafka_namespace, tp.topic),
       tp.partition);
     if (!leader) {
         co_return cluster::errc::not_leader;
     }
-    produce_request req;
-    req.topic_data.emplace_back(std::move(tp), std::move(batches));
-    req.timeout = timeout;
     auto reply = co_await (
       *leader == _self ? do_local_produce(std::move(req))
                        : do_remote_produce(*leader, std::move(req)));
@@ -174,6 +183,12 @@ client::do_remote_produce(model::node_id node, produce_request req) {
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
 client::store_wasm_binary(iobuf data, model::timeout_clock::duration timeout) {
+    co_return co_await do_store_wasm_binary_once(std::move(data), timeout);
+}
+
+ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+client::do_store_wasm_binary_once(
+  iobuf data, model::timeout_clock::duration timeout) {
     auto leader = co_await compute_wasm_binary_ntp_leader();
     if (!leader) {
         co_return cluster::errc::not_leader;
@@ -219,6 +234,11 @@ client::do_remote_store_wasm_binary(
 
 ss::future<cluster::errc>
 client::delete_wasm_binary(uuid_t key, model::timeout_clock::duration timeout) {
+    co_return co_await do_delete_wasm_binary_once(key, timeout);
+}
+
+ss::future<cluster::errc> client::do_delete_wasm_binary_once(
+  uuid_t key, model::timeout_clock::duration timeout) {
     auto leader = co_await compute_wasm_binary_ntp_leader();
     if (!leader) {
         co_return cluster::errc::not_leader;
@@ -255,6 +275,11 @@ ss::future<cluster::errc> client::do_remote_delete_wasm_binary(
 }
 
 ss::future<result<iobuf, cluster::errc>> client::load_wasm_binary(
+  model::offset offset, model::timeout_clock::duration timeout) {
+    co_return co_await do_load_wasm_binary_once(offset, timeout);
+}
+
+ss::future<result<iobuf, cluster::errc>> client::do_load_wasm_binary_once(
   model::offset offset, model::timeout_clock::duration timeout) {
     auto leader = co_await compute_wasm_binary_ntp_leader();
     if (!leader) {

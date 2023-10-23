@@ -85,21 +85,28 @@ private:
     ss::future<model::cluster_transform_report>
       generate_remote_report(model::node_id);
 
+    ss::future<cluster::errc> do_produce_once(produce_request);
     ss::future<produce_reply> do_local_produce(produce_request);
     ss::future<produce_reply>
       do_remote_produce(model::node_id, produce_request);
 
+    ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
+    do_store_wasm_binary_once(iobuf, model::timeout_clock::duration timeout);
     ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
     do_local_store_wasm_binary(iobuf, model::timeout_clock::duration timeout);
     ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
     do_remote_store_wasm_binary(
       model::node_id, iobuf, model::timeout_clock::duration timeout);
 
+    ss::future<cluster::errc> do_delete_wasm_binary_once(
+      uuid_t key, model::timeout_clock::duration timeout);
     ss::future<cluster::errc> do_local_delete_wasm_binary(
       uuid_t key, model::timeout_clock::duration timeout);
     ss::future<cluster::errc> do_remote_delete_wasm_binary(
       model::node_id, uuid_t key, model::timeout_clock::duration timeout);
 
+    ss::future<result<iobuf, cluster::errc>> do_load_wasm_binary_once(
+      model::offset, model::timeout_clock::duration timeout);
     ss::future<result<iobuf, cluster::errc>> do_local_load_wasm_binary(
       model::offset, model::timeout_clock::duration timeout);
     ss::future<result<iobuf, cluster::errc>> do_remote_load_wasm_binary(
