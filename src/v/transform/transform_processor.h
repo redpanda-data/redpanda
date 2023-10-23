@@ -46,7 +46,10 @@ public:
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
       probe*);
-
+    processor(const processor&) = delete;
+    processor(processor&&) = delete;
+    processor& operator=(const processor&) = delete;
+    processor& operator=(processor&&) = delete;
     virtual ~processor() = default;
     virtual ss::future<> start();
     virtual ss::future<> stop();
