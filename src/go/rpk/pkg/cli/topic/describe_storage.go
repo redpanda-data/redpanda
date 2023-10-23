@@ -112,15 +112,23 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if all {
 				summary, size, syncF, offset = true, true, true, true
 			}
-			var sections int
-			for _, b := range []bool{summary, size, syncF, offset} {
-				if b {
-					sections++
-				}
-			}
-			withSections := sections > 1
 
-			out.Header("SUMMARY", summary, withSections, func() {
+			const (
+				secSummary = "SUMMARY"
+				secOffsets = "OFFSETS"
+				secSize    = "SIZE"
+				secSync    = "SYNC"
+			)
+			sections := out.NewMaybeHeaderSections(
+				out.ConditionalSectionHeaders(map[string]bool{
+					secSummary: summary,
+					secOffsets: offset,
+					secSize:    size,
+					secSync:    syncF,
+				})...,
+			)
+
+			sections.Add(secSummary, func() {
 				tw := out.NewTabWriter()
 				defer tw.Flush()
 				tw.PrintColumn("NAME", topic)
@@ -141,7 +149,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				tw.PrintColumn("LAST-UPLOAD", humanReadable(lastUpload, human, humanTime))
 			})
 
-			out.Header("OFFSETS", offset, withSections, func() {
+			sections.Add(secOffsets, func() {
 				tw := out.NewTable("PARTITION", "CLOUD-START", "CLOUD-LAST", "LOCAL-START", "LOCAL-LAST")
 				defer tw.Flush()
 				for _, r := range report {
@@ -155,7 +163,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 			})
 
-			out.Header("SIZE", size, withSections, func() {
+			sections.Add(secSize, func() {
 				tw := out.NewTable("PARTITION", "CLOUD-BYTES", "LOCAL-BYTES", "TOTAL-BYTES", "CLOUD-SEGMENTS", "LOCAL-SEGMENTS")
 				defer tw.Flush()
 				for _, r := range report {
@@ -170,7 +178,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 			})
 
-			out.Header("SYNC", syncF, withSections, func() {
+			sections.Add(secSync, func() {
 				isRrr := report[0].CloudStatus.CloudStorageMode == "read_replica"
 				headers := []string{"PARTITION", "LAST-SEGMENT-UPLOAD", "LAST-MANIFEST-UPLOAD", "METADATA-UPDATE-PENDING"}
 				if isRrr {

@@ -23,7 +23,7 @@ import (
 )
 
 func NewDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var summary, commits, lagPerTopic bool
+	var summary, commitsOnly, lagPerTopic bool
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
 		Short: "Describe group offset status & lag",
@@ -56,12 +56,12 @@ information about the members.
 				printDescribedSummary(lags)
 				return
 			}
-			printDescribed(commits, lags)
+			printDescribed(commitsOnly, lags)
 		},
 	}
 	cmd.Flags().BoolVarP(&lagPerTopic, "print-lag-per-topic", "t", false, "Print the aggregated lag per topic")
 	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print only the group summary section")
-	cmd.Flags().BoolVarP(&commits, "print-commits", "c", false, "Print only the group commits section")
+	cmd.Flags().BoolVarP(&commitsOnly, "print-commits", "c", false, "Print only the group commits section")
 	cmd.MarkFlagsMutuallyExclusive("print-summary", "print-commits")
 	cmd.MarkFlagsMutuallyExclusive("print-lag-per-topic", "print-commits")
 	return cmd
@@ -86,8 +86,8 @@ type describeRow struct {
 	err           string
 }
 
-func printDescribed(commits bool, lags kadm.DescribedGroupLags) {
-	for _, group := range lags.Sorted() {
+func printDescribed(commitsOnly bool, lags kadm.DescribedGroupLags) {
+	for i, group := range lags.Sorted() {
 		var rows []describeRow
 		var useInstanceID, useErr bool
 		for _, l := range group.Lag.Sorted() {
@@ -123,20 +123,24 @@ func printDescribed(commits bool, lags kadm.DescribedGroupLags) {
 			rows = append(rows, row)
 		}
 
-		printDescribedGroup(commits, group, rows, useInstanceID, useErr)
-		fmt.Println()
+		printDescribedGroup(commitsOnly, group, rows, useInstanceID, useErr)
+		if i != len(lags)-1 {
+			fmt.Println()
+		}
 	}
 }
 
 func printDescribedSummary(groups kadm.DescribedGroupLags) {
-	for _, group := range groups.Sorted() {
+	for i, group := range groups.Sorted() {
 		printDescribedGroupSummary(group)
+		if i != len(groups)-1 {
+			fmt.Println()
+		}
 	}
 }
 
 func printDescribedGroupSummary(group kadm.DescribedGroupLag) {
 	tw := out.NewTabWriter()
-	defer fmt.Println()
 	defer tw.Flush()
 	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
 	fmt.Fprintf(tw, "COORDINATOR\t%d\n", group.Coordinator.NodeID)
@@ -150,17 +154,20 @@ func printDescribedGroupSummary(group kadm.DescribedGroupLag) {
 }
 
 func printDescribedGroup(
-	commits bool,
+	commitsOnly bool,
 	group kadm.DescribedGroupLag,
 	rows []describeRow,
 	useInstanceID bool,
 	useErr bool,
 ) {
-	if !commits {
+	if !commitsOnly {
 		printDescribedGroupSummary(group)
 	}
 	if len(rows) == 0 {
 		return
+	}
+	if !commitsOnly {
+		fmt.Println()
 	}
 
 	headers := []string{
@@ -218,6 +225,7 @@ func printDescribedGroup(
 
 func printLagPerTopic(groups kadm.DescribedGroupLags) {
 	printDescribedSummary(groups)
+	fmt.Println()
 	tw := out.NewTable("TOPIC", "LAG")
 	defer tw.Flush()
 	for _, group := range groups.Sorted() {

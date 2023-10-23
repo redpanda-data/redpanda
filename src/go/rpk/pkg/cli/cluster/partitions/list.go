@@ -113,7 +113,17 @@ func newListPartitionMovementsCommand(fs afero.Fs, p *config.Params) *cobra.Comm
 
 			types.Sort(response)
 
-			out.Header("Partition movements", true, true, func() {
+			const (
+				secMove      = "Partition movements"
+				secReconcile = "Reconciliation statuses"
+			)
+			sections := out.NewSections(
+				out.ConditionalSectionHeaders(map[string]bool{
+					secMove:      true, // we always print this section
+					secReconcile: all,  // we only print this section if -a is passed
+				})...,
+			)
+			sections.Add(secMove, func() {
 				headers := []string{"Namespace-Topic", "Partition", "Moving-from", "Moving-to", "Completion-%", "Partition-size", "Bytes-moved", "Bytes-remaining"}
 				tw := out.NewTable(headers...)
 				defer tw.Flush()
@@ -122,7 +132,7 @@ func newListPartitionMovementsCommand(fs afero.Fs, p *config.Params) *cobra.Comm
 				}
 			})
 
-			out.Header("Reconciliation statuses", all, true, func() {
+			sections.Add(secReconcile, func() {
 				var j int
 				for _, p := range response {
 					fmt.Printf("%s\n", p.Ns+"/"+p.Topic+"/"+strconv.Itoa(p.PartitionID))
