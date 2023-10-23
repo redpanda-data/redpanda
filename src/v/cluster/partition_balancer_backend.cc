@@ -469,21 +469,39 @@ ss::future<> partition_balancer_backend::do_tick() {
     co_await ss::max_concurrent_for_each(
       plan_data.reassignments, 32, [this](ntp_reassignment& reassignment) {
           _tick_in_progress->check();
-          auto f = _topics_frontend.move_partition_replicas(
-            reassignment.ntp,
-            reassignment.allocated.replicas(),
-            reassignment.reconfiguration_policy,
-            model::timeout_clock::now() + add_move_cmd_timeout,
-            _cur_term->id);
-          return f.then([reassignment = std::move(reassignment)](auto errc) {
-              if (errc) {
-                  vlog(
-                    clusterlog.warn,
-                    "submitting {} reassignment failed, error: {}",
-                    reassignment.ntp,
-                    errc.message());
-              }
-          });
+          auto f = ss::make_ready_future<std::error_code>();
+          switch (reassignment.type) {
+          case regular:
+              f = _topics_frontend.move_partition_replicas(
+                reassignment.ntp,
+                reassignment.allocated.replicas(),
+                reassignment.reconfiguration_policy,
+                model::timeout_clock::now() + add_move_cmd_timeout,
+                _cur_term->id);
+              break;
+          case force:
+              f = _topics_frontend.force_update_partition_replicas(
+                reassignment.ntp,
+                reassignment.allocated.replicas(),
+                model::timeout_clock::now() + add_move_cmd_timeout);
+              break;
+          default:
+              vassert(
+                false,
+                "unexpected ntp reassignment type: {}",
+                reassignment.type);
+              break;
+          }
+          return std::move(f).then(
+            [reassignment = std::move(reassignment)](auto errc) {
+                if (errc) {
+                    vlog(
+                      clusterlog.warn,
+                      "submitting {} reassignment failed, error: {}",
+                      reassignment.ntp,
+                      errc.message());
+                }
+            });
       });
 
     _cur_term->last_tick_in_progress_updates = moves_before

@@ -844,8 +844,8 @@ ss::future<> members_manager::apply_snapshot(
         }
 
         // 8. reset force recovery partitions in balancer.
-        _pb_state.local().partitions_to_force_reconfigure()
-          = snap.partitions_to_force_recover;
+        _pb_state.local().reset_partitions_to_force_reconfigure(
+          snap.partitions_to_force_recover);
 
         _last_connection_update_offset = snap_offset;
     }

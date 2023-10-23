@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_state.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
@@ -82,6 +83,71 @@ void partition_balancer_state::handle_ntp_move_begin_or_cancel(
                   next);
             }
         }
+    }
+}
+
+void partition_balancer_state::handle_ntp_move_finish(
+  const model::ntp& ntp, const std::vector<model::broker_shard>& replicas) {
+    auto it = _ntps_to_force_reconfigure.find(ntp);
+    if (it == _ntps_to_force_reconfigure.end()) {
+        return;
+    }
+    auto& entries = it->second;
+    auto num_erased = std::erase_if(entries, [&replicas](const auto& entry) {
+        // check if the new replica set contains any defunct nodes that were
+        // intended to be removed.
+        bool has_defunct_nodes = std::any_of(
+          entry.defunct_nodes.begin(),
+          entry.defunct_nodes.end(),
+          [&replicas](const model::node_id& id) {
+              return contains_node(replicas, id);
+          });
+        return !has_defunct_nodes;
+    });
+    if (num_erased > 0) {
+        _ntps_to_force_reconfigure_revision++;
+    }
+    if (entries.size() == 0) {
+        _ntps_to_force_reconfigure.erase(it);
+        _ntps_to_force_reconfigure_revision++;
+    }
+}
+
+void partition_balancer_state::handle_ntp_delete(const model::ntp& ntp) {
+    auto it = _ntps_to_force_reconfigure.find(ntp);
+    if (it == _ntps_to_force_reconfigure.end()) {
+        return;
+    }
+    auto topic_md = _topic_table.get_topic_metadata_ref({ntp.ns, ntp.tp.topic});
+    if (!topic_md) {
+        // topic no longer exists
+        _ntps_to_force_reconfigure.erase(it);
+        _ntps_to_force_reconfigure_revision++;
+        vlog(
+          clusterlog.debug,
+          "marking force repair action as finished for partition: {} because "
+          "the topic was deleted.",
+          it->first);
+        return;
+    }
+    // A newer version of the topic exists.
+    // delete all entries for older revision of the topic.
+    auto& entries = it->second;
+    auto new_topic_revision = topic_md.value().get().get_revision();
+    auto num_erased = std::erase_if(entries, [&](const auto& entry) {
+        return entry.topic_revision < new_topic_revision;
+    });
+    if (num_erased > 0) {
+        _ntps_to_force_reconfigure_revision++;
+    }
+    if (entries.size() == 0) {
+        _ntps_to_force_reconfigure.erase(it);
+        _ntps_to_force_reconfigure_revision++;
+        vlog(
+          clusterlog.debug,
+          "marking force repair action as finished for partition: {} because "
+          "the topic was deleted.",
+          it->first);
     }
 }
 
