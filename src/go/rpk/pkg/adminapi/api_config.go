@@ -81,6 +81,7 @@ type ConfigPropertyMetadata struct {
 	Example      string              `json:"example,omitempty"`     // A non-default value for use in docs or tests
 	EnumValues   []string            `json:"enum_values,omitempty"` // Permitted values, or empty list.
 	Items        ConfigPropertyItems `json:"items,omitempty"`       // If this is an array, the contained value type
+	Aliases      []string            `json:"aliases,omitempty"`     // Aliases for this property
 }
 
 type ConfigSchema map[string]ConfigPropertyMetadata
