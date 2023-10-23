@@ -2,6 +2,7 @@ v_cc_library(
   NAME security_audit
   SRCS
     audit_log_manager.cc
+    probes.cc
     logger.cc
   DEPS
     v::kafka_client
