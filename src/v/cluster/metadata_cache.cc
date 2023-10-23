@@ -277,7 +277,7 @@ metadata_cache::get_default_initial_retention_local_target_bytes() const {
     return config::shard_local_cfg()
       .initial_retention_local_target_bytes_default();
 }
-std::chrono::milliseconds
+std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_initial_retention_local_target_ms() const {
     return config::shard_local_cfg()
       .initial_retention_local_target_ms_default();
