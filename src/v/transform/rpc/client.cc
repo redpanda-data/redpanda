@@ -639,12 +639,19 @@ ss::future<model::cluster_transform_report> client::generate_report() {
 ss::future<model::cluster_transform_report>
 client::generate_one_report(model::node_id node) {
     if (node == _self) {
-        return _local_service->local().compute_node_local_report();
+        co_return co_await _local_service->local().compute_node_local_report();
     }
-    return generate_remote_report(node);
+    auto result = co_await retry(
+      [this, node]() { return generate_remote_report(node); });
+    if (result.has_error()) {
+        auto msg = cluster::error_category().message(int(result.error()));
+        throw std::runtime_error(
+          ss::format("failed to generate transform report: {}", msg));
+    }
+    co_return std::move(result).value();
 }
 
-ss::future<model::cluster_transform_report>
+ss::future<result<model::cluster_transform_report, cluster::errc>>
 client::generate_remote_report(model::node_id node) {
     auto resp = co_await _connections->local()
                   .with_node_client<impl::transform_rpc_client_protocol>(
@@ -660,10 +667,7 @@ client::generate_remote_report(model::node_id node) {
                     })
                   .then(&::rpc::get_ctx_data<generate_report_reply>);
     if (resp.has_error()) {
-        cluster::errc ec = map_errc(resp.error());
-        auto msg = cluster::error_category().message(int(ec));
-        throw std::runtime_error(ss::format(
-          "unable to generate transform report for {}: {}", node, msg));
+        co_return map_errc(resp.error());
     }
     co_return std::move(resp).value().report;
 }

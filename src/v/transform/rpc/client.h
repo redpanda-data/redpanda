@@ -82,7 +82,7 @@ public:
 private:
     ss::future<model::cluster_transform_report>
       generate_one_report(model::node_id);
-    ss::future<model::cluster_transform_report>
+    ss::future<result<model::cluster_transform_report, cluster::errc>>
       generate_remote_report(model::node_id);
 
     ss::future<cluster::errc> do_produce_once(produce_request);
