@@ -21,8 +21,6 @@ void allocation_state::rollback(
     verify_shard();
     for (auto& as : v) {
         rollback(as.replicas, domain);
-        // rollback for each assignment as the groups are distinct
-        _highest_group = raft::group_id(_highest_group() - 1);
     }
 }
 
