@@ -41,7 +41,8 @@ public:
       ss::connected_socket f,
       ss::socket_address a,
       server_probe& p,
-      std::optional<size_t> in_max_buffer_size);
+      std::optional<size_t> in_max_buffer_size,
+      bool tls_enabled);
     ~connection() noexcept;
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
@@ -72,6 +73,8 @@ public:
         return _fd ? _fd.wait_input_shutdown() : ss::make_ready_future<>();
     }
 
+    bool tls_enabled() const { return _tls_enabled; }
+
 private:
     boost::intrusive::list<connection>& _hook;
     ss::sstring _name;
@@ -79,6 +82,7 @@ private:
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
     server_probe& _probe;
+    bool _tls_enabled;
 };
 
 } // namespace net
