@@ -133,7 +133,6 @@ public:
     ss::future<> apply_snapshot(const controller_snapshot&);
 
 private:
-    // reverts not only allocations but group_ids as well
     class intermediate_allocation {
     public:
         intermediate_allocation(
