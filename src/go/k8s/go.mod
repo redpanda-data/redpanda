@@ -31,7 +31,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.25.0
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.25.0
 	github.com/twmb/franz-go v1.15.0
-	github.com/twmb/franz-go/pkg/kadm v1.9.1
+	github.com/twmb/franz-go/pkg/kadm v1.10.0
 	github.com/twmb/franz-go/pkg/kmsg v1.7.0
 	github.com/twmb/franz-go/pkg/sasl/kerberos v1.1.0
 	gopkg.in/yaml.v2 v2.4.0
