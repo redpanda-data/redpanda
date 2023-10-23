@@ -10,6 +10,8 @@
 #pragma once
 
 #include "json/document.h"
+#include "json/ostreamwrapper.h"
+#include "json/writer.h"
 #include "oncore.h"
 #include "outcome.h"
 #include "utils/string_switch.h"
@@ -27,6 +29,7 @@
 #include <cryptopp/osrng.h>
 #include <cryptopp/rsa.h>
 
+#include <iosfwd>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -404,6 +407,18 @@ public:
     auto jti() const { return claim("jti"); }
 
 private:
+    friend std::ostream& operator<<(std::ostream& os, jwt const& jwt) {
+        const auto write = [](std::ostream& os, auto const& doc) {
+            json::OStreamWrapper osw(os);
+            json::Writer<json::OStreamWrapper> h{osw};
+            doc.Accept(h);
+        };
+        write(os, jwt._header);
+        os << '.';
+        write(os, jwt._payload);
+        return os;
+    }
+
     jwt(json::Document header, json::Document payload)
       : _header{std::move(header)}
       , _payload{std::move(payload)} {}

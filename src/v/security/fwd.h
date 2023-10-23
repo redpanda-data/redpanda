@@ -17,6 +17,14 @@ class authorizer;
 class credential_store;
 class ephemeral_credential_store;
 
+namespace oidc {
+
+class jws;
+class jwt;
+class verifier;
+
+} // namespace oidc
+
 namespace audit {
 
 class audit_log_manager;

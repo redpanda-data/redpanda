@@ -8,16 +8,21 @@
 // by the Apache License, Version 2.0
 
 #include "security/jwt.h"
+#include "security/oidc_authenticator.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/data/monomorphic/fwd.hpp>
 #include <boost/test/data/test_case.hpp>
 #include <boost/test/unit_test.hpp>
 #include <boost/test/unit_test_suite.hpp>
+#include <fmt/chrono.h>
 
 namespace oidc = security::oidc;
 namespace bdata = boost::unit_test::data;
+
+using namespace std::chrono_literals;
 
 struct parse_test_data {
     std::string_view data;
@@ -225,6 +230,212 @@ BOOST_DATA_TEST_CASE(test_oidc_verifier, bdata::make(oidc_verify_data), d) {
         return;
     }
     BOOST_REQUIRE(!verify.has_error());
+}
+
+struct auth_test_data {
+    time_t now;
+    std::string_view jwks;
+    std::string_view jws;
+    ss::sstring issuer;
+    ss::sstring audience;
+    std::chrono::seconds clock_skew_tolerance;
+    oidc::errc auth_err;
+    security::acl_principal principal;
+    friend std::ostream& operator<<(std::ostream& os, auth_test_data const& r) {
+        fmt::print(
+          os,
+          "jwks: {}, jws: {}, issuer: {}, audience: {}, clock_skew_tolerance: "
+          "{}, auth_err: {}",
+          r.jwks,
+          r.jws,
+          r.issuer,
+          r.audience,
+          r.clock_skew_tolerance,
+          r.auth_err);
+        return os;
+    }
+};
+const auto oidc_auth_data = std::to_array<auth_test_data>(
+  {// Auth0 example
+   {1695887942,
+    R"({"keys":[{"kty":"RSA","use":"sig","n":"zs8Zk1hD9hh8XGfXy21K5yzreZf7R9vYTQTNVGKdDDHfB7YRbC1FRwi6pGca3ElQHtH5l4S93MUaQtkN8JYI-5YyGzxBOVyiwdc_qJ-jNWYzVdZX7PuCo-h3ikBJkD5N9f9b-zv0c_uHhtluzHQkhaCxVJn5t4XQ5HAm1qfxJgotVXbrTDGAdZEh7p5RI2kU8RAGE68RLUVsAGXdefs73QGVpM_uGONlqfMQk05ewyS2iqo14MfMwUn60gREk1w7riMGJvddEATe8XfOTZwErsf8ZcExXMVOcBmIn694y1CZx6LimrWIzWynvuC6h8OFCC76I_TiPHqiMaLXqaNabQ","e":"AQAB","kid":"tMQzailSAdaW4nojXxES9","x5t":"_LDYs6FFeEvJ-ng_a5-cxjUYaRw","x5c":["MIIDHTCCAgWgAwIBAgIJGbkt6m2aGpdZMA0GCSqGSIb3DQEBCwUAMCwxKjAoBgNVBAMTIWRldi1sdHhjaGNsczRpZ3pobzc4LnVzLmF1dGgwLmNvbTAeFw0yMzA5MDYxMDM4NDRaFw0zNzA1MTUxMDM4NDRaMCwxKjAoBgNVBAMTIWRldi1sdHhjaGNsczRpZ3pobzc4LnVzLmF1dGgwLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAM7PGZNYQ/YYfFxn18ttSucs63mX+0fb2E0EzVRinQwx3we2EWwtRUcIuqRnGtxJUB7R+ZeEvdzFGkLZDfCWCPuWMhs8QTlcosHXP6ifozVmM1XWV+z7gqPod4pASZA+TfX/W/s79HP7h4bZbsx0JIWgsVSZ+beF0ORwJtan8SYKLVV260wxgHWRIe6eUSNpFPEQBhOvES1FbABl3Xn7O90BlaTP7hjjZanzEJNOXsMktoqqNeDHzMFJ+tIERJNcO64jBib3XRAE3vF3zk2cBK7H/GXBMVzFTnAZiJ+veMtQmcei4pq1iM1sp77guofDhQgu+iP04jx6ojGi16mjWm0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUIVqxco8b4MbVi3oKXvpvTQcAgxAwDgYDVR0PAQH/BAQDAgKEMA0GCSqGSIb3DQEBCwUAA4IBAQAz2efVzpAKHu7l7iPlBSRNRbXDnrxLR54ZtEX025l0yPdfM9fhPECYe9s2ze2TDupu2Is6XFk7ur5lUnON3qEKUU1kLRygz8oaj9lqsXdrfg9aTwXpxywWUelUKjLUL7FFZrXITSlG8SvwioTocpWPDaaDw0xefXnZRay5jjc9pl4E9uvd6K50SyQr7mY1ZEmNSYSftaoJGorFROaZs8Q0dc998JleYG1kFN0788eycCn4aRa0IKD/RfMXYj0j61T66vKnCALUfzFVtd/BUNwWdu0kRQceeuca4A+GWWxvYbDa4wJ/hEzWXT71BHUM6OhW4ls91wNTO9jdId/WJ3Rx"],"alg":"RS256"},{"kty":"RSA","use":"sig","n":"sP1lZhMdFVBrS06tFjwtuY0oRxDcZ8vPzUyUA5-vULpihTFDM-Jkeskvi3lAsZVkIv8iJVGSqdoBQyr3c27DWfDsUnH1HY1vGI6oB2m61uemCir104P07J6sZwO46hRnjp5vub2vJMjN_o4BOD2XiYXsTLg2gXsuh32HHKOr7ljbEZm4ygLeDVknGsSRIROxRWE8VPWjTQYRktAzwW8SMXI1wWxvg8wI6sKI4ydBMhQHO8ZomcIzdo66H31a45j2Jxn5JxKy-fMJbMg3qfTVh_9FMIOAjdVqtPN1g0TkoI8Y1H_iqkGq7tvqURnHBsbVkxwnaisJFJ1r67P7QnK3pw","e":"AQAB","kid":"NKxtg1GbhZJBVcnBjtSqI","x5t":"ENffeDpSw-aWSjJq0pCEhtDnYP0","x5c":["MIIDHTCCAgWgAwIBAgIJYGCzfjL18UZhMA0GCSqGSIb3DQEBCwUAMCwxKjAoBgNVBAMTIWRldi1sdHhjaGNsczRpZ3pobzc4LnVzLmF1dGgwLmNvbTAeFw0yMzA5MDYxMDM4NDVaFw0zNzA1MTUxMDM4NDVaMCwxKjAoBgNVBAMTIWRldi1sdHhjaGNsczRpZ3pobzc4LnVzLmF1dGgwLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALD9ZWYTHRVQa0tOrRY8LbmNKEcQ3GfLz81MlAOfr1C6YoUxQzPiZHrJL4t5QLGVZCL/IiVRkqnaAUMq93Nuw1nw7FJx9R2NbxiOqAdputbnpgoq9dOD9OyerGcDuOoUZ46eb7m9ryTIzf6OATg9l4mF7Ey4NoF7Lod9hxyjq+5Y2xGZuMoC3g1ZJxrEkSETsUVhPFT1o00GEZLQM8FvEjFyNcFsb4PMCOrCiOMnQTIUBzvGaJnCM3aOuh99WuOY9icZ+ScSsvnzCWzIN6n01Yf/RTCDgI3VarTzdYNE5KCPGNR/4qpBqu7b6lEZxwbG1ZMcJ2orCRSda+uz+0Jyt6cCAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQU3JMo7j8KyWFC2F184jYmV55OHjcwDgYDVR0PAQH/BAQDAgKEMA0GCSqGSIb3DQEBCwUAA4IBAQATHVMl6HagdRkYMP+ZZtdKN4ZSnc5HW0ttANDA5fM19OUFKEdRhQdlhsutD8yQtM4/XDIQ29p7q/665IgA3NJvIOQ98+aDub3Gs92yCnSZqCpSvaJGWkczjL5HQQAEDpSW+WAqAuoazkNdlPmeU0fkA/W92BaZaLw7oDiUrz/JT9pXcnN1SBOALfoj3BiGvvTRNFctFqX7nE8PCwj5tIrzYUVRGD8iNPj342G91D3Q+awp+YJNQxZ5MahWbdcoUJXTgIIOGkIOd0vZ1KcKUyADGMZp0U/pSAWbXXaJtzf8VZjBO0ySZGOMy73HYogUrOQGHoKecLuDIEWX75pOOH3d"],"alg":"RS256"}]})",
+    R"(eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRNUXphaWxTQWRhVzRub2pYeEVTOSJ9.eyJpc3MiOiJodHRwczovL2Rldi1sdHhjaGNsczRpZ3pobzc4LnVzLmF1dGgwLmNvbS8iLCJzdWIiOiIzSkplSTR0bU1DNnY4bUNWQ1NEbkFHVmYydnJuSjBCVEBjbGllbnRzIiwiYXVkIjoibG9jYWxob3N0IiwiaWF0IjoxNjk1ODg3OTQyLCJleHAiOjE2OTU5NzQzNDIsImF6cCI6IjNKSmVJNHRtTUM2djhtQ1ZDU0RuQUdWZjJ2cm5KMEJUIiwic2NvcGUiOiJlbWFpbDIiLCJndHkiOiJjbGllbnQtY3JlZGVudGlhbHMifQ.W6rhgOjWcTPmpeLHiGSd668HHnZJvHgP0QSKU0F1vnin_UMIpei9IONfN28YSHlAabdUs2JAV70AvVeXB9IqUcEi_Cfubf3JRpmRcvfyApnmfcRktg1Rq0DVGVl6uBPlqX12SAQ4GPYe4BysUuMb8X-FU99wF6waCAQw8XLu_Texqy8QOQhW9vZtm5HC54-APn9PV6ZAtG989ihePOsauXUHNe2sqF_iJ1_7-nkqRbgb_Je-8UjahAkC54y5LPTMVFQvTB5lntf-sUyHl5oPH7P58M8eNUocOOGADUmrfKMYeSLacM_9mPvZR_uMbVX0iNt18KO6hKkIvAPrb4U8SA)",
+    "https://dev-ltxchcls4igzho78.us.auth0.com/",
+    "localhost",
+    0s,
+    oidc::errc::success,
+    security::acl_principal{
+      security::principal_type::user,
+      "3JJeI4tmMC6v8mCVCSDnAGVf2vrnJ0BT@clients"}},
+   // Keycloak example
+   {1697645170,
+    R"({"keys":[{"kid":"EWGWeiW8jqUC_T7Fawi5ecRbrDOanB_uqtTgAOgJDPk","kty":"RSA","alg":"RSA-OAEP","use":"enc","n":"0OceMDMwIZCADl3oZnevxMBzB5GTLwFYevc7PFbw394YY4-Sdt4xqudPMSf2WhU22CidYiMVP1xvcZP7W_5eNLS9nNg3gsswgPiL52ZbWeWoOYx1WDVZzZur3YyjOR1iYvwhR572JumAfDE64y2cHpN2meVana9Zv7S4_yc9pFwGdPTJh7O76lamMjigfYKGF8BKSsFYPkxh_RgaRVqOaaF-CtXPBWmwqvJZ1r0h7GewcP5QeyaUUrZtTo7z0H6VovUGdwguL-OxhWVWZNyGDudtc50PPu3BBn47NpZIa4qCBEsMpm0mJ7YUvwAG-Ktd93uSquJkXvFjaVbTYj_iqQ","e":"AQAB","x5c":["MIICoTCCAYkCBgGLQ4llfDANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAlkZW1vcmVhbG0wHhcNMjMxMDE4MTYwNDE5WhcNMzMxMDE4MTYwNTU5WjAUMRIwEAYDVQQDDAlkZW1vcmVhbG0wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQ5x4wMzAhkIAOXehmd6/EwHMHkZMvAVh69zs8VvDf3hhjj5J23jGq508xJ/ZaFTbYKJ1iIxU/XG9xk/tb/l40tL2c2DeCyzCA+IvnZltZ5ag5jHVYNVnNm6vdjKM5HWJi/CFHnvYm6YB8MTrjLZwek3aZ5Vqdr1m/tLj/Jz2kXAZ09MmHs7vqVqYyOKB9goYXwEpKwVg+TGH9GBpFWo5poX4K1c8FabCq8lnWvSHsZ7Bw/lB7JpRStm1OjvPQfpWi9QZ3CC4v47GFZVZk3IYO521znQ8+7cEGfjs2lkhrioIESwymbSYnthS/AAb4q133e5Kq4mRe8WNpVtNiP+KpAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAGXwcq9tUEOYmO9U8yiVqTxHT1mYHmSJYJITHyRH21tYZKqx8vtj83Xnywh1uioBMkD9YBZL3T5j1wNU3HOvucox62uaWTihd/fliGEMPcAJNqQIaoScOM0Ur6Mh03/qTU3fb53iyKvhd/MrOnO71hwXTFDOi5neIAopLqZHNPBwRiIsxHvlDZ0pN/maUYsTpDVBBYPZZpv3XklKyAmIrAL1655Xz+l6OU/586IY3b6N0EMMLQ0DWZedLK7ueneNV1m6bnc1uzBtj23VcafJN3AkgpQXrAKeREBWn8idyxCWjJZUkJxGUVUAYfBQ90J+WQl/YPtCOwwRcifdNl+9TyM="],"x5t":"2pddNGN6l8gxd7dKncQNOU67zn0","x5t#S256":"08bCcr5IDx1OPuLJcT3t5rSeJbY7Y1JHPF-aBCQfdio"},{"kid":"kf46eDlB9jtz2PpktQ6NQSfRwoU_tT3NqxlI8C4MGvQ","kty":"RSA","alg":"RS256","use":"sig","n":"3yqePLS9Q5Nf-q-ujodgMbblIwwPsEUCcXSxBS0eqrrSTNuPaHr-v_y_yyfKfxqhEmK_MBVvlXXmmwWZk6rWlR2hSdQW6Ih7UWLVaNOT35slcCfjQWQa3O0ZHxzemhgj0HHQ9x8t_AcK1wJd_hMjl3qwG12V1l-9-vSVIOrnl47YXC57K_j8MuNBPr1YdD4Rm9GGFxPQPRpc3nxTO2tFkkeGubfN6eJ226OvaA1uP6SlZEeA4KSjd-Bl0AAKotKcF9orHOuiceAarKs6uGZ84GocGaUtEEOli4e5bJrnNOXZDzCo34VdhFXFmJ2vU3g1XkY8e9wgA0fs9b3OhjqXIw","e":"AQAB","x5c":["MIICoTCCAYkCBgGLQ4lk7DANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAlkZW1vcmVhbG0wHhcNMjMxMDE4MTYwNDE5WhcNMzMxMDE4MTYwNTU5WjAUMRIwEAYDVQQDDAlkZW1vcmVhbG0wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDfKp48tL1Dk1/6r66Oh2AxtuUjDA+wRQJxdLEFLR6qutJM249oev6//L/LJ8p/GqESYr8wFW+VdeabBZmTqtaVHaFJ1BboiHtRYtVo05PfmyVwJ+NBZBrc7RkfHN6aGCPQcdD3Hy38BwrXAl3+EyOXerAbXZXWX7369JUg6ueXjthcLnsr+Pwy40E+vVh0PhGb0YYXE9A9GlzefFM7a0WSR4a5t83p4nbbo69oDW4/pKVkR4DgpKN34GXQAAqi0pwX2isc66Jx4Bqsqzq4ZnzgahwZpS0QQ6WLh7lsmuc05dkPMKjfhV2EVcWYna9TeDVeRjx73CADR+z1vc6GOpcjAgMBAAEwDQYJKoZIhvcNAQELBQADggEBALGuaok4wAivQTlQON+CqhCYeG7ulkfwWoEdBlwLGmBmletdteIX3rC9ESQx9dHTMgk3+qFfH8BIfMVpiH202P5VfGygEdza3zj9C0ot/9HANjpff60XpPdqHmdwq/wpgaZR7ZfJqLjs1BwMZuGC/aQiGh70JBm7tvgXN+qrOrRnhsZiBT4Uec3mCIgEJlsrHqqBiJBohVK5c+EGh+NtvZAW5YNZgXV9SNXDwUS1z4AERoWnV4DtDuGWe0Q0IrFD/B8jFriOAOnu37RAhVt1Gvk/MM5UaHWsFAzyv8t99e0deFafiYmCqaERo1IoHAqCbIgU4nBid8IN5elj5+B4oq4="],"x5t":"8pMnWd5FLQJEK-62faplcAnJg3s","x5t#S256":"RiXQ3fgtOOATBmwUxB6sCnDP9aTthPtAdHo4ZXj0uPY"}]})",
+    R"(eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJrZjQ2ZURsQjlqdHoyUHBrdFE2TlFTZlJ3b1VfdFQzTnF4bEk4QzRNR3ZRIn0.eyJleHAiOjE2OTc2NDU0NjksImlhdCI6MTY5NzY0NTE3MCwiYXV0aF90aW1lIjowLCJqdGkiOiJkZGYxZWE2MC01NzcwLTQ0MzctYTMzYy02MWM2MjllYmM3YWIiLCJpc3MiOiJodHRwOi8vZG9ja2VyLXJwLTE6ODA4MC9yZWFsbXMvZGVtb3JlYWxtIiwiYXVkIjoibXlhcHAiLCJzdWIiOiJiMDBmNjU0Yy04NDJiLTRlYjEtODhmMi0zMDRkMTcyNDZiYjUiLCJ0eXAiOiJJRCIsImF6cCI6Im15YXBwIiwiYXRfaGFzaCI6ImFHb2tGUGVpa2FDUm85WUZxbHlnbEEiLCJhY3IiOiIxIiwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJjbGllbnRIb3N0IjoiMTcyLjE4LjAuMzYiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJzZXJ2aWNlLWFjY291bnQtbXlhcHAiLCJjbGllbnRBZGRyZXNzIjoiMTcyLjE4LjAuMzYiLCJlbWFpbCI6Im15YXBwQGN1c3RvbWVyLmNvbSIsImNsaWVudF9pZCI6Im15YXBwIn0.bYoI1XzW6Bw-dOnPAwBoB3tjM4xrt3loeUgwuipOmcm-yTheLSCf4qK3LOlzmuZdyF7TduDiizl4q8XIDe6XydrYL0tw4ebnQjcQo0wJNSZZQ3olZ65iJUoFHqK0YZuI4a4VDqMq0viEo2c2zFo3reVsr2XTtBgtU-iVyWpvmz6x-CceaGaKZpjDOcS8ixFcpSx-_mraQ18vr2yNHDO1DExg3Pc6FdbaiYApfldR9QIe2Oa5VTlVWXaqmjbFv3dA-FODIznEZ4tiN_8fZz5-BhkTTEupQGbCrYTIhR9rW_2xC_b8MhJCBMVFkMYATxLmJH9WPN5Fnzs2kiP7Xvs_eg)",
+    "http://docker-rp-1:8080/realms/demorealm",
+    "myapp",
+    0s,
+    oidc::errc::success,
+    security::acl_principal{
+      security::principal_type::user,
+      "b00f654c-842b-4eb1-88f2-304d17246bb5"}}});
+BOOST_DATA_TEST_CASE(test_oidc_authenticate, bdata::make(oidc_auth_data), d) {
+    auto jwks = oidc::jwks::make(ss::sstring{d.jwks});
+    BOOST_REQUIRE(!jwks.has_error());
+
+    auto jws = oidc::jws::make(ss::sstring{d.jws});
+    BOOST_REQUIRE(!jws.has_error());
+
+    oidc::verifier v;
+    auto update = v.update_keys(std::move(jwks).assume_value());
+    BOOST_REQUIRE(!update.has_error());
+
+    auto auth = security::oidc::authenticate(
+      std::move(jws).assume_value(),
+      v,
+      d.issuer,
+      d.audience,
+      d.clock_skew_tolerance,
+      seastar::lowres_system_clock::from_time_t(d.now));
+    if (d.auth_err != oidc::errc::success) {
+        BOOST_REQUIRE_EQUAL(d.auth_err, auth.error());
+        return;
+    }
+    BOOST_REQUIRE(!auth.has_error());
+}
+
+struct auth_error_test_data {
+    time_t now;
+    std::string_view token_payload;
+    ss::sstring issuer;
+    ss::sstring audience;
+    std::chrono::seconds clock_skew_tolerance;
+    oidc::errc auth_err;
+    security::acl_principal principal;
+    friend std::ostream&
+    operator<<(std::ostream& os, auth_error_test_data const& r) {
+        fmt::print(
+          os,
+          "token_payload: {}, issuer: {}, audience: {}, clock_skew_tolerance: "
+          "{}, auth_err: {}",
+          r.token_payload,
+          r.issuer,
+          r.audience,
+          r.clock_skew_tolerance,
+          r.auth_err);
+        return os;
+    }
+};
+const auto oidc_auth_error_data = std::to_array<auth_error_test_data>({
+  // Correct
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "redpanda", "exp": 1695887942, "iat": 1695887942})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::success,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Incorrect issuer
+  {1695887942,
+   R"({"iss": "wrong", "sub": "subject", "aud": "redpanda", "exp": 1695887942, "iat": 1695887942})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::jwt_invalid_iss,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Incorrect aud
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "wrong", "exp": 1695887942, "iat": 1695887942})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::jwt_invalid_aud,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Expired
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "redpanda", "exp": 1695887941, "iat": 1695887942})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::jwt_invalid_exp,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Expired = skew should tolerate it
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "redpanda", "exp": 1695887941, "iat": 1695887942})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   1s,
+   oidc::errc::success,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Issued in the future
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "redpanda", "exp": 1695887942, "iat": 1695887943})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::jwt_invalid_iat,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Issued in the future - tolerance should allow it
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "redpanda", "exp": 1695887942, "iat": 1695887943})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   1s,
+   oidc::errc::success,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // NBF in the future
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "redpanda", "exp": 1695887944, "iat": 1695887942, "nbf": 1695887943})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::jwt_invalid_nbf,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // NBF in the future - tolerance should allow it
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": "redpanda", "exp": 1695887944, "iat": 1695887942, "nbf": 1695887943})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   1s,
+   oidc::errc::success,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Correct aud list
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": ["wrong", "redpanda"], "exp": 1695887942, "iat": 1695887942})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::success,
+   security::acl_principal{security::principal_type::user, "subject"}},
+  // Correct aud list
+  {1695887942,
+   R"({"iss": "http://docker-rp-1:8080/realms/demorealm", "sub": "subject", "aud": ["redpanda", "wrong"], "exp": 1695887942, "iat": 1695887942})",
+   "http://docker-rp-1:8080/realms/demorealm",
+   "redpanda",
+   0s,
+   oidc::errc::success,
+   security::acl_principal{security::principal_type::user, "subject"}},
+});
+BOOST_DATA_TEST_CASE(
+  test_oidc_authenticate_errors, bdata::make(oidc_auth_error_data), d) {
+    json::Document header;
+    header.Parse(R"({"alg": "RS256", "typ": "JWT", "kid": "42"})");
+    json::Document payload;
+    payload.Parse(d.token_payload.data(), d.token_payload.length());
+    auto jwt = oidc::jwt::make(std::move(header), std::move(payload));
+    BOOST_REQUIRE(!jwt.has_error());
+    auto auth = oidc::authenticate(
+      jwt.assume_value(),
+      d.issuer,
+      d.audience,
+      d.clock_skew_tolerance,
+      ss::lowres_system_clock::from_time_t(d.now));
+
+    if (d.auth_err != oidc::errc::success) {
+        BOOST_REQUIRE(auth.has_error());
+        BOOST_REQUIRE_EQUAL(d.auth_err, auth.error());
+        return;
+    }
+    BOOST_REQUIRE(!auth.has_error());
 }
 
 // BOOST_AUTO_TEST_CASE(test_)
