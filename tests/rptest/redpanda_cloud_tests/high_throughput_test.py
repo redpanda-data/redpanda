@@ -34,7 +34,8 @@ from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName,
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
                                       SISettings, RedpandaServiceCloud)
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.tests.redpanda_test import RedpandaTest
+#from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import firewall_blocked
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
@@ -189,10 +190,10 @@ def get_cloud_globals(globals):
     return _config
 
 
-class HighThroughputTest(RedpandaTest):
+class HighThroughputTest(PreallocNodesTest):
     msg_size = 256 * KiB
     # Min segment size across all tiers
-    small_segment_size = 16 * MiB
+    min_segment_size = 16 * MiB
     unavailable_timeout = 60
     
 
@@ -217,6 +218,7 @@ class HighThroughputTest(RedpandaTest):
         super(HighThroughputTest,
               self).__init__(test_ctx,
                              *args,
+                             node_prealloc_count=3,
                              num_brokers=num_brokers,
                              extra_rp_conf=extra_rp_conf,
                              cloud_tier=cloud_tier,
@@ -227,7 +229,7 @@ class HighThroughputTest(RedpandaTest):
         if cloud_tier == CloudTierName.DOCKER:
             si_settings = SISettings(
                 test_ctx,
-                log_segment_size=self.small_segment_size,
+                log_segment_size=self.min_segment_size,
                 cloud_storage_cache_size=self.tier_config.cloud_cache_size,
             )
             self.redpanda.set_si_settings(si_settings)
@@ -283,12 +285,12 @@ class HighThroughputTest(RedpandaTest):
         small segments to bootstrap a test enviornment that would stress
         the tiered storage subsytem.
         """
-        cloud_segment_size = self.small_segment_size
+        cloud_segment_size = self.min_segment_size
         # Original value is 1000
         # which results in 1016 hours of data preload at tier1 ingress speed
         #     at '2' metric shows for 100% produced
         #     [INFO  - 2023-10-20 22:34:52,258 - si_utils - nodes_report_cloud_segments - lineno:539]: Cluster metrics report 315 / 800 cloud segments
-        num_segments_per_partition = 2
+        num_segments_per_partition = 10
         target_cloud_segments = num_segments_per_partition * self.tier_config.partitions_upper_limit
         total_bytes_to_produce = target_cloud_segments * cloud_segment_size
         total_messages = int((total_bytes_to_produce / self.msg_size) * 1.2)
@@ -311,7 +313,7 @@ class HighThroughputTest(RedpandaTest):
         try:
             producer.start()
             wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, target_cloud_segments),
+                self.redpanda, target_cloud_segments // 10),
                        timeout_sec=estimated_produce_time_secs,
                        backoff_sec=5)
         finally:
@@ -668,8 +670,8 @@ class HighThroughputTest(RedpandaTest):
         self._create_default_topics()
 
         self.adjust_topic_segment_properties(
-            segment_bytes=self.small_segment_size,
-            retention_local_bytes=2 * self.small_segment_size)
+            segment_bytes=self.min_segment_size,
+            retention_local_bytes=2 * self.min_segment_size)
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
         try:
@@ -800,8 +802,8 @@ class HighThroughputTest(RedpandaTest):
         self._create_default_topics()
 
         self.adjust_topic_segment_properties(
-            segment_bytes=self.small_segment_size,
-            retention_local_bytes=2 * self.small_segment_size)
+            segment_bytes=self.min_segment_size,
+            retention_local_bytes=2 * self.min_segment_size)
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
@@ -843,10 +845,10 @@ class HighThroughputTest(RedpandaTest):
 
         self.logger.info(f"Starting stage_lots_of_failed_consumers")
 
-        consume_count = 10000
+        consume_count = 5000
 
         def random_stop_check(consumer):
-            if consumer.message_count >= min(10, consume_count):
+            if consumer.message_count >= min(100, consume_count):
                 return True
             else:
                 return False
@@ -865,7 +867,8 @@ class HighThroughputTest(RedpandaTest):
             consumer.free()
 
             consume_count -= consumer.message_count
-            self.logger.warn(f"consumed {consumer.message_count} messages")
+            self.logger.warn(f"consumed {consumer.message_count} messages, "
+                             f"{consume_count} left")
 
     def _consume_from_offset(self, topic_name: str, msg_count: int,
                              partition: int, starting_offset: str,
@@ -908,8 +911,8 @@ class HighThroughputTest(RedpandaTest):
         self._create_default_topics()
 
         self.adjust_topic_segment_properties(
-            segment_bytes=self.small_segment_size,
-            retention_local_bytes=2 * self.small_segment_size)
+            segment_bytes=self.min_segment_size,
+            retention_local_bytes=2 * self.min_segment_size)
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
