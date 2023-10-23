@@ -211,4 +211,6 @@ std::pair<bool, std::optional<ss::sstring>> scrubber::should_skip() const {
     return {false, std::nullopt};
 }
 
+void scrubber::reset_scheduler() { _scheduler.pick_next_scrub_time(); }
+
 } // namespace archival

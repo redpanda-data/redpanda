@@ -69,7 +69,8 @@ public:
 
     std::pair<bool, std::optional<ss::sstring>> should_skip() const;
 
-    model::timestamp next_scrub_at() const;
+    // Reset the scheduler and pick a new time-point for the next scrub
+    void reset_scheduler();
 
 private:
     ss::abort_source _as;
