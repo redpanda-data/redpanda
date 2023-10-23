@@ -4335,6 +4335,8 @@ struct update_partition_replicas_cmd_data
       update_partition_replicas_cmd_data,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
     replicas_t replicas;
     reconfiguration_policy policy;
@@ -4344,7 +4346,7 @@ struct update_partition_replicas_cmd_data
       const update_partition_replicas_cmd_data&)
       = default;
 
-    auto serde_fields() { std::tie(ntp, replicas, policy); }
+    auto serde_fields() { return std::tie(ntp, replicas, policy); }
 
     friend std::ostream&
     operator<<(std::ostream&, const update_partition_replicas_cmd_data&);
