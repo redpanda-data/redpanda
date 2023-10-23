@@ -30,6 +30,7 @@ class tx_gateway_frontend;
 class partition_leaders_table;
 class partition_allocator;
 class partition_manager;
+class partition;
 class shard_table;
 class topics_frontend;
 class topic_table;
