@@ -605,6 +605,60 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                    backoff_sec=2,
                    err_msg=f"Too many bytes in the cloud")
 
+    @cluster(num_nodes=1)
+    def test_topic_recovery_retention_settings(self):
+        """
+        Test that topic recovery handles retention.ms/bytes correctly
+        see issues/14325
+        """
+
+        topic_name = 'topic-with-retention'
+        # pre step: set cluster default values different from -1
+        self.rpk.cluster_config_set("delete_retention_ms", "12345678")
+        self.rpk.cluster_config_set("retention_bytes", "12345678")
+        # create a remote topic with infinite retention and
+        self.rpk.create_topic(topic=topic_name,
+                              partitions=1,
+                              replicas=1,
+                              config={
+                                  'redpanda.remote.delete': 'false',
+                                  'redpanda.remote.read': 'true',
+                                  'redpanda.remote.write': 'true',
+                                  'retention.ms': -1,
+                                  'retention.bytes': -1,
+                              })
+
+        # check that the source of the retention configuration is DYNAMIC
+        pre_cfg = self.rpk.describe_topic_configs(topic_name)
+        assert pre_cfg['retention.bytes'] == (
+            '-1', 'DYNAMIC_TOPIC_CONFIG'
+        ) and pre_cfg['retention.ms'] == (
+            '-1', 'DYNAMIC_TOPIC_CONFIG'
+        ), f"{topic_name} expected DYNAMIC_TOPIC_CONFIG for retention.bytes and retention.ms, got {pre_cfg}"
+
+        # produce data and wait for uploads, to ensure that the topic manifest is uploaded
+        produce_total_bytes(self.redpanda,
+                            topic_name,
+                            partition_index=0,
+                            bytes_to_produce=200)
+        # originally this was quiesce_uploads() but it's not present in v23.1.x
+        time.sleep(30)
+
+        # delete topic and recreated it with redpanda.remote.recovery
+        self.rpk.delete_topic(topic_name)
+
+        self.rpk.create_topic(topic=topic_name,
+                              partitions=1,
+                              replicas=1,
+                              config={
+                                  'redpanda.remote.recovery': 'true',
+                              })
+        # check that recovered cfg matches
+        post_cfg = self.rpk.describe_topic_configs(topic_name)
+        assert pre_cfg['retention.bytes'] == post_cfg[
+            'retention.bytes'] and pre_cfg['retention.ms'] == post_cfg[
+                'retention.ms'], f"recreated topic {topic_name} cfg do not match {pre_cfg=} {post_cfg=}"
+
 
 class BogusTimestampTest(RedpandaTest):
     segment_size = 1048576
