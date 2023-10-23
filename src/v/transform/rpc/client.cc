@@ -28,7 +28,6 @@
 #include "transform/rpc/logger.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
-#include "utils/retry.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -161,7 +160,8 @@ ss::future<cluster::errc> client::produce(
     produce_request req;
     req.topic_data.emplace_back(std::move(tp), std::move(batches));
     req.timeout = timeout;
-    co_return co_await do_produce_once(std::move(req));
+    co_return co_await retry(
+      [this, &req]() { return do_produce_once(req.share()); });
 }
 
 ss::future<cluster::errc> client::do_produce_once(produce_request req) {
@@ -224,7 +224,10 @@ client::do_remote_produce(model::node_id node, produce_request req) {
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
 client::store_wasm_binary(iobuf data, model::timeout_clock::duration timeout) {
-    co_return co_await do_store_wasm_binary_once(std::move(data), timeout);
+    co_return co_await retry([this, &data, timeout]() {
+        return do_store_wasm_binary_once(
+          data.share(0, data.size_bytes()), timeout);
+    });
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
@@ -275,7 +278,9 @@ client::do_remote_store_wasm_binary(
 
 ss::future<cluster::errc>
 client::delete_wasm_binary(uuid_t key, model::timeout_clock::duration timeout) {
-    co_return co_await do_delete_wasm_binary_once(key, timeout);
+    return retry([this, key, timeout]() {
+        return do_delete_wasm_binary_once(key, timeout);
+    });
 }
 
 ss::future<cluster::errc> client::do_delete_wasm_binary_once(
@@ -317,7 +322,9 @@ ss::future<cluster::errc> client::do_remote_delete_wasm_binary(
 
 ss::future<result<iobuf, cluster::errc>> client::load_wasm_binary(
   model::offset offset, model::timeout_clock::duration timeout) {
-    co_return co_await do_load_wasm_binary_once(offset, timeout);
+    return retry([this, offset, timeout]() {
+        return do_load_wasm_binary_once(offset, timeout);
+    });
 }
 
 ss::future<result<iobuf, cluster::errc>> client::do_load_wasm_binary_once(
@@ -435,8 +442,7 @@ client::compute_wasm_binary_ntp_leader() {
 ss::future<result<model::partition_id, cluster::errc>>
 client::find_coordinator(model::transform_offsets_key key) {
     // todo: lookup in a local cache first.
-    return retry_with_backoff(
-      max_client_retries, [key, this] { return find_coordinator_once(key); });
+    return retry([key, this] { return find_coordinator_once(key); });
 }
 
 ss::future<result<model::partition_id, cluster::errc>>
@@ -500,9 +506,7 @@ ss::future<find_coordinator_response> client::do_remote_find_coordinator(
 
 ss::future<cluster::errc> client::offset_commit(
   model::transform_offsets_key key, model::transform_offsets_value value) {
-    return retry_with_backoff(max_client_retries, [key, value, this] {
-        return offset_commit_once(key, value);
-    });
+    return retry([key, value, this] { return offset_commit_once(key, value); });
 }
 
 ss::future<cluster::errc> client::offset_commit_once(
@@ -564,8 +568,7 @@ ss::future<offset_commit_response> client::do_remote_offset_commit(
 
 ss::future<result<model::transform_offsets_value, cluster::errc>>
 client::offset_fetch(model::transform_offsets_key key) {
-    return retry_with_backoff(
-      max_client_retries, [key, this] { return offset_fetch_once(key); });
+    return retry([key, this] { return offset_fetch_once(key); });
 }
 
 ss::future<result<model::transform_offsets_value, cluster::errc>>
