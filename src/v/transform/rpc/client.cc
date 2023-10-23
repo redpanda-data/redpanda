@@ -432,14 +432,14 @@ client::compute_wasm_binary_ntp_leader() {
     co_return leader;
 }
 
-ss::future<result<model::partition_id>>
+ss::future<result<model::partition_id, cluster::errc>>
 client::find_coordinator(model::transform_offsets_key key) {
     // todo: lookup in a local cache first.
     return retry_with_backoff(
       max_client_retries, [key, this] { return find_coordinator_once(key); });
 }
 
-ss::future<result<model::partition_id>>
+ss::future<result<model::partition_id, cluster::errc>>
 client::find_coordinator_once(model::transform_offsets_key key) {
     auto ntp = offsets_ntp(coordinator_partition);
     auto leader = _leaders->get_leader_node(ntp);
@@ -452,16 +452,14 @@ client::find_coordinator_once(model::transform_offsets_key key) {
     }
     find_coordinator_request request;
     request.add(key);
-    auto f = *leader == _self
-               ? do_local_find_coordinator(std::move(request))
-               : do_remote_find_coordinator(*leader, std::move(request));
-    co_return co_await std::move(f).then([key](auto response) {
-        using ret_t = result<model::partition_id>;
-        if (response.ec == cluster::errc::success) {
-            return ss::make_ready_future<ret_t>(response.coordinators.at(key));
-        }
-        return ss::make_exception_future<ret_t>(response.ec);
-    });
+    auto response = co_await (
+      *leader == _self
+        ? do_local_find_coordinator(std::move(request))
+        : do_remote_find_coordinator(*leader, std::move(request)));
+    if (response.ec == cluster::errc::success) {
+        co_return response.coordinators.at(key);
+    }
+    co_return response.ec;
 }
 
 ss::future<find_coordinator_response>
@@ -511,7 +509,7 @@ ss::future<cluster::errc> client::offset_commit_once(
   model::transform_offsets_key key, model::transform_offsets_value value) {
     auto coordinator = co_await find_coordinator(key);
     if (!coordinator) {
-        co_return map_errc(coordinator.error());
+        co_return coordinator.error();
     }
 
     auto ntp = offsets_ntp(coordinator.value());
@@ -523,16 +521,10 @@ ss::future<cluster::errc> client::offset_commit_once(
     offset_commit_request request{coordinator.value()};
     request.add(key, value);
 
-    auto f = *leader == _self
-               ? do_local_offset_commit(std::move(request))
-               : do_remote_offset_commit(*leader, std::move(request));
-
-    co_return co_await std::move(f).then([](auto response) {
-        if (response.errc == cluster::errc::success) {
-            return ss::make_ready_future<cluster::errc>(response.errc);
-        }
-        return ss::make_exception_future<cluster::errc>(response.errc);
-    });
+    auto resp = co_await (
+      *leader == _self ? do_local_offset_commit(std::move(request))
+                       : do_remote_offset_commit(*leader, std::move(request)));
+    co_return resp.errc;
 }
 
 ss::future<offset_commit_response>
@@ -570,13 +562,13 @@ ss::future<offset_commit_response> client::do_remote_offset_commit(
     co_return response.value();
 }
 
-ss::future<result<model::transform_offsets_value>>
+ss::future<result<model::transform_offsets_value, cluster::errc>>
 client::offset_fetch(model::transform_offsets_key key) {
     return retry_with_backoff(
       max_client_retries, [key, this] { return offset_fetch_once(key); });
 }
 
-ss::future<result<model::transform_offsets_value>>
+ss::future<result<model::transform_offsets_value, cluster::errc>>
 client::offset_fetch_once(model::transform_offsets_key key) {
     auto coordinator = co_await find_coordinator(key);
     if (!coordinator) {
@@ -590,15 +582,14 @@ client::offset_fetch_once(model::transform_offsets_key key) {
     }
 
     offset_fetch_request request{key, coordinator.value()};
-    auto f = *leader == _self ? do_local_offset_fetch(request)
-                              : do_remote_offset_fetch(*leader, request);
-    co_return co_await std::move(f).then([](auto response) {
-        using ret_t = result<model::transform_offsets_value>;
-        if (response.errc == cluster::errc::success) {
-            return ss::make_ready_future<ret_t>(*response.result);
-        }
-        return ss::make_exception_future<ret_t>(response.errc);
-    });
+    auto resp = co_await (
+      *leader == _self ? do_local_offset_fetch(request)
+                       : do_remote_offset_fetch(*leader, request));
+
+    if (resp.errc == cluster::errc::success) {
+        co_return *resp.result;
+    }
+    co_return resp.errc;
 }
 
 ss::future<offset_fetch_response>

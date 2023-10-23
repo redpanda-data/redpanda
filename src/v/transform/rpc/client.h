@@ -66,10 +66,10 @@ public:
     ss::future<result<iobuf, cluster::errc>>
     load_wasm_binary(model::offset, model::timeout_clock::duration timeout);
 
-    ss::future<result<model::partition_id>>
+    ss::future<result<model::partition_id, cluster::errc>>
       find_coordinator(model::transform_offsets_key);
 
-    ss::future<result<model::transform_offsets_value>>
+    ss::future<result<model::transform_offsets_value, cluster::errc>>
       offset_fetch(model::transform_offsets_key);
 
     ss::future<cluster::errc> offset_commit(
@@ -116,11 +116,11 @@ private:
     ss::future<bool> try_create_wasm_binary_ntp();
     ss::future<> try_create_transform_offsets_topic();
 
-    ss::future<result<model::partition_id>>
+    ss::future<result<model::partition_id, cluster::errc>>
       find_coordinator_once(model::transform_offsets_key);
     ss::future<cluster::errc> offset_commit_once(
       model::transform_offsets_key, model::transform_offsets_value);
-    ss::future<result<model::transform_offsets_value>>
+    ss::future<result<model::transform_offsets_value, cluster::errc>>
       offset_fetch_once(model::transform_offsets_key);
 
     ss::future<find_coordinator_response>
