@@ -594,6 +594,8 @@ ss::future<std::error_code> ntp_archiver::reset_scrubbing_metadata() {
           _rtclog.warn,
           "Failed to replicate reset scrubbing metadata command: {}",
           error.message());
+    } else if (_scrubber) {
+        _scrubber->reset_scheduler();
     }
 
     co_return error;

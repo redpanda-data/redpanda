@@ -11,6 +11,7 @@
 #pragma once
 #include "archival/archival_policy.h"
 #include "archival/probe.h"
+#include "archival/scrubber.h"
 #include "archival/types.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/fwd.h"
@@ -649,7 +650,7 @@ private:
     std::unique_ptr<housekeeping_job> _local_segment_merger;
 
     // NTP level scrubbing job
-    std::unique_ptr<housekeeping_job> _scrubber;
+    std::unique_ptr<scrubber> _scrubber;
 
     // The archival metadata stm has its own clean/dirty mechanism, but it
     // is expensive to persistently mark it clean after each segment upload,
