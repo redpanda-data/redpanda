@@ -63,8 +63,15 @@ class RpkException(Exception):
 
 
 class RpkPartition:
-    def __init__(self, id, leader, leader_epoch, replicas, lso, hw,
-                 start_offset):
+    def __init__(self,
+                 id,
+                 leader,
+                 leader_epoch,
+                 replicas,
+                 lso,
+                 hw,
+                 start_offset,
+                 load_error=None):
         self.id = id
         self.leader = leader
         self.leader_epoch = leader_epoch
@@ -72,11 +79,15 @@ class RpkPartition:
         self.last_stable_offset = lso
         self.high_watermark = hw
         self.start_offset = start_offset
+        self.load_error = load_error
 
     def __str__(self):
-        return "id: {}, leader: {}, leader_epoch: {} replicas: {}, hw: {}, start_offset: {}".format(
+        ret = "id: {}, leader: {}, leader_epoch: {} replicas: {}, hw: {}, start_offset: {}".format(
             self.id, self.leader, self.leader_epoch, self.replicas,
             self.high_watermark, self.start_offset)
+        if self.load_error:
+            ret += f", load_error: `{self.load_error}'"
+        return ret
 
     def __eq__(self, other):
         if other is None:
@@ -85,7 +96,8 @@ class RpkPartition:
             and self.leader_epoch == other.leader_epoch \
             and self.replicas == other.replicas \
             and self.high_watermark == other.high_watermark \
-            and self.start_offset == other.start_offset
+            and self.start_offset == other.start_offset \
+            and self.load_error == other.load_error
 
 
 class RpkGroupPartition(typing.NamedTuple):
@@ -98,6 +110,7 @@ class RpkGroupPartition(typing.NamedTuple):
     instance_id: str
     client_id: str
     host: str
+    error: str
 
 
 class RpkGroup(typing.NamedTuple):
@@ -438,7 +451,7 @@ class RpkTool:
 
         expected_columns = set([
             "PARTITION", "LEADER", "EPOCH", "REPLICAS", "LOG-START-OFFSET",
-            "HIGH-WATERMARK", "LAST-STABLE-OFFSET"
+            "HIGH-WATERMARK", "LAST-STABLE-OFFSET", "LOAD-ERROR"
         ])
         received_columns = set()
 
@@ -453,7 +466,10 @@ class RpkTool:
         # sometimes LSO is present, sometimes it isn't
         # same is true for EPOCH:
         # https://github.com/redpanda-data/redpanda/issues/8381#issuecomment-1403051606
-        missing_columns = missing_columns - {"LAST-STABLE-OFFSET", "EPOCH"}
+        # LOAD-ERROR is not present if there was no error.
+        missing_columns = missing_columns - {
+            "LAST-STABLE-OFFSET", "EPOCH", "LOAD-ERROR"
+        }
 
         if len(missing_columns) != 0:
             missing_columns = ",".join(missing_columns)
@@ -490,7 +506,8 @@ class RpkTool:
                                      replicas=obj["REPLICAS"],
                                      lso=None,
                                      hw=obj["HIGH-WATERMARK"],
-                                     start_offset=obj["LOG-START-OFFSET"])
+                                     start_offset=obj["LOG-START-OFFSET"],
+                                     load_error=obj.get("LOAD-ERROR"))
 
             if initialized or tolerant:
                 yield partition
@@ -575,32 +592,12 @@ class RpkTool:
         cmd = ["seek", group, "--to", to]
         self._run_group(cmd)
 
-    def group_describe(self, group, summary=False):
+    def group_describe(self, group, summary=False, tolerant=False):
         def parse_field(field_name, string):
             pattern = re.compile(f" *{field_name} +(?P<value>.+)")
             m = pattern.match(string)
             assert m is not None, f"Field string '{string}' does not match the pattern"
             return m['value']
-
-        def check_lines(lines):
-            for line in lines:
-                # UNKNOWN_TOPIC_OR_PARTITION: This server doesn't contain this partition or topic.
-                # We should wait until server will get information about it.
-                if line.find('UNKNOWN_TOPIC_OR_PARTITION') != -1:
-                    return False
-
-                # Leadership movements are underway
-                if 'NOT_LEADER_FOR_PARTITION' in line:
-                    return False
-
-                # Cluster not ready yet
-                if 'unknown broker' in line:
-                    return False
-
-                if "missing from list offsets" in line:
-                    return False
-
-            return True
 
         def try_describe_group(group):
             if summary:
@@ -629,9 +626,6 @@ class RpkTool:
                     raise
 
             lines = out.splitlines()
-
-            if not check_lines(lines):
-                return None
 
             group_name = parse_field("GROUP", lines[0])
             coordinator = parse_field("COORDINATOR", lines[1])
@@ -667,9 +661,21 @@ class RpkTool:
                                for i in range(len(table.columns)))
 
                     # Check to see if info for the partition was queried during a change in leadership.
-                    error = obj.get("ERROR", "")
-                    if "NOT_LEADER_FOR_PARTITION" in error:
-                        return None
+                    error = obj.get("ERROR")
+                    if not tolerant and error:
+                        error_strs = [
+                            # UNKNOWN_TOPIC_OR_PARTITION: This server doesn't contain this partition
+                            # or topic. We should wait until server will get information about it.
+                            "UNKNOWN_TOPIC_OR_PARTITION",
+                            # Leadership movements are underway
+                            "NOT_LEADER_FOR_PARTITION",
+                            # Cluster not ready yet
+                            "unknown broker",
+                            # ListOffsets request (needed to calculate lag) errored or was incomplete
+                            "missing from list offsets",
+                        ]
+                        if any(e in error for e in error_strs):
+                            return None
 
                     def maybe_parse_int(field):
                         # Account for negative numbers and '-' value
@@ -687,6 +693,7 @@ class RpkTool:
                         instance_id=obj.get("INSTANCE-ID"),
                         client_id=obj["CLIENT-ID"],
                         host=obj["HOST"],
+                        error=error,
                     )
 
                     partitions.append(partition)

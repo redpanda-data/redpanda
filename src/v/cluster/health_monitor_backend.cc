@@ -863,17 +863,24 @@ health_monitor_backend::get_cluster_health_overview(
 
     for (auto& [id, _] : brokers) {
         ret.all_nodes.push_back(id);
-        if (id == _raft0->self().id()) {
-            continue;
+        if (id != _raft0->self().id()) {
+            auto it = _status.find(id);
+            if (it == _status.end() || !it->second.is_alive) {
+                ret.nodes_down.push_back(id);
+            }
         }
-        auto it = _status.find(id);
-        if (it == _status.end() || !it->second.is_alive) {
-            ret.nodes_down.push_back(id);
+        auto report_it = _reports.find(id);
+        if (
+          report_it != _reports.end()
+          && report_it->second.local_state.recovery_mode_enabled) {
+            ret.nodes_in_recovery_mode.push_back(id);
         }
     }
 
     std::sort(ret.all_nodes.begin(), ret.all_nodes.end());
     std::sort(ret.nodes_down.begin(), ret.nodes_down.end());
+    std::sort(
+      ret.nodes_in_recovery_mode.begin(), ret.nodes_in_recovery_mode.end());
 
     auto aggr_report = aggregate_reports(_reports);
 

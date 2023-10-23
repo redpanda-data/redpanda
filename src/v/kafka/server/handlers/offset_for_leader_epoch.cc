@@ -182,6 +182,23 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
+    if (unlikely(ctx.recovery_mode_enabled())) {
+        offset_for_leader_epoch_response response;
+        for (const auto& t : request.data.topics) {
+            offset_for_leader_topic_result topic_res{.topic = t.topic};
+            topic_res.partitions.reserve(t.partitions.size());
+            for (const auto& p : t.partitions) {
+                topic_res.partitions.push_back(
+                  response_t::make_epoch_end_offset(
+                    p.partition, error_code::policy_violation));
+            }
+
+            response.data.topics.push_back(std::move(topic_res));
+        }
+
+        co_return co_await ctx.respond(std::move(response));
+    }
+
     std::vector<offset_for_leader_topic_result> unauthorized;
 
     // authorize

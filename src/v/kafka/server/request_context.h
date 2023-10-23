@@ -139,6 +139,10 @@ public:
         return _conn->server().are_transactions_enabled();
     }
 
+    bool recovery_mode_enabled() const {
+        return _conn->server().recovery_mode_enabled();
+    }
+
     cluster::tx_gateway_frontend& tx_gateway_frontend() const {
         return _conn->server().tx_gateway_frontend();
     }

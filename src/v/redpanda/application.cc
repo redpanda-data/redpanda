@@ -1368,7 +1368,7 @@ void application::wire_up_redpanda_services(
       std::ref(metadata_cache));
     controller->wire_up().get0();
 
-    if (archival_storage_enabled()) {
+    if (archival_storage_enabled() && !config::node().recovery_mode_enabled()) {
         construct_service(
           _archival_purger,
           ss::sharded_parameter(
@@ -2237,7 +2237,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 
     start_runtime_services(cd, app_signal);
 
-    if (_proxy_config) {
+    if (_proxy_config && !config::node().recovery_mode_enabled) {
         _proxy->start().get();
         vlog(
           _log.info,
@@ -2245,7 +2245,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           _proxy_config->pandaproxy_api());
     }
 
-    if (_schema_reg_config) {
+    if (_schema_reg_config && !config::node().recovery_mode_enabled) {
         _schema_registry->start().get();
         vlog(
           _log.info,

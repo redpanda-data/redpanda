@@ -143,6 +143,15 @@ ss::future<response_ptr> create_topics_handler::handle(
       request.data.topics.end(),
       std::back_inserter(response.data.topics));
 
+    if (ctx.recovery_mode_enabled()) {
+        for (const auto& t :
+             boost::make_iterator_range(begin, valid_range_end)) {
+            response.data.topics.push_back(generate_error(
+              t, error_code::policy_violation, "Forbidden in recovery mode"));
+        }
+        co_return co_await ctx.respond(std::move(response));
+    }
+
     const auto has_cluster_auth = ctx.authorized(
       security::acl_operation::create, security::default_cluster_name);
 

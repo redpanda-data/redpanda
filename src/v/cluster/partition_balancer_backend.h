@@ -57,6 +57,8 @@ public:
 
     bool is_leader() const { return _raft0->is_leader(); }
 
+    bool is_enabled() const;
+
     std::optional<model::node_id> leader_id() const {
         auto leader_id = _raft0->get_leader_id();
         if (leader_id && leader_id == _raft0->self().id() && !is_leader()) {

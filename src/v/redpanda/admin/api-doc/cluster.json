@@ -102,6 +102,13 @@
                     },
                     "description": "ids of all nodes being recognized as down"
                 },
+                "nodes_in_recovery_mode": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    },
+                    "description": "ids of all nodes that were booted in recovery mode"
+                },
                 "leaderless_partitions": {
                     "type": "array",
                     "items": {

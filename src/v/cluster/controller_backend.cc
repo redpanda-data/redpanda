@@ -596,6 +596,12 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
 
 ss::future<>
 controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
+    if (should_skip(ntp)) {
+        vlog(clusterlog.info, "[{}] skipping bootstrap", ntp);
+        deltas.clear();
+        return ss::now();
+    }
+
     // find last delta that has to be applied
     deltas = calculate_bootstrap_deltas(_self, deltas);
     vlog(clusterlog.trace, "[{}] bootstrapping with deltas {}", ntp, deltas);
@@ -628,7 +634,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     }
 
     // apply all deltas following the one found previously
-    return reconcile_ntp(deltas);
+    return reconcile_ntp(ntp, deltas);
 }
 
 ss::future<> controller_backend::fetch_deltas() {
@@ -769,7 +775,14 @@ void controller_backend::housekeeping() {
         });
 }
 
-ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
+ss::future<>
+controller_backend::reconcile_ntp(const model::ntp& ntp, deltas_t& deltas) {
+    if (should_skip(ntp)) {
+        vlog(clusterlog.debug, "[{}] skipping reconcilation", ntp);
+        deltas.clear();
+        co_return;
+    }
+
     bool stop = false;
     auto it = deltas.begin();
     while (!(stop || it == deltas.end())) {
@@ -948,7 +961,7 @@ ss::future<> controller_backend::reconcile_topics() {
                  _topic_deltas.end(),
                  1024,
                  [this](underlying_t::value_type& ntp_deltas) {
-                     return reconcile_ntp(ntp_deltas.second);
+                     return reconcile_ntp(ntp_deltas.first, ntp_deltas.second);
                  })
           .then([this] {
               // cleanup empty NTP keys
@@ -2030,6 +2043,10 @@ controller_backend::list_ntp_deltas(const model::ntp& ntp) const {
     }
 
     return {};
+}
+
+bool controller_backend::should_skip(const model::ntp& ntp) const {
+    return config::node().recovery_mode_enabled() && model::is_user_topic(ntp);
 }
 
 std::ostream&

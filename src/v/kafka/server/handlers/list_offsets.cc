@@ -258,6 +258,22 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     request.compute_duplicate_topics();
     log_request(ctx.header(), request);
 
+    if (unlikely(ctx.recovery_mode_enabled())) {
+        list_offsets_response response;
+        response.data.topics.reserve(request.data.topics.size());
+        for (const auto& t : request.data.topics) {
+            std::vector<list_offset_partition_response> partitions;
+            partitions.reserve(t.partitions.size());
+            for (const auto& p : t.partitions) {
+                partitions.push_back(list_offsets_response::make_partition(
+                  p.partition_index, error_code::policy_violation));
+            }
+            response.data.topics.push_back(list_offset_topic_response{
+              .name = t.name, .partitions = std::move(partitions)});
+        }
+        return ctx.respond(std::move(response));
+    }
+
     auto unauthorized_it = std::partition(
       request.data.topics.begin(),
       request.data.topics.end(),

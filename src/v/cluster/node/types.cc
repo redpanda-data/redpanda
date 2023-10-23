@@ -35,12 +35,13 @@ std::ostream& operator<<(std::ostream& o, const local_state& s) {
     fmt::print(
       o,
       "{{redpanda_version: {}, uptime: {}, data_disk: {}, cache_disk: {} log "
-      "data {}}}",
+      "data {}, recovery_mode_enabled: {}}}",
       s.redpanda_version,
       s.uptime,
       s.data_disk,
       s.cache_disk,
-      s.log_data_size);
+      s.log_data_size,
+      s.recovery_mode_enabled);
     return o;
 }
 
@@ -73,6 +74,10 @@ void local_state::serde_read(iobuf_parser& in, const serde::header& h) {
         log_data_size = serde::read_nested<std::optional<log_data_state>>(
           in, 0);
     }
+
+    if (h._version >= 3) {
+        recovery_mode_enabled = serde::read_nested<bool>(in, 0);
+    }
 }
 
 void local_state::serde_write(iobuf& out) const {
@@ -82,6 +87,7 @@ void local_state::serde_write(iobuf& out) const {
     serde::write(out, disks());
     serde::write(out, get_disk_alert());
     serde::write(out, log_data_size);
+    serde::write(out, recovery_mode_enabled);
 }
 
 storage::disk_space_alert local_state::get_disk_alert() const {

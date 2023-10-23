@@ -925,6 +925,8 @@ get_brokers(cluster::controller* const controller) {
 
               if (r_it != h_report.value().node_reports.end()) {
                   it->second.version = r_it->local_state.redpanda_version;
+                  it->second.recovery_mode_enabled
+                    = r_it->local_state.recovery_mode_enabled;
                   auto nm = members_table.get_node_metadata_ref(r_it->id);
                   if (nm && r_it->drain_status) {
                       it->second.maintenance_status = fill_maintenance_status(
@@ -4853,6 +4855,8 @@ void admin_server::register_cluster_routes() {
                 ret.unhealthy_reasons = health_overview.unhealthy_reasons;
                 ret.all_nodes = health_overview.all_nodes;
                 ret.nodes_down = health_overview.nodes_down;
+                ret.nodes_in_recovery_mode
+                  = health_overview.nodes_in_recovery_mode;
 
                 ret.leaderless_count = health_overview.leaderless_count;
                 ret.under_replicated_count
