@@ -315,6 +315,11 @@ struct seq_marker {
     schema_version version;
     seq_marker_key_type key_type{seq_marker_key_type::invalid};
 
+    // Note that matching nullopts is possible on the seq and node fields.
+    // This is intentional; both fields are particular to redpanda, so making
+    // them optional provides compatibility with non-rp schema registries. If
+    // either is not present, we can assume a collision has not occurred.
+    friend bool operator==(const seq_marker&, const seq_marker&) = default;
     friend std::ostream& operator<<(std::ostream& os, const seq_marker& v);
 };
 

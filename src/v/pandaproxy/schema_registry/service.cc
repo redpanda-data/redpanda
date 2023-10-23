@@ -104,6 +104,10 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       wrap(gate, es, put_config_subject)});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::delete_config_subject,
+      wrap(gate, es, delete_config_subject)});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_mode, wrap(gate, es, get_mode)});
 
     routes.routes.emplace_back(server::route_t{

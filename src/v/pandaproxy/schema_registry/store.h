@@ -246,6 +246,34 @@ public:
         }
     }
 
+    /// \brief Return the seq_marker write history of a subject, but only
+    /// config_keys
+    ///
+    /// \return A vector (possibly empty)
+    result<std::vector<seq_marker>>
+    get_subject_config_written_at(const subject& sub) const {
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+
+        // This should never happen (how can a record get into the
+        // store without an originating sequenced record?), but return
+        // an error instead of vasserting out.
+        if (sub_it->second.written_at.empty()) {
+            return not_found(sub);
+        }
+
+        std::vector<seq_marker> result;
+        std::copy_if(
+          sub_it->second.written_at.begin(),
+          sub_it->second.written_at.end(),
+          std::back_inserter(result),
+          [](const auto& sm) {
+              return sm.key_type == seq_marker_key_type::config;
+          });
+
+        return result;
+    }
+
     /// \brief Return the seq_marker write history of a version.
     ///
     /// \return A vector with at least one element
@@ -471,9 +499,11 @@ public:
     }
 
     ///\brief Clear the compatibility level for a subject.
-    result<bool> clear_compatibility(const subject& sub) {
+    result<bool>
+    clear_compatibility(const seq_marker& marker, const subject& sub) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
+        std::erase(sub_it->second.written_at, marker);
         return std::exchange(sub_it->second.compatibility, std::nullopt)
                != std::nullopt;
     }
