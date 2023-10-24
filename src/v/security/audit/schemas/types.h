@@ -187,11 +187,33 @@ struct actor {
     auto equality_fields() const { return std::tie(authorizations, user); }
 };
 
+struct acl_binding_detail {
+    std::optional<ss::sstring> resource_type;
+    std::optional<ss::sstring> resource_name;
+    std::optional<ss::sstring> pattern_type;
+    std::optional<ss::sstring> acl_principal;
+    std::optional<ss::sstring> acl_host;
+    std::optional<ss::sstring> acl_operation;
+    std::optional<ss::sstring> acl_permission;
+
+    auto equality_fields() const {
+        return std::tie(
+          resource_type,
+          resource_name,
+          pattern_type,
+          acl_principal,
+          acl_host,
+          acl_operation,
+          acl_permission);
+    }
+};
+
 struct resource_detail {
     ss::sstring name;
     ss::sstring type;
+    std::optional<acl_binding_detail> data;
 
-    auto equality_fields() const { return std::tie(name, type); }
+    auto equality_fields() const { return std::tie(name, type, data); }
 };
 
 struct authorization_metadata {
@@ -373,12 +395,50 @@ inline void rjson_serialize(Writer<StringBuffer>& w, const sa::actor& actor) {
 }
 
 inline void
+rjson_serialize(Writer<StringBuffer>& w, const sa::acl_binding_detail& acl) {
+    w.StartObject();
+    if (acl.resource_type.has_value()) {
+        w.Key("resource_type");
+        rjson_serialize(w, acl.resource_type);
+    }
+    if (acl.resource_name.has_value()) {
+        w.Key("resource_name");
+        rjson_serialize(w, acl.resource_name);
+    }
+    if (acl.pattern_type.has_value()) {
+        w.Key("pattern_type");
+        rjson_serialize(w, acl.pattern_type);
+    }
+    if (acl.acl_principal.has_value()) {
+        w.Key("acl_principal");
+        rjson_serialize(w, acl.acl_principal);
+    }
+    if (acl.acl_host.has_value()) {
+        w.Key("acl_host");
+        rjson_serialize(w, acl.acl_host);
+    }
+    if (acl.acl_operation.has_value()) {
+        w.Key("acl_operation");
+        rjson_serialize(w, acl.acl_operation);
+    }
+    if (acl.acl_permission.has_value()) {
+        w.Key("acl_permission");
+        rjson_serialize(w, acl.acl_permission);
+    }
+    w.EndObject();
+}
+
+inline void
 rjson_serialize(Writer<StringBuffer>& w, const sa::resource_detail& resource) {
     w.StartObject();
     w.Key("name");
     rjson_serialize(w, resource.name);
     w.Key("type");
     rjson_serialize(w, resource.type);
+    if (resource.data.has_value()) {
+        w.Key("data");
+        rjson_serialize(w, *resource.data);
+    }
     w.EndObject();
 }
 
