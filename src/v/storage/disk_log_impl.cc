@@ -365,7 +365,7 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
     co_return _start_offset;
 }
 
-ss::future<> disk_log_impl::do_compact(
+ss::future<> disk_log_impl::adjacent_merge_compact(
   compaction_config cfg, std::optional<model::offset> new_start_offset) {
     vlog(
       gclog.trace,
@@ -878,7 +878,7 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
-        co_await do_compact(cfg.compact, new_start_offset);
+        co_await adjacent_merge_compact(cfg.compact, new_start_offset);
     }
 
     _probe->set_compaction_ratio(_compaction_ratio.get());
