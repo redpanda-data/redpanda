@@ -161,6 +161,10 @@ public:
     ss::future<> adjacent_merge_compact(
       compaction_config, std::optional<model::offset> = std::nullopt);
 
+    ss::future<> sliding_window_compact(
+      const compaction_config& cfg,
+      std::optional<model::offset> new_start_offset = std::nullopt);
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
