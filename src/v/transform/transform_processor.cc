@@ -11,12 +11,14 @@
 #include "transform/transform_processor.h"
 
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "random/simple_time_jitter.h"
 #include "transform/logger.h"
 #include "wasm/api.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/sleep.hh>
@@ -26,6 +28,26 @@
 namespace transform {
 
 namespace {
+
+class queue_output_consumer {
+public:
+    queue_output_consumer(ss::queue<model::record_batch>* output, probe* probe)
+      : _output(output)
+      , _probe(probe) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        _last_offset = b.last_offset();
+        _probe->increment_read_bytes(b.size_bytes());
+        co_await _output->push_eventually(std::move(b));
+        co_return ss::stop_iteration::no;
+    }
+    std::optional<model::offset> end_of_stream() const { return _last_offset; }
+
+private:
+    std::optional<model::offset> _last_offset;
+    ss::queue<model::record_batch>* _output;
+    probe* _probe;
+};
 
 /**
  * A specific exception to throw on processor::stop so that we're not accidently
@@ -102,9 +124,10 @@ ss::future<> processor::run_consumer_loop() {
     vlog(_logger.trace, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);
-        auto batches = co_await model::consume_reader_to_memory(
-          std::move(reader), model::no_timeout);
-        if (batches.empty()) {
+        auto last_offset = co_await std::move(reader).consume(
+          queue_output_consumer(&_consumer_transform_pipe, _probe),
+          model::no_timeout);
+        if (!last_offset) {
             vlog(
               _logger.trace,
               "received no results, sleeping before polling at offset {}",
@@ -112,12 +135,8 @@ ss::future<> processor::run_consumer_loop() {
             co_await poll_sleep();
             continue;
         }
-        offset = model::next_offset(batches.back().last_offset());
+        offset = model::next_offset(*last_offset);
         vlog(_logger.trace, "consumed up to offset {}", offset);
-        for (auto& batch : batches) {
-            _probe->increment_read_bytes(batch.size_bytes());
-            co_await _consumer_transform_pipe.push_eventually(std::move(batch));
-        }
     }
 }
 
