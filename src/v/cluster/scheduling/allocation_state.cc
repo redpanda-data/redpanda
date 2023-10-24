@@ -24,8 +24,6 @@ void allocation_state::rollback(
             remove_allocation(bs, domain);
             remove_final_count(bs, domain);
         }
-        // rollback for each assignment as the groups are distinct
-        _highest_group = raft::group_id(_highest_group() - 1);
     }
 }
 
