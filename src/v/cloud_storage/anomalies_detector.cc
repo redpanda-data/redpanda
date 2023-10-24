@@ -36,12 +36,16 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
   std::optional<model::offset> scrub_from) {
     _result = result{};
     _received_quota = quota;
+    auto make_rtc_node = [&] {
+        return retry_chain_node(30s, rtc_node.get_backoff(), &rtc_node);
+    };
 
     vlog(_logger.debug, "Downloading partition manifest ...");
 
     partition_manifest manifest(_ntp, _initial_rev);
+    auto manifest_rtc = make_rtc_node();
     auto [dl_result, format] = co_await _remote.try_download_partition_manifest(
-      _bucket, manifest, rtc_node);
+      _bucket, manifest, manifest_rtc);
     ++_result.ops;
 
     if (dl_result == download_result::notfound) {
@@ -67,8 +71,9 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
 
         auto spill_path = generate_spillover_manifest_path(
           _ntp, _initial_rev, comp);
+        auto seg_exists_rtc = make_rtc_node();
         auto exists_result = co_await _remote.segment_exists(
-          _bucket, remote_segment_path{spill_path()}, rtc_node);
+          _bucket, remote_segment_path{spill_path()}, seg_exists_rtc);
         ++_result.ops;
         if (exists_result == download_result::notfound) {
             _result.detected.missing_spillover_manifests.emplace(comp);
@@ -90,8 +95,9 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         _result.detected.missing_partition_manifest = true;
     }
 
+    auto check_manifest_rtc = make_rtc_node();
     const auto stop_at_stm = co_await check_manifest(
-      manifest, scrub_from, rtc_node);
+      manifest, scrub_from, check_manifest_rtc);
     if (stop_at_stm == stop_detector::yes) {
         _result.status = scrub_status::partial;
         co_return _result;
@@ -108,8 +114,9 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
             co_return _result;
         }
 
+        auto spill_rtc = make_rtc_node();
         const auto spill = co_await download_spill_manifest(
-          spill_manifest_paths[i], rtc_node);
+          spill_manifest_paths[i], spill_rtc);
         if (spill) {
             // Check adjacent segments which have a manifest
             // boundary between them.
@@ -121,8 +128,9 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
                   _result.detected.segment_metadata_anomalies);
             }
 
+            auto check_spill_rtc = make_rtc_node();
             const auto stop_at_spill = co_await check_manifest(
-              *spill, scrub_from, rtc_node);
+              *spill, scrub_from, check_spill_rtc);
             if (stop_at_spill == stop_detector::yes) {
                 _result.status = scrub_status::partial;
                 co_return _result;
