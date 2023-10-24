@@ -235,7 +235,8 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
           ss::sstring anonymous_principal;
           if (!dn.has_value()) {
               vlog(klog.info, "failed to fetch distinguished name");
-              return security::tls::mtls_state{anonymous_principal};
+              return security::tls::mtls_state{
+                anonymous_principal, std::nullopt};
           }
           auto principal = pm.apply(dn->subject);
           if (!principal) {
@@ -243,7 +244,8 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
                 klog.info,
                 "failed to extract principal from distinguished name: {}",
                 dn->subject);
-              return security::tls::mtls_state{anonymous_principal};
+              return security::tls::mtls_state{
+                anonymous_principal, dn->subject};
           }
 
           vlog(
@@ -251,7 +253,7 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
             "got principal: {}, from distinguished name: {}",
             *principal,
             dn->subject);
-          return security::tls::mtls_state{*principal};
+          return security::tls::mtls_state{*principal, dn->subject};
       });
 }
 
