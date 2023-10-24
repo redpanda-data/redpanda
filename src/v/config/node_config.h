@@ -151,6 +151,9 @@ private:
     std::filesystem::path _cfg_file_path;
 };
 
+// TODO(nv): Make const
 node_config& node();
+
+ss::future<> mutate_node_configs(std::function<void(config::node_config&)> f);
 
 } // namespace config

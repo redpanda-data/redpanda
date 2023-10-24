@@ -10,7 +10,12 @@
 #include "node_config.h"
 
 #include "config/configuration.h"
-
+namespace {
+config::node_config& thread_local_node_config() {
+    static thread_local config::node_config cfg;
+    return cfg;
+}
+} // namespace
 namespace config {
 
 node_config::node_config() noexcept
@@ -241,9 +246,12 @@ node_config::error_map_t node_config::load(const YAML::Node& root_node) {
 ///
 /// This has a terse name because it is used so many places,
 /// usually as config::node().<property>
-node_config& node() {
-    static thread_local node_config cfg;
-    return cfg;
-}
 
+// TODO(nv): Make const
+config::node_config& node() { return thread_local_node_config(); }
+
+ss::future<> mutate_node_configs(std::function<void(config::node_config&)> f) {
+    return ss::smp::invoke_on_all(
+      [f = std::move(f)] { f(thread_local_node_config()); });
+}
 } // namespace config
