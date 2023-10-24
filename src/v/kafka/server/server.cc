@@ -49,6 +49,9 @@
 #include "kafka/server/response.h"
 #include "kafka/server/usage_manager.h"
 #include "net/connection.h"
+#include "security/audit/schemas/iam.h"
+#include "security/audit/schemas/utils.h"
+#include "security/audit/types.h"
 #include "security/errc.h"
 #include "security/exceptions.h"
 #include "security/gssapi_authenticator.h"
@@ -58,6 +61,7 @@
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
 #include "ssx/thread_worker.h"
+#include "utils/string_switch.h"
 #include "utils/utf8.h"
 #include "vlog.h"
 
@@ -311,6 +315,22 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
 
     std::exception_ptr eptr;
     try {
+        if (authn_method == config::broker_authn_method::mtls_identity) {
+            auto authn_event = security::audit::make_authentication_event(
+              mtls_state.value(),
+              ctx->local_address(),
+              ctx->server().name(),
+              ctx->client_host(),
+              ctx->client_port(),
+              std::nullopt);
+            if (!ctx->server().audit_mgr().enqueue_audit_event(
+                  security::audit::event_type::authenticate,
+                  std::move(authn_event))) {
+                throw std::runtime_error(
+                  "Failed to enqueue mTLS authentication event - audit log "
+                  "system error");
+            }
+        }
         co_await ctx->start();
         co_await ctx->process();
     } catch (...) {
@@ -426,6 +446,20 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
                   "session_lifetime for principal '{}': {}",
                   ctx.sasl()->principal(),
                   ctx.sasl()->session_lifetime_ms());
+                if (!ctx.audit_authn_success(
+                      ctx.sasl()->mechanism().mechanism_name(),
+                      ctx.sasl()->mechanism().audit_user())) {
+                    ctx.sasl()->set_state(
+                      security::sasl_server::sasl_state::failed);
+                    sasl_authenticate_response_data data{
+                      .error_code = error_code::broker_not_available,
+                      .error_message
+                      = "Broker not available - audit system failure",
+                    };
+
+                    co_return co_await ctx.respond(
+                      sasl_authenticate_response(std::move(data)));
+                }
             }
             sasl_authenticate_response_data data{
               .error_code = error_code::none,
@@ -450,11 +484,20 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
         ec = make_error_code(security::errc::invalid_credentials);
     }
 
-    sasl_authenticate_response_data data{
-      .error_code = error_code::sasl_authentication_failed,
-      .error_message = ssx::sformat(
-        "SASL authentication failed: {}", ec.message()),
-    };
+    sasl_authenticate_response_data data;
+
+    if (!ctx.audit_authn_failure(
+          fmt::format("SASL authentication failed: {}", ec.message()),
+          ctx.sasl()->mechanism().mechanism_name(),
+          ctx.sasl()->mechanism().audit_user())) {
+        data.error_code = error_code::broker_not_available;
+        data.error_message = "Broker not available - audit system failure";
+    } else {
+        data.error_code = error_code::sasl_authentication_failed;
+        data.error_message = ssx::sformat(
+          "SASL authentication failed: {}", ec.message());
+    }
+
     co_return co_await ctx.respond(sasl_authenticate_response(std::move(data)));
 }
 
@@ -649,7 +692,12 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
     }
 
     if (!ctx.sasl()->has_mechanism()) {
-        error = error_code::unsupported_sasl_mechanism;
+        if (!ctx.audit_authn_failure(
+              "Unsupported SASL mechanism", request.data.mechanism)) {
+            error = error_code::broker_not_available;
+        } else {
+            error = error_code::unsupported_sasl_mechanism;
+        }
     }
 
     return ctx.respond(
