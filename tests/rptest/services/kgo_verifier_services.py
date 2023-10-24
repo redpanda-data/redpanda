@@ -9,6 +9,7 @@
 
 import os
 import time
+import signal
 import threading
 import requests
 from typing import Optional
@@ -151,6 +152,43 @@ class KgoVerifierService(Service):
         pid = int(pid_str.strip())
         self._pid = pid
 
+        # Wait for status endpoint to respond.
+        self._await_ready(node)
+
+        # Because the above command was run with `nohup` we can't be sure that
+        # it is the one who actually replied to the `await_ready` calls.
+        # Check that the PID we just launched is still running as a confirmation
+        # that it is the one.
+        self._assert_running(node)
+
+    def _await_ready(self, node):
+        """
+        Wait for the remote processes http endpoint to come up
+        """
+
+        wait_until(
+            lambda: self._is_ready(node),
+            timeout_sec=5,
+            backoff_sec=0.5,
+            err_msg=
+            f"Timed out waiting for status endpoint {self.who_am_i()} to be available"
+        )
+
+    def _is_ready(self, node):
+        try:
+            r = requests.get(self._remote_url(node, "status"), timeout=10)
+        except Exception as e:
+            # Broad exception handling for any lower level connection errors etc
+            # that might not be properly classed as `requests` exception.
+            self.logger.debug(
+                f"Status endpoint {self.who_am_i()} not ready: {e}")
+            return False
+        else:
+            return r.status_code == 200
+
+    def _assert_running(self, node):
+        node.account.ssh_output(f"ps -p {self._pid}", allow_fail=False)
+
     def stop_node(self, node, **kwargs):
         if self._status_thread:
             self._status_thread.stop()
@@ -162,7 +200,7 @@ class KgoVerifierService(Service):
         self._redpanda.logger.info(f"{self.__class__.__name__}.stop")
         self.logger.debug("Killing pid %s" % {self._pid})
         try:
-            node.account.signal(self._pid, 9, allow_fail=False)
+            node.account.signal(self._pid, signal.SIGKILL, allow_fail=False)
         except RemoteCommandError as e:
             if b"No such process" not in e.msg:
                 raise
@@ -229,7 +267,7 @@ class KgoVerifierService(Service):
 
         self.logger.debug(
             f"wait_node {self.who_am_i()}: waiting for remote endpoint")
-        self._status_thread.await_ready()
+        self._await_ready(node)
 
         # If this is a looping worker, tell it to end after the current loop
         self.logger.debug(f"wait_node {self.who_am_i()}: requesting last_pass")
@@ -329,28 +367,12 @@ class StatusThread(threading.Thread):
 
     def run(self):
         try:
-            # Don't assume the HTTP port will be open instantly on startup (although it should be open very soon)
-            self.await_ready()
-
             self.poll_status()
         except Exception as ex:
             self._ex = ex
             self.logger.exception(
                 f"Error reading status from {self.who_am_i} on {self._node.name}"
             )
-
-    def is_ready(self):
-        try:
-            r = requests.get(self._parent._remote_url(self._node, "status"),
-                             timeout=10)
-        except Exception as e:
-            # Broad exception handling for any lower level connection errors etc
-            # that might not be properly classed as `requests` exception.
-            self.logger.debug(
-                f"Status endpoint {self.who_am_i} not ready: {e}")
-            return False
-        else:
-            return r.status_code == 200
 
     def _ingest_status(self, worker_statuses):
         self.logger.debug(f"{self.who_am_i} status: {worker_statuses}")
@@ -368,22 +390,6 @@ class StatusThread(threading.Thread):
             self.logger.info(f"Worker {self.who_am_i} status: {reduced}")
 
         self._parent._status = reduced
-
-    def await_ready(self):
-        """
-        Wait for the remote processes http endpoint to come up
-        """
-        if self._ready:
-            return
-
-        wait_until(
-            lambda: self.is_ready() or self._stop_requested.is_set(),
-            timeout_sec=5,
-            backoff_sec=0.5,
-            err_msg=
-            f"Timed out waiting for status endpoint {self.who_am_i} to be available"
-        )
-        self._ready = True
 
     def poll_status(self):
         while not self._stop_requested.is_set():
