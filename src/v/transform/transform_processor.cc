@@ -16,6 +16,7 @@
 #include "model/timeout_clock.h"
 #include "random/simple_time_jitter.h"
 #include "transform/logger.h"
+#include "units.h"
 #include "wasm/api.h"
 
 #include <seastar/core/loop.hh>
@@ -48,6 +49,29 @@ private:
     ss::queue<model::record_batch>* _output;
     probe* _probe;
 };
+
+ss::future<ss::chunked_fifo<model::record_batch>>
+drain_queue(ss::queue<model::record_batch>* queue, probe* p) {
+    static constexpr size_t max_batches_bytes = 1_MiB;
+    ss::chunked_fifo<model::record_batch> output;
+    if (queue->empty()) {
+        co_await queue->not_empty();
+    }
+    size_t batches_size = 0;
+    while (!queue->empty()) {
+        auto& batch = queue->front();
+        auto batch_size = batch.size_bytes();
+        batches_size += batch_size;
+        // ensure if there is a large batch we make some progress
+        // otherwise cap how much data we send to the sink at once.
+        if (!output.empty() && batches_size > max_batches_bytes) {
+            break;
+        }
+        p->increment_write_bytes(batch_size);
+        output.push_back(queue->pop());
+    }
+    co_return output;
+}
 
 /**
  * A specific exception to throw on processor::stop so that we're not accidently
@@ -150,10 +174,7 @@ ss::future<> processor::run_transform_loop() {
 
 ss::future<> processor::run_producer_loop() {
     while (!_as.abort_requested()) {
-        auto batch = co_await _transform_producer_pipe.pop_eventually();
-        _probe->increment_write_bytes(batch.size_bytes());
-        ss::chunked_fifo<model::record_batch> batches;
-        batches.push_back(std::move(batch));
+        auto batches = co_await drain_queue(&_transform_producer_pipe, _probe);
         co_await _sinks[0]->write(std::move(batches));
     }
 }
