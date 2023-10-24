@@ -159,7 +159,8 @@ public:
     // TODO: implement delete retention with incremental raft snapshots.
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
-    ss::future<result<model::partition_id>> coordinator(Key key) {
+    ss::future<result<model::partition_id, cluster::errc>>
+    coordinator(Key key) {
         auto holder = _gate.hold();
         if (!_is_routing_partition) {
             co_return errc::invalid_request;
@@ -205,7 +206,7 @@ public:
         co_return co_await coordinator(key);
     }
 
-    ss::future<result<std::optional<Value>>> get(Key key) {
+    ss::future<result<std::optional<Value>, cluster::errc>> get(Key key) {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
         if (!co_await sync(sync_timeout)) {
@@ -239,7 +240,8 @@ public:
           make_kv_data_batch_remove_key<Key, Value>(key));
     }
 
-    ss::future<result<size_t>> repartition(size_t new_partition_count) {
+    ss::future<result<size_t, cluster::errc>>
+    repartition(size_t new_partition_count) {
         auto holder = _gate.hold();
         if (!_is_routing_partition) {
             co_return errc::invalid_request;
@@ -307,7 +309,7 @@ private:
         _kvs.erase(key_data.key);
     }
 
-    ss::future<result<size_t>> total_partitions() {
+    ss::future<result<size_t, cluster::errc>> total_partitions() {
         auto holder = _gate.hold();
         if (!_is_routing_partition || !co_await sync(sync_timeout)) {
             co_return errc::not_leader;
