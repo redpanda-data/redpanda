@@ -14,6 +14,7 @@
 #include "kafka/client/types.h"
 #include "model/timeout_clock.h"
 #include "net/types.h"
+#include "security/audit/probe.h"
 #include "security/audit/schemas/schemas.h"
 #include "security/audit/types.h"
 #include "ssx/semaphore.h"
@@ -121,6 +122,8 @@ private:
       std::unique_ptr<security::audit::ocsf_base_impl> msg);
     void set_enabled_events();
 
+    audit_probe& probe() { return *_probe; }
+
 private:
     /// Multi index container is efficent in terms of time and space, underlying
     /// internal data structures are compact requiring only one node per
@@ -179,6 +182,7 @@ private:
     /// Other references
     cluster::controller* _controller;
     kafka::client::configuration& _config;
+    std::unique_ptr<audit_probe> _probe;
 };
 
 } // namespace security::audit
