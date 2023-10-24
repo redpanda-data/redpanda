@@ -136,6 +136,12 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
 
     auto units = co_await _cache->write_lock();
 
+    vlog(
+      txlog.trace,
+      "initing hosted transactions, term: {}, partition count: {}",
+      term,
+      tx_coordinator_partition_amount);
+
     model::partition_id partition = get_partition();
     auto initial_hash_range = default_tm_hash_range(
       partition, tx_coordinator_partition_amount);
@@ -844,6 +850,11 @@ tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
         _insync_offset = data.offset;
         _hosted_txes = std::move(data.hash_ranges);
         _hosted_txes.inited = true;
+        vlog(
+          txlog.trace,
+          "Applied snapshot at offset: {}, hosted txes: {}",
+          hdr.offset,
+          _hosted_txes);
     }
 
     return ss::now();
@@ -1015,6 +1026,11 @@ ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
     auto hash_ranges = serde::from_iobuf<tm_tx_hosted_transactions>(
       rec.release_value());
     _hosted_txes = hash_ranges;
+    vlog(
+      txlog.trace,
+      "Applied hosted txes batch from log, offset: {}, ranges: {}",
+      b.base_offset(),
+      _hosted_txes);
     return ss::now();
 }
 

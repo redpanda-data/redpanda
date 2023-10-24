@@ -242,8 +242,14 @@ tx_gateway_frontend::get_ntp(kafka::transactional_id id) {
           features::feature::transaction_partitioning)) {
         co_return model::legacy_tm_ntp;
     }
+    vlog(txlog.trace, "[tx_id={}] get_ntp request begin", id);
     auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
     if (!cfg) {
+        vlog(
+          txlog.trace,
+          "[tx_id={}] get_ntp request failed due to lack of topic cfg for: {}",
+          id,
+          model::tx_manager_nt);
         // Transaction coordinator topic not exist in cache
         // should be catched by caller (find_coordinator)
         // It must wait for topic in cache or init topic
@@ -252,6 +258,13 @@ tx_gateway_frontend::get_ntp(kafka::transactional_id id) {
     int32_t partitions_amount = cfg->partition_count;
     for (auto p = 0; p < partitions_amount; ++p) {
         auto hosted_by_partition = co_await hosts(model::partition_id(p), id);
+        vlog(
+          txlog.trace,
+          "[tx_id={}] get_ntp request, checking hosts for partition: {}, "
+          "result: {}",
+          id,
+          p,
+          hosted_by_partition);
         if (hosted_by_partition) {
             co_return model::ntp(
               model::tx_manager_nt.ns,
@@ -259,6 +272,8 @@ tx_gateway_frontend::get_ntp(kafka::transactional_id id) {
               model::partition_id(p));
         }
     }
+    vlog(
+      txlog.trace, "[tx_id={}] get ntp failed, no hosting partition found", id);
     co_return std::nullopt;
 }
 
@@ -274,14 +289,20 @@ ss::future<bool> tx_gateway_frontend::hosts(
     while (!aborted && !leader_opt && 0 < retries--) {
         vlog(
           txlog.trace,
-          "waiting for {} to fill leaders cache, retries left: {}",
+          "[tx_id={}] waiting for {} leadership, retries left: {}",
+          tx_id,
           tx_ntp,
           retries);
         aborted = !co_await sleep_abortable(delay_ms, _as);
         leader_opt = _leaders.local().get_leader(tx_ntp);
     }
     if (!leader_opt) {
-        vlog(txlog.warn, "can't find {} in the leaders cache", tx_ntp);
+        vlog(
+          txlog.warn,
+          "[tx_id={}] cannot find {} in the leaders cache, hosts request "
+          "failed",
+          tx_id,
+          tx_ntp);
         co_return false;
     }
 
@@ -292,6 +313,15 @@ ss::future<bool> tx_gateway_frontend::hosts(
         co_return co_await do_hosts(partition, tx_id);
     }
 
+    vlog(
+      txlog.trace,
+      "[tx_id={}] hosts request failed, current node {} is not the leader for "
+      "{}, found leader: {}",
+      tx_id,
+      _self,
+      tx_ntp,
+      leader);
+
     co_return false;
 }
 
@@ -300,6 +330,8 @@ ss::future<bool> tx_gateway_frontend::do_hosts(
     model::ntp tx_ntp(
       model::tx_manager_nt.ns, model::tx_manager_nt.tp, partition);
     auto shard = _shard_table.local().shard_for(tx_ntp);
+
+    vlog(txlog.trace, "[tx_id={}] do_hosts, ntp: {}", tx_id, tx_ntp);
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
@@ -310,6 +342,11 @@ ss::future<bool> tx_gateway_frontend::do_hosts(
     }
 
     if (!shard) {
+        vlog(
+          txlog.trace,
+          "[tx_id={}] do_hosts for ntp: {} failed, no shard found",
+          tx_id,
+          tx_ntp);
         co_return false;
     }
 
@@ -321,23 +358,40 @@ ss::future<bool> tx_gateway_frontend::do_hosts(
             self._gate, [tx_id, partition, &self]() -> ss::future<bool> {
                 return self.with_stm(
                   partition,
-                  [tx_id, &self](checked<ss::shared_ptr<tm_stm>, tx_errc> r)
+                  [tx_id, partition, &self](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r)
                     -> ss::future<bool> {
                       if (!r) {
                           return ss::make_ready_future<bool>(false);
                       }
                       auto stm = r.value();
                       return self.do_init_hosted_transactions(stm).then(
-                        [tx_id, stm](tx_errc init_res) -> ss::future<bool> {
+                        [tx_id, partition, stm](
+                          tx_errc init_res) -> ss::future<bool> {
                             if (init_res != tx_errc::none) {
+                                vlog(
+                                  txlog.trace,
+                                  "[tx_id={}] init_hosted_transactions "
+                                  "failed, ec: {}, partition: {}",
+                                  tx_id,
+                                  init_res,
+                                  partition);
                                 return ss::make_ready_future<bool>(false);
                             }
                             return stm->read_lock().then(
-                              [stm,
-                               tx_id](ss::basic_rwlock<>::holder unit) mutable
+                              [stm, partition, tx_id](
+                                ss::basic_rwlock<>::holder unit) mutable
                               -> ss::future<bool> {
-                                  return ss::make_ready_future<bool>(
-                                           stm->hosts(tx_id))
+                                  auto result = stm->hosts(tx_id);
+                                  vlog(
+                                    txlog.trace,
+                                    "[tx_id={}] stm hosts request, partition: "
+                                    "{}, "
+                                    "result: {}",
+                                    tx_id,
+                                    partition,
+                                    result);
+                                  return ss::make_ready_future<bool>(result)
                                     .finally([u = std::move(unit)] {});
                               });
                         });
@@ -365,8 +419,8 @@ ss::future<tx_errc> tx_gateway_frontend::do_init_hosted_transactions(
       term, cfg->partition_count);
     if (hash_ranges_inited != tm_stm::op_status::success) {
         vlog(
-          txlog.info,
-          "got {} on initing hash ranges for tm {}",
+          txlog.warn,
+          "init_hosted_transactions request failed, ec: {}, partition: {}",
           hash_ranges_inited,
           stm->get_partition());
         co_return tx_errc::not_coordinator;
@@ -935,6 +989,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
         co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
     }
 
+    vlog(
+      txlog.trace,
+      "[tx_id={}] init_tm_tx request begin, expected_pid: {}",
+      tx_id,
+      expected_pid);
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
@@ -948,9 +1007,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     while (!aborted && (!tx_ntp_opt || !has_metadata) && 0 < retries--) {
         vlog(
           txlog.trace,
-          "waiting for {} to fill metadata cache, retries left: {}",
+          "[tx_id={}] Waiting for {} to fill metadata cache, retries left: {}, "
+          "has_tx_ntp_opt: {}, has_metadata: {}",
+          tx_id,
           model::tx_manager_nt,
-          retries);
+          retries,
+          tx_ntp_opt,
+          has_metadata);
         aborted = !co_await sleep_abortable(delay_ms, _as);
         tx_ntp_opt = co_await get_ntp(tx_id);
         if (tx_ntp_opt) {
@@ -959,12 +1022,20 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
         }
     }
     if (!tx_ntp_opt) {
+        vlog(
+          txlog.trace,
+          "[tx_id={}] init_tm_tx request failed, no coordinator found, "
+          "expected_pid: {}, errc: {}",
+          tx_id,
+          expected_pid,
+          tx_errc::coordinator_not_available);
         co_return cluster::init_tm_tx_reply{tx_errc::coordinator_not_available};
     }
     if (!has_metadata) {
         vlog(
           txlog.warn,
-          "can't find {}/{} in the metadata cache",
+          "[tx_id={}] can't find {}/{} in the metadata cache",
+          tx_id,
           model::tx_manager_nt,
           tx_ntp_opt->tp.partition);
         co_return cluster::init_tm_tx_reply{tx_errc::partition_not_exists};
@@ -976,14 +1047,20 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     while (!aborted && !leader_opt && 0 < retries--) {
         vlog(
           txlog.trace,
-          "waiting for {} to fill leaders cache, retries left: {}",
+          "[tx_id={}] Waiting for {} leadership, retries left: {}",
+          tx_id,
           tx_ntp,
           retries);
         aborted = !co_await sleep_abortable(delay_ms, _as);
         leader_opt = _leaders.local().get_leader(tx_ntp);
     }
     if (!leader_opt) {
-        vlog(txlog.warn, "can't find {} in the leaders cache", tx_ntp);
+        vlog(
+          txlog.warn,
+          "[tx_id={}] init_tm_tx request failed, can't find {} in the leaders "
+          "cache",
+          tx_id,
+          tx_ntp);
         co_return cluster::init_tm_tx_reply{tx_errc::leader_not_found};
     }
 
@@ -999,6 +1076,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           tx_ntp.tp.partition);
     }
 
+    vlog(
+      txlog.trace,
+      "[tx_id={}] init_tm_tx request failed, this node {} is not the "
+      "leader for {}, found leader: {}",
+      tx_id,
+      _self,
+      tx_ntp,
+      leader);
     // Kafka does not dispatch this request. So we should delete this logic in
     // future TODO: https://github.com/redpanda-data/redpanda/issues/6418
     co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
@@ -1031,7 +1116,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
   model::partition_id tm) {
     vlog(
       txlog.trace,
-      "processing name:init_tm_tx, tx_id:{}, timeout:{}",
+      "[tx_id={}] processing name:init_tm_tx, timeout:{}",
       tx_id,
       transaction_timeout_ms);
 
@@ -1049,9 +1134,10 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
     if (!shard) {
         vlog(
           txlog.trace,
-          "sending name:init_tm_tx, tx_id:{}, ec: {}",
+          "[tx_id={}] init_tm_tx failed, ec: {}, no shard found for {}",
           tx_id,
-          tx_errc::shard_not_found);
+          tx_errc::shard_not_found,
+          tx_ntp);
         co_return cluster::init_tm_tx_reply{tx_errc::shard_not_found};
     }
 
@@ -1096,7 +1182,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
 
     vlog(
       txlog.trace,
-      "sending name:init_tm_tx, tx_id:{}, pid:{}, ec: {}",
+      "[tx_id={}] sending name:init_tm_tx, pid:{}, ec: {}",
       tx_id,
       reply.pid,
       reply.ec);

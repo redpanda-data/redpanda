@@ -70,6 +70,12 @@ struct tm_hash_range
         return (r.first >= first && r.first <= last)
                || (r.last >= first && r.last <= last) || r.contains(*this);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const tm_hash_range& range) {
+        fmt::print(o, "[{}, {}]", range.first, range.last);
+        return o;
+    }
 };
 
 inline tm_hash_range default_tm_hash_range(
@@ -149,6 +155,12 @@ struct tm_hash_ranges_set
               return range1.intersects(range2);
           });
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const tm_hash_ranges_set& ranges) {
+        fmt::print(o, "{{ {} }}", ranges.ranges);
+        return o;
+    }
 };
 
 using repartitioning_id = named_type<int64_t, struct repartitioning_id_type>;
@@ -170,6 +182,15 @@ struct draining_txs
       , transactions(std::move(txs)) {}
 
     auto serde_fields() { return std::tie(id, ranges, transactions); }
+    friend std::ostream& operator<<(std::ostream& o, const draining_txs& txes) {
+        fmt::print(
+          o,
+          "{{ id: {}, ranges: {}, transactions: {} }}",
+          txes.id,
+          txes.ranges,
+          txes.transactions.size());
+        return o;
+    }
 };
 
 struct tm_tx_hosted_transactions
@@ -275,6 +296,17 @@ struct tm_tx_hosted_transactions
         }
         auto tx_id_hash = get_tx_id_hash(tx_id);
         return hash_ranges.contains(tx_id_hash);
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const tm_tx_hosted_transactions& h) {
+        fmt::print(
+          o,
+          "{{ ranges: {}, excluded: {}, included: {} }}",
+          h.hash_ranges,
+          h.excluded_transactions.size(),
+          h.included_transactions.size());
+        return o;
     }
 };
 
