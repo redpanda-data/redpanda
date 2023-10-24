@@ -17,6 +17,7 @@
 #include "security/audit/schemas/types.h"
 #include "security/audit/types.h"
 #include "security/authorizer.h"
+#include "security/mtls.h"
 #include "security/request_auth.h"
 #include "security/types.h"
 #include "utils/string_switch.h"
@@ -158,11 +159,40 @@ authentication make_authentication_event(
   const request_auth_result& r,
   const ss::sstring& svc_name);
 
+authentication make_authentication_event(
+  const ss::sstring& auth_protocol,
+  const ss::socket_address& local_address,
+  std::string_view service_name,
+  ss::net::inet_address client_addr,
+  uint16_t client_port,
+  std::optional<std::string_view> client_id,
+  authentication::used_cleartext is_cleartext,
+  security::audit::user user);
+
+authentication make_authentication_event(
+  const security::tls::mtls_state& mtls_state,
+  const ss::socket_address& local_address,
+  std::string_view service_name,
+  ss::net::inet_address client_addr,
+  uint16_t client_port,
+  std::optional<std::string_view> client_id);
+
 authentication make_authentication_failure_event(
   ss::httpd::const_req req,
   const security::credential_user& r,
   const ss::sstring& svc_name,
   const ss::sstring& reason);
+
+authentication make_authentication_failure_event(
+  const ss::sstring& auth_protocol,
+  const ss::socket_address& local_address,
+  std::string_view service_name,
+  ss::net::inet_address client_addr,
+  uint16_t client_port,
+  std::optional<std::string_view> client_id,
+  authentication::used_cleartext is_cleartext,
+  const ss::sstring& reason,
+  security::audit::user user);
 
 /// Creates a security::audit::api_activity event from an authorization result
 ///

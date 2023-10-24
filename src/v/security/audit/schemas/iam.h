@@ -19,6 +19,7 @@ class authentication final : public ocsf_base_event<authentication> {
 public:
     using used_cleartext = ss::bool_class<struct used_cleartext_tag>;
     using used_mfa = ss::bool_class<struct used_mfa_tag>;
+
     enum class activity_id : uint8_t {
         unknown = 0,
         logon = 1,
@@ -50,9 +51,11 @@ public:
         other = 99,
     };
 
+    using auth_protocol_variant = std::variant<auth_protocol_id, ss::sstring>;
+
     authentication(
       activity_id activity_id,
-      std::variant<auth_protocol_id, ss::sstring> auth_protocol,
+      auth_protocol_variant auth_protocol,
       network_endpoint dst_endpoint,
       used_cleartext is_cleartext,
       used_mfa mfa,

@@ -56,7 +56,11 @@
 #include "security/audit/schemas/types.h"
 #include "security/audit/types.h"
 #include "security/authorizer.h"
+#include "security/gssapi_authenticator.h"
+#include "security/mtls.h"
+#include "security/oidc_authenticator.h"
 #include "security/request_auth.h"
+#include "security/scram_authenticator.h"
 
 #include <seastar/core/smp.hh>
 
@@ -277,6 +281,35 @@ actor result_to_actor(const security::auth_result& result) {
        .policy = std::move(policy)}};
 
     return {.authorizations = std::move(auths), .user = std::move(user)};
+}
+
+authentication::auth_protocol_variant
+mechanism_string_to_auth_protocol(const ss::sstring& mech) {
+    if (mech.empty()) {
+        return authentication::auth_protocol_id::unknown;
+    }
+    return string_switch<authentication::auth_protocol_variant>(mech)
+      .match(
+        security::scram_sha256_authenticator::name,
+        security::scram_sha256_authenticator::name)
+      .match(
+        security::scram_sha512_authenticator::name,
+        security::scram_sha512_authenticator::name)
+      .match(
+        security::gssapi_authenticator::name,
+        authentication::auth_protocol_id::kerberos)
+      .match(
+        security::oidc::sasl_authenticator::name,
+        authentication::auth_protocol_id::oauth_2_0)
+      .default_match(mech);
+}
+
+user mtls_to_user(const security::tls::mtls_state& mtls_state) {
+    return {
+      .credential_uid = mtls_state.subject().value_or(""),
+      .name = mtls_state.principal().name(),
+      .type_id = user::type::user,
+    };
 }
 
 } // namespace
@@ -502,7 +535,7 @@ authentication make_authentication_event(
   const ss::sstring& svc_name) {
     return {
       authentication::activity_id::logon,
-      r.get_sasl_mechanism(),
+      mechanism_string_to_auth_protocol(r.get_sasl_mechanism()),
       from_ss_endpoint(req.get_server_address(), svc_name),
       boost::iequals(req.get_protocol_name(), "https")
         ? authentication::used_cleartext::no
@@ -516,6 +549,51 @@ authentication make_authentication_event(
       std::nullopt,
       create_timestamp_t<std::chrono::system_clock>(),
       user_from_request_auth_result(r)};
+}
+
+authentication make_authentication_event(
+  const ss::sstring& auth_protocol,
+  const ss::socket_address& local_address,
+  std::string_view service_name,
+  ss::net::inet_address client_addr,
+  uint16_t client_port,
+  std::optional<std::string_view> client_id,
+  authentication::used_cleartext is_cleartext,
+  security::audit::user user) {
+    return {
+      authentication::activity_id::logon,
+      mechanism_string_to_auth_protocol(auth_protocol),
+      from_ss_endpoint(local_address, service_name),
+      is_cleartext,
+      authentication::used_mfa::no,
+      network_endpoint{
+        .addr = net::unresolved_address(
+          fmt::format("{}", client_addr), client_port),
+        .name = ss::sstring(client_id.value_or(""))},
+      service{.name = ss::sstring{service_name}},
+      severity_id::informational,
+      authentication::status_id::success,
+      std::nullopt,
+      create_timestamp_t<std::chrono::system_clock>(),
+      std::move(user)};
+}
+
+authentication make_authentication_event(
+  const security::tls::mtls_state& mtls_state,
+  const ss::socket_address& local_address,
+  std::string_view service_name,
+  ss::net::inet_address client_addr,
+  uint16_t client_port,
+  std::optional<std::string_view> client_id) {
+    return make_authentication_event(
+      "mtls",
+      local_address,
+      service_name,
+      client_addr,
+      client_port,
+      client_id,
+      authentication::used_cleartext::no,
+      mtls_to_user(mtls_state));
 }
 
 authentication make_authentication_failure_event(
@@ -538,6 +616,34 @@ authentication make_authentication_failure_event(
       reason,
       create_timestamp_t<std::chrono::system_clock>(),
       user{.name = r, .type_id = user::type::unknown}};
+}
+
+authentication make_authentication_failure_event(
+  const ss::sstring& auth_protocol,
+  const ss::socket_address& local_address,
+  std::string_view service_name,
+  ss::net::inet_address client_addr,
+  uint16_t client_port,
+  std::optional<std::string_view> client_id,
+  authentication::used_cleartext is_cleartext,
+  const ss::sstring& reason,
+  user user) {
+    return {
+      authentication::activity_id::logon,
+      mechanism_string_to_auth_protocol(auth_protocol),
+      from_ss_endpoint(local_address, service_name),
+      is_cleartext,
+      authentication::used_mfa::no,
+      network_endpoint{
+        .addr = net::unresolved_address(
+          fmt::format("{}", client_addr), client_port),
+        .name = ss::sstring(client_id.value_or(""))},
+      service{.name = ss::sstring{service_name}},
+      severity_id::informational,
+      authentication::status_id::failure,
+      reason,
+      create_timestamp_t<std::chrono::system_clock>(),
+      std::move(user)};
 }
 
 api_activity make_api_activity_event(

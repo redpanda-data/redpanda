@@ -184,7 +184,7 @@ struct user {
     ss::sstring credential_uid;
     ss::sstring domain;
     ss::sstring name;
-    type type_id;
+    type type_id{type::unknown};
 
     auto equality_fields() const {
         return std::tie(credential_uid, domain, name, type_id);
