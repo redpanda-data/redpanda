@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"go.uber.org/zap"
 )
 
 func newAddPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -65,11 +66,19 @@ func newAddPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			for _, resp := range resps.Sorted() {
 				msg := "OK"
+				if resp.ErrMessage != "" {
+					zap.L().Sugar().Debugf("redpanda returned error message: %v", resp.ErrMessage)
+				}
 				if e := resp.Err; e != nil {
 					if errors.Is(e, kerr.InvalidPartitions) && num > 0 {
 						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to add %d partitions due to hardware constraints", num)
 					} else {
 						msg = e.Error()
+						if ke := (*kerr.Error)(nil); errors.As(e, &ke) {
+							if resp.ErrMessage != "" {
+								msg = ke.Message + ": " + resp.ErrMessage
+							}
+						}
 					}
 					exit1 = true
 				}

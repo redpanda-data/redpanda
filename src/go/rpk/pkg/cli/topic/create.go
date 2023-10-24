@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.uber.org/zap"
 )
 
 func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -99,6 +100,9 @@ the cleanup.policy=compact config option set.
 
 			for _, topic := range resp.Topics {
 				msg := "OK"
+				if topic.ErrorMessage != nil {
+					zap.L().Sugar().Debugf("redpanda returned error message: %v", *topic.ErrorMessage)
+				}
 				if err := kerr.ErrorForCode(topic.ErrorCode); err != nil {
 					if errors.Is(err, kerr.InvalidPartitions) && partitions > 0 {
 						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to create topic with %d partitions due to hardware constraints", partitions)
@@ -108,6 +112,11 @@ the cleanup.policy=compact config option set.
 						msg = "INVALID_REPLICATION_FACTOR: replication factor must be odd"
 					} else {
 						msg = err.Error()
+						if ke := (*kerr.Error)(nil); errors.As(err, &ke) {
+							if topic.ErrorMessage != nil {
+								msg = ke.Message + ": " + *topic.ErrorMessage
+							}
+						}
 					}
 					exit1 = true
 				}

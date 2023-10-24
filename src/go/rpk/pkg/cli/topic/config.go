@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.uber.org/zap"
 )
 
 func newAlterConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -154,6 +155,10 @@ valid, but does not apply it.
 						msg = err.Message
 					} else if err := kerr.TypedErrorForCode(rrwErrorCode); err != nil {
 						msg = err.Message
+					}
+					if resource.ErrorMessage != nil {
+						zap.L().Sugar().Debugf("redpanda returned error message: %v", *resource.ErrorMessage)
+						msg += ": " + *resource.ErrorMessage
 					}
 				}
 				tw.Print(resource.ResourceName, msg)
