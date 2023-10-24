@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import signal
 import time
 import requests
 import json
@@ -16,7 +17,9 @@ from collections import defaultdict
 
 from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.tests.test import TestContext
+from ducktape.utils.util import wait_until
 
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.rpk import RpkTool
@@ -89,6 +92,7 @@ class KgoRepeaterService(Service):
         self.compression_type = compression_type
         self.compressible_payload = compressible_payload
 
+        self._pid = None
         self._stopped = False
 
     def clean_node(self, node):
@@ -134,10 +138,51 @@ class KgoRepeaterService(Service):
         if self.compressible_payload is not None:
             cmd += f" -compressible-payload={'true' if self.compressible_payload else 'false'}"
 
-        cmd = f"nohup {cmd} >> {self.LOG_PATH} 2>&1 &"
+        cmd = f"nohup {cmd} >> {self.LOG_PATH} 2>&1 & echo $!"
 
         self.logger.info(f"start_node[{node.name}]: {cmd}")
-        node.account.ssh(cmd)
+        pid_str = node.account.ssh_output(cmd, timeout_sec=10)
+        self.logger.debug(
+            f"spawned {self.who_am_i()} node={node.name} pid={pid_str} port={self.remote_port}"
+        )
+        self._pid = int(pid_str.strip())
+
+        # Wait for status endpoint to respond.
+        self._await_ready(node)
+
+        # Because the above command was run with `nohup` we can't be sure that
+        # it is the one who actually replied to the `await_ready` calls.
+        # Check that the PID we just launched is still running as a confirmation
+        # that it is the one.
+        self._assert_running(node)
+
+    def _await_ready(self, node):
+        """
+        Wait for the remote processes http endpoint to come up
+        """
+
+        wait_until(
+            lambda: self._is_ready(node),
+            timeout_sec=5,
+            backoff_sec=0.5,
+            err_msg=
+            f"Timed out waiting for status endpoint {self.who_am_i()} to be available"
+        )
+
+    def _is_ready(self, node):
+        try:
+            r = requests.get(self._remote_url(node, "status"), timeout=10)
+        except Exception as e:
+            # Broad exception handling for any lower level connection errors etc
+            # that might not be properly classed as `requests` exception.
+            self.logger.debug(
+                f"Status endpoint {self.who_am_i()} not ready: {e}")
+            return False
+        else:
+            return r.status_code == 200
+
+    def _assert_running(self, node):
+        node.account.ssh_output(f"ps -p {self._pid}", allow_fail=False)
 
     def stop(self, *args, **kwargs):
         # On first call to stop, log status from the workers.
@@ -146,7 +191,8 @@ class KgoRepeaterService(Service):
             for node in self.nodes:
                 # This is only advisory, make errors non-fatal
                 try:
-                    r = requests.get(self._remote_url(node, "status"))
+                    r = requests.get(self._remote_url(node, "status"),
+                                     timeout=10)
                     self.logger.debug(
                         f"kgo-repeater status on node {node.name}:")
                     self.logger.debug(json.dumps(r.json(), indent=2))
@@ -159,9 +205,16 @@ class KgoRepeaterService(Service):
         super().stop(*args, **kwargs)
 
     def stop_node(self, node):
-        node.account.kill_process(self.EXE,
-                                  allow_fail=False,
-                                  clean_shutdown=True)
+        if self._pid is None:
+            return
+
+        self.redpanda.logger.info(f"{self.__class__.__name__}.stop")
+        self.logger.debug("Killing pid %s" % {self._pid})
+        try:
+            node.account.signal(self._pid, signal.SIGKILL, allow_fail=False)
+        except RemoteCommandError as e:
+            if b"No such process" not in e.msg:
+                raise
 
     def _remote_url(self, node, path):
         return f"http://{node.account.hostname}:{self.remote_port}/{path}"
@@ -169,7 +222,7 @@ class KgoRepeaterService(Service):
     def remote_to_all(self, path):
         for node in self.nodes:
             self.logger.debug(f"Invoking remote path {path} on {node.name}")
-            r = requests.get(self._remote_url(node, path))
+            r = requests.get(self._remote_url(node, path), timeout=10)
             r.raise_for_status()
 
     def prepare_and_activate(self):
@@ -223,7 +276,8 @@ class KgoRepeaterService(Service):
             # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
             for node in self.nodes:
                 try:
-                    r = requests.get(self._remote_url(node, "print_stack"))
+                    r = requests.get(self._remote_url(node, "print_stack"),
+                                     timeout=10)
                     r.raise_for_status()
                 except Exception as e:
                     # Just log exceptions: we want to proceed with rest of teardown
@@ -263,7 +317,7 @@ class KgoRepeaterService(Service):
         produced = 0
         consumed = 0
         for node in self.nodes:
-            r = requests.get(self._remote_url(node, "status"))
+            r = requests.get(self._remote_url(node, "status"), timeout=10)
             r.raise_for_status()
             node_status = r.json()
             for worker_status in node_status:
