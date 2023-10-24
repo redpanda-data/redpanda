@@ -6,18 +6,22 @@ import requests
 import uuid
 import yaml
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 from ducktape.utils.util import wait_until
 from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients import make_provider_client
 from rptest.services.provider_clients.ec2_client import RTBS_LABEL
+from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
 from urllib.parse import urlparse
 
 rp_profiles_path = os.path.join(os.path.dirname(__file__),
                                 "rp_config_profiles")
 tiers_config_filename = os.path.join(rp_profiles_path,
                                      "redpanda.cloud-tiers-config.yml")
+ns_name_prefix = "rp-ducktape-ns-"
+ns_name_date_fmt = "%Y-%m-%d-%H%M%S-"
 
 
 def load_tier_profiles():
@@ -237,97 +241,6 @@ AdvertisedTierConfigs = {
     ),
 }
 # yapf: enable
-
-
-class RpCloudApiClient(object):
-    def __init__(self, config, log):
-        self._config = config
-        self._token = None
-        self._logger = log
-        self.lasterror = None
-
-    def _handle_error(self, response):
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as e:
-            self.lasterror = f'{e} {response.text}'
-            self._logger.error(self.lasterror)
-            raise e
-        return response
-
-    def _get_token(self):
-        """
-        Returns access token to be used in subsequent api calls to cloud api.
-
-        To save on repeated token generation, this function will cache it in a local variable.
-        Assumes the token has an expiration that will last throughout the usage of this cluster.
-
-        :return: access token as a string
-        """
-
-        if self._token is None:
-            headers = {'Content-Type': "application/x-www-form-urlencoded"}
-            data = {
-                'grant_type': 'client_credentials',
-                'client_id': f'{self._config.oauth_client_id}',
-                'client_secret': f'{self._config.oauth_client_secret}',
-                'audience': f'{self._config.oauth_audience}'
-            }
-            resp = requests.post(f'{self._config.oauth_url}',
-                                 headers=headers,
-                                 data=data)
-            _r = self._handle_error(resp)
-            if _r is None:
-                return _r
-            j = resp.json()
-            self._token = j['access_token']
-        return self._token
-
-    def _http_get(self,
-                  endpoint='',
-                  base_url=None,
-                  override_headers=None,
-                  text_response=False,
-                  **kwargs):
-        headers = override_headers
-        if headers is None:
-            token = self._get_token()
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/json'
-            }
-        _base = base_url if base_url else self._config.api_url
-        resp = requests.get(f'{_base}{endpoint}', headers=headers, **kwargs)
-        _r = self._handle_error(resp)
-        if text_response:
-            return _r if _r is None else _r.text
-        return _r if _r is None else _r.json()
-
-    def _http_post(self, base_url=None, endpoint='', **kwargs):
-        token = self._get_token()
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Accept': 'application/json'
-        }
-        if base_url is None:
-            base_url = self._config.api_url
-        resp = requests.post(f'{base_url}{endpoint}',
-                             headers=headers,
-                             **kwargs)
-        _r = self._handle_error(resp)
-        return _r if _r is None else _r.json()
-
-    def _http_delete(self, endpoint='', **kwargs):
-        token = self._get_token()
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Accept': 'application/json'
-        }
-        resp = requests.delete(f'{self._config.api_url}{endpoint}',
-                               headers=headers,
-                               **kwargs)
-        _r = self._handle_error(resp)
-        return _r if _r is None else _r.json()
 
 
 @dataclass(kw_only=True)
@@ -573,9 +486,15 @@ class CloudCluster():
         else:
             return False if username not in _users else True
 
+    def _format_namespace_name(self):
+        # format namespace name as 'rp-ducktape-ns-YYYY-MM-DD-HHMMSS-3b36f516'
+        _date = datetime.now().strftime(ns_name_date_fmt)
+        # For easier regex parsing, date format has second dash inside
+        return f'{ns_name_prefix}{_date}{self._unique_id}'
+
     def _create_namespace(self):
-        # format namespace name as 'rp-ducktape-ns-3b36f516
-        name = f'rp-ducktape-ns-{self._unique_id}'
+        # fetch namespace name
+        name = self._format_namespace_name()
         self._logger.debug(f'creating namespace name {name}')
         body = {'name': name}
         r = self.cloudv2._http_post(endpoint='/api/v1/namespaces', json=body)
