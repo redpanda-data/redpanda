@@ -749,6 +749,7 @@ class PandaproxyConfig(TlsConfig):
         super(PandaproxyConfig, self).__init__()
         self.cache_keep_alive_ms: Optional[int] = 300000
         self.cache_max_size: Optional[int] = 10
+        self.advertised_api_host: Optional[str] = None
 
 
 class SchemaRegistryConfig(TlsConfig):

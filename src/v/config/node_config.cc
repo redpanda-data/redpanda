@@ -10,6 +10,7 @@
 #include "node_config.h"
 
 #include "config/configuration.h"
+#include "net/unresolved_address.h"
 
 namespace config {
 
@@ -222,6 +223,20 @@ void validate_multi_node_property_config(
                 }
             }
         }
+    }
+
+    for (auto const& ep : cfg.advertised_kafka_api()) {
+        auto err = model::broker_endpoint::validate_not_is_addr_any(ep);
+        if (err) {
+            errors.emplace("advertised_kafka_api", ssx::sformat("{}", *err));
+        }
+    }
+
+    auto rpc_err = model::broker_endpoint::validate_not_is_addr_any(
+      model::broker_endpoint{"", cfg.advertised_rpc_api()});
+
+    if (rpc_err) {
+        errors.emplace("advertised_rpc_api", ssx::sformat("{}", *rpc_err));
     }
 }
 

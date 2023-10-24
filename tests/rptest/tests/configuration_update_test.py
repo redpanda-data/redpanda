@@ -7,9 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
+
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, PandaproxyConfig
 
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -119,6 +121,59 @@ class ConfigurationUpdateTest(RedpandaTest):
                    timeout_sec=60,
                    backoff_sec=2,
                    err_msg="Broker metadata aren't updated")
+
+    @cluster(num_nodes=3,
+             log_allow_list=[re.compile(r'std::invalid_argument')])
+    def test_update_invalid_advertised_api(self):
+        node_1 = self.redpanda.get_node(1)
+        node_2 = self.redpanda.get_node(2)
+        node_3 = self.redpanda.get_node(3)
+
+        # stop all nodes
+        self.redpanda.stop_node(node_1)
+        self.redpanda.stop_node(node_2)
+        self.redpanda.stop_node(node_3)
+
+        def make_new_address(node, port):
+            return dict(address=node.name, port=port)
+
+        altered_cfg_1 = dict(kafka_api=make_new_address(node_1, 10091),
+                             advertised_kafka_api=dict(address="0.0.0.0",
+                                                       port=10091))
+
+        altered_cfg_2 = dict(
+            rpc_server=make_new_address(node_2, ALTERNATIVE_RPC_PORTS[0]),
+            advertised_rpc_api=dict(address="0.0.0.0",
+                                    port=ALTERNATIVE_RPC_PORTS[0]))
+
+        altered_cfg_3 = PandaproxyConfig()
+        altered_cfg_3.advertised_api_host = "0.0.0.0"
+
+        self.redpanda.start_node(node_1,
+                                 override_cfg_params=altered_cfg_1,
+                                 expect_fail=True,
+                                 timeout=10)
+
+        n_err_logs = self.redpanda.count_log_node(
+            node_1, "'advertised_kafka_api' validation error")
+        assert (n_err_logs == 1)
+
+        self.redpanda.start_node(node_2,
+                                 override_cfg_params=altered_cfg_2,
+                                 expect_fail=True,
+                                 timeout=10)
+
+        n_err_logs = self.redpanda.count_log_node(
+            node_2, "'advertised_rpc_api' validation error")
+        assert (n_err_logs == 1)
+
+        self.redpanda.set_pandaproxy_settings(altered_cfg_3)
+
+        self.redpanda.start_node(node_3, expect_fail=True, timeout=10)
+
+        n_err_logs = self.redpanda.count_log_node(
+            node_3, "'advertised_pandaproxy_api' validation error")
+        assert (n_err_logs == 1)
 
     @cluster(num_nodes=3)
     def test_updating_address_after_data_deletion(self):

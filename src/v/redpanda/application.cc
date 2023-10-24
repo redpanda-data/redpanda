@@ -505,6 +505,17 @@ void application::initialize(
 
     if (proxy_cfg) {
         _proxy_config.emplace(*proxy_cfg);
+        for (const auto& e : _proxy_config->errors()) {
+            vlog(
+              _log.warn,
+              "Pandaproxy property '{}' validation error: {}",
+              e.first,
+              e.second);
+        }
+        if (_proxy_config->errors().size() > 0) {
+            throw std::invalid_argument(
+              "Validation errors in pandaproxy config");
+        }
     }
 
     if (proxy_client_cfg) {
@@ -719,6 +730,17 @@ void application::hydrate_config(const po::variables_map& cfg) {
 
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
+        for (const auto& e : _proxy_config->errors()) {
+            vlog(
+              _log.warn,
+              "Pandaproxy property '{}' validation error: {}",
+              e.first,
+              e.second);
+        }
+        if (_proxy_config->errors().size() > 0) {
+            throw std::invalid_argument(
+              "Validation errors in pandaproxy config");
+        }
         if (config["pandaproxy_client"]) {
             _proxy_client_config.emplace(config["pandaproxy_client"]);
         } else {
