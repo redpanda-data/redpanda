@@ -113,8 +113,10 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
         ++attempts;
         co_await ss::sleep_abortable<ss::lowres_clock>(
           backoff.current_backoff_duration(), *as);
-        auto fut = co_await ss::coroutine::as_future<
-          typename std::invoke_result_t<Func>::value_type>(func());
+        using result_type
+          = ss::futurize<typename std::invoke_result_t<Func>>::value_type;
+        auto fut = co_await ss::coroutine::as_future<result_type>(
+          ss::futurize_invoke(func));
         backoff.next_backoff();
         if (fut.failed()) {
             if (attempts < max_client_retries) {
