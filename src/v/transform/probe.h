@@ -13,26 +13,33 @@
 #include "model/transform.h"
 #include "wasm/probe.h"
 
+#include <absl/container/flat_hash_map.h>
+
 namespace transform {
 
-struct probe_gauges {
-    std::function<int64_t(model::transform_report::processor::state)>
-      num_processors;
+struct processor_state_change {
+    using state = model::transform_report::processor::state;
+
+    std::optional<state> from;
+    std::optional<state> to;
 };
 
 /** A per transform probe. */
 class probe : public wasm::transform_probe {
 public:
-    void setup_metrics(ss::sstring transform_name, probe_gauges);
+    void setup_metrics(ss::sstring);
 
     void increment_read_bytes(uint64_t bytes);
     void increment_write_bytes(uint64_t bytes);
     void increment_failure();
+    void state_change(processor_state_change);
 
 private:
     uint64_t _read_bytes = 0;
     uint64_t _write_bytes = 0;
     uint64_t _failures = 0;
+    absl::flat_hash_map<model::transform_report::processor::state, uint64_t>
+      _processor_state;
 };
 
 } // namespace transform

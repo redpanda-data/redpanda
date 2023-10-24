@@ -17,7 +17,7 @@
 
 namespace transform {
 
-void probe::setup_metrics(ss::sstring transform_name, probe_gauges gauges) {
+void probe::setup_metrics(ss::sstring transform_name) {
     wasm::transform_probe::setup_metrics(transform_name);
     namespace sm = ss::metrics;
 
@@ -60,7 +60,7 @@ void probe::setup_metrics(ss::sstring transform_name, probe_gauges gauges) {
         metric_defs.emplace_back(
           sm::make_gauge(
             "processor_state",
-            [s, cb = gauges.num_processors] { return cb(s); },
+            [this, s] { return _processor_state[s]; },
             sm::description(
               "The count of transform processors in a certain state"),
             state_labels)
@@ -72,4 +72,12 @@ void probe::setup_metrics(ss::sstring transform_name, probe_gauges gauges) {
 void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
 void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
 void probe::increment_failure() { ++_failures; }
+void probe::state_change(processor_state_change change) {
+    if (change.from) {
+        _processor_state[*change.from] -= 1;
+    }
+    if (change.to) {
+        _processor_state[*change.to] += 1;
+    }
+}
 } // namespace transform

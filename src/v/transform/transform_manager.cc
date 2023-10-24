@@ -45,6 +45,7 @@
 
 namespace transform {
 
+using state = model::transform_report::processor::state;
 using namespace std::chrono_literals;
 
 namespace {
@@ -103,7 +104,27 @@ public:
           std::unique_ptr<transform::processor> processor,
           ss::lw_shared_ptr<transform::probe> probe)
           : _processor(std::move(processor))
-          , _probe(std::move(probe)) {}
+          , _probe(std::move(probe))
+          , _current_state(state::inactive) {
+            _probe->state_change({.to = _current_state});
+        }
+        entry_t(const entry_t&) = delete;
+        entry_t& operator=(const entry_t&) = delete;
+        entry_t(entry_t&& e) noexcept
+          : _processor(std::move(e._processor))
+          , _probe(std::move(e._probe))
+          , _backoff(std::move(e._backoff))
+          , _current_state(e._current_state) {
+            e._current_state = std::nullopt;
+        }
+        entry_t& operator=(entry_t&& e) noexcept {
+            _processor = std::move(e._processor);
+            _probe = std::move(e._probe);
+            _backoff = std::move(e._backoff);
+            _current_state = std::exchange(e._current_state, std::nullopt);
+            return *this;
+        }
+        ~entry_t() { _probe->state_change({.from = _current_state}); }
 
         transform::processor* processor() const { return _processor.get(); }
         const ss::lw_shared_ptr<transform::probe>& probe() const {
@@ -111,27 +132,32 @@ public:
         }
 
         ClockType::duration next_backoff_duration() {
-            _is_errored = true;
+            _probe->state_change(
+              {.from = _current_state, .to = state::errored});
+            _current_state = state::errored;
             return _backoff.next_backoff_duration();
         }
         void mark_start_attempt() {
-            _is_errored = false;
+            _probe->state_change(
+              {.from = _current_state, .to = state::inactive});
+            _current_state = state::inactive;
             _backoff.mark_start_attempt();
         }
-
-        model::transform_report::processor::state compute_state() const {
-            using state = model::transform_report::processor::state;
-            if (_processor->is_running()) {
-                return state::running;
-            }
-            return _is_errored ? state::errored : state::inactive;
+        void mark_running() {
+            _probe->state_change(
+              {.from = _current_state, .to = state::running});
+            _current_state = state::running;
         }
+        std::optional<state> current_state() const { return _current_state; }
 
     private:
         std::unique_ptr<transform::processor> _processor;
         ss::lw_shared_ptr<transform::probe> _probe;
         processor_backoff<ClockType> _backoff;
-        bool _is_errored = false;
+        // This is optional so that the entry can be moved, when moved
+        // std::optional is made std::nullopt, we do this so that on destruction
+        // we don't mis-account any states in the probe.
+        std::optional<state> _current_state;
     };
 
     auto range() const { return std::make_pair(_table.begin(), _table.end()); }
@@ -156,16 +182,7 @@ public:
             return it->second.probe();
         }
         auto probe = ss::make_lw_shared<transform::probe>();
-        probe->setup_metrics(
-          meta.name(),
-          {
-            .num_processors =
-              [this](auto state) {
-                  return absl::c_count_if(_table, [state](const auto& entry) {
-                      return entry.second.compute_state() == state;
-                  });
-              },
-          });
+        probe->setup_metrics(meta.name());
         return probe;
     }
 
@@ -348,8 +365,8 @@ ss::future<> manager<ClockType>::handle_transform_error(
         co_return;
     }
     entry->probe()->increment_failure();
-    co_await entry->processor()->stop();
     auto delay = entry->next_backoff_duration();
+    co_await entry->processor()->stop();
     vlog(
       tlog.info,
       "transform {} errored on partition {}, delaying for {} then restarting",
@@ -426,6 +443,7 @@ ss::future<> manager<ClockType>::create_processor(
         vlog(tlog.info, "starting transform {} on {}", meta.name, ntp);
         entry.mark_start_attempt();
         co_await entry.processor()->start();
+        entry.mark_running();
     }
 }
 
@@ -449,13 +467,16 @@ model::cluster_transform_report manager<ClockType>::compute_report() const {
         const auto& entry = it->second;
         processor* p = entry.processor();
         auto id = p->ntp().tp.partition;
-
+        auto state = entry.current_state();
+        if (!state) {
+            continue;
+        }
         report.add(
           p->id(),
           p->meta(),
           {
             .id = id,
-            .status = entry.compute_state(),
+            .status = *state,
             .node = _self,
           });
     }
