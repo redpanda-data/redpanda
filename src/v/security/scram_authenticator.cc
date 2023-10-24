@@ -26,6 +26,7 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
 
     // lookup credentials for this user
     auto authid = _client_first->username_normalized();
+    _audit_user.name = authid;
     auto credential = _credentials.get<scram_credential>(
       credential_user(authid));
     if (!credential) {
@@ -34,6 +35,8 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     _principal = credential->principal().value_or(
       acl_principal{principal_type::user, authid});
     _credential = std::make_unique<scram_credential>(std::move(*credential));
+    _audit_user.name = _principal.name();
+    _audit_user.type_id = audit::user::type::user;
 
     if (
       !_client_first->authzid().empty() && _client_first->authzid() != authid) {

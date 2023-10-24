@@ -10,6 +10,7 @@
 #include "bytes/bytes.h"
 #include "outcome.h"
 #include "security/acl.h"
+#include "security/audit/schemas/types.h"
 #include "vassert.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -35,6 +36,8 @@ public:
     credential_expires_in_ms() const {
         return std::nullopt;
     }
+    virtual const audit::user& audit_user() const = 0;
+    virtual const char* mechanism_name() const = 0;
 };
 
 /*
