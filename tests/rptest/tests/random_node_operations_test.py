@@ -123,7 +123,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         if with_tiered_storage:
             si_settings = SISettings(self.test_context,
                                      cloud_storage_enable_remote_read=True,
-                                     cloud_storage_enable_remote_write=True)
+                                     cloud_storage_enable_remote_write=True,
+                                     fast_uploads=True)
             # since this test is deleting topics we must tolerate missing manifests
             si_settings.set_expected_damage(
                 {"ntr_no_topic_manifest", "ntpr_no_manifest"})
@@ -254,27 +255,15 @@ class RandomNodeOperationsTest(PreallocNodesTest):
              log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
             num_to_upgrade=[0, 3],
-            enable_controller_snapshots=[True, False],
             with_tiered_storage=[True, False])
     def test_node_operations(self, enable_failures, num_to_upgrade,
-                             enable_controller_snapshots, with_tiered_storage):
+                             with_tiered_storage):
 
         lock = threading.Lock()
         default_segment_size = 1024 * 1024
 
-        # do not test controller snapshots with older versions
-        # as they do not support it
-        if num_to_upgrade > 0 and enable_controller_snapshots:
-            cleanup_on_early_exit(self)
-            return
-
         # setup test case scale parameters
         self._setup_test_scale(num_to_upgrade)
-
-        if not enable_controller_snapshots:
-            # Without snapshots, there is not bound on how large
-            # the controller log may grow.
-            self.redpanda.set_expected_controller_records(None)
 
         if self.should_skip:
             cleanup_on_early_exit(self)
@@ -283,13 +272,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # start redpanda process
         self._start_redpanda(num_to_upgrade,
                              with_tiered_storage=with_tiered_storage)
-
-        admin = Admin(self.redpanda)
-        if enable_controller_snapshots:
-            self.redpanda.set_cluster_config(
-                {"controller_snapshot_max_age_sec": 1})
-        else:
-            admin.put_feature("controller_snapshots", {"state": "disabled"})
+        self.redpanda.set_cluster_config(
+            {"controller_snapshot_max_age_sec": 1})
 
         # create some initial topics
         self._create_topics(10)
