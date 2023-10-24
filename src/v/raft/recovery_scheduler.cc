@@ -14,6 +14,8 @@
 #include "seastar/core/coroutine.hh"
 #include "vassert.h"
 
+#include <seastar/core/metrics.hh>
+
 namespace raft {
 
 follower_recovery_state::follower_recovery_state(
@@ -360,41 +362,44 @@ recovery_status recovery_scheduler_base::get_status() {
 void recovery_scheduler_base::setup_metrics() {
     namespace sm = ss::metrics;
 
-    auto setup = [this](ssx::metrics::metric_groups& metrics) {
+    auto setup = [this](const std::vector<sm::label>& aggregate_labels) {
+        std::vector<ss::metrics::metric_definition> defs;
+        defs.emplace_back(
+          sm::make_gauge(
+            "partitions_to_recover",
+            [this] { return _active.size() + _pending.size(); },
+            sm::description("Number of partition replicas that have to "
+                            "recover for this node."))
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_gauge(
+            "partitions_active",
+            [this] { return _active.size(); },
+            sm::description("Number of partition replicas are currently "
+                            "recovering on this node."))
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_gauge(
+            "offsets_pending",
+            [this] { return _offsets_pending; },
+            sm::description("Sum of offsets that partitions on this node "
+                            "need to recover."))
+            .aggregate(aggregate_labels));
+
+        return defs;
+    };
+
+    auto group_name = prometheus_sanitize::metrics_name("raft:recovery");
+
+    if (!config::shard_local_cfg().disable_metrics()) {
         auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
                                   ? std::vector<sm::label>{sm::shard_label}
                                   : std::vector<sm::label>{};
-
-        metrics.add_group(
-          prometheus_sanitize::metrics_name("raft:recovery"),
-          {
-            sm::make_gauge(
-              "partitions_to_recover",
-              [this] { return _active.size() + _pending.size(); },
-              sm::description("Number of partition replicas that have to "
-                              "recover for this node."))
-              .aggregate(aggregate_labels),
-            sm::make_gauge(
-              "partitions_active",
-              [this] { return _active.size(); },
-              sm::description("Number of partition replicas are currently "
-                              "recovering on this node."))
-              .aggregate(aggregate_labels),
-            sm::make_gauge(
-              "offsets_pending",
-              [this] { return _offsets_pending; },
-              sm::description("Sum of offsets that partitions on this node "
-                              "need to recover."))
-              .aggregate(aggregate_labels),
-          });
-    };
-
-    if (!config::shard_local_cfg().disable_metrics()) {
-        setup(_metrics);
+        _metrics.add_group(group_name, setup(aggregate_labels));
     }
 
     if (!config::shard_local_cfg().disable_public_metrics()) {
-        setup(_public_metrics);
+        _public_metrics.add_group(group_name, setup({sm::shard_label}));
     }
 }
 
