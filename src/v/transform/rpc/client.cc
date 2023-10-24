@@ -21,6 +21,7 @@
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "raft/errc.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
@@ -33,8 +34,10 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/map_reduce.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -98,12 +101,20 @@ cluster::errc map_errc(std::error_code ec) {
 }
 
 template<typename Func>
-std::invoke_result_t<Func> retry(Func func) {
+std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
+    constexpr auto base_backoff_duration = 100ms;
+    constexpr auto max_backoff_duration = base_backoff_duration
+                                          * max_client_retries;
+    auto backoff = ::rpc::make_exponential_backoff_policy<ss::lowres_clock>(
+      base_backoff_duration, max_backoff_duration);
     int attempts = 0;
     while (true) {
         ++attempts;
+        co_await ss::sleep_abortable<ss::lowres_clock>(
+          backoff.current_backoff_duration(), *as);
         auto fut = co_await ss::coroutine::as_future<
           typename std::invoke_result_t<Func>::value_type>(func());
+        backoff.next_backoff();
         if (fut.failed()) {
             if (attempts < max_client_retries) {
                 co_return co_await std::move(fut);
@@ -187,7 +198,10 @@ ss::future<cluster::errc> client::do_produce_once(produce_request req) {
     co_return reply.results.front().err;
 }
 
-ss::future<> client::stop() { return ss::now(); }
+ss::future<> client::stop() {
+    _as.request_abort();
+    return ss::now();
+}
 
 ss::future<produce_reply> client::do_local_produce(produce_request req) {
     auto r = co_await _local_service->local().produce(
@@ -670,6 +684,11 @@ client::generate_remote_report(model::node_id node) {
         co_return map_errc(resp.error());
     }
     co_return std::move(resp).value().report;
+}
+
+template<typename Func>
+std::invoke_result_t<Func> client::retry(Func&& func) {
+    return retry_with_backoff(std::forward<Func>(func), &_as);
 }
 
 } // namespace transform::rpc

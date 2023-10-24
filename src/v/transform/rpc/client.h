@@ -28,6 +28,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <memory>
+#include <type_traits>
 
 namespace transform::rpc {
 
@@ -137,6 +138,9 @@ private:
     ss::future<offset_fetch_response>
       do_remote_offset_fetch(model::node_id, offset_fetch_request);
 
+    template<typename Func>
+    std::invoke_result_t<Func> retry(Func&&);
+
     model::node_id _self;
     std::unique_ptr<cluster_members_cache> _cluster_members;
     // need partition_leaders_table to know which node owns the partitions
@@ -145,6 +149,7 @@ private:
     std::unique_ptr<topic_creator> _topic_creator;
     ss::sharded<::rpc::connection_cache>* _connections;
     ss::sharded<local_service>* _local_service;
+    ss::abort_source _as;
 };
 
 } // namespace transform::rpc
