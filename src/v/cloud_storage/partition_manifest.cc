@@ -855,6 +855,10 @@ model::timestamp partition_manifest::last_partition_scrub() const {
     return _last_partition_scrub;
 }
 
+std::optional<model::offset> partition_manifest::last_scrubbed_offset() const {
+    return _last_scrubbed_offset;
+}
+
 const anomalies& partition_manifest::detected_anomalies() const {
     return _detected_anomalies;
 }
@@ -1122,6 +1126,7 @@ partition_manifest partition_manifest::clone() const {
       _archive_size_bytes,
       spillover,
       _last_partition_scrub,
+      _last_scrubbed_offset,
       _detected_anomalies);
     return tmp;
 }
@@ -1496,6 +1501,8 @@ struct partition_manifest_handler
                 _archive_size_bytes = u;
             } else if (_manifest_key == "last_partition_scrub") {
                 _last_partition_scrub = model::timestamp(u);
+            } else if (_manifest_key == "last_scrubbed_offset") {
+                _last_scrubbed_offset = model::offset(u);
             } else {
                 return false;
             }
@@ -1826,6 +1833,7 @@ struct partition_manifest_handler
     std::optional<kafka::offset> _start_kafka_offset;
     std::optional<size_t> _archive_size_bytes;
     std::optional<model::timestamp> _last_partition_scrub;
+    std::optional<model::offset> _last_scrubbed_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -2049,6 +2057,8 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
 
     _last_partition_scrub = handler._last_partition_scrub.value_or(
       model::timestamp::missing());
+
+    _last_scrubbed_offset = handler._last_scrubbed_offset;
 }
 
 // This object is supposed to track state of the asynchronous
@@ -2188,6 +2198,10 @@ void partition_manifest::serialize_begin(
     if (_last_partition_scrub != model::timestamp::missing()) {
         w.Key("last_partition_scrub");
         w.Int64(static_cast<int64_t>(_last_partition_scrub()));
+    }
+    if (_last_scrubbed_offset != std::nullopt) {
+        w.Key("last_scrubbed_offset");
+        w.Int64(static_cast<int64_t>(*_last_scrubbed_offset));
     }
     cursor->prologue_done = true;
 }
@@ -2564,6 +2578,7 @@ struct partition_manifest_serde
     size_t archive_size_bytes;
     iobuf _spillover_manifests_serialized;
     model::timestamp _last_partition_scrub;
+    std::optional<model::offset> _last_scrubbed_offset;
 };
 
 static_assert(
@@ -2641,7 +2656,10 @@ void partition_manifest::from_iobuf(iobuf in) {
 }
 
 void partition_manifest::process_anomalies(
-  model::timestamp scrub_timestamp, scrub_status status, anomalies detected) {
+  model::timestamp scrub_timestamp,
+  std::optional<model::offset> last_scrubbed_offset,
+  scrub_status status,
+  anomalies detected) {
     // Firstly, update the in memory list of anomalies.
     // If the entires log was scrubbed, overwrite the old anomalies,
     // otherwise append to them.
@@ -2673,11 +2691,17 @@ void partition_manifest::process_anomalies(
             return true;
         }
 
-        // The segment might have been missing because it was merged with
-        // something else. If the offset range doesn't match a segment exactly,
-        // discard the anomaly.
-        return !segment_with_offset_range_exists(
-          meta.base_offset, meta.committed_offset);
+        if (meta.committed_offset >= get_start_offset()) {
+            // The segment might have been missing because it was merged with
+            // something else. If the offset range doesn't match a segment
+            // exactly, discard the anomaly. Only segments from the STM manifest
+            // may be merged/reuploaded.
+            return !segment_with_offset_range_exists(
+              meta.base_offset, meta.committed_offset);
+        } else {
+            // Segment belongs to the archive. No reuploads are done here.
+            return false;
+        }
     });
 
     auto& segment_meta_anomalies
@@ -2689,13 +2713,27 @@ void partition_manifest::process_anomalies(
               return true;
           }
 
-          // Similarly to the missing segment case, if the boundaries of the
-          // segment where the anomaly was detected changed, drop it.
-          return !segment_with_offset_range_exists(
-            anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
+          if (anomaly_meta.at.committed_offset >= get_start_offset()) {
+              // Similarly to the missing segment case, if the boundaries of the
+              // segment where the anomaly was detected changed, drop it.
+              return !segment_with_offset_range_exists(
+                anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
+          } else {
+              return false;
+          }
       });
 
     _last_partition_scrub = scrub_timestamp;
+    _last_scrubbed_offset = last_scrubbed_offset;
+
+    vlog(
+      cst_log.debug,
+      "[{}] Anomalies processed: {{ detected: {}, last_partition_scrub: {}, "
+      "last_scrubbed_offset: {} }}",
+      _ntp,
+      _detected_anomalies,
+      _last_partition_scrub,
+      _last_scrubbed_offset);
 }
 
 } // namespace cloud_storage

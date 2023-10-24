@@ -153,6 +153,8 @@ struct archival_metadata_stm::process_anomalies_cmd {
     struct value
       : serde::envelope<value, serde::version<0>, serde::compat_version<0>> {
         model::timestamp scrub_timestamp;
+        std::optional<model::offset> last_scrubbed_offset;
+
         cloud_storage::scrub_status status;
         cloud_storage::anomalies detected;
     };
@@ -197,6 +199,8 @@ struct archival_metadata_stm::snapshot
     fragmented_vector<segment> spillover_manifests;
     // Timestamp of last completed scrub
     model::timestamp last_partition_scrub;
+    // Offest at which the previous scrubbing stopped
+    std::optional<model::offset> last_scrubbed_offset;
     // Anomalies detected by the scrubber
     cloud_storage::anomalies detected_anomalies;
 };
@@ -266,12 +270,14 @@ command_batch_builder::replace_manifest(iobuf replacement) {
 
 command_batch_builder& command_batch_builder::process_anomalies(
   model::timestamp scrub_timestamp,
+  std::optional<model::offset> last_scrubbed_offset,
   cloud_storage::scrub_status status,
   cloud_storage::anomalies detected) {
     iobuf key_buf = serde::to_iobuf(
       archival_metadata_stm::process_anomalies_cmd::key);
     auto record_val = archival_metadata_stm::process_anomalies_cmd::value{
       .scrub_timestamp = scrub_timestamp,
+      .last_scrubbed_offset = last_scrubbed_offset,
       .status = status,
       .detected = std::move(detected)};
     _builder.add_raw_kv(
@@ -611,12 +617,14 @@ ss::future<std::error_code> archival_metadata_stm::cleanup_metadata(
 
 ss::future<std::error_code> archival_metadata_stm::process_anomalies(
   model::timestamp scrub_timestamp,
+  std::optional<model::offset> last_scrubbed_offset,
   cloud_storage::scrub_status status,
   cloud_storage::anomalies detected,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
     auto builder = batch_start(deadline, as);
-    builder.process_anomalies(scrub_timestamp, status, std::move(detected));
+    builder.process_anomalies(
+      scrub_timestamp, last_scrubbed_offset, status, std::move(detected));
     co_return co_await builder.replicate();
 }
 
@@ -1086,6 +1094,7 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       snap.archive_size_bytes,
       snap.spillover_manifests,
       snap.last_partition_scrub,
+      snap.last_scrubbed_offset,
       snap.detected_anomalies);
 
     vlog(
@@ -1125,6 +1134,7 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
       .start_kafka_offset = _manifest->get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover),
       .last_partition_scrub = _manifest->last_partition_scrub(),
+      .last_scrubbed_offset = _manifest->last_scrubbed_offset(),
       .detected_anomalies = _manifest->detected_anomalies()});
 
     vlog(
@@ -1336,7 +1346,10 @@ void archival_metadata_stm::apply_process_anomalies(iobuf buf) {
           std::move(buf));
         vlog(_logger.debug, "Processing anomalies: {}", cmd.detected);
         _manifest->process_anomalies(
-          cmd.scrub_timestamp, cmd.status, std::move(cmd.detected));
+          cmd.scrub_timestamp,
+          cmd.last_scrubbed_offset,
+          cmd.status,
+          std::move(cmd.detected));
     } catch (...) {
         vlog(
           _logger.error,

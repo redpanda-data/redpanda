@@ -154,6 +154,7 @@ public:
       uint64_t archive_size_bytes,
       const fragmented_vector<segment_t>& spillover,
       model::timestamp last_partition_scrub,
+      std::optional<model::offset> last_scrubbed_offset,
       anomalies detected_anomalies)
       : _ntp(std::move(ntp))
       , _rev(rev)
@@ -169,6 +170,7 @@ public:
       , _start_kafka_offset_override(start_kafka_offset)
       , _archive_size_bytes(archive_size_bytes)
       , _last_partition_scrub(last_partition_scrub)
+      , _last_scrubbed_offset(last_scrubbed_offset)
       , _detected_anomalies(std::move(detected_anomalies)) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
@@ -456,6 +458,8 @@ public:
 
     model::timestamp last_partition_scrub() const;
 
+    std::optional<model::offset> last_scrubbed_offset() const;
+
     const anomalies& detected_anomalies() const;
 
     /// Removes all replaced segments from the manifest.
@@ -510,7 +514,8 @@ public:
           _start_kafka_offset_override,
           _archive_size_bytes,
           _spillover_manifests,
-          _last_partition_scrub);
+          _last_partition_scrub,
+          _last_scrubbed_offset);
     }
     auto serde_fields() const {
         // this list excludes _mem_tracker, which is not serialized
@@ -530,7 +535,8 @@ public:
           _start_kafka_offset_override,
           _archive_size_bytes,
           _spillover_manifests,
-          _last_partition_scrub);
+          _last_partition_scrub,
+          _last_scrubbed_offset);
     }
 
     /// Compare two manifests for equality. Don't compare the mem_tracker.
@@ -544,6 +550,7 @@ public:
 
     void process_anomalies(
       model::timestamp scrub_timestamp,
+      std::optional<model::offset> last_scrubbed_offset,
       scrub_status status,
       anomalies detected);
 
@@ -630,6 +637,12 @@ private:
     spillover_manifest_map _spillover_manifests;
     // Timestamps at which the last partition scrub completed
     model::timestamp _last_partition_scrub;
+    // Last offset proccessed in the most recent scrubber run.
+    // Null if the last scrub reached the end of the log.
+    // Note that this offset is not linear. The scrubber will process
+    // each manifest from newest to oldest and the data within each
+    // manifest is processed from oldest to newest.
+    std::optional<model::offset> _last_scrubbed_offset;
 
     // The starting offset for a Kafka batch in the segment that corresponds
     // with `_start_offset`. This value is computed from

@@ -559,6 +559,7 @@ ss::future<bool> ntp_archiver::sync_for_tests() {
 
 ss::future<std::error_code> ntp_archiver::process_anomalies(
   model::timestamp scrub_timestamp,
+  std::optional<model::offset> last_scrubbed_offset,
   cloud_storage::scrub_status status,
   cloud_storage::anomalies detected) {
     // If there's ongoing housekeeping job, let it finish first.
@@ -569,7 +570,12 @@ ss::future<std::error_code> ntp_archiver::process_anomalies(
     auto deadline = ss::lowres_clock::now() + sync_timeout;
 
     auto error = co_await _parent.archival_meta_stm()->process_anomalies(
-      scrub_timestamp, status, std::move(detected), deadline, _as);
+      scrub_timestamp,
+      last_scrubbed_offset,
+      status,
+      std::move(detected),
+      deadline,
+      _as);
     if (error != cluster::errc::success) {
         vlog(
           _rtclog.warn,

@@ -46,20 +46,28 @@ public:
 
     struct result {
         scrub_status status{scrub_status::full};
+        std::optional<model::offset> last_scrubbed_offset;
         anomalies detected;
         int32_t ops{0};
 
         result& operator+=(result&&);
     };
 
-    ss::future<result> run(retry_chain_node&, archival::run_quota_t);
+    ss::future<result> run(
+      retry_chain_node&,
+      archival::run_quota_t,
+      std::optional<model::offset> = std::nullopt);
 
 private:
     ss::future<std::optional<spillover_manifest>> download_spill_manifest(
       const ss::sstring& path, retry_chain_node& rtc_node);
 
-    ss::future<> check_manifest(
-      const partition_manifest& manifest, retry_chain_node& rtc_node);
+    using stop_detector = ss::bool_class<struct stop_detector_tag>;
+
+    ss::future<stop_detector> check_manifest(
+      const partition_manifest& manifest,
+      std::optional<model::offset>,
+      retry_chain_node& rtc_node);
 
     bool should_stop() const;
 

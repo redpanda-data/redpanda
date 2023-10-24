@@ -31,7 +31,9 @@ anomalies_detector::anomalies_detector(
   , _as(as) {}
 
 ss::future<anomalies_detector::result> anomalies_detector::run(
-  retry_chain_node& rtc_node, archival::run_quota_t quota) {
+  retry_chain_node& rtc_node,
+  archival::run_quota_t quota,
+  std::optional<model::offset> scrub_from) {
     _result = result{};
     _received_quota = quota;
 
@@ -88,8 +90,10 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         _result.detected.missing_partition_manifest = true;
     }
 
-    co_await check_manifest(manifest, rtc_node);
-    if (should_stop()) {
+    const auto stop_at_stm = co_await check_manifest(
+      manifest, scrub_from, rtc_node);
+    if (stop_at_stm == stop_detector::yes) {
+        _result.status = scrub_status::partial;
         co_return _result;
     }
 
@@ -98,15 +102,14 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         first_seg_previous_manifest = *manifest.begin();
     }
 
-    for (const auto& spill_manifest_path : spill_manifest_paths) {
+    for (size_t i = 0; i < spill_manifest_paths.size(); ++i) {
         if (should_stop()) {
             _result.status = scrub_status::partial;
             co_return _result;
         }
 
-        ++_result.ops;
         const auto spill = co_await download_spill_manifest(
-          spill_manifest_path, rtc_node);
+          spill_manifest_paths[i], rtc_node);
         if (spill) {
             // Check adjacent segments which have a manifest
             // boundary between them.
@@ -118,8 +121,10 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
                   _result.detected.segment_metadata_anomalies);
             }
 
-            co_await check_manifest(*spill, rtc_node);
-            if (should_stop()) {
+            const auto stop_at_spill = co_await check_manifest(
+              *spill, scrub_from, rtc_node);
+            if (stop_at_spill == stop_detector::yes) {
+                _result.status = scrub_status::partial;
                 co_return _result;
             }
 
@@ -129,12 +134,17 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
                 vlog(
                   _logger.warn,
                   "Empty spillover manifest at {}",
-                  spill_manifest_path);
+                  spill_manifest_paths[i]);
             }
         } else {
             _result.status = scrub_status::partial;
             first_seg_previous_manifest = std::nullopt;
         }
+    }
+
+    _result.last_scrubbed_offset = std::nullopt;
+    if (scrub_from) {
+        _result.status = scrub_status::partial;
     }
 
     co_return _result;
@@ -144,6 +154,8 @@ ss::future<std::optional<spillover_manifest>>
 anomalies_detector::download_spill_manifest(
   const ss::sstring& path, retry_chain_node& rtc_node) {
     vlog(_logger.debug, "Downloading spillover manifest {}", path);
+
+    ++_result.ops;
 
     spillover_manifest spill{_ntp, _initial_rev};
     auto manifest_get_result = co_await _remote.download_manifest(
@@ -161,16 +173,42 @@ anomalies_detector::download_spill_manifest(
     co_return spill;
 }
 
-ss::future<> anomalies_detector::check_manifest(
-  const partition_manifest& manifest, retry_chain_node& rtc_node) {
+ss::future<anomalies_detector::stop_detector>
+anomalies_detector::check_manifest(
+  const partition_manifest& manifest,
+  std::optional<model::offset> scrub_from,
+  retry_chain_node& rtc_node) {
     vlog(_logger.debug, "Checking manifest {}", manifest.get_manifest_path());
+    if (
+      scrub_from
+      && (manifest.get_start_offset() > *scrub_from || manifest.get_last_offset() == scrub_from)) {
+        vlog(
+          _logger.debug,
+          "Manifest with offset range [{}, {}] ({}) is above the scrub "
+          "starting offset ({}), so it has been scrubed already. "
+          "Skipping ...",
+          manifest.get_start_offset(),
+          manifest.get_last_offset(),
+          manifest.get_manifest_path(),
+          scrub_from);
 
+        co_return stop_detector::no;
+    }
+
+    auto seg_iter = manifest.begin();
     std::optional<segment_meta> previous_seg_meta;
-    for (auto seg_iter = manifest.begin(); seg_iter != manifest.end();
-         ++seg_iter) {
+    if (scrub_from && manifest.get_last_offset() > scrub_from) {
+        if (auto iter = manifest.segment_containing(*scrub_from);
+            iter != manifest.end()) {
+            previous_seg_meta = *iter;
+            seg_iter = std::move(++iter);
+        }
+    }
+
+    for (; seg_iter != manifest.end(); ++seg_iter) {
         if (should_stop()) {
             _result.status = scrub_status::partial;
-            co_return;
+            co_return stop_detector::yes;
         }
 
         const auto seg_meta = *seg_iter;
@@ -196,12 +234,16 @@ ss::future<> anomalies_detector::check_manifest(
           previous_seg_meta,
           _result.detected.segment_metadata_anomalies);
         previous_seg_meta = seg_meta;
+
+        _result.last_scrubbed_offset = seg_meta.committed_offset;
     }
 
     vlog(
       _logger.debug,
       "Finished checking manifest {}",
       manifest.get_manifest_path());
+
+    co_return stop_detector::no;
 }
 
 bool anomalies_detector::should_stop() const {
@@ -210,7 +252,10 @@ bool anomalies_detector::should_stop() const {
     }
 
     if (archival::run_quota_t{_result.ops} > _received_quota) {
-        return true;
+        // Allow the scrubbing of one segment even if that means
+        // going above the quota in order to ensure some forward
+        // progress in all quota cases.
+        return _result.last_scrubbed_offset.has_value();
     }
 
     return false;
@@ -230,6 +275,7 @@ anomalies_detector::result::operator+=(anomalies_detector::result&& other) {
     }
 
     ops += other.ops;
+    last_scrubbed_offset = other.last_scrubbed_offset;
     detected += std::move(other.detected);
 
     return *this;
