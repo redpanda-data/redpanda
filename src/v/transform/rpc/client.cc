@@ -46,6 +46,7 @@
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <boost/fusion/sequence/intrinsic/back.hpp>
+#include <boost/outcome/basic_result.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -147,6 +148,17 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
     __builtin_unreachable();
 }
 
+template<typename T>
+requires outcome::is_basic_result_v<T>
+std::ostream& operator<<(std::ostream& os, T result) {
+    if (result.has_value()) {
+        return fmt::print(os, "{{ value: {} }}", result.value());
+    } else {
+        return fmt::print(os, "{{ error: {} }}", result.error());
+    }
+    return os;
+}
+
 } // namespace
 
 client::client(
@@ -167,7 +179,6 @@ client::client(
 
 ss::future<cluster::errc> client::produce(
   model::topic_partition tp, ss::chunked_fifo<model::record_batch> batches) {
-    vlog(log.trace, "producing {} batches to {}", batches.size(), tp);
     produce_request req;
     req.topic_data.emplace_back(std::move(tp), std::move(batches));
     req.timeout = timeout;
@@ -187,9 +198,11 @@ ss::future<cluster::errc> client::do_produce_once(produce_request req) {
     if (!leader) {
         co_return cluster::errc::not_leader;
     }
+    vlog(log.trace, "do_produce_once_request(node={}): {}", *leader, req);
     auto reply = co_await (
       *leader == _self ? do_local_produce(std::move(req))
                        : do_remote_produce(*leader, std::move(req)));
+    vlog(log.trace, "do_produce_once_reply(node={}): {}", *leader, req);
     vassert(
       reply.results.size() == 1,
       "expected a single result: {}",
@@ -251,10 +264,21 @@ client::do_store_wasm_binary_once(
     if (!leader) {
         co_return cluster::errc::not_leader;
     }
-    co_return co_await (
+    vlog(
+      log.trace,
+      "do_store_wasm_binary_once_request(node={}): size={}",
+      *leader,
+      data.size_bytes());
+    auto reply = co_await (
       leader == _self
         ? do_local_store_wasm_binary(std::move(data), timeout)
         : do_remote_store_wasm_binary(*leader, std::move(data), timeout));
+    vlog(
+      log.trace,
+      "do_store_wasm_binary_once_response(node={}): {}",
+      *leader,
+      reply);
+    co_return reply;
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
@@ -303,9 +327,20 @@ ss::future<cluster::errc> client::do_delete_wasm_binary_once(
     if (!leader) {
         co_return cluster::errc::not_leader;
     }
-    co_return co_await (
+    vlog(
+      log.trace,
+      "do_delete_wasm_binary_once_request(node={}): {}",
+      *leader,
+      key);
+    auto reply = co_await (
       leader == _self ? do_local_delete_wasm_binary(key, timeout)
                       : do_remote_delete_wasm_binary(*leader, key, timeout));
+    vlog(
+      log.trace,
+      "do_delete_wasm_binary_once_response(node={}): {}",
+      *leader,
+      reply);
+    co_return reply;
 }
 
 ss::future<cluster::errc> client::do_local_delete_wasm_binary(
@@ -347,9 +382,20 @@ ss::future<result<iobuf, cluster::errc>> client::do_load_wasm_binary_once(
     if (!leader) {
         co_return cluster::errc::not_leader;
     }
-    co_return co_await (
+    vlog(
+      log.trace,
+      "do_load_wasm_binary_once_request(node={}): {}",
+      *leader,
+      offset);
+    auto reply = co_await (
       leader == _self ? do_local_load_wasm_binary(offset, timeout)
                       : do_remote_load_wasm_binary(*leader, offset, timeout));
+    vlog(
+      log.trace,
+      "do_load_wasm_binary_once_response(node={}): {}",
+      *leader,
+      reply);
+    co_return reply;
 }
 
 ss::future<result<iobuf, cluster::errc>> client::do_local_load_wasm_binary(
@@ -472,10 +518,13 @@ client::find_coordinator_once(model::transform_offsets_key key) {
     }
     find_coordinator_request request;
     request.add(key);
+    vlog(log.trace, "find_coordinator_request(node={}): {}", *leader, key);
     auto response = co_await (
       *leader == _self
         ? do_local_find_coordinator(std::move(request))
         : do_remote_find_coordinator(*leader, std::move(request)));
+    vlog(
+      log.trace, "find_coordinator_response(node={}): {}", *leader, response);
     if (response.ec == cluster::errc::success) {
         co_return response.coordinators.at(key);
     }
@@ -484,18 +533,11 @@ client::find_coordinator_once(model::transform_offsets_key key) {
 
 ss::future<find_coordinator_response>
 client::do_local_find_coordinator(find_coordinator_request request) {
-    vlog(log.trace, "local find coordinator: {}", request);
     return _local_service->local().find_coordinator(std::move(request));
 }
 
 ss::future<find_coordinator_response> client::do_remote_find_coordinator(
   model::node_id node, find_coordinator_request request) {
-    vlog(
-      log.trace,
-      "remote find coordinator, node: {}, self: {}, request: {}",
-      node,
-      _self,
-      request);
     auto response = co_await _connections->local()
                       .with_node_client<impl::transform_rpc_client_protocol>(
                         _self,
@@ -539,39 +581,36 @@ ss::future<cluster::errc> client::offset_commit_once(
     offset_commit_request request{coordinator.value()};
     request.add(key, value);
 
+    vlog(
+      log.trace, "offset_commit_once_request(node={}): {}", *leader, request);
     auto resp = co_await (
       *leader == _self ? do_local_offset_commit(std::move(request))
                        : do_remote_offset_commit(*leader, std::move(request)));
+    vlog(log.trace, "offset_commit_once_response(node={}): {}", *leader, resp);
     co_return resp.errc;
 }
 
 ss::future<offset_commit_response>
 client::do_local_offset_commit(offset_commit_request request) {
-    vlog(log.trace, "local offset commit: {}", request);
-    return _local_service->local().offset_commit(request);
+    return _local_service->local().offset_commit(std::move(request));
 }
 
 ss::future<offset_commit_response> client::do_remote_offset_commit(
   model::node_id node, offset_commit_request request) {
-    vlog(
-      log.trace,
-      "remote offset commit, node: {}, self: {}, request: {}",
-      node,
-      _self,
-      request);
-    auto response
-      = co_await _connections->local()
-          .with_node_client<impl::transform_rpc_client_protocol>(
-            _self,
-            ss::this_shard_id(),
-            node,
-            timeout,
-            [request](impl::transform_rpc_client_protocol proto) mutable {
-                return proto.offset_commit(
-                  std::move(request),
-                  ::rpc::client_opts(model::timeout_clock::now() + timeout));
-            })
-          .then(&::rpc::get_ctx_data<offset_commit_response>);
+    auto response = co_await _connections->local()
+                      .with_node_client<impl::transform_rpc_client_protocol>(
+                        _self,
+                        ss::this_shard_id(),
+                        node,
+                        timeout,
+                        [request = std::move(request)](
+                          impl::transform_rpc_client_protocol proto) mutable {
+                            return proto.offset_commit(
+                              std::move(request),
+                              ::rpc::client_opts(
+                                model::timeout_clock::now() + timeout));
+                        })
+                      .then(&::rpc::get_ctx_data<offset_commit_response>);
     if (!response) {
         offset_commit_response commit_response{};
         commit_response.errc = map_errc(response.error());
@@ -599,9 +638,11 @@ client::offset_fetch_once(model::transform_offsets_key key) {
     }
 
     offset_fetch_request request{key, coordinator.value()};
+    vlog(log.trace, "offset_fetch_once_request(node={}): {}", *leader, request);
     auto resp = co_await (
       *leader == _self ? do_local_offset_fetch(request)
                        : do_remote_offset_fetch(*leader, request));
+    vlog(log.trace, "offset_fetch_once_response(node={}): {}", *leader, resp);
 
     if (resp.errc == cluster::errc::success) {
         co_return *resp.result;
@@ -667,6 +708,7 @@ client::generate_one_report(model::node_id node) {
 
 ss::future<result<model::cluster_transform_report, cluster::errc>>
 client::generate_remote_report(model::node_id node) {
+    vlog(log.trace, "generate_one_report_request(node={})", node);
     auto resp = co_await _connections->local()
                   .with_node_client<impl::transform_rpc_client_protocol>(
                     _self,
@@ -680,6 +722,7 @@ client::generate_remote_report(model::node_id node) {
                             model::timeout_clock::now() + timeout));
                     })
                   .then(&::rpc::get_ctx_data<generate_report_reply>);
+    vlog(log.trace, "generate_one_report_response(node={}): {}", node, resp);
     if (resp.has_error()) {
         co_return map_errc(resp.error());
     }

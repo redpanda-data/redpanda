@@ -16,6 +16,8 @@
 
 #include <seastar/core/chunked_fifo.hh>
 
+#include <fmt/format.h>
+
 namespace transform::rpc {
 transformed_topic_data::transformed_topic_data(
   model::topic_partition tp, model::record_batch b)
@@ -73,4 +75,99 @@ operator<<(std::ostream& os, const find_coordinator_response& resp) {
       resp.ec);
     return os;
 }
+
+std::ostream& operator<<(std::ostream& os, const generate_report_request&) {
+    fmt::print(os, "{{ }}");
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const generate_report_reply& reply) {
+    fmt::print(os, "{{ transforms: {} }}", reply.report.transforms.size());
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const offset_fetch_request& resp) {
+    fmt::print(
+      os, "{{ key: {}, coordinator: {} }}", resp.key, resp.coordinator);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const offset_fetch_response& resp) {
+    fmt::print(os, "{{ errc: {}, result: {} }}", resp.errc, resp.result);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const load_wasm_binary_request& req) {
+    fmt::print(os, "{{ offset: {}, timeout: {} }}", req.offset, req.timeout);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const load_wasm_binary_reply& reply) {
+    fmt::print(
+      os, "{{ data_size: {}, errc: {} }}", reply.data.size_bytes(), reply.ec);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const delete_wasm_binary_reply& reply) {
+    fmt::print(os, "{{ errc: {} }}", reply.ec);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const delete_wasm_binary_request& req) {
+    fmt::print(os, "{{ key: {}, timeout: {} }}", req.key, req.timeout);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const store_wasm_binary_reply& reply) {
+    fmt::print(os, "{{ errc: {}, stored: {} }}", reply.ec, reply.stored);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const stored_wasm_binary_metadata& meta) {
+    fmt::print(os, "{{ key: {}, offset: {} }}", meta.key, meta.offset);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const store_wasm_binary_request& req) {
+    fmt::print(
+      os,
+      "{{ data_size: {}, timeout: {} }}",
+      req.data.size_bytes(),
+      req.timeout);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const produce_request& req) {
+    fmt::print(
+      os,
+      "{{ topic_data: {}, timeout: {} }}",
+      fmt::join(req.topic_data, ", "),
+      req.timeout);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const produce_reply& reply) {
+    fmt::print(os, "{{ results: {} }}", fmt::join(reply.results, ", "));
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const transformed_topic_data_result& result) {
+    fmt::print(os, "{{ errc: {}, tp: {} }}", result.err, result.tp);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const transformed_topic_data& data) {
+    fmt::print(
+      os, "{{ tp: {}, batches_size: {} }}", data.tp, data.batches.size());
+    return os;
+}
+
 } // namespace transform::rpc
