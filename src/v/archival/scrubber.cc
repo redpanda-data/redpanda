@@ -159,7 +159,7 @@ void scrubber::release() {
 }
 
 ss::future<> scrubber::stop() {
-    vlog(archival_log.info, "Stopping scrubber ({})...", _gate.get_count());
+    vlog(_logger.info, "Stopping scrubber ({})...", _gate.get_count());
     _as.request_abort();
     return _gate.close();
 }
