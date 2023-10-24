@@ -43,7 +43,7 @@ exists if you want to download the plugin ahead of time.
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			_, _, installed, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
+			_, _, installed, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID, false) // latest is always false, we only want to install the pinned byoc version when using `rpk cloud byoc install`
 			out.MaybeDie(err, "unable to install byoc plugin: %v", err)
 			if !installed {
 				fmt.Print(`
@@ -60,10 +60,11 @@ autocompletion, start a new terminal and tab complete through it!
 		},
 	}
 	cmd.Flags().StringVar(&redpandaID, flagRedpandaID, "", flagRedpandaIDDesc)
+	cmd.MarkFlagRequired(flagRedpandaID)
 	return cmd
 }
 
-func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.Config, redpandaID string) (binPath string, token string, installed bool, rerr error) {
+func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.Config, redpandaID string, isLatest bool) (binPath string, token string, installed bool, rerr error) {
 	// First load our configuration and token.
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
@@ -94,14 +95,23 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 	}
 	// Check our current version of the plugin.
 	cl := cloudapi.NewClient(cloudURL, token)
-	cluster, err := cl.Cluster(ctx, redpandaID)
-	if err != nil {
-		return "", "", false, fmt.Errorf("unable to request cluster details for %q: %w", redpandaID, err)
+	var pack cloudapi.InstallPack
+	if isLatest {
+		pack, err = cl.LatestInstallPack(ctx)
+		if err != nil {
+			return "", "", false, fmt.Errorf("unable to get latest installpack: %v", err)
+		}
+	} else {
+		cluster, err := cl.Cluster(ctx, redpandaID)
+		if err != nil {
+			return "", "", false, fmt.Errorf("unable to request cluster details for %q: %w", redpandaID, err)
+		}
+		pack, err = cl.InstallPack(ctx, cluster.Spec.InstallPackVersion)
+		if err != nil {
+			return "", "", false, fmt.Errorf("unable to request install pack details for %q: %v", cluster.Spec.InstallPackVersion, err)
+		}
 	}
-	pack, err := cl.InstallPack(ctx, cluster.Spec.InstallPackVersion)
-	if err != nil {
-		return "", "", false, fmt.Errorf("unable to request install pack details for %q: %v", cluster.Spec.InstallPackVersion, err)
-	}
+
 	name := fmt.Sprintf("byoc-%s-%s", runtime.GOOS, runtime.GOARCH)
 	artifact, found := pack.Artifacts.Find(name)
 	if !found {

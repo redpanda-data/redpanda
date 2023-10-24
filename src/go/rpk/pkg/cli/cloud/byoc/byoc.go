@@ -12,6 +12,9 @@ package byoc
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"slices"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
@@ -26,6 +29,10 @@ const (
 	flagCloudAPIToken  = "cloud-api-token"
 	flagRedpandaID     = "redpanda-id"
 	flagRedpandaIDDesc = "The redpanda ID of the cluster you are creating"
+
+	applyCmd    = "apply"
+	destroyCmd  = "destroy"
+	validateCmd = "validate"
 )
 
 type ctxKeyRedpandaID struct{}
@@ -44,13 +51,32 @@ func init() {
 			cfg, redpandaID, pluginArgs, err := parseBYOCFlags(fs, p, cmd, args)
 			out.MaybeDieErr(err)
 
+			// --redpanda-id is only required in apply or destroy commands.
+			// For validate commands we don't need the redpanda-id, instead,
+			// we download the latest version always.
+			isValidate := slices.Contains(strings.Split(cmd.CommandPath(), " "), validateCmd)
+			if redpandaID == "" && !isValidate {
+				isApply := slices.Contains(strings.Split(cmd.CommandPath(), " "), applyCmd)
+				isDestroy := slices.Contains(strings.Split(cmd.CommandPath(), " "), destroyCmd)
+				if cmd.Flags().Changed("redpanda-id") || isApply || isDestroy {
+					fmt.Fprint(os.Stderr, "Error: required --redpanda-id flag cannot be empty\n")
+					cmd.Usage()
+					os.Exit(1)
+				}
+				cmd.Help()
+				os.Exit(0)
+			}
 			// We require our plugin to always be the exact version
-			// pinned in the control plane.
-			_, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
+			// pinned in the control plane except if it's the 'validate' command.
+			_, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID, isValidate)
 			out.MaybeDie(err, "unable to ensure byoc plugin version: %v", err)
+			execArgs := append(pluginArgs, "--"+flagCloudAPIToken, token)
+			if !isValidate {
+				execArgs = append(execArgs, "--"+flagRedpandaID, redpandaID)
+			}
 
 			// Finally, exec.
-			run(cmd, append(pluginArgs, "--"+flagCloudAPIToken, token, "--"+flagRedpandaID, redpandaID))
+			run(cmd, execArgs)
 		}
 		return cmd
 	})
@@ -66,7 +92,6 @@ func addBYOCFlags(cmd *cobra.Command, p *config.Params) {
 	cmd.SetContext(ctx)
 	f.String(flagCloudAPIToken, "", "")
 	f.MarkHidden(flagCloudAPIToken)
-	cmd.MarkFlagRequired(flagRedpandaID)
 	p.InstallCloudFlags(cmd)
 }
 
@@ -125,11 +150,14 @@ and then come back to this command to complete the process.
 			// this is mostly best effort, but we do not expect
 			// the plugin to be complicated.
 			var isKnown bool
+			var isValidate bool
 			for i := 0; i < len(pluginArgs); i++ {
 				arg := pluginArgs[i]
 				switch {
 				case strings.HasPrefix(arg, "--") && !strings.Contains(arg, "="):
 					i++
+				case arg == "validate":
+					isKnown, isValidate = true, true
 				case arg == "aws":
 					isKnown = true
 				case arg == "gcp":
@@ -137,15 +165,19 @@ and then come back to this command to complete the process.
 				}
 			}
 
-			if !isKnown || redpandaID == "" {
+			if !isKnown || (redpandaID == "" && !isValidate) {
 				cmd.Help()
 				return
 			}
 
-			path, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
+			path, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID, isValidate)
 			out.MaybeDie(err, "unable to ensure byoc plugin version: %v", err)
+			execArgs := append(pluginArgs, "--"+flagCloudAPIToken, token)
+			if !isValidate {
+				execArgs = append(execArgs, "--"+flagRedpandaID, redpandaID)
+			}
 
-			err = execFn(path, append(pluginArgs, "--"+flagCloudAPIToken, token, "--"+flagRedpandaID, redpandaID))
+			err = execFn(path, execArgs)
 			out.MaybeDie(err, "unable to execute plugin: %v", err)
 		},
 	}

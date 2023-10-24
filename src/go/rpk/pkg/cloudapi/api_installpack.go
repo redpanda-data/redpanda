@@ -11,6 +11,9 @@ package cloudapi
 
 import (
 	"context"
+	"errors"
+	"sort"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 )
@@ -39,12 +42,37 @@ func (as InstallPackArtifacts) Find(name string) (InstallPackArtifact, bool) {
 
 // InstallPack contains pinned versions for an install pack.
 type InstallPack struct {
-	ID        string               `json:"id"`
-	Artifacts InstallPackArtifacts `json:"artifacts"`
+	ID              string               `json:"id"`
+	Artifacts       InstallPackArtifacts `json:"artifacts"`
+	Version         string               `json:"version"`
+	Certified       bool                 `json:"certified"`
+	RedpandaVersion string               `json:"redpandaVersion"`
+	ReleasedAt      time.Time            `json:"releasedAt"`
 }
 
-// Cluster returns information about a Redpanda cluster.
+// InstallPack returns a specific installpack version.
 func (cl *Client) InstallPack(ctx context.Context, version string) (p InstallPack, err error) {
 	path := httpapi.Pathfmt(installpackPath+"/%s", version)
 	return p, cl.cl.Get(ctx, path, nil, &p)
+}
+
+// InstallPacks returns a list of available installpack versions.
+func (cl *Client) InstallPacks(ctx context.Context) (l []InstallPack, err error) {
+	return l, cl.cl.Get(ctx, installpackPath, nil, &l)
+}
+
+// LatestInstallPack retrieves the latest installpack according to the
+// releasedAt field.
+func (cl *Client) LatestInstallPack(ctx context.Context) (InstallPack, error) {
+	ipvs, err := cl.InstallPacks(ctx)
+	if err != nil {
+		return InstallPack{}, err
+	}
+	if len(ipvs) < 1 {
+		return InstallPack{}, errors.New("no install-pack versions found")
+	}
+	sort.Slice(ipvs, func(i, j int) bool {
+		return ipvs[i].ReleasedAt.After(ipvs[j].ReleasedAt)
+	})
+	return ipvs[0], nil
 }
