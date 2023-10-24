@@ -32,4 +32,7 @@ ss::future<> do_authenticate_scram256(
 ss::future<> do_authenticate_scram512(
   shared_broker_t broker, ss::sstring username, ss::sstring password);
 
+ss::future<>
+do_authenticate_oauthbearer(shared_broker_t broker, ss::sstring token);
+
 } // namespace kafka::client
