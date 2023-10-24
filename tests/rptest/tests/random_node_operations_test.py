@@ -253,7 +253,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
-            num_to_upgrade=[0],
+            num_to_upgrade=[0, 3],
             enable_controller_snapshots=[True, False],
             with_tiered_storage=[True, False])
     def test_node_operations(self, enable_failures, num_to_upgrade,
