@@ -17,6 +17,7 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
+#include "cluster/types.h"
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
@@ -117,7 +118,45 @@ public:
         _as.check();
     }
 
+    static reconfiguration_policy
+    map_change_reason_to_policy(change_reason reason) {
+        switch (reason) {
+        case change_reason::node_unavailable:
+        case change_reason::rack_constraint_repair:
+            return reconfiguration_policy::full_local_retention;
+        case change_reason::disk_full:
+        case change_reason::node_decommissioning:
+        case change_reason::partition_count_rebalancing:
+            return reconfiguration_policy::target_initial_retention;
+        }
+    }
+
+    static reconfiguration_policy update_reconfiguration_policy(
+      reconfiguration_policy current, change_reason reason) {
+        /**
+         * If current policy requires full local retention, simply leave it as
+         * is
+         */
+        if (current == reconfiguration_policy::full_local_retention) {
+            return current;
+        }
+
+        if (
+          reason == change_reason::node_unavailable
+          || reason == change_reason::rack_constraint_repair) {
+            // require more strict reconfiguration policy
+            return reconfiguration_policy::full_local_retention;
+        }
+
+        return current;
+    }
+
 private:
+    struct reassignment_info {
+        allocated_partition partition;
+        reconfiguration_policy reconfiguration_policy;
+    };
+
     friend class partition_balancer_planner;
 
     request_context(partition_balancer_planner& parent, ss::abort_source& as)
@@ -171,7 +210,7 @@ private:
 
     partition_balancer_planner& _parent;
     absl::btree_map<model::ntp, partition_sizes> _ntp2sizes;
-    absl::node_hash_map<model::ntp, allocated_partition> _reassignments;
+    absl::node_hash_map<model::ntp, reassignment_info> _reassignments;
     size_t _failed_actions_count = 0;
     // we track missing partition size info separately as it requires force
     // refresh of health report
@@ -478,11 +517,12 @@ class partition_balancer_planner::reassignable_partition {
 public:
     const model::ntp& ntp() const { return _ntp; }
     const std::vector<model::broker_shard>& replicas() const {
-        return (_reallocated ? _reallocated->replicas() : _orig_replicas);
+        return (
+          _reallocated ? _reallocated->partition.replicas() : _orig_replicas);
     };
 
     bool is_original(model::node_id replica) const {
-        return !_reallocated || _reallocated->is_original(replica);
+        return !_reallocated || _reallocated->partition.is_original(replica);
     }
 
     const request_context::partition_sizes& sizes() const { return _sizes; }
@@ -500,7 +540,7 @@ private:
     reassignable_partition(
       model::ntp ntp,
       const request_context::partition_sizes& sizes,
-      std::optional<allocated_partition> reallocated,
+      std::optional<request_context::reassignment_info> reallocated,
       const std::vector<model::broker_shard>& orig_replicas,
       request_context& ctx)
       : _ntp(std::move(ntp))
@@ -510,7 +550,7 @@ private:
       , _ctx(ctx) {}
 
     bool has_changes() const {
-        return _reallocated && _reallocated->has_changes();
+        return _reallocated && _reallocated->partition.has_changes();
     }
 
     allocation_constraints
@@ -519,7 +559,7 @@ private:
 private:
     model::ntp _ntp;
     const request_context::partition_sizes& _sizes;
-    std::optional<allocated_partition> _reallocated;
+    std::optional<request_context::reassignment_info> _reallocated;
     const std::vector<model::broker_shard>& _orig_replicas;
     request_context& _ctx;
 };
@@ -793,7 +833,7 @@ auto partition_balancer_planner::request_context::do_with_partition(
         return visitor(part);
     }
 
-    std::optional<allocated_partition> reallocated;
+    std::optional<reassignment_info> reallocated;
     if (reassignment_it != _reassignments.end()) {
         // borrow the allocated_partition object
         reallocated = std::move(reassignment_it->second);
@@ -928,23 +968,26 @@ partition_balancer_planner::reassignable_partition::move_replica(
   double max_disk_usage_ratio,
   partition_balancer_planner::change_reason reason) {
     if (!_reallocated) {
-        _reallocated
+        _reallocated = request_context::reassignment_info{
+          .partition
           = _ctx._parent._partition_allocator.make_allocated_partition(
-            _ntp, replicas(), get_allocation_domain(_ntp));
+            _ntp, replicas(), get_allocation_domain(_ntp)),
+          .reconfiguration_policy
+          = request_context::map_change_reason_to_policy(reason)};
     }
 
     // Verify that we are moving only original replicas. This assumption
     // simplifies the code considerably (although in the future nothing stops us
     // from supporting moving already moved replicas several times).
     vassert(
-      _reallocated->is_original(replica),
+      _reallocated->partition.is_original(replica),
       "ntp {}: trying to move replica {} which was already reassigned earlier",
       _ntp,
       replica);
 
     auto constraints = get_allocation_constraints(max_disk_usage_ratio);
     auto moved = _ctx._parent._partition_allocator.reallocate_replica(
-      *_reallocated, replica, std::move(constraints));
+      _reallocated->partition, replica, std::move(constraints));
     if (!moved) {
         if (_ctx.increment_failure_count()) {
             vlog(
@@ -974,6 +1017,14 @@ partition_balancer_planner::reassignable_partition::move_replica(
           new_node,
           reason);
 
+        /**
+         * Reallocation may require policy update as previous reason might have
+         * been different.
+         */
+        _reallocated->reconfiguration_policy
+          = request_context::update_reconfiguration_policy(
+            _reallocated->reconfiguration_policy, reason);
+
         auto from_it = _ctx.node_disk_reports.find(replica);
         if (from_it != _ctx.node_disk_reports.end()) {
             from_it->second.released += _sizes.get_current(replica);
@@ -987,7 +1038,7 @@ partition_balancer_planner::reassignable_partition::move_replica(
 
         auto to_it = _ctx.node_disk_reports.find(new_node);
         if (to_it != _ctx.node_disk_reports.end()) {
-            if (_reallocated->is_original(new_node)) {
+            if (_reallocated->partition.is_original(new_node)) {
                 to_it->second.released -= _sizes.get_current(new_node);
             } else {
                 to_it->second.assigned += _sizes.non_reclaimable;
@@ -1012,13 +1063,13 @@ void partition_balancer_planner::reassignable_partition::revert(
       "ntp {}: trying to revert move without previous replica",
       _ntp);
     vassert(
-      _reallocated->is_original(move.previous()->node_id),
+      _reallocated->partition.is_original(move.previous()->node_id),
       "ntp {}: move {}->{} should have been from original node",
       _ntp,
       move.current(),
       move.previous());
 
-    auto err = _reallocated->try_revert(move);
+    auto err = _reallocated->partition.try_revert(move);
     vassert(err == errc::success, "ntp {}: revert error: {}", _ntp, err);
 
     auto from_it = _ctx.node_disk_reports.find(move.previous()->node_id);
@@ -1035,7 +1086,7 @@ void partition_balancer_planner::reassignable_partition::revert(
 
     auto to_it = _ctx.node_disk_reports.find(move.current().node_id);
     if (to_it != _ctx.node_disk_reports.end()) {
-        if (_reallocated->is_original(move.current().node_id)) {
+        if (_reallocated->partition.is_original(move.current().node_id)) {
             to_it->second.released += _sizes.get_current(
               move.current().node_id);
         } else {
@@ -1551,9 +1602,11 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
 void partition_balancer_planner::request_context::collect_actions(
   partition_balancer_planner::plan_data& result) {
     result.reassignments.reserve(_reassignments.size());
-    for (auto& [ntp, reallocated] : _reassignments) {
-        result.reassignments.push_back(
-          ntp_reassignment{.ntp = ntp, .allocated = std::move(reallocated)});
+    for (auto& [ntp, reallocated_meta] : _reassignments) {
+        result.reassignments.push_back(ntp_reassignment{
+          .ntp = ntp,
+          .allocated = std::move(reallocated_meta.partition),
+          .reconfiguration_policy = reallocated_meta.reconfiguration_policy});
     }
 
     result.failed_actions_count = _failed_actions_count;

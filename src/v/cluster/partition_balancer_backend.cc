@@ -472,7 +472,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           auto f = _topics_frontend.move_partition_replicas(
             reassignment.ntp,
             reassignment.allocated.replicas(),
-            reconfiguration_policy::full_local_retention,
+            reassignment.reconfiguration_policy,
             model::timeout_clock::now() + add_move_cmd_timeout,
             _cur_term->id);
           return f.then([reassignment = std::move(reassignment)](auto errc) {
