@@ -27,6 +27,8 @@ enum class event_type : std::uint8_t {
     num_elements
 };
 
+std::ostream& operator<<(std::ostream&, event_type);
+
 inline event_type string_to_event_type(const std::string_view s) {
     return string_switch<event_type>(s)
       .match("management", event_type::management)

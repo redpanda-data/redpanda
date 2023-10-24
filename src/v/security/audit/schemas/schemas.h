@@ -44,6 +44,12 @@ public:
     virtual ss::sstring to_json() const = 0;
     virtual size_t key() const noexcept = 0;
     virtual void increment(timestamp_t) const = 0;
+    virtual category_uid get_category_uid() const = 0;
+    virtual class_uid get_class_uid() const = 0;
+    virtual type_uid get_type_uid() const = 0;
+
+private:
+    friend std::ostream& operator<<(std::ostream&, const ocsf_base_impl&);
 };
 
 template<typename Derived>
@@ -66,12 +72,18 @@ public:
           *(static_cast<const Derived*>(this)));
     }
 
+    category_uid get_category_uid() const final { return _category_uid; }
+
+    class_uid get_class_uid() const final { return _class_uid; }
+
+    type_uid get_type_uid() const final { return _type_uid; }
+
     timestamp_t get_time() const { return _time; }
 
     ocsf_base_event(const ocsf_base_event&) = delete;
     ocsf_base_event& operator=(const ocsf_base_event&) = delete;
-    ocsf_base_event(ocsf_base_event&&) = default;
-    ocsf_base_event& operator=(ocsf_base_event&&) = default;
+    ocsf_base_event(ocsf_base_event&&) noexcept = default;
+    ocsf_base_event& operator=(ocsf_base_event&&) noexcept = default;
     ~ocsf_base_event() override = default;
 
 protected:

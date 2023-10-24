@@ -44,6 +44,8 @@ enum class category_uid : uint8_t {
     application_activity = 6
 };
 
+std::ostream& operator<<(std::ostream&, const category_uid&);
+
 enum class class_uid : uint16_t {
     file_system_activity = 1001,
     kernel_extension_activity = 1002,
@@ -78,6 +80,8 @@ enum class class_uid : uint16_t {
     api_activity = 6003,
     web_resource_access_activity = 6004
 };
+
+std::ostream& operator<<(std::ostream&, const class_uid&);
 
 enum class severity_id : uint8_t {
     unknown = 0,
