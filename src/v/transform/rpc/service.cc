@@ -283,7 +283,7 @@ local_service::consume_wasm_binary_reader(
 }
 
 ss::future<find_coordinator_response>
-local_service::find_coordinator(find_coordinator_request&& request) {
+local_service::find_coordinator(find_coordinator_request request) {
     model::ntp ntp(
       model::kafka_internal_namespace,
       model::transform_offsets_topic,
@@ -295,37 +295,7 @@ local_service::find_coordinator(find_coordinator_request&& request) {
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard,
-      [this, req = std::move(request), ntp](
-        cluster::partition_manager& local) mutable {
-          return do_find_coordinator(local.get(ntp), std::move(req));
-      });
-}
-
-ss::future<find_coordinator_response> local_service::do_find_coordinator(
-  ss::lw_shared_ptr<cluster::partition> partition,
-  find_coordinator_request&& request) {
-    find_coordinator_response response;
-    if (!partition) {
-        response.ec = cluster::errc::not_leader;
-        co_return response;
-    }
-    auto stm = partition->transform_offsets_stm();
-    if (partition->ntp().tp.partition != coordinator_partition) {
-        response.ec = cluster::errc::not_leader;
-        co_return response;
-    }
-    for (auto& key : request.keys) {
-        auto coordinator = co_await stm->coordinator(key);
-        if (!coordinator) {
-            response.ec = map_errc(coordinator.error());
-            response.coordinators.clear();
-            co_return response;
-        }
-        response.coordinators[key] = coordinator.value();
-    }
-    response.ec = cluster::errc::success;
-    co_return response;
+      *shard, ntp, std::move(request));
 }
 
 ss::future<offset_commit_response>
@@ -341,25 +311,7 @@ local_service::offset_commit(offset_commit_request request) {
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard, [this, request, ntp](cluster::partition_manager& local) mutable {
-          return do_local_offset_commit(local.get(ntp), request);
-      });
-}
-
-ss::future<offset_commit_response> local_service::do_local_offset_commit(
-  ss::lw_shared_ptr<cluster::partition> partition, offset_commit_request req) {
-    offset_commit_response response{};
-    if (req.kvs.empty()) {
-        response.errc = cluster::errc::success;
-        co_return response;
-    }
-    if (!partition) {
-        response.errc = cluster::errc::not_leader;
-        co_return response;
-    }
-    auto stm = partition->transform_offsets_stm();
-    response.errc = co_await stm->put(std::move(req.kvs));
-    co_return response;
+      *shard, ntp, std::move(request));
 }
 
 ss::future<offset_fetch_response>
@@ -375,28 +327,7 @@ local_service::offset_fetch(offset_fetch_request request) {
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard, [this, request, ntp](cluster::partition_manager& local) mutable {
-          return do_local_offset_fetch(local.get(ntp), request);
-      });
-}
-
-ss::future<offset_fetch_response> local_service::do_local_offset_fetch(
-  ss::lw_shared_ptr<cluster::partition> partition,
-  offset_fetch_request request) {
-    offset_fetch_response response{};
-    if (!partition) {
-        response.errc = cluster::errc::not_leader;
-        co_return response;
-    }
-    auto stm = partition->transform_offsets_stm();
-    auto result = co_await stm->get(request.key);
-    if (!result) {
-        response.errc = map_errc(result.error());
-        co_return response;
-    }
-    response.errc = cluster::errc::success;
-    response.result = result.value();
-    co_return response;
+      *shard, ntp, request);
 }
 
 ss::future<produce_reply>

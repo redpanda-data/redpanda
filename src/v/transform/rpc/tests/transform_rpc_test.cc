@@ -36,6 +36,7 @@
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/logger.h"
+#include "transform/rpc/serde.h"
 #include "transform/rpc/service.h"
 #include "transform/tests/cluster_fixture.h"
 
@@ -303,23 +304,23 @@ public:
     }
 
     ss::future<find_coordinator_response> invoke_on_shard(
-      ss::shard_id,
-      ss::noncopyable_function<ss::future<find_coordinator_response>(
-        cluster::partition_manager&)>) override final {
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      find_coordinator_request req) final {
         return ss::make_exception_future<find_coordinator_response>({});
     }
 
     ss::future<offset_commit_response> invoke_on_shard(
-      ss::shard_id,
-      ss::noncopyable_function<ss::future<offset_commit_response>(
-        cluster::partition_manager&)>) override final {
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      offset_commit_request req) final {
         return ss::make_exception_future<offset_commit_response>({});
     }
 
     ss::future<offset_fetch_response> invoke_on_shard(
-      ss::shard_id,
-      ss::noncopyable_function<ss::future<offset_fetch_response>(
-        cluster::partition_manager&)>) override final {
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      offset_fetch_request req) final {
         return ss::make_exception_future<offset_fetch_response>({});
     }
 

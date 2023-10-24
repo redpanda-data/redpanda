@@ -20,17 +20,22 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/partition_proxy.h"
+#include "model/fundamental.h"
 #include "model/ktp.h"
+#include "model/namespace.h"
+#include "model/transform.h"
 #include "transform/rpc/logger.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
 
 #include <memory>
+#include <type_traits>
 
 namespace transform::rpc {
 
 namespace {
+
 class partition_leader_cache_impl final : public partition_leader_cache {
 public:
     explicit partition_leader_cache_impl(
@@ -64,13 +69,6 @@ private:
     ss::sharded<cluster::metadata_cache>* _cache;
 };
 class partition_manager_impl final : public partition_manager {
-private:
-    template<class Func>
-    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
-    auto invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
-        return _manager->invoke_on(shard, std::forward<Func>(func));
-    }
-
 public:
     partition_manager_impl(
       ss::sharded<cluster::shard_table>* table,
@@ -100,28 +98,113 @@ public:
         return invoke_on_shard_impl(shard, ntp, std::move(fn));
     }
 
-    ss::future<offset_commit_response> invoke_on_shard(
-      ss::shard_id shard,
-      ss::noncopyable_function<ss::future<offset_commit_response>(
-        cluster::partition_manager&)> func) final {
-        return invoke_func_on_shard_impl(shard, std::move(func));
-    }
-
     ss::future<find_coordinator_response> invoke_on_shard(
       ss::shard_id shard,
-      ss::noncopyable_function<ss::future<find_coordinator_response>(
-        cluster::partition_manager&)> func) final {
-        return invoke_func_on_shard_impl(shard, std::move(func));
+      const model::ntp& ntp,
+      find_coordinator_request req) final {
+        return invoke_func_on_shard_impl(
+          shard,
+          [this, ntp, req = std::move(req)](
+            cluster::partition_manager& mgr) mutable {
+              return do_find_coordinator(mgr.get(ntp), std::move(req));
+          });
+    }
+
+    ss::future<offset_commit_response> invoke_on_shard(
+      ss::shard_id shard,
+      const model::ntp& ntp,
+      offset_commit_request req) final {
+        return invoke_func_on_shard_impl(
+          shard,
+          [this, ntp, req = std::move(req)](
+            cluster::partition_manager& mgr) mutable {
+              return do_offset_commit(mgr.get(ntp), std::move(req));
+          });
     }
 
     ss::future<offset_fetch_response> invoke_on_shard(
       ss::shard_id shard,
-      ss::noncopyable_function<ss::future<offset_fetch_response>(
-        cluster::partition_manager&)> func) final {
-        return invoke_func_on_shard_impl(shard, std::move(func));
+      const model::ntp& ntp,
+      offset_fetch_request req) final {
+        return invoke_func_on_shard_impl(
+          shard,
+          [this, ntp, req = req](cluster::partition_manager& mgr) mutable {
+              return do_offset_fetch(mgr.get(ntp), req);
+          });
     }
 
 private:
+    static constexpr auto coordinator_partition = model::partition_id{0};
+
+    ss::future<find_coordinator_response> do_find_coordinator(
+      ss::lw_shared_ptr<cluster::partition> partition,
+      find_coordinator_request request) {
+        find_coordinator_response response;
+        if (!partition) {
+            response.ec = cluster::errc::not_leader;
+            co_return response;
+        }
+        auto stm = partition->transform_offsets_stm();
+        if (partition->ntp().tp.partition != coordinator_partition) {
+            response.ec = cluster::errc::not_leader;
+            co_return response;
+        }
+        for (auto& key : request.keys) {
+            auto coordinator = co_await stm->coordinator(key);
+            if (!coordinator) {
+                response.ec = coordinator.error();
+                response.coordinators.clear();
+                co_return response;
+            }
+            response.coordinators[key] = coordinator.value();
+        }
+        response.ec = cluster::errc::success;
+        co_return response;
+    }
+
+    ss::future<offset_commit_response> do_offset_commit(
+      ss::lw_shared_ptr<cluster::partition> partition,
+      offset_commit_request req) {
+        offset_commit_response response{};
+        if (req.kvs.empty()) {
+            response.errc = cluster::errc::success;
+            co_return response;
+        }
+        if (!partition) {
+            response.errc = cluster::errc::not_leader;
+            co_return response;
+        }
+        auto stm = partition->transform_offsets_stm();
+        response.errc = co_await stm->put(std::move(req.kvs));
+        co_return response;
+    }
+
+    ss::future<offset_fetch_response> do_offset_fetch(
+      ss::lw_shared_ptr<cluster::partition> partition,
+      offset_fetch_request request) {
+        offset_fetch_response response{};
+        if (!partition) {
+            response.errc = cluster::errc::not_leader;
+            co_return response;
+        }
+        auto stm = partition->transform_offsets_stm();
+        auto result = co_await stm->get(request.key);
+        if (!result) {
+            response.errc = result.error();
+            co_return response;
+        }
+        response.errc = cluster::errc::success;
+        response.result = result.value();
+        co_return response;
+    }
+
+    template<class Func>
+    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
+    std::invoke_result_t<Func, cluster::partition_manager&>
+    invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
+        return _manager->invoke_on(shard, std::forward<Func>(func));
+    }
+
     ss::future<cluster::errc> invoke_on_shard_impl(
       ss::shard_id shard,
       const model::any_ntp auto& ntp,

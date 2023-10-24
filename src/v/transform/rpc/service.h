@@ -48,7 +48,7 @@ public:
     load_wasm_binary(model::offset, model::timeout_clock::duration timeout);
 
     ss::future<find_coordinator_response>
-    find_coordinator(find_coordinator_request&&);
+      find_coordinator(find_coordinator_request);
     ss::future<offset_commit_response> offset_commit(offset_commit_request);
     ss::future<offset_fetch_response> offset_fetch(offset_fetch_request);
 
@@ -66,12 +66,6 @@ private:
     ss::future<result<iobuf, cluster::errc>> consume_wasm_binary_reader(
       model::record_batch_reader, model::timeout_clock::duration);
 
-    ss::future<find_coordinator_response> do_find_coordinator(
-      ss::lw_shared_ptr<cluster::partition>, find_coordinator_request&&);
-    ss::future<offset_commit_response> do_local_offset_commit(
-      ss::lw_shared_ptr<cluster::partition>, offset_commit_request);
-    ss::future<offset_fetch_response> do_local_offset_fetch(
-      ss::lw_shared_ptr<cluster::partition>, offset_fetch_request);
     std::unique_ptr<topic_metadata_cache> _metadata_cache;
     std::unique_ptr<partition_manager> _partition_manager;
     std::unique_ptr<reporter> _reporter;
