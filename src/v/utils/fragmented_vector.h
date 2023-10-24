@@ -335,6 +335,10 @@ private:
     friend seastar::future<>
     fragmented_vector_fill_async(fragmented_vector<TT, SS>&, const TT&);
 
+    template<typename TT, size_t SS>
+    friend seastar::future<>
+    fragmented_vector_clear_async(fragmented_vector<TT, SS>&);
+
     size_t _size{0};
     size_t _capacity{0};
     std::vector<std::vector<T>> _frags;
@@ -382,4 +386,20 @@ fragmented_vector_fill_async(fragmented_vector<T, S>& vec, const T& value) {
       vec._size,
       vec._capacity,
       vec._frags.size());
+}
+
+/**
+ * A futurized version of fragmented_vector::clear that allows clearing a large
+ * vector without incurring a reactor stall.
+ */
+template<typename T, size_t S>
+inline seastar::future<>
+fragmented_vector_clear_async(fragmented_vector<T, S>& vec) {
+    while (!vec._frags.empty()) {
+        vec._frags.pop_back();
+        if (seastar::need_preempt()) {
+            co_await seastar::yield();
+        }
+    }
+    vec.clear();
 }

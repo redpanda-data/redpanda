@@ -33,3 +33,26 @@ SEASTAR_THREAD_TEST_CASE(fragmented_vector_fill_async_test) {
         BOOST_REQUIRE(e == 0);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(fragmented_vector_clear_async_test) {
+    fragmented_vector<int> v;
+    fragmented_vector_clear_async(v).get();
+    BOOST_REQUIRE(v.size() == 0);
+
+    // one element
+    v.push_back(0);
+    BOOST_REQUIRE(v.size() == 1);
+    fragmented_vector_clear_async(v).get();
+    BOOST_REQUIRE(v.size() == 0);
+
+    // many fragments
+    for (int i = 0; i < 5; ++i) {
+        for (int j = 0; j < v.elements_per_fragment(); ++j) {
+            v.push_back(j);
+        }
+    }
+    BOOST_REQUIRE(v.size() == (5 * v.elements_per_fragment()));
+
+    fragmented_vector_clear_async(v).get();
+    BOOST_REQUIRE(v.size() == 0);
+}
