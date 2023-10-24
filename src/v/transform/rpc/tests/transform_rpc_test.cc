@@ -43,6 +43,7 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/print.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
@@ -56,6 +57,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -263,6 +265,8 @@ public:
         return it->second;
     };
 
+    void set_errors(int n) { _errors_to_inject = n; }
+
     void set_shard_owner(const model::ntp& ntp, ss::shard_id shard_id) {
         _shard_locations.insert_or_assign(ntp, shard_id);
     }
@@ -288,6 +292,10 @@ public:
         auto owner = shard_owner(ntp);
         if (!owner || shard_id != *owner) {
             co_return cluster::errc::not_leader;
+        }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            co_return cluster::errc::timeout;
         }
         auto pp = kafka::partition_proxy(
           std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
@@ -435,6 +443,7 @@ private:
         ss::chunked_fifo<produced_batch>* _produced_batches;
     };
 
+    int _errors_to_inject = 0;
     ss::chunked_fifo<produced_batch> _produced_batches;
     model::ntp_flat_map_type<ss::shard_id> _shard_locations;
 };
@@ -600,6 +609,11 @@ public:
         _ftpc->set_default_new_topic_leader(node_id);
     }
 
+    void set_errors_to_inject(int n) {
+        _local_fpm->set_errors(n);
+        _remote_fpm->set_errors(n);
+    }
+
     cluster::errc produce(const model::ntp& ntp, record_batches batches) {
         return client()->produce(ntp.tp, std::move(batches.underlying)).get();
     }
@@ -693,6 +707,7 @@ TEST_P(TransformRpcTest, ClientCanProduce) {
     create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
     elect_leader(ntp, leader_node());
     auto batches = record_batches::make();
+    set_errors_to_inject(2);
     cluster::errc ec = produce(ntp, batches);
     EXPECT_EQ(ec, cluster::errc::success)
       << cluster::error_category().message(int(ec));
@@ -712,15 +727,18 @@ TEST_P(TransformRpcTest, WasmBinaryCrud) {
     // The topic is auto created
     set_default_new_topic_leader(leader_node());
 
+    set_errors_to_inject(2);
     auto stored = store_wasm_binary(wasm_binary.copy());
     ASSERT_TRUE(stored.has_value());
     EXPECT_THAT(
       non_leader_batches(model::wasm_binaries_internal_ntp), IsEmpty());
     EXPECT_THAT(leader_batches(model::wasm_binaries_internal_ntp), SizeIs(1));
     auto [key, offset] = stored.value();
+    set_errors_to_inject(2);
     auto loaded = load_wasm_binary(offset);
     ASSERT_TRUE(loaded.has_value());
     EXPECT_EQ(loaded.value(), wasm_binary);
+    set_errors_to_inject(2);
     auto ec = delete_wasm_binary(key);
     EXPECT_EQ(ec, cluster::errc::success)
       << cluster::error_category().message(int(ec));
