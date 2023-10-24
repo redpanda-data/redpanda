@@ -29,6 +29,7 @@
 #include "transform/rpc/logger.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
+#include "utils/type_traits.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -101,6 +102,11 @@ cluster::errc map_errc(std::error_code ec) {
     return cluster::errc::timeout;
 }
 
+template<typename T>
+concept ResponseWithErrorCode = requires(T resp) {
+    { resp.ec } -> std::same_as<cluster::errc>;
+};
+
 template<typename Func>
 std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
     constexpr auto base_backoff_duration = 100ms;
@@ -124,14 +130,18 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
             }
             continue;
         }
-        auto r = fut.get();
+        result_type r = fut.get();
         cluster::errc ec = cluster::errc::success;
-        if constexpr (std::is_same_v<cluster::errc, decltype(r)>) {
+        if constexpr (std::is_same_v<cluster::errc, result_type>) {
             ec = r;
-        } else if constexpr (outcome::is_basic_result_v<decltype(r)>) {
+        } else if constexpr (outcome::is_basic_result_v<result_type>) {
             ec = r.has_error() ? r.error() : cluster::errc::success;
-        } else {
+        } else if constexpr (ResponseWithErrorCode<result_type>) {
             ec = r.ec;
+        } else {
+            static_assert(
+              utils::unsupported_type<result_type>::value,
+              "unsupported response type");
         }
         switch (ec) {
         case cluster::errc::not_leader:
