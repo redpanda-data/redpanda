@@ -20,8 +20,8 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/moby/moby v24.0.6+incompatible
 	github.com/moby/sys/mountinfo v0.6.2
-	github.com/onsi/ginkgo/v2 v2.12.1
-	github.com/onsi/gomega v1.28.0
+	github.com/onsi/ginkgo/v2 v2.13.0
+	github.com/onsi/gomega v1.28.1
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/common v0.45.0
 	github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524
@@ -193,7 +193,7 @@ require (
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/certificate-transparency-go v1.1.6 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-containerregistry v0.16.1 // indirect
 	github.com/google/go-containerregistry/pkg/authn/k8schain v0.0.0-20230802205906-a54d64203cff // indirect
 	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20230516205744-dbecb1de8cfa // indirect
