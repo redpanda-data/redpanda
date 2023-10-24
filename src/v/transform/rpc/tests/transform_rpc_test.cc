@@ -28,6 +28,7 @@
 #include "net/server.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
+#include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
@@ -36,13 +37,14 @@
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/logger.h"
+#include "transform/rpc/serde.h"
 #include "transform/rpc/service.h"
-#include "transform/tests/cluster_fixture.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/print.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
@@ -56,6 +58,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -253,8 +256,43 @@ private:
     model::cluster_transform_report _report;
 };
 
+class fake_offset_tracker {
+public:
+    void set_partitions(int n) { _num_partitions = n; }
+
+    model::partition_id
+    compute_coordinator(model::transform_offsets_key key) const {
+        int hash = int(absl::HashOf(key));
+        auto pid = model::partition_id(std::abs(hash % _num_partitions));
+        return pid;
+    }
+
+    std::optional<model::transform_offsets_value>
+    get(model::transform_offsets_key key) {
+        if (!_offsets.contains(key)) {
+            return std::nullopt;
+        }
+        return _offsets[key];
+    }
+
+    void
+    set(model::transform_offsets_key key, model::transform_offsets_value val) {
+        _offsets.insert_or_assign(key, val);
+    }
+
+private:
+    int _num_partitions = 3;
+    absl::flat_hash_map<
+      model::transform_offsets_key,
+      model::transform_offsets_value>
+      _offsets;
+};
+
 class fake_partition_manager : public partition_manager {
 public:
+    explicit fake_partition_manager(fake_offset_tracker* fot)
+      : _offset_tracker(fot) {}
+
     std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) final {
         auto it = _shard_locations.find(ntp);
         if (it == _shard_locations.end()) {
@@ -262,6 +300,8 @@ public:
         }
         return it->second;
     };
+
+    void set_errors(int n) { _errors_to_inject = n; }
 
     void set_shard_owner(const model::ntp& ntp, ss::shard_id shard_id) {
         _shard_locations.insert_or_assign(ntp, shard_id);
@@ -289,30 +329,84 @@ public:
         if (!owner || shard_id != *owner) {
             co_return cluster::errc::not_leader;
         }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            co_return cluster::errc::timeout;
+        }
         auto pp = kafka::partition_proxy(
           std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
         co_return co_await fn(&pp);
     }
 
     ss::future<find_coordinator_response> invoke_on_shard(
-      ss::shard_id,
-      ss::noncopyable_function<ss::future<find_coordinator_response>(
-        cluster::partition_manager&)>) override final {
-        return ss::make_exception_future<find_coordinator_response>({});
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      find_coordinator_request req) final {
+        auto owner = shard_owner(ntp);
+        find_coordinator_response resp;
+        if (!owner || shard_id != *owner) {
+            resp.ec = cluster::errc::not_leader;
+            co_return resp;
+        }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            resp.ec = cluster::errc::timeout;
+            co_return resp;
+        }
+        for (auto k : req.keys) {
+            resp.coordinators[k] = _offset_tracker->compute_coordinator(k);
+        }
+        co_return resp;
     }
 
     ss::future<offset_commit_response> invoke_on_shard(
-      ss::shard_id,
-      ss::noncopyable_function<ss::future<offset_commit_response>(
-        cluster::partition_manager&)>) override final {
-        return ss::make_exception_future<offset_commit_response>({});
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      offset_commit_request req) final {
+        offset_commit_response resp;
+        auto owner = shard_owner(ntp);
+        if (!owner || shard_id != *owner) {
+            resp.errc = cluster::errc::not_leader;
+            co_return resp;
+        }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            resp.errc = cluster::errc::timeout;
+            co_return resp;
+        }
+        for (const auto& entry : req.kvs) {
+            if (
+              ntp.tp.partition
+              != _offset_tracker->compute_coordinator(entry.first)) {
+                resp.errc = cluster::errc::not_leader;
+                co_return resp;
+            }
+            _offset_tracker->set(entry.first, entry.second);
+        }
+        co_return resp;
     }
 
     ss::future<offset_fetch_response> invoke_on_shard(
-      ss::shard_id,
-      ss::noncopyable_function<ss::future<offset_fetch_response>(
-        cluster::partition_manager&)>) override final {
-        return ss::make_exception_future<offset_fetch_response>({});
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      offset_fetch_request req) final {
+        offset_fetch_response resp;
+        auto owner = shard_owner(ntp);
+        if (!owner || shard_id != *owner) {
+            resp.errc = cluster::errc::not_leader;
+            co_return resp;
+        }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            resp.errc = cluster::errc::timeout;
+            co_return resp;
+        }
+        if (ntp.tp.partition != _offset_tracker->compute_coordinator(req.key)) {
+            resp.errc = cluster::errc::not_leader;
+            co_return resp;
+        }
+        resp.result = _offset_tracker->get(req.key);
+        co_return resp;
     }
 
 private:
@@ -435,6 +529,8 @@ private:
         ss::chunked_fifo<produced_batch>* _produced_batches;
     };
 
+    fake_offset_tracker* _offset_tracker;
+    int _errors_to_inject = 0;
     ss::chunked_fifo<produced_batch> _produced_batches;
     model::ntp_flat_map_type<ss::shard_id> _shard_locations;
 };
@@ -477,7 +573,8 @@ public:
                 return ftmc;
             }),
             ss::sharded_parameter([this]() {
-                auto fpm = std::make_unique<fake_partition_manager>();
+                auto fpm = std::make_unique<fake_partition_manager>(
+                  &_tracked_offsets);
                 _remote_fpm = fpm.get();
                 return fpm;
             }),
@@ -511,7 +608,8 @@ public:
                 return ftmc;
             }),
             ss::sharded_parameter([this]() {
-                auto fpm = std::make_unique<fake_partition_manager>();
+                auto fpm = std::make_unique<fake_partition_manager>(
+                  &_tracked_offsets);
                 _local_fpm = fpm.get();
                 return fpm;
             }),
@@ -570,11 +668,12 @@ public:
         _fplc = nullptr;
     }
 
-    void create_topic(const model::topic_namespace& tp_ns) {
+    void
+    create_topic(const model::topic_namespace& tp_ns, int partition_count = 1) {
         cluster::topic_configuration tcfg{
           tp_ns.ns,
           tp_ns.tp,
-          /*partition_count=*/1,
+          partition_count,
           /*replication_factor=*/1,
         };
         remote_metadata_cache()->set_topic_cfg(tcfg);
@@ -598,6 +697,11 @@ public:
 
     void set_default_new_topic_leader(model::node_id node_id) {
         _ftpc->set_default_new_topic_leader(node_id);
+    }
+
+    void set_errors_to_inject(int n) {
+        _local_fpm->set_errors(n);
+        _remote_fpm->set_errors(n);
     }
 
     cluster::errc produce(const model::ntp& ntp, record_batches batches) {
@@ -649,6 +753,8 @@ private:
         return manager->partition_records(ntp);
     }
 
+    fake_offset_tracker _tracked_offsets;
+
     std::unique_ptr<::rpc::rpc_server> _server;
     fake_topic_metadata_cache* _local_ftmc = nullptr;
     fake_partition_manager* _local_fpm = nullptr;
@@ -693,6 +799,7 @@ TEST_P(TransformRpcTest, ClientCanProduce) {
     create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
     elect_leader(ntp, leader_node());
     auto batches = record_batches::make();
+    set_errors_to_inject(2);
     cluster::errc ec = produce(ntp, batches);
     EXPECT_EQ(ec, cluster::errc::success)
       << cluster::error_category().message(int(ec));
@@ -712,74 +819,49 @@ TEST_P(TransformRpcTest, WasmBinaryCrud) {
     // The topic is auto created
     set_default_new_topic_leader(leader_node());
 
+    set_errors_to_inject(2);
     auto stored = store_wasm_binary(wasm_binary.copy());
     ASSERT_TRUE(stored.has_value());
     EXPECT_THAT(
       non_leader_batches(model::wasm_binaries_internal_ntp), IsEmpty());
     EXPECT_THAT(leader_batches(model::wasm_binaries_internal_ntp), SizeIs(1));
     auto [key, offset] = stored.value();
+    set_errors_to_inject(2);
     auto loaded = load_wasm_binary(offset);
     ASSERT_TRUE(loaded.has_value());
     EXPECT_EQ(loaded.value(), wasm_binary);
+    set_errors_to_inject(2);
     auto ec = delete_wasm_binary(key);
     EXPECT_EQ(ec, cluster::errc::success)
       << cluster::error_category().message(int(ec));
 }
 
-struct TransformRpcTestParams {
-    int num_transform_topic_partitions;
-    bool shuffle_leadership;
-    friend std::ostream&
-    operator<<(std::ostream& os, const TransformRpcTestParams& tp) {
-        return os << "{partitions: " << tp.num_transform_topic_partitions
-                  << " shuffle_leadership: " << tp.shuffle_leadership << "}";
+TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
+    constexpr size_t num_partitions = 3;
+    create_topic(model::transform_offsets_nt, num_partitions);
+    for (int i = 0; i < num_partitions; ++i) {
+        model::ntp ntp(
+          model::kafka_internal_namespace,
+          model::transform_offsets_topic,
+          model::partition_id(i));
+        elect_leader(ntp, i % 2 == 0 ? leader_node() : non_leader_node());
     }
-};
+    constexpr size_t num_transforms = 10;
+    constexpr size_t num_src_partitions = 25;
 
-class TransformRpcTestFixture
-  : public WasmClusterFixture
-  , public ::testing::TestWithParam<TransformRpcTestParams> {
-public:
-    void shuffle_transform_offsets_leaders() {
-        for (auto id = 0; id < GetParam().num_transform_topic_partitions;
-             id++) {
-            shuffle_leadership(
-              {model::kafka_internal_namespace,
-               model::transform_offsets_topic,
-               id});
-        }
-    }
-};
-
-TEST_P(TransformRpcTestFixture, TestTransformOffsetRPCs) {
-    constexpr size_t num_brokers = 3;
-    for (int i = 0; i < num_brokers; i++) {
-        create_node_application(model::node_id{i});
-    }
-    wait_for_all_members(5s).get();
-    create_transform_offsets_topic(GetParam().num_transform_topic_partitions);
-    constexpr size_t num_transforms = 50;
-    constexpr size_t num_src_partitions = 100;
-
-    auto& client = transforms_client(model::node_id{0}).local();
     for (int i = 0; i < num_transforms; i++) {
         auto request_key = model::transform_offsets_key{};
         request_key.id = model::transform_id{i};
+        set_errors_to_inject(random_generators::get_int(0, 2));
         for (int32_t j = 0; j < num_src_partitions; j++) {
             request_key.partition = model::partition_id{j};
             auto request_val = model::transform_offsets_value{
               .offset = kafka::offset{j}};
-            auto result = client.offset_commit(request_key, request_val).get();
+            auto result
+              = client()->offset_commit(request_key, request_val).get();
             ASSERT_EQ(result, cluster::errc::success)
               << "request (" << i << "," << j << ")";
-            // issue occastional leadership changes and ensure fetch sees a
-            // consistent state.
-            if (
-              GetParam().shuffle_leadership
-              && random_generators::get_int(100) <= 10) {
-                shuffle_transform_offsets_leaders();
-            }
-            auto read_result = client.offset_fetch(request_key).get();
+            auto read_result = client()->offset_fetch(request_key).get();
             ASSERT_TRUE(!read_result.has_error());
             ASSERT_EQ(read_result.value().offset, request_val.offset);
         }
@@ -792,17 +874,6 @@ INSTANTIATE_TEST_SUITE_P(
   ::testing::Values(
     test_parameters{.leader_node = self_node, .non_leader_node = other_node},
     test_parameters{.leader_node = other_node, .non_leader_node = self_node}));
-
-INSTANTIATE_TEST_SUITE_P(
-  TransformRpcSingleAndMultiPartitions,
-  TransformRpcTestFixture,
-  ::testing::Values(
-    TransformRpcTestParams{
-      .num_transform_topic_partitions = 1, .shuffle_leadership = false},
-    TransformRpcTestParams{
-      .num_transform_topic_partitions = 3, .shuffle_leadership = true},
-    TransformRpcTestParams{
-      .num_transform_topic_partitions = 3, .shuffle_leadership = false}));
 
 TEST_F(TransformRpcTest, CanAggregateReports) {
     using state = model::transform_report::processor::state;

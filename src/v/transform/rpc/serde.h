@@ -40,6 +40,8 @@ struct transformed_topic_data
     ss::chunked_fifo<model::record_batch> batches;
 
     transformed_topic_data share();
+    friend std::ostream&
+    operator<<(std::ostream&, const transformed_topic_data&);
 
     auto serde_fields() { return std::tie(tp, batches); }
 };
@@ -59,6 +61,7 @@ struct produce_request
     auto serde_fields() { return std::tie(topic_data, timeout); }
 
     produce_request share();
+    friend std::ostream& operator<<(std::ostream&, const produce_request&);
 
     ss::chunked_fifo<transformed_topic_data> topic_data;
     model::timeout_clock::duration timeout{};
@@ -78,6 +81,8 @@ struct transformed_topic_data_result
     cluster::errc err{cluster::errc::success};
 
     auto serde_fields() { return std::tie(tp, err); }
+    friend std::ostream&
+    operator<<(std::ostream&, const transformed_topic_data_result&);
 };
 
 struct produce_reply
@@ -90,6 +95,8 @@ struct produce_reply
       : results(std::move(r)) {}
 
     auto serde_fields() { return std::tie(results); }
+
+    friend std::ostream& operator<<(std::ostream&, const produce_reply&);
 
     ss::chunked_fifo<transformed_topic_data_result> results;
 };
@@ -109,6 +116,9 @@ struct store_wasm_binary_request
 
     auto serde_fields() { return std::tie(data, timeout); }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const store_wasm_binary_request&);
+
     iobuf data;
     model::timeout_clock::duration timeout{};
 };
@@ -126,6 +136,9 @@ struct stored_wasm_binary_metadata
       , offset(o){};
 
     auto serde_fields() { return std::tie(key, offset); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const stored_wasm_binary_metadata&);
 
     uuid_t key{};
     model::offset offset;
@@ -146,6 +159,9 @@ struct store_wasm_binary_reply
 
     auto serde_fields() { return std::tie(ec, stored); }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const store_wasm_binary_reply&);
+
     cluster::errc ec = cluster::errc::success;
     stored_wasm_binary_metadata stored;
 };
@@ -165,6 +181,9 @@ struct delete_wasm_binary_request
 
     auto serde_fields() { return std::tie(key, timeout); }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const delete_wasm_binary_request&);
+
     uuid_t key{};
     model::timeout_clock::duration timeout{};
 };
@@ -181,6 +200,9 @@ struct delete_wasm_binary_reply
       : ec(e) {}
 
     auto serde_fields() { return std::tie(ec); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const delete_wasm_binary_reply&);
 
     cluster::errc ec = cluster::errc::success;
 };
@@ -200,6 +222,9 @@ struct load_wasm_binary_request
 
     auto serde_fields() { return std::tie(offset, timeout); }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const load_wasm_binary_request&);
+
     model::offset offset;
     model::timeout_clock::duration timeout{};
 };
@@ -217,6 +242,9 @@ struct load_wasm_binary_reply
       , data(std::move(b)) {}
 
     auto serde_fields() { return std::tie(ec, data); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const load_wasm_binary_reply&);
 
     cluster::errc ec = cluster::errc::success;
     iobuf data;
@@ -255,7 +283,7 @@ struct find_coordinator_response
       coordinators;
 
     friend std::ostream&
-    operator<<(std::ostream&, const find_coordinator_request&);
+    operator<<(std::ostream&, const find_coordinator_response&);
 
     auto serde_fields() { return std::tie(ec, coordinators); }
 };
@@ -324,6 +352,8 @@ struct offset_fetch_request
     model::partition_id coordinator;
 
     auto serde_fields() { return std::tie(key, coordinator); }
+
+    friend std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
 };
 
 struct offset_fetch_response
@@ -344,6 +374,9 @@ struct offset_fetch_response
     std::optional<model::transform_offsets_value> result;
 
     auto serde_fields() { return std::tie(errc, result); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const offset_fetch_response&);
 };
 
 struct generate_report_request
@@ -356,6 +389,9 @@ struct generate_report_request
     generate_report_request() = default;
 
     auto serde_fields() { return std::tie(); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const generate_report_request&);
 };
 
 struct generate_report_reply
@@ -370,6 +406,9 @@ struct generate_report_reply
       : report(std::move(r)) {}
 
     auto serde_fields() { return std::tie(report); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const generate_report_reply&);
 
     model::cluster_transform_report report;
 };
