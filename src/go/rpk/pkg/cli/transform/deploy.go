@@ -67,6 +67,21 @@ The --env-var can be repeated to specify multiple variables.
 			err = validateProjectConfig(cfg, err)
 			out.MaybeDieErr(err)
 
+			if cfg.InputTopic == "" {
+				cfg.InputTopic, err = out.Prompt("Select an input topic:")
+				out.MaybeDie(err, "no input topic: %v", err)
+				if cfg.InputTopic == "" {
+					out.Die("missing input topic")
+				}
+			}
+			if cfg.OutputTopic == "" {
+				cfg.OutputTopic, err = out.Prompt("Select an output topic:")
+				out.MaybeDie(err, "no output topic: %v", err)
+				if cfg.OutputTopic == "" {
+					out.Die("missing output topic")
+				}
+			}
+
 			deployable := fmt.Sprintf("%s.wasm", cfg.Name)
 			if len(args) == 1 {
 				deployable = args[0]
@@ -197,12 +212,6 @@ func validateProjectConfig(cfg project.Config, fileConfigErr error) error {
 	}
 	if cfg.Name == "" {
 		return errors.New("missing name")
-	}
-	if cfg.InputTopic == "" {
-		return errors.New("missing input-topic")
-	}
-	if cfg.OutputTopic == "" {
-		return errors.New("missing output-topic")
 	}
 	return nil
 }
