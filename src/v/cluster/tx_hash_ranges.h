@@ -76,6 +76,12 @@ struct tx_hash_range
         return (r.first >= first && r.first <= last)
                || (r.last >= first && r.last <= last) || r.contains(*this);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const tx_hash_range& range) {
+        fmt::print(o, "[{}, {}]", range.first, range.last);
+        return o;
+    }
 };
 
 inline tx_hash_range default_hash_range(
@@ -158,6 +164,12 @@ struct tx_hash_ranges_set
               return range1.intersects(range2);
           });
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const tx_hash_ranges_set& ranges) {
+        fmt::print(o, "{{ {} }}", ranges.ranges);
+        return o;
+    }
 };
 
 using repartitioning_id = named_type<int64_t, struct repartitioning_id_type>;
@@ -183,6 +195,16 @@ struct hosted_txs
     auto serde_fields() {
         return std::tie(
           hash_ranges, excluded_transactions, included_transactions);
+    }
+
+    friend std::ostream& operator<<(std::ostream& o, hosted_txs h) {
+        fmt::print(
+          o,
+          "{{ ranges: {}, excluded: {}, included: {} }}",
+          h.hash_ranges,
+          h.excluded_transactions.size(),
+          h.included_transactions.size());
+        return o;
     }
 };
 

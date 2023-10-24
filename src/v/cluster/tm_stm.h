@@ -148,6 +148,17 @@ public:
           = default;
 
         auto serde_fields() { return std::tie(id, ranges, transactions); }
+
+        friend std::ostream&
+        operator<<(std::ostream& o, const draining_txs& txes) {
+            fmt::print(
+              o,
+              "{{ id: {}, ranges: {}, transactions: {} }}",
+              txes.id,
+              txes.ranges,
+              txes.transactions.size());
+            return o;
+        }
     };
 
     // this struct is basicly the same as other hosted_txs but we can't
@@ -190,6 +201,20 @@ public:
               excluded_transactions,
               included_transactions,
               draining);
+        }
+
+        friend std::ostream&
+        operator<<(std::ostream& o, const locally_hosted_txs& txes) {
+            fmt::print(
+              o,
+              "{{ inited: {}, hash ranges: {}, excluded: {}, included: {}, "
+              "draining: {} }}",
+              txes.inited,
+              txes.hash_ranges,
+              txes.excluded_transactions.size(),
+              txes.included_transactions.size(),
+              txes.draining);
+            return o;
         }
     };
 
