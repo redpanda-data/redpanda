@@ -195,7 +195,10 @@ class HighThroughputTest(PreallocNodesTest):
     # Min segment size across all tiers
     min_segment_size = 16 * MiB
     unavailable_timeout = 60
-    
+    # default message count to check
+    msg_count = 10000
+    # Default value
+    msg_timeout = 120
 
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
@@ -239,6 +242,10 @@ class HighThroughputTest(PreallocNodesTest):
 
         self.rpk = RpkTool(self.redpanda)
 
+        # Calculate timeout for 10000 messages with a 50% gap
+        self.msg_timeout = int(
+            self.msg_count //
+            (self.tier_config.ingress_rate // self.msg_size) * 1.5)
         # resources
         self.resources = []
 
@@ -288,15 +295,21 @@ class HighThroughputTest(PreallocNodesTest):
         cloud_segment_size = self.min_segment_size
         # Original value is 1000
         # which results in 1016 hours of data preload at tier1 ingress speed
-        #     at '2' metric shows for 100% produced
+        #   at '2' metric shows for 100% produced
         #     [INFO  - 2023-10-20 22:34:52,258 - si_utils - nodes_report_cloud_segments - lineno:539]: Cluster metrics report 315 / 800 cloud segments
-        num_segments_per_partition = 10
-        target_cloud_segments = num_segments_per_partition * self.tier_config.partitions_upper_limit
-        total_bytes_to_produce = target_cloud_segments * cloud_segment_size
+        #   at '10'
+        #     [INFO  - 2023-10-24 15:50:00,793 - kgo_verifier_services - _ingest_status - lineno:364]: Producer KgoVerifierProducer-0-140624622493344 progress: 69.58% ProduceStatus<2137520 2136495 0 0 0 0 115750.5/5504122.5/6040921.75>
+        #     [INFO  - 2023-10-24 15:50:03,314 - si_utils - nodes_report_cloud_segments - lineno:539]: Cluster metrics report 2238 / 4000 cloud segments
+        num_segments_per_partition = 100
+        # Use half upper limit for projected number of segments in the cloud for 100% messages produced
+        projected_cloud_segments = num_segments_per_partition * (
+            self.tier_config.partitions_upper_limit // 2)
+        total_bytes_to_produce = projected_cloud_segments * cloud_segment_size
         total_messages = int((total_bytes_to_produce / self.msg_size) * 1.2)
-        self.redpanda.logger.info(f"Total bytes: {total_bytes_to_produce}, "
-                                  f"total messages: {total_messages}, "
-                                  f"target segments: {target_cloud_segments}")
+        self.redpanda.logger.info(
+            f"Total bytes: {total_bytes_to_produce}, "
+            f"total messages: {total_messages}, "
+            f"target segments: {projected_cloud_segments}")
         assert cloud_segment_size >= self.msg_size
         producer = KgoVerifierProducer(self.test_context, self.redpanda,
                                        self.topic, self.msg_size,
@@ -310,10 +323,14 @@ class HighThroughputTest(PreallocNodesTest):
         # for any network hiccups or transitent errors
         estimated_produce_time_secs = int(
             (total_bytes_to_produce / self.tier_config.ingress_rate) * 1.2)
+        # Use sensible target cloud segments number
+        # based on ingress rate and amount of data can be produced in 10 min
+        # on current tier
+        target_cloud_segments = self.tier_config.ingress_rate // cloud_segment_size * 600 // 4
         try:
             producer.start()
             wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, target_cloud_segments // 10),
+                self.redpanda, target_cloud_segments),
                        timeout_sec=estimated_produce_time_secs,
                        backoff_sec=5)
         finally:
@@ -512,7 +529,8 @@ class HighThroughputTest(PreallocNodesTest):
                                self.tier_config, self.topic,
                                self.msg_size) as tgen:
             # Wait until theres some traffic
-            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
+            tgen.wait_for_traffic(acked=self.msg_count,
+                                  timeout_sec=self.msg_timeout)
 
             # Run a rolling restart.
             self.stage_rolling_restart()
@@ -604,7 +622,8 @@ class HighThroughputTest(PreallocNodesTest):
                                self.tier_config, self.topic,
                                self.msg_size) as tgen:
             # Wait until theres some traffic
-            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
+            tgen.wait_for_traffic(acked=self.msg_count,
+                                  timeout_sec=self.msg_timeout)
 
             # S3 up -> down -> up
             self.stage_block_s3()
@@ -685,9 +704,10 @@ class HighThroughputTest(PreallocNodesTest):
                 custom_node=[self.preallocated_nodes[0]])
             try:
                 producer.start()
-                wait_until(lambda: producer.produce_status.acked > 10000,
-                           timeout_sec=60,
-                           backoff_sec=1.0)
+                wait_until(
+                    lambda: producer.produce_status.acked > self.msg_count,
+                    timeout_sec=self.msg_timeout,
+                    backoff_sec=1.0)
 
                 # Decommission.
                 # Add node (after stage_decommission has freed up a node)
@@ -772,7 +792,8 @@ class HighThroughputTest(PreallocNodesTest):
         with traffic_generator(self.test_context, self.redpanda,
                                self.tier_config, self.topic,
                                self.msg_size) as tgen:
-            tgen.wait_for_traffic(acked=10000, timeout_sec=60)
+            tgen.wait_for_traffic(acked=self.msg_count,
+                                  timeout_sec=self.msg_timeout)
             wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100),
                        timeout_sec=600,
                        backoff_sec=5)
@@ -796,7 +817,6 @@ class HighThroughputTest(PreallocNodesTest):
                 consumer.stop()
                 consumer.wait(timeout_sec=600)
 
-    @ok_to_fail
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
         # create default topics
@@ -819,8 +839,8 @@ class HighThroughputTest(PreallocNodesTest):
                 rate_limit_bps=self.tier_config.ingress_rate,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
+            wait_until(lambda: producer.produce_status.acked > self.msg_count,
+                       timeout_sec=self.msg_timeout,
                        backoff_sec=1.0)
 
             self.stage_lots_of_failed_consumers()
@@ -845,11 +865,12 @@ class HighThroughputTest(PreallocNodesTest):
         # a SIGKILL.
 
         self.logger.info(f"Starting stage_lots_of_failed_consumers")
-
+        # Original value 10000
         consume_count = 5000
 
         def random_stop_check(consumer):
-            if consumer.message_count >= min(100, consume_count):
+            # original step was 10 messages
+            if consumer.message_count >= min(50, consume_count):
                 return True
             else:
                 return False
@@ -928,8 +949,8 @@ class HighThroughputTest(PreallocNodesTest):
                 rate_limit_bps=self.tier_config.ingress_rate,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
+            wait_until(lambda: producer.produce_status.acked > self.msg_count,
+                       timeout_sec=self.msg_timeout,
                        backoff_sec=1.0)
 
             # this stage could have been a part of test_consume however one
