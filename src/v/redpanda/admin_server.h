@@ -24,6 +24,9 @@
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
+#include "security/audit/schemas/iam.h"
+#include "security/fwd.h"
+#include "security/types.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
 #include "utils/request_auth.h"
@@ -38,6 +41,7 @@
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
 #include <seastar/json/json_elements.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -81,7 +85,8 @@ public:
       ss::sharded<memory_sampling>&,
       ss::sharded<cloud_storage::cache>&,
       ss::sharded<resources::cpu_profiler>&,
-      ss::sharded<transform::service>*);
+      ss::sharded<transform::service>*,
+      ss::sharded<security::audit::audit_log_manager>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -103,24 +108,65 @@ private:
     static constexpr auth_level user = auth_level::user;
     static constexpr auth_level superuser = auth_level::superuser;
 
+    using httpd_authorized = ss::bool_class<struct httpd_authorized>;
+    void audit_authz(
+      ss::httpd::const_req req,
+      const request_auth_result& auth_result,
+      httpd_authorized authorized,
+      std::optional<std::string_view> reason = std::nullopt);
+
+    void audit_authn(
+      ss::httpd::const_req req, const request_auth_result& auth_result);
+
+    void audit_authn_failure(
+      ss::httpd::const_req req,
+      const security::credential_user& username,
+      const ss::sstring& reason);
+
+    void do_audit_authn(
+      ss::httpd::const_req req,
+      security::audit::authentication authentication_event);
+
     /**
      * Authenticate, and raise if `required_auth` is not met by
      * the credential (or pass if authentication is disabled).
      */
     template<auth_level required_auth>
     request_auth_result apply_auth(ss::httpd::const_req req) {
-        auto auth_state = _auth.authenticate(req);
-        if constexpr (required_auth == auth_level::superuser) {
-            auth_state.require_superuser();
-        } else if constexpr (required_auth == auth_level::user) {
-            auth_state.require_authenticated();
-        } else if constexpr (required_auth == auth_level::publik) {
-            auth_state.pass();
-        } else {
-            static_assert(
-              utils::unsupported_value<required_auth>::value,
-              "Invalid auth_level");
+        auto auth_state = [this, &req]() -> request_auth_result {
+            try {
+                return _auth.authenticate(req);
+            } catch (unauthorized_user_exception& e) {
+                audit_authn_failure(req, e.get_username(), e.what());
+                throw;
+            } catch (const ss::httpd::base_exception& e) {
+                audit_authn_failure(
+                  req, security::credential_user{"{{unknown}}"}, e.what());
+                throw;
+            }
+        }();
+
+        audit_authn(req, auth_state);
+
+        try {
+            if constexpr (required_auth == auth_level::superuser) {
+                auth_state.require_superuser();
+            } else if constexpr (required_auth == auth_level::user) {
+                auth_state.require_authenticated();
+            } else if constexpr (required_auth == auth_level::publik) {
+                auth_state.pass();
+            } else {
+                static_assert(
+                  utils::unsupported_value<required_auth>::value,
+                  "Invalid auth_level");
+            }
+
+        } catch (const ss::httpd::base_exception& ex) {
+            audit_authz(req, auth_state, httpd_authorized::no, ex.what());
+            throw;
         }
+
+        audit_authz(req, auth_state, httpd_authorized::yes);
 
         return auth_state;
     }
@@ -552,6 +598,7 @@ private:
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     ss::sharded<resources::cpu_profiler>& _cpu_profiler;
     ss::sharded<transform::service>* _transform_service;
+    ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

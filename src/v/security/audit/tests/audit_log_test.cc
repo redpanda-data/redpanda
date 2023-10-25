@@ -18,7 +18,7 @@
 
 namespace sa = security::audit;
 
-bool enqueue_random_audit_event(sa::audit_log_manager& m, sa::event_type type) {
+sa::application_lifecycle make_random_audit_event() {
     auto make_random_product = []() {
         return sa::product{
           .name = random_generators::gen_alphanum_string(10),
@@ -31,12 +31,11 @@ bool enqueue_random_audit_event(sa::audit_log_manager& m, sa::event_type type) {
         std::chrono::system_clock::now().time_since_epoch())
         .count()};
 
-    return m.enqueue_audit_event<sa::application_lifecycle>(
-      type,
+    return {
       sa::application_lifecycle::activity_id(random_generators::get_int(0, 4)),
       make_random_product(),
       sa::severity_id(random_generators::get_int(0, 6)),
-      now);
+      now};
 }
 
 ss::future<size_t> pending_audit_events(sa::audit_log_manager& m) {
@@ -72,8 +71,8 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
     audit_mgr
       .invoke_on_all([](sa::audit_log_manager& m) {
           for (auto i = 0; i < 20; ++i) {
-              BOOST_ASSERT(
-                enqueue_random_audit_event(m, sa::event_type::management));
+              BOOST_ASSERT(m.enqueue_audit_event(
+                sa::event_type::management, make_random_audit_event()));
           }
       })
       .get0();
@@ -102,8 +101,9 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
                            for (auto i = 0; i < 20; ++i) {
                                /// Should always return true, auditing is
                                /// disabled
-                               bool enqueued = enqueue_random_audit_event(
-                                 m, sa::event_type::management);
+                               bool enqueued = m.enqueue_audit_event(
+                                 sa::event_type::management,
+                                 make_random_audit_event());
                                if (i >= 5) {
                                    /// Assert that when the max is reached data
                                    /// cannot be entered into the system
@@ -123,12 +123,12 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
       size_t(5 * ss::smp::count));
 
     /// Verify auditing doesn't enqueue the non configured types
-    BOOST_CHECK(enqueue_random_audit_event(
-      audit_mgr.local(), sa::event_type::authenticate));
-    BOOST_CHECK(
-      enqueue_random_audit_event(audit_mgr.local(), sa::event_type::describe));
-    BOOST_CHECK(!enqueue_random_audit_event(
-      audit_mgr.local(), sa::event_type::management));
+    BOOST_CHECK(audit_mgr.local().enqueue_audit_event(
+      sa::event_type::authenticate, make_random_audit_event()));
+    BOOST_CHECK(audit_mgr.local().enqueue_audit_event(
+      sa::event_type::describe, make_random_audit_event()));
+    BOOST_CHECK(!audit_mgr.local().enqueue_audit_event(
+      sa::event_type::management, make_random_audit_event()));
 
     /// Toggle the audit switch a few times
     for (auto i = 0; i < 5; ++i) {
@@ -154,8 +154,9 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
     const bool enqueued = audit_mgr
                             .map_reduce0(
                               [](sa::audit_log_manager& m) {
-                                  return enqueue_random_audit_event(
-                                    m, sa::event_type::management);
+                                  return m.enqueue_audit_event(
+                                    sa::event_type::management,
+                                    make_random_audit_event());
                               },
                               true,
                               std::logical_and<>())

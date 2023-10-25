@@ -9,7 +9,15 @@
  * by the Apache License, Version 2.0
  */
 
+#include "json/json.h"
 #include "security/audit/schemas/types.h"
+#include "security/audit/schemas/utils.h"
+#include "security/types.h"
+#include "utils/request_auth.h"
+
+#include <seastar/net/socket_defs.hh>
+
+#include <optional>
 #define BOOST_TEST_MODULE security_audit
 
 #include "json/reader.h"
@@ -18,6 +26,8 @@
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/schemas.h"
+
+#include <seastar/http/request.hh>
 
 #include <boost/test/unit_test.hpp>
 
@@ -103,7 +113,6 @@ static const ss::sstring client_kafka_endpoint_ser{
 )"};
 
 static const sa::api_activity_unmapped unmapped {
-  .shard_id = ss::shard_id{1},
   .authorization_metadata = sa::authorization_metadata {
     .acl_authorization = {
       .host = "*",
@@ -122,7 +131,6 @@ static const sa::api_activity_unmapped unmapped {
 static const ss::sstring unmapped_ser{
   R"(
 {
-  "shard_id": 1,
   "authorization_metadata": {
     "acl_authorization": {
       "host": "*",
@@ -271,6 +279,8 @@ BOOST_AUTO_TEST_CASE(validate_authentication_sasl_scram) {
       sa::authentication::used_mfa ::yes,
       std::move(src_endpoint),
       sa::severity_id::informational,
+      sa::authentication::status_id::success,
+      std::nullopt,
       now,
       sa::user{default_user});
 
@@ -296,6 +306,7 @@ BOOST_AUTO_TEST_CASE(validate_authentication_sasl_scram) {
 "mfa": true,
 "src_endpoint": )"
       + client_kafka_endpoint_ser + R"(,
+"status_id": 1,
 "user": )"
       + default_user_ser + R"(
 }
@@ -319,6 +330,8 @@ BOOST_AUTO_TEST_CASE(validate_authentication_kerberos) {
       sa::authentication::used_mfa ::no,
       std::move(src_endpoint),
       sa::severity_id::informational,
+      sa::authentication::status_id::failure,
+      "Failure",
       now,
       sa::user{default_user});
 
@@ -343,6 +356,8 @@ BOOST_AUTO_TEST_CASE(validate_authentication_kerberos) {
 "mfa": false,
 "src_endpoint": )"
       + client_kafka_endpoint_ser + R"(,
+"status_id": 2,
+"status_detail": "Failure",
 "user": )"
       + default_user_ser + R"(
 }
@@ -581,6 +596,8 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::success,
+          std::nullopt,
           sa::timestamp_t{1},
           sa::user{default_user});
         auto authn2 = sa::authentication(
@@ -591,6 +608,8 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::success,
+          std::nullopt,
           sa::timestamp_t{2},
           sa::user{default_user});
 
@@ -614,6 +633,8 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::failure,
+          "Failure",
           sa::timestamp_t{1},
           sa::user{default_user});
         auto authn2 = sa::authentication(
@@ -624,9 +645,361 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
           sa::severity_id::informational,
+          sa::authentication::status_id::failure,
+          "Failure",
           sa::timestamp_t{2},
           sa::user{default_user});
 
         BOOST_REQUIRE_NE(authn1.key(), authn2.key());
     }
+}
+
+BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
+    const ss::socket_address client_addr{ss::ipv4_addr("10.0.0.1", 12345)};
+    const ss::socket_address server_addr{ss::ipv4_addr("10.1.1.1", 23456)};
+    const ss::sstring url = "/v1/test?param=val";
+    const ss::sstring method = "GET";
+    const ss::sstring protocol_name = "https";
+    const ss::sstring host_name = "local";
+    const ss::sstring version = "1.1";
+    const ss::sstring user_agent = "Mozilla";
+    const ss::sstring username = "test";
+
+    auto req = ss::http::request::make(method, host_name, url);
+    req.parse_query_param();
+    req._client_address = client_addr;
+    req._server_address = server_addr;
+    req._version = version;
+    req._headers["User-Agent"] = user_agent;
+    req._headers["Authorization"] = "You shouldn't see this at all";
+    req.protocol_name = protocol_name;
+
+    request_auth_result auth_result{
+      security::credential_user{username},
+      security::credential_password{"password"},
+      "sasl",
+      request_auth_result::superuser::no};
+
+    auto api_activity = sa::make_api_activity_event(
+      req, auth_result, true, std::nullopt);
+
+    auth_result.pass();
+
+    const auto expected = fmt::format(
+      R"(
+{{
+ "category_uid": 6,
+  "class_uid": 6003,
+  "metadata": {metadata},
+  "severity_id": 1,
+  "time": {time},
+  "type_uid": 600302,
+  "activity_id": 2,
+  "actor": {{
+    "authorizations": [
+      {{
+        "decision": "authorized",
+        "policy": {{
+          "desc": "",
+          "name": "Admin httpd authorizer"
+        }}
+      }}
+    ],
+    "user": {{
+      "name": "{username}",
+      "type_id": 1
+    }}
+  }},
+  "api": {{
+    "operation": "{method}"
+  }},
+  "dst_endpoint": {{
+    "ip": "10.1.1.1",
+    "port": 23456
+  }},
+  "http_request": {{
+    "http_headers": [
+      {{
+        "name": "User-Agent",
+        "value": "{user_agent}"
+      }},
+      {{
+        "name": "Authorization",
+        "value": "******"
+      }},
+      {{
+        "name": "Host",
+        "value": "{host_name}"
+      }}
+    ],
+    "http_method": "{method}",
+    "url": {{
+      "hostname": "{host_name}",
+      "path": "{url}",
+      "port": 23456,
+      "scheme": "{protocol_name}",
+      "url_string": "{url_string}"
+    }},
+    "user_agent": "{user_agent}",
+    "version": "{version}"
+  }},
+  "src_endpoint": {{
+    "ip": "10.0.0.1",
+    "port": 12345
+  }},
+  "status_id": 1,
+  "unmapped": {{}}
+}}
+    )",
+      fmt::arg("metadata", metadata_ser),
+      fmt::arg("time", ss::to_sstring(api_activity.get_time())),
+      fmt::arg("username", username),
+      fmt::arg("method", method),
+      fmt::arg("user_agent", user_agent),
+      fmt::arg("host_name", host_name),
+      fmt::arg("url", url),
+      fmt::arg("protocol_name", protocol_name),
+      fmt::arg("url_string", protocol_name + "://" + host_name + url),
+      fmt::arg("version", version));
+
+    auto ser = sa::rjson_serialize(api_activity);
+
+    BOOST_REQUIRE_EQUAL(ser, ::json::minify(expected));
+}
+
+BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
+    const ss::socket_address client_addr{ss::ipv4_addr("10.0.0.1", 12345)};
+    const ss::socket_address server_addr{ss::ipv4_addr("10.1.1.1", 23456)};
+    const ss::sstring url = "/v1/test?param=val";
+    const ss::sstring method = "GET";
+    const ss::sstring protocol_name = "https";
+    const ss::sstring host_name = "local";
+    const ss::sstring version = "1.1";
+    const ss::sstring user_agent = "Mozilla";
+    const ss::sstring username = "test";
+
+    auto req = ss::http::request::make(method, host_name, url);
+    req.parse_query_param();
+    req._client_address = client_addr;
+    req._server_address = server_addr;
+    req._version = version;
+    req._headers["User-Agent"] = user_agent;
+    req._headers["Authorization"] = "You shouldn't see this at all";
+    req.protocol_name = protocol_name;
+
+    request_auth_result auth_result{
+      security::credential_user{username},
+      security::credential_password{"password"},
+      "sasl",
+      request_auth_result::superuser::no};
+
+    auto authn = sa::make_authentication_event(req, auth_result);
+    auth_result.pass();
+
+    const auto expected = fmt::format(
+      R"(
+{{
+  "category_uid": 3,
+  "class_uid": 3002,
+  "metadata": {metadata},
+  "severity_id": 1,
+  "time": {time},
+  "type_uid": 300201,
+  "activity_id": 1,
+  "auth_protocol": "sasl",
+  "auth_protocol_id": 99,
+  "dst_endpoint": {{
+    "ip": "10.1.1.1",
+    "port": 23456
+  }},
+  "is_cleartext": false,
+  "mfa": false,
+  "src_endpoint": {{
+    "ip": "10.0.0.1",
+    "port": 12345
+  }},
+  "status_id": 1,
+  "user": {{
+    "name": "{username}",
+    "type_id": 1
+  }}
+}}
+    ))",
+      fmt::arg("metadata", metadata_ser),
+      fmt::arg("time", ss::to_sstring(authn.get_time())),
+      fmt::arg("username", username));
+
+    auto ser = sa::rjson_serialize(authn);
+    BOOST_REQUIRE_EQUAL(ser, ::json::minify(expected));
+}
+
+BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
+    const ss::socket_address client_addr{ss::ipv4_addr("10.0.0.1", 12345)};
+    const ss::socket_address server_addr{ss::ipv4_addr("10.1.1.1", 23456)};
+    const ss::sstring url = "/v1/test?param=val";
+    const ss::sstring method = "GET";
+    const ss::sstring protocol_name = "https";
+    const ss::sstring host_name = "local";
+    const ss::sstring version = "1.1";
+    const ss::sstring user_agent = "Mozilla";
+    const ss::sstring username = "test";
+
+    auto req = ss::http::request::make(method, host_name, url);
+    req.parse_query_param();
+    req._client_address = client_addr;
+    req._server_address = server_addr;
+    req._version = version;
+    req._headers["User-Agent"] = user_agent;
+    req._headers["Authorization"] = "You shouldn't see this at all";
+    req.protocol_name = protocol_name;
+
+    request_auth_result auth_result{
+      request_auth_result::authenticated::yes,
+      request_auth_result::superuser::yes,
+      request_auth_result::auth_required::no};
+
+    auto api_activity = sa::make_api_activity_event(
+      req, auth_result, true, std::nullopt);
+
+    auth_result.pass();
+
+    const auto expected = fmt::format(
+      R"(
+{{
+  "category_uid": 6,
+  "class_uid": 6003,
+  "metadata": {metadata},
+  "severity_id": 1,
+  "time": {time},
+  "type_uid": 600302,
+  "activity_id": 2,
+  "actor": {{
+    "authorizations": [
+      {{
+        "decision": "authorized",
+        "policy": {{
+          "desc": "Auth Disabled",
+          "name": "Admin httpd authorizer"
+        }}
+      }}
+    ],
+    "user": {{
+      "name": "{{{{anonymous}}}}",
+      "type_id": 2
+    }}
+  }},
+  "api": {{
+    "operation": "{method}"
+  }},
+  "dst_endpoint": {{
+    "ip": "10.1.1.1",
+    "port": 23456
+  }},
+  "http_request": {{
+    "http_headers": [
+      {{
+        "name": "User-Agent",
+        "value": "{user_agent}"
+      }},
+      {{
+        "name": "Authorization",
+        "value": "******"
+      }},
+      {{
+        "name": "Host",
+        "value": "{host_name}"
+      }}
+    ],
+    "http_method": "{method}",
+    "url": {{
+      "hostname": "{host_name}",
+      "path": "{url}",
+      "port": 23456,
+      "scheme": "{protocol_name}",
+      "url_string": "{url_string}"
+    }},
+    "user_agent": "{user_agent}",
+    "version": "{version}"
+  }},
+  "src_endpoint": {{
+    "ip": "10.0.0.1",
+    "port": 12345
+  }},
+  "status_id": 1,
+  "unmapped": {{}}
+}}
+)",
+      fmt::arg("metadata", metadata_ser),
+      fmt::arg("time", ss::to_sstring(api_activity.get_time())),
+      fmt::arg("method", method),
+      fmt::arg("user_agent", user_agent),
+      fmt::arg("host_name", host_name),
+      fmt::arg("url", url),
+      fmt::arg("protocol_name", protocol_name),
+      fmt::arg("url_string", protocol_name + "://" + host_name + url),
+      fmt::arg("version", version));
+
+    auto ser = sa::rjson_serialize(api_activity);
+
+    BOOST_REQUIRE_EQUAL(ser, ::json::minify(expected));
+}
+
+BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
+    const ss::socket_address client_addr{ss::ipv4_addr("10.0.0.1", 12345)};
+    const ss::socket_address server_addr{ss::ipv4_addr("10.1.1.1", 23456)};
+    const ss::sstring url = "/v1/test?param=val";
+    const ss::sstring method = "GET";
+    const ss::sstring protocol_name = "https";
+    const ss::sstring host_name = "local";
+    const ss::sstring version = "1.1";
+    const ss::sstring user_agent = "Mozilla";
+    const ss::sstring username = "test";
+
+    auto req = ss::http::request::make(method, host_name, url);
+    req.parse_query_param();
+    req._client_address = client_addr;
+    req._server_address = server_addr;
+    req._version = version;
+    req._headers["User-Agent"] = user_agent;
+    req._headers["Authorization"] = "You shouldn't see this at all";
+    req.protocol_name = protocol_name;
+
+    auto authn = sa::make_authentication_failure_event(
+      req, security::credential_user{username}, "FAILURE");
+
+    const auto expected = fmt::format(
+      R"(
+{{
+  "category_uid": 3,
+  "class_uid": 3002,
+  "metadata": {metadata},
+  "severity_id": 1,
+  "time": {time},
+  "type_uid": 300201,
+  "activity_id": 1,
+  "auth_protocol_id": 0,
+  "dst_endpoint": {{
+    "ip": "10.1.1.1",
+    "port": 23456
+  }},
+  "is_cleartext": false,
+  "mfa": false,
+  "src_endpoint": {{
+    "ip": "10.0.0.1",
+    "port": 12345
+  }},
+  "status_id": 2,
+  "status_detail": "FAILURE",
+  "user": {{
+    "name": "{username}",
+    "type_id": 0
+  }}
+}}
+)",
+      fmt::arg("metadata", metadata_ser),
+      fmt::arg("time", ss::to_sstring(authn.get_time())),
+      fmt::arg("username", username));
+
+    auto ser = sa::rjson_serialize(authn);
+    BOOST_REQUIRE_EQUAL(ser, ::json::minify(expected));
 }

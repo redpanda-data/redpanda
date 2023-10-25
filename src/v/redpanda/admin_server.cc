@@ -90,6 +90,11 @@
 #include "rpc/errc.h"
 #include "rpc/rpc_utils.h"
 #include "security/acl.h"
+#include "security/audit/audit_log_manager.h"
+#include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/iam.h"
+#include "security/audit/schemas/utils.h"
+#include "security/audit/types.h"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
@@ -116,7 +121,9 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
+#include <seastar/http/json_path.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
@@ -245,7 +252,8 @@ admin_server::admin_server(
   ss::sharded<memory_sampling>& memory_sampling_service,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::sharded<resources::cpu_profiler>& cpu_profiler,
-  ss::sharded<transform::service>* transform_service)
+  ss::sharded<transform::service>* transform_service,
+  ss::sharded<security::audit::audit_log_manager>& audit_mgr)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -273,6 +281,7 @@ admin_server::admin_server(
   , _cloud_storage_cache(cloud_storage_cache)
   , _cpu_profiler(cpu_profiler)
   , _transform_service(transform_service)
+  , _audit_mgr(audit_mgr)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
@@ -581,6 +590,91 @@ ss::future<> admin_server::configure_listeners() {
           "`admin_api_require_auth`",
           ep.address.host(),
           ep.address.port());
+    }
+}
+
+void admin_server::audit_authz(
+  ss::httpd::const_req req,
+  const request_auth_result& auth_result,
+  httpd_authorized authorized,
+  std::optional<std::string_view> reason) {
+    vlog(logger.trace, "Attempting to audit authz for {}", req.format_url());
+    auto api_event = security::audit::make_api_activity_event(
+      req, auth_result, bool(authorized), reason);
+    auto success = _audit_mgr.local().enqueue_audit_event(
+      security::audit::event_type::management, std::move(api_event));
+    if (!success) {
+        ///
+        /// The following "break glass" mechanism allows the cluster config
+        /// API to be hit in the case the user desires to disable auditing
+        /// so the cluster can continue to make progress in the event auditing
+        /// is not working as expected.
+        static const auto allowed_requests = std::to_array(
+          {ss::httpd::cluster_config_json::get_cluster_config_status,
+           ss::httpd::cluster_config_json::get_cluster_config_schema,
+           ss::httpd::cluster_config_json::patch_cluster_config});
+
+        bool is_allowed = std::any_of(
+          allowed_requests.cbegin(),
+          allowed_requests.cend(),
+          [method = req._method,
+           url = req.get_url()](const ss::httpd::path_description& d) {
+              return d.path == url
+                     && d.operations.method == ss::httpd::str2type(method);
+          });
+
+        if (!is_allowed) {
+            vlog(
+              logger.error,
+              "Failed to audit authorization request for endpoint: {}",
+              req.format_url());
+            throw ss::httpd::base_exception(
+              "Failed to audit authorization request",
+              ss::http::reply::status_type::service_unavailable);
+        }
+
+        vlog(
+          logger.error,
+          "Request to modify or view cluster configuration was not audited due "
+          "to audit queues being full");
+    }
+}
+
+void admin_server::audit_authn(
+  ss::httpd::const_req req, const request_auth_result& auth_result) {
+    auto authentication_event = security::audit::make_authentication_event(
+      req, auth_result);
+
+    do_audit_authn(req, std::move(authentication_event));
+}
+
+void admin_server::audit_authn_failure(
+  ss::httpd::const_req req,
+  const security::credential_user& username,
+  const ss::sstring& reason) {
+    auto authentication_event
+      = security::audit::make_authentication_failure_event(
+        req, username, reason);
+
+    do_audit_authn(req, std::move(authentication_event));
+}
+
+void admin_server::do_audit_authn(
+  ss::httpd::const_req req,
+  security::audit::authentication authentication_event) {
+    vlog(logger.trace, "Attempting to audit authn for {}", req.format_url());
+    auto success = _audit_mgr.local().enqueue_audit_event(
+      security::audit::event_type::authenticate,
+      std::move(authentication_event));
+
+    if (!success) {
+        vlog(
+          logger.error,
+          "Failed to audit authentication request for endpoint: {}",
+          req.format_url());
+        throw ss::httpd::base_exception(
+          "Failed to audit authentication request",
+          ss::http::reply::status_type::service_unavailable);
     }
 }
 
