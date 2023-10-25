@@ -12,7 +12,7 @@
 
 #include "kafka/server/fetch_session.h"
 #include "kafka/types.h"
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
 #include "units.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -77,8 +77,7 @@ private:
 
     size_t _sessions_mem_usage = 0;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 
 } // namespace kafka

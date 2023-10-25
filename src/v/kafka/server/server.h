@@ -22,6 +22,7 @@
 #include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/queue_depth_monitor.h"
+#include "metrics/metrics.h"
 #include "net/server.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "security/fwd.h"
@@ -29,7 +30,6 @@
 #include "security/krb5_configurator.h"
 #include "security/mtls.h"
 #include "ssx/fwd.h"
-#include "ssx/metrics.h"
 #include "utils/ema.h"
 
 #include <seastar/core/future.hh>
@@ -233,8 +233,7 @@ private:
     ssx::semaphore _memory_fetch_sem;
 
     handler_probe_manager _handler_probes;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
     std::unique_ptr<class latency_probe> _probe;
     ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
