@@ -459,11 +459,18 @@ void remote::notify_external_subscribers(
         if (flt._events_to_ignore.contains(event.type)) {
             continue;
         }
-        if (
-          flt._source_to_ignore.has_value()
-          && flt._source_to_ignore->get().same_root(caller)) {
+
+        auto iter = std::find_if(
+          flt._sources_to_ignore.begin(),
+          flt._sources_to_ignore.end(),
+          [&caller](const auto& source) {
+              return source.get().same_root(caller);
+          });
+
+        if (iter != flt._sources_to_ignore.end()) {
             continue;
         }
+
         // Invariant: the filter._promise is always initialized
         // by the 'subscribe' method.
         vassert(

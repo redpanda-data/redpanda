@@ -64,7 +64,6 @@ upload_housekeeping_service::upload_housekeeping_service(
       config::shard_local_cfg().cloud_storage_background_jobs_quota.bind())
   , _rtc(_as)
   , _ctxlog(archival_log, _rtc)
-  , _filter(_rtc)
   , _workflow(_rtc, run_quota_t{_raw_quota()}, sg, _probe)
   , _api_utilization(
       std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
@@ -89,6 +88,9 @@ upload_housekeeping_service::upload_housekeeping_service(
 
     _raw_quota.watch(
       [this] { _workflow.update_quota(run_quota_t{_raw_quota()}); });
+
+    // Removed in a later patch ...
+    _filter.add_source_to_ignore(_rtc);
 }
 
 upload_housekeeping_service::~upload_housekeeping_service() {}
@@ -212,6 +214,7 @@ void upload_housekeeping_service::register_jobs(
   std::vector<std::reference_wrapper<housekeeping_job>> jobs) {
     for (auto ref : jobs) {
         vlog(_ctxlog.debug, "Registering job: {}", ref.get().name());
+        _filter.add_source_to_ignore(ref.get().get_root_retry_chain_node());
         _workflow.register_job(ref.get());
     }
 }
@@ -221,6 +224,7 @@ void upload_housekeeping_service::deregister_jobs(
     for (auto ref : jobs) {
         vlog(_ctxlog.debug, "Deregistering job: {}", ref.get().name());
         _workflow.deregister_job(ref.get());
+        _filter.remove_source_to_ignore(ref.get().get_root_retry_chain_node());
     }
 }
 
