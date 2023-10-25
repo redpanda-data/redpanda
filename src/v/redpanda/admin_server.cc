@@ -60,6 +60,7 @@
 #include "json/writer.h"
 #include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -100,7 +101,6 @@
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
 #include "ssx/future-util.h"
-#include "ssx/metrics.h"
 #include "ssx/sformat.h"
 #include "transform/api.h"
 #include "utils/fragmented_vector.h"
@@ -527,7 +527,7 @@ void admin_server::configure_metrics_route() {
       _server,
       {.metric_help = "redpanda metrics",
        .prefix = "redpanda",
-       .handle = ssx::metrics::public_metrics_handle,
+       .handle = metrics::public_metrics_handle,
        .route = "/public_metrics"})
       .get();
 }

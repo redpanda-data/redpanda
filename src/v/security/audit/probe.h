@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -36,10 +36,8 @@ public:
     void audit_error() { ++_audit_error_count; }
 
 private:
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 
     clock_type::time_point _last_event;
     uint32_t _audit_error_count{0};

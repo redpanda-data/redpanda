@@ -13,9 +13,9 @@
 
 #include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "resource_mgmt/cpu_scheduling.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -40,7 +40,7 @@ public:
                 seastar::metrics::description(
                   "Accumulated runtime of task queue associated with this "
                   "scheduling group"),
-                {ssx::metrics::make_namespaced_label("scheduling_group")(
+                {metrics::make_namespaced_label("scheduling_group")(
                   group_ref.get().name())})});
         }
     }
@@ -48,6 +48,5 @@ public:
     void clear() { _public_metrics.clear(); }
 
 private:
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _public_metrics;
 };
