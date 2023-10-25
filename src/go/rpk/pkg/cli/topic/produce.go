@@ -15,14 +15,18 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/serde"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sr"
 )
 
 func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -39,6 +43,11 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 		tombstone              bool
 		allowAutoTopicCreation bool
+
+		schemaID    int
+		keySchemaID int
+		protoFQN    string
+		protoKeyFQN string
 
 		timeout time.Duration
 	)
@@ -107,6 +116,14 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("invalid empty format")
 			}
 
+			isSchemaRegistry := schemaID >= 0 || keySchemaID >= 0
+			// If the user is using schema registry, we want to use the json
+			// format: %v{json} and %k{json}.
+			if isSchemaRegistry {
+				// Replace any instance of %k or %v with %k{json} or %v{json}.
+				inFormat = regexp.MustCompile("%(v|k)([^{]|$)").ReplaceAllString(inFormat, "%$1{json}$2")
+			}
+
 			// Parse our input/output formats.
 			inf, err := kgo.NewRecordReader(os.Stdin, inFormat)
 			out.MaybeDie(err, "unable to parse input format: %v", err)
@@ -134,6 +151,24 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			defer cl.Close()
 			defer cl.Flush(context.Background())
 
+			var keySerde, valSerde *serde.Serde
+			var srCl *sr.Client
+			if isSchemaRegistry {
+				srCl, err = schemaregistry.NewClient(fs, p)
+				out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
+
+				keySchema, valSchema, err := querySchemas(cmd.Context(), srCl, keySchemaID, schemaID)
+				out.MaybeDie(err, "unable to query schemas from the registry: %v", err)
+
+				if keySchema != nil {
+					keySerde, err = serde.NewSerde(cmd.Context(), srCl, keySchema, keySchemaID, protoKeyFQN)
+					out.MaybeDie(err, "unable to build serializer for the key schema: %v", err)
+				}
+				if valSchema != nil {
+					valSerde, err = serde.NewSerde(cmd.Context(), srCl, valSchema, schemaID, protoFQN)
+					out.MaybeDie(err, "unable to build serializer for the value schema: %v", err)
+				}
+			}
 			for {
 				r := &kgo.Record{
 					Partition: partition,
@@ -154,6 +189,16 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if tombstone && len(r.Value) == 0 {
 					r.Value = nil
 				}
+				if keySerde != nil {
+					record, err := keySerde.EncodeRecord(r.Key)
+					out.MaybeDie(err, "unable to encode key: %v", err)
+					r.Key = record
+				}
+				if valSerde != nil {
+					record, err := valSerde.EncodeRecord(r.Value)
+					out.MaybeDie(err, "unable to encode value: %v", err)
+					r.Value = record
+				}
 				cl.Produce(context.Background(), r, func(r *kgo.Record, err error) {
 					out.MaybeDie(err, "unable to produce record: %v", err)
 					if outf != nil {
@@ -173,17 +218,15 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().Int32Var(&maxMessageBytes, "max-message-bytes", -1, "If non-negative, maximum size of a record batch before compression")
 
 	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "Input record format")
-	cmd.Flags().StringVarP(
-		&outFormat,
-		"output-format",
-		"o",
-		"Produced to partition %p at offset %o with timestamp %d.\n",
-		"what to write to stdout when a record is successfully produced",
-	)
+	cmd.Flags().StringVarP(&outFormat, "output-format", "o", "Produced to partition %p at offset %o with timestamp %d.\n", "what to write to stdout when a record is successfully produced")
 	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "Headers in format key:value to add to each record (repeatable)")
 	cmd.Flags().StringVarP(&key, "key", "k", "", "A fixed key to use for each record (parsed input keys take precedence)")
 	cmd.Flags().BoolVarP(&tombstone, "tombstone", "Z", false, "Produce empty values as tombstones")
 	cmd.Flags().BoolVar(&allowAutoTopicCreation, "allow-auto-topic-creation", false, "Auto-create non-existent topics; requires auto_create_topics_enabled on the broker")
+	cmd.Flags().IntVar(&schemaID, "schema-id", -1, "Schema ID to encode the record value with")
+	cmd.Flags().IntVar(&keySchemaID, "schema-key-id", -1, "Schema ID to encode the record key with")
+	cmd.Flags().StringVar(&protoFQN, "proto-msg-type", "", "Name of the protobuf message type to be used to encode the record value using schema registry")
+	cmd.Flags().StringVar(&protoKeyFQN, "proto-key-msg-type", "", "Name of the protobuf message type to be used to encode the record key using schema registry")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
@@ -194,6 +237,24 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().MarkDeprecated("timestamp", "Record timestamps are set when producing")
 
 	return cmd
+}
+
+func querySchemas(ctx context.Context, cl *sr.Client, keySchemaID, valSchemaID int) (keySchema *sr.Schema, valSchema *sr.Schema, err error) {
+	if keySchemaID > 0 {
+		keySch, err := cl.SchemaByID(ctx, keySchemaID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to retrieve the key schema with ID %v: %v", keySchemaID, err)
+		}
+		keySchema = &keySch
+	}
+	if valSchemaID > 0 {
+		vSch, err := cl.SchemaByID(ctx, valSchemaID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to retrieve the value schema with ID %v: %v", valSchemaID, err)
+		}
+		valSchema = &vSch
+	}
+	return
 }
 
 const helpProduce = `Produce records to a topic.
@@ -279,6 +340,7 @@ Reading text values can have the following modifiers:
     hex       read text then hex decode it
     base64    read text then std-encoding base64 decode it
     re        read text matching a regular expression
+    json      read text as json then compact it
 
 HEADERS
 
@@ -304,6 +366,8 @@ A big-endian uint16 key size, the text " foo ", and then that key:
     -f '%K{big16} foo %k'
 A value that can be two or three characters followed by a newline:
     -f '%v{re#...?#}\n'
+A key and a json value, separated by a space:
+    -f '%k %v{json}'
 
 MISC
 
