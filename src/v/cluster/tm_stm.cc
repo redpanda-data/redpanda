@@ -123,6 +123,7 @@ ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
 
 bool tm_stm::hosted_transactions_inited() const { return _hosted_txes.inited; }
 
+// must be invoked under write lock
 ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
   model::term_id term, int32_t tx_coordinator_partition_amount) {
     if (_hosted_txes.inited) {
@@ -132,12 +133,6 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
           features::feature::transaction_partitioning)) {
         co_return tm_stm::op_status::success;
     }
-
-    auto units = co_await _cache->write_lock();
-    if (_hosted_txes.inited) {
-        co_return op_status::success;
-    }
-
     model::partition_id partition = get_partition();
     auto initial_hash_range = default_hash_range(
       partition, tx_coordinator_partition_amount);
@@ -181,6 +176,21 @@ ss::future<tm_stm::op_status> tm_stm::exclude_hosted_transaction(
     } else {
         co_return op_status::conflict;
     }
+}
+
+ss::future<tm_stm::op_status>
+tm_stm::set_draining_transactions(model::term_id term, draining_txs draining) {
+    if (!_hosted_txes.inited) {
+        co_return op_status::unknown;
+    }
+    locally_hosted_txs copy = _hosted_txes;
+
+    auto error = copy.set_draining(draining);
+    if (error != tx_hash_ranges_errc::success) {
+        vlog(txlog.warn, "set_draining failed with ec:{}", error);
+        co_return op_status::unknown;
+    }
+    co_return co_await update_hosted_transactions(term, std::move(copy));
 }
 
 uint8_t tm_stm::active_snapshot_version() {
@@ -395,6 +405,10 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
         co_return op_status::unknown;
     }
     co_return op_status::success;
+}
+
+bool tm_stm::is_transaction_draining(const kafka::transactional_id& tx_id) {
+    return _hosted_txes.is_draining(tx_id);
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
@@ -1077,10 +1091,8 @@ tm_stm::try_lock_tx(kafka::transactional_id tx_id, std::string_view lock_name) {
 }
 
 absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
-    auto now_ts = clock_type::now();
-    auto ids = _cache->filter_all_txid_by_tx([this, now_ts](auto tx) {
-        return _transactional_id_expiration < now_ts - tx.last_update_ts;
-    });
+    auto ids = _cache->filter_all_txid_by_tx(
+      [this](auto tx) { return is_expired(tx); });
     return ids;
 }
 

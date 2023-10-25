@@ -149,6 +149,15 @@ std::ostream& operator<<(std::ostream& o, const tx_errc& err) {
     case tx_errc::tx_id_not_found:
         o << "tx_errc::tx_id_not_found";
         break;
+    case tx_errc::tx_hash_range_not_hosted:
+        o << "tx_errc::tx_hash_range_not_hosted";
+        break;
+    case tx_errc::tx_hash_range_not_inited:
+        o << "tx_errc::tx_hash_range_not_inited";
+        break;
+    case tx_errc::not_draining:
+        o << "tx_errc::not_draining";
+        break;
     }
     return o;
 }
@@ -1048,6 +1057,41 @@ std::ostream& operator<<(std::ostream& o, const find_coordinator_request& r) {
 std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
     fmt::print(
       o, "{{coordinator {} ntp {} ec {}}}", r.coordinator, r.ntp, r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_request& r) {
+    fmt::print(
+      o,
+      "{{ntp:{} timeout:{} draining:{{id:{} ranges:{} transactions:{}}}}}",
+      r.tm_ntp,
+      r.timeout,
+      r.draining.id,
+      r.draining.ranges.ranges.size(),
+      r.draining.transactions.size());
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const get_draining_transactions_request& r) {
+    fmt::print(o, "{{ntp: {}}}", r.tm_ntp);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const get_draining_transactions_reply& r) {
+    if (r.operation) {
+        fmt::print(o, "{{ repartitioning_id {} ec {}}}", r.operation->id, r.ec);
+    } else {
+        fmt::print(o, "{{ ec {}}}", r.ec);
+    }
     return o;
 }
 

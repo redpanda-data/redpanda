@@ -66,9 +66,18 @@ public:
     ss::future<return_all_txs_res> get_all_transactions();
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(kafka::transactional_id);
+    ss::future<get_draining_transactions_reply>
+    route_globally(get_draining_transactions_request&&);
+    ss::future<get_draining_transactions_reply>
+    route_locally(get_draining_transactions_request&&);
 
     ss::future<try_abort_reply> route_globally(try_abort_request&&);
     ss::future<try_abort_reply> route_locally(try_abort_request&&);
+
+    ss::future<set_draining_transactions_reply>
+    route_globally(set_draining_transactions_request&&);
+    ss::future<set_draining_transactions_reply>
+    route_locally(set_draining_transactions_request&&);
 
     ss::future<tx_errc> delete_partition_from_tx(
       kafka::transactional_id, tm_transaction::tx_partition);
@@ -260,8 +269,14 @@ private:
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
 
+    ss::future<get_draining_transactions_reply> process_locally(
+      ss::shared_ptr<tm_stm>, get_draining_transactions_request&&);
+
     ss::future<try_abort_reply>
     process_locally(ss::shared_ptr<tm_stm>, try_abort_request&&);
+
+    ss::future<set_draining_transactions_reply> process_locally(
+      ss::shared_ptr<tm_stm>, set_draining_transactions_request&&);
 
     void expire_old_txs();
     ss::future<> expire_old_txs(model::ntp);

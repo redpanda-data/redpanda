@@ -140,7 +140,10 @@ enum class tx_errc {
     invalid_txn_state,
     invalid_producer_epoch,
     tx_not_found,
-    tx_id_not_found
+    tx_id_not_found,
+    tx_hash_range_not_hosted,
+    tx_hash_range_not_inited,
+    not_draining
 };
 
 std::ostream& operator<<(std::ostream&, const tx_errc&);
@@ -1069,6 +1072,128 @@ struct find_coordinator_request
     operator<<(std::ostream& o, const find_coordinator_request& r);
 
     auto serde_fields() { return std::tie(tid); }
+};
+
+struct set_draining_transactions_reply
+  : serde::envelope<
+      set_draining_transactions_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    tx_errc ec{};
+
+    set_draining_transactions_reply() noexcept = default;
+
+    set_draining_transactions_reply(tx_errc ec)
+      : ec(ec) {}
+
+    friend bool operator==(
+      const set_draining_transactions_reply&,
+      const set_draining_transactions_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_draining_transactions_reply& r);
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+struct set_draining_transactions_request
+  : serde::envelope<
+      set_draining_transactions_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    using reply = set_draining_transactions_reply;
+    static constexpr const std::string_view name = "set_draining_transactions";
+
+    model::ntp tm_ntp;
+    cluster::draining_txs draining;
+    model::timeout_clock::duration timeout;
+
+    set_draining_transactions_request() noexcept = default;
+
+    set_draining_transactions_request(
+      model::ntp tm_ntp,
+      cluster::draining_txs draining,
+      model::timeout_clock::duration timeout)
+      : tm_ntp(tm_ntp)
+      , draining(std::move(draining))
+      , timeout(timeout) {}
+
+    friend bool operator==(
+      const set_draining_transactions_request&,
+      const set_draining_transactions_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_draining_transactions_request& r);
+
+    auto serde_fields() { return std::tie(tm_ntp, draining, timeout); }
+};
+
+struct get_draining_transactions_reply
+  : serde::envelope<
+      get_draining_transactions_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    std::optional<draining_txs> operation;
+    tx_errc ec{};
+
+    get_draining_transactions_reply() noexcept = default;
+
+    get_draining_transactions_reply(tx_errc ec)
+      : ec(ec) {}
+
+    get_draining_transactions_reply(
+      std::optional<draining_txs> operation, tx_errc ec)
+      : operation(std::move(operation))
+      , ec(ec) {}
+
+    friend bool operator==(
+      const get_draining_transactions_reply&,
+      const get_draining_transactions_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_draining_transactions_reply& r);
+
+    auto serde_fields() { return std::tie(operation, ec); }
+};
+
+struct get_draining_transactions_request
+  : serde::envelope<
+      get_draining_transactions_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    using reply = get_draining_transactions_reply;
+    static constexpr const std::string_view name = "get_draining_transactions";
+
+    model::ntp tm_ntp;
+    model::timeout_clock::duration timeout;
+
+    get_draining_transactions_request() noexcept = default;
+
+    get_draining_transactions_request(
+      model::ntp tm_ntp, model::timeout_clock::duration timeout)
+      : tm_ntp(tm_ntp)
+      , timeout(timeout) {}
+
+    friend bool operator==(
+      const get_draining_transactions_request&,
+      const get_draining_transactions_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_draining_transactions_request& r);
+
+    auto serde_fields() { return std::tie(tm_ntp, timeout); }
 };
 
 struct describe_tx_registry_reply {

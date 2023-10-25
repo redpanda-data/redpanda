@@ -47,7 +47,7 @@ struct tm_transaction {
 
     enum tx_status : int32_t {
         ongoing,
-        preparing,
+        preparing, // obsoleted since 23.2
         prepared,
         aborting, // abort is initiated by a client
         killed,   // abort is initiated by a timeout

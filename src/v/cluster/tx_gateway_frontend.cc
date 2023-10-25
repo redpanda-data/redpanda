@@ -125,9 +125,25 @@ static tm_transaction as_tx(
     return tx;
 }
 
+auto send(
+  tx_gateway_client_protocol& cp, get_draining_transactions_request&& request) {
+    auto timeout = request.timeout;
+    return cp.get_draining_transactions(
+      std::move(request),
+      rpc::client_opts(model::timeout_clock::now() + timeout));
+}
+
 static auto send(tx_gateway_client_protocol& cp, try_abort_request&& request) {
     auto timeout = request.timeout;
     return cp.try_abort(
+      std::move(request),
+      rpc::client_opts(model::timeout_clock::now() + timeout));
+}
+
+static auto send(
+  tx_gateway_client_protocol& cp, set_draining_transactions_request&& request) {
+    auto timeout = request.timeout;
+    return cp.set_draining_transactions(
       std::move(request),
       rpc::client_opts(model::timeout_clock::now() + timeout));
 }
@@ -459,6 +475,11 @@ ss::future<bool> tx_gateway_frontend::do_hosts(
 
 ss::future<tx_errc> tx_gateway_frontend::do_init_hosted_transactions(
   ss::shared_ptr<cluster::tm_stm> stm) {
+    auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
+    if (!cfg) {
+        co_return tx_errc::partition_not_exists;
+    }
+
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
         if (term_opt.error() == tm_stm::op_status::not_leader) {
@@ -468,10 +489,10 @@ ss::future<tx_errc> tx_gateway_frontend::do_init_hosted_transactions(
     }
     auto term = term_opt.value();
 
-    auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
-    if (!cfg) {
-        co_return tx_errc::partition_not_exists;
+    if (stm->hosted_transactions_inited()) {
+        co_return tx_errc::none;
     }
+    auto unit = co_await stm->write_lock();
     auto hash_ranges_inited = co_await stm->try_init_hosted_transactions(
       term, cfg->partition_count);
     if (hash_ranges_inited != tm_stm::op_status::success) {
@@ -1220,6 +1241,15 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         co_return tx_errc::not_coordinator;
     }
 
+    if (stm->is_transaction_draining(tx_id)) {
+        vlog(
+          txlog.warn,
+          "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+          tx_id,
+          stm->get_partition());
+        co_return tx_errc::not_coordinator;
+    }
+
     auto r0 = co_await get_tx(term, stm, tx_id, timeout);
     if (!r0.has_value()) {
         if (r0.error() != tx_errc::tx_not_found) {
@@ -1442,6 +1472,18 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     }
     auto tx = r.value();
 
+    if (tx.partitions.empty() && tx.groups.empty()) {
+        if (stm->is_transaction_draining(request.transactional_id)) {
+            vlog(
+              txlog.warn,
+              "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+              request.transactional_id,
+              stm->get_partition());
+            co_return make_add_partitions_error_response(
+              request, tx_errc::not_coordinator);
+        }
+    }
+
     add_paritions_tx_reply response;
 
     std::vector<model::ntp> new_partitions;
@@ -1659,6 +1701,17 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
         co_return add_offsets_tx_reply{.error_code = r.error()};
     }
     auto tx = r.value();
+
+    if (tx.partitions.empty() && tx.groups.empty()) {
+        if (stm->is_transaction_draining(request.transactional_id)) {
+            vlog(
+              txlog.warn,
+              "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+              request.transactional_id,
+              stm->get_partition());
+            co_return add_offsets_tx_reply{tx_errc::not_coordinator};
+        }
+    }
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
       request.group_id, pid, tx.tx_seq, tx.timeout_ms, stm->get_partition());
@@ -3247,6 +3300,53 @@ ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
     co_return co_await get_tx(term, stm, tid, timeout);
 }
 
+ss::future<set_draining_transactions_reply>
+tx_gateway_frontend::process_locally(
+  ss::shared_ptr<tm_stm> stm, set_draining_transactions_request&& request) {
+    auto draining = request.draining;
+
+    auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
+    if (!cfg) {
+        co_return tx_errc::partition_not_exists;
+    }
+
+    auto unit = co_await stm->write_lock();
+
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
+        co_return tx_errc::coordinator_not_available;
+    }
+    auto term = term_opt.value();
+
+    if (!stm->hosted_transactions_inited()) {
+        auto hash_ranges_inited = co_await stm->try_init_hosted_transactions(
+          term, cfg->partition_count);
+        if (hash_ranges_inited != tm_stm::op_status::success) {
+            vlog(
+              txlog.warn,
+              "got {} on initing hash ranges for tm {}",
+              hash_ranges_inited,
+              stm->get_partition());
+            co_return tx_errc::unknown_server_error;
+        }
+    }
+
+    auto res = co_await stm->set_draining_transactions(term, draining);
+    if (res == tm_stm::op_status::unknown) {
+        co_return tx_errc::unknown_server_error;
+    } else if (res == tm_stm::op_status::not_found) {
+        co_return tx_errc::tx_hash_range_not_hosted;
+    } else if (res == tm_stm::op_status::not_leader) {
+        co_return tx_errc::not_coordinator;
+    } else if (res != tm_stm::op_status::success) {
+        co_return tx_errc::unknown_server_error;
+    }
+    co_return tx_errc::none;
+}
+
 ss::future<try_abort_reply>
 tx_gateway_frontend::route_globally(try_abort_request&& r) {
     auto ntp = model::ntp(
@@ -3259,6 +3359,53 @@ tx_gateway_frontend::route_locally(try_abort_request&& r) {
     auto ntp = model::ntp(
       model::tx_manager_nt.ns, model::tx_manager_nt.tp, r.tm);
     return do_route_locally(ntp, std::move(r));
+}
+
+ss::future<set_draining_transactions_reply>
+tx_gateway_frontend::route_globally(set_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
+    return do_route_globally(ntp, std::move(r));
+}
+
+ss::future<set_draining_transactions_reply>
+tx_gateway_frontend::route_locally(set_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
+    return do_route_locally(ntp, std::move(r));
+}
+
+ss::future<get_draining_transactions_reply>
+tx_gateway_frontend::route_globally(get_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
+    return do_route_globally(ntp, std::move(r));
+}
+
+ss::future<get_draining_transactions_reply>
+tx_gateway_frontend::route_locally(get_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
+    return do_route_locally(ntp, std::move(r));
+}
+
+ss::future<get_draining_transactions_reply>
+tx_gateway_frontend::process_locally(
+  ss::shared_ptr<tm_stm> stm, get_draining_transactions_request&& request) {
+    auto unit = co_await stm->read_lock();
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return get_draining_transactions_reply(tx_errc::not_coordinator);
+        }
+        co_return get_draining_transactions_reply(
+          tx_errc::coordinator_not_available);
+    }
+
+    auto draining_txes = stm->get_draining_transactions();
+    if (draining_txes.is_empty()) {
+        co_return get_draining_transactions_reply(tx_errc::not_draining);
+    }
+    get_draining_transactions_reply reply;
+    reply.operation = draining_txes;
+    reply.ec = tx_errc::none;
+    co_return reply;
 }
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(

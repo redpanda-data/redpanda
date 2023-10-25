@@ -127,29 +127,6 @@ public:
         timeout
     };
 
-    struct draining_txs
-      : serde::
-          envelope<draining_txs, serde::version<0>, serde::compat_version<0>> {
-        repartitioning_id id;
-        tx_hash_ranges_set ranges{};
-        absl::btree_set<kafka::transactional_id> transactions{};
-
-        draining_txs() = default;
-
-        draining_txs(
-          repartitioning_id id,
-          tx_hash_ranges_set ranges,
-          absl::btree_set<kafka::transactional_id> txs)
-          : id(id)
-          , ranges(std::move(ranges))
-          , transactions(std::move(txs)) {}
-
-        friend bool operator==(const draining_txs&, const draining_txs&)
-          = default;
-
-        auto serde_fields() { return std::tie(id, ranges, transactions); }
-    };
-
     // this struct is basicly the same as other hosted_txs but we can't
     // unify them in minor release because locally_hosted_txs already is
     // being persisted to disk and `inited` doesn't make sense in other
@@ -190,6 +167,28 @@ public:
               excluded_transactions,
               included_transactions,
               draining);
+        }
+
+        tx_hash_ranges_errc set_draining(draining_txs new_draining) {
+            for (const auto& range : new_draining.ranges.ranges) {
+                if (!hash_ranges.contains(range)) {
+                    return tx_hash_ranges_errc::not_hosted;
+                }
+            }
+            for (const auto& tx_id : new_draining.transactions) {
+                if (
+                  (!included_transactions.contains(tx_id)
+                   && !hash_ranges.contains(get_tx_id_hash(tx_id)))
+                  || excluded_transactions.contains(tx_id)) {
+                    return tx_hash_ranges_errc::not_hosted;
+                }
+            }
+            draining = std::move(new_draining);
+            return tx_hash_ranges_errc::success;
+        }
+
+        bool is_draining(const kafka::transactional_id& tx_id) {
+            return draining.is_draining(tx_id);
         }
     };
 
@@ -256,6 +255,7 @@ public:
         return r;
     }
     bool hosts(const kafka::transactional_id& tx_id);
+    bool is_transaction_draining(const kafka::transactional_id&);
 
     ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>
@@ -270,9 +270,18 @@ public:
       include_hosted_transaction(model::term_id, kafka::transactional_id);
     ss::future<tm_stm::op_status>
       exclude_hosted_transaction(model::term_id, kafka::transactional_id);
+    ss::future<tm_stm::op_status>
+      set_draining_transactions(model::term_id, draining_txs);
+    draining_txs get_draining_transactions() const {
+        return _hosted_txes.draining;
+    }
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _cache->read_lock();
+    }
+
+    ss::future<ss::basic_rwlock<>::holder> write_lock() {
+        return _cache->write_lock();
     }
     uint8_t active_snapshot_version();
 
@@ -415,20 +424,6 @@ inline txlock_unit::~txlock_unit() noexcept {
 } // namespace cluster
 
 namespace reflection {
-template<>
-struct adl<cluster::tm_stm::draining_txs> {
-    void to(iobuf& out, cluster::tm_stm::draining_txs&& dr) {
-        reflection::serialize(out, dr.id, dr.ranges, dr.transactions);
-    }
-    cluster::tm_stm::draining_txs from(iobuf_parser& in) {
-        auto id = reflection::adl<cluster::repartitioning_id>{}.from(in);
-        auto ranges
-          = reflection::adl<std::vector<cluster::tx_hash_range>>{}.from(in);
-        auto txs = reflection::adl<absl::btree_set<kafka::transactional_id>>{}
-                     .from(in);
-        return {id, std::move(ranges), std::move(txs)};
-    }
-};
 
 template<>
 struct adl<cluster::tm_stm::locally_hosted_txs> {
@@ -452,8 +447,7 @@ struct adl<cluster::tm_stm::locally_hosted_txs> {
         auto excluded_transactions
           = reflection::adl<absl::btree_set<kafka::transactional_id>>{}.from(
             in);
-        auto draining = reflection::adl<cluster::tm_stm::draining_txs>{}.from(
-          in);
+        auto draining = reflection::adl<cluster::draining_txs>{}.from(in);
         return {
           inited,
           std::move(hash_ranges_set),
