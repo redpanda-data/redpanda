@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -34,8 +34,7 @@ private:
     uint64_t _leader_transfer_timeout = 0;
     uint64_t _leader_transfer_no_improvement = 0;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 
 } // namespace cluster

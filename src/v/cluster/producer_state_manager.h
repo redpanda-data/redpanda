@@ -58,8 +58,7 @@ private:
     intrusive_list<producer_state, &producer_state::_hook> _lru_producers;
     ss::timer<ss::steady_clock_type> _reaper;
     ss::gate _gate;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 
     friend struct ::test_fixture;
 };

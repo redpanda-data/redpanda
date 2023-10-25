@@ -16,8 +16,8 @@
 #include "cluster/node_status_table.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "config/configuration.h"
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 
@@ -137,8 +137,7 @@ partition_balancer_state::apply_snapshot(const controller_snapshot& snap) {
 }
 
 partition_balancer_state::probe::probe(const partition_balancer_state& parent)
-  : _parent(parent)
-  , _public_metrics(ssx::metrics::public_metrics_handle) {
+  : _parent(parent) {
     if (
       config::shard_local_cfg().disable_metrics() || ss::this_shard_id() != 0) {
         return;
@@ -149,7 +148,7 @@ partition_balancer_state::probe::probe(const partition_balancer_state& parent)
 }
 
 void partition_balancer_state::probe::setup_metrics(
-  ssx::metrics::metric_groups& metrics) {
+  metrics::metric_groups_base& metrics) {
     namespace sm = ss::metrics;
     metrics.add_group(
       prometheus_sanitize::metrics_name("cluster:partition"),

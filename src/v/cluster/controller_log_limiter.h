@@ -13,7 +13,7 @@
 
 #include "cluster/commands.h"
 #include "config/configuration.h"
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
 #include "utils/token_bucket.h"
 #include "vlog.h"
 
@@ -60,8 +60,7 @@ private:
     config::binding<std::optional<size_t>> _capacity_binding;
     token_bucket<> _throttler;
     int64_t _dropped_requests_amount{};
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _public_metrics;
 };
 
 class controller_log_limiter {

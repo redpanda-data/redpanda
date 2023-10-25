@@ -11,9 +11,9 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "ssx/metrics.h"
 #include "utils/stable_iterator_adaptor.h"
 
 #include <seastar/core/sharded.hh>
@@ -87,11 +87,11 @@ private:
     struct probe {
         explicit probe(const partition_balancer_state&);
 
-        void setup_metrics(ssx::metrics::metric_groups&);
+        void setup_metrics(metrics::metric_groups_base&);
 
         const partition_balancer_state& _parent;
-        ssx::metrics::metric_groups _metrics;
-        ssx::metrics::metric_groups _public_metrics;
+        metrics::internal_metric_groups _metrics;
+        metrics::public_metric_groups _public_metrics;
     };
 
 private:

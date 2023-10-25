@@ -62,7 +62,7 @@ void group_limiter::setup_public_metrics() {
     }
 
     namespace sm = ss::metrics;
-    auto group_label = ssx::metrics::make_namespaced_label("cmd_group");
+    auto group_label = metrics::make_namespaced_label("cmd_group");
     const std::vector<sm::label_instance> labels = {group_label(_group_name)};
     _public_metrics.add_group(
       "cluster_controller_log_limit",

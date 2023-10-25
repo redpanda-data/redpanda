@@ -14,8 +14,8 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 
 namespace cluster {
 
@@ -137,13 +137,13 @@ void topic_table_probe::handle_topic_creation(
     }
 
     const auto labels = {
-      ssx::metrics::make_namespaced_label("namespace")(topic_namespace.ns()),
-      ssx::metrics::make_namespaced_label("topic")(topic_namespace.tp())};
+      metrics::make_namespaced_label("namespace")(topic_namespace.ns()),
+      metrics::make_namespaced_label("topic")(topic_namespace.tp())};
 
     namespace sm = ss::metrics;
 
     auto [it, inserted] = _topics_metrics.emplace(
-      topic_namespace, ssx::metrics::public_metrics_handle);
+      topic_namespace, metrics::public_metrics_handle);
 
     it->second.add_group(
       prometheus_sanitize::metrics_name("kafka"),
