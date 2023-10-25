@@ -419,7 +419,7 @@ class SISettings:
             self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
             if test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
                                         'aws') == 'gcp':
-                self.cloud_storage_api_endpoint = 'storage.googleapis.com'
+                self.cloud_storage_api_endpoint = 'https://storage.googleapis.com'
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self.cloud_storage_azure_shared_key = self.ABS_AZURITE_KEY
