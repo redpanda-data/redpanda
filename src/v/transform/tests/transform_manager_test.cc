@@ -483,6 +483,46 @@ TEST_F(TransformManagerTest, DeleteTransform) {
     EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
 }
 
+TEST_F(TransformManagerTest, DeleteTransformWithLostLeader) {
+    deploy_transform("foo->bar");
+    become_leader("foo/1");
+    become_leader("foo/2");
+    become_leader("foo/3");
+    drain_queue();
+    EXPECT_THAT(
+      status(),
+      status_is(
+        "foo->bar/1",
+        lifecycle_status::active,
+        "foo->bar/2",
+        lifecycle_status::active,
+        "foo->bar/3",
+        lifecycle_status::active));
+    lose_leadership("foo/2");
+    drain_queue();
+    EXPECT_THAT(
+      status(),
+      status_is(
+        "foo->bar/1",
+        lifecycle_status::active,
+        "foo->bar/2",
+        lifecycle_status::destroyed,
+        "foo->bar/3",
+        lifecycle_status::active));
+    // delete should only delete foo/1 and foo/2
+    delete_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(
+      status(),
+      status_is(
+        "foo->bar/1",
+        lifecycle_status::destroyed,
+        "foo->bar/2",
+        lifecycle_status::destroyed,
+        "foo->bar/3",
+        lifecycle_status::destroyed));
+}
+
 TEST_F(TransformManagerTest, NamesCanBeReused) {
     become_leader("foo/1");
     deploy_transform("foo->bar#1");
