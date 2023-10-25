@@ -88,6 +88,7 @@ function (rp_test)
   if (RP_TEST_GTEST)
     target_compile_definitions(${RP_TEST_BINARY_NAME} PRIVATE "IS_GTEST")
   endif()
+  target_compile_options(${RP_TEST_BINARY_NAME} PRIVATE -Wall -Wextra -Werror -Wno-missing-field-initializers -Wno-unused-parameter -Wno-sign-compare)
 
   install(TARGETS ${RP_TEST_BINARY_NAME} DESTINATION bin)
 
