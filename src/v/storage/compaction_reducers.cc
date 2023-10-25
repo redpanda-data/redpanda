@@ -118,12 +118,22 @@ compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
     return ss::make_ready_future<stop_t>(stop_t::no);
 }
 
-std::optional<model::record_batch>
+ss::future<> copy_data_segment_reducer::maybe_keep_offset(
+  const model::record_batch& batch,
+  const model::record& r,
+  std::vector<int32_t>& offset_deltas) {
+    if (co_await _should_keep_fn(batch, r)) {
+        offset_deltas.push_back(r.offset_delta());
+    }
+    co_return;
+}
+
+ss::future<std::optional<model::record_batch>>
 copy_data_segment_reducer::filter(model::record_batch batch) {
     // do not compact raft configuration and archival metadata as they shift
     // offset translation
     if (!is_compactible(batch)) {
-        return std::move(batch);
+        co_return std::move(batch);
     }
 
     // 0. Reset the transactional bit, we need not carry it forward.
@@ -160,16 +170,14 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     // 1. compute which records to keep
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
-    batch.for_each_record(
+    co_await batch.for_each_record_async(
       [this, &batch, &offset_deltas](const model::record& r) {
-          if (_should_keep_fn(batch, r)) {
-              offset_deltas.push_back(r.offset_delta());
-          }
+          return maybe_keep_offset(batch, r, offset_deltas);
       });
 
     // 2. no record to keep
     if (offset_deltas.empty()) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
 
     // 3. keep all records
@@ -178,7 +186,7 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
             hdr.crc = model::crc_record_batch(batch);
             hdr.header_crc = model::internal_header_only_crc(hdr);
         }
-        return std::move(batch);
+        co_return std::move(batch);
     }
 
     // 4. filter
@@ -235,7 +243,7 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
         // above. These empty batches are retained only until either a new
         // sequence number is written by the corresponding producer or the
         // producerId is expired from lack of activity.
-        return std::nullopt;
+        co_return std::nullopt;
     }
 
     // There is no similar need to preserve the timestamp from the original
@@ -263,13 +271,13 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     reset_size_checksum_metadata(new_hdr, ret);
     auto new_batch = model::record_batch(
       new_hdr, std::move(ret), model::record_batch::tag_ctor_ng{});
-    return new_batch;
+    co_return new_batch;
 }
 
 ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
   model::compression original, model::record_batch b) {
     using stop_t = ss::stop_iteration;
-    auto to_copy = filter(std::move(b));
+    auto to_copy = co_await filter(std::move(b));
     if (to_copy == std::nullopt) {
         co_return stop_t::no;
     }

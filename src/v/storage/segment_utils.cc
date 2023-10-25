@@ -422,7 +422,7 @@ ss::future<storage::index_state> do_copy_segment_data(
     auto should_keep = [compacted_list = std::move(compacted_offsets)](
                          const model::record_batch& b, const model::record& r) {
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-        return compacted_list.contains(o);
+        return ss::make_ready_future<bool>(compacted_list.contains(o));
     };
 
     auto copy_reducer = copy_data_segment_reducer(
