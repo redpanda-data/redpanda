@@ -959,7 +959,6 @@ fill_maintenance_status(const cluster::broker_state& b_state) {
 ss::future<std::vector<ss::httpd::broker_json::broker>>
 get_brokers(cluster::controller* const controller) {
     cluster::node_report_filter filter;
-
     return controller->get_health_monitor()
       .local()
       .get_cluster_health(
@@ -2486,6 +2485,13 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
     ret.membership_status = fmt::format(
       "{}", node_meta->state.get_membership_state());
     ret.maintenance_status = fill_maintenance_status(node_meta->state);
+    vlog(logger.warn, "LOG DRAIN STATUS");
+    if (maybe_drain_status.has_error()) {
+        auto e = maybe_drain_status.error();
+        vlog(logger.warn, "DRAIN STATUS ERR: {} {}", e.value(), e.message());
+    } else if (!maybe_drain_status.has_value()) {
+        vlog(logger.warn, "DRAIN STATUS NULL");
+    }
     if (
       !maybe_drain_status.has_error()
       && maybe_drain_status.value().has_value()) {
