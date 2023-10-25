@@ -10,12 +10,12 @@
  */
 #include "wasm/wasmtime.h"
 
+#include "metrics/metrics.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 #include "storage/parser_utils.h"
 #include "utils/human.h"
 #include "utils/type_traits.h"
@@ -154,8 +154,7 @@ private:
     ss::sharded<wasm::heap_allocator> _heap_allocator;
     ss::sharded<stack_allocator> _stack_allocator;
     size_t _total_executable_memory = 0;
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _public_metrics;
 };
 
 void check_error(const wasmtime_error_t* error) {
