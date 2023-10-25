@@ -117,7 +117,8 @@ tm_stm::tm_stm(
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
   , _feature_table(feature_table)
-  , _cache(tm_stm_cache) {}
+  , _cache(tm_stm_cache)
+  , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {}
 
 ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
 
@@ -137,6 +138,12 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
     if (_hosted_txes.inited) {
         co_return op_status::success;
     }
+
+    vlog(
+      _ctx_log.trace,
+      "initing hosted transactions, term: {}, partition count: {}",
+      term,
+      tx_coordinator_partition_amount);
 
     model::partition_id partition = get_partition();
     auto initial_hash_range = default_hash_range(
@@ -247,7 +254,7 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
                 return term;
             } catch (...) {
                 vlog(
-                  txlog.error,
+                  _ctx_log.error,
                   "Error during writing a barrier batch: {}",
                   std::current_exception());
                 return tm_stm::op_status::unknown;
@@ -289,7 +296,7 @@ ss::future<> tm_stm::checkpoint_ongoing_txs() {
     size_t checkpointed_txes = 0;
     for (auto& tx : txes_to_checkpoint) {
         vlog(
-          txlog.trace,
+          _ctx_log.trace,
           "transfering tx:{} etag:{} pid:{} tx_seq:{}",
           tx.id,
           tx.etag,
@@ -299,7 +306,7 @@ ss::future<> tm_stm::checkpoint_ongoing_txs() {
         auto result = co_await update_tx(tx, tx.etag);
         if (!result.has_value()) {
             vlog(
-              txlog.warn,
+              _ctx_log.warn,
               "Error {} transferring tx {} to new leader, transferred {}/{} "
               "txns.",
               result.error(),
@@ -314,13 +321,13 @@ ss::future<> tm_stm::checkpoint_ongoing_txs() {
         checkpointed_txes++;
     }
     vlog(
-      txlog.info,
+      _ctx_log.info,
       "Checkpointed all txes: {} to the new leader.",
       txes_to_checkpoint.size());
 }
 
 ss::future<ss::basic_rwlock<>::holder> tm_stm::prepare_transfer_leadership() {
-    vlog(txlog.trace, "Preparing for leadership transfer");
+    vlog(_ctx_log.trace, "Preparing for leadership transfer");
     auto units = co_await _cache->write_lock();
     // This is a best effort basis, we checkpoint as many as we can
     // and stop at the first error.
@@ -363,7 +370,7 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
-        vlog(txlog.info, "got error {} on updating hash_ranges", r.error());
+        vlog(_ctx_log.info, "got error {} on updating hash_ranges", r.error());
         if (_raft->is_leader() && _raft->term() == term) {
             co_await _raft->step_down(
               "txn coordinator update_hash_ranges replication error");
@@ -378,7 +385,7 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
     if (!co_await wait_no_throw(
           offset, model::timeout_clock::now() + _sync_timeout)) {
         vlog(
-          txlog.info,
+          _ctx_log.info,
           "timeout on waiting until {} is applied on updating hash_ranges",
           offset);
         if (_raft->is_leader() && _raft->term() == term) {
@@ -388,7 +395,7 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
     }
     if (_raft->term() != term) {
         vlog(
-          txlog.info,
+          _ctx_log.info,
           "lost leadership while waiting until {} is applied on updating hash "
           "ranges",
           offset);
@@ -410,7 +417,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
         vlog(
-          txlog.info,
+          _ctx_log.info,
           "got error {} on updating tx:{} pid:{} etag:{} tx_seq:{}",
           r.error(),
           tx.id,
@@ -431,7 +438,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     if (!co_await wait_no_throw(
           offset, model::timeout_clock::now() + _sync_timeout)) {
         vlog(
-          txlog.info,
+          _ctx_log.info,
           "timeout on waiting until {} is applied on updating tx:{} pid:{} "
           "tx_seq:{}",
           offset,
@@ -445,7 +452,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     }
     if (_raft->term() != term) {
         vlog(
-          txlog.info,
+          _ctx_log.info,
           "lost leadership while waiting until {} is applied on updating tx:{} "
           "pid:{} tx_seq:{}",
           offset,
@@ -458,7 +465,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     auto tx_opt = _cache->find_log(tx.id);
     if (!tx_opt) {
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "can't find an updated tx:{} pid:{} tx_seq:{} in the cache",
           tx.id,
           tx.pid,
@@ -489,7 +496,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
         vlog(
-          txlog.trace,
+          _ctx_log.trace,
           "got {} on pulling tx {} to mark it prepared",
           tx_opt.error(),
           tx_id);
@@ -502,7 +509,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
                           : tm_transaction::tx_status::preparing;
     if (tx.status != check_status) {
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "can't mark tx:{} pid:{} tx_seq:{} prepared wrong status {} != {}",
           tx.id,
           tx.pid,
@@ -545,7 +552,7 @@ tm_stm::reset_transferring(model::term_id term, kafka::transactional_id tx_id) {
         co_return tm_stm::op_status::conflict;
     }
     vlog(
-      txlog.trace,
+      _ctx_log.trace,
       "observed a transferring tx:{} pid:{} etag:{} tx_seq:{} in term:{}",
       tx_id,
       tx.pid,
@@ -555,7 +562,7 @@ tm_stm::reset_transferring(model::term_id term, kafka::transactional_id tx_id) {
     if (tx.etag == term) {
         // case 1 - Unlikely, just reset the transferring flag.
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "tx: {} transferring within same term: {}, resetting.",
           tx_id,
           tx.etag);
@@ -581,7 +588,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
     tm_transaction tx = tx_opt.value();
     if (tx.etag != expected_term) {
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "An attempt to update state data tx:{} pid:{} tx_seq:{} etag:{} "
           "assuming etag is {}",
           tx.id,
@@ -606,7 +613,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid,
   model::producer_identity last_pid) {
-    vlog(txlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
+    vlog(_ctx_log.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
@@ -650,7 +657,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid) {
-    vlog(txlog.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
+    vlog(_ctx_log.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
 
     auto tx_opt = co_await get_tx(tx_id);
     if (tx_opt.has_value()) {
@@ -699,13 +706,13 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
   std::vector<tm_transaction::tx_partition> partitions) {
     auto tx_opt = find_tx(tx_id);
     if (!tx_opt) {
-        vlog(txlog.warn, "An ongoing transaction tx:{} isn't found", tx_id);
+        vlog(_ctx_log.warn, "An ongoing transaction tx:{} isn't found", tx_id);
         co_return tm_stm::op_status::unknown;
     }
     auto tx = tx_opt.value();
     if (tx.status != tm_transaction::tx_status::ongoing) {
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "Expected an ongoing txn, found tx:{} pid:{} tx_seq:{} etag:{} "
           "status:{}",
           tx.id,
@@ -717,7 +724,7 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
     }
     if (tx.etag != expected_term) {
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "An attempt to add partitions to tx:{} pid:{} tx_seq:{} etag:{} "
           "assuming etag is {}",
           tx.id,
@@ -762,13 +769,13 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
   model::term_id etag) {
     auto tx_opt = find_tx(tx_id);
     if (!tx_opt) {
-        vlog(txlog.warn, "An ongoing transaction tx:{} isn't found", tx_id);
+        vlog(_ctx_log.warn, "An ongoing transaction tx:{} isn't found", tx_id);
         co_return tm_stm::op_status::unknown;
     }
     auto tx = tx_opt.value();
     if (tx.status != tm_transaction::tx_status::ongoing) {
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "Expected an ongoing txn, found tx:{} pid:{} tx_seq:{} etag:{} "
           "status:{}",
           tx.id,
@@ -780,7 +787,7 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
     }
     if (tx.etag != expected_term) {
         vlog(
-          txlog.warn,
+          _ctx_log.warn,
           "An attempt to add group to tx:{} pid:{} tx_seq:{} etag:{} assuming "
           "etag is {}",
           tx.id,
@@ -852,6 +859,11 @@ tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
         }
         _hosted_txes = std::move(data.hash_ranges);
         _hosted_txes.inited = true;
+        vlog(
+          _ctx_log.trace,
+          "Applied snapshot at offset: {}, hosted txes: {}",
+          hdr.offset,
+          _hosted_txes);
     }
 
     return ss::now();
@@ -968,7 +980,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     if (tx.status == tm_transaction::tx_status::tombstone) {
         _cache->erase_log(tx.id);
         vlog(
-          txlog.trace,
+          _ctx_log.trace,
           "erasing {} (tombstone) pid:{} tx_seq:{} etag:{} in term:{} from mem",
           tx.id,
           tx.pid,
@@ -988,7 +1000,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
           || (old_tx.etag == tx.etag && old_tx.tx_seq <= tx.tx_seq)) {
             _cache->erase_mem(tx.id);
             vlog(
-              txlog.trace,
+              _ctx_log.trace,
               "erasing {} (log overwrite) pid:{} tx_seq:{} etag:{} from mem in "
               "term:{} by pid:{} etag:{} tx_seq:{}",
               old_tx.id,
@@ -1023,6 +1035,11 @@ ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
     auto hash_ranges = serde::from_iobuf<locally_hosted_txs>(
       rec.release_value());
     _hosted_txes = hash_ranges;
+    vlog(
+      _ctx_log.trace,
+      "Applied hosted txes batch from log, offset: {}, ranges: {}",
+      b.base_offset(),
+      _hosted_txes);
     return ss::now();
 }
 
@@ -1149,7 +1166,7 @@ tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     auto r0 = co_await update_tx(std::move(tx), etag);
     if (r0.has_value()) {
         vlog(
-          txlog.error,
+          _ctx_log.error,
           "written tombstone should evict tx:{} from the cache",
           tx_id);
         co_return tm_stm::op_status::unknown;
