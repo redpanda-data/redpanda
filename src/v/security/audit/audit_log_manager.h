@@ -43,6 +43,8 @@ class audit_sink;
 class audit_log_manager
   : public ss::peering_sharded_service<audit_log_manager> {
 public:
+    static constexpr auto client_shard_id = ss::shard_id{0};
+
     audit_log_manager(
       cluster::controller* controller, kafka::client::configuration&);
 

@@ -37,8 +37,6 @@ static const security::acl_principal audit_principal{
 /// on the value of the global audit toggle config option (audit_enabled)
 class audit_client {
 public:
-    static const auto shard_id = ss::shard_id{0};
-
     audit_client(cluster::controller*, kafka::client::configuration&);
 
     /// Initializes the client (with all necessary auth) and connects to the
@@ -446,7 +444,7 @@ audit_log_manager::audit_log_manager(
       config::shard_local_cfg().audit_enabled_event_types.bind())
   , _controller(controller)
   , _config(client_config) {
-    if (ss::this_shard_id() == audit_client::shard_id) {
+    if (ss::this_shard_id() == client_shard_id) {
         _sink = std::make_unique<audit_sink>(this, controller, client_config);
     }
 
@@ -480,7 +478,7 @@ bool audit_log_manager::is_audit_event_enabled(event_type event_type) const {
 }
 
 ss::future<> audit_log_manager::start() {
-    if (ss::this_shard_id() != audit_client::shard_id) {
+    if (ss::this_shard_id() != client_shard_id) {
         co_return;
     }
     _audit_enabled.watch([this] {
@@ -505,7 +503,7 @@ ss::future<> audit_log_manager::start() {
 ss::future<> audit_log_manager::stop() {
     _drain_timer.cancel();
     _as.request_abort();
-    if (ss::this_shard_id() == audit_client::shard_id) {
+    if (ss::this_shard_id() == client_shard_id) {
         vlog(adtlog.info, "Shutting down audit log manager");
         co_await _sink->stop();
     }
@@ -543,7 +541,7 @@ ss::future<> audit_log_manager::resume() {
 
 bool audit_log_manager::is_client_enabled() const {
     vassert(
-      ss::this_shard_id() == audit_client::shard_id,
+      ss::this_shard_id() == client_shard_id,
       "Must be called on audit client shard");
     return _sink->is_enabled();
 }
@@ -594,7 +592,7 @@ ss::future<> audit_log_manager::drain() {
     /// backpressure here, and the \ref _queue will begin to fill closer to
     /// capacity. When it hits capacity, enqueue_audit_event() will block.
     co_await container().invoke_on(
-      audit_client::shard_id,
+      client_shard_id,
       [recs = std::move(essences)](audit_log_manager& mgr) mutable {
           return mgr._sink->produce(std::move(recs));
       });
