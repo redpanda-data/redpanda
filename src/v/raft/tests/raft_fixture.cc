@@ -97,7 +97,7 @@ ss::future<iobuf> channel::exchange(msg_type type, iobuf request) {
     _messages.push_back(std::move(m));
     _new_messages.broadcast();
 
-    return f;
+    co_return co_await std::move(f);
 }
 bool channel::is_valid() const { return _node && _node->raft() != nullptr; }
 
