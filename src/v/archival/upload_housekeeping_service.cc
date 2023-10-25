@@ -460,6 +460,7 @@ void housekeeping_workflow::maybe_update_probe(
     switch (res.status) {
     case housekeeping_job::run_status::ok:
         is_ok = 1;
+        [[fallthrough]];
     case housekeeping_job::run_status::failed:
         probe.housekeeping_jobs(is_ok);
         probe.housekeeping_jobs_failed(1 - is_ok);

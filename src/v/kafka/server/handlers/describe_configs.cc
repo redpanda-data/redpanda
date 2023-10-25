@@ -956,6 +956,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   &describe_as_string<
                     pandaproxy::schema_registry::subject_name_strategy>,
                   validation_hide_default_override);
+                [[fallthrough]];
             }
             case pandaproxy::schema_registry::schema_id_validation_mode::none: {
                 break;
