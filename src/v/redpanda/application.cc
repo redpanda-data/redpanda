@@ -205,6 +205,9 @@ static void set_auditing_kafka_client_defaults(
         client_config.client_identifier.set_value(
           std::make_optional<ss::sstring>("audit_log_client"));
     }
+    if (!client_config.produce_compression_type.is_overriden()) {
+        client_config.produce_compression_type.set_value("zstd");
+    }
 }
 
 application::application(ss::sstring logger_name)
