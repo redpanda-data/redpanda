@@ -104,27 +104,19 @@ public:
           std::unique_ptr<transform::processor> processor,
           ss::lw_shared_ptr<transform::probe> probe)
           : _processor(std::move(processor))
-          , _probe(std::move(probe))
-          , _current_state(state::inactive) {
+          , _probe(std::move(probe)) {
             _probe->state_change({.to = _current_state});
         }
         entry_t(const entry_t&) = delete;
         entry_t& operator=(const entry_t&) = delete;
-        entry_t(entry_t&& e) noexcept
-          : _processor(std::move(e._processor))
-          , _probe(std::move(e._probe))
-          , _backoff(std::move(e._backoff))
-          , _current_state(e._current_state) {
-            e._current_state = std::nullopt;
+        entry_t(entry_t&& e) noexcept = default;
+        entry_t& operator=(entry_t&& e) noexcept = default;
+        ~entry_t() {
+            // _probe could be moved out
+            if (_probe) {
+                _probe->state_change({.from = _current_state});
+            }
         }
-        entry_t& operator=(entry_t&& e) noexcept {
-            _processor = std::move(e._processor);
-            _probe = std::move(e._probe);
-            _backoff = std::move(e._backoff);
-            _current_state = std::exchange(e._current_state, std::nullopt);
-            return *this;
-        }
-        ~entry_t() { _probe->state_change({.from = _current_state}); }
 
         transform::processor* processor() const { return _processor.get(); }
         const ss::lw_shared_ptr<transform::probe>& probe() const {
@@ -148,16 +140,13 @@ public:
               {.from = _current_state, .to = state::running});
             _current_state = state::running;
         }
-        std::optional<state> current_state() const { return _current_state; }
+        state current_state() const { return _current_state; }
 
     private:
         std::unique_ptr<transform::processor> _processor;
         ss::lw_shared_ptr<transform::probe> _probe;
         processor_backoff<ClockType> _backoff;
-        // This is optional so that the entry can be moved, when moved
-        // std::optional is made std::nullopt, we do this so that on destruction
-        // we don't mis-account any states in the probe.
-        std::optional<state> _current_state;
+        state _current_state = state::inactive;
     };
 
     auto range() const { return std::make_pair(_table.begin(), _table.end()); }
@@ -467,16 +456,12 @@ model::cluster_transform_report manager<ClockType>::compute_report() const {
         const auto& entry = it->second;
         processor* p = entry.processor();
         auto id = p->ntp().tp.partition;
-        auto state = entry.current_state();
-        if (!state) {
-            continue;
-        }
         report.add(
           p->id(),
           p->meta(),
           {
             .id = id,
-            .status = *state,
+            .status = entry.current_state(),
             .node = _self,
           });
     }
