@@ -1096,34 +1096,6 @@ ss::future<topic_result> topics_frontend::do_create_partition(
           p_cfg.tp_ns, errc::topic_invalid_partitions);
     }
 
-    // NOTE: This is best effort validation, it's possible for a plugin creation
-    // racing in a suspension point and there being extra partitions on an input
-    // topic that were added.
-    auto transforms = _plugin_table.find_by_input_topic(p_cfg.tp_ns);
-    // Check that all the topics are copartitioned
-    for (const auto& entry : transforms) {
-        for (const auto& output_topic : entry.second.output_topics) {
-            auto output_tp_cfg = _topics.local().get_topic_cfg(output_topic);
-            if (!output_tp_cfg) {
-                vlog(
-                  clusterlog.error,
-                  "invalid transform (id={}) output topic {} doesn't exist",
-                  entry.first,
-                  output_topic);
-                co_return make_error_result(
-                  p_cfg.tp_ns, errc::topic_invalid_config);
-            }
-            // We enforce the input topic has as many partitions as the
-            // output topic (copartitioning).
-            if (
-              p_cfg.new_total_partition_count
-              < output_tp_cfg->partition_count) {
-                co_return make_error_result(
-                  p_cfg.tp_ns, errc::topic_invalid_partitions);
-            }
-        }
-    }
-
     auto units = co_await _allocator.invoke_on(
       partition_allocator::shard,
       [p_cfg,

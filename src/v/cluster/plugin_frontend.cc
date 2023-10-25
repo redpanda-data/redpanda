@@ -505,18 +505,6 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                     out_name.tp);
                   return errc::transform_invalid_create;
               }
-              if (
-                output_config.partition_count < input_config.partition_count) {
-                  // copartitioning is required
-                  vlog(
-                    clusterlog.info,
-                    "attempted to deploy transform {} without copartitioning "
-                    "{} < {}",
-                    cmd.value.name,
-                    output_config.partition_count,
-                    input_config.partition_count);
-                  return errc::transform_invalid_create;
-              }
               if (would_cause_cycle(cmd.value.input_topic, out_name)) {
                   vlog(
                     clusterlog.info,

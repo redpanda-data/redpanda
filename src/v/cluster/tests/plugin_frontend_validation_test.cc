@@ -294,25 +294,6 @@ TEST_F(PluginValidationTest, MultipleOutputs) {
       errc::transform_invalid_create);
 }
 
-TEST_F(PluginValidationTest, Copartitioned) {
-    EXPECT_EQ(create_topic("foo", {.partition_count = 2}), errc::success);
-    EXPECT_EQ(create_topic("bar", {.partition_count = 4}), errc::success);
-    EXPECT_EQ(
-      upsert_transform({
-        .name = "missing-output-partitions",
-        .src = "bar",
-        .sinks = {"foo"},
-      }),
-      errc::transform_invalid_create);
-    EXPECT_EQ(
-      upsert_transform({
-        .name = "ok-to-have-extra-output-partitions",
-        .src = "foo",
-        .sinks = {"bar"},
-      }),
-      errc::success);
-}
-
 TEST_F(PluginValidationTest, RemoveMustExist) {
     EXPECT_EQ(delete_transform("bar2foo"), errc::transform_does_not_exist);
 }
