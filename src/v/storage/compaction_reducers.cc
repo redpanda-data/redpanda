@@ -119,7 +119,7 @@ compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
 }
 
 std::optional<model::record_batch>
-copy_data_segment_reducer::filter(model::record_batch&& batch) {
+copy_data_segment_reducer::filter(model::record_batch batch) {
     // do not compact raft configuration and archival metadata as they shift
     // offset translation
     if (!is_compactible(batch)) {

@@ -136,7 +136,7 @@ private:
         const auto o = base + model::offset(delta);
         return _list.contains(o);
     }
-    std::optional<model::record_batch> filter(model::record_batch&&);
+    std::optional<model::record_batch> filter(model::record_batch);
 
     compacted_offset_list _list;
     segment_appender* _appender;
