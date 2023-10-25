@@ -25,8 +25,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
-from rptest.util import produce_until_segments
-from rptest.util import expect_exception
+from rptest.util import produce_until_segments, wait_until_result, expect_exception
 from rptest.services.redpanda import SISettings
 from rptest.utils.si_utils import BucketView, NTP
 
@@ -165,26 +164,44 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         assert response[0].error_msg == "", f"Err msg: {response[0].error}"
         return response[0].new_start_offset
 
+    def retry_list_offset_request(self, fn, value_on_read):
+        def check_bound():
+            try:
+                if fn():
+                    return value_on_read
+            except Exception as e:
+                # Transient failure, desired to retry
+                if 'unknown broker' in str(e):
+                    raise e
+            return not value_on_read
+
+        return wait_until_result(
+            check_bound,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Failed to make list_offsets request, unknown broker",
+            retry_on_exc=True)
+
     def assert_start_partition_boundaries(self, topic_name, truncate_offset):
-        def check_bound_start(offset):
-            retries = 3
-            while retries > 0:
-                try:
-                    r = self.rpk.consume(topic_name,
-                                         n=1,
-                                         offset=f'{offset}-{offset+1}',
-                                         quiet=True,
-                                         timeout=10)
-                    return r.count('_') == 1
-                except Exception as _:
-                    retries = retries - 1
-                    time.sleep(1)
-            return False
+        def check_bound_start(offset, value_on_read=True):
+            def attempt_consume_one():
+                r = self.rpk.consume(topic_name,
+                                     n=1,
+                                     offset=f'{offset}-{offset+1}',
+                                     quiet=True,
+                                     timeout=10)
+                return r.count('_') == 1
+
+            return self.retry_list_offset_request(attempt_consume_one,
+                                                  value_on_read)
+
+        def check_bound_start_fails(offset):
+            return check_bound_start(offset, value_on_read=False)
 
         assert check_bound_start(
             truncate_offset
         ), f"new log start: {truncate_offset} not consumable"
-        assert not check_bound_start(
+        assert check_bound_start_fails(
             truncate_offset -
             1), f"before log start: {truncate_offset - 1} is consumable"
 
@@ -195,26 +212,26 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         ensuring the truncation worked at the exact requested point and that the
         number of remaining records is as expected.
         """
-        def check_bound_end(offset):
-            retries = 3
-            while retries > 0:
-                try:
-                    # Not timing out means data was available to read
-                    _ = self.rpk.consume(topic_name,
-                                         n=1,
-                                         offset=offset,
-                                         timeout=10)
-                    return True
-                except Exception as _:
-                    retries = retries - 1
-                    time.sleep(1)
-            return False
+        def check_bound_end(offset, value_on_read=True):
+            def attempt_consume_last():
+                # Not timing out means data was available to read
+                _ = self.rpk.consume(topic_name,
+                                     n=1,
+                                     offset=offset,
+                                     timeout=10)
+                return True
+
+            return self.retry_list_offset_request(attempt_consume_last,
+                                                  value_on_read)
+
+        def check_bound_end_fails(offset):
+            return check_bound_end(offset, value_on_read=False)
 
         assert truncate_offset <= high_watermark, f"Test malformed"
 
         if truncate_offset == high_watermark:
             # Assert no data at all can be read
-            assert not check_bound_end(truncate_offset)
+            assert check_bound_end_fails(truncate_offset)
             return
 
         # truncate_offset is inclusive start of log
@@ -224,7 +241,7 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         assert check_bound_end(
             high_watermark -
             1), f"log end: {high_watermark - 1} not consumable"
-        assert not check_bound_end(
+        assert check_bound_end_fails(
             high_watermark), f"high watermark: {high_watermark} is consumable"
 
     @cluster(num_nodes=3)
