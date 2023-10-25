@@ -16,6 +16,8 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "storage/compacted_offset_list.h"
+#include "storage/compaction_reducers.h"
 #include "storage/disk_log_appender.h"
 #include "storage/fwd.h"
 #include "storage/kvstore.h"
@@ -43,6 +45,7 @@
 #include <seastar/core/shared_ptr.hh>
 
 #include <fmt/format.h>
+#include <roaring/roaring.hh>
 
 #include <exception>
 #include <iterator>

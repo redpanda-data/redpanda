@@ -158,14 +158,14 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     }
 
     // 1. compute which records to keep
-    const auto base = batch.base_offset();
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
-    batch.for_each_record([this, base, &offset_deltas](const model::record& r) {
-        if (should_keep(base, r.offset_delta())) {
-            offset_deltas.push_back(r.offset_delta());
-        }
-    });
+    batch.for_each_record(
+      [this, &batch, &offset_deltas](const model::record& r) {
+          if (_should_keep_fn(batch, r)) {
+              offset_deltas.push_back(r.offset_delta());
+          }
+      });
 
     // 2. no record to keep
     if (offset_deltas.empty()) {

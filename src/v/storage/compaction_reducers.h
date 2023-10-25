@@ -24,6 +24,8 @@
 #include "utils/fragmented_vector.h"
 #include "utils/tracking_allocator.h"
 
+#include <seastar/util/noncopyable_function.hh>
+
 #include <absl/container/btree_map.h>
 #include <fmt/core.h>
 #include <roaring/roaring.hh>
@@ -115,12 +117,14 @@ private:
 
 class copy_data_segment_reducer : public compaction_reducer {
 public:
+    using filter_t = ss::noncopyable_function<bool(
+      const model::record_batch&, const model::record&)>;
     copy_data_segment_reducer(
-      compacted_offset_list l,
+      filter_t f,
       segment_appender* a,
       bool internal_topic,
       offset_delta_time apply_offset)
-      : _list(std::move(l))
+      : _should_keep_fn(std::move(f))
       , _appender(a)
       , _idx(index_state::make_empty_index(apply_offset))
       , _internal_topic(internal_topic) {}
@@ -132,13 +136,10 @@ private:
     ss::future<ss::stop_iteration>
       do_compaction(model::compression, model::record_batch);
 
-    bool should_keep(model::offset base, int32_t delta) const {
-        const auto o = base + model::offset(delta);
-        return _list.contains(o);
-    }
     std::optional<model::record_batch> filter(model::record_batch);
 
-    compacted_offset_list _list;
+    filter_t _should_keep_fn;
+
     segment_appender* _appender;
     index_state _idx;
     size_t _acc{0};
