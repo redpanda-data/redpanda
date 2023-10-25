@@ -60,6 +60,25 @@ configuration::configuration()
       "Delay (in milliseconds) to wait before sending batch",
       {},
       100ms)
+  , produce_compression_type(
+      *this,
+      "produce_compression_type",
+      "Enable or disable compression by the kafka client. Specify 'none' to "
+      "disable compression or one of the supported types [gzip, snappy, lz4, "
+      "zstd]",
+      {},
+      "none",
+      [](const ss::sstring& v) -> std::optional<ss::sstring> {
+          constexpr auto supported_types = std::to_array<std::string_view>(
+            {"none", "gzip", "snappy", "lz4", "zstd"});
+          const auto found = std::find(
+            supported_types.cbegin(), supported_types.cend(), v);
+          if (found == supported_types.end()) {
+              return ss::format(
+                "{} is not a supported client compression type", v);
+          }
+          return std::nullopt;
+      })
   , consumer_request_timeout(
       *this,
       "consumer_request_timeout_ms",
