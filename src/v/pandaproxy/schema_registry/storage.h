@@ -1286,19 +1286,31 @@ struct consume_to_store {
         }
         try {
             vlog(plog.debug, "Applying: {}", key);
-            if (!val) {
-                co_await _store.clear_compatibility(*key.sub);
-            } else if (key.sub) {
-                co_await _store.set_compatibility(
-                  seq_marker{
-                    .seq = key.seq,
-                    .node = key.node,
-                    .version{invalid_schema_version}, // Not applicable
-                    .key_type = seq_marker_key_type::config},
-                  *key.sub,
-                  val->compat);
-            } else {
+            if (key.sub.has_value()) {
+                if (!val.has_value()) {
+                    co_await _store.clear_compatibility(
+                      seq_marker{
+                        .seq = key.seq,
+                        .node = key.node,
+                        .version{invalid_schema_version}, // Not applicable
+                        .key_type = seq_marker_key_type::config},
+                      *key.sub);
+                } else {
+                    co_await _store.set_compatibility(
+                      seq_marker{
+                        .seq = key.seq,
+                        .node = key.node,
+                        .version{invalid_schema_version}, // Not applicable
+                        .key_type = seq_marker_key_type::config},
+                      *key.sub,
+                      val->compat);
+                }
+            } else if (val.has_value()) {
                 co_await _store.set_compatibility(val->compat);
+            } else {
+                vlog(
+                  plog.warn,
+                  "Tried to apply config with neither subject nor value");
             }
         } catch (const exception& e) {
             vlog(plog.debug, "Error replaying: {}: {}", key, e);

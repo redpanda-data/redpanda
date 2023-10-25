@@ -17,6 +17,7 @@
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/requests/compatibility.h"
 #include "pandaproxy/schema_registry/requests/config.h"
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
@@ -171,6 +172,36 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
     co_await rq.service().writer().write_config(sub, config.compat);
 
     auto json_rslt = ppj::rjson_serialize(config);
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+delete_config_subject(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+
+    rq.req.reset();
+
+    // ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+
+    compatibility_level lvl{};
+    try {
+        lvl = co_await rq.service().schema_store().get_compatibility(
+          sub, default_to_global::no);
+    } catch (const exception& e) {
+        if (e.code() == error_code::compatibility_not_found) {
+            throw as_exception(not_found(sub));
+        } else {
+            throw;
+        }
+    }
+
+    co_await rq.service().writer().delete_config(sub);
+
+    auto json_rslt = ppj::rjson_serialize(get_config_req_rep{.compat = lvl});
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
