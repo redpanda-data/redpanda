@@ -115,7 +115,6 @@ hash_key_offset_map::put(const compaction_key& key, model::offset offset) {
     };
 
     // handle a non-normalized probe position
-    // returns true if key is inserted
     auto handle_entry = [&](size_t index) {
         ++probe_count_;
         index = index % entries_.size();
