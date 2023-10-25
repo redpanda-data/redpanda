@@ -88,9 +88,6 @@ upload_housekeeping_service::upload_housekeeping_service(
 
     _raw_quota.watch(
       [this] { _workflow.update_quota(run_quota_t{_raw_quota()}); });
-
-    // Removed in a later patch ...
-    _filter.add_source_to_ignore(_rtc);
 }
 
 upload_housekeeping_service::~upload_housekeeping_service() {}
@@ -389,7 +386,18 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                   "Running job {} with quota {}",
                   _running.front().name(),
                   quota);
-                auto res = co_await _running.front().run(_parent, quota);
+
+                auto& job = _running.front();
+
+                _as.check();
+                auto sub = _as.subscribe([&job]() mutable noexcept {
+                    // Propagate an abort of the `upload_housekeeping_service`
+                    // to the running job.
+                    job.get_root_retry_chain_node().request_abort();
+                });
+
+                auto res = co_await job.run(quota);
+
                 jobs_executed++;
                 quota = res.remaining;
                 maybe_update_probe(res);

@@ -148,7 +148,7 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
 }
 
 ss::future<housekeeping_job::run_result>
-adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
+adjacent_segment_merger::run(run_quota_t quota) {
     ss::gate::holder h(_gate);
     run_result result{
       .status = run_status::skipped,
@@ -227,7 +227,7 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
               src->size_bytes());
         }
         auto uploaded = co_await _archiver.upload(
-          std::move(*archiver_units), std::move(*upl), std::ref(rtc));
+          std::move(*archiver_units), std::move(*upl), std::ref(_root_rtc));
         if (uploaded) {
             _last = next;
             result.status = run_status::ok;

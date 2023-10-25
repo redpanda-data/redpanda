@@ -55,8 +55,7 @@ ss::future<> scrubber::await_feature_enabled() {
     _scheduler.pick_next_scrub_time();
 }
 
-ss::future<scrubber::run_result>
-scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
+ss::future<scrubber::run_result> scrubber::run(run_quota_t quota) {
     ss::gate::holder holder{_gate};
 
     if (auto [skip, reason] = should_skip(); skip) {
@@ -74,7 +73,7 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
       quota(),
       scrub_from);
 
-    retry_chain_node anomaly_detection_rtc(5min, 100ms, &rtc_node);
+    retry_chain_node anomaly_detection_rtc(5min, 100ms, &_root_rtc);
     auto detect_result = co_await _detector.run(
       anomaly_detection_rtc, quota, scrub_from);
 

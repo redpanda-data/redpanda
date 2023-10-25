@@ -49,8 +49,7 @@ public:
 
     ss::future<> await_feature_enabled();
 
-    ss::future<run_result>
-    run(retry_chain_node& rtc, run_quota_t quota) override;
+    ss::future<run_result> run(run_quota_t quota) override;
 
     void interrupt() override;
 

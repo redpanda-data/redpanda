@@ -319,8 +319,7 @@ purger::global_position purger::get_global_position() {
     return global_position{.self = result, .total = total};
 }
 
-ss::future<housekeeping_job::run_result>
-purger::run(retry_chain_node& parent_rtc, run_quota_t quota) {
+ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
     auto gate_holder = _gate.hold();
 
     run_result result{
@@ -409,11 +408,12 @@ purger::run(retry_chain_node& parent_rtc, run_quota_t quota) {
             // Persist a record that we have started purging: this is useful for
             // anything reading from the bucket that wants to distinguish
             // corruption from in-progress deletion.
+            retry_chain_node pre_purge_marker_rtc(5s, 1s, &_root_rtc);
             auto marker_r = co_await write_remote_lifecycle_marker(
               nt_revision,
               bucket,
               cloud_storage::lifecycle_status::purging,
-              parent_rtc);
+              pre_purge_marker_rtc);
             if (marker_r != cloud_storage::upload_result::success) {
                 vlog(
                   archival_log.warn,
@@ -435,7 +435,7 @@ purger::run(retry_chain_node& parent_rtc, run_quota_t quota) {
                 }
 
                 auto purge_r = co_await purge_partition(
-                  marker, bucket, ntp, marker.initial_revision_id, parent_rtc);
+                  marker, bucket, ntp, marker.initial_revision_id, _root_rtc);
 
                 result.consumed += run_quota_t(purge_r.ops);
                 result.remaining
@@ -470,7 +470,7 @@ purger::run(retry_chain_node& parent_rtc, run_quota_t quota) {
               archival_log.debug,
               "Erasing topic manifest {}",
               topic_manifest_path);
-            retry_chain_node topic_manifest_rtc(5s, 1s, &parent_rtc);
+            retry_chain_node topic_manifest_rtc(5s, 1s, &_root_rtc);
             auto manifest_delete_result = co_await _api.delete_object(
               bucket,
               cloud_storage_clients::object_key(topic_manifest_path),
@@ -489,11 +489,12 @@ purger::run(retry_chain_node& parent_rtc, run_quota_t quota) {
             // unambiguously understand that this topic is gone due to an
             // intentional deletion, and that any stray objects belonging to
             // this topic may be purged.
+            retry_chain_node post_purge_marker_rtc(5s, 1s, &_root_rtc);
             marker_r = co_await write_remote_lifecycle_marker(
               nt_revision,
               bucket,
               cloud_storage::lifecycle_status::purged,
-              parent_rtc);
+              post_purge_marker_rtc);
             if (marker_r != cloud_storage::upload_result::success) {
                 vlog(
                   archival_log.warn,
