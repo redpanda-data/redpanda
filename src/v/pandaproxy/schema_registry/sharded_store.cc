@@ -460,6 +460,15 @@ sharded_store::get_subject_written_at(subject sub) {
 }
 
 ss::future<std::vector<seq_marker>>
+sharded_store::get_subject_config_written_at(subject sub) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, _smp_opts, [sub{std::move(sub)}](store& s) {
+          return s.store::get_subject_config_written_at(sub).value();
+      });
+}
+
+ss::future<std::vector<seq_marker>>
 sharded_store::get_subject_version_written_at(subject sub, schema_version ver) {
     auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
@@ -510,11 +519,12 @@ ss::future<bool> sharded_store::set_compatibility(
       });
 }
 
-ss::future<bool> sharded_store::clear_compatibility(subject sub) {
+ss::future<bool>
+sharded_store::clear_compatibility(seq_marker marker, subject sub) {
     auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      sub_shard, _smp_opts, [sub{std::move(sub)}](store& s) {
-          return s.clear_compatibility(sub).value();
+      sub_shard, _smp_opts, [marker, sub{std::move(sub)}](store& s) {
+          return s.clear_compatibility(marker, sub).value();
       });
 }
 
