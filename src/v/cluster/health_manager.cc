@@ -18,6 +18,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
 #include "model/namespace.h"
+#include "model/transform.h"
 #include "seastarx.h"
 #include "vlog.h"
 
@@ -187,6 +188,10 @@ ss::future<> health_manager::do_tick() {
         if (ok) {
             ok = co_await ensure_topic_replication(
               model::topic_namespace_view(model::wasm_binaries_internal_ntp));
+        }
+
+        if (ok) {
+            ok = co_await ensure_topic_replication(model::transform_offsets_nt);
         }
     }
 
