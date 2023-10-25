@@ -5112,6 +5112,65 @@ fragmented_vector<cluster_partition_info> topic2cluster_partitions(
 } // namespace
 
 ss::future<ss::json::json_return_type>
+admin_server::get_cluster_partitions_handler(
+  std::unique_ptr<ss::http::request> req) {
+    std::optional<bool> disabled_filter;
+    if (req->query_parameters.contains("disabled")) {
+        disabled_filter = get_boolean_query_param(*req, "disabled");
+    }
+
+    bool with_internal = get_boolean_query_param(*req, "with_internal");
+
+    const auto& topics_state = _controller->get_topics_state().local();
+
+    fragmented_vector<model::topic_namespace> topics;
+    auto fill_topics = [&](const auto& map) {
+        for (const auto& [ns_tp, _] : map) {
+            if (!with_internal && !model::is_user_topic(ns_tp)) {
+                continue;
+            }
+            topics.push_back(ns_tp);
+        }
+    };
+
+    if (disabled_filter && *disabled_filter) {
+        // optimization: if disabled filter is on, iterate only over disabled
+        // topics;
+        fill_topics(topics_state.get_disabled_partitions());
+    } else {
+        fill_topics(topics_state.topics_map());
+    }
+
+    std::sort(topics.begin(), topics.end());
+
+    ss::chunked_fifo<cluster_partition_info> partitions;
+    for (const auto& ns_tp : topics) {
+        auto topic_it = topics_state.topics_map().find(ns_tp);
+        if (topic_it == topics_state.topics_map().end()) {
+            // probably got deleted while we were iterating.
+            continue;
+        }
+
+        auto topic_partitions = topic2cluster_partitions(
+          ns_tp,
+          topic_it->second.get_assignments(),
+          topics_state.get_topic_disabled_set(ns_tp),
+          disabled_filter);
+
+        std::move(
+          topic_partitions.begin(),
+          topic_partitions.end(),
+          std::back_inserter(partitions));
+
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      lw_shared_container{std::move(partitions)},
+      [](const auto& p) { return p.to_json(); }));
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::get_cluster_partitions_topic_handler(
   std::unique_ptr<ss::http::request> req) {
     auto ns_tp = model::topic_namespace{
@@ -5239,6 +5298,11 @@ void admin_server::register_cluster_partitions_routes() {
     // The following GET routes provide APIs for getting high-level partition
     // info known to all cluster nodes.
 
+    register_route<user>(
+      ss::httpd::cluster_json::get_cluster_partitions,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return get_cluster_partitions_handler(std::move(req));
+      });
     register_route<user>(
       ss::httpd::cluster_json::get_cluster_partitions_topic,
       [this](std::unique_ptr<ss::http::request> req) {

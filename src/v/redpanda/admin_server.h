@@ -490,6 +490,8 @@ private:
       post_cluster_partitions_topic_partition_handler(
         std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
+      get_cluster_partitions_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
       get_cluster_partitions_topic_handler(std::unique_ptr<ss::http::request>);
 
     /// Shadow indexing routes

@@ -68,6 +68,37 @@
             ]
         },
         {
+            "path": "/v1/cluster/partitions",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get cluster-level metadata for all partitions in the cluster",
+                    "nickname": "get_cluster_partitions",
+                    "type": "array",
+                    "items": {
+                        "type": "cluster_partition"
+                    },
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "disabled",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "with_internal",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/cluster/partitions/{namespace}/{topic}",
             "operations": [
                 {
