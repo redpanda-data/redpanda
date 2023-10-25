@@ -692,3 +692,13 @@ SEASTAR_THREAD_TEST_CASE(iobuf_parser_consume_to) {
 
     BOOST_REQUIRE(stream.bytes_left() == 0);
 }
+
+SEASTAR_THREAD_TEST_CASE(iobuf_hexdump) {
+    static constexpr std::string_view t = "Aenean sed leo porttitor.";
+    iobuf buf;
+    buf.append(t.data(), t.size());
+    auto h = buf.hexdump(1000);
+    BOOST_TEST_REQUIRE(h == R"(
+  00000000 | 41 65 6e 65 61 6e 20 73  65 64 20 6c 65 6f 20 70  | Aenean sed leo p
+  00000010 | 6f 72 74 74 69 74 6f 72  2e                       | orttitor.)");
+}

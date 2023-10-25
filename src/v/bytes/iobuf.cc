@@ -279,6 +279,15 @@ std::string iobuf::hexdump(size_t limit) const {
     }
 
     if (trail.size()) {
+        auto padding = line_length - trail.size();
+        if (padding) {
+            if (trail.size() < 8) {
+                result << " ";
+            }
+            while (padding--) {
+                result << "   ";
+            }
+        }
         result << " | " << trail;
     }
 
