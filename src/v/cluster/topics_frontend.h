@@ -138,6 +138,17 @@ public:
       std::vector<create_partitions_configuration>,
       model::timeout_clock::time_point);
 
+    /// if partition_id is nullopt, the disabled flag is applied to all
+    /// partitions of the topic.
+    ///
+    /// The method is idempotent, i.e. if the disabled flag already has the
+    /// desired value, the call is ignored.
+    ss::future<std::error_code> set_topic_partitions_disabled(
+      model::topic_namespace_view,
+      std::optional<model::partition_id>,
+      bool disabled,
+      model::timeout_clock::time_point);
+
     ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
 
     ss::future<result<std::vector<move_cancellation_result>>>

@@ -1011,6 +1011,54 @@ ss::future<std::vector<topic_result>> topics_frontend::create_partitions(
     co_return result;
 }
 
+ss::future<std::error_code> topics_frontend::set_topic_partitions_disabled(
+  model::topic_namespace_view ns_tp,
+  std::optional<model::partition_id> p_id,
+  bool disabled,
+  model::timeout_clock::time_point timeout) {
+    if (!_features.local().is_active(features::feature::disabling_partitions)) {
+        co_return errc::feature_disabled;
+    }
+
+    auto r = co_await stm_linearizable_barrier(timeout);
+    if (!r) {
+        co_return r.error();
+    }
+
+    // pre-replicate checks
+
+    if (p_id) {
+        if (!_topics.local().contains(ns_tp, *p_id)) {
+            co_return errc::partition_not_exists;
+        }
+        if (_topics.local().is_disabled(ns_tp, *p_id) == disabled) {
+            // no-op
+            co_return errc::success;
+        }
+    } else {
+        if (!_topics.local().contains(ns_tp)) {
+            co_return errc::topic_not_exists;
+        }
+        if (_topics.local().is_disabled(ns_tp) == disabled) {
+            // no-op
+            co_return errc::success;
+        }
+    }
+
+    // replicate the command
+
+    set_topic_partitions_disabled_cmd cmd(
+      0, // unused
+      set_topic_partitions_disabled_cmd_data{
+        .ns_tp = model::topic_namespace{ns_tp},
+        .partition_id = p_id,
+        .disabled = disabled,
+      });
+
+    co_return co_await replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), timeout);
+}
+
 ss::future<bool>
 topics_frontend::validate_shard(model::node_id node, uint32_t shard) const {
     return _allocator.invoke_on(
