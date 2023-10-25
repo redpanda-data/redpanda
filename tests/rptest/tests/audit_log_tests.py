@@ -11,15 +11,18 @@ import re
 import time
 import json
 from functools import partial, reduce
+from typing import Optional
 from rptest.services.rpk_consumer import RpkConsumer
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
 from rptest.tests.cluster_config_test import wait_for_version_sync
+from rptest.util import wait_until_result
 from rptest.utils.audit_schemas import validate_audit_schema
-from rptest.services.redpanda import LoggingConfig
+from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint
 
 
 class AuditLogTests(RedpandaTest):
@@ -174,3 +177,57 @@ class AuditLogTests(RedpandaTest):
             call_apis()
         self.logger.debug("Finished 500 api calls with management disabled")
         _ = number_of_records_matching(api_keys, 1000)
+
+    @cluster(num_nodes=3)
+    def test_audit_log_metrics(self):
+        """
+        Confirm that audit log metrics are present
+        """
+        def get_metrics_from_node(
+            node: ClusterNode,
+            patterns: list[str],
+            endpoint: MetricsEndpoint = MetricsEndpoint.METRICS
+        ) -> Optional[dict[str, MetricSamples]]:
+            def get_metrics_from_node_sync(patterns: list[str]):
+                samples = self.redpanda.metrics_samples(
+                    patterns, [node], endpoint)
+                success = samples is not None
+                return success, samples
+
+            try:
+                return wait_until_result(
+                    lambda: get_metrics_from_node_sync(patterns),
+                    timeout_sec=2,
+                    backoff_sec=.1)
+            except TimeoutError as e:
+                return None
+
+        public_metrics = [
+            "audit_last_event",
+            "audit_errors_total",
+        ]
+        metrics = public_metrics + [
+            "audit_buffer_usage_ratio",
+            "audit_client_buffer_usage_ratio",
+        ]
+
+        self._wait_for_audit_log(timeout_sec=10)
+
+        for node in self.redpanda.nodes:
+            samples = get_metrics_from_node(node, metrics)
+            assert samples, f"Missing expected metrics from node {node.name}"
+            assert sorted(samples.keys()) == sorted(
+                metrics), f"Metrics incomplete: {samples.keys()}"
+
+        for node in self.redpanda.nodes:
+            samples = get_metrics_from_node(node, metrics,
+                                            MetricsEndpoint.PUBLIC_METRICS)
+            assert samples, f"Missing expected public metrics from node {node.name}"
+            assert sorted(samples.keys()) == sorted(
+                public_metrics), f"Public metrics incomplete: {samples.keys()}"
+
+        # Remove management setting
+        patch_result = self.admin.patch_cluster_config(
+            upsert={'audit_enabled_event_types': ['heartbeat']})
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
