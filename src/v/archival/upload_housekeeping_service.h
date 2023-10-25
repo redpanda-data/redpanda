@@ -61,7 +61,6 @@ public:
       = std::optional<std::reference_wrapper<upload_housekeeping_probe>>;
 
     explicit housekeeping_workflow(
-      retry_chain_node& parent,
       run_quota_t quota,
       ss::scheduling_group sg = ss::default_scheduling_group(),
       probe_opt_t probe = std::nullopt);
@@ -111,7 +110,6 @@ private:
     ss::gate _gate;
     ss::gate _exec_gate;
     ss::abort_source _as;
-    retry_chain_node& _parent;
     ss::scheduling_group _sg;
     probe_opt_t _probe;
     housekeeping_state _state{housekeeping_state::idle};
@@ -243,8 +241,6 @@ private:
     /// Quota to be shared between jobs in one interation of the housekeeping
     /// loop
     config::binding<int32_t> _raw_quota;
-    retry_chain_node _rtc;
-    retry_chain_logger _ctxlog;
     cloud_storage::remote::event_filter _filter;
     upload_housekeeping_probe _probe;
     housekeeping_workflow _workflow;
