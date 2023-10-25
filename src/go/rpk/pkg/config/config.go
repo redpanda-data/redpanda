@@ -185,8 +185,9 @@ func (p *Params) LoadVirtualProfile(fs afero.Fs) (*RpkProfile, error) {
 ///////////
 
 const (
-	ModeDev  = "dev"
-	ModeProd = "prod"
+	ModeDev      = "dev"
+	ModeProd     = "prod"
+	ModeRecovery = "recovery"
 )
 
 func (c *Config) SetMode(fs afero.Fs, mode string) error {
@@ -196,6 +197,8 @@ func (c *Config) SetMode(fs afero.Fs, mode string) error {
 		yRedpanda.setDevMode()
 	case strings.HasPrefix("production", mode):
 		yRedpanda.setProdMode()
+	case strings.HasPrefix("recovery", mode):
+		yRedpanda.setRecoveryMode()
 	default:
 		return fmt.Errorf("unknown mode %q", mode)
 	}
@@ -204,6 +207,7 @@ func (c *Config) SetMode(fs afero.Fs, mode string) error {
 
 func (y *RedpandaYaml) setDevMode() {
 	y.Redpanda.DeveloperMode = true
+	y.Redpanda.RecoveryModeEnabled = false
 	// Defaults to setting all tuners to false
 	y.Rpk = RpkNodeConfig{
 		KafkaAPI:             y.Rpk.KafkaAPI,
@@ -221,6 +225,7 @@ func (y *RedpandaYaml) setDevMode() {
 
 func (y *RedpandaYaml) setProdMode() {
 	y.Redpanda.DeveloperMode = false
+	y.Redpanda.RecoveryModeEnabled = false
 	y.Rpk.Overprovisioned = false
 	y.Rpk.Tuners.TuneNetwork = true
 	y.Rpk.Tuners.TuneDiskScheduler = true
@@ -233,4 +238,8 @@ func (y *RedpandaYaml) setProdMode() {
 	y.Rpk.Tuners.TuneSwappiness = true
 	y.Rpk.Tuners.TuneDiskWriteCache = true
 	y.Rpk.Tuners.TuneBallastFile = true
+}
+
+func (y *RedpandaYaml) setRecoveryMode() {
+	y.Redpanda.RecoveryModeEnabled = true
 }
