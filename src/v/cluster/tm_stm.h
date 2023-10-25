@@ -383,6 +383,7 @@ private:
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
     locally_hosted_txs _hosted_txes;
     mutex _tx_thrashing_lock;
+    prefix_logger _ctx_log;
 
     ss::future<> apply(const model::record_batch& b) final;
     ss::future<> apply_hosted_transactions(model::record_batch b);
