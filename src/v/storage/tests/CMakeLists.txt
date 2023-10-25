@@ -133,3 +133,13 @@ rp_test(
   ARGS "-- -c 1"
   LABELS storage
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_storage
+  SOURCES segment_deduplication_test.cc
+  LIBRARIES  v::storage v::storage_test_utils v::gtest_main
+  LABELS storage
+  ARGS "-- -c 1"
+)
