@@ -1330,6 +1330,44 @@ operator<<(std::ostream& o, const update_partition_replicas_cmd_data& data) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const topic_disabled_partitions_set& disabled) {
+    if (disabled.partitions) {
+        fmt::print(
+          o,
+          "{{partitions: {}}}",
+          std::vector(
+            disabled.partitions->begin(), disabled.partitions->end()));
+    } else {
+        fmt::print(o, "{{partitions: all}}");
+    }
+    return o;
+}
+
+void topic_disabled_partitions_set::add(model::partition_id id) {
+    if (partitions) {
+        partitions->insert(id);
+    } else {
+        // do nothing, std::nullopt means all partitions are already
+        // disabled.
+    }
+}
+
+void topic_disabled_partitions_set::remove(
+  model::partition_id id, const assignments_set& all_partitions) {
+    if (!all_partitions.contains(id)) {
+        return;
+    }
+    if (!partitions) {
+        partitions = absl::node_hash_set<model::partition_id>{};
+        partitions->reserve(all_partitions.size());
+        for (const auto& p : all_partitions) {
+            partitions->insert(p.id);
+        }
+    }
+    partitions->erase(id);
+}
+
 } // namespace cluster
 
 namespace reflection {

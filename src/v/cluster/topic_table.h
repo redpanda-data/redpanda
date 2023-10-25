@@ -244,6 +244,12 @@ public:
       nt_revision_hash,
       nt_revision_eq>;
 
+    using disabled_partitions_t = absl::node_hash_map<
+      model::topic_namespace,
+      topic_disabled_partitions_set,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
+
     using delta_range_t
       = boost::iterator_range<fragmented_vector<delta>::const_iterator>;
     using delta_cb_t = ss::noncopyable_function<void(delta_range_t)>;
@@ -320,6 +326,8 @@ public:
       apply(force_partition_reconfiguration_cmd, model::offset);
     ss::future<std::error_code>
       apply(update_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(set_topic_partitions_disabled_cmd, model::offset);
 
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<>
@@ -493,6 +501,40 @@ public:
         return _lifecycle_markers;
     }
 
+    const disabled_partitions_t& get_disabled_partitions() const {
+        return _disabled_partitions;
+    }
+
+    const topic_disabled_partitions_set*
+    get_topic_disabled_set(model::topic_namespace_view ns_tp) const {
+        auto it = _disabled_partitions.find(ns_tp);
+        if (it == _disabled_partitions.end()) {
+            return nullptr;
+        }
+        return &it->second;
+    }
+
+    bool is_disabled(model::topic_namespace_view ns_tp) const {
+        auto it = _disabled_partitions.find(ns_tp);
+        if (it == _disabled_partitions.end()) {
+            return false;
+        }
+        return it->second.is_topic_disabled();
+    }
+
+    bool is_disabled(
+      model::topic_namespace_view ns_tp, model::partition_id p_id) const {
+        auto it = _disabled_partitions.find(ns_tp);
+        if (it == _disabled_partitions.end()) {
+            return false;
+        }
+        return it->second.is_disabled(p_id);
+    }
+
+    bool is_disabled(const model::ntp& ntp) const {
+        return is_disabled(model::topic_namespace_view{ntp}, ntp.tp.partition);
+    }
+
     auto topics_iterator_begin() const {
         return stable_iterator<
           underlying_t::const_iterator,
@@ -542,6 +584,7 @@ private:
 
     underlying_t _topics;
     lifecycle_markers_t _lifecycle_markers;
+    disabled_partitions_t _disabled_partitions;
     size_t _partition_count{0};
 
     updates_t _updates_in_progress;

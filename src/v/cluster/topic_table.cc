@@ -128,6 +128,7 @@ topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
         }
 
         _topics.erase(tp);
+        _disabled_partitions.erase(nt);
         _topics_map_revision++;
         notify_waiters();
         _probe.handle_topic_deletion(nt);
@@ -620,6 +621,45 @@ topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
     return ss::make_ready_future<std::error_code>(errc::success);
 }
 
+ss::future<std::error_code>
+topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
+    _last_applied_revision_id = model::revision_id(o);
+
+    auto topic_it = _topics.find(cmd.value.ns_tp);
+    if (topic_it == _topics.end()) {
+        co_return errc::topic_not_exists;
+    }
+
+    if (cmd.value.partition_id) {
+        const auto& assignments = topic_it->second.get_assignments();
+        if (!assignments.contains(*cmd.value.partition_id)) {
+            co_return errc::partition_not_exists;
+        }
+
+        auto [disabled_it, inserted] = _disabled_partitions.try_emplace(
+          cmd.value.ns_tp);
+        auto& disabled_set = disabled_it->second;
+
+        if (cmd.value.disabled) {
+            disabled_set.add(*cmd.value.partition_id);
+        } else {
+            disabled_set.remove(*cmd.value.partition_id, assignments);
+        }
+
+        if (disabled_set.is_empty()) {
+            _disabled_partitions.erase(disabled_it);
+        }
+    } else {
+        if (cmd.value.disabled) {
+            _disabled_partitions[cmd.value.ns_tp].set_topic_disabled();
+        } else {
+            _disabled_partitions.erase(cmd.value.ns_tp);
+        }
+    }
+
+    co_return errc::success;
+}
+
 template<typename T>
 void incremental_update(
   std::optional<T>& property, property_update<std::optional<T>> override) {
@@ -857,6 +897,11 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
 
     for (const auto& [ntr, lm] : _lifecycle_markers) {
         snap.lifecycle_markers.emplace(ntr, lm);
+    }
+
+    for (const auto& [ns_tp, dps] : _disabled_partitions) {
+        snap.disabled_partitions.emplace(ns_tp, dps);
+        co_await ss::coroutine::maybe_yield();
     }
 }
 
@@ -1212,6 +1257,13 @@ ss::future<> topic_table::apply_snapshot(
         }
     }
 
+    // Lifecycle markers is a simple static collection without notifications
+    // etc, so we can just copy directly into place.
+    _lifecycle_markers = controller_snap.topics.lifecycle_markers;
+
+    // Same for disabled partitions.
+    _disabled_partitions = controller_snap.topics.disabled_partitions;
+
     // 2. re-calculate derived state
 
     _partition_count = 0;
@@ -1222,10 +1274,6 @@ ss::future<> topic_table::apply_snapshot(
 
     // 3. notify delta waiters
     notify_waiters();
-
-    // Lifecycle markers is a simple static collection without notifications
-    // etc, so we can just copy directly into place.
-    _lifecycle_markers = controller_snap.topics.lifecycle_markers;
 
     _last_applied_revision_id = snap_revision;
 }
