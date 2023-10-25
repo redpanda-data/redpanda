@@ -73,14 +73,14 @@ fetch_dep(GTest
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   set(TINYGO_TARBALL "tinygo-linux-amd64.tar.gz")
-  set(TINYGO_MD5 "b7738cce3c44a7d17a4fed4ef150f45c")
+  set(TINYGO_MD5 "5b4ba9d8dd8ce10f7939de441ad46a80")
 elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
   set(TINYGO_TARBALL "tinygo-linux-arm64.tar.gz")
-  set(TINYGO_MD5 "f4a23e599dc2bb1543f5261f19aabb12")
+  set(TINYGO_MD5 "a0b397306665a9634a6b9c716f60f0a6")
 endif()
 
 FetchContent_Declare(tinygo
-  URL https://github.com/redpanda-data/tinygo/releases/download/v0.29.0-rpk1/${TINYGO_TARBALL}
+  URL https://github.com/redpanda-data/tinygo/releases/download/v0.30.0-rpk1/${TINYGO_TARBALL}
   URL_HASH MD5=${TINYGO_MD5}
   DOWNLOAD_EXTRACT_TIMESTAMP ON)
 FetchContent_GetProperties(tinygo)
