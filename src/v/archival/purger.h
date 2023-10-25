@@ -49,6 +49,8 @@ public:
     void acquire() override;
     void release() override;
 
+    retry_chain_node& get_root_retry_chain_node() override;
+
     ss::sstring name() const override;
 
 private:
@@ -117,6 +119,7 @@ private:
     global_position get_global_position();
 
     ss::abort_source _as;
+    retry_chain_node _root_rtc;
     ss::gate _gate;
 
     // A gate holder we keep on behalf of the housekeeping service, when

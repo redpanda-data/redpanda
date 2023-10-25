@@ -159,17 +159,13 @@ ntp_archiver_upload_result::operator()(cloud_storage::upload_result) const {
 
 static std::unique_ptr<adjacent_segment_merger>
 maybe_make_adjacent_segment_merger(
-  ntp_archiver& self,
-  retry_chain_logger& log,
-  const storage::ntp_config& cfg,
-  bool am_leader) {
+  ntp_archiver& self, const storage::ntp_config& cfg, bool am_leader) {
     std::unique_ptr<adjacent_segment_merger> result = nullptr;
     if (
       cfg.is_archival_enabled() && !cfg.is_compacted()
       && !cfg.is_read_replica_mode_enabled()) {
         result = std::make_unique<adjacent_segment_merger>(
           self,
-          log,
           true,
           config::shard_local_cfg()
             .cloud_storage_enable_segment_merging.bind());
@@ -181,7 +177,6 @@ maybe_make_adjacent_segment_merger(
 static std::unique_ptr<scrubber> maybe_make_scrubber(
   ntp_archiver& self,
   cloud_storage::remote& remote,
-  retry_chain_logger& logger,
   features::feature_table& feature_table,
   const storage::ntp_config& cfg,
   bool am_leader) {
@@ -190,7 +185,6 @@ static std::unique_ptr<scrubber> maybe_make_scrubber(
         result = std::make_unique<scrubber>(
           self,
           remote,
-          logger,
           feature_table,
           config::shard_local_cfg().cloud_storage_enable_scrubbing.bind(),
           config::shard_local_cfg().cloud_storage_scrubbing_interval_ms.bind(),
@@ -230,11 +224,10 @@ ntp_archiver::ntp_archiver(
   , _next_housekeeping(_housekeeping_jitter())
   , _feature_table(parent.feature_table())
   , _local_segment_merger(maybe_make_adjacent_segment_merger(
-      *this, _rtclog, parent.log()->config(), parent.is_leader()))
+      *this, parent.log()->config(), parent.is_leader()))
   , _scrubber(maybe_make_scrubber(
       *this,
       _remote,
-      _rtclog,
       _feature_table.local(),
       parent.log()->config(),
       parent.is_leader()))

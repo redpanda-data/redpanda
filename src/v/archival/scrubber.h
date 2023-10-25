@@ -42,7 +42,6 @@ public:
     scrubber(
       ntp_archiver& archiver,
       cloud_storage::remote& remote,
-      retry_chain_logger& logger,
       features::feature_table& feature_table,
       config::binding<bool> config_enabled,
       config::binding<std::chrono::milliseconds> interval,
@@ -64,6 +63,8 @@ public:
     void acquire() override;
     void release() override;
 
+    retry_chain_node& get_root_retry_chain_node() override;
+
     ss::sstring name() const override;
 
     std::pair<bool, std::optional<ss::sstring>> should_skip() const;
@@ -72,6 +73,8 @@ public:
 
 private:
     ss::abort_source _as;
+    retry_chain_node _root_rtc;
+    retry_chain_logger _logger;
     ss::gate _gate;
 
     // A gate holder we keep on behalf of the housekeeping service, when
@@ -87,7 +90,6 @@ private:
 
     ntp_archiver& _archiver;
     cloud_storage::remote& _remote;
-    retry_chain_logger& _logger;
 
     features::feature_table& _feature_table;
 

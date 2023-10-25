@@ -18,15 +18,15 @@ namespace archival {
 scrubber::scrubber(
   ntp_archiver& archiver,
   cloud_storage::remote& remote,
-  retry_chain_logger& logger,
   features::feature_table& feature_table,
   config::binding<bool> config_enabled,
   config::binding<std::chrono::milliseconds> interval,
   config::binding<std::chrono::milliseconds> jitter)
-  : _config_enabled(std::move(config_enabled))
+  : _root_rtc(_as)
+  , _logger(archival_log, _root_rtc, archiver.get_ntp().path())
+  , _config_enabled(std::move(config_enabled))
   , _archiver(archiver)
   , _remote(remote)
-  , _logger(logger)
   , _feature_table(feature_table)
   , _detector{_archiver.get_bucket_name(), _archiver.get_ntp(), _archiver.get_revision_id(), _remote, _logger, _as}
   , _scheduler(
@@ -164,6 +164,8 @@ ss::future<> scrubber::stop() {
     _as.request_abort();
     return _gate.close();
 }
+
+retry_chain_node& scrubber::get_root_retry_chain_node() { return _root_rtc; }
 
 ss::sstring scrubber::name() const { return "scrubber"; }
 

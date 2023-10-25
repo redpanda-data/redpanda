@@ -10,6 +10,7 @@
 
 #include "archival/adjacent_segment_merger.h"
 
+#include "archival/logger.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/segment_reupload.h"
 #include "archival/types.h"
@@ -36,18 +37,16 @@ static std::pair<size_t, size_t> get_low_high_segment_size(
 }
 
 adjacent_segment_merger::adjacent_segment_merger(
-  ntp_archiver& parent,
-  retry_chain_logger& ctxlog,
-  bool is_local,
-  config::binding<bool> config_enabled)
+  ntp_archiver& parent, bool is_local, config::binding<bool> config_enabled)
   : _is_local(is_local)
   , _config_enabled(std::move(config_enabled))
   , _archiver(parent)
-  , _ctxlog(ctxlog)
   , _target_segment_size(
       config::shard_local_cfg().cloud_storage_segment_size_target.bind())
   , _min_segment_size(
-      config::shard_local_cfg().cloud_storage_segment_size_min.bind()) {
+      config::shard_local_cfg().cloud_storage_segment_size_min.bind())
+  , _root_rtc(_as)
+  , _ctxlog(archival_log, _root_rtc, _archiver.get_ntp().path()) {
     vassert(
       !_archiver.ntp_config().is_read_replica_mode_enabled(),
       "Constructed adjacent segment merger on read replica {}",
@@ -64,6 +63,10 @@ void adjacent_segment_merger::set_enabled(bool enabled) {
 void adjacent_segment_merger::acquire() { _holder = ss::gate::holder(_gate); }
 
 void adjacent_segment_merger::release() { _holder.release(); }
+
+retry_chain_node& adjacent_segment_merger::get_root_retry_chain_node() {
+    return _root_rtc;
+}
 
 ss::sstring adjacent_segment_merger::name() const {
     return ssx::sformat("adjacent_segment_merger:{}", _archiver.get_ntp());

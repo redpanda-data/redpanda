@@ -42,7 +42,8 @@ purger::purger(
   cluster::topic_table& tt,
   ss::sharded<cluster::topics_frontend>& tf,
   ss::sharded<cluster::members_table>& mt)
-  : _api(r)
+  : _root_rtc(_as)
+  , _api(r)
   , _topic_table(tt)
   , _topics_frontend(tf)
   , _members_table(mt) {}
@@ -562,6 +563,8 @@ void purger::set_enabled(bool e) { _enabled = e; }
 void purger::acquire() { _holder = ss::gate::holder(_gate); }
 
 void purger::release() { _holder.release(); }
+
+retry_chain_node& purger::get_root_retry_chain_node() { return _root_rtc; }
 
 ss::sstring purger::name() const { return "purger"; }
 

@@ -32,14 +32,16 @@ constexpr archival::run_quota_t mock_quota{10};
 class mock_job : public archival::housekeeping_job {
 public:
     explicit mock_job(std::chrono::milliseconds ms)
-      : _delay(ms) {}
+      : _delay(ms)
+      , _root_rtc(_as) {}
 
     mock_job()
       : _delay(100ms)
+      , _root_rtc(_as)
       , _throw(true) {}
 
     ss::future<archival::housekeeping_job::run_result>
-    run(retry_chain_node& rtc, archival::run_quota_t quota) override {
+    run(archival::run_quota_t quota) override {
         ss::gate::holder h(_gate);
         if (_throw) {
             throw std::runtime_error("Job failed");
@@ -79,6 +81,8 @@ public:
 
     void release() override { _holder.release(); }
 
+    retry_chain_node& get_root_retry_chain_node() override { return _root_rtc; }
+
     ss::sstring name() const override { return "mock_job"; }
 
     size_t executed{0};
@@ -87,6 +91,7 @@ public:
 private:
     std::chrono::milliseconds _delay;
     ss::abort_source _as;
+    retry_chain_node _root_rtc;
     ss::gate _gate;
     ss::gate::holder _holder;
     bool _throw{false};
