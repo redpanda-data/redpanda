@@ -11,6 +11,9 @@ import requests
 
 from ducktape.utils.util import wait_until
 
+import json
+import time
+
 
 class RollingRestarter:
     """
@@ -42,6 +45,9 @@ class RollingRestarter:
                 node_id = self.redpanda.node_id(node)
                 broker_resp = admin.get_broker(node_id, node=node)
                 maintenance_status = broker_resp["maintenance_status"]
+                self.redpanda.logger.info(
+                    f"{node.name}: {json.dumps(maintenance_status, indent=1)}")
+
                 return maintenance_status["draining"] and maintenance_status[
                     "finished"]
             except requests.exceptions.HTTPError:
