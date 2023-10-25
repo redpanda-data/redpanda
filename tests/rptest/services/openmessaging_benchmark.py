@@ -51,7 +51,7 @@ class OpenMessagingBenchmarkWorkers(Service):
             assert len(nodes) > 0
             self.nodes = nodes
 
-    def start_node(self, node):
+    def start_node(self, node, timeout_sec=60, **kwargs):
         self.logger.info("Starting Open Messaging Benchmark worker node on %s",
                          node.account.hostname)
 
@@ -71,7 +71,7 @@ class OpenMessagingBenchmarkWorkers(Service):
             node.account.ssh(start_cmd)
             monitor.wait_until(
                 "Javalin has started",
-                timeout_sec=60,
+                timeout_sec=timeout_sec,
                 backoff_sec=4,
                 err_msg=
                 "Open Messaging Benchmark worker service didn't finish startup"
@@ -219,7 +219,7 @@ class OpenMessagingBenchmark(Service):
             nodes=self.worker_nodes)
         self.workers.start()
 
-    def start_node(self, node):
+    def start_node(self, node, timeout_sec=60, **kwargs):
         idx = self.idx(node)
         self.logger.info("Open Messaging Benchmark: benchmark node - %d on %s",
                          idx, node.account.hostname)
@@ -270,7 +270,7 @@ class OpenMessagingBenchmark(Service):
             node.account.ssh(start_cmd)
             monitor.wait_until(
                 "Starting warm-up traffic",
-                timeout_sec=60,
+                timeout_sec=timeout_sec,
                 backoff_sec=4,
                 err_msg="Open Messaging Benchmark service didn't start")
 
