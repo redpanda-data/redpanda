@@ -12,7 +12,8 @@
 
 #include "model/record.h"
 #include "model/transform.h"
-#include "ssx/thread_worker.h"
+#include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 #include "storage/parser_utils.h"
 #include "utils/human.h"
 #include "utils/type_traits.h"
@@ -252,9 +253,22 @@ private:
  * Creating instances from this is as fast as allocating the memory needed and
  * running any startup functions for the module.
  */
-struct preinitialized_instance {
-    handle<wasmtime_instance_pre_t, wasmtime_instance_pre_delete> underlying
+class preinitialized_instance {
+public:
+    preinitialized_instance() = default;
+    preinitialized_instance(const preinitialized_instance&) = delete;
+    preinitialized_instance(preinitialized_instance&&) = delete;
+    preinitialized_instance& operator=(const preinitialized_instance&) = delete;
+    preinitialized_instance& operator=(preinitialized_instance&&) = delete;
+    ~preinitialized_instance() { _cleanup_fn(); }
+
+    wasmtime_instance_pre_t* get() noexcept { return _underlying.get(); }
+
+private:
+    friend class wasmtime_runtime;
+    handle<wasmtime_instance_pre_t, wasmtime_instance_pre_delete> _underlying
       = nullptr;
+    ss::noncopyable_function<void() noexcept> _cleanup_fn;
 };
 
 absl::flat_hash_map<ss::sstring, ss::sstring>
@@ -385,7 +399,7 @@ private:
         wasmtime_error_t* error_ptr = nullptr;
         handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
           wasmtime_instance_pre_instantiate_async(
-            _preinitialized->underlying.get(),
+            _preinitialized->get(),
             context,
             &_instance,
             &trap_ptr,
@@ -1112,9 +1126,11 @@ public:
             ss::throw_pthread_error(
               ::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
         });
+        register_metrics();
     }
 
     ss::future<> stop() override {
+        _public_metrics.clear();
         co_await _alien_thread.stop();
         co_await _heap_allocator.stop();
         co_await _stack_allocator.stop();
@@ -1133,7 +1149,7 @@ public:
                          ? &_stack_allocator
                          : nullptr,
         };
-        co_await _alien_thread.submit(
+        size_t memory_usage_size = co_await _alien_thread.submit(
           [this, &meta, &buf, &preinitialized, &ssc] {
               vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
               // This can be a large contiguous allocation, however it happens
@@ -1158,9 +1174,17 @@ public:
               wasmtime_instance_pre_t* preinitialized_ptr = nullptr;
               error.reset(wasmtime_linker_instantiate_pre(
                 linker.get(), user_module.get(), &preinitialized_ptr));
-              preinitialized->underlying.reset(preinitialized_ptr);
+              preinitialized->_underlying.reset(preinitialized_ptr);
               check_error(error.get());
+
+              size_t start = 0, end = 0;
+              wasmtime_module_image_range(user_module.get(), &start, &end);
+              return end - start;
           });
+        _total_executable_memory += memory_usage_size;
+        preinitialized->_cleanup_fn = [this, memory_usage_size]() noexcept {
+            _total_executable_memory -= memory_usage_size;
+        };
         co_return ss::make_shared<wasmtime_engine_factory>(
           _engine.get(),
           std::move(meta),
@@ -1277,11 +1301,29 @@ private:
         return nullptr;
     }
 
+    void register_metrics() {
+        namespace sm = ss::metrics;
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("wasm"),
+          {
+            sm::make_gauge(
+              "binary_executable_memory_usage",
+              [this] { return _total_executable_memory; },
+              sm::description("The amount of executable memory used for "
+                              "WebAssembly binaries"))
+              .aggregate({ss::metrics::shard_label}),
+          });
+    }
+
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
     ss::sharded<heap_allocator> _heap_allocator;
     ss::sharded<stack_allocator> _stack_allocator;
+
+    size_t _total_executable_memory = 0;
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace

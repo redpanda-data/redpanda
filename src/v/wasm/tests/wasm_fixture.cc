@@ -164,6 +164,7 @@ void WasmTestFixture::TearDown() {
     if (_engine) {
         _engine->stop().get();
     }
+    _engine = nullptr;
     _factory = nullptr;
     _runtime->stop().get();
     _runtime = nullptr;
