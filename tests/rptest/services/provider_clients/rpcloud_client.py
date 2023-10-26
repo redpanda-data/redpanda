@@ -167,6 +167,9 @@ class RpCloudApiClient(object):
         return _r
 
     def delete_resource(self, resource_handle):
-        _r = self._http_delete(endpoint=resource_handle)
-        self._logger.debug(f"...delete requested for '{resource_handle}'")
+        try:
+            _r = self._http_delete(endpoint=resource_handle)
+            self._logger.debug(f"...delete requested for '{resource_handle}'")
+        except Exception as e:
+            self.log.warning(f"# Warning deletion failed: {e}")
         return _r

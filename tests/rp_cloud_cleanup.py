@@ -176,6 +176,9 @@ class CloudCleanup():
                     for net in networks:
                         # Add network delete handle to own list
                         net_queue += [self.cloudv2.network_endpoint(net['id'])]
+                # At this point, we should not add namespace to cleaning
+                # if it has any resources. Just leave it to the next run
+                continue
             # Add ns delete handle to the list
             ns_queue += [self.cloudv2.namespace_endpoint(uuid=ns['id'])]
         # Use ThreadPool
