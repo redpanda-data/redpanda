@@ -11,25 +11,15 @@
 
 #pragma once
 
-#include "config/configuration.h"
-#include "config/node_config.h"
-#include "seastarx.h"
-
-#include <seastar/core/memory.hh>
+#include <cstddef>
 
 // centralized unit for memory management
 class memory_groups {
 public:
-    static size_t kafka_total_memory() {
-        // 30%
-        return total_memory() * .30; // NOLINT
-    }
+    static size_t kafka_total_memory();
 
     /// \brief includes raft & all services
-    static size_t rpc_total_memory() {
-        // 20%
-        return total_memory() * .20; // NOLINT
-    }
+    static size_t rpc_total_memory();
 
     /**
      * The target allocation size for the chunk cache. This is a soft target,
@@ -38,42 +28,23 @@ public:
      *
      * add upper bound of 30 pct of memory as a hard outstanding limit.
      */
-    static size_t chunk_cache_min_memory() {
-        return total_memory() * .10; // NOLINT
-    }
+    static size_t chunk_cache_min_memory();
 
     /**
      * Upper bound on the amount of outstanding memory for inflight write
      * requests. Requests above this limit will wait for an existing chunk to be
      * returned to the cache.
      */
-    static size_t chunk_cache_max_memory() {
-        return total_memory() * .30; // NOLINT
-    }
+    static size_t chunk_cache_max_memory();
 
-    static size_t recovery_max_memory() {
-        return total_memory() * .10; // NOLINT
-    }
+    static size_t recovery_max_memory();
 
     /// Max memory that both cloud storage uploads and read-path could use
-    static size_t tiered_storage_max_memory() {
-        return total_memory() * .10; // NOLINT
-    }
+    static size_t tiered_storage_max_memory();
 
 private:
     /**
      * Total memory for a core after the user's Wasm reservation.
      */
-    static size_t total_memory() {
-        size_t total = ss::memory::stats().total_memory();
-        if (
-          config::shard_local_cfg().data_transforms_enabled.value()
-          && !config::node().emergency_disable_data_transforms.value()) {
-            size_t wasm_memory_reservation
-              = config::shard_local_cfg()
-                  .wasm_per_core_memory_reservation.value();
-            total -= wasm_memory_reservation;
-        }
-        return total;
-    }
+    static size_t total_memory();
 };

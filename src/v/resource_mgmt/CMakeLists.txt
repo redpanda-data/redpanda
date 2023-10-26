@@ -1,6 +1,7 @@
 v_cc_library(
   NAME resource_mgmt
   SRCS
+    memory_groups.cc
     available_memory.cc
     memory_sampling.cc
     cpu_profiler.cc
