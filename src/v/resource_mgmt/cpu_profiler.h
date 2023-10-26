@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "config/property.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/internal/cpu_profiler.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
@@ -76,10 +77,20 @@ public:
     // is called on.
     shard_samples shard_results() const;
 
+    // Enables the profiler for `timeout` milliseconds, then returns samples
+    // collected during that time period.
+    ss::future<std::vector<shard_samples>> collect_results_for_period(
+      std::chrono::milliseconds timeout, std::optional<ss::shard_id> shard_id);
+
 private:
     // Used to poll seastar at set intervals to capture all samples
     ss::timer<ss::lowres_clock> _query_timer;
     ss::gate _gate;
+
+    // Counts active overrides
+    unsigned _override_enabled{0};
+    // Used to abort sleeping `collect_results_for_period` tasks when stopping.
+    ss::abort_source _as;
 
     // Configuration for seastar's cpu profiler
     config::binding<bool> _enabled;
@@ -100,6 +111,8 @@ private:
 
     void on_enabled_change();
     void on_sample_period_change();
+
+    bool is_enabled() const;
 };
 
 } // namespace resources

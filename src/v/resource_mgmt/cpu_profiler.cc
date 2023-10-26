@@ -18,7 +18,9 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/internal/cpu_profiler.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/util/later.hh>
 
 #include <iterator>
@@ -36,19 +38,14 @@ cpu_profiler::cpu_profiler(
 }
 
 ss::future<> cpu_profiler::start() {
-    seastar::engine().set_cpu_profiler_period(_sample_period());
-    seastar::engine().set_cpu_profiler_enabled(_enabled());
-
-    if (_enabled()) {
-        // Arm the timer to fire whenever the profiler collects
-        // the maximum number of traces it can retain.
-        _query_timer.arm_periodic(ss::max_number_of_traces * _sample_period());
-    }
+    on_sample_period_change();
+    on_enabled_change();
 
     return ss::now();
 }
 
 ss::future<> cpu_profiler::stop() {
+    _as.request_abort();
     _query_timer.cancel();
     co_await _gate.close();
     ss::engine().set_cpu_profiler_enabled(false);
@@ -126,15 +123,22 @@ void cpu_profiler::poll_samples() {
     _results_buffers.emplace_front(dropped_samples, std::move(results_buffer));
 }
 
+bool cpu_profiler::is_enabled() const {
+    auto currently_overriden = _override_enabled > 0;
+    return _enabled() || currently_overriden;
+}
+
 void cpu_profiler::on_enabled_change() {
     if (_gate.is_closed()) {
         return;
     }
 
-    ss::engine().set_cpu_profiler_enabled(_enabled());
+    ss::engine().set_cpu_profiler_enabled(is_enabled());
     _query_timer.cancel();
 
-    if (_enabled()) {
+    if (is_enabled()) {
+        // Arm the timer to fire whenever the profiler collects
+        // the maximum number of traces it can retain.
         _query_timer.arm_periodic(ss::max_number_of_traces * _sample_period());
     }
 }
@@ -145,6 +149,31 @@ void cpu_profiler::on_sample_period_change() {
     }
 
     ss::engine().set_cpu_profiler_period(_sample_period());
+}
+
+ss::future<std::vector<cpu_profiler::shard_samples>>
+cpu_profiler::collect_results_for_period(
+  std::chrono::milliseconds timeout, std::optional<ss::shard_id> shard_id) {
+    if (_gate.is_closed()) {
+        co_return std::vector<shard_samples>{};
+    }
+    auto holder = _gate.hold();
+
+    _override_enabled++;
+    // enable the profiler if disabled pre-override.
+    on_enabled_change();
+
+    try {
+        co_await ss::sleep_abortable(timeout, _as);
+    } catch (const ss::sleep_aborted&) {
+        resourceslog.debug("Sleep aborted while collecting CPU profile");
+    }
+
+    _override_enabled--;
+    // check if profiler should be disabled post-override.
+    on_enabled_change();
+
+    co_return co_await results(shard_id);
 }
 
 } // namespace resources
