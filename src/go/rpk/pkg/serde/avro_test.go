@@ -17,7 +17,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/linkedin/goavro/v2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 	"github.com/spf13/afero"
@@ -25,7 +24,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-func Test_encodeAvroRecordNoReferences(t *testing.T) {
+func Test_encodeDecodeAvroRecordNoReferences(t *testing.T) {
 	tests := []struct {
 		name      string
 		schema    string
@@ -157,14 +156,11 @@ func Test_encodeAvroRecordNoReferences(t *testing.T) {
 			}
 
 			// Validate encoded record. Decode and compare to original:
-			codec, err := goavro.NewCodec(tt.schema)
-			require.NoError(t, err)
-			native, _, err := codec.NativeFromBinary(encRecord)
-			require.NoError(t, err)
-			gotDecoded, err := codec.TextualFromNative(nil, native)
+			gotDecoded, err := serde.DecodeRecord(encRecord)
 			if err != nil {
 				return
 			}
+			require.NoError(t, err)
 
 			// To avoid any mismatch in the decode order of the elements, we
 			// better unmarshal and compare the unmarshaled records.
@@ -179,7 +175,7 @@ func Test_encodeAvroRecordNoReferences(t *testing.T) {
 	}
 }
 
-func Test_encodeAvroRecordWithReferences(t *testing.T) {
+func Test_encodeDecodeAvroRecordWithReferences(t *testing.T) {
 	tests := []struct {
 		name     string
 		schema   *sr.Schema
@@ -304,22 +300,33 @@ func Test_encodeAvroRecordWithReferences(t *testing.T) {
 			require.Equal(t, uint8(0), got[0])
 
 			var serdeHeader sr.ConfluentHeader
-			id, _, err := serdeHeader.DecodeID(got)
+			id, encRecord, err := serdeHeader.DecodeID(got)
 			require.NoError(t, err)
 			require.Equal(t, tt.schemaID, id)
 			if len(got) == 5 {
 				return // It's an empty record.
 			}
 
-			// We stop here, we will add test for decoding once we support
-			// decoding with references.
+			// Validate encoded record. Decode and compare to original:
+			gotDecoded, err := serde.DecodeRecord(encRecord)
+			require.NoError(t, err)
+
+			// To avoid any mismatch in the decode order of the elements, we
+			// better unmarshal and compare the unmarshaled records.
+			var gotU, expU map[string]any
+			err = json.Unmarshal(gotDecoded, &gotU)
+			require.NoError(t, err)
+			err = json.Unmarshal([]byte(tt.record), &expU)
+			require.NoError(t, err)
+
+			require.Equal(t, expU, gotU)
 		})
 	}
 }
 
 var avroReferenceMap = map[string]string{
 	"single-0": `{"schema":"{\"type\":\"record\",\"name\":\"telephone\",\"fields\":[{\"name\":\"number\",\"type\":\"int\"},{\"name\":\"identifier\",\"type\":\"string\"}]}"}`,
-	"single-1": `{"schema":"{\"type\":\"record\",\"name\":\"coordinates\",\"fields\":[{\"name\":\"longitude\",\"type\":\"long\"},{\"name\":\"latitude\",\"type\":\"float\"}]}"}`,
+	"single-1": `{"schema":"{\"type\":\"record\",\"name\":\"coordinates\",\"fields\":[{\"name\":\"longitude\",\"type\":\"long\"},{\"name\":\"latitude\",\"type\":\"double\"}]}"}`,
 	"nested-1": `{"references":[{"name":"owner","subject":"nested","version":2}],"schema":"{\"type\":\"record\",\"name\":\"telephoneOwner\",\"fields\":[{\"name\":\"number\",\"type\":\"int\"},{\"name\":\"identifier\",\"type\":\"string\"},{\"name\":\"owner\",\"type\":\"owner\"}]}"}`,
 	"nested-2": `{"schema":"{\"type\":\"record\",\"name\":\"owner\",\"fields\":[{\"name\":\"lastname\",\"type\":\"string\"}]}"}`,
 }

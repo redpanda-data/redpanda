@@ -23,6 +23,7 @@ type serdeFunc func([]byte) ([]byte, error)
 // Serde is a protobuf or avro serializer/deserializer.
 type Serde struct {
 	encodeFn serdeFunc
+	decodeFn serdeFunc
 }
 
 // NewSerde will build a de/serializer based on the schema type. For Protobuf
@@ -32,17 +33,25 @@ type Serde struct {
 func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID int, protoFQN string) (*Serde, error) {
 	switch schema.Type {
 	case sr.TypeAvro:
-		encFn, err := newAvroEncoder(ctx, cl, schema, schemaID)
+		codec, err := generateAvroCodec(ctx, cl, schema)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse schema: %v", err)
+		}
+		encFn, err := newAvroEncoder(codec, schemaID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to build avro encoder: %v", err)
 		}
-		return &Serde{encFn}, nil
+		decFn, err := newAvroDecoder(codec)
+		if err != nil {
+			return nil, fmt.Errorf("unable to build avro decoder: %v", err)
+		}
+		return &Serde{encFn, decFn}, nil
 	case sr.TypeProtobuf:
 		encFn, err := newProtoEncoder(ctx, cl, schema, protoFQN, schemaID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to build protobuf encoder: %v", err)
 		}
-		return &Serde{encFn}, nil
+		return &Serde{encodeFn: encFn}, nil
 	default:
 		return nil, fmt.Errorf("schema with ID %v contains an unsupported schema type %v", schemaID, schema.Type)
 	}
@@ -54,4 +63,12 @@ func (s *Serde) EncodeRecord(record []byte) ([]byte, error) {
 		return nil, errors.New("encoder not found")
 	}
 	return s.encodeFn(record)
+}
+
+// DecodeRecord will encode the given record using the internal decodeFn.
+func (s *Serde) DecodeRecord(record []byte) ([]byte, error) {
+	if s.decodeFn == nil {
+		return nil, errors.New("decoder not found")
+	}
+	return s.decodeFn(record)
 }
