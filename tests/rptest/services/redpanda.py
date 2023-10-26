@@ -3527,8 +3527,8 @@ class RedpandaService(RedpandaServiceBase):
         }
 
         for node in nodes:
-            metrics = self.metrics(node, metrics_endpoint)
             for pattern in sample_patterns:
+                metrics = self.metrics(node, metrics_endpoint)
                 sample_values_per_pattern[pattern] += self._extract_samples(
                     metrics, pattern, node)
 
