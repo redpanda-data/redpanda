@@ -1124,7 +1124,8 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                 request.data.transaction_timeout_ms,
                 config::shard_local_cfg().create_topic_timeout_ms(),
                 expected_pid)
-              .then([&ctx](cluster::init_tm_tx_reply r) {
+              .then([&ctx, id = request.data.transactional_id.value()](
+                      cluster::init_tm_tx_reply r) {
                   init_producer_id_response reply;
 
                   switch (r.ec) {
@@ -1154,7 +1155,11 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                       reply.data.error_code = error_code::not_coordinator;
                       break;
                   default:
-                      vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
+                      vlog(
+                        klog.warn,
+                        "[tx_id={}] failed to allocate pid, ec: {}",
+                        id,
+                        r.ec);
                       reply.data.error_code = error_code::broker_not_available;
                       break;
                   }
