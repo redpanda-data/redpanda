@@ -658,9 +658,8 @@ class PartitionBalancerTest(PartitionBalancerService):
                 "health_monitor_max_metadata_age": 3000,
                 "log_segment_size": 104857600,  # 100 MiB
                 "retention_local_target_capacity_percent": 100.0,
-                # add disk reservation to buffer
-                "disk_reservation_percent": 10.0,
-                "retention_local_trim_interval": 3000
+                "retention_local_trim_interval": 3000,
+                "disk_reservation_percent": 0.0
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
 
