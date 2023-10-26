@@ -21,6 +21,8 @@ struct kv_t {
     ss::sstring key;
     ss::sstring val;
 
+    friend std::ostream& operator<<(std::ostream& o, const kv_t& kv);
+
     kv_t(ss::sstring k, ss::sstring v)
       : key(std::move(k))
       , val(std::move(v)) {}

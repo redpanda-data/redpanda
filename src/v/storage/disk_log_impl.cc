@@ -16,10 +16,12 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
 #include "storage/compaction_reducers.h"
 #include "storage/disk_log_appender.h"
 #include "storage/fwd.h"
+#include "storage/key_offset_map.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/logger.h"
@@ -27,6 +29,7 @@
 #include "storage/offset_to_filepos.h"
 #include "storage/readers_cache.h"
 #include "storage/segment.h"
+#include "storage/segment_deduplication_utils.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
 #include "storage/types.h"
@@ -365,7 +368,7 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
     co_return _start_offset;
 }
 
-ss::future<> disk_log_impl::do_compact(
+ss::future<> disk_log_impl::adjacent_merge_compact(
   compaction_config cfg, std::optional<model::offset> new_start_offset) {
     vlog(
       gclog.trace,
@@ -507,6 +510,140 @@ segment_set disk_log_impl::find_sliding_range(
         }
     }
     return segs;
+}
+
+ss::future<> disk_log_impl::sliding_window_compact(
+  const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
+    vlog(gclog.info, "[{}] running sliding window compaction", config().ntp());
+    auto segs = find_sliding_range(cfg, new_start_offset);
+    if (segs.empty()) {
+        vlog(gclog.info, "[{}] no more segments to compact", config().ntp());
+        co_return;
+    }
+    for (auto& seg : segs) {
+        auto result = co_await storage::internal::self_compact_segment(
+          seg,
+          _stm_manager,
+          cfg,
+          *_probe,
+          *_readers_cache,
+          _manager.resources(),
+          storage::internal::should_apply_delta_time_offset(_feature_table));
+
+        vlog(
+          gclog.debug,
+          "[{}] segment {} self compaction result: {}",
+          config().ntp(),
+          seg->reader().filename(),
+          result);
+    }
+
+    simple_key_offset_map map(cfg.key_offset_map_max_keys);
+    model::offset idx_start_offset;
+    try {
+        idx_start_offset = co_await build_offset_map(cfg, segs, map);
+    } catch (...) {
+        vlog(
+          gclog.warn,
+          "[{}] failed to build offset map. Stopping compaction: {}",
+          config().ntp(),
+          std::current_exception());
+        co_return;
+    }
+
+    auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
+    for (auto& seg : segs) {
+        if (seg->offsets().base_offset > map.max_offset()) {
+            break;
+        }
+        // TODO: implement a segment replacement strategy such that each term
+        // tries to write only one segment (or more if the term had a large
+        // amount of data), rather than replacing N segments with N segments.
+        auto tmpname = seg->reader().path().to_staging();
+        auto appender = co_await internal::make_segment_appender(
+          tmpname,
+          segment_appender::write_behind_memory
+            / internal::chunks().chunk_size(),
+          std::nullopt,
+          cfg.iopc,
+          resources(),
+          cfg.sanitizer_config);
+
+        auto cmp_idx_tmpname = seg->path().to_compaction_staging();
+        auto cmp_idx_name = seg->path().to_compacted_index();
+        auto compacted_idx_writer = make_file_backed_compacted_index(
+          cmp_idx_tmpname, cfg.iopc, true, resources(), cfg.sanitizer_config);
+
+        vlog(
+          gclog.trace,
+          "Deduplicating data from segment {} to {}",
+          seg->path(),
+          tmpname);
+        auto initial_generation_id = seg->get_generation_id();
+        std::exception_ptr eptr;
+        index_state new_idx;
+        try {
+            new_idx = co_await deduplicate_segment(
+              cfg,
+              map,
+              seg,
+              *appender,
+              compacted_idx_writer,
+              *_probe,
+              storage::internal::should_apply_delta_time_offset(
+                _feature_table));
+
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        // We must close the segment apender
+        co_await compacted_idx_writer.close();
+        co_await appender->close();
+        if (eptr) {
+            std::rethrow_exception(eptr);
+        }
+
+        vlog(
+          gclog.trace,
+          "Proceeding to replace segment {} with {}",
+          tmpname,
+          seg->path(),
+          tmpname);
+
+        auto rdr_holder = co_await _readers_cache->evict_segment_readers(seg);
+        auto write_lock = seg->write_lock();
+        if (initial_generation_id != seg->get_generation_id()) {
+            throw std::runtime_error(fmt::format(
+              "Aborting compaction of segment: {}, segment was mutated "
+              "while compacting",
+              seg->path()));
+        }
+        if (seg->is_closed()) {
+            throw segment_closed_exception();
+        }
+
+        // Clear our indexes before swapping the data files (note, the new
+        // compaction index was opened with the truncate option above).
+        co_await seg->index().drop_all_data();
+
+        // Rename the data file.
+        co_await internal::do_swap_data_file_handles(
+          tmpname, seg, cfg, *_probe);
+
+        // Persist the state of our indexes in their new names.
+        seg->index().swap_index_state(std::move(new_idx));
+        seg->force_set_commit_offset_from_index();
+        seg->release_batch_cache_index();
+        co_await seg->index().flush();
+        co_await ss::rename_file(
+          cmp_idx_tmpname.string(), cmp_idx_name.string());
+
+        seg->mark_as_finished_windowed_compaction();
+        _probe->segment_compacted();
+        seg->advance_generation();
+    }
+    _last_compaction_window_start_offset = idx_start_offset;
+    co_return;
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
@@ -878,7 +1015,7 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
-        co_await do_compact(cfg.compact, new_start_offset);
+        co_await adjacent_merge_compact(cfg.compact, new_start_offset);
     }
 
     _probe->set_compaction_ratio(_compaction_ratio.get());

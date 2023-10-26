@@ -22,6 +22,11 @@ namespace tests {
 
 static ss::logger test_log("produce_consume_logger");
 
+std::ostream& operator<<(std::ostream& o, const kv_t& kv) {
+    o << ssx::sformat("{{k=\"{}\", v=\"{}\"}}", kv.key, kv.val);
+    return o;
+}
+
 // Produces the given records per partition to the given topic.
 // NOTE: inputs must remain valid for the duration of the call.
 ss::future<kafka_produce_transport::pid_to_offset_map_t>

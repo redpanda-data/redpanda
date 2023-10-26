@@ -158,6 +158,13 @@ public:
 
     storage_resources& resources();
 
+    ss::future<> adjacent_merge_compact(
+      compaction_config, std::optional<model::offset> = std::nullopt);
+
+    ss::future<> sliding_window_compact(
+      const compaction_config& cfg,
+      std::optional<model::offset> new_start_offset = std::nullopt);
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
@@ -175,8 +182,6 @@ private:
     // Returns if the update actually took place.
     ss::future<bool> update_start_offset(model::offset o);
 
-    ss::future<> do_compact(
-      compaction_config, std::optional<model::offset> = std::nullopt);
     ss::future<compaction_result> compact_adjacent_segments(
       std::pair<segment_set::iterator, segment_set::iterator>,
       storage::compaction_config cfg);
