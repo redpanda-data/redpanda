@@ -374,58 +374,63 @@ public:
 
     template<typename Func>
     auto retry_with_leader(
-      int retry_count, model::timeout_clock::time_point deadline, Func&& f) {
+      model::timeout_clock::time_point deadline,
+      std::chrono::milliseconds backoff,
+      Func&& f) {
         using futurator
           = ss::futurize<std::invoke_result_t<Func, raft_node_instance&>>;
         using ret_t = futurator::value_type;
         struct retry_state {
             ret_t result = errc::timeout;
-            int retries_left;
+            int retry = 0;
         };
         return ss::do_with(
-          retry_state{.retries_left = retry_count},
-          [this, deadline, f = std::forward<Func>(f), retry_count](
+          retry_state{},
+          [this, deadline, f = std::forward<Func>(f), backoff](
             retry_state& state) mutable {
               return ss::do_until(
-                       [&state] { return state.retries_left <= 0; },
+                       [&state, deadline] {
+                           return model::timeout_clock::now() > deadline
+                                  || state.result.has_value();
+                       },
                        [this,
                         &state,
                         f = std::forward<Func>(f),
                         deadline,
-                        retry_count]() mutable {
+                        backoff]() mutable {
                            vlog(
                              _logger.info,
-                             "Executing action with leader, retries left {}/{}",
-                             state.retries_left,
-                             retry_count);
-                           if (model::timeout_clock::now() > deadline) {
-                               state.retries_left = 0;
-                               return ss::now();
-                           }
+                             "Executing action with leader, current retry: {}",
+                             state.retry);
 
                            return wait_for_leader(deadline).then(
-                             [this, f = std::forward<Func>(f), &state](
+                             [this, f = std::forward<Func>(f), &state, backoff](
                                model::node_id leader_id) {
                                  return ss::futurize_invoke(f, node(leader_id))
-                                   .then([this, &state](auto result) mutable {
+                                   .then([this, &state, backoff](
+                                           auto result) mutable {
                                        // success
                                        if (result) {
                                            state.result = std::move(result);
-                                           state.retries_left = 0;
                                            return ss::now();
                                        }
                                        vlog(
                                          _logger.info,
                                          "Leader action returned an error: {}",
                                          result.error());
-                                       state.retries_left--;
+                                       state.retry++;
 
-                                       return ss::sleep(100ms);
+                                       return ss::sleep(backoff);
                                    });
                              });
                        })
                 .then([&state] { return state.result; });
           });
+    }
+    template<typename Func>
+    auto
+    retry_with_leader(model::timeout_clock::time_point deadline, Func&& f) {
+        return retry_with_leader(deadline, 100ms, std::forward<Func>(f));
     }
 
 private:
