@@ -53,7 +53,7 @@ client::client(const YAML::Node& cfg, external_mitigate mitigater)
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
       return update_metadata(tag);
   }}
-  , _producer{_config, _topic_cache, _brokers, [this](std::exception_ptr ex) {
+  , _producer{_config, _topic_cache, _brokers, _config.produce_ack_level(), [this](std::exception_ptr ex) {
       return mitigate_error(std::move(ex));
   }}
   , _external_mitigate(std::move(mitigater)) {}

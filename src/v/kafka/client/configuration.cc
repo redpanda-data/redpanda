@@ -79,6 +79,19 @@ configuration::configuration()
           }
           return std::nullopt;
       })
+  , produce_ack_level(
+      *this,
+      "produce_ack_level",
+      "Number of acknowledgments the producer requires the leader to have "
+      "received before considering a request complete, choices are 0, 1 and -1",
+      {},
+      -1,
+      [](int16_t acks) -> std::optional<ss::sstring> {
+          if (acks < -1 || acks > 1) {
+              return ss::format("Validation failed for acks: {}", acks);
+          }
+          return std::nullopt;
+      })
   , consumer_request_timeout(
       *this,
       "consumer_request_timeout_ms",

@@ -24,8 +24,8 @@
 
 namespace kafka::client {
 
-produce_request
-make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
+produce_request make_produce_request(
+  model::topic_partition tp, model::record_batch&& batch, int16_t acks) {
     std::vector<produce_request::partition> partitions;
     partitions.emplace_back(produce_request::partition{
       .partition_index{tp.partition},
@@ -35,7 +35,6 @@ make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
     topics.emplace_back(produce_request::topic{
       .name{std::move(tp.topic)}, .partitions{std::move(partitions)}});
     std::optional<ss::sstring> t_id;
-    int16_t acks = -1;
     return produce_request(t_id, acks, std::move(topics));
 }
 
@@ -73,7 +72,7 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
     auto leader = co_await _topic_cache.leader(tp);
     auto broker = co_await _brokers.find(leader);
     auto res = co_await broker->dispatch(
-      make_produce_request(std::move(tp), std::move(batch)));
+      make_produce_request(std::move(tp), std::move(batch), _acks));
     auto topic = std::move(res.data.responses[0]);
     auto partition = std::move(topic.partitions[0]);
     if (partition.error_code != error_code::none) {
