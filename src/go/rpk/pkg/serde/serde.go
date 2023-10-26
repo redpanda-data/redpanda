@@ -27,15 +27,16 @@ type Serde struct {
 }
 
 // NewSerde will build a de/serializer based on the schema type. For Protobuf
-// schemas, it will use the FQN to find the message type. Each encoded record
-// will contain the schema registry wire format bytes (Magic number, Schema ID
-// and Index for Proto).
+// schemas, it will use the FQN to find the message type, if no FQN is provided,
+// it will only build a deserializer. Each encoded record will contain the
+// schema registry wire format bytes (Magic number, Schema ID and Index for
+// Proto).
 func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID int, protoFQN string) (*Serde, error) {
 	switch schema.Type {
 	case sr.TypeAvro:
 		codec, err := generateAvroCodec(ctx, cl, schema)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse schema: %v", err)
+			return nil, fmt.Errorf("unable to parse avro schema: %v", err)
 		}
 		encFn, err := newAvroEncoder(codec, schemaID)
 		if err != nil {
@@ -47,11 +48,23 @@ func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID in
 		}
 		return &Serde{encFn, decFn}, nil
 	case sr.TypeProtobuf:
-		encFn, err := newProtoEncoder(ctx, cl, schema, protoFQN, schemaID)
+		compiled, err := compileSchema(ctx, cl, schema)
 		if err != nil {
-			return nil, fmt.Errorf("unable to build protobuf encoder: %v", err)
+			return nil, fmt.Errorf("unable to compile proto schema: %v", err)
 		}
-		return &Serde{encodeFn: encFn}, nil
+		var encFn serdeFunc
+		// If there is no FQN, most likely we are trying to decode only.
+		if protoFQN != "" {
+			encFn, err = newProtoEncoder(compiled, protoFQN, schemaID)
+			if err != nil {
+				return nil, fmt.Errorf("unable to build protobuf encoder: %v", err)
+			}
+		}
+		decFn, err := newProtoDecoder(compiled)
+		if err != nil {
+			return nil, fmt.Errorf("unable to build protobuf decoder: %v", err)
+		}
+		return &Serde{encFn, decFn}, nil
 	default:
 		return nil, fmt.Errorf("schema with ID %v contains an unsupported schema type %v", schemaID, schema.Type)
 	}
