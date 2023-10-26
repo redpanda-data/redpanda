@@ -161,7 +161,7 @@ public:
     virtual ss::future<run_result> run(run_quota_t quota) = 0;
 
     /// Returns the the root retry chain node of the job.
-    virtual retry_chain_node& get_root_retry_chain_node() = 0;
+    virtual retry_chain_node* get_root_retry_chain_node() = 0;
 
     virtual ss::sstring name() const = 0;
 

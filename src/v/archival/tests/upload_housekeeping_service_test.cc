@@ -81,7 +81,9 @@ public:
 
     void release() override { _holder.release(); }
 
-    retry_chain_node& get_root_retry_chain_node() override { return _root_rtc; }
+    retry_chain_node* get_root_retry_chain_node() override {
+        return &_root_rtc;
+    }
 
     ss::sstring name() const override { return "mock_job"; }
 

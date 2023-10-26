@@ -336,6 +336,9 @@ public:
     /// Return deadline time
     ss::lowres_clock::time_point get_deadline() const;
 
+    /// Return root node of the retry chain
+    const retry_chain_node* get_root() const;
+
 private:
     void format(std::back_insert_iterator<fmt::memory_buffer>& bii) const;
 
@@ -344,9 +347,6 @@ private:
     void rem_child();
 
     uint16_t get_len() const;
-
-    /// Return root node of the retry chain
-    const retry_chain_node* get_root() const;
 
     /// Fetch parent of the node
     /// Method returns nullptr if root

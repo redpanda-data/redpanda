@@ -455,19 +455,14 @@ ss::future<upload_result> remote::upload_manifest(
 
 void remote::notify_external_subscribers(
   api_activity_notification event, const retry_chain_node& caller) {
+    const auto* caller_root = caller.get_root();
+
     for (auto& flt : _filters) {
         if (flt._events_to_ignore.contains(event.type)) {
             continue;
         }
 
-        auto iter = std::find_if(
-          flt._sources_to_ignore.begin(),
-          flt._sources_to_ignore.end(),
-          [&caller](const auto& source) {
-              return source.get().same_root(caller);
-          });
-
-        if (iter != flt._sources_to_ignore.end()) {
+        if (flt._sources_to_ignore.contains(caller_root)) {
             continue;
         }
 

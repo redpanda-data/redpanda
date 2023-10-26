@@ -40,7 +40,7 @@ public:
     void acquire() override;
     void release() override;
 
-    retry_chain_node& get_root_retry_chain_node() override;
+    retry_chain_node* get_root_retry_chain_node() override;
 
     ss::sstring name() const override;
 

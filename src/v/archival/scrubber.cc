@@ -164,7 +164,7 @@ ss::future<> scrubber::stop() {
     return _gate.close();
 }
 
-retry_chain_node& scrubber::get_root_retry_chain_node() { return _root_rtc; }
+retry_chain_node* scrubber::get_root_retry_chain_node() { return &_root_rtc; }
 
 ss::sstring scrubber::name() const { return "scrubber"; }
 

@@ -436,29 +436,12 @@ public:
           std::unordered_set<api_activity_type> ignored_events)
           : _events_to_ignore(std::move(ignored_events)) {}
 
-        void
-        add_source_to_ignore(std::reference_wrapper<retry_chain_node> source) {
-            _sources_to_ignore.push_back(source);
+        void add_source_to_ignore(const retry_chain_node* source) {
+            _sources_to_ignore.insert(source);
         }
 
-        void remove_source_to_ignore(
-          std::reference_wrapper<retry_chain_node> source) {
-            auto at = std::find_if(
-              _sources_to_ignore.begin(),
-              _sources_to_ignore.end(),
-              [&source](const auto& src) {
-                  return source.get().same_root(src.get());
-              });
-
-            if (at == _sources_to_ignore.end()) {
-                return;
-            }
-
-            if (std::distance(at, _sources_to_ignore.end()) > 1) {
-                std::iter_swap(at, _sources_to_ignore.end() - 1);
-            }
-
-            _sources_to_ignore.pop_back();
+        void remove_source_to_ignore(const retry_chain_node* source) {
+            _sources_to_ignore.erase(source);
         }
 
         void cancel() {
@@ -469,8 +452,7 @@ public:
         }
 
     private:
-        fragmented_vector<std::reference_wrapper<retry_chain_node>>
-          _sources_to_ignore;
+        absl::node_hash_set<const retry_chain_node*> _sources_to_ignore;
         std::unordered_set<api_activity_type> _events_to_ignore;
         std::optional<ss::promise<api_activity_notification>> _promise;
         intrusive_list_hook _hook;

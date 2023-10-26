@@ -565,7 +565,7 @@ void purger::acquire() { _holder = ss::gate::holder(_gate); }
 
 void purger::release() { _holder.release(); }
 
-retry_chain_node& purger::get_root_retry_chain_node() { return _root_rtc; }
+retry_chain_node* purger::get_root_retry_chain_node() { return &_root_rtc; }
 
 ss::sstring purger::name() const { return "purger"; }
 

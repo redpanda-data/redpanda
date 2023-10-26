@@ -912,7 +912,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     auto conf = get_configuration();
     retry_chain_node root_rtc(never_abort, 100ms, 20ms);
     remote::event_filter flt;
-    flt.add_source_to_ignore(root_rtc);
+    flt.add_source_to_ignore(&root_rtc);
 
     auto subscription = remote.local().subscribe(flt);
     partition_manifest actual(manifest_ntp, manifest_revision);
@@ -961,7 +961,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
 
     // Remove the rtc node from the filter and re-subscribe. This time we should
     // receive the notification.
-    flt.remove_source_to_ignore(root_rtc);
+    flt.remove_source_to_ignore(&root_rtc);
     subscription = remote.local().subscribe(flt);
     res = remote.local()
             .download_manifest(

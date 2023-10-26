@@ -390,7 +390,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                 auto sub = _as.subscribe([&job]() mutable noexcept {
                     // Propagate an abort of the `upload_housekeeping_service`
                     // to the running job.
-                    job.get_root_retry_chain_node().request_abort();
+                    job.get_root_retry_chain_node()->request_abort();
                 });
 
                 auto res = co_await job.run(quota);

@@ -64,8 +64,8 @@ void adjacent_segment_merger::acquire() { _holder = ss::gate::holder(_gate); }
 
 void adjacent_segment_merger::release() { _holder.release(); }
 
-retry_chain_node& adjacent_segment_merger::get_root_retry_chain_node() {
-    return _root_rtc;
+retry_chain_node* adjacent_segment_merger::get_root_retry_chain_node() {
+    return &_root_rtc;
 }
 
 ss::sstring adjacent_segment_merger::name() const {
