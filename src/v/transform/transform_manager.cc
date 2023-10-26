@@ -228,7 +228,7 @@ public:
         ss::chunked_fifo<entry_t> entries;
         ss::chunked_fifo<ss::future<>> stop_futures;
         while (it != _ntp_index.end()) {
-            auto [ntp, id] = std::move(*it);
+            auto [ntp, id] = *it;
             if (ntp != target_ntp) {
                 break;
             }
