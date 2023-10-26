@@ -17,6 +17,13 @@
 
 #include <seastar/core/memory.hh>
 
+namespace {
+bool wasm_enabled() {
+    return config::shard_local_cfg().data_transforms_enabled.value()
+           && !config::node().emergency_disable_data_transforms.value();
+}
+} // namespace
+
 size_t memory_groups::kafka_total_memory() {
     // 30%
     return total_memory() * .30; // NOLINT
@@ -45,9 +52,7 @@ size_t memory_groups::tiered_storage_max_memory() {
 
 size_t memory_groups::total_memory() {
     size_t total = ss::memory::stats().total_memory();
-    if (
-      config::shard_local_cfg().data_transforms_enabled.value()
-      && !config::node().emergency_disable_data_transforms.value()) {
+    if (wasm_enabled()) {
         size_t wasm_memory_reservation
           = config::shard_local_cfg().wasm_per_core_memory_reservation.value();
         total -= wasm_memory_reservation;
