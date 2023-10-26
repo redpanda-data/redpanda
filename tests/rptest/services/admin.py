@@ -1119,11 +1119,23 @@ class Admin:
                              node=node,
                              **kwargs).json()
 
-    def get_cpu_profile(self, node=None):
+    def get_cpu_profile(self, node=None, wait_ms=None):
         """
         Get the CPU profile of a node.
         """
-        return self._request("get", "debug/cpu_profile", node=node).json()
+        path = "debug/cpu_profile"
+        params = {}
+        timeout = DEFAULT_TIMEOUT
+
+        if wait_ms:
+            params["wait_ms"] = wait_ms
+            timeout = max(2 * (int(wait_ms) // 1_000), timeout)
+
+        return self._request("get",
+                             path,
+                             node=node,
+                             timeout=timeout,
+                             params=params).json()
 
     def get_local_offsets_translated(self,
                                      offsets,
