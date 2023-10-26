@@ -12,6 +12,7 @@
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "security/audit/audit_log_manager.h"
+#include "security/audit/client_probe.h"
 #include "security/audit/probe.h"
 
 #include <seastar/core/metrics.hh>
@@ -64,5 +65,27 @@ void audit_probe::setup_metrics(std::function<double()> get_usage_ratio) {
     if (!config::shard_local_cfg().disable_public_metrics()) {
         _public_metrics.add_group(group_name, setup_common({sm::shard_label}));
     }
+}
+
+void client_probe::setup_metrics(std::function<double()> get_usage_ratio) {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("security_audit_client"),
+      {
+        sm::make_gauge(
+          "buffer_usage_ratio",
+          [fn = std::move(get_usage_ratio)] { return fn(); },
+          sm::description("Audit client send buffer usage ratio"))
+          .aggregate(aggregate_labels),
+      });
 }
 } // namespace security::audit
