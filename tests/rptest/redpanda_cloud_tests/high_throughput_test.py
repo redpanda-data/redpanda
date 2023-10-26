@@ -168,7 +168,9 @@ def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
 def omb_runner(context, redpanda, driver, workload, omb_config):
     bench = OpenMessagingBenchmark(context, redpanda, driver,
                                    (workload, omb_config))
-    bench.start()
+    # No need to set 'clean' flag as OMB service always cleans node on start
+    # On nodes with lower perf start takes longer than 60 sec
+    bench.start(timeout_sec=120)
     try:
         benchmark_time_min = bench.benchmark_time() + 1
         bench.wait(timeout_sec=benchmark_time_min * 60)
