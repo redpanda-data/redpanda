@@ -31,8 +31,8 @@ public:
     static constexpr const alignment alignment{4_KiB};
 
     chunk_cache() noexcept
-      : _size_target(memory_groups::chunk_cache_min_memory())
-      , _size_limit(memory_groups::chunk_cache_max_memory())
+      : _size_target(memory_groups().chunk_cache_min_memory())
+      , _size_limit(memory_groups().chunk_cache_max_memory())
       , _chunk_size(config::shard_local_cfg().append_chunk_size()) {}
 
     chunk_cache(chunk_cache&&) = delete;
@@ -42,7 +42,7 @@ public:
     ~chunk_cache() noexcept = default;
 
     ss::future<> start() {
-        const auto num_chunks = memory_groups::chunk_cache_min_memory()
+        const auto num_chunks = memory_groups().chunk_cache_min_memory()
                                 / _chunk_size;
         return ss::do_for_each(
           boost::counting_iterator<size_t>(0),

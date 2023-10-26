@@ -31,12 +31,20 @@ struct memory_shares {
     constexpr static size_t tiered_storage = 1;
     constexpr static size_t data_transforms = 1;
 
-    constexpr static size_t total_shares() {
-        return kafka + rpc + recovery + tiered_storage + data_transforms;
+    static size_t total_shares(bool with_wasm) {
+        size_t total = kafka + rpc + recovery + tiered_storage;
+        if (with_wasm) {
+            total += data_transforms;
+        }
+        return total;
     }
 };
 
 } // namespace
+
+memory_groups::memory_groups(size_t total_system_memory, bool wasm_enabled)
+  : _total_system_memory(total_system_memory)
+  , _wasm_enabled(wasm_enabled) {}
 
 size_t memory_groups::chunk_cache_min_memory() {
     return total_memory() * .10; // NOLINT
@@ -63,22 +71,31 @@ size_t memory_groups::tiered_storage_max_memory() {
 }
 
 size_t memory_groups::data_transforms_max_memory() {
+    if (!_wasm_enabled) {
+        return 0;
+    }
     return subsystem_memory<memory_shares::data_transforms>();
 }
 
 template<size_t shares>
 size_t memory_groups::subsystem_memory() {
     size_t remaining = total_memory() - chunk_cache_max_memory();
-    size_t per_share_amount = remaining / memory_shares::total_shares();
+    size_t per_share_amount = remaining
+                              / memory_shares::total_shares(_wasm_enabled);
     return per_share_amount * shares;
 }
 
 size_t memory_groups::total_memory() {
+    size_t total = _total_system_memory;
+    return total;
+}
+
+class memory_groups memory_groups() {
     size_t total = ss::memory::stats().total_memory();
     if (wasm_enabled()) {
         size_t wasm_memory_reservation
           = config::shard_local_cfg().wasm_per_core_memory_reservation.value();
         total -= wasm_memory_reservation;
     }
-    return total;
+    return {total, wasm_enabled()};
 }
