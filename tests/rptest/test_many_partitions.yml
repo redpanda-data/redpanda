@@ -2,6 +2,7 @@
 partitions:
   included:
     - scale_tests/many_partitions_test.py
+    - scale_tests/rpk_many_partitions_test.py
 
   excluded:
     - scale_tests/many_partitions_test.py::ManyPartitionsTest.test_many_partitions
