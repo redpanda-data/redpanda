@@ -22,6 +22,7 @@
 #include "wasm/fwd.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/queue.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 namespace transform {
@@ -60,9 +61,14 @@ public:
     const model::transform_metadata& meta() const;
 
 private:
+    ss::future<> run_consumer_loop();
     ss::future<> run_transform_loop();
-    ss::future<> do_run_transform_loop();
-    ss::future<> transform_batches(model::record_batch_reader::data_t);
+    ss::future<> run_producer_loop();
+    ss::future<> poll_sleep();
+
+    template<typename... Future>
+    ss::future<> when_all_shutdown(Future&&...);
+    ss::future<> handle_run_loop(ss::future<>);
 
     model::transform_id _id;
     model::ntp _ntp;
@@ -72,6 +78,9 @@ private:
     std::vector<std::unique_ptr<sink>> _sinks;
     error_callback _error_callback;
     probe* _probe;
+
+    ss::queue<model::record_batch> _consumer_transform_pipe;
+    ss::queue<model::record_batch> _transform_producer_pipe;
 
     ss::abort_source _as;
     ss::future<> _task;
