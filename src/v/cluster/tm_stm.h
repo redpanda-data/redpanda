@@ -292,6 +292,7 @@ private:
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
     tm_tx_hosted_transactions _hosted_txes;
     mutex _tx_thrashing_lock;
+    prefix_logger _ctx_log;
 
     ss::future<> apply(model::record_batch b) override;
     ss::future<> apply_hosted_transactions(model::record_batch b);
