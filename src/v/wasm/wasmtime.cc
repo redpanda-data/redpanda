@@ -375,10 +375,8 @@ public:
 
 private:
     void reset_fuel(wasmtime_context_t* ctx) {
-        uint64_t fuel = 0;
-        wasmtime_context_fuel_remaining(ctx, &fuel);
         handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_context_add_fuel(ctx, fuel_amount - fuel));
+          wasmtime_context_set_fuel(ctx, fuel_amount));
         check_error(error.get());
     }
 

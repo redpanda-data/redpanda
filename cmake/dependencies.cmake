@@ -91,12 +91,13 @@ fetch_dep(hdrhistogram
 
 list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --no-default-features)
 list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --features=async)
+list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --features=addr2line)
 
 # We need submodules for wasmtime to compile
 FetchContent_Declare(
   wasmtime
   GIT_REPOSITORY https://github.com/bytecodealliance/wasmtime
-  GIT_TAG 81b14a50431104631023fb5723041667fd141efb
+  GIT_TAG 282edac149c0883a7d064132f93ce0a20a50d0d7
   GIT_PROGRESS TRUE
   USES_TERMINAL_DOWNLOAD TRUE
   OVERRIDE_FIND_PACKAGE
