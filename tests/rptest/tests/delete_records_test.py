@@ -167,15 +167,19 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
 
     def assert_start_partition_boundaries(self, topic_name, truncate_offset):
         def check_bound_start(offset):
-            try:
-                r = self.rpk.consume(topic_name,
-                                     n=1,
-                                     offset=f'{offset}-{offset+1}',
-                                     quiet=True,
-                                     timeout=10)
-                return r.count('_') == 1
-            except Exception as _:
-                return False
+            retries = 3
+            while retries > 0:
+                try:
+                    r = self.rpk.consume(topic_name,
+                                         n=1,
+                                         offset=f'{offset}-{offset+1}',
+                                         quiet=True,
+                                         timeout=10)
+                    return r.count('_') == 1
+                except Exception as _:
+                    retries = retries - 1
+                    time.sleep(1)
+            return False
 
         assert check_bound_start(
             truncate_offset
@@ -192,15 +196,19 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         number of remaining records is as expected.
         """
         def check_bound_end(offset):
-            try:
-                # Not timing out means data was available to read
-                _ = self.rpk.consume(topic_name,
-                                     n=1,
-                                     offset=offset,
-                                     timeout=10)
-            except Exception as _:
-                return False
-            return True
+            retries = 3
+            while retries > 0:
+                try:
+                    # Not timing out means data was available to read
+                    _ = self.rpk.consume(topic_name,
+                                         n=1,
+                                         offset=offset,
+                                         timeout=10)
+                    return True
+                except Exception as _:
+                    retries = retries - 1
+                    time.sleep(1)
+            return False
 
         assert truncate_offset <= high_watermark, f"Test malformed"
 
