@@ -380,6 +380,8 @@ public:
         return _request_contains_audit_topic;
     }
 
+    bool authorized_auditor() const { return _conn->authorized_auditor(); }
+
     cluster::security_frontend& security_frontend() const {
         return _conn->server().security_frontend();
     }

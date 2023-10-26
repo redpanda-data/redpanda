@@ -50,11 +50,6 @@ std::ostream& operator<<(std::ostream& os, event_type t) {
     }
 }
 
-/// TODO: Create a new ephemeral user for the audit principal so even clients
-/// instantiated by pandaproxy cannot modify or produce to the audit topic
-static const security::acl_principal audit_principal{
-  security::principal_type::ephemeral_user, "__auditing"};
-
 /// Contains a kafka client and a sempahore to bound the memory allocated
 /// by it. This class may be allocated/deallocated on the owning shard depending
 /// on the value of the global audit toggle config option (audit_enabled)
@@ -227,9 +222,6 @@ ss::future<> audit_client::set_auditing_permissions() {
       model::kafka_audit_logging_topic,
       security::pattern_type::literal};
 
-    /// TODO: Add rules for User:* deny to things like deleting the topic
-    /// and other unwanted behavior. User:* should be allowed to ::describe
-    /// and alter topic configs
     co_await _controller->get_security_frontend().local().create_acls(
       {security::acl_binding{audit_topic_pattern, acl_create_entry},
        security::acl_binding{audit_topic_pattern, acl_write_entry}},

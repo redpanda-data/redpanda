@@ -179,16 +179,6 @@ public:
     template<typename T>
     security::auth_result authorized(
       security::acl_operation operation, const T& name, authz_quiet quiet) {
-        auto get_principal = [this]() {
-            if (_mtls_state) {
-                return _mtls_state->principal();
-            } else if (_sasl) {
-                return _sasl->principal();
-            }
-            // anonymous user
-            return security::acl_principal{security::principal_type::user, {}};
-        };
-
         // authorization disabled?
         if (!_enable_authorizer) {
             return security::auth_result::authz_disabled(
@@ -199,6 +189,10 @@ public:
         }
 
         return authorized_user(get_principal(), operation, name, quiet);
+    }
+
+    bool authorized_auditor() const {
+        return get_principal() == security::audit_principal;
     }
 
     template<typename T>
@@ -268,6 +262,16 @@ public:
     bool tls_enabled() const { return conn->tls_enabled(); }
 
 private:
+    security::acl_principal get_principal() const {
+        if (_mtls_state) {
+            return _mtls_state->principal();
+        } else if (_sasl) {
+            return _sasl->principal();
+        }
+        // anonymous user
+        return security::acl_principal{security::principal_type::user, {}};
+    }
+
     bool is_finished_parsing() const;
 
     // Reserve units from memory from the memory semaphore in proportion

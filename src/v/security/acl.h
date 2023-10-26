@@ -499,4 +499,8 @@ private:
     acl_entry_filter _acl;
 };
 
+/// Name of the principal the kafka client for auditing will be using
+inline const acl_principal audit_principal{
+  principal_type::ephemeral_user, "__auditing"};
+
 } // namespace security
