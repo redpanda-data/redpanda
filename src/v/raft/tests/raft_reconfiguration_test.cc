@@ -15,6 +15,8 @@
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "outcome.h"
+#include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/tests/raft_fixture.h"
 #include "raft/types.h"
@@ -26,6 +28,7 @@
 #include "test_utils/test.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/bool_class.hh>
@@ -34,9 +37,12 @@
 #include <fmt/core.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <optional>
 
 using namespace raft;
+
+static ss::logger test_log("reconfiguration-test");
 
 /**
  * Some basic Raft tests validating if Raft test fixture is working correctly
@@ -94,6 +100,30 @@ struct reconfiguration_test
     }
 };
 
+ss::future<result<model::offset>>
+wait_for_offset(model::offset expected, raft_fixture::raft_nodes_t& nodes) {
+    auto start = model::timeout_clock::now();
+    // wait for visible offset to propagate
+    while (start + 10s > model::timeout_clock::now()) {
+        bool aligned = std::all_of(
+          nodes.begin(), nodes.end(), [expected](auto& p) {
+              vlog(
+                test_log.info,
+                "node: {}, last_visible_index: {}, expected_offset: {}",
+                p.first,
+                p.second->raft()->last_visible_index(),
+                expected);
+              return p.second->raft()->last_visible_index() >= expected;
+          });
+
+        if (aligned) {
+            co_return expected;
+        }
+        co_await ss::sleep(1s);
+    }
+    co_return result<model::offset>(raft::errc::timeout);
+}
+
 TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
     const auto param = GetParam();
     use_snapshot snapshot = std::get<0>(param);
@@ -123,27 +153,34 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
 
     // replicate batches
     auto result = co_await retry_with_leader(
-      5,
       model::timeout_clock::now() + 30s,
       [this, consistency_level](raft_node_instance& leader_node) {
-          return leader_node.raft()->replicate(
-            make_random_batches(), replicate_options(consistency_level));
+          return leader_node.raft()
+            ->replicate(
+              make_random_batches(), replicate_options(consistency_level))
+            .then([this](::result<replicate_result> r) {
+                if (!r) {
+                    return ss::make_ready_future<::result<model::offset>>(
+                      r.error());
+                }
+                return wait_for_offset(r.value().last_offset, nodes());
+            });
       });
 
     // wait for leader
-    auto leader = co_await wait_for_leader(10s);
-    auto& leader_node = node(leader);
     ASSERT_TRUE_CORO(result.has_value());
+    auto leader = co_await wait_for_leader(30s);
+    auto& leader_node = node(leader);
     model::offset start_offset = leader_node.raft()->start_offset();
     if (snapshot) {
         if (consistency_level == consistency_level::leader_ack) {
-            co_await wait_for_visible_offset(
-              leader_node.raft()->dirty_offset(), 30s);
             for (auto& [_, n] : nodes()) {
                 co_await n->raft()->refresh_commit_index();
             }
-            co_await wait_for_committed_offset(result.value().last_offset, 10s);
+            co_await wait_for_committed_offset(
+              leader_node.raft()->flushed_offset(), 10s);
         }
+
         const auto rand_offset = co_await with_leader(
           30s, [](raft_node_instance& leader_node) {
               auto committed_offset = leader_node.raft()->committed_offset();
@@ -192,7 +229,6 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
 
     // update group configuration
     auto success = co_await retry_with_leader(
-      5,
       model::timeout_clock::now() + 30s,
       [current_nodes, learner_start_offset](raft_node_instance& leader_node) {
           return leader_node.raft()
@@ -217,8 +253,6 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
                 leader_node.raft()->last_visible_index(), 30s);
           }
       });
-
-    // wait for committed offset to propagate
 
     co_await wait_for_reconfiguration_to_finish(30s);
 

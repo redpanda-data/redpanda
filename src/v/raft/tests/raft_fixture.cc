@@ -244,6 +244,7 @@ void in_memory_test_protocol::remove_failure(msg_type type) {
 }
 
 ss::future<> in_memory_test_protocol::stop() {
+    co_await _gate.close();
     for (auto& [_, ch] : _channels) {
         co_await ch->stop();
     }
@@ -272,6 +273,7 @@ static constexpr msg_type map_msg_type() {
 template<typename ReqT, typename RespT>
 ss::future<result<RespT>>
 in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
+    _gate.hold();
     auto it = _channels.find(id);
     if (it == _channels.end()) {
         auto node = _nodes.node_for(id);
@@ -632,6 +634,7 @@ ss::future<> raft_fixture::wait_for_visible_offset(
           });
     });
 }
+
 std::ostream& operator<<(std::ostream& o, msg_type type) {
     switch (type) {
     case msg_type::append_entries:
