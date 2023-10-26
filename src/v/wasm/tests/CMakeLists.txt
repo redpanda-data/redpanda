@@ -98,3 +98,19 @@ rp_test(
   ARGS "-- -c 1"
   LABELS wasm
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME wasm_transform
+  SOURCES wasm_transform_bench.cc
+  LIBRARIES 
+    Seastar::seastar_perf_testing
+    v::seastar_testing_main
+    v::wasm 
+    v::model_test_utils
+  BUILD_DEPENDENCIES
+    wasm_testdata_identity
+  INPUT_FILES
+    "${TESTDATA_DIR}/identity.wasm"
+  LABELS wasm
+)

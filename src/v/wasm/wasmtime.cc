@@ -67,7 +67,7 @@ constexpr size_t max_vm_guest_stack_usage = 64_KiB;
 constexpr size_t max_host_function_stack_usage = vm_stack_size
                                                  - max_vm_guest_stack_usage
                                                  - 4_KiB;
-constexpr uint64_t fuel_amount = 1'000'000'000;
+constexpr uint64_t fuel_amount = 10'000'000'000;
 
 template<typename T, auto fn>
 struct deleter {
