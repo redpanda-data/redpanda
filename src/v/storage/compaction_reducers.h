@@ -24,6 +24,8 @@
 #include "utils/fragmented_vector.h"
 #include "utils/tracking_allocator.h"
 
+#include <seastar/util/noncopyable_function.hh>
+
 #include <absl/container/btree_map.h>
 #include <fmt/core.h>
 #include <roaring/roaring.hh>
@@ -115,13 +117,19 @@ private:
 
 class copy_data_segment_reducer : public compaction_reducer {
 public:
+    using filter_t = ss::noncopyable_function<ss::future<bool>(
+      const model::record_batch&, const model::record&)>;
     copy_data_segment_reducer(
-      compacted_offset_list l,
+      filter_t f,
       segment_appender* a,
       bool internal_topic,
-      offset_delta_time apply_offset)
-      : _list(std::move(l))
+      offset_delta_time apply_offset,
+      model::offset segment_last_offset = model::offset{},
+      compacted_index_writer* cidx = nullptr)
+      : _should_keep_fn(std::move(f))
+      , _segment_last_offset(segment_last_offset)
       , _appender(a)
+      , _compacted_idx(cidx)
       , _idx(index_state::make_empty_index(apply_offset))
       , _internal_topic(internal_topic) {}
 
@@ -132,14 +140,21 @@ private:
     ss::future<ss::stop_iteration>
       do_compaction(model::compression, model::record_batch);
 
-    bool should_keep(model::offset base, int32_t delta) const {
-        const auto o = base + model::offset(delta);
-        return _list.contains(o);
-    }
-    std::optional<model::record_batch> filter(model::record_batch&&);
+    ss::future<> maybe_keep_offset(
+      const model::record_batch&, const model::record&, std::vector<int32_t>&);
 
-    compacted_offset_list _list;
+    ss::future<std::optional<model::record_batch>> filter(model::record_batch);
+
+    filter_t _should_keep_fn;
+
+    // Offset to keep in case the index is empty as of getting to this offset.
+    model::offset _segment_last_offset;
     segment_appender* _appender;
+
+    // Compacted index writer for the newly written segment. May not be
+    // supplied if the compacted index isn't expected to change, e.g. when
+    // rewriting a single segment filtering with its own compacted index.
+    compacted_index_writer* _compacted_idx;
     index_state _idx;
     size_t _acc{0};
 

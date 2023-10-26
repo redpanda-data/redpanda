@@ -72,7 +72,8 @@ public:
      * Construct a new simple_key_offset_map with \p max_key maximum number of
      * keys.
      */
-    explicit simple_key_offset_map(size_t max_keys = default_key_limit);
+    explicit simple_key_offset_map(
+      std::optional<size_t> max_keys = std::nullopt);
 
     seastar::future<bool>
     put(const compaction_key& key, model::offset offset) override;

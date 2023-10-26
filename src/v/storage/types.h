@@ -383,10 +383,12 @@ struct compaction_config {
       model::offset max_collect_offset,
       ss::io_priority_class p,
       ss::abort_source& as,
-      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt)
+      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
+      std::optional<size_t> max_keys = std::nullopt)
       : max_collectible_offset(max_collect_offset)
       , iopc(p)
       , sanitizer_config(std::move(san_cfg))
+      , key_offset_map_max_keys(max_keys)
       , asrc(&as) {}
 
     // Cannot delete or compact past this offset (i.e. for unresolved txn
@@ -396,6 +398,10 @@ struct compaction_config {
     ss::io_priority_class iopc;
     // use proxy fileops with assertions and/or failure injection
     std::optional<ntp_sanitizer_config> sanitizer_config;
+
+    // Limit the number of keys stored by a compaction's key-offset map.
+    std::optional<size_t> key_offset_map_max_keys;
+
     // abort source for compaction task
     ss::abort_source* asrc;
 

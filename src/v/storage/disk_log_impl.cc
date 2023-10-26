@@ -16,6 +16,8 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "storage/compacted_offset_list.h"
+#include "storage/compaction_reducers.h"
 #include "storage/disk_log_appender.h"
 #include "storage/fwd.h"
 #include "storage/kvstore.h"
@@ -43,6 +45,7 @@
 #include <seastar/core/shared_ptr.hh>
 
 #include <fmt/format.h>
+#include <roaring/roaring.hh>
 
 #include <exception>
 #include <iterator>
@@ -457,6 +460,53 @@ ss::future<> disk_log_impl::do_compact(
             _compaction_ratio.update(r.compaction_ratio());
         }
     }
+}
+
+segment_set disk_log_impl::find_sliding_range(
+  const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
+    // Collect all segments that have stable data.
+    segment_set::underlying_t buf;
+    for (const auto& seg : _segs) {
+        if (
+          new_start_offset
+          && seg->offsets().base_offset < new_start_offset.value()) {
+            // Skip over segments that are being truncated.
+            continue;
+        }
+        if (seg->has_appender() || !seg->has_compactible_offsets(cfg)) {
+            // Stop once we get to an unstable segment.
+            break;
+        }
+        buf.emplace_back(seg);
+    }
+    segment_set segs(std::move(buf));
+    if (segs.empty()) {
+        return segs;
+    }
+
+    // If a previous sliding window compaction ran, and there are no new
+    // segments, segments at the start of that window and above have been
+    // fully deduplicated and don't need to be compacted further.
+    //
+    // If there are new segments that have not been compacted, we can't make
+    // this claim, and compact everything again.
+    if (
+      segs.back()->finished_windowed_compaction()
+      && _last_compaction_window_start_offset.has_value()) {
+        while (!segs.empty()) {
+            if (
+              segs.back()->offsets().base_offset
+              >= _last_compaction_window_start_offset.value()) {
+                // A previous compaction deduplicated the keys above this
+                // offset. As such, segments above this point would not benefit
+                // from being included in the compaction window.
+                segs.pop_back();
+            } else {
+                break;
+            }
+        }
+    }
+    return segs;
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>

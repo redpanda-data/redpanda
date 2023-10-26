@@ -419,18 +419,22 @@ ss::future<storage::index_state> do_copy_segment_data(
       seg->reader().filename(),
       tmpname);
 
-    auto copy_reducer = [&] {
-        return copy_data_segment_reducer(
-          std::move(compacted_offsets),
-          appender.get(),
-          seg->path().is_internal_topic(),
-          apply_offset);
+    auto should_keep = [compacted_list = std::move(compacted_offsets)](
+                         const model::record_batch& b, const model::record& r) {
+        const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
+        return ss::make_ready_future<bool>(compacted_list.contains(o));
     };
+
+    auto copy_reducer = copy_data_segment_reducer(
+      std::move(should_keep),
+      appender.get(),
+      seg->path().is_internal_topic(),
+      apply_offset);
 
     // create the segment, get the in-memory index for the new segment
     auto new_index = co_await create_segment_full_reader(
                        seg, cfg, pb, std::move(rw_lock_holder))
-                       .consume(copy_reducer(), model::no_timeout)
+                       .consume(std::move(copy_reducer), model::no_timeout)
                        .finally([&] {
                            return appender->close().handle_exception(
                              [](std::exception_ptr e) {
