@@ -208,6 +208,9 @@ static void set_auditing_kafka_client_defaults(
     if (!client_config.produce_compression_type.is_overriden()) {
         client_config.produce_compression_type.set_value("zstd");
     }
+    if (!client_config.produce_ack_level.is_overriden()) {
+        client_config.produce_ack_level.set_value(int16_t(1));
+    }
 }
 
 application::application(ss::sstring logger_name)
