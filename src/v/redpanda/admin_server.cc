@@ -3792,7 +3792,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, *r.ntp);
     }
 
-    auto tx_ntp = co_await tx_frontend.local().get_ntp(tid);
+    auto tx_ntp = co_await tx_frontend.local().ntp_for_tx_id(tid);
     if (!tx_ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }

@@ -43,7 +43,8 @@ public:
       ss::sharded<cluster::tm_stm_cache_manager>&,
       config::binding<uint64_t> max_transactions_per_coordinator);
 
-    ss::future<std::optional<model::ntp>> get_ntp(kafka::transactional_id);
+    ss::future<std::optional<model::ntp>>
+      ntp_for_tx_id(kafka::transactional_id);
     ss::future<bool> hosts(model::partition_id, kafka::transactional_id);
     ss::future<fetch_tx_reply> fetch_tx_locally(
       kafka::transactional_id, model::term_id, model::partition_id);
