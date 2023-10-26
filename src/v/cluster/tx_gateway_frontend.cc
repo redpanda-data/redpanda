@@ -964,63 +964,49 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
       expected_pid);
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
-
-    auto tx_ntp_opt = co_await get_ntp(tx_id);
-    bool has_metadata = false;
-    if (tx_ntp_opt) {
-        has_metadata = _metadata_cache.local().contains(
-          model::tx_manager_nt, tx_ntp_opt->tp.partition);
-    }
-    while (!aborted && (!tx_ntp_opt || !has_metadata) && 0 < retries--) {
-        vlog(
-          txlog.trace,
-          "[tx_id={}] Waiting for {} to fill metadata cache, retries left: {}, "
-          "has_tx_ntp_opt: {}, has_metadata: {}",
-          tx_id,
-          model::tx_manager_nt,
-          retries,
-          tx_ntp_opt,
-          has_metadata);
-        aborted = !co_await sleep_abortable(delay_ms, _as);
-        tx_ntp_opt = co_await get_ntp(tx_id);
-        if (tx_ntp_opt) {
-            has_metadata = _metadata_cache.local().contains(
-              model::tx_manager_nt, tx_ntp_opt->tp.partition);
+    /**
+     * If transactional manager metadata is missing, wait for it
+     */
+    if (unlikely(!_metadata_cache.local().contains(model::tx_manager_nt))) {
+        while (!_as.abort_requested() && retries-- > 0) {
+            vlog(
+              txlog.trace,
+              "[tx_id: {}] waiting for {} topic to apper in metadata cache, "
+              "retries left: {}",
+              model::tx_manager_nt,
+              retries);
+            if (_metadata_cache.local().contains(model::tx_manager_nt)) {
+                break;
+            }
+            co_await sleep_abortable(delay_ms, _as);
+        }
+        if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
+            vlog(
+              txlog.warn,
+              "[{}] transaction coordinator topic {} not found in "
+              "metadata_cache",
+              tx_id,
+              model::tx_manager_nt);
+            co_return cluster::init_tm_tx_reply{tx_errc::partition_not_exists};
         }
     }
-    if (!tx_ntp_opt) {
-        vlog(
-          txlog.trace,
-          "[tx_id={}] init_tm_tx request failed, no coordinator found, "
-          "expected_pid: {}, errc: {}",
-          tx_id,
-          expected_pid,
-          tx_errc::coordinator_not_available);
-        co_return cluster::init_tm_tx_reply{tx_errc::coordinator_not_available};
+
+    auto coordinator_ntp = co_await ntp_for_tx_id(tx_id);
+    if (!coordinator_ntp) {
+        co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
     }
-    if (!has_metadata) {
-        vlog(
-          txlog.warn,
-          "[tx_id={}] can't find {}/{} in the metadata cache",
-          tx_id,
-          model::tx_manager_nt,
-          tx_ntp_opt->tp.partition);
-        co_return cluster::init_tm_tx_reply{tx_errc::partition_not_exists};
-    }
-    auto tx_ntp = tx_ntp_opt.value();
     retries = _metadata_dissemination_retries;
-    aborted = false;
-    auto leader_opt = _leaders.local().get_leader(tx_ntp);
-    while (!aborted && !leader_opt && 0 < retries--) {
+
+    auto leader_opt = _leaders.local().get_leader(coordinator_ntp.value());
+    while (!_as.abort_requested() && !leader_opt && 0 < retries--) {
         vlog(
           txlog.trace,
           "[tx_id={}] Waiting for {} leadership, retries left: {}",
           tx_id,
-          tx_ntp,
+          *coordinator_ntp,
           retries);
-        aborted = !co_await sleep_abortable(delay_ms, _as);
-        leader_opt = _leaders.local().get_leader(tx_ntp);
+        co_await sleep_abortable(delay_ms, _as);
+        leader_opt = _leaders.local().get_leader(*coordinator_ntp);
     }
     if (!leader_opt) {
         vlog(
@@ -1028,7 +1014,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           "[tx_id={}] init_tm_tx request failed, can't find {} in the leaders "
           "cache",
           tx_id,
-          tx_ntp);
+          *coordinator_ntp);
         co_return cluster::init_tm_tx_reply{tx_errc::leader_not_found};
     }
 
@@ -1042,7 +1028,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           "leader for {}, found leader: {}",
           tx_id,
           _self,
-          tx_ntp,
+          *coordinator_ntp,
           leader);
         co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
     }
@@ -1052,7 +1038,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
       transaction_timeout_ms,
       timeout,
       expected_pid,
-      tx_ntp.tp.partition);
+      coordinator_ntp->tp.partition);
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
@@ -3257,7 +3243,7 @@ tx_gateway_frontend::get_all_transactions() {
 
 ss::future<result<tm_transaction, tx_errc>>
 tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
-    auto tm_ntp_opt = co_await get_ntp(tid);
+    auto tm_ntp_opt = co_await ntp_for_tx_id(tid);
     if (!tm_ntp_opt) {
         co_return tx_errc::coordinator_not_available;
     }
@@ -3349,7 +3335,7 @@ tx_gateway_frontend::route_locally(try_abort_request&& r) {
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
   kafka::transactional_id tid, tm_transaction::tx_partition ntp) {
-    auto tm_ntp = co_await get_ntp(tid);
+    auto tm_ntp = co_await ntp_for_tx_id(tid);
     if (!tm_ntp) {
         co_return tx_errc::coordinator_not_available;
     }
