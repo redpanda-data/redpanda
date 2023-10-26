@@ -237,7 +237,7 @@ ss::future<> tx_gateway_frontend::stop() {
 }
 
 ss::future<std::optional<model::ntp>>
-tx_gateway_frontend::get_ntp(kafka::transactional_id id) {
+tx_gateway_frontend::ntp_for_tx_id(kafka::transactional_id id) {
     if (!_feature_table.local().is_active(
           features::feature::transaction_partitioning)) {
         co_return model::legacy_tm_ntp;
@@ -1517,7 +1517,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
 ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
   add_paritions_tx_request request, model::timeout_clock::duration timeout) {
-    auto tx_ntp_opt = co_await get_ntp(request.transactional_id);
+    auto tx_ntp_opt = co_await ntp_for_tx_id(request.transactional_id);
     if (!tx_ntp_opt) {
         co_return make_add_partitions_error_response(
           request, tx_errc::coordinator_not_available);
@@ -1739,7 +1739,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
 ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
   add_offsets_tx_request request, model::timeout_clock::duration timeout) {
-    auto tx_ntp_opt = co_await get_ntp(request.transactional_id);
+    auto tx_ntp_opt = co_await ntp_for_tx_id(request.transactional_id);
     if (!tx_ntp_opt) {
         co_return add_offsets_tx_reply{
           .error_code = tx_errc::coordinator_not_available};
@@ -1847,7 +1847,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
 
 ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
   end_tx_request request, model::timeout_clock::duration timeout) {
-    auto tx_ntp_opt = co_await get_ntp(request.transactional_id);
+    auto tx_ntp_opt = co_await ntp_for_tx_id(request.transactional_id);
     if (!tx_ntp_opt) {
         co_return end_tx_reply{
           .error_code = tx_errc::coordinator_not_available};
