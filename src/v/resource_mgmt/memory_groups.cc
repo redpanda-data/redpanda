@@ -18,21 +18,25 @@
 #include <seastar/core/memory.hh>
 
 namespace {
+
 bool wasm_enabled() {
     return config::shard_local_cfg().data_transforms_enabled.value()
            && !config::node().emergency_disable_data_transforms.value();
 }
+
+struct memory_shares {
+    constexpr static size_t kafka = 3;
+    constexpr static size_t rpc = 2;
+    constexpr static size_t recovery = 1;
+    constexpr static size_t tiered_storage = 1;
+    constexpr static size_t data_transforms = 1;
+
+    constexpr static size_t total_shares() {
+        return kafka + rpc + recovery + tiered_storage + data_transforms;
+    }
+};
+
 } // namespace
-
-size_t memory_groups::kafka_total_memory() {
-    // 30%
-    return total_memory() * .30; // NOLINT
-}
-
-size_t memory_groups::rpc_total_memory() {
-    // 20%
-    return total_memory() * .20; // NOLINT
-}
 
 size_t memory_groups::chunk_cache_min_memory() {
     return total_memory() * .10; // NOLINT
@@ -42,12 +46,31 @@ size_t memory_groups::chunk_cache_max_memory() {
     return total_memory() * .30; // NOLINT
 }
 
+size_t memory_groups::kafka_total_memory() {
+    return subsystem_memory<memory_shares::kafka>();
+}
+
+size_t memory_groups::rpc_total_memory() {
+    return subsystem_memory<memory_shares::rpc>();
+}
+
 size_t memory_groups::recovery_max_memory() {
-    return total_memory() * .10; // NOLINT
+    return subsystem_memory<memory_shares::recovery>();
 }
 
 size_t memory_groups::tiered_storage_max_memory() {
-    return total_memory() * .10; // NOLINT
+    return subsystem_memory<memory_shares::tiered_storage>();
+}
+
+size_t memory_groups::data_transforms_max_memory() {
+    return subsystem_memory<memory_shares::data_transforms>();
+}
+
+template<size_t shares>
+size_t memory_groups::subsystem_memory() {
+    size_t remaining = total_memory() - chunk_cache_max_memory();
+    size_t per_share_amount = remaining / memory_shares::total_shares();
+    return per_share_amount * shares;
 }
 
 size_t memory_groups::total_memory() {

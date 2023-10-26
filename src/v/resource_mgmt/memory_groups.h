@@ -25,8 +25,6 @@ public:
      * The target allocation size for the chunk cache. This is a soft target,
      * and may be expanded as needed by segment appenders, or reclaimed from by
      * seastar under memory pressure.
-     *
-     * add upper bound of 30 pct of memory as a hard outstanding limit.
      */
     static size_t chunk_cache_min_memory();
 
@@ -42,9 +40,18 @@ public:
     /// Max memory that both cloud storage uploads and read-path could use
     static size_t tiered_storage_max_memory();
 
+    /// Max memory that data transform subsystem should use.
+    static size_t data_transforms_max_memory();
+
 private:
     /**
      * Total memory for a core after the user's Wasm reservation.
      */
     static size_t total_memory();
+    /**
+     * The amount of memory we reserve for the rest of the system to use, after
+     * we take the minimum amount required for the batch cache.
+     */
+    template<size_t shares>
+    static size_t subsystem_memory();
 };
