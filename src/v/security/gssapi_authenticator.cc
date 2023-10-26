@@ -19,6 +19,8 @@
 #include "ssx/thread_worker.h"
 #include "vlog.h"
 
+#include <seastar/core/lowres_clock.hh>
+
 #include <boost/outcome/basic_outcome.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/ranges.h>
@@ -135,6 +137,8 @@ public:
         return _rp_user_principal;
     }
 
+    std::optional<std::chrono::seconds> lifetime() const { return _lifetime_s; }
+
     void reset() {
         _context.reset();
         _server_creds.reset();
@@ -163,6 +167,7 @@ private:
     ss::sstring _keytab;
     const std::vector<gssapi_rule> _rules;
     security::acl_principal _rp_user_principal;
+    std::optional<std::chrono::seconds> _lifetime_s;
     state _state{state::init};
     gss::cred_id _server_creds;
     gss::ctx_id _context;
@@ -202,12 +207,20 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
 
     _state = res.state;
     if (_state == state::complete) {
-        _principal = co_await _worker.submit([this]() {
+        std::optional<std::chrono::seconds> lifetime;
+        std::tie(_principal, lifetime) = co_await _worker.submit([this]() {
             auto principal = _impl->principal();
+            auto lifetime = _impl->lifetime();
             // Clear the gssapi members, as they're no longer required.
             _impl->reset();
-            return principal;
+            return std::make_pair(principal, lifetime);
         });
+        if (lifetime.has_value()) {
+            _session_expiry.emplace(clock_type::now() + lifetime.value());
+        } else {
+            _session_expiry.reset();
+        }
+
         // Clear the impl struct, as it's no longer required.
         _impl.reset();
     } else if (_state == state::failed) {
@@ -457,6 +470,9 @@ gssapi_authenticator::impl::check() {
           "gss {} failed to inquire context",
           _state);
         return {_state, errc::invalid_scram_state};
+    }
+    if (lifetime_rec != GSS_C_INDEFINITE) {
+        _lifetime_s.emplace(std::chrono::seconds(lifetime_rec));
     }
 
     auto target_buf = target.display_name_buffer();

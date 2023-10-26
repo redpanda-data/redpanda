@@ -13,9 +13,13 @@
 #include "security/sasl_authentication.h"
 #include "ssx/fwd.h"
 
+#include <seastar/core/lowres_clock.hh>
+
 namespace security {
 
 class gssapi_authenticator final : public sasl_mechanism {
+    using clock_type = ss::lowres_clock;
+
 public:
     enum class state { init = 0, more, ssfcap, ssfreq, complete, failed };
     static constexpr const char* name = "GSSAPI";
@@ -36,12 +40,22 @@ public:
         return _principal;
     }
 
+    std::optional<std::chrono::milliseconds>
+    credential_expires_in_ms() const override {
+        if (_session_expiry.has_value()) {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+              _session_expiry.value() - clock_type::now());
+        }
+        return std::nullopt;
+    }
+
 private:
     friend std::ostream&
     operator<<(std::ostream& os, gssapi_authenticator::state const s);
 
     ssx::singleton_thread_worker& _worker;
     security::acl_principal _principal;
+    std::optional<clock_type::time_point> _session_expiry;
     state _state{state::init};
     class impl;
     std::unique_ptr<impl> _impl;
