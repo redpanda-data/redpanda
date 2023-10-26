@@ -1232,8 +1232,11 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     request.data.topic_names.erase(
       unauthorized_it, request.data.topic_names.end());
 
-    const auto& kafka_nodelete_topics
+    auto kafka_nodelete_topics
       = config::shard_local_cfg().kafka_nodelete_topics();
+    if (config::shard_local_cfg().audit_enabled()) {
+        kafka_nodelete_topics.push_back(model::kafka_audit_logging_topic());
+    }
     auto nodelete_it = std::partition(
       request.data.topic_names.begin(),
       request.data.topic_names.end(),
