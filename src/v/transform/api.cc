@@ -159,8 +159,24 @@ public:
     ss::future<> commit_offset(kafka::offset offset) override {
         // TODO(rockwood): We should be batching commits so commiting scales
         // with the number of cores, not the number of partitions.
-        cluster::errc ec = co_await _client->offset_commit(
-          {.id = _tid, .partition = _pid}, {.offset = offset});
+        auto coordinator = co_await _client->find_coordinator(
+          {.id = _tid, .partition = _pid});
+        if (coordinator.has_error()) {
+            cluster::errc ec = coordinator.error();
+            throw std::runtime_error(ss::format(
+              "error committing offset: {}",
+              cluster::error_category().message(int(ec))));
+        }
+        absl::btree_map<
+          model::transform_offsets_key,
+          model::transform_offsets_value>
+          batch;
+        batch.emplace(
+          model::transform_offsets_key{.id = _tid, .partition = _pid},
+          model::transform_offsets_value{.offset = offset});
+
+        cluster::errc ec = co_await _client->batch_offset_commit(
+          coordinator.value(), std::move(batch));
         if (ec != cluster::errc::success) {
             throw std::runtime_error(ss::format(
               "error committing offset: {}",
