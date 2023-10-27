@@ -14,6 +14,7 @@
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
+#include "raft/group_configuration.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/api.h"
@@ -73,7 +74,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
             .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
             .get0());
         res.push_back(
-          configs(n)
+          configs(n, raft::group_configuration::v_6)
             .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
             .get0());
         get_log()->flush().get();
@@ -109,17 +110,52 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
       cfg.data_batches_seen(),
       cfg.config_batches_seen());
 
-    cfg.configurations().back().cfg.for_each_voter([](raft::vnode rni) {
-        BOOST_REQUIRE(
-          rni.id() >= 0 && rni.id() <= bootstrap_fixture::active_nodes);
-    });
-
-    cfg.configurations().back().cfg.for_each_learner([](raft::vnode rni) {
-        BOOST_REQUIRE(rni.id() > bootstrap_fixture::active_nodes);
-    });
-
     BOOST_REQUIRE_EQUAL(cfg.data_batches_seen(), 10);
     BOOST_REQUIRE_EQUAL(cfg.config_batches_seen(), 10);
+}
+FIXTURE_TEST(mixed_config_versions, bootstrap_fixture) {
+    const storage::log_append_config append_cfg{
+      storage::log_append_config::fsync::no,
+      ss::default_priority_class(),
+      model::no_timeout};
+
+    datas(20)
+      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .get0();
+    configs(3, raft::group_configuration::v_4)
+      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .get0();
+    configs(2, raft::group_configuration::v_5)
+      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .get0();
+    configs(5, raft::group_configuration::v_6)
+      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .get0();
+    get_log()->flush().get();
+
+    auto state = raft::details::read_bootstrap_state(
+                   get_log(), model::offset(0), _as)
+                   .get0();
+
+    // 20 data batches
+    BOOST_REQUIRE_EQUAL(state.data_batches_seen(), 20);
+    // 10 configuration batches
+    BOOST_REQUIRE_EQUAL(state.config_batches_seen(), 10);
+
+    for (auto i = 0; i < state.configurations().size(); ++i) {
+        auto& current_cfg = state.configurations()[i];
+        info("i: {}, cfg_version: {}", i, current_cfg.cfg.version());
+        if (i < 3) {
+            BOOST_REQUIRE_EQUAL(
+              current_cfg.cfg.version(), raft::group_configuration::v_4);
+        } else if (i >= 3 && i < 5) {
+            BOOST_REQUIRE_EQUAL(
+              current_cfg.cfg.version(), raft::group_configuration::v_5);
+        } else {
+            BOOST_REQUIRE_EQUAL(
+              current_cfg.cfg.version(), raft::group_configuration::v_6);
+        }
+    }
 }
 
 FIXTURE_TEST(empty_log, bootstrap_fixture) {
