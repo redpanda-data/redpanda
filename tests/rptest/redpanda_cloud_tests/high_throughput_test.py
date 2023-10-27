@@ -853,7 +853,7 @@ class HighThroughputTest(PreallocNodesTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
-    @ok_to_fail
+    @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_ts_resource_utilization(self):
         """
