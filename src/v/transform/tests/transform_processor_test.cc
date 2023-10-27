@@ -113,4 +113,34 @@ TEST_F(ProcessorTestFixture, ProcessMany) {
     }
     EXPECT_EQ(error_count(), 0);
 }
+
+TEST_F(ProcessorTestFixture, TracksOffsets) {
+    constexpr int num_batches = 32;
+    std::vector<model::record_batch> first_batches;
+    std::generate_n(std::back_inserter(first_batches), num_batches, [this] {
+        return make_tiny_batch();
+    });
+    std::vector<model::record_batch> second_batches;
+    std::generate_n(std::back_inserter(second_batches), num_batches, [this] {
+        return make_tiny_batch();
+    });
+    for (auto& b : first_batches) {
+        push_batch(b.share());
+    }
+    restart();
+    for (auto& b : first_batches) {
+        auto returned = read_batch();
+        EXPECT_EQ(b, returned);
+    }
+    restart();
+    for (auto& b : second_batches) {
+        push_batch(b.share());
+    }
+    for (auto& b : second_batches) {
+        auto returned = read_batch();
+        EXPECT_EQ(b, returned);
+    }
+    EXPECT_EQ(error_count(), 0);
+}
+
 } // namespace transform
