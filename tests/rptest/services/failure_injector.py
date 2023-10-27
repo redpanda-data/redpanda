@@ -270,10 +270,15 @@ class FailureInjector(FailureInjectorBase):
 
     def _start(self, node):
         # make this idempotent
-        if self.redpanda.redpanda_pid(node) == None:
+        pid = self.redpanda.redpanda_pid(node)
+        if pid == None:
             self.redpanda.logger.info(
                 f"starting redpanda on {node.account.hostname}")
             self.redpanda.start_redpanda(node)
+        else:
+            self.redpanda.logger.info(
+                f"skipping starting redpanda on {node.account.hostname}, already running with pid: {[pid]}"
+            )
 
     def _netem(self, node, op):
         self.redpanda.logger.info(
