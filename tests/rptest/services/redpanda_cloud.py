@@ -288,7 +288,7 @@ class LiveClusterParams:
     network_id: str = None
     network_cidr: str = None
     install_pack_ver: str = None
-    product_id: str = None
+    product_name: str = None
     region: str = None
     region_id: str = None
     peer_vpc_id: str = None
@@ -584,8 +584,8 @@ class CloudCluster():
                 return r['id']
         return None
 
-    def _get_product_id(self, config_profile_name):
-        """Get the product id for the first matching config
+    def _get_product_name(self, config_profile_name):
+        """Get the product name for the first matching config
         profile name using filter parameters.
         Uses self.current as a source of params
             provider: cloud provider filter, e.g. 'AWS'
@@ -608,8 +608,8 @@ class CloudCluster():
             endpoint='/api/v1/clusters-resources/products', params=params)
         for p in products:
             if p['redpandaConfigProfileName'] == config_profile_name:
-                return p['id']
-        self._logger.warning("CloudV2 API returned empty 'product_id' list "
+                return p['name']
+        self._logger.warning("CloudV2 API returned empty 'product_name' list "
                              f"for request: '{params}'")
         return None
 
@@ -618,8 +618,8 @@ class CloudCluster():
         return {
             "cluster": {
                 "name": self.current.name,
-                "productId": self.current.product_id,
                 "spec": {
+                    "productName": self.current.product_name,
                     "clusterType": self.config.type,
                     "connectors": {
                         "enabled": True
@@ -775,7 +775,7 @@ class CloudCluster():
             # Populate self.current from cluster info
             self._update_live_cluster_info()
             # Fill in additional info based on collected from cluster
-            self.current.product_id = self._get_product_id(
+            self.current.product_name = self._get_product_name(
                 self.config.config_profile_name)
         else:
             # In order not to have long list of arguments in each internal
@@ -796,9 +796,9 @@ class CloudCluster():
             self.current.zones = self.provider_cli.get_single_zone(
                 self.current.region)
             # Call CloudV2 API to determine Product ID
-            self.current.product_id = self._get_product_id(
+            self.current.product_name = self._get_product_name(
                 self.config.config_profile_name)
-            if self.current.product_id is None:
+            if self.current.product_name is None:
                 raise RuntimeError("ProductID failed to be determined for "
                                    f"'{self.config.provider}', "
                                    f"'{self.config.type}', "
