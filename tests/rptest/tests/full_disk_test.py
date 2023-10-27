@@ -560,11 +560,13 @@ class LogStorageMaxSizeSI(RedpandaTest):
         """
         # start redpanda with specific config like segment size
         si_settings = SISettings(test_context=self.test_context,
-                                 log_segment_size=log_segment_size)
+                                 log_segment_size=log_segment_size,
+                                 fast_uploads=True)
         extra_rp_conf = {
             'compacted_log_segment_size': log_segment_size,
             'disk_reservation_percent': 0,
             'retention_local_target_capacity_percent': 100,
+            'retention_local_trim_interval': 1000,  # every second
         }
         self.redpanda.set_extra_rp_conf(extra_rp_conf)
         self.redpanda.set_si_settings(si_settings)
@@ -657,7 +659,7 @@ class LogStorageMaxSizeSI(RedpandaTest):
         # The informal guarantee that this correctly tests the behavior we're interesting in
         # is given by the fact that the `cleanup.policy=delete` hits the same invariants within
         # the same timeout.
-        timeout_sec = 120
+        timeout_sec = 30
 
         if cleanup_policy == TopicSpec.CLEANUP_COMPACT:
             # For `cleanup.policy=compat` we don't expect any removal. Wait for timeout.
