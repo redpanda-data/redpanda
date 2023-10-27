@@ -32,7 +32,7 @@ func NewModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			// We complete "dev" and "prod", but if the user is typing
 			// the full word, we switch to completing that.
 			var complete []string
-			for _, s := range []string{config.ModeDev, config.ModeProd} {
+			for _, s := range []string{config.ModeDev, config.ModeProd, config.ModeRecovery} {
 				if strings.HasPrefix(s, toComplete) {
 					complete = append(complete, s)
 				}
@@ -50,7 +50,7 @@ func NewModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Run: func(_ *cobra.Command, args []string) {
 			err := executeMode(fs, p, args[0])
 			out.MaybeDieErr(err)
-			fmt.Printf("Successfully set mode to %q.", args[0])
+			fmt.Printf("Successfully set mode to %q.\n", args[0])
 		},
 	}
 	return cmd

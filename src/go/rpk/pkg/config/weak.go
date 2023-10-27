@@ -342,6 +342,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api"`
 		AdvertisedKafkaAPI         namedSocketAddresses      `yaml:"advertised_kafka_api"`
 		DeveloperMode              weakBool                  `yaml:"developer_mode"`
+		RecoveryModeEnabled        weakBool                  `yaml:"recovery_mode_enabled"`
 		CrashLoopLimit             *weakInt                  `yaml:"crash_loop_limit"`
 		Other                      map[string]interface{}    `yaml:",inline"`
 	}
@@ -397,6 +398,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpc.AdvertisedRPCAPI = internal.AdvertisedRPCAPI
 	rpc.AdvertisedKafkaAPI = internal.AdvertisedKafkaAPI
 	rpc.DeveloperMode = bool(internal.DeveloperMode)
+	rpc.RecoveryModeEnabled = bool(internal.RecoveryModeEnabled)
 	rpc.CrashLoopLimit = (*int)(internal.CrashLoopLimit)
 	rpc.Other = internal.Other
 	return nil
