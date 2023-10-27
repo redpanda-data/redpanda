@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+import re
 import threading
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
@@ -26,6 +27,12 @@ from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
 
 from rptest.clients.offline_log_viewer import OfflineLogViewer
+
+TS_LOG_ALLOW_LIST = [
+    re.compile("archival_stm.*Replication wait for archival STM timed out"),
+    # topic deletion may happen before data were uploaded
+    re.compile("cloud_storage.*Failed to fetch manifest during finalize().*")
+]
 
 
 class RandomNodeOperationsTest(PreallocNodesTest):
@@ -252,7 +259,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
     @skip_debug_mode
     @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
+             log_allow_list=CHAOS_LOG_ALLOW_LIST +
+             PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
             num_to_upgrade=[0, 3],
             with_tiered_storage=[True, False])
