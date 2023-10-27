@@ -56,6 +56,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <memory>
@@ -505,13 +506,31 @@ raft_node_instance::read_batches_in_range(
 
 ss::future<model::offset>
 raft_node_instance::random_batch_base_offset(model::offset max) {
-    model::offset read_start(
-      random_generators::get_int<int64_t>(_raft->start_offset(), max));
-    model::offset last = model::next_offset(read_start);
     ss::circular_buffer<model::record_batch> batches;
-    while (batches.empty()) {
+    auto deadline = model::timeout_clock::now() + 1s;
+    while (batches.empty() && model::timeout_clock::now() < deadline) {
+        // The reader clamps to last visible index, so make sure we don't try
+        // and read past that point.
+        model::offset clamped = std::min(max, _raft->last_visible_index());
+        model::offset read_start(
+          random_generators::get_int<int64_t>(_raft->start_offset(), clamped));
+        model::offset last = model::next_offset(read_start);
         batches = co_await read_batches_in_range(read_start, last);
-        last++;
+    }
+
+    if (batches.empty()) {
+        batches = co_await read_all_data_batches();
+    }
+
+    if (batches.empty()) {
+        throw std::runtime_error(ss::format(
+          "unable to find random base offset: "
+          "(max={}, last_visible={}, "
+          "start={}, committed={})",
+          max,
+          _raft->last_visible_index(),
+          _raft->start_offset(),
+          _raft->committed_offset()));
     }
 
     co_return batches.front().base_offset();
