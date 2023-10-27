@@ -30,6 +30,8 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, RedpandaService
 from rptest.services.storage import Topic
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.services.redpanda import LoggingConfig, RedpandaService, SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, search_logs_with_timeout, produce_total_bytes
@@ -678,6 +680,17 @@ class LogStorageMaxSizeSI(RedpandaTest):
             assert min_local_start_offset(
                 self.redpanda, topic_name
             ) > 0, "expecting disk storage to be reduced by advancing local offsets (local log prefix trim)"
+
+        # Ensure that all the data is readable.
+        consumer = KgoVerifierSeqConsumer.oneshot(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            loop=False,
+        )
+        assert consumer.consumer_status.validator.valid_reads == 2 * msg_count
+        assert consumer.consumer_status.validator.invalid_reads == 0
+        assert consumer.consumer_status.validator.out_of_scope_invalid_reads == 0
 
 
 def max_local_start_offset(redpanda: RedpandaService, topic: str):
