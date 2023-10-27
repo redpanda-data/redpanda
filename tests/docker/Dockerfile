@@ -196,6 +196,24 @@ RUN /keycloak && rm /keycloak
 
 #################################
 
+FROM golang as tinygo
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tinygo /
+RUN /tinygo && \
+    rm /tinygo
+ENV PATH="${PATH}:/usr/local/tinygo/bin"
+
+#################################
+
+FROM tinygo as wasi-transforms
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tinygo-wasi-transforms /
+COPY --chown=0:0 --chmod=0755 src/go/transform-sdk /transform-sdk
+RUN /tinygo-wasi-transforms && \
+    rm -rf /transform-sdk
+
+#################################
+
 FROM librdkafka as final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/teleport /
@@ -271,6 +289,7 @@ COPY --from=kcl /usr/local/bin/kcl /usr/local/bin/
 COPY --from=kgo-verifier /opt/kgo-verifier /opt/kgo-verifier
 COPY --from=byoc-mock /opt/redpanda-tests/go/byoc-mock/.rpk.managed-byoc /root/.local/bin/.rpk.managed-byoc
 COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
+COPY --from=wasi-transforms /opt/transforms/ /opt/transforms/
 
 RUN ldconfig
 

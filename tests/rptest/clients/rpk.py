@@ -123,6 +123,21 @@ class RpkGroup(typing.NamedTuple):
     partitions: list[RpkGroupPartition]
 
 
+class RpkWasmListProcessorResponse(typing.NamedTuple):
+    node_id: int
+    partition: int
+    # running | inactive | errored | unknown
+    status: str
+
+
+class RpkWasmListResponse(typing.NamedTuple):
+    name: str
+    input_topic: str
+    output_topics: list[str]
+    status: list[RpkWasmListProcessorResponse]
+    environment: dict[str, str]
+
+
 class RpkClusterInfoNode:
     def __init__(self, id, address):
         self.id = id
@@ -737,14 +752,6 @@ class RpkTool:
         out = self._run_group(cmd)
 
         return [l.split()[1] for l in out.splitlines()[1:]]
-
-    def wasm_deploy(self, script, name, description):
-        cmd = [
-            self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
-            self._redpanda.brokers(), '--name', name, '--description',
-            description
-        ]
-        return self._execute(cmd)
 
     def wasm_remove(self, name):
         cmd = ['wasm', 'remove', name, '--brokers', self._redpanda.brokers()]
@@ -1479,3 +1486,54 @@ class RpkTool:
             cmd += ["--permanent"]
 
         return self._run_registry(cmd)
+
+    def _run_wasm(self, rest):
+        cmd = [self._rpk_binary(), "transform"]
+        cmd += ["-X", "admin.hosts=" + self._redpanda.admin_endpoints()]
+        cmd += rest
+        return self._execute(cmd)
+
+    def deploy_wasm(self, name, input_topic, output_topic):
+        self._run_wasm([
+            "deploy",
+            "--name",
+            name,
+            "--input-topic",
+            input_topic,
+            "--output-topic",
+            output_topic,
+            "/opt/transforms/tinygo/identity.wasm",
+        ])
+
+    def delete_wasm(self, name):
+        self._run_wasm(["delete", name, "--no-confirm"])
+
+    def list_wasm(self):
+        out = self._run_wasm([
+            "list",
+            "--format",
+            "json",
+            "--detailed",
+        ])
+        loaded = json.loads(out)
+
+        def status_from_json(loaded):
+            return RpkWasmListProcessorResponse(
+                node_id=loaded["node_id"],
+                partition=loaded["partition"],
+                status=loaded["status"],
+            )
+
+        def transform_from_json(loaded):
+            return RpkWasmListResponse(
+                name=loaded["name"],
+                input_topic=loaded["input_topic"],
+                output_topics=loaded["output_topics"],
+                status=[status_from_json(s) for s in loaded["status"]],
+                environment={
+                    obj["key"]: obj["value"]
+                    for obj in loaded["environment"]
+                },
+            )
+
+        return [transform_from_json(o) for o in loaded]

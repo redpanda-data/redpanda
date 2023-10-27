@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+set -x
+
+mkdir -p /opt/transforms/tinygo/
+
+cd /transform-sdk/internal/testdata
+
+tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/identity.wasm" ./identity
