@@ -70,4 +70,21 @@ uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
 };
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
+
+ss::future<> fake_offset_tracker::commit_offset(kafka::offset o) {
+    _committed = o;
+    _cond_var.broadcast();
+    co_return;
+}
+
+ss::future<std::optional<kafka::offset>>
+fake_offset_tracker::load_committed_offset() {
+    co_return _committed;
+}
+
+ss::future<> fake_offset_tracker::wait_for_committed_offset(kafka::offset o) {
+    return _cond_var.wait(
+      1s, [this, o] { return _committed && *_committed >= o; });
+}
+
 } // namespace transform::testing

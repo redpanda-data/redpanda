@@ -78,4 +78,17 @@ private:
     ss::condition_variable _cond_var;
 };
 
+class fake_offset_tracker : public offset_tracker {
+public:
+    ss::future<std::optional<kafka::offset>> load_committed_offset() override;
+
+    ss::future<> commit_offset(kafka::offset o) override;
+
+    ss::future<> wait_for_committed_offset(kafka::offset);
+
+private:
+    std::optional<kafka::offset> _committed;
+    ss::condition_variable _cond_var;
+};
+
 } // namespace transform::testing

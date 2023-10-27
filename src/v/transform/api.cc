@@ -160,6 +160,48 @@ private:
     cluster::partition_manager* _manager;
 };
 
+class offset_tracker_impl : public offset_tracker {
+public:
+    offset_tracker_impl(
+      model::transform_id tid, model::partition_id pid, rpc::client* client)
+      : _tid(tid)
+      , _pid(pid)
+      , _client(client) {}
+
+    ss::future<std::optional<kafka::offset>> load_committed_offset() override {
+        auto result = co_await _client->offset_fetch(
+          {.id = _tid, .partition = _pid});
+        if (result.has_error()) {
+            cluster::errc ec = result.error();
+            throw std::runtime_error(ss::format(
+              "error committing offset: {}",
+              cluster::error_category().message(int(ec))));
+        }
+        auto value = result.value();
+        if (!value) {
+            co_return std::nullopt;
+        }
+        co_return value->offset;
+    }
+
+    ss::future<> commit_offset(kafka::offset offset) override {
+        // TODO(rockwood): We should be batching commits so commiting scales
+        // with the number of cores, not the number of partitions.
+        cluster::errc ec = co_await _client->offset_commit(
+          {.id = _tid, .partition = _pid}, {.offset = offset});
+        if (ec != cluster::errc::success) {
+            throw std::runtime_error(ss::format(
+              "error committing offset: {}",
+              cluster::error_category().message(int(ec))));
+        }
+    }
+
+private:
+    model::transform_id _tid;
+    model::partition_id _pid;
+    rpc::client* _client;
+};
+
 using wasm_engine_factory = ss::noncopyable_function<
   ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>(
     model::transform_metadata)>;
