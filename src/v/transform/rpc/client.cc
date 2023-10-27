@@ -631,12 +631,12 @@ ss::future<offset_commit_response> client::do_remote_offset_commit(
     co_return response.value();
 }
 
-ss::future<result<model::transform_offsets_value, cluster::errc>>
+ss::future<result<std::optional<model::transform_offsets_value>, cluster::errc>>
 client::offset_fetch(model::transform_offsets_key key) {
     return retry([key, this] { return offset_fetch_once(key); });
 }
 
-ss::future<result<model::transform_offsets_value, cluster::errc>>
+ss::future<result<std::optional<model::transform_offsets_value>, cluster::errc>>
 client::offset_fetch_once(model::transform_offsets_key key) {
     auto coordinator = co_await find_coordinator(key);
     if (!coordinator) {
@@ -657,7 +657,7 @@ client::offset_fetch_once(model::transform_offsets_key key) {
     vlog(log.trace, "offset_fetch_once_response(node={}): {}", *leader, resp);
 
     if (resp.errc == cluster::errc::success) {
-        co_return *resp.result;
+        co_return resp.result;
     }
     co_return resp.errc;
 }

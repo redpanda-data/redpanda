@@ -855,15 +855,18 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
         set_errors_to_inject(random_generators::get_int(0, 2));
         for (int32_t j = 0; j < num_src_partitions; j++) {
             request_key.partition = model::partition_id{j};
+            auto read_result = client()->offset_fetch(request_key).get();
+            ASSERT_TRUE(!read_result.has_error());
+            ASSERT_EQ(read_result.value(), std::nullopt);
             auto request_val = model::transform_offsets_value{
               .offset = kafka::offset{j}};
             auto result
               = client()->offset_commit(request_key, request_val).get();
             ASSERT_EQ(result, cluster::errc::success)
               << "request (" << i << "," << j << ")";
-            auto read_result = client()->offset_fetch(request_key).get();
+            read_result = client()->offset_fetch(request_key).get();
             ASSERT_TRUE(!read_result.has_error());
-            ASSERT_EQ(read_result.value().offset, request_val.offset);
+            ASSERT_EQ(read_result.value()->offset, request_val.offset);
         }
     }
 }
