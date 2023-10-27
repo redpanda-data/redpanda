@@ -128,6 +128,9 @@ ss::future<> processor::start() {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
         _error_callback(_id, _ntp, _meta);
     }
+    _as = {};
+    _consumer_transform_pipe = ss::queue<model::record_batch>(1);
+    _transform_producer_pipe = ss::queue<transformed_batch>(1);
     _task = when_all_shutdown(
       run_consumer_loop(), run_transform_loop(), run_producer_loop());
 }
