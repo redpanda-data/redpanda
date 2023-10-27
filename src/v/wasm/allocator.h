@@ -80,7 +80,13 @@ public:
      */
     void deallocate(heap_memory);
 
+    /**
+     * The maximum size of a heap_memory that can be allocated.
+     */
+    size_t max_size() const;
+
 private:
+    size_t _max_size;
     // We expect this list to be small, so override the chunk to be smaller too.
     static constexpr size_t items_per_chunk = 16;
     ss::chunked_fifo<heap_memory, items_per_chunk> _memory_pool;

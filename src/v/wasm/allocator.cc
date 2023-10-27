@@ -27,11 +27,11 @@ namespace wasm {
 
 heap_allocator::heap_allocator(config c) {
     size_t page_size = ::getpagesize();
-    size_t alloc_size = ss::align_up(c.heap_memory_size, page_size);
+    _max_size = ss::align_up(c.heap_memory_size, page_size);
     for (size_t i = 0; i < c.num_heaps; ++i) {
         auto buffer = ss::allocate_aligned_buffer<uint8_t>(
-          alloc_size, page_size);
-        _memory_pool.emplace_back(std::move(buffer), alloc_size);
+          _max_size, page_size);
+        _memory_pool.emplace_back(std::move(buffer), _max_size);
     }
 }
 
@@ -51,6 +51,8 @@ std::optional<heap_memory> heap_allocator::allocate(request req) {
 void heap_allocator::deallocate(heap_memory m) {
     _memory_pool.push_back(std::move(m));
 }
+
+size_t heap_allocator::max_size() const { return _max_size; }
 
 stack_memory::stack_memory(stack_bounds bounds, allocated_memory data)
   : _bounds(bounds)
@@ -123,5 +125,4 @@ std::ostream& operator<<(std::ostream& os, const stack_bounds& bounds) {
              fmt::ptr(bounds.top),
              fmt::ptr(bounds.bottom));
 }
-
 } // namespace wasm
