@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 
 TEST(MemoryGroups, HasCompatibility) {
-    class memory_groups groups(2_GiB, /*wasm_enabled=*/false);
+    class system_memory_groups groups(2_GiB, /*wasm_enabled=*/false);
     EXPECT_THAT(groups.chunk_cache_max_memory(), 2_GiB * .3);
     EXPECT_THAT(groups.chunk_cache_min_memory(), 2_GiB * .1);
     EXPECT_THAT(groups.tiered_storage_max_memory(), 2_GiB * .1);
@@ -38,7 +38,7 @@ MATCHER_P(IsApprox, n, "") {
 
 TEST(MemoryGroups, DividesSharesWithWasm) {
     constexpr size_t user_wasm_reservation = 20_MiB;
-    class memory_groups groups(
+    class system_memory_groups groups(
       2_GiB - user_wasm_reservation, /*wasm_enabled=*/true);
     EXPECT_THAT(groups.chunk_cache_min_memory(), IsApprox(202_MiB));
     EXPECT_THAT(groups.chunk_cache_max_memory(), IsApprox(609_MiB));

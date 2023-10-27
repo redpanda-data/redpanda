@@ -14,9 +14,9 @@
 #include <cstddef>
 
 // centralized unit for memory management
-class memory_groups {
+class system_memory_groups {
 public:
-    memory_groups(size_t total_system_memory, bool wasm_enabled);
+    system_memory_groups(size_t total_system_memory, bool wasm_enabled);
 
     size_t kafka_total_memory();
 
@@ -64,4 +64,4 @@ private:
 /**
  * Compute the memory groups based on the system configuration.
  */
-memory_groups memory_groups();
+system_memory_groups memory_groups();
