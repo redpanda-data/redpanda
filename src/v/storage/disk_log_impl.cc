@@ -953,7 +953,7 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
 
 bool disk_log_impl::is_cloud_retention_active() const {
     return config::shard_local_cfg().cloud_storage_enabled()
-           && (config().is_archival_enabled());
+           && (config().is_remote_fetch_enabled());
 }
 
 /*

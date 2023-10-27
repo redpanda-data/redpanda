@@ -553,17 +553,21 @@ class LogStorageMaxSizeSI(RedpandaTest):
     @cluster(num_nodes=4)
     @matrix(
         log_segment_size=[1024 * 1024],
-        cleanup_policy=[TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE])
-    def test_stay_below_target_size(self, log_segment_size, cleanup_policy):
+        cleanup_policy=[TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE],
+        cloud_storage_enable_remote_read=[True, False])
+    def test_stay_below_target_size(self, log_segment_size, cleanup_policy,
+                                    cloud_storage_enable_remote_read):
         """
         Tests that when a log storage target size is specified that data
         uploaded into s3 will become eligible for forced GC in order to meet the
         target size.
         """
         # start redpanda with specific config like segment size
-        si_settings = SISettings(test_context=self.test_context,
-                                 log_segment_size=log_segment_size,
-                                 fast_uploads=True)
+        si_settings = SISettings(
+            test_context=self.test_context,
+            log_segment_size=log_segment_size,
+            cloud_storage_enable_remote_read=cloud_storage_enable_remote_read,
+            fast_uploads=True)
         extra_rp_conf = {
             'compacted_log_segment_size': log_segment_size,
             'disk_reservation_percent': 0,
@@ -655,7 +659,7 @@ class LogStorageMaxSizeSI(RedpandaTest):
                 )
             return below
 
-        # In the case of the `cleanup.policy=compact` We want to assert a "safety property,"
+        # In the case of the negative testing, we want to assert a "safety property,"
         # which means proving that nothing bad happens. The best mechanism we have for doing
         # this here is to run the system for some time and periodically check the invariant(s).
         # The informal guarantee that this correctly tests the behavior we're interesting in
@@ -663,8 +667,10 @@ class LogStorageMaxSizeSI(RedpandaTest):
         # the same timeout.
         timeout_sec = 30
 
-        if cleanup_policy == TopicSpec.CLEANUP_COMPACT:
-            # For `cleanup.policy=compat` we don't expect any removal. Wait for timeout.
+        eviction_expected = (cleanup_policy != TopicSpec.CLEANUP_COMPACT
+                             and cloud_storage_enable_remote_read)
+        if not eviction_expected:
+            # We don't expect any removal. Wait for timeout.
             with expect_exception(TimeoutError, bool):
                 wait_until(target_size_reached,
                            timeout_sec=timeout_sec,
