@@ -9,6 +9,7 @@
 
 import tempfile
 import socket
+import json
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -281,3 +282,156 @@ class RpkRegistryTest(RedpandaTest):
         out_deleted = self._rpk.list_subjects(deleted=True)
         assert len(out) == 0
         assert len(out_deleted) == 0
+
+    @cluster(num_nodes=3)
+    def test_produce_consume_avro(self):
+        # First we register the schemas with their references.
+        subject_1 = "subject-for-telephone"
+        avro_reference = '{"type":"record","name":"telephone","fields":[{"name":"number","type":"int"},{"name":"identifier","type":"string"}]}'
+        self.create_schema(subject_1, avro_reference, ".avro")  # ID 1
+
+        subject_2 = "subject-for-reference"
+        avro_with_reference = '{"type":"record","name":"test","fields":[{"name":"name","type":"string"},{"name":"telephone","type":"telephone"}]}'
+        self.create_schema(subject_2, avro_with_reference, ".avro",
+                           f"telephone:{subject_1}:1")  # ID 2
+
+        test_topic = "test_topic_sr"
+        self._rpk.create_topic(test_topic)
+
+        msg_1 = '{"name":"redpanda","telephone":{"number":12341234,"identifier":"home"}}'
+        key_1 = "somekey"
+        expected_msg_1 = json.loads(msg_1)
+        # Produce: unencoded key, encoded value:
+        self._rpk.produce(test_topic, msg=msg_1, key=key_1, schema_id=2)
+
+        # We consume as is, i.e: it will show the encoded value.
+        out = self._rpk.consume(test_topic, offset="0:1")
+        msg = json.loads(out)
+
+        # We check that:
+        # - we are not storing the value without encoding.
+        # - first byte is the magic number 0 from the serde header.
+        # - key is not encoded.
+        raw_bytes_string = msg["value"]
+        assert raw_bytes_string != expected_msg_1
+        assert msg["key"] == key_1
+
+        bytes_from_string = bytes(
+            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+        assert bytes_from_string[0] == 0
+
+        # Now we decode the same message:
+        out = self._rpk.consume(test_topic,
+                                offset="0:1",
+                                use_schema_registry="value")
+        msg = json.loads(out)
+
+        assert json.loads(msg["value"]) == expected_msg_1
+        assert msg["key"] == key_1
+
+        # We can produce using different schema for key and value
+        msg_2 = '{"number":3211123,"identifier":"work"}'
+        expected_msg_2 = json.loads(msg_2)
+        self._rpk.produce(test_topic,
+                          key=msg_2,
+                          msg=msg_1,
+                          schema_key_id=1,
+                          schema_id=2)
+
+        # And decode them separately
+        out = self._rpk.consume(test_topic,
+                                offset="1:2",
+                                use_schema_registry="key,value")
+        msg = json.loads(out)
+
+        assert json.loads(msg["value"]) == expected_msg_1
+        assert json.loads(msg["key"]) == expected_msg_2
+
+    @cluster(num_nodes=3)
+    def test_produce_consume_proto(self):
+        # First we register the schemas with their references.
+        subject_1 = "subject_for_person"
+        proto_person = """
+syntax = "proto3";
+
+message Person {
+  message PhoneNumber {
+    string number = 1;
+  }
+  string name = 1;
+  int32 id = 2;
+  string email = 3;
+  repeated .Person.PhoneNumber phones = 4;
+}"""
+        self.create_schema(subject_1, proto_person, ".proto")  # ID 1
+
+        subject_2 = "subject-for-reference"
+        proto_with_reference = """
+syntax = "proto3";
+
+import "person.proto";
+
+message AddressBook {
+  repeated .Person people = 1;
+}
+"""
+        self.create_schema(subject_2, proto_with_reference, ".proto",
+                           f"person.proto:{subject_1}:1")  # ID 2
+
+        test_topic = "test_topic_sr"
+        self._rpk.create_topic(test_topic)
+
+        msg_1 = '{"people":[{"name":"foo","id":123,"email":"test@redpanda.com","phones":[{"number":"111"}]},{"name":"igor","id":321,"email":"igor@redpanda.com","phones":[{"number":"1231231"},{"number":"2222333"}]}]}'
+        key_1 = "somekey"
+        expected_msg_1 = json.loads(msg_1)
+        # Produce: unencoded key, encoded value:
+        self._rpk.produce(test_topic,
+                          msg=msg_1,
+                          key=key_1,
+                          schema_id=2,
+                          proto_msg="AddressBook")
+
+        # We consume as is, i.e: it will show the encoded value.
+        out = self._rpk.consume(test_topic, offset="0:1")
+        msg = json.loads(out)
+
+        # We check that:
+        # - we are not storing the value without encoding.
+        # - first byte is the magic number 0 from the serde header.
+        # - key is not encoded.
+        raw_bytes_string = msg["value"]
+        assert raw_bytes_string != expected_msg_1
+        assert msg["key"] == key_1
+
+        bytes_from_string = bytes(
+            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+        assert bytes_from_string[0] == 0
+
+        # Now we decode the same message:
+        out = self._rpk.consume(test_topic,
+                                offset="0:1",
+                                use_schema_registry="value")
+        msg = json.loads(out)
+
+        assert json.loads(msg["value"]) == expected_msg_1
+        assert msg["key"] == key_1
+
+        # We can produce using different schema for key and value and a different proto message.
+        msg_2 = '{"name":"bar","id":2212,"email":"test2@redpanda.com","phones":[{"number":"1431"}]}'
+        expected_msg_2 = json.loads(msg_2)
+        self._rpk.produce(test_topic,
+                          key=msg_2,
+                          msg=msg_1,
+                          schema_key_id=1,
+                          schema_id=2,
+                          proto_key_msg="Person",
+                          proto_msg="AddressBook")
+
+        # And decode them separately
+        out = self._rpk.consume(test_topic,
+                                offset="1:2",
+                                use_schema_registry="key,value")
+        msg = json.loads(out)
+
+        assert json.loads(msg["value"]) == expected_msg_1
+        assert json.loads(msg["key"]) == expected_msg_2
