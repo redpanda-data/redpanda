@@ -7,6 +7,7 @@ v_cc_library(
     client.cc
     logger.cc
     mime.cc
+    multipart.cc
   DEPS
     Seastar::seastar
     v::bytes

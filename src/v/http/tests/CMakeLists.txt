@@ -29,6 +29,7 @@ rp_test(
   BINARY_NAME test_http_multipart
   SOURCES
     mime_test.cc
+    multipart_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::http
   ARGS "-- -c 1"
