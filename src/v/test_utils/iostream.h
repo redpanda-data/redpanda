@@ -135,4 +135,80 @@ public:
     }
 };
 
+/// A class for generating fuzzed (garbled) inputs based on good inputs to
+/// improve the effectiveness of parser testing.
+/// The goal is to increase the likelihood of the parser exploring a variety of
+/// states, including correct parsing, by introducing somewhat controlled
+/// variations rather than completely random data.
+///
+/// \note This is not a replacement for a coverage guided fuzzer. However, we
+/// should plug in a fuzzer state.
+class garbling_input_stream {
+    struct ds_wrapper : ss::data_source_impl {
+        explicit ds_wrapper(ss::data_source ds)
+          : _fd(std::move(ds)) {}
+        ~ds_wrapper() override = default;
+        ss::future<ss::temporary_buffer<char>> get() override {
+            while (!_eof) {
+                auto data = co_await _fd.get();
+                if (data.empty()) {
+                    _eof = true;
+                    break;
+                }
+                _bufs.emplace_back(std::move(data));
+                if (random_generators::get_int(0, 9) < 1) {
+                    break;
+                }
+            }
+
+            if (_bufs.empty()) {
+                co_return ss::temporary_buffer<char>();
+            }
+
+            auto buf_ix = random_generators::get_int<size_t>(
+              0, _bufs.size() - 1);
+            auto ret = std::exchange(_bufs[buf_ix], std::move(_bufs.back()));
+            _bufs.pop_back();
+
+            co_return ret;
+        }
+
+        ss::future<> close() override {
+            _bufs.clear();
+            return _fd.close();
+        }
+
+    private:
+        std::vector<ss::temporary_buffer<char>> _bufs;
+        ss::data_source _fd;
+        bool _eof = false;
+    };
+
+public:
+    garbling_input_stream() = delete;
+
+    static ss::input_stream<char> create(ss::data_source ds) {
+        // For better effectiveness we will wrap the data source with
+        // varying_buffer_input_stream too and relatively small buffer sizes.
+        return ss::input_stream<char>(
+          ss::data_source(std::make_unique<ds_wrapper>(
+            varying_buffer_input_stream::create(
+              ss::data_source(std::make_unique<ds_wrapper>(std::move(ds))),
+              1,
+              128)
+              .detach())));
+    }
+
+    static ss::input_stream<char> create(ss::input_stream<char> in) {
+        return garbling_input_stream::create(std::move(in).detach());
+    }
+
+    static ss::input_stream<char> create(std::string_view str) {
+        auto buffers = std::vector<ss::temporary_buffer<char>>{};
+        buffers.emplace_back(str.data(), str.size());
+        return garbling_input_stream::create(ss::data_source(
+          std::make_unique<memory_data_source>(std::move(buffers))));
+    }
+};
+
 } // namespace tests
