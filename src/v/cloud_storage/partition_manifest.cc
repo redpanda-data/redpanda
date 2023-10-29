@@ -910,43 +910,286 @@ bool partition_manifest::add(
     return add(m);
 }
 
-bool partition_manifest::safe_segment_meta_to_add(const segment_meta& m) {
-    if (_segments.empty()) {
-        // The empty manifest can be started from any offset. If we deleted all
-        // segments due to retention we should start from last uploaded offset.
-        // The reuploads are not possible if the manifest is empty.
-        return _last_offset == model::offset{0}
-               || model::next_offset(_last_offset) == m.base_offset;
+namespace {
+// This code block contains bits of scrubber logic.
+enum class anomaly_type {
+    missing_delta,
+    non_monotonical_delta,
+    committed_smaller,
+    end_delta_smaller,
+    offset_gap,
+    offset_overlap,
+};
+
+struct anomaly_meta {
+    anomaly_type type;
+    segment_meta at;
+    std::optional<segment_meta> previous;
+
+    auto operator<=>(anomaly_meta const& other) const {
+        return std::tie(
+                 type, at.base_offset, at.committed_offset, at.size_bytes)
+               <=> std::tie(
+                 other.type,
+                 other.at.base_offset,
+                 other.at.committed_offset,
+                 other.at.size_bytes);
     }
-    auto last = _segments.last_segment().value();
-    auto next = model::next_offset(last.committed_offset);
-    if (m.base_offset == next) {
-        return last.delta_offset_end == m.delta_offset;
+};
+
+std::ostream& operator<<(std::ostream& o, anomaly_type m) {
+    switch (m) {
+    case anomaly_type::missing_delta:
+        o << "missing_delta";
+        break;
+    case anomaly_type::non_monotonical_delta:
+        o << "non_monotonical_delta";
+        break;
+    case anomaly_type::committed_smaller:
+        o << "committed_smaller";
+        break;
+    case anomaly_type::end_delta_smaller:
+        o << "end_delta_smaller";
+        break;
+    case anomaly_type::offset_gap:
+        o << "offset_gap";
+        break;
+    case anomaly_type::offset_overlap:
+        o << "offset_overlap";
+        break;
+    };
+    return o;
+}
+
+using segment_meta_anomalies = std::set<anomaly_meta>;
+
+void scrub_segment_meta(
+  const segment_meta& current,
+  const std::optional<segment_meta>& previous,
+  segment_meta_anomalies& detected) {
+    // After one segment has a delta offset, all subsequent segments
+    // should have a delta offset too.
+    if (
+      previous && previous->delta_offset != model::offset_delta{}
+      && current.delta_offset == model::offset_delta{}) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::missing_delta,
+          .at = current,
+          .previous = previous});
     }
-    if (m.base_offset > next) {
-        // Base offset of the uploaded segment overshoots the expected value
-        return false;
+
+    // The delta offset field of a segment should always be greater or
+    // equal to that of the previous one.
+    if (
+      previous && previous->delta_offset != model::offset_delta{}
+      && current.delta_offset != model::offset_delta{}
+      && previous->delta_offset > current.delta_offset) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::non_monotonical_delta,
+          .at = current,
+          .previous = previous});
     }
-    // Check reupload correctness
-    // The segment should be aligned with existing segments in the manifest but
-    // there should be more than one segment covered by 'm'.
-    auto it = _segments.find(m.base_offset);
-    if (it == _segments.end()) {
-        return false;
+
+    // The committed offset of a segment should always be greater or equal
+    // to the base offset.
+    if (current.committed_offset < current.base_offset) {
+        detected.insert(
+          anomaly_meta{.type = anomaly_type::committed_smaller, .at = current});
     }
-    if (it->committed_offset == m.committed_offset) {
-        // 'm' is a reupload of an individual segment, the segment should have
-        // different size
-        return it->size_bytes != m.size_bytes;
+
+    // The end delta offset of a segment should always be greater or equal
+    // to the base delta offset.
+    if (
+      current.delta_offset != model::offset_delta{}
+      && current.delta_offset_end != model::offset_delta{}
+      && current.delta_offset_end < current.delta_offset) {
+        detected.insert(
+          anomaly_meta{.type = anomaly_type::end_delta_smaller, .at = current});
     }
-    ++it;
-    while (it != _segments.end()) {
-        if (it->committed_offset == m.committed_offset) {
-            return true;
+
+    // The base offset of a given segment should be equal to the committed
+    // offset of the previous segment plus one. Otherwise, if the base offset is
+    // greater, we have a gap in the log.
+    if (
+      previous
+      && model::next_offset(previous->committed_offset) < current.base_offset) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::offset_gap,
+          .at = current,
+          .previous = previous});
+    }
+
+    // The base offset of a given segment should be equal to the committed
+    // offset of the previous segment plus one. Otherwise, if the base offset is
+    // lower, we have overlapping segments in the log.
+    if (
+      previous
+      && model::next_offset(previous->committed_offset) > current.base_offset) {
+        detected.insert(anomaly_meta{
+          .type = anomaly_type::offset_overlap,
+          .at = current,
+          .previous = previous});
+    }
+}
+} // namespace
+
+size_t partition_manifest::safe_segment_meta_to_add(
+  std::vector<segment_meta> meta_list) const {
+    struct manifest_substitute {
+        model::offset last_offset;
+        std::optional<segment_meta> last_segment;
+        size_t num_accepted{0};
+    };
+
+    manifest_substitute subst{
+      .last_offset = _last_offset,
+      .last_segment = last_segment(),
+    };
+
+    for (const auto& m : meta_list) {
+        if (_segments.empty() && !subst.last_segment.has_value()) {
+            // The empty manifest can be started from any offset. If we deleted
+            // all segments due to retention we should start from last uploaded
+            // offset. The reuploads are not possible if the manifest is empty.
+            const bool is_safe = subst.last_offset == model::offset{0}
+                                 || model::next_offset(_last_offset)
+                                      == m.base_offset;
+
+            if (!is_safe) {
+                vlog(
+                  cst_log.error,
+                  "[{}] New segment does not line up with last offset of empty "
+                  "log: "
+                  "last_offset: {}, new_segment: {}",
+                  _ntp,
+                  subst.last_offset,
+                  m);
+                break;
+            }
+            subst.last_offset = m.committed_offset;
+            subst.last_segment = m;
+            subst.num_accepted++;
+        } else {
+            // We have segments to check
+            auto format_seg_meta_anomalies =
+              [](const segment_meta_anomalies& smas) {
+                  if (smas.empty()) {
+                      return ss::sstring{};
+                  }
+
+                  std::vector<anomaly_type> types;
+                  for (const auto& a : smas) {
+                      types.push_back(a.type);
+                  }
+
+                  return ssx::sformat(
+                    "{{anomaly_types: {}, new_segment: {}, previous_segment: "
+                    "{}}}",
+                    types,
+                    smas.begin()->at,
+                    smas.begin()->previous);
+              };
+
+            auto it = _segments.find(m.base_offset);
+            if (it == _segments.end()) {
+                // Segment added to tip of the log
+                const auto last_seg = subst.last_segment;
+                vassert(
+                  last_seg.has_value(),
+                  "Empty manifest, base_offset: {}",
+                  m.base_offset);
+
+                segment_meta_anomalies anomalies;
+                scrub_segment_meta(m, last_seg, anomalies);
+                if (!anomalies.empty()) {
+                    vlog(
+                      cst_log.error,
+                      "[{}] New segment does not line up with previous "
+                      "segment: {}",
+                      _ntp,
+                      format_seg_meta_anomalies(anomalies));
+                    break;
+                }
+                // Only update if we extending the log
+                subst.last_offset = m.committed_offset;
+                subst.last_segment = m;
+                subst.num_accepted++;
+                continue;
+            } else {
+                // Segment reupload case:
+                // The segment should be aligned with existing segments in the
+                // manifest but there should be at least one segment covered by
+                // 'm'.
+                if (it != _segments.begin()) {
+                    // Firstly, check that the replacement lines up with the
+                    // segment preceeding it if one exists.
+                    const auto prev_segment_it = _segments.prev(it);
+                    segment_meta_anomalies anomalies;
+                    scrub_segment_meta(m, *prev_segment_it, anomalies);
+                    if (!anomalies.empty()) {
+                        vlog(
+                          cst_log.error,
+                          "[{}] New replacement segment does not line up with "
+                          "previous "
+                          "segment: {}",
+                          _ntp,
+                          format_seg_meta_anomalies(anomalies));
+                        break;
+                    }
+                }
+
+                if (it->committed_offset == m.committed_offset) {
+                    // 'm' is a reupload of an individual segment, the segment
+                    // should have different size
+                    if (it->size_bytes == m.size_bytes) {
+                        vlog(
+                          cst_log.error,
+                          "[{}] New replacement segment has the same size as "
+                          "replaced "
+                          "segment: new_segment: {}, replaced_segment: {}",
+                          _ntp,
+                          m,
+                          *it);
+                        break;
+                    }
+                    subst.num_accepted++;
+                    continue;
+                }
+
+                // 'm' is a reupload which merges multiple segments. The
+                // committed offset of 'm' should match an existing segment.
+                // Otherwise, the re-upload changes segment boundaries and is
+                // *not valid*.
+                ++it;
+                bool boundary_found = false;
+                while (it != _segments.end()) {
+                    if (it->committed_offset == m.committed_offset) {
+                        boundary_found = true;
+                        break;
+                    }
+                    ++it;
+                }
+
+                if (!boundary_found) {
+                    vlog(
+                      cst_log.error,
+                      "[{}] New replacement segment does not match the "
+                      "committed "
+                      "offset of "
+                      "any previous segment: new_segment: {}",
+                      _ntp,
+                      m);
+                    break;
+                }
+                subst.num_accepted++;
+            }
         }
-        ++it;
     }
-    return false;
+    return subst.num_accepted;
+}
+
+bool partition_manifest::safe_segment_meta_to_add(const segment_meta& m) const {
+    return safe_segment_meta_to_add(std::vector<segment_meta>{m}) == 1;
 }
 
 partition_manifest
