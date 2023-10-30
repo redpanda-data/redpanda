@@ -71,6 +71,10 @@ fetch_dep(GTest
   REPO https://github.com/google/googletest
   TAG v1.14.0)
 
+fetch_dep(ada
+  REPO https://github.com/ada-url/ada
+  TAG v2.7.2)
+
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   set(TINYGO_TARBALL "tinygo-linux-amd64.tar.gz")
   set(TINYGO_MD5 "5b4ba9d8dd8ce10f7939de441ad46a80")
@@ -115,7 +119,8 @@ FetchContent_MakeAvailable(
     avro
     tinygo
     wasmtime
-    hdrhistogram)
+    hdrhistogram
+    ada)
 
 add_library(Crc32c::crc32c ALIAS crc32c)
 add_library(aklomp::base64 ALIAS base64)

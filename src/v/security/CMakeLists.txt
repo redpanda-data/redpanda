@@ -7,6 +7,7 @@ v_cc_library(
     v::json
     Seastar::seastar
     re2
+    ada
 )
 
 v_cc_library(
