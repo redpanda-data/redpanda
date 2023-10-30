@@ -3,7 +3,6 @@ v_cc_library(
     ssx
   HDRS
     "future-util.h"
-    "metrics.h"
   SRCS
     work_queue.cc
   DEPS

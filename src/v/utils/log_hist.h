@@ -204,7 +204,7 @@ private:
  * So if this histogram and `hdr_hist` are create and have the same values
  * recorded to them then `log_hist_public::seastar_histogram_logform(1000000)`
  * will produce the same seastar histogram as
- * `ssx::metrics::report_default_histogram(hdr_hist)`.
+ * `metrics::report_default_histogram(hdr_hist)`.
  */
 using log_hist_public = log_hist<std::chrono::microseconds, 18, 256ul>;
 
