@@ -55,6 +55,10 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
         response.error_code = error_code::operation_not_attempted;
+    } catch (const ss::abort_requested_exception&) {
+        /// Could only occur when abort_source is triggered via stop()
+        vlog(kclog.debug, "sleep_aborted / abort_requested exception");
+        response.error_code = error_code::operation_not_attempted;
     } catch (const std::exception& ex) {
         vlog(kclog.warn, "std::exception {}", ex.what());
         response.error_code = error_code::unknown_server_error;
@@ -64,6 +68,12 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
 
 ss::future<produce_response::partition>
 producer::produce(model::topic_partition tp, model::record_batch&& batch) {
+    if (_as.abort_requested()) {
+        return ss::make_ready_future<produce_response::partition>(
+          make_produce_response(
+            tp.partition,
+            std::make_exception_ptr(ss::abort_requested_exception())));
+    }
     return get_context(std::move(tp))->produce(std::move(batch));
 }
 
@@ -109,7 +119,8 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
                                kclog.trace, "Error during mitigation: {}", ex);
                              // ignore failed mitigation
                          });
-                   });
+                   },
+                   _as);
              })
       .handle_exception([p_id](std::exception_ptr ex) {
           return make_produce_response(p_id, std::move(ex));

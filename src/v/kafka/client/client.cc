@@ -82,7 +82,8 @@ ss::future<> client::connect() {
           [this, &retries](std::exception_ptr ex) {
               ++retries;
               return _external_mitigate(ex);
-          });
+          },
+          _as);
     });
 }
 
@@ -99,8 +100,9 @@ ss::future<> catch_and_log(client const& c, Func&& f) noexcept {
 } // namespace
 
 ss::future<> client::stop() noexcept {
-    co_await _gate.close();
+    _as.request_abort();
     co_await catch_and_log(*this, [this]() { return _producer.stop(); });
+    co_await _gate.close();
     for (auto& [id, group] : _consumers) {
         while (!group.empty()) {
             auto c = *group.begin();

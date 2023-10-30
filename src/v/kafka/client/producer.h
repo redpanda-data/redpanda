@@ -48,8 +48,9 @@ public:
     produce(model::topic_partition tp, model::record_batch&& batch);
 
     ss::future<> stop() {
+        _as.request_abort();
         return ssx::parallel_transform(
-          std::move(_partitions),
+          _partitions,
           [](partitions_t::value_type p) { return p.second->stop(); });
     }
 
@@ -83,6 +84,7 @@ private:
     topic_cache& _topic_cache;
     brokers& _brokers;
     int16_t _acks;
+    ss::abort_source _as;
 };
 
 } // namespace kafka::client

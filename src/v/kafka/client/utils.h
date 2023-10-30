@@ -74,14 +74,16 @@ std::invoke_result_t<Func> gated_retry_with_mitigation_impl(
   int32_t retries,
   std::chrono::milliseconds retry_base_backoff,
   Func func,
-  ErrFunc errFunc) {
+  ErrFunc errFunc,
+  std::optional<std::reference_wrapper<ss::abort_source>> as = std::nullopt) {
     return ss::try_with_gate(
       retry_gate,
       [retries,
        retry_base_backoff,
        &retry_gate,
        func{std::move(func)},
-       errFunc{std::move(errFunc)}]() {
+       errFunc{std::move(errFunc)},
+       as]() {
           return retry_with_mitigation(
             retries,
             retry_base_backoff,
@@ -89,7 +91,8 @@ std::invoke_result_t<Func> gated_retry_with_mitigation_impl(
                 retry_gate.check();
                 return func();
             },
-            errFunc);
+            errFunc,
+            as);
       });
 }
 
