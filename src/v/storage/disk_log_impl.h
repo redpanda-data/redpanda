@@ -161,7 +161,7 @@ public:
     ss::future<> adjacent_merge_compact(
       compaction_config, std::optional<model::offset> = std::nullopt);
 
-    ss::future<> sliding_window_compact(
+    ss::future<bool> sliding_window_compact(
       const compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 

@@ -517,13 +517,13 @@ segment_set disk_log_impl::find_sliding_range(
     return segs;
 }
 
-ss::future<> disk_log_impl::sliding_window_compact(
+ss::future<bool> disk_log_impl::sliding_window_compact(
   const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
     vlog(gclog.info, "[{}] running sliding window compaction", config().ntp());
     auto segs = find_sliding_range(cfg, new_start_offset);
     if (segs.empty()) {
         vlog(gclog.info, "[{}] no more segments to compact", config().ntp());
-        co_return;
+        co_return false;
     }
     for (auto& seg : segs) {
         auto result = co_await storage::internal::self_compact_segment(
@@ -553,7 +553,7 @@ ss::future<> disk_log_impl::sliding_window_compact(
           "[{}] failed to build offset map. Stopping compaction: {}",
           config().ntp(),
           std::current_exception());
-        co_return;
+        co_return false;
     }
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
@@ -648,7 +648,7 @@ ss::future<> disk_log_impl::sliding_window_compact(
         seg->advance_generation();
     }
     _last_compaction_window_start_offset = idx_start_offset;
-    co_return;
+    co_return true;
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
@@ -731,6 +731,14 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     auto segments = std::vector<ss::lw_shared_ptr<segment>>(
       range.first, range.second);
 
+    bool all_window_compacted = true;
+    for (const auto& seg : segments) {
+        if (!seg->finished_windowed_compaction()) {
+            all_window_compacted = false;
+            break;
+        }
+    }
+
     if (gclog.is_enabled(ss::log_level::debug)) {
         std::stringstream segments_str;
         for (size_t i = 0; i < segments.size(); i++) {
@@ -765,6 +773,9 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // tracking needs to be adjusted as compaction routines assume the segment
     // size is already contained in the partition size probe
     replacement->mark_as_compacted_segment();
+    if (all_window_compacted) {
+        replacement->mark_as_finished_windowed_compaction();
+    }
     _probe->add_initial_segment(*replacement.get());
     auto ret = co_await storage::internal::self_compact_segment(
       replacement,
@@ -1021,7 +1032,27 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      */
     if (config().is_compacted() && !_segs.empty()) {
         if (config::shard_local_cfg().log_compaction_use_sliding_window()) {
-            co_await sliding_window_compact(cfg.compact, new_start_offset);
+            auto compacted = co_await sliding_window_compact(
+              cfg.compact, new_start_offset);
+            if (!compacted) {
+                if (auto range = find_compaction_range(cfg.compact); range) {
+                    auto r = co_await compact_adjacent_segments(
+                      std::move(*range), cfg.compact);
+                    vlog(
+                      gclog.debug,
+                      "Adjacent segments of {}, compaction result: {}",
+                      config().ntp(),
+                      r);
+                    if (r.did_compact()) {
+                        _compaction_ratio.update(r.compaction_ratio());
+                    }
+                } else {
+                    vlog(
+                      gclog.debug,
+                      "Adjacent segments of {}, no adjacent pair",
+                      config().ntp());
+                }
+            }
         } else {
             co_await adjacent_merge_compact(cfg.compact, new_start_offset);
         }
