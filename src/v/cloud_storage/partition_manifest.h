@@ -339,7 +339,10 @@ public:
     bool add(const segment_name& name, const segment_meta& meta);
 
     /// Return 'true' if the segment meta can be added safely
-    bool safe_segment_meta_to_add(const segment_meta& meta);
+    bool safe_segment_meta_to_add(const segment_meta& meta) const;
+    /// Return number of segments (counting from the beginning of the list) that
+    /// can be added safely.
+    size_t safe_segment_meta_to_add(std::vector<segment_meta> list) const;
 
     /// \brief Truncate the manifest (remove entries from the manifest)
     ///
