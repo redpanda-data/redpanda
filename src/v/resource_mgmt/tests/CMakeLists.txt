@@ -37,6 +37,6 @@ rp_test(
   BINARY_NAME gtest_resource_mgmt
   SOURCES
     memory_groups_test.cc
-  LIBRARIES v::resource_mgmt v::gtest_main
+  LIBRARIES v::resource_mgmt v::gtest_main v::utils
   LABELS resource_mgmt
 )

@@ -17,9 +17,8 @@
  * Centralized unit for memory management.
  *
  * Works via a share system. First we subtract the amount of memory the user
- * decides to use for their WebAssembly functions, then we carve out 30% for the
- * batch cache. The remaining subsystems are distributed memory via a share
- * system.
+ * decides to use for their WebAssembly functions. The remaining subsystems
+ * are distributed memory via a share system.
  */
 class system_memory_groups {
 public:
@@ -58,8 +57,8 @@ private:
      */
     size_t total_memory() const;
     /**
-     * The amount of memory we reserve for the rest of the system to use, after
-     * we take the minimum amount required for the batch cache.
+     * The fraction of memory for this subsystem based on the number of shares
+     * allotted to it.
      */
     template<size_t shares>
     size_t subsystem_memory() const;

@@ -27,6 +27,7 @@ bool wasm_enabled() {
 }
 
 struct memory_shares {
+    constexpr static size_t chunk_cache = 3;
     constexpr static size_t kafka = 3;
     constexpr static size_t rpc = 2;
     constexpr static size_t recovery = 1;
@@ -34,7 +35,7 @@ struct memory_shares {
     constexpr static size_t data_transforms = 1;
 
     static size_t total_shares(bool with_wasm) {
-        size_t total = kafka + rpc + recovery + tiered_storage;
+        size_t total = chunk_cache + kafka + rpc + recovery + tiered_storage;
         if (with_wasm) {
             total += data_transforms;
         }
@@ -50,11 +51,11 @@ system_memory_groups::system_memory_groups(
   , _wasm_enabled(wasm_enabled) {}
 
 size_t system_memory_groups::chunk_cache_min_memory() const {
-    return total_memory() * .10; // NOLINT
+    return chunk_cache_max_memory() / 3;
 }
 
 size_t system_memory_groups::chunk_cache_max_memory() const {
-    return total_memory() * .30; // NOLINT
+    return subsystem_memory<memory_shares::chunk_cache>();
 }
 
 size_t system_memory_groups::kafka_total_memory() const {
@@ -82,8 +83,7 @@ size_t system_memory_groups::data_transforms_max_memory() const {
 
 template<size_t shares>
 size_t system_memory_groups::subsystem_memory() const {
-    size_t remaining = total_memory() - chunk_cache_max_memory();
-    size_t per_share_amount = remaining
+    size_t per_share_amount = total_memory()
                               / memory_shares::total_shares(_wasm_enabled);
     return per_share_amount * shares;
 }
