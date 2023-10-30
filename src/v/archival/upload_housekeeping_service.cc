@@ -62,10 +62,7 @@ upload_housekeeping_service::upload_housekeeping_service(
       config::shard_local_cfg().cloud_storage_idle_threshold_rps.bind())
   , _raw_quota(
       config::shard_local_cfg().cloud_storage_background_jobs_quota.bind())
-  , _rtc(_as)
-  , _ctxlog(archival_log, _rtc)
-  , _filter(_rtc)
-  , _workflow(_rtc, run_quota_t{_raw_quota()}, sg, _probe)
+  , _workflow(run_quota_t{_raw_quota()}, sg, _probe)
   , _api_utilization(
       std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution))
   , _api_slow_downs(
@@ -172,7 +169,7 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
           slow_downs_rate >= max_slow_downs_rate
           && _workflow.state() == housekeeping_state::active) {
             vlog(
-              _ctxlog.info,
+              archival_log.info,
               "Too many cloud storage requests are being throttled ({}% >= "
               "{}%). Pausing housekeeping workflow to get some headroom",
               slow_downs_rate,
@@ -188,11 +185,11 @@ void upload_housekeeping_service::rearm_idle_timer() {
 }
 
 void upload_housekeeping_service::idle_timer_callback() {
-    vlog(_ctxlog.debug, "Cloud storage is idle");
+    vlog(archival_log.debug, "Cloud storage is idle");
     if (
       _workflow.state() == housekeeping_state::idle
       || _workflow.state() == housekeeping_state::pause) {
-        vlog(_ctxlog.debug, "Activating upload housekeeping");
+        vlog(archival_log.debug, "Activating upload housekeeping");
         _workflow.resume(false);
     }
 
@@ -200,10 +197,11 @@ void upload_housekeeping_service::idle_timer_callback() {
 }
 
 void upload_housekeeping_service::epoch_timer_callback() {
-    vlog(_ctxlog.debug, "Cloud storage housekeeping epoch");
+    vlog(archival_log.debug, "Cloud storage housekeeping epoch");
     if (_workflow.state() != housekeeping_state::draining) {
         vlog(
-          _ctxlog.debug, "Housekeeping epoch timeout, draining the job queue");
+          archival_log.debug,
+          "Housekeeping epoch timeout, draining the job queue");
         _workflow.resume(true);
     }
 }
@@ -211,7 +209,8 @@ void upload_housekeeping_service::epoch_timer_callback() {
 void upload_housekeeping_service::register_jobs(
   std::vector<std::reference_wrapper<housekeeping_job>> jobs) {
     for (auto ref : jobs) {
-        vlog(_ctxlog.debug, "Registering job: {}", ref.get().name());
+        vlog(archival_log.debug, "Registering job: {}", ref.get().name());
+        _filter.add_source_to_ignore(ref.get().get_root_retry_chain_node());
         _workflow.register_job(ref.get());
     }
 }
@@ -219,18 +218,17 @@ void upload_housekeeping_service::register_jobs(
 void upload_housekeeping_service::deregister_jobs(
   std::vector<std::reference_wrapper<housekeeping_job>> jobs) {
     for (auto ref : jobs) {
-        vlog(_ctxlog.debug, "Deregistering job: {}", ref.get().name());
+        vlog(archival_log.debug, "Deregistering job: {}", ref.get().name());
         _workflow.deregister_job(ref.get());
+        _filter.remove_source_to_ignore(ref.get().get_root_retry_chain_node());
     }
 }
 
 housekeeping_workflow::housekeeping_workflow(
-  retry_chain_node& parent,
   run_quota_t quota,
   ss::scheduling_group sg,
   std::optional<std::reference_wrapper<upload_housekeeping_probe>> probe)
-  : _parent(parent)
-  , _sg(sg)
+  : _sg(sg)
   , _probe(probe)
   , _quota(quota) {}
 
@@ -385,7 +383,18 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                   "Running job {} with quota {}",
                   _running.front().name(),
                   quota);
-                auto res = co_await _running.front().run(_parent, quota);
+
+                auto& job = _running.front();
+
+                _as.check();
+                auto sub = _as.subscribe([&job]() mutable noexcept {
+                    // Propagate an abort of the `upload_housekeeping_service`
+                    // to the running job.
+                    job.get_root_retry_chain_node()->request_abort();
+                });
+
+                auto res = co_await job.run(quota);
+
                 jobs_executed++;
                 quota = res.remaining;
                 maybe_update_probe(res);

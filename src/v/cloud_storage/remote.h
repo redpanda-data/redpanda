@@ -424,28 +424,25 @@ public:
     /// events from all sybsystems except one.
     /// The filter is a RAII object. It works until the object
     /// exists. If the filter is destroyed before the notification
-    /// will be received the receiver of the event will se broken
+    /// will be received the receiver of the event will see broken
     /// promise error.
     class event_filter {
         friend class remote;
 
     public:
-        /// Event filter that subscribes to events from all sources.
-        /// The event type wildcard can also be specified.
+        event_filter() = default;
+
         explicit event_filter(
-          std::unordered_set<api_activity_type> ignored_events = {})
+          std::unordered_set<api_activity_type> ignored_events)
           : _events_to_ignore(std::move(ignored_events)) {}
-        /// Event filter that subscribes to events from all sources
-        /// except one. The event type wildcard can also be specified.
-        /// The filter will ignore all events triggered by callers which
-        /// are using the same retry_chain_node. This is useful when the
-        /// client of the 'remote' needs to subscribe to all events except
-        /// own.
-        explicit event_filter(
-          retry_chain_node& ignored_src,
-          std::unordered_set<api_activity_type> ignored_events = {})
-          : _source_to_ignore(std::ref(ignored_src))
-          , _events_to_ignore(std::move(ignored_events)) {}
+
+        void add_source_to_ignore(const retry_chain_node* source) {
+            _sources_to_ignore.insert(source);
+        }
+
+        void remove_source_to_ignore(const retry_chain_node* source) {
+            _sources_to_ignore.erase(source);
+        }
 
         void cancel() {
             if (_promise.has_value()) {
@@ -455,8 +452,7 @@ public:
         }
 
     private:
-        std::optional<std::reference_wrapper<retry_chain_node>>
-          _source_to_ignore;
+        absl::node_hash_set<const retry_chain_node*> _sources_to_ignore;
         std::unordered_set<api_activity_type> _events_to_ignore;
         std::optional<ss::promise<api_activity_notification>> _promise;
         intrusive_list_hook _hook;

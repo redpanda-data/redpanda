@@ -32,14 +32,16 @@ constexpr archival::run_quota_t mock_quota{10};
 class mock_job : public archival::housekeeping_job {
 public:
     explicit mock_job(std::chrono::milliseconds ms)
-      : _delay(ms) {}
+      : _delay(ms)
+      , _root_rtc(_as) {}
 
     mock_job()
       : _delay(100ms)
+      , _root_rtc(_as)
       , _throw(true) {}
 
     ss::future<archival::housekeeping_job::run_result>
-    run(retry_chain_node& rtc, archival::run_quota_t quota) override {
+    run(archival::run_quota_t quota) override {
         ss::gate::holder h(_gate);
         if (_throw) {
             throw std::runtime_error("Job failed");
@@ -79,6 +81,10 @@ public:
 
     void release() override { _holder.release(); }
 
+    retry_chain_node* get_root_retry_chain_node() override {
+        return &_root_rtc;
+    }
+
     ss::sstring name() const override { return "mock_job"; }
 
     size_t executed{0};
@@ -87,6 +93,7 @@ public:
 private:
     std::chrono::milliseconds _delay;
     ss::abort_source _as;
+    retry_chain_node _root_rtc;
     ss::gate _gate;
     ss::gate::holder _holder;
     bool _throw{false};
@@ -125,7 +132,7 @@ void wait_for_job_execution(
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_stop) {
     retry_chain_node rtc(abort_never);
-    archival::housekeeping_workflow wf(rtc, mock_quota);
+    archival::housekeeping_workflow wf(mock_quota);
     mock_job job1(10s);
     mock_job job2(10s);
     wf.register_job(job1);
@@ -146,7 +153,7 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_stop) {
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_pause) {
     retry_chain_node rtc(abort_never);
-    archival::housekeeping_workflow wf(rtc, mock_quota);
+    archival::housekeeping_workflow wf(mock_quota);
     mock_job job1(10ms);
     mock_job job2(10ms);
     wf.register_job(job1);
@@ -173,7 +180,7 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_pause) {
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_drain) {
     retry_chain_node rtc(abort_never);
-    archival::housekeeping_workflow wf(rtc, mock_quota);
+    archival::housekeeping_workflow wf(mock_quota);
     mock_job job1(10ms);
     mock_job job2(10ms);
     mock_job job3(10ms);
@@ -204,7 +211,7 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_drain) {
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_interrupt) {
     retry_chain_node rtc(abort_never);
-    archival::housekeeping_workflow wf(rtc, mock_quota);
+    archival::housekeeping_workflow wf(mock_quota);
     mock_job job1(10s);
     mock_job job2(10ms);
     wf.register_job(job1);
@@ -223,7 +230,7 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_interrupt) {
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_no_jobs) {
     retry_chain_node rtc(abort_never);
-    archival::housekeeping_workflow wf(rtc, mock_quota);
+    archival::housekeeping_workflow wf(mock_quota);
     {
         mock_job job1(10s);
         mock_job job2(10ms);
@@ -248,7 +255,7 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_no_jobs) {
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_job_throws) {
     retry_chain_node rtc(abort_never);
-    archival::housekeeping_workflow wf(rtc, mock_quota);
+    archival::housekeeping_workflow wf(mock_quota);
     {
         mock_job job1; // This job will throw
         mock_job job2(10s);

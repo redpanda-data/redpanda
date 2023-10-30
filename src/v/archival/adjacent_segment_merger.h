@@ -25,13 +25,9 @@ namespace archival {
 class adjacent_segment_merger : public housekeeping_job {
 public:
     explicit adjacent_segment_merger(
-      ntp_archiver& parent,
-      retry_chain_logger& ctxlog,
-      bool,
-      config::binding<bool>);
+      ntp_archiver& parent, bool, config::binding<bool>);
 
-    ss::future<run_result>
-    run(retry_chain_node& rtc, run_quota_t quota) override;
+    ss::future<run_result> run(run_quota_t quota) override;
 
     void interrupt() override;
 
@@ -43,6 +39,8 @@ public:
 
     void acquire() override;
     void release() override;
+
+    retry_chain_node* get_root_retry_chain_node() override;
 
     ss::sstring name() const override;
 
@@ -65,10 +63,11 @@ private:
 
     model::offset _last;
     ntp_archiver& _archiver;
-    retry_chain_logger& _ctxlog;
     config::binding<std::optional<size_t>> _target_segment_size;
     config::binding<std::optional<size_t>> _min_segment_size;
     ss::abort_source _as;
+    retry_chain_node _root_rtc;
+    retry_chain_logger _ctxlog;
     ss::gate _gate;
     ss::gate::holder _holder;
 };

@@ -152,15 +152,16 @@ public:
 
     /// Start the job. The job can be paused (not immediately).
     ///
-    /// \param rtc is a retry chain node of the housekeeping service
     /// \param quota is number of actions job can execute during current run
     ///        the job is not forced to use its entire quota. It's also possible
     ///        to use more resuorces than the job was given.
     /// \return a future that will become available when the job is completed.
     ///         The result of the future contains stats for the current run (
     ///         number of uploaded segments/manifests, etc).
-    virtual ss::future<run_result>
-    run(retry_chain_node& rtc, run_quota_t quota) = 0;
+    virtual ss::future<run_result> run(run_quota_t quota) = 0;
+
+    /// Returns the the root retry chain node of the job.
+    virtual retry_chain_node* get_root_retry_chain_node() = 0;
 
     virtual ss::sstring name() const = 0;
 

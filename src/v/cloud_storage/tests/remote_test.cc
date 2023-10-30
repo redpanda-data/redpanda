@@ -911,7 +911,9 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
       .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
     auto conf = get_configuration();
     retry_chain_node root_rtc(never_abort, 100ms, 20ms);
-    remote::event_filter flt(root_rtc);
+    remote::event_filter flt;
+    flt.add_source_to_ignore(&root_rtc);
+
     auto subscription = remote.local().subscribe(flt);
     partition_manifest actual(manifest_ntp, manifest_revision);
 
@@ -951,6 +953,22 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
               json_manifest_format_path,
               actual,
               other_rtc)
+            .get();
+    BOOST_REQUIRE(res == download_result::success);
+    BOOST_REQUIRE(subscription.available());
+    BOOST_REQUIRE(
+      subscription.get().type == api_activity_type::manifest_download);
+
+    // Remove the rtc node from the filter and re-subscribe. This time we should
+    // receive the notification.
+    flt.remove_source_to_ignore(&root_rtc);
+    subscription = remote.local().subscribe(flt);
+    res = remote.local()
+            .download_manifest(
+              cloud_storage_clients::bucket_name("bucket"),
+              json_manifest_format_path,
+              actual,
+              child_rtc)
             .get();
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(subscription.available());

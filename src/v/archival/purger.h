@@ -35,8 +35,7 @@ public:
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::members_table>&);
 
-    ss::future<run_result>
-    run(retry_chain_node& rtc, run_quota_t quota) override;
+    ss::future<run_result> run(run_quota_t quota) override;
 
     void interrupt() override;
 
@@ -48,6 +47,8 @@ public:
 
     void acquire() override;
     void release() override;
+
+    retry_chain_node* get_root_retry_chain_node() override;
 
     ss::sstring name() const override;
 
@@ -117,6 +118,7 @@ private:
     global_position get_global_position();
 
     ss::abort_source _as;
+    retry_chain_node _root_rtc;
     ss::gate _gate;
 
     // A gate holder we keep on behalf of the housekeeping service, when

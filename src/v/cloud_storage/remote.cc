@@ -455,15 +455,17 @@ ss::future<upload_result> remote::upload_manifest(
 
 void remote::notify_external_subscribers(
   api_activity_notification event, const retry_chain_node& caller) {
+    const auto* caller_root = caller.get_root();
+
     for (auto& flt : _filters) {
         if (flt._events_to_ignore.contains(event.type)) {
             continue;
         }
-        if (
-          flt._source_to_ignore.has_value()
-          && flt._source_to_ignore->get().same_root(caller)) {
+
+        if (flt._sources_to_ignore.contains(caller_root)) {
             continue;
         }
+
         // Invariant: the filter._promise is always initialized
         // by the 'subscribe' method.
         vassert(
