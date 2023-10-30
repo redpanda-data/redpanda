@@ -34,6 +34,23 @@
 using namespace storage; // NOLINT
 using namespace std::chrono;
 
+// miscellaneous captured info about a segment appender such as
+// its offsets and other counters
+struct segment_appender_info {
+    size_t committed_offset, stable_offset, flushed_offset, bytes_flush_pending,
+      inflight_dispatched;
+
+    ss::sstring to_string() const {
+        return fmt::format(
+          "co {} : so {} : fo {} : fbp {} : bfp {}",
+          committed_offset,
+          stable_offset,
+          flushed_offset,
+          bytes_flush_pending,
+          inflight_dispatched);
+    }
+};
+
 struct storage::segment_appender_test_accessor {
     segment_appender& sa; // NOLINT
 
@@ -54,6 +71,14 @@ struct storage::segment_appender_test_accessor {
     auto inflight_dispatched() { return sa._inflight_dispatched; }
     auto total_dispatched() { return sa._dispatched_writes; }
     auto total_merged() { return sa._merged_writes; }
+    auto info() {
+        return segment_appender_info{
+          .committed_offset = sa._committed_offset,
+          .stable_offset = sa._stable_offset,
+          .flushed_offset = sa._flushed_offset,
+          .bytes_flush_pending = sa._bytes_flush_pending,
+          .inflight_dispatched = sa._inflight_dispatched};
+    }
 };
 
 namespace {
