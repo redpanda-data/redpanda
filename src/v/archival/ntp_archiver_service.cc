@@ -1867,7 +1867,12 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
         }
 
         auto error = co_await _parent.archival_meta_stm()->add_segments(
-          mdiff, manifest_clean_offset, deadline, _as);
+          mdiff,
+          manifest_clean_offset,
+          deadline,
+          _as,
+          checks_disabled ? cluster::segment_validated::no
+                          : cluster::segment_validated::yes);
         if (
           error != cluster::errc::success
           && error != cluster::errc::not_leader) {
@@ -2908,10 +2913,21 @@ ss::future<bool> ntp_archiver::do_upload_local(
             co_return false;
         }
     }
+    if (!checks_disabled) {
+        // Validate metadata using the STM state
+        if (!manifest().safe_segment_meta_to_add(meta)) {
+            co_return false;
+        }
+    }
 
     auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout;
     auto error = co_await _parent.archival_meta_stm()->add_segments(
-      {meta}, std::nullopt, deadline, _as);
+      {meta},
+      std::nullopt,
+      deadline,
+      _as,
+      checks_disabled ? cluster::segment_validated::no
+                      : cluster::segment_validated::yes);
     if (error != cluster::errc::success && error != cluster::errc::not_leader) {
         vlog(
           _rtclog.warn,

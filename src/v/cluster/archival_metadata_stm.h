@@ -38,6 +38,8 @@ class archival_metadata_stm_accessor;
 
 class archival_metadata_stm;
 
+using segment_validated = ss::bool_class<struct segment_validated_tag>;
+
 /// Batch builder allows to combine different archival_metadata_stm commands
 /// together in a single record batch
 class command_batch_builder {
@@ -54,8 +56,8 @@ public:
     /// Reset the manifest.
     command_batch_builder& reset_metadata();
     /// Add segments to the batch
-    command_batch_builder&
-      add_segments(std::vector<cloud_storage::segment_meta>);
+    command_batch_builder& add_segments(
+      std::vector<cloud_storage::segment_meta>, segment_validated is_validated);
     /// Add cleanup_metadata command to the batch
     command_batch_builder& cleanup_metadata();
     /// Add mark_clean command to the batch
@@ -115,7 +117,8 @@ public:
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
       ss::lowres_clock::time_point deadline,
-      ss::abort_source&);
+      ss::abort_source&,
+      segment_validated is_validated);
 
     /// Truncate local snapshot by moving start_offset forward
     ///
@@ -249,7 +252,8 @@ private:
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
       ss::lowres_clock::time_point deadline,
-      ss::abort_source&);
+      ss::abort_source&,
+      segment_validated is_validated);
 
     // Replicate commands in a batch and wait for their application.
     // Should be called under _lock to ensure linearisability
