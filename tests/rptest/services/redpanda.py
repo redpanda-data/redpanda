@@ -1030,8 +1030,9 @@ class RedpandaServiceBase(Service):
         def make_partition(topic_name, p):
             index = p["partition"]
             leader_id = p["leader"]
-            leader = None if leader_id == -1 else self.get_node(leader_id)
-            replicas = [self.get_node(r["id"]) for r in p["replicas"]]
+            leader = None if leader_id == -1 else self.get_node_by_id(
+                leader_id)
+            replicas = [self.get_node_by_id(r["id"]) for r in p["replicas"]]
             return Partition(topic_name, index, leader, replicas)
 
         for topic in md["topics"]:
