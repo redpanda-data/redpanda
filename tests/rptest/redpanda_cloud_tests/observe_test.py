@@ -2,6 +2,7 @@ import requests
 import json
 from ducktape.tests.test import Test
 from types import SimpleNamespace
+from io import BytesIO
 
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import make_redpanda_service
@@ -29,7 +30,8 @@ class HTObserveTest(Test):
         with requests.get(self._endpoint, headers=headers, stream=True) as r:
             if r.status_code != requests.status_codes.codes.ok:
                 r.raise_for_status()
-            return json.load(r.raw, object_hook=lambda d: SimpleNamespace(**d))
+            return json.load(BytesIO(r.content),
+                             object_hook=lambda d: SimpleNamespace(**d))
 
     def cluster_alerts(self, rule_groups):
         alerts = []
