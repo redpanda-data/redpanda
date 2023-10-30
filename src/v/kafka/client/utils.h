@@ -37,13 +37,14 @@ auto retry_with_mitigation(
   int32_t retries,
   std::chrono::milliseconds retry_base_backoff,
   Func func,
-  ErrFunc errFunc) {
+  ErrFunc errFunc,
+  std::optional<std::reference_wrapper<ss::abort_source>> as = std::nullopt) {
     using namespace std::chrono_literals;
     return ss::do_with(
       std::move(func),
       std::move(errFunc),
       std::exception_ptr(),
-      [retries, retry_base_backoff](
+      [retries, retry_base_backoff, as](
         const Func& func, ErrFunc& errFunc, std::exception_ptr& eptr) {
           return retry_with_backoff(
             retries,
@@ -61,7 +62,8 @@ auto retry_with_mitigation(
                       return Futurator::make_exception_future(eptr);
                   });
             },
-            retry_base_backoff);
+            retry_base_backoff,
+            as);
       });
 }
 

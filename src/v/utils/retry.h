@@ -69,9 +69,9 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              as->get().check();
                          } catch (const std::exception& e) {
                              promise.set_exception(e);
+                             return ss::make_ready_future<stop_iteration>(
+                               stop_iteration::yes);
                          }
-                         return ss::make_ready_future<stop_iteration>(
-                           stop_iteration::yes);
                      }
                      attempt++;
                      return f()
