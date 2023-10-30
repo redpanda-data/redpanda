@@ -3713,6 +3713,8 @@ class RedpandaService(RedpandaServiceBase):
                 vars[
                     "AZURE_STORAGE_ACCOUNT_NAME"] = self.si_settings.cloud_storage_azure_storage_account
 
+        if self.si_settings.endpoint_url and self.si_settings.endpoint_url == 'https://storage.googleapis.com':
+            backend = "gcp"
         # Pick an arbitrary node to run the scrub from
         node = self.nodes[0]
 
