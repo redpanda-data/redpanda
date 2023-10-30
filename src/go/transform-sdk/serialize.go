@@ -16,8 +16,6 @@ package redpanda
 
 import (
 	"encoding/binary"
-	"errors"
-	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/rwbuf"
 )
@@ -25,32 +23,20 @@ import (
 // Reusable slice of record headers
 var incomingRecordHeaders []RecordHeader = nil
 
-func (r *Record) deserialize(b *rwbuf.RWBuf) error {
-	rs, err := binary.ReadVarint(b)
-	if err != nil {
-		return err
-	}
-	if rs != int64(b.ReaderLen()) {
-		return errors.New("record size mismatch")
-	}
-	attr, err := b.ReadByte()
-	if err != nil {
-		return err
-	}
-	td, err := binary.ReadVarint(b)
-	if err != nil {
-		return err
-	}
-	od, err := binary.ReadVarint(b)
-	if err != nil {
-		return err
-	}
-
+func readKV(b *rwbuf.RWBuf) ([]byte, []byte, error) {
 	k, err := b.ReadSizedSlice()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	v, err := b.ReadSizedSlice()
+	if err != nil {
+		return nil, nil, err
+	}
+	return k, v, err
+}
+
+func (r *Record) deserializePayload(b *rwbuf.RWBuf) error {
+	k, v, err := readKV(b)
 	if err != nil {
 		return err
 	}
@@ -61,12 +47,9 @@ func (r *Record) deserialize(b *rwbuf.RWBuf) error {
 	if incomingRecordHeaders == nil || len(incomingRecordHeaders) < int(hc) {
 		incomingRecordHeaders = make([]RecordHeader, hc)
 	}
+	incomingRecordHeaders = incomingRecordHeaders[:hc]
 	for i := 0; i < int(hc); i++ {
-		k, err := b.ReadSizedSlice()
-		if err != nil {
-			return err
-		}
-		v, err := b.ReadSizedSlice()
+		k, v, err := readKV(b)
 		if err != nil {
 			return err
 		}
@@ -77,31 +60,12 @@ func (r *Record) deserialize(b *rwbuf.RWBuf) error {
 	}
 	r.Key = k
 	r.Value = v
-	r.Attrs.attr = attr
 	r.Headers = incomingRecordHeaders
-	r.Timestamp = time.UnixMilli(td)
-	r.Offset = od
 	return nil
 }
 
-// Serialize this output record into the buffer
-func (r Record) serialize(b *rwbuf.RWBuf) {
-	// The first thing we write is the size of the record,
-	// which we need to go over the data to see how big that is.
-	// Instead of going over the data twice, we reserve some space
-	// then write the varint at the end in the space we reserved.
-	f := b.DelayWrite(binary.MaxVarintLen32, func(buf []byte) {
-		rs := int64(b.ReaderLen() - binary.MaxVarintLen32)
-		o := binary.PutVarint(buf, rs)
-		// Shift the varint to the start of the record
-		copy(buf[len(buf)-o:], buf[:o])
-		// Skip over the bytes we didn't use
-		b.AdvanceReader(len(buf) - o)
-	})
-	// this can never fail
-	_ = b.WriteByte(r.Attrs.attr)
-	b.WriteVarint(r.Timestamp.UnixMilli())
-	b.WriteVarint(r.Offset)
+// Serialize this output record's payload (key, value, headers) into the buffer
+func (r Record) serializePayload(b *rwbuf.RWBuf) {
 	b.WriteBytesWithSize(r.Key)
 	b.WriteBytesWithSize(r.Value)
 	if r.Headers != nil {
@@ -113,6 +77,4 @@ func (r Record) serialize(b *rwbuf.RWBuf) {
 	} else {
 		b.WriteVarint(0)
 	}
-	// Now write the header
-	f()
 }

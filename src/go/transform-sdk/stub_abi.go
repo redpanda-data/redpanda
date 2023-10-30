@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !tinygo
+//go:build !(wasip1 || tinygo)
 
 package redpanda
 
@@ -24,8 +24,11 @@ import (
 // exist here so that the code can be compiled in a non-wasm environment, even if they
 // will always fail at runtime.
 
-func readRecordHeader(
-	h inputBatchHandle,
+func checkAbiVersion() {
+	panic("stub")
+}
+
+func readBatchHeader(
 	baseOffset unsafe.Pointer,
 	recordCount unsafe.Pointer,
 	partitionLeaderEpoch unsafe.Pointer,
@@ -40,7 +43,13 @@ func readRecordHeader(
 	panic("stub")
 }
 
-func readRecord(h inputRecordHandle, buf unsafe.Pointer, len int32) int32 {
+func readNextRecord(
+	attributes unsafe.Pointer,
+	timestampDelta unsafe.Pointer,
+	offsetDelta unsafe.Pointer,
+	buf unsafe.Pointer,
+	len int32,
+) int32 {
 	panic("stub")
 }
 

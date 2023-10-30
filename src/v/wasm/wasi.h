@@ -44,6 +44,20 @@
 namespace wasm::wasi {
 
 /**
+ * An exit code to show that the VM has exited.
+ */
+class exit_exception : public std::exception {
+public:
+    explicit exit_exception(int32_t exit_code);
+    const char* what() const noexcept override;
+    int32_t code() const noexcept;
+
+private:
+    int32_t _code;
+    ss::sstring _msg;
+};
+
+/**
  * This is the function that the wasi standard expects to be exported to call
  * into the user's main function.
  */

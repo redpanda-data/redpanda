@@ -36,6 +36,13 @@ public:
         _byte_index += len;
     }
 
+    [[gnu::always_inline]] void write_end(const uint8_t* src, size_t len) {
+        details::check_out_of_range(len, _remaining_size);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        std::copy_n(src, len, mutable_index() + _remaining_size - len);
+        _remaining_size -= len;
+    }
+
     size_t remaining_size() const { return _remaining_size; }
 
     // the first byte of the _current_ iterator + offset

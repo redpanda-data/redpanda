@@ -31,7 +31,6 @@ TEST_F(WasmTestFixture, IdentityFunction) {
     auto batch = make_tiny_batch();
     auto transformed = transform(batch);
     ASSERT_EQ(transformed.copy_records(), batch.copy_records());
-    ASSERT_EQ(transformed, batch);
 }
 
 TEST_F(WasmTestFixture, CanRestartEngine) {
@@ -42,7 +41,6 @@ TEST_F(WasmTestFixture, CanRestartEngine) {
     auto batch = make_tiny_batch();
     auto transformed = transform(batch);
     ASSERT_EQ(transformed.copy_records(), batch.copy_records());
-    ASSERT_EQ(transformed, batch);
 }
 
 TEST_F(WasmTestFixture, HandlesSetupPanic) {

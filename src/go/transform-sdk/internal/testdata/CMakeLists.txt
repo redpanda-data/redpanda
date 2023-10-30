@@ -7,7 +7,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 function(add_wasm_transform NAME)
   find_program(TINYGO_BIN "tinygo")
   set(wasm_output "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.wasm")
-  set(tinygo_cmd ${TINYGO_BIN} build -o ${wasm_output} -quiet -target wasi "${NAME}/transform.go")
+  set(tinygo_cmd ${TINYGO_BIN} build -o ${wasm_output} -quiet -target wasi -scheduler none "${NAME}/transform.go")
   set(gopath ${CMAKE_CURRENT_BINARY_DIR}/${NAME})
   add_custom_command(OUTPUT ${wasm_output}
                      COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/retry.py

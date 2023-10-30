@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "seastarx.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
@@ -194,6 +195,47 @@ struct cluster_transform_report
     // This is useful for aggregating multiple node's reports into a single
     // report.
     void merge(const cluster_transform_report&);
+};
+
+/**
+ * The output of a user's transformed function.
+ *
+ * It is a buffer formatted with the "payload" of a record using Kafka's wire
+ * format. Specifically the following fields are included:
+ *
+ * keyLength: varint
+ * key: byte[]
+ * valueLen: varint
+ * value: byte[]
+ * Headers => [Header]
+ *
+ * Where Header is:
+ *
+ * headerKeyLength: varint
+ * headerKey: String
+ * headerValueLength: varint
+ * Value: byte[]
+ *
+ * See: https://kafka.apache.org/documentation/#record for more information.
+ *
+ */
+class transformed_data {
+public:
+    /**
+     * Create a transformed record - validating the format is correct.
+     */
+    static std::optional<transformed_data> create_validated(iobuf);
+
+    /**
+     * Generate a serialized record from the following metadata.
+     */
+    iobuf to_serialized_record(
+      record_attributes, int64_t timestamp_delta, int32_t offset_delta) &&;
+
+private:
+    explicit transformed_data(iobuf d);
+
+    iobuf _data;
 };
 
 } // namespace model

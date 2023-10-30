@@ -11,9 +11,58 @@
 
 #include "model/transform.h"
 
+#include "bytes/iobuf_parser.h"
 #include "model/fundamental.h"
+#include "utils/vint.h"
+
+#include <seastar/core/print.hh>
+
+#include <algorithm>
+#include <optional>
+#include <stdexcept>
 
 namespace model {
+
+namespace {
+
+bool validate_kv(iobuf_const_parser* parser) {
+    auto [key_length, kl] = parser->read_varlong();
+    // -1 is valid size of a `null` record, and is used to distinguish between
+    // `null` and empty bytes.
+    if (key_length < -1) {
+        return false;
+    }
+    if (key_length > 0) {
+        parser->skip(key_length);
+    }
+    auto [value_length, vl] = parser->read_varlong();
+    if (value_length < -1) {
+        return false;
+    }
+    if (value_length > 0) {
+        parser->skip(value_length);
+    }
+    return true;
+}
+
+bool validate_record_payload(const iobuf& buf) {
+    iobuf_const_parser parser(buf);
+    if (!validate_kv(&parser)) {
+        return false;
+    }
+    auto [header_count, hc] = parser.read_varlong();
+    if (header_count < 0) {
+        return false;
+    }
+    for (int64_t i = 0; i < header_count; ++i) {
+        if (!validate_kv(&parser)) {
+            return false;
+        }
+    }
+    return parser.bytes_left() == 0;
+}
+
+} // namespace
 
 std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
     fmt::print(
@@ -80,6 +129,7 @@ std::ostream&
 operator<<(std::ostream& os, transform_report::processor::state s) {
     return os << processor_state_to_string(s);
 }
+
 std::string_view
 processor_state_to_string(transform_report::processor::state state) {
     switch (state) {
@@ -94,4 +144,50 @@ processor_state_to_string(transform_report::processor::state state) {
     }
     return "unknown";
 }
+
+transformed_data::transformed_data(iobuf d)
+  : _data(std::move(d)) {}
+
+std::optional<transformed_data> transformed_data::create_validated(iobuf buf) {
+    try {
+        if (!validate_record_payload(buf)) {
+            return std::nullopt;
+        }
+    } catch (const std::out_of_range&) {
+        return std::nullopt;
+    }
+    return transformed_data(std::move(buf));
+}
+
+iobuf transformed_data::to_serialized_record(
+  record_attributes attrs, int64_t timestamp_delta, int32_t offset_delta) && {
+    iobuf out;
+    out.reserve_memory(sizeof(attrs) + vint::max_length * 3);
+    // placeholder for the final length.
+    auto placeholder = out.reserve(vint::max_length);
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto attr = ss::cpu_to_be(attrs.value());
+    out.append(reinterpret_cast<const char*>(&attr), sizeof(attr));
+
+    bytes td = vint::to_bytes(timestamp_delta);
+    out.append(td.data(), td.size());
+
+    bytes od = vint::to_bytes(offset_delta);
+    out.append(od.data(), od.size());
+
+    out.append_fragments(std::move(_data));
+
+    bytes encoded_size = vint::to_bytes(
+      int64_t(out.size_bytes() - vint::max_length));
+
+    // Write out the size at the end of the reserved space we took at the
+    // beginning.
+    placeholder.write_end(encoded_size.data(), encoded_size.size());
+    // drop the bytes we reserved, but didn't use.
+    out.trim_front(vint::max_length - encoded_size.size());
+
+    return out;
+}
+
 } // namespace model

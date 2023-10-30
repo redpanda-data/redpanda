@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build tinygo
+//go:build wasip1 || tinygo
 
 package redpanda
 
@@ -23,13 +23,18 @@ import (
 // These are the host functions that go allows for wasm functions that are imported.
 // See: https://github.com/golang/go/issues/59149
 
+// An imported function to ensure that the broker supports this ABI version.
+//
+//go:wasmimport redpanda_transform check_abi_version_1
+func checkAbiVersion()
+
 // readRecordHeader reads all the data from the batch header into memory.
 //
-// Returns 0 upon success.
+// Returns maximum record size for the batch in bytes (which is useful
+// when you want to allocate a single buffer for the entire batch).
 //
 //go:wasmimport redpanda_transform read_batch_header
-func readRecordHeader(
-	h inputBatchHandle,
+func readBatchHeader(
 	baseOffset unsafe.Pointer,
 	recordCount unsafe.Pointer,
 	partitionLeaderEpoch unsafe.Pointer,
@@ -42,25 +47,49 @@ func readRecordHeader(
 	baseSequence unsafe.Pointer,
 ) int32
 
-// readRecord reads the record specified using the handle. The format of the data
-// written into `buf` is a single record as specified by kafka protocol's serialized
-// wire format.
+// readRecord reads the next record in the current batch.
 //
-// See: https://kafka.apache.org/documentation/#record for more information.
+// In addition to the record metadata, into `buf` the serialized the "payload"
+// of a record will be written.
+// The payload is the key, value and headers as specified by kafka's serialized
+// wire protocol. In particular, the following fields should be as included:
+//
+// keyLength: varint
+// key: byte[]
+// valueLen: varint
+// value: byte[]
+// Headers => [Header]
 //
 // Returns the amount that was written into `buf` on success, otherwise
 // returns a negative number to indicate an error.
 //
-//go:wasmimport redpanda_transform read_record
-func readRecord(h inputRecordHandle, buf unsafe.Pointer, len int32) int32
+//go:wasmimport redpanda_transform read_next_record
+func readNextRecord(
+	attributes unsafe.Pointer,
+	timestamp unsafe.Pointer,
+	offset unsafe.Pointer,
+	buf unsafe.Pointer,
+	len int32,
+) int32
 
-// writeRecord writes a new record by copying the data pointed to. The expected
-// format of `buf` is to be a record serialized according to the kafka protocol's
-// wire format.
+// writeRecord writes a new record by copying the data pointed to.
+//
+// The `buf` here is expected to be the serialized the "payload" of a record
+// as specified by kafka's serialized wire protocol. In particular, the following
+// fields should be as included:
+//
+// keyLength: varint
+// key: byte[]
+// valueLen: varint
+// value: byte[]
+// Headers => [Header]
+//
+// The record metdata such as the total length, attributes, timestamp and offset
+// should be omitted - the broker will handle adding that information as required.
 //
 // See: https://kafka.apache.org/documentation/#record for more information.
 //
 // Returns a negative number to indicate an error.
 //
 //go:wasmimport redpanda_transform write_record
-func writeRecord(buf unsafe.Pointer, len int32) int32
+func writeRecord(data unsafe.Pointer, length int32) int32

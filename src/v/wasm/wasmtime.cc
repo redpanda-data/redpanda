@@ -11,6 +11,8 @@
 #include "wasm/wasmtime.h"
 
 #include "model/record.h"
+#include "model/record_batch_reader.h"
+#include "model/timestamp.h"
 #include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
@@ -26,6 +28,7 @@
 #include "wasm/probe.h"
 #include "wasm/schema_registry_module.h"
 #include "wasm/transform_module.h"
+#include "wasm/transform_module_v2.h"
 #include "wasm/wasi.h"
 
 #include <seastar/core/align.hh>
@@ -44,7 +47,6 @@
 #include <alloca.h>
 #include <cmath>
 #include <csignal>
-#include <limits>
 #include <memory>
 #include <pthread.h>
 #include <span>
@@ -67,7 +69,7 @@ constexpr size_t max_vm_guest_stack_usage = 64_KiB;
 constexpr size_t max_host_function_stack_usage = vm_stack_size
                                                  - max_vm_guest_stack_usage
                                                  - 4_KiB;
-constexpr uint64_t fuel_amount = 1'000'000'000;
+constexpr uint64_t fuel_amount = 10'000'000'000;
 
 template<typename T, auto fn>
 struct deleter {
@@ -75,6 +77,27 @@ struct deleter {
 };
 template<typename T, auto fn>
 using handle = std::unique_ptr<T, deleter<T, fn>>;
+
+bool is_v2_abi(wasmtime_module_t* user_module) {
+    wasm_importtype_vec_t imports;
+    wasm_importtype_vec_new_empty(&imports);
+    auto _ = ss::defer([&imports]() { wasm_importtype_vec_delete(&imports); });
+    wasmtime_module_imports(user_module, &imports);
+    for (wasm_importtype_t* imprt : std::span(imports.data, imports.size)) {
+        const wasm_name_t* wasm_module_name = wasm_importtype_module(imprt);
+        std::string_view module_name{
+          wasm_module_name->data, wasm_module_name->size};
+        if (module_name != transform_module_v2::name) {
+            continue;
+        }
+        const wasm_name_t* wasm_name = wasm_importtype_name(imprt);
+        std::string_view name{wasm_name->data, wasm_name->size};
+        if (name == "check_abi_version_1") {
+            return true;
+        }
+    }
+    return false;
+}
 
 class wasmtime_runtime : public runtime {
 public:
@@ -135,6 +158,12 @@ void check_error(const wasmtime_error_t* error) {
     wasm_byte_vec_delete(&msg);
     throw wasm_exception(std::move(str), errc::load_failure);
 }
+
+wasm_trap_t* make_trap(std::exception_ptr ex) {
+    auto msg = ss::format("failure executing host function: {}", ex);
+    return wasmtime_trap_new(msg.data(), msg.size());
+};
+
 void check_trap(const wasm_trap_t* trap) {
     if (!trap) {
         return;
@@ -314,9 +343,11 @@ public:
     ~preinitialized_instance() { _cleanup_fn(); }
 
     wasmtime_instance_pre_t* get() noexcept { return _underlying.get(); }
+    bool uses_new_abi() const { return _uses_new_abi; }
 
 private:
     friend class wasmtime_runtime;
+    bool _uses_new_abi = false;
     handle<wasmtime_instance_pre_t, wasmtime_instance_pre_delete> _underlying
       = nullptr;
     ss::noncopyable_function<void() noexcept> _cleanup_fn;
@@ -343,11 +374,12 @@ public:
       , _meta(std::move(metadata))
       , _preinitialized(std::move(preinitialized))
       , _sr_module(sr)
-      , _wasi_module({_meta.name()}, make_environment_vars(_meta), logger) {}
+      , _wasi_module({_meta.name()}, make_environment_vars(_meta), logger)
+      , _transform_module_v2(&_wasi_module) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
-    wasmtime_engine(wasmtime_engine&&) = default;
-    wasmtime_engine& operator=(wasmtime_engine&&) = default;
+    wasmtime_engine(wasmtime_engine&&) = delete;
+    wasmtime_engine& operator=(wasmtime_engine&&) = delete;
     ~wasmtime_engine() override = default;
 
     uint64_t memory_usage_size_bytes() const final {
@@ -369,12 +401,12 @@ public:
         return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
     };
 
-    ss::future<> start() final {
+    ss::future<> start() override {
         co_await create_instance();
         co_await initialize_wasi();
     }
 
-    ss::future<> stop() final {
+    ss::future<> stop() override {
         // Deleting the store invalidates the instance and actually frees the
         // memory for the underlying instance.
         _store = nullptr;
@@ -412,6 +444,8 @@ public:
             return &_transform_module;
         } else if constexpr (std::is_same_v<T, schema_registry_module>) {
             return &_sr_module;
+        } else if constexpr (std::is_same_v<T, transform_module_v2>) {
+            return &_transform_module_v2;
         } else {
             static_assert(
               utils::unsupported_type<T>::value, "unsupported module");
@@ -560,7 +594,7 @@ private:
           &cb);
         if (!ok || cb.kind != WASMTIME_EXTERN_FUNC) {
             throw wasm_exception(
-              "Missing wasi initialization function", errc::user_code_failure);
+              "Missing on record callback function", errc::user_code_failure);
         }
         wasmtime_val_t result;
         std::array<wasmtime_val_t, 4> args{};
@@ -604,6 +638,8 @@ private:
           });
     }
 
+    friend class wasmtime_engine_v2;
+
     wasmtime_runtime* _runtime;
     model::transform_metadata _meta;
     ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>> _preinitialized;
@@ -611,11 +647,147 @@ private:
     transform_module _transform_module;
     schema_registry_module _sr_module;
     wasi::preview1_module _wasi_module;
+    transform_module_v2 _transform_module_v2;
 
     // The following state is only valid if there is a non-null store.
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
     wasmtime_instance_t _instance{};
     std::optional<ss::future<>> _pending_host_function;
+};
+
+class wasmtime_engine_v2 : public wasmtime_engine {
+public:
+    wasmtime_engine_v2(
+      wasmtime_runtime* runtime,
+      model::transform_metadata metadata,
+      ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>>
+        preinitialized,
+      schema_registry* sr,
+      ss::logger* logger)
+      : wasmtime_engine(
+        runtime, std::move(metadata), std::move(preinitialized), sr, logger) {}
+    wasmtime_engine_v2(const wasmtime_engine_v2&) = delete;
+    wasmtime_engine_v2& operator=(const wasmtime_engine_v2&) = delete;
+    wasmtime_engine_v2(wasmtime_engine_v2&&) = delete;
+    wasmtime_engine_v2& operator=(wasmtime_engine_v2&&) = delete;
+    ~wasmtime_engine_v2() override = default;
+
+    ss::future<> start() final {
+        _transform_module_v2.start();
+        co_await create_instance();
+        _main_task = initialize_wasi();
+        co_await _transform_module_v2.await_ready();
+    }
+
+    ss::future<> stop() final {
+        _transform_module_v2.stop(std::make_exception_ptr(
+          wasm_exception("vm was shutdown", errc::engine_shutdown)));
+        co_await std::exchange(_main_task, ss::now());
+        // Deleting the store invalidates the instance and actually frees the
+        // memory for the underlying instance.
+        _store = nullptr;
+        vassert(
+          !_pending_host_function,
+          "pending host functions should be awaited upon before stopping the "
+          "engine");
+        co_return;
+    }
+
+    ss::future<model::record_batch>
+    transform(model::record_batch batch, transform_probe* probe) override {
+        vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
+        if (batch.record_count() == 0) {
+            co_return std::move(batch);
+        }
+        if (batch.compressed()) {
+            batch = co_await storage::internal::decompress_batch(
+              std::move(batch));
+        }
+        ss::future<model::record_batch> fut = co_await ss::coroutine::as_future(
+          invoke_transform(std::move(batch), probe));
+        if (fut.failed()) {
+            probe->transform_error();
+            std::rethrow_exception(fut.get_exception());
+        }
+        co_return std::move(fut).get();
+    }
+
+private:
+    ss::future<> initialize_wasi() {
+        auto* ctx = wasmtime_store_context(_store.get());
+        wasmtime_extern_t start;
+        bool ok = wasmtime_instance_export_get(
+          ctx,
+          &_instance,
+          wasi::preview_1_start_function_name.data(),
+          wasi::preview_1_start_function_name.size(),
+          &start);
+        if (!ok || start.kind != WASMTIME_EXTERN_FUNC) {
+            throw wasm_exception(
+              "Missing wasi _start function", errc::user_code_failure);
+        }
+        vlog(wasm_log.info, "starting wasm vm {}", _meta.name());
+        std::exception_ptr ex;
+        try {
+            co_await call_host_func(ctx, &start.of.func, {}, {});
+        } catch (...) {
+            ex = std::current_exception();
+            vlog(wasm_log.warn, "wasm vm failed: {}", ex);
+        }
+        vlog(wasm_log.info, "wasm vm {} finished", _meta.name());
+        if (!ex) {
+            ex = std::make_exception_ptr(
+              wasm_exception("vm has exited", errc::engine_not_running));
+        }
+        _transform_module_v2.stop(ex);
+    }
+
+    ss::future<model::record_batch>
+    invoke_transform(model::record_batch batch, transform_probe* p) {
+        std::unique_ptr<transform_probe::hist_t::measurement> m;
+        model::record_batch_header header = batch.header().copy();
+        auto transformed = co_await _transform_module_v2.for_each_record_async(
+          std::move(batch),
+          [this, &m, p, ctx = wasmtime_store_context(_store.get())]() {
+              reset_fuel(ctx);
+              m = p->latency_measurement();
+          });
+        m = nullptr;
+
+        model::record_batch::compressed_records serialized_records;
+        int32_t i = 0;
+        for (model::transformed_data& r : transformed) {
+            serialized_records.append_fragments(
+              std::move(r).to_serialized_record(
+                model::record_attributes(),
+                /*timestamp_delta=*/0,
+                /*offset_delta=*/i++));
+        }
+
+        header.record_count = i;
+        header.size_bytes = int32_t(
+          model::packed_record_batch_header_size
+          + serialized_records.size_bytes());
+
+        // mark the batch as created with broker time
+        header.attrs.set_timestamp_type(model::timestamp_type::append_time);
+        header.first_timestamp = model::timestamp::now();
+        header.max_timestamp = header.first_timestamp;
+
+        batch = model::record_batch(
+          header,
+          std::move(serialized_records),
+          model::record_batch::tag_ctor_ng{});
+
+        // Recompute the crc
+        batch.header().crc = model::crc_record_batch(batch);
+        batch.header().header_crc = model::internal_header_only_crc(
+          batch.header());
+
+        co_return batch;
+    }
+
+    ss::future<> _main_task = ss::now();
 };
 
 // If strict stack checking is configured
@@ -744,10 +916,8 @@ private:
             do_invoke_sync_host_fn(
               host_module, &mem, {args, nargs}, {results, nresults});
             return nullptr;
-        } catch (const std::exception& e) {
-            vlog(wasm_log.warn, "Failure executing host function: {}", e);
-            std::string_view msg = e.what();
-            return wasmtime_trap_new(msg.data(), msg.size());
+        } catch (...) {
+            return make_trap(std::current_exception());
         }
     }
 
@@ -788,10 +958,7 @@ private:
         // this future and can return that it's completed.
         if (host_future_result.available()) {
             if (host_future_result.failed()) {
-                auto msg = ss::format(
-                  "Failure executing host function: {}",
-                  host_future_result.get_exception());
-                *trap_ret = wasmtime_trap_new(msg.data(), msg.size());
+                *trap_ret = make_trap(host_future_result.get_exception());
             }
             continuation->callback = [](void*) { return true; };
             return;
@@ -806,10 +973,7 @@ private:
             .then_wrapped(
               [status, trap_ret, mem = std::move(mem)](ss::future<> fut) {
                   if (fut.failed()) {
-                      auto msg = ss::format(
-                        "Failure executing host function: {}",
-                        fut.get_exception());
-                      *trap_ret = wasmtime_trap_new(msg.data(), msg.size());
+                      *trap_ret = make_trap(fut.get_exception());
                   }
                   *status = async_call_done::yes;
               }));
@@ -1037,7 +1201,7 @@ void register_wasi_module(
 #undef REG_HOST_FN
 }
 
-void register_transform_module(
+void register_transform_module_v1(
   wasmtime_linker_t* linker, const strict_stack_config& ssc) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
@@ -1047,6 +1211,19 @@ void register_transform_module(
     REG_HOST_FN(write_record);
 #undef REG_HOST_FN
 }
+
+void register_transform_module_v2(
+  wasmtime_linker_t* linker, const strict_stack_config& ssc) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define REG_HOST_FN(name)                                                      \
+    host_function<&transform_module_v2::name>::reg(linker, #name, ssc)
+    REG_HOST_FN(check_abi_version_1);
+    REG_HOST_FN(read_batch_header);
+    REG_HOST_FN(read_next_record);
+    REG_HOST_FN(write_record);
+#undef REG_HOST_FN
+}
+
 void register_sr_module(
   wasmtime_linker_t* linker, const strict_stack_config& ssc) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
@@ -1078,8 +1255,13 @@ public:
     // This can be invoked on any shard and must be thread safe.
     ss::future<ss::shared_ptr<engine>> make_engine() final {
         auto copy = co_await _preinitialized.copy();
-        co_return ss::make_shared<wasmtime_engine>(
-          _runtime, _meta, std::move(copy), _sr, _logger);
+        if (copy->uses_new_abi()) {
+            co_return ss::make_shared<wasmtime_engine_v2>(
+              _runtime, _meta, std::move(copy), _sr, _logger);
+        } else {
+            co_return ss::make_shared<wasmtime_engine>(
+              _runtime, _meta, std::move(copy), _sr, _logger);
+        }
     }
 
 private:
@@ -1238,10 +1420,16 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
             user_module_ptr};
           wasm_log.info("Finished compiling wasm module {}", meta.name);
 
+          preinitialized->_uses_new_abi = is_v2_abi(user_module.get());
+
           handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
             wasmtime_linker_new(_engine.get())};
 
-          register_transform_module(linker.get(), ssc);
+          if (preinitialized->uses_new_abi()) {
+              register_transform_module_v2(linker.get(), ssc);
+          } else {
+              register_transform_module_v1(linker.get(), ssc);
+          }
           register_sr_module(linker.get(), ssc);
           register_wasi_module(linker.get(), ssc);
 

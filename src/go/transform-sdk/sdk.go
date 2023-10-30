@@ -22,13 +22,11 @@ import (
 //
 // OnRecordWritten should be called in a package's `main` function to register the transform function that will be applied.
 func OnRecordWritten(fn OnRecordWrittenCallback) {
-	userTransformFunction = fn
+	process(fn)
 }
 
 // OnRecordWrittenCallback is a callback to transform records after a write event happens in the input topic.
 type OnRecordWrittenCallback func(e WriteEvent) ([]Record, error)
-
-var userTransformFunction OnRecordWrittenCallback = nil
 
 // WriteEvent contains information about the write that took place,
 // namely it contains the record that was written.
@@ -81,11 +79,4 @@ type Record struct {
 
 type RecordAttrs struct {
 	attr uint8
-}
-
-func (a RecordAttrs) TimestampType() int8 {
-	if a.attr&0b1000_0000 != 0 {
-		return -1
-	}
-	return int8(a.attr&0b0000_1000) >> 3
 }
