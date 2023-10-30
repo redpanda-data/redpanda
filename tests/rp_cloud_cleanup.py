@@ -3,8 +3,12 @@ import logging
 import re
 import os
 import sys
-from datetime import datetime, timedelta
+
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
+
+from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
 from rptest.services.redpanda_cloud import CloudClusterConfig, ns_name_date_fmt, \
     ns_name_prefix
@@ -25,11 +29,16 @@ def setupLogger(level):
     return root
 
 
+class FakeContext():
+    def __init__(self, globals):
+        self.globals = globals
+
+
 class CloudCleanup():
     _ns_pattern = f"{ns_name_prefix}"
     # At this point all is disabled except namespaces
-    delete_clusters = False
-    delete_peerings = False
+    delete_clusters = True
+    delete_peerings = True
     delete_networks = False
     delete_namespaces = True
 
@@ -43,6 +52,9 @@ class CloudCleanup():
         # Load config
         ducktape_globals = self.load_globals(gconfig_path)
 
+        # Prepare fake context
+        _fake_context = FakeContext(ducktape_globals)
+
         # Serialize it to class
         if "cloud_cluster" not in ducktape_globals:
             self.log.warn("# WARNING: Cloud cluster configuration "
@@ -52,6 +64,16 @@ class CloudCleanup():
 
         # Init the REST client
         self.cloudv2 = RpCloudApiClient(self.config, self.log)
+
+        # Init Cloud Cluster Utils
+        o = urlparse(self.config.oauth_url)
+        oauth_url_origin = f'{o.scheme}://{o.hostname}'
+        self.utils = CloudClusterUtils(_fake_context, self.log,
+                                       ducktape_globals['s3_access_key'],
+                                       ducktape_globals['s3_secret_key'],
+                                       self.config.provider,
+                                       self.config.api_url, oauth_url_origin,
+                                       self.config.oauth_audience)
 
     def load_globals(self, path):
         _gconfig = {}
@@ -63,43 +85,69 @@ class CloudCleanup():
             self.log.error(f"# ERROR: globals.json not found; {e}")
         return _gconfig
 
-    def _delete_peerings(self, pool, queue):
-        if not self.delete_peerings:
-            self.log.info(f"# {len(queue)} network peerings could be deleted")
-        else:
-            self.log.info(f"# Deleting {len(queue)} network peerings")
-            for r in pool.map(self.cloudv2.delete_resource, queue):
-                # TODO: Check on real peering network delete request
-                if not r:
-                    self.log.warning(f"# Network peering '{r['name']}' "
-                                     "not deleted")
+    def _delete_cluster(self, handle):
+        # Function detects cluster type and deletes it
+        _cluster = self.cloudv2.get_resource(handle)
+        _id = _cluster['id']
+        _type = _cluster['spec']['clusterType']
+        _state = _cluster['state']
+        if _type in ['FMC']:
+            # Just request deletion right away
+            return self.cloudv2.delete_resource(handle)
+        elif _type in ['BYOC']:
+            # Check status and act in steps
+            # In most cases cluisters will be in 'deleting_agent' status
+            # I.e. past 36h that we skip for namespaces,
+            # native CloudV2 cleaning will kick in and delete main cluster.
+            # Only agent would be left
 
-    def _delete_clusters(self, pool, queue):
-        if not self.delete_clusters:
-            self.log.info(f"# {len(queue)} clusters could be deleted")
-        else:
-            self.log.info(f"# Deleting {len(queue)} clusters")
-            for r in pool.map(self.cloudv2.delete_resource, queue):
-                if r['state'] != 'deleted':
-                    self.log.warning(f"# Cluster '{r['name']}' not deleted")
+            # TODO: Implement deletion on rare non-agent statuses
 
-    def _delete_networks(self, pool, queue):
-        if not self.delete_networks:
-            self.log.info(f"# {len(queue)} networks could be deleted")
-        else:
-            self.log.info(f"# Deleting {len(queue)} networks")
-            for r in pool.map(self.cloudv2.delete_resource, queue):
-                if r['state'] != 'deleted':
-                    self.log.warning(f"# Network '{r['name']}' not deleted")
+            if _state in ['deleting_agent']:
+                # Login
+                try:
+                    self.log.info(f"-> {handle} -> cloud login")
+                    out = self.utils.rpk_cloud_login(
+                        self.config.oauth_client_id,
+                        self.config.oauth_client_secret)
+                except Exception as e:
+                    self.log.error(
+                        f"# ERROR: failed to login as '{self.config.oauth_client_id}'"
+                    )
+                    return False
 
-    def _delete_namespaces(self, pool, queue):
-        if not self.delete_namespaces:
-            self.log.info(f"# {len(queue)} namespaces could be deleted")
+                # Delete agent
+                try:
+                    self.log.info(f"-> {handle} -> delete agent")
+                    out = self.utils.rpk_cloud_agent_delete(_id)
+                except Exception as e:
+                    self.log.error(
+                        f"# ERROR: failed to delete agent for cluster '{_id}'")
+                    return False
+                # All good
+                return True
+            else:
+                self.log.warning(
+                    f"# WARNING: Cluster deletion with status '{_state}' not yet implemented"
+                )
         else:
-            self.log.info(f"# Deleting {len(queue)} namespaces")
-            for r in pool.map(self.cloudv2.delete_resource, queue):
-                if not r['deleted']:
-                    self.log.warning(f"# Namespace '{r['name']}' not deleted")
+            self.log.warning(f"# WARNING: Cloud type not supported: '{_type}'")
+            return False
+
+    def _pooled_delete(self, pool, resource_name, func, queue):
+        _c = len(queue)
+        if _c < 1:
+            self.log.info(f"# {resource_name}: nothing to delete")
+            return
+        else:
+            self.log.info(f"# {resource_name}: amount to cleanup {_c}")
+            for r in pool.map(func, queue):
+                if isinstance(r, bool):
+                    if not r:
+                        self.log.warning(f"# {resource_name}: not deleted")
+                else:
+                    self.log.debug("  output:\n{r}")
+            return
 
     def clean_namespaces(self):
         """
@@ -185,18 +233,35 @@ class CloudCleanup():
         # Deletion can be done only in this order:
         # Peerings - > clusters -> networks -> namespaces
         pool = ThreadPoolExecutor(max_workers=5)
-
+        self.log.info("\n\n# Cleaning up")
         # Delete network peerings
-        self._delete_peerings(pool, npr_queue)
+        if not self.delete_peerings:
+            self.log.info(
+                f"# {len(npr_queue)} network peerings could be deleted")
+        else:
+            self._pooled_delete(pool, "Network peerings",
+                                self.cloudv2.delete_resource, npr_queue)
 
         # Delete clusters
-        self._delete_clusters(pool, cl_queue)
+        if not self.delete_clusters:
+            self.log.info(f"# {len(cl_queue)} clusters could be deleted")
+        else:
+            self._pooled_delete(pool, "Clusters", self._delete_cluster,
+                                cl_queue)
 
         # Delete orphaned networks
-        self._delete_networks(pool, net_queue)
+        if not self.delete_networks:
+            self.log.info(f"# {len(net_queue)} networks could be deleted")
+        else:
+            self._pooled_delete(pool, "Networks", self.cloudv2.delete_resource,
+                                net_queue)
 
         # Delete namespaces
-        self._delete_namespaces(pool, ns_queue)
+        if not self.delete_namespaces:
+            self.log.info(f"# {len(ns_queue)} namespaces could be deleted")
+        else:
+            self._pooled_delete(pool, "Namespaces",
+                                self.cloudv2.delete_resource, ns_queue)
 
         # Cleanup thread resources
         pool.shutdown()

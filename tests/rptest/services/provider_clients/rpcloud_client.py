@@ -161,6 +161,15 @@ class RpCloudApiClient(object):
         _network = self._http_get(self.network_endpoint(id=network_id))
         return _network
 
+    def get_resource(self, resource_handle):
+        try:
+            _r = self._http_get(endpoint=resource_handle)
+            self._logger.debug(
+                f"...resource requested with '{resource_handle}'")
+        except Exception as e:
+            self.log.warning(f"# Warning failed to get resource: {e}")
+        return _r
+
     def delete_namespace(self, uuid):
         _r = self._http_delete(endpoint=self.namespace_endpoint(uuid=uuid))
         # Check status
@@ -172,4 +181,5 @@ class RpCloudApiClient(object):
             self._logger.debug(f"...delete requested for '{resource_handle}'")
         except Exception as e:
             self.log.warning(f"# Warning deletion failed: {e}")
+            return False
         return _r

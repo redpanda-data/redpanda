@@ -83,7 +83,7 @@ class CloudClusterUtils:
 
     def rpk_cloud_login(self, client_id, client_secret):
         # perform cloud login
-        self.logger.info("Loggin in to cloud cluster")
+        self.logger.debug(f"...[{client_id}] Loggin in to cloud cluster")
         cmd = self._get_rpk_cloud_cmd()
         cmd += [
             "login", "--save", f"--client-id={client_id}",
@@ -132,7 +132,7 @@ class CloudClusterUtils:
         return False
 
     def rpk_cloud_agent_delete(self, cluster_id):
-        self.logger.info("Destroying cluster agent")
+        self.logger.debug(f"...[{cluster_id}] destroying cluster agent")
         cmd = self._get_rpk_cloud_cmd()
         cmd += [
             "byoc", self.provider, "destroy", f"--redpanda-id={cluster_id}"
