@@ -60,14 +60,14 @@ struct batch_transform_context {
  * This provides an ABI to WASM guests, as well as the mechanism for
  * guest<->host interactions (such as how we call into a wasm host and when).
  */
-class transform_module_v2 {
+class transform_module {
 public:
-    explicit transform_module_v2(wasi::preview1_module*);
-    transform_module_v2(const transform_module_v2&) = delete;
-    transform_module_v2(transform_module_v2&&) = delete;
-    transform_module_v2& operator=(const transform_module_v2&) = delete;
-    transform_module_v2& operator=(transform_module_v2&&) = delete;
-    ~transform_module_v2() = default;
+    explicit transform_module(wasi::preview1_module*);
+    transform_module(const transform_module&) = delete;
+    transform_module(transform_module&&) = delete;
+    transform_module& operator=(const transform_module&) = delete;
+    transform_module& operator=(transform_module&&) = delete;
+    ~transform_module() = default;
 
     static constexpr std::string_view name = "redpanda_transform";
 

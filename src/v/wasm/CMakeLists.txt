@@ -11,7 +11,7 @@ v_cc_library(
     probe.cc
     schema_registry.cc
     schema_registry_module.cc
-    transform_module_v2.cc
+    transform_module.cc
     wasi.cc
     wasmtime.cc
     cache.cc

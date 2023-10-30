@@ -27,7 +27,7 @@
 #include "wasm/logger.h"
 #include "wasm/probe.h"
 #include "wasm/schema_registry_module.h"
-#include "wasm/transform_module_v2.h"
+#include "wasm/transform_module.h"
 #include "wasm/wasi.h"
 
 #include <seastar/core/align.hh>
@@ -421,7 +421,7 @@ public:
     T* get_module() noexcept {
         if constexpr (std::is_same_v<T, wasi::preview1_module>) {
             return &_wasi_module;
-        } else if constexpr (std::is_same_v<T, transform_module_v2>) {
+        } else if constexpr (std::is_same_v<T, transform_module>) {
             return &_transform_module;
         } else if constexpr (std::is_same_v<T, schema_registry_module>) {
             return &_sr_module;
@@ -623,7 +623,7 @@ private:
 
     schema_registry_module _sr_module;
     wasi::preview1_module _wasi_module;
-    transform_module_v2 _transform_module;
+    transform_module _transform_module;
 
     // The following state is only valid if there is a non-null store.
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
@@ -1043,11 +1043,11 @@ void register_wasi_module(
 #undef REG_HOST_FN
 }
 
-void register_transform_module_v2(
+void register_transform_module(
   wasmtime_linker_t* linker, const strict_stack_config& ssc) {
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
-    host_function<&transform_module_v2::name>::reg(linker, #name, ssc)
+    host_function<&transform_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(check_abi_version_1);
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_next_record);
@@ -1249,7 +1249,7 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
           handle<wasmtime_linker_t, wasmtime_linker_delete> linker{
             wasmtime_linker_new(_engine.get())};
 
-          register_transform_module_v2(linker.get(), ssc);
+          register_transform_module(linker.get(), ssc);
           register_sr_module(linker.get(), ssc);
           register_wasi_module(linker.get(), ssc);
 

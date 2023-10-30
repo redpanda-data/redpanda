@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "wasm/transform_module_v2.h"
+#include "wasm/transform_module.h"
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
@@ -36,11 +36,11 @@ namespace wasm {
 constexpr int32_t NO_ACTIVE_TRANSFORM = -1;
 constexpr int32_t INVALID_BUFFER = -2;
 
-transform_module_v2::transform_module_v2(wasi::preview1_module* m)
+transform_module::transform_module(wasi::preview1_module* m)
   : _wasi_module(m) {}
 
 ss::future<ss::chunked_fifo<model::transformed_data>>
-transform_module_v2::for_each_record_async(
+transform_module::for_each_record_async(
   model::record_batch input, ss::noncopyable_function<void()> cb) {
     vassert(
       input.header().attrs.compression() == model::compression::none,
@@ -92,13 +92,13 @@ transform_module_v2::for_each_record_async(
     co_return std::move(result->output_data);
 }
 
-void transform_module_v2::check_abi_version_1() {
+void transform_module::check_abi_version_1() {
     // This function does nothing at runtime, it's only an opportunity for
     // static analysis of the module to determine which ABI version to use.
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-ss::future<int32_t> transform_module_v2::read_batch_header(
+ss::future<int32_t> transform_module::read_batch_header(
   int64_t* base_offset,
   int32_t* record_count,
   int32_t* partition_leader_epoch,
@@ -136,7 +136,7 @@ ss::future<int32_t> transform_module_v2::read_batch_header(
     co_return _call_ctx->max_input_record_size;
 }
 
-ss::future<int32_t> transform_module_v2::read_next_record(
+ss::future<int32_t> transform_module::read_next_record(
   uint8_t* attributes,
   int64_t* timestamp,
   model::offset* offset,
@@ -181,7 +181,7 @@ ss::future<int32_t> transform_module_v2::read_next_record(
     co_return int32_t(record.payload_size);
 }
 
-int32_t transform_module_v2::write_record(ffi::array<uint8_t> buf) {
+int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!_call_ctx) {
         return NO_ACTIVE_TRANSFORM;
     }
@@ -195,12 +195,12 @@ int32_t transform_module_v2::write_record(ffi::array<uint8_t> buf) {
     return int32_t(buf.size());
 }
 
-void transform_module_v2::start() {
+void transform_module::start() {
     _guest_cond_var.emplace();
     _host_cond_var.emplace();
 }
 
-void transform_module_v2::stop(const std::exception_ptr& ex) {
+void transform_module::stop(const std::exception_ptr& ex) {
     if (_guest_cond_var) {
         _guest_cond_var->broken(ex);
     }
@@ -209,17 +209,15 @@ void transform_module_v2::stop(const std::exception_ptr& ex) {
     }
 }
 
-ss::future<> transform_module_v2::host_wait_for_proccessing() {
+ss::future<> transform_module::host_wait_for_proccessing() {
     _guest_cond_var->signal();
     return _host_cond_var->wait();
 }
 
-ss::future<> transform_module_v2::guest_wait_for_batch() {
+ss::future<> transform_module::guest_wait_for_batch() {
     _host_cond_var->signal();
     return _guest_cond_var->wait();
 }
 
-ss::future<> transform_module_v2::await_ready() {
-    return _host_cond_var->wait();
-}
+ss::future<> transform_module::await_ready() { return _host_cond_var->wait(); }
 } // namespace wasm
