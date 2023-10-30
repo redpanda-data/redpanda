@@ -385,9 +385,10 @@ public:
     }
 
     ss::future<> stop() final {
+        ss::future<> main = std::exchange(_main_task, ss::now());
         _transform_module.stop(std::make_exception_ptr(
           wasm_exception("vm was shutdown", errc::engine_shutdown)));
-        co_await std::exchange(_main_task, ss::now());
+        co_await std::move(main);
         // Deleting the store invalidates the instance and actually frees the
         // memory for the underlying instance.
         _store = nullptr;
@@ -562,7 +563,16 @@ private:
             co_await call_host_func(ctx, &start.of.func, {}, {});
         } catch (...) {
             ex = std::current_exception();
-            vlog(wasm_log.warn, "wasm vm failed: {}", ex);
+            // In the stop method, _main_task is exchanged for a ready future,
+            // this means that're shutting down and we expect the VM to be
+            // shutdown, so prevent the log spam in this case.
+            //
+            // In reality it'd be better if we could plumb some custom data
+            // through the wasm runtime host errors for this. But we can't do
+            // that at the moment.
+            if (!_main_task.available()) {
+                vlog(wasm_log.warn, "wasm vm failed: {}", ex);
+            }
         }
         vlog(wasm_log.info, "wasm vm {} finished", _meta.name());
         if (!ex) {
