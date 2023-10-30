@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaInstaller
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
@@ -19,14 +19,12 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 import random
+import time
 
 
 class ControllerSnapshotPolicyTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args,
-                         num_brokers=3,
-                         extra_rp_conf={'controller_snapshot_max_age_sec': 5},
-                         **kwargs)
+        super().__init__(*args, num_brokers=3, **kwargs)
 
     def setUp(self):
         # start the nodes manually
@@ -38,6 +36,7 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
         Test that Redpanda creates a controller snapshot some time after controller commands appear.
         """
         admin = Admin(self.redpanda)
+        self.redpanda.set_extra_rp_conf({'controller_snapshot_max_age_sec': 5})
         self.redpanda.start()
         self.redpanda.set_feature_active('controller_snapshots',
                                          False,
@@ -65,6 +64,41 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
             mtime, start_offset = node_idx2snapshot_info[self.redpanda.idx(n)]
             self.redpanda.wait_for_controller_snapshot(
                 n, prev_mtime=mtime, prev_start_offset=start_offset)
+
+    @cluster(num_nodes=3)
+    def test_upgrade_auto_enable(self):
+        """
+        Test that redpanda will auto-enable snapshots even for clusters created with 23.1
+        """
+
+        installer = self.redpanda._installer
+
+        installer.install(self.redpanda.nodes, (23, 1))
+        self.redpanda.start()
+
+        # 23.2.x version that only enables the feature for new clusters
+        installer.install(self.redpanda.nodes, (23, 2, 14))
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_for_membership(first_start=False)
+
+        self.redpanda.set_cluster_config(
+            {'controller_snapshot_max_age_sec': 5})
+        RpkTool(self.redpanda).create_topic('test')
+
+        # check that controller snapshots are still disabled
+        time.sleep(10)
+        admin = Admin(self.redpanda)
+        for n in self.redpanda.nodes:
+            controller_status = admin.get_controller_status(n)
+            assert controller_status['start_offset'] == 0
+
+        # check that after we upgrade to 23.3, snapshots are automatically enabled
+        installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_for_membership(first_start=False)
+
+        for n in self.redpanda.nodes:
+            self.redpanda.wait_for_controller_snapshot(n)
 
 
 class ControllerState:
