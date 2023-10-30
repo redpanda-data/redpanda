@@ -69,15 +69,6 @@ private:
 };
 
 /**
- * Initialize the memory groups for **this core**.
- *
- * Initializing memory groups reads from cluster configuration values that can
- * change, but require a restart to take effect, so we read and lock in the
- * configuration values when initializing memory groups.
- */
-void initialize_memory_groups();
-
-/**
- * Grab the shard local, initialized on startup, system memory groups.
+ * Grab the shard local, lazily initialized, system memory groups.
  */
 system_memory_groups& memory_groups();

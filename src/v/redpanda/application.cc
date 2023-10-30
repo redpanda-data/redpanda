@@ -428,7 +428,10 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<YAML::Node> audit_log_client_cfg,
   std::optional<scheduling_groups> groups) {
-    ss::smp::invoke_on_all(&initialize_memory_groups).get();
+    ss::smp::invoke_on_all([] {
+        // initialize memory groups now that our configuration is loaded
+        memory_groups();
+    }).get();
     construct_service(
       _memory_sampling, std::ref(_log), ss::sharded_parameter([]() {
           return config::shard_local_cfg().sampled_memory_profile.bind();

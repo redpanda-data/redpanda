@@ -42,22 +42,6 @@ struct memory_shares {
     }
 };
 
-system_memory_groups& core_local_memory_groups() {
-    static thread_local std::optional<system_memory_groups> groups;
-    if (!groups) {
-        size_t total = ss::memory::stats().total_memory();
-        bool wasm = wasm_enabled();
-        if (wasm) {
-            size_t wasm_memory_reservation
-              = config::shard_local_cfg()
-                  .wasm_per_core_memory_reservation.value();
-            total -= wasm_memory_reservation;
-        }
-        groups.emplace(total, wasm);
-    }
-    return *groups;
-}
-
 } // namespace
 
 system_memory_groups::system_memory_groups(
@@ -108,6 +92,18 @@ size_t system_memory_groups::total_memory() const {
     return _total_system_memory;
 }
 
-void initialize_memory_groups() { core_local_memory_groups(); }
-
-system_memory_groups& memory_groups() { return core_local_memory_groups(); }
+system_memory_groups& memory_groups() {
+    static thread_local std::optional<system_memory_groups> groups;
+    if (!groups) {
+        size_t total = ss::memory::stats().total_memory();
+        bool wasm = wasm_enabled();
+        if (wasm) {
+            size_t wasm_memory_reservation
+              = config::shard_local_cfg()
+                  .wasm_per_core_memory_reservation.value();
+            total -= wasm_memory_reservation;
+        }
+        groups.emplace(total, wasm);
+    }
+    return *groups;
+}
