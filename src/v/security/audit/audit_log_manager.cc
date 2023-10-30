@@ -15,6 +15,7 @@
 #include "kafka/client/config_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "security/acl.h"
+#include "security/audit/client_probe.h"
 #include "security/audit/logger.h"
 #include "security/ephemeral_credential_store.h"
 #include "storage/parser_utils.h"
@@ -37,8 +38,6 @@ static const security::acl_principal audit_principal{
 /// on the value of the global audit toggle config option (audit_enabled)
 class audit_client {
 public:
-    static const auto shard_id = ss::shard_id{0};
-
     audit_client(cluster::controller*, kafka::client::configuration&);
 
     /// Initializes the client (with all necessary auth) and connects to the
@@ -53,7 +52,8 @@ public:
 
     /// Produces to the audit topic, internal partitioner assigns partitions
     /// to the batches provided. Blocks if semaphore is exhausted.
-    ss::future<> produce(std::vector<kafka::client::record_essence>);
+    ss::future<>
+    produce(std::vector<kafka::client::record_essence>, audit_probe& probe);
 
     bool is_initialized() const { return _is_initialized; }
 
@@ -70,9 +70,11 @@ private:
     ss::abort_source _as;
     ss::gate _gate;
     bool _is_initialized{false};
+    size_t _max_buffer_size;
     ssx::semaphore _send_sem;
     kafka::client::client _client;
     cluster::controller* _controller;
+    std::unique_ptr<client_probe> _probe;
 };
 
 /// Allocated only on the shard responsible for owning the kafka client, its
@@ -124,9 +126,8 @@ private:
 
 audit_client::audit_client(
   cluster::controller* controller, kafka::client::configuration& client_config)
-  : _send_sem(
-    config::shard_local_cfg().audit_client_max_buffer_size(),
-    "audit_log_producer_semaphore")
+  : _max_buffer_size(config::shard_local_cfg().audit_client_max_buffer_size())
+  , _send_sem(_max_buffer_size, "audit_log_producer_semaphore")
   , _client(
       config::to_yaml(client_config, config::redact_secrets::no),
       [this](std::exception_ptr eptr) { return mitigate_error(eptr); })
@@ -146,6 +147,13 @@ ss::future<> audit_client::initialize() {
         auto next = backoff_policy.next_backoff();
         co_await ss::sleep_abortable(base_backoff * next, _as)
           .handle_exception_type([](const ss::sleep_aborted&) {});
+    }
+    if (_is_initialized) {
+        _probe = std::make_unique<client_probe>();
+        _probe->setup_metrics([this]() {
+            return 1.0
+                   - (static_cast<double>(_send_sem.available_units()) / static_cast<double>(_max_buffer_size));
+        });
     }
 }
 
@@ -303,10 +311,11 @@ ss::future<> audit_client::shutdown() {
     _send_sem.broken();
     co_await _client.stop();
     co_await _gate.close();
+    _probe.reset(nullptr);
 }
 
-ss::future<>
-audit_client::produce(std::vector<kafka::client::record_essence> records) {
+ss::future<> audit_client::produce(
+  std::vector<kafka::client::record_essence> records, audit_probe& probe) {
     /// TODO: Produce with acks=1, atm -1 is hardcoded into client
     const auto records_size = [](const auto& records) {
         std::size_t size = 0;
@@ -326,12 +335,21 @@ audit_client::produce(std::vector<kafka::client::record_essence> records) {
         ssx::spawn_with_gate(
           _gate,
           [this,
+           &probe,
            units = std::move(units),
            records = std::move(records)]() mutable {
               return _client
                 .produce_records(
                   model::kafka_audit_logging_topic, std::move(records))
                 .discard_result()
+                .then_wrapped([&probe](ss::future<> fut) {
+                    if (fut.failed()) {
+                        probe.audit_error();
+                    } else {
+                        probe.audit_event();
+                    }
+                    return fut;
+                })
                 .handle_exception_type(
                   [](const kafka::client::partition_error& ex) {
                       /// TODO: Possible optimization to retry with different
@@ -380,7 +398,7 @@ audit_sink::produce(std::vector<kafka::client::record_essence> records) {
     /// No locks/gates since the calls to this method are done in controlled
     /// context of other synchronization primitives
     vassert(_client, "produce() called on a null client");
-    co_await _client->produce(std::move(records));
+    co_await _client->produce(std::move(records), _audit_mgr->probe());
 }
 
 void audit_sink::toggle(bool enabled) {
@@ -446,7 +464,7 @@ audit_log_manager::audit_log_manager(
       config::shard_local_cfg().audit_enabled_event_types.bind())
   , _controller(controller)
   , _config(client_config) {
-    if (ss::this_shard_id() == audit_client::shard_id) {
+    if (ss::this_shard_id() == client_shard_id) {
         _sink = std::make_unique<audit_sink>(this, controller, client_config);
     }
 
@@ -455,11 +473,12 @@ audit_log_manager::audit_log_manager(
             return ss::get_units(_active_drain, 1)
               .then([this](auto units) mutable {
                   return drain()
-                    .handle_exception([](std::exception_ptr e) {
+                    .handle_exception([&probe = probe()](std::exception_ptr e) {
                         vlog(
                           adtlog.warn,
                           "Exception in audit_log_manager fiber: {}",
                           e);
+                        probe.audit_error();
                     })
                     .finally([this, units = std::move(units)] {
                         _drain_timer.arm(_queue_drain_interval_ms());
@@ -480,7 +499,12 @@ bool audit_log_manager::is_audit_event_enabled(event_type event_type) const {
 }
 
 ss::future<> audit_log_manager::start() {
-    if (ss::this_shard_id() != audit_client::shard_id) {
+    _probe = std::make_unique<audit_probe>();
+    _probe->setup_metrics([this] {
+        return static_cast<double>(pending_events())
+               / static_cast<double>(_max_queue_elements_per_shard());
+    });
+    if (ss::this_shard_id() != client_shard_id) {
         co_return;
     }
     _audit_enabled.watch([this] {
@@ -505,7 +529,7 @@ ss::future<> audit_log_manager::start() {
 ss::future<> audit_log_manager::stop() {
     _drain_timer.cancel();
     _as.request_abort();
-    if (ss::this_shard_id() == audit_client::shard_id) {
+    if (ss::this_shard_id() == client_shard_id) {
         vlog(adtlog.info, "Shutting down audit log manager");
         co_await _sink->stop();
     }
@@ -513,6 +537,7 @@ ss::future<> audit_log_manager::stop() {
         /// Gate may already be closed if ::pause() had been called
         co_await _gate.close();
     }
+    _probe.reset(nullptr);
     if (_queue.size() > 0) {
         vlog(
           adtlog.debug,
@@ -543,7 +568,7 @@ ss::future<> audit_log_manager::resume() {
 
 bool audit_log_manager::is_client_enabled() const {
     vassert(
-      ss::this_shard_id() == audit_client::shard_id,
+      ss::this_shard_id() == client_shard_id,
       "Must be called on audit client shard");
     return _sink->is_enabled();
 }
@@ -554,6 +579,7 @@ bool audit_log_manager::do_enqueue_audit_event(
     auto it = map.find(msg->key());
     if (it == map.end()) {
         if (_queue.size() >= _max_queue_elements_per_shard()) {
+            probe().audit_error();
             return false;
         }
         auto& list = _queue.get<underlying_list>();
@@ -594,7 +620,7 @@ ss::future<> audit_log_manager::drain() {
     /// backpressure here, and the \ref _queue will begin to fill closer to
     /// capacity. When it hits capacity, enqueue_audit_event() will block.
     co_await container().invoke_on(
-      audit_client::shard_id,
+      client_shard_id,
       [recs = std::move(essences)](audit_log_manager& mgr) mutable {
           return mgr._sink->produce(std::move(recs));
       });
