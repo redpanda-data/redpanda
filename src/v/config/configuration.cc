@@ -1811,6 +1811,14 @@ configuration::configuration()
       "violations. Normally, this options should be disabled.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , cloud_storage_disable_metadata_consistency_checks(
+      *this,
+      "cloud_storage_disable_metadata_consistency_checks",
+      "Disable all metadata consistency checks. This will allow redpanda to "
+      "replay logs with inconsistent tiered-storage metadata. Normally, this "
+      "option should be disabled.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
