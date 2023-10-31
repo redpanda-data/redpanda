@@ -28,7 +28,7 @@ public:
     void SetUp() override {
         ss::shared_ptr<wasm::engine> engine
           = ss::make_shared<testing::fake_wasm_engine>();
-        auto src = std::make_unique<testing::fake_source>(_offset);
+        auto src = std::make_unique<testing::fake_source>();
         _src = src.get();
         auto sink = std::make_unique<testing::fake_sink>();
         std::vector<std::unique_ptr<transform::sink>> sinks;
@@ -52,7 +52,7 @@ public:
 
     model::record_batch make_tiny_batch() {
         return model::test::make_random_batch(model::test::record_batch_spec{
-          .offset = kafka::offset_cast(_offset++),
+          .offset = kafka::offset_cast(++_offset),
           .allow_compression = false,
           .count = 1});
     }
@@ -62,8 +62,13 @@ public:
     model::record_batch read_batch() { return _sinks[0]->read().get(); }
     uint64_t error_count() const { return _error_count; }
 
+    void restart() {
+        _p->stop().get();
+        _p->start().get();
+    }
+
 private:
-    static constexpr kafka::offset start_offset = kafka::offset(9);
+    static constexpr kafka::offset start_offset = kafka::offset(0);
 
     kafka::offset _offset = start_offset;
     std::unique_ptr<transform::processor> _p;
