@@ -38,6 +38,7 @@ import (
 const (
 	NoneConstantString = "none"
 	FinalizerKey       = "operator.redpanda.com/finalizer"
+	revisionPath       = "/revision"
 )
 
 // These are for convenience when doing log.V(...) to log at a particular level. They correspond to the logr
@@ -229,7 +230,7 @@ func (r *TopicReconciler) reconcile(ctx context.Context, topic *v1alpha1.Topic, 
 func (r *TopicReconciler) successfulTopicReconciliation(topic *v1alpha1.Topic) *v1alpha1.Topic {
 	if r.EventRecorder != nil {
 		r.EventRecorder.AnnotatedEventf(topic,
-			map[string]string{v2.GroupVersion.Group + "/revision": topic.ResourceVersion},
+			map[string]string{v2.GroupVersion.Group + revisionPath: topic.ResourceVersion},
 			corev1.EventTypeNormal, v1alpha1.EventTopicSynced, "configuration synced")
 	}
 	return v1alpha1.TopicReady(topic)
@@ -358,7 +359,7 @@ func (r *TopicReconciler) alterTopicConfiguration(ctx context.Context, topic *v1
 	if len(configs) == 0 {
 		if r.EventRecorder != nil {
 			r.EventRecorder.AnnotatedEventf(topic,
-				map[string]string{v2.GroupVersion.Group + "/revision": topic.ResourceVersion},
+				map[string]string{v2.GroupVersion.Group + revisionPath: topic.ResourceVersion},
 				corev1.EventTypeNormal, v1alpha1.EventTopicAlreadySynced, "configuration not changed")
 		}
 		return nil
@@ -575,7 +576,7 @@ func (r *TopicReconciler) recordErrorEvent(err error, topic *v1alpha1.Topic, eve
 		copy(eventArgs, args)
 		eventArgs = append(eventArgs, err.Error())
 		r.EventRecorder.AnnotatedEventf(topic,
-			map[string]string{v2.GroupVersion.Group + "/revision": topic.ResourceVersion},
+			map[string]string{v2.GroupVersion.Group + revisionPath: topic.ResourceVersion},
 			corev1.EventTypeWarning, eventType, fmt.Sprintf(message+": %s", eventArgs))
 	}
 	args = append(args, err)

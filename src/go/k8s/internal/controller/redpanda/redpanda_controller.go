@@ -42,6 +42,8 @@ const (
 
 	resourceTypeHelmRepository = "HelmRepository"
 	resourceTypeHelmRelease    = "HelmRelease"
+
+	managedPath = "/managed"
 )
 
 // RedpandaReconciler reconciles a Redpanda object
@@ -524,7 +526,7 @@ func helmChartRequiresUpdate(template, chart *helmv2beta1.HelmChartTemplate) boo
 func isRedpandaManaged(ctx context.Context, redpandaCluster *v1alpha1.Redpanda) bool {
 	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.isRedpandaManaged")
 
-	managedAnnotationKey := v1alpha1.GroupVersion.Group + "/managed"
+	managedAnnotationKey := v1alpha1.GroupVersion.Group + managedPath
 	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == NotManaged {
 		log.Info(fmt.Sprintf("management is disabled; to enable it, change the '%s' annotation to true or remove it", managedAnnotationKey))
 		return false
