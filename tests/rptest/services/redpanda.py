@@ -3156,6 +3156,7 @@ class RedpandaService(RedpandaServiceBase):
                 dict(http_authentication=self._security.http_authentication))
 
         conf_yaml = yaml.dump(conf)
+        self.logger.debug(conf_yaml)
         for node in self.nodes:
             self.logger.info(
                 "Writing bootstrap cluster config file {}:{}".format(

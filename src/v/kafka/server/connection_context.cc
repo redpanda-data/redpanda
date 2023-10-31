@@ -244,7 +244,12 @@ connection_context::record_tp_and_calculate_throttle(
     snc_quota_manager::delays_t shard_delays;
     if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
         _server.snc_quota_mgr().get_or_create_quota_context(
-          _snc_quota_context, hdr.client_id);
+          _snc_quota_context,
+          hdr.client_id,
+          _sasl ? std::make_optional(std::cref(_sasl->principal()))
+                : std::nullopt,
+          _client_addr,
+          client_port());
         _server.snc_quota_mgr().record_request_receive(
           *_snc_quota_context, request_size, now);
         shard_delays = _server.snc_quota_mgr().get_shard_delays(
@@ -263,7 +268,7 @@ connection_context::record_tp_and_calculate_throttle(
       || delay_request != clock::duration::zero()) {
         vlog(
           klog.trace,
-          "[{}:{}] throttle request:{{snc:{}, client:{}}}, "
+          "{}:{} throttle request:{{snc:{}, client:{}}}, "
           "enforce:{{snc:{}, client:{}}}, key:{}, request_size:{}",
           _client_addr,
           client_port(),
@@ -367,8 +372,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
         // snc_quota_mgr().get_or_create_quota_context() in
         // record_tp_and_calculate_throttle(), but there is possibility
         // that the changing configuration could still take us into this
-        // branch with unmatching (and even null) _snc_quota_context.
-        // Simply an unmatching _snc_quota_context is no big deal because
+        // branch with nonmatching (and even null) _snc_quota_context.
+        // Simply an nonmatching _snc_quota_context is no big deal because
         // it is a one off event, but we need protection from it being
         // nullptr
         if (likely(_snc_quota_context)) {
