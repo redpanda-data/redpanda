@@ -26,18 +26,19 @@ ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
 ss::future<model::record_batch> fake_sink::read() {
     return _batches.pop_eventually();
 }
-ss::future<model::offset> fake_source::load_latest_offset() {
+ss::future<kafka::offset> fake_source::load_latest_offset() {
     co_return _latest_offset;
 }
 ss::future<model::record_batch_reader>
-fake_source::read_batch(model::offset offset, ss::abort_source* as) {
+fake_source::read_batch(kafka::offset offset, ss::abort_source* as) {
     EXPECT_EQ(offset, _latest_offset);
     if (!_batches.empty()) {
         model::record_batch_reader::data_t batches;
         while (!_batches.empty()) {
             batches.push_back(_batches.pop());
         }
-        _latest_offset = model::next_offset(batches.back().last_offset());
+        _latest_offset = model::offset_cast(
+          model::next_offset(batches.back().last_offset()));
         co_return model::make_memory_record_batch_reader(std::move(batches));
     }
     auto sub = as->subscribe(
@@ -51,7 +52,8 @@ fake_source::read_batch(model::offset offset, ss::abort_source* as) {
           std::make_exception_ptr(ss::abort_requested_exception()));
     }
     auto batch = co_await _batches.pop_eventually();
-    _latest_offset = model::next_offset(batch.last_offset());
+    _latest_offset = model::offset_cast(
+      model::next_offset(batch.last_offset()));
     sub->unlink();
     co_return model::make_memory_record_batch_reader(std::move(batch));
 }

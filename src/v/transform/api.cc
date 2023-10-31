@@ -17,6 +17,7 @@
 #include "cluster/types.h"
 #include "features/feature_table.h"
 #include "kafka/server/replicated_partition.h"
+#include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
@@ -79,20 +80,20 @@ public:
     explicit partition_source(kafka::partition_proxy p)
       : _partition(std::move(p)) {}
 
-    ss::future<model::offset> load_latest_offset() final {
+    ss::future<kafka::offset> load_latest_offset() final {
         auto result = _partition.last_stable_offset();
         if (result.has_error()) {
             throw std::runtime_error(
               kafka::make_error_code(result.error()).message());
         }
-        co_return result.value();
+        co_return model::offset_cast(result.value());
     }
 
     ss::future<model::record_batch_reader>
-    read_batch(model::offset offset, ss::abort_source* as) final {
+    read_batch(kafka::offset offset, ss::abort_source* as) final {
         auto translater = co_await _partition.make_reader(
           storage::log_reader_config(
-            /*start_offset=*/offset,
+            /*start_offset=*/kafka::offset_cast(offset),
             /*max_offset=*/model::offset::max(),
             /*prio=*/wasm_read_priority(),
             /*as=*/*as));

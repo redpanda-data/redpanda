@@ -52,7 +52,9 @@ public:
 
     model::record_batch make_tiny_batch() {
         return model::test::make_random_batch(model::test::record_batch_spec{
-          .offset = _offset++, .allow_compression = false, .count = 1});
+          .offset = kafka::offset_cast(_offset++),
+          .allow_compression = false,
+          .count = 1});
     }
     void push_batch(model::record_batch batch) {
         _src->push_batch(std::move(batch)).get();
@@ -61,9 +63,9 @@ public:
     uint64_t error_count() const { return _error_count; }
 
 private:
-    static constexpr model::offset start_offset = model::offset(9);
+    static constexpr kafka::offset start_offset = kafka::offset(9);
 
-    model::offset _offset = start_offset;
+    kafka::offset _offset = start_offset;
     std::unique_ptr<transform::processor> _p;
     testing::fake_source* _src;
     std::vector<testing::fake_sink*> _sinks;

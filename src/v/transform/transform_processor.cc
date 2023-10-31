@@ -37,15 +37,18 @@ public:
       , _probe(probe) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-        _last_offset = b.last_offset();
+        // This is a "safe" cast as all our offsets come from the translating
+        // reader, but we don't have a seperate type for kafka::record_batch vs
+        // model::record_batch.
+        _last_offset = model::offset_cast(b.last_offset());
         _probe->increment_read_bytes(b.size_bytes());
         co_await _output->push_eventually(std::move(b));
         co_return ss::stop_iteration::no;
     }
-    std::optional<model::offset> end_of_stream() const { return _last_offset; }
+    std::optional<kafka::offset> end_of_stream() const { return _last_offset; }
 
 private:
-    std::optional<model::offset> _last_offset;
+    std::optional<kafka::offset> _last_offset;
     ss::queue<model::record_batch>* _output;
     probe* _probe;
 };
@@ -159,7 +162,7 @@ ss::future<> processor::run_consumer_loop() {
             co_await poll_sleep();
             continue;
         }
-        offset = model::next_offset(*last_offset);
+        offset = kafka::next_offset(*last_offset);
         vlog(_logger.trace, "consumed up to offset {}", offset);
     }
 }
