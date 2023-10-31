@@ -28,6 +28,27 @@
 
 namespace security::audit {
 
+std::ostream& operator<<(std::ostream& os, event_type t) {
+    switch (t) {
+    case event_type::management:
+        return os << "management";
+    case event_type::produce:
+        return os << "produce";
+    case event_type::consume:
+        return os << "consume";
+    case event_type::describe:
+        return os << "describe";
+    case event_type::heartbeat:
+        return os << "heartbeat";
+    case event_type::authenticate:
+        return os << "authenticated";
+    case event_type::unknown:
+        return os << "unknown";
+    default:
+        return os << "invalid";
+    }
+}
+
 /// TODO: Create a new ephemeral user for the audit principal so even clients
 /// instantiated by pandaproxy cannot modify or produce to the audit topic
 static const security::acl_principal audit_principal{
@@ -331,6 +352,10 @@ ss::future<> audit_client::produce(
 
     try {
         const auto size_bytes = records_size(records);
+        vlog(
+          adtlog.trace,
+          "Obtaining {} units from auditing semaphore",
+          size_bytes);
         auto units = co_await ss::get_units(_send_sem, size_bytes);
         ssx::spawn_with_gate(
           _gate,
@@ -579,12 +604,19 @@ bool audit_log_manager::do_enqueue_audit_event(
     auto it = map.find(msg->key());
     if (it == map.end()) {
         if (_queue.size() >= _max_queue_elements_per_shard()) {
+            vlog(
+              adtlog.warn,
+              "Unable to enqueue audit message: {} >= {}",
+              _queue.size(),
+              _max_queue_elements_per_shard());
             probe().audit_error();
             return false;
         }
         auto& list = _queue.get<underlying_list>();
+        vlog(adtlog.trace, "Successfully enqueued audit event {}", *msg);
         list.push_back(std::move(msg));
     } else {
+        vlog(adtlog.trace, "incrementing count of event {}", *msg);
         auto now = security::audit::timestamp_t{
           std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
@@ -598,6 +630,11 @@ ss::future<> audit_log_manager::drain() {
     if (_queue.empty() || _as.abort_requested()) {
         co_return;
     }
+
+    vlog(
+      adtlog.debug,
+      "Attempting to drain {} audit events from sharded queue",
+      _queue.size());
 
     /// Combine all batched audit msgs into record_essences
     std::vector<kafka::client::record_essence> essences;

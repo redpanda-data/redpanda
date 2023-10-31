@@ -44,6 +44,8 @@ enum class category_uid : uint8_t {
     application_activity = 6
 };
 
+std::ostream& operator<<(std::ostream&, const category_uid&);
+
 enum class class_uid : uint16_t {
     file_system_activity = 1001,
     kernel_extension_activity = 1002,
@@ -79,6 +81,8 @@ enum class class_uid : uint16_t {
     web_resource_access_activity = 6004
 };
 
+std::ostream& operator<<(std::ostream&, const class_uid&);
+
 enum class severity_id : uint8_t {
     unknown = 0,
     informational = 1,
@@ -90,10 +94,17 @@ enum class severity_id : uint8_t {
     other = 99,
 };
 
+struct service {
+    ss::sstring name;
+
+    auto equality_fields() const { return std::tie(name); }
+};
+
 struct api {
     ss::sstring operation;
+    service service;
 
-    auto equality_fields() const { return std::tie(operation); }
+    auto equality_fields() const { return std::tie(operation, service); }
 };
 
 struct product {
@@ -176,11 +187,33 @@ struct actor {
     auto equality_fields() const { return std::tie(authorizations, user); }
 };
 
+struct acl_binding_detail {
+    std::optional<ss::sstring> resource_type;
+    std::optional<ss::sstring> resource_name;
+    std::optional<ss::sstring> pattern_type;
+    std::optional<ss::sstring> acl_principal;
+    std::optional<ss::sstring> acl_host;
+    std::optional<ss::sstring> acl_operation;
+    std::optional<ss::sstring> acl_permission;
+
+    auto equality_fields() const {
+        return std::tie(
+          resource_type,
+          resource_name,
+          pattern_type,
+          acl_principal,
+          acl_host,
+          acl_operation,
+          acl_permission);
+    }
+};
+
 struct resource_detail {
     ss::sstring name;
     ss::sstring type;
+    std::optional<acl_binding_detail> data;
 
-    auto equality_fields() const { return std::tie(name, type); }
+    auto equality_fields() const { return std::tie(name, type, data); }
 };
 
 struct authorization_metadata {
@@ -250,10 +283,20 @@ struct http_request {
 namespace json {
 namespace sa = security::audit;
 
+inline void
+rjson_serialize(Writer<StringBuffer>& w, const sa::service& service) {
+    w.StartObject();
+    w.Key("name");
+    rjson_serialize(w, service.name);
+    w.EndObject();
+}
+
 inline void rjson_serialize(Writer<StringBuffer>& w, const sa::api& api) {
     w.StartObject();
     w.Key("operation");
     rjson_serialize(w, api.operation);
+    w.Key("service");
+    rjson_serialize(w, api.service);
     w.EndObject();
 }
 
@@ -352,12 +395,50 @@ inline void rjson_serialize(Writer<StringBuffer>& w, const sa::actor& actor) {
 }
 
 inline void
+rjson_serialize(Writer<StringBuffer>& w, const sa::acl_binding_detail& acl) {
+    w.StartObject();
+    if (acl.resource_type.has_value()) {
+        w.Key("resource_type");
+        rjson_serialize(w, acl.resource_type);
+    }
+    if (acl.resource_name.has_value()) {
+        w.Key("resource_name");
+        rjson_serialize(w, acl.resource_name);
+    }
+    if (acl.pattern_type.has_value()) {
+        w.Key("pattern_type");
+        rjson_serialize(w, acl.pattern_type);
+    }
+    if (acl.acl_principal.has_value()) {
+        w.Key("acl_principal");
+        rjson_serialize(w, acl.acl_principal);
+    }
+    if (acl.acl_host.has_value()) {
+        w.Key("acl_host");
+        rjson_serialize(w, acl.acl_host);
+    }
+    if (acl.acl_operation.has_value()) {
+        w.Key("acl_operation");
+        rjson_serialize(w, acl.acl_operation);
+    }
+    if (acl.acl_permission.has_value()) {
+        w.Key("acl_permission");
+        rjson_serialize(w, acl.acl_permission);
+    }
+    w.EndObject();
+}
+
+inline void
 rjson_serialize(Writer<StringBuffer>& w, const sa::resource_detail& resource) {
     w.StartObject();
     w.Key("name");
     rjson_serialize(w, resource.name);
     w.Key("type");
     rjson_serialize(w, resource.type);
+    if (resource.data.has_value()) {
+        w.Key("data");
+        rjson_serialize(w, *resource.data);
+    }
     w.EndObject();
 }
 

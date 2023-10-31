@@ -30,6 +30,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/net/socket_defs.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -179,7 +180,10 @@ public:
         // authorization disabled?
         if (!_enable_authorizer) {
             return security::auth_result::authz_disabled(
-              get_principal(), security::acl_host(_client_addr), name);
+              get_principal(),
+              security::acl_host(_client_addr),
+              operation,
+              name);
         }
 
         return authorized_user(get_principal(), operation, name, quiet);
@@ -245,6 +249,9 @@ public:
     ss::future<> process_one_request();
     ss::net::inet_address client_host() const { return _client_addr; }
     uint16_t client_port() const { return conn ? conn->addr.port() : 0; }
+    ss::socket_address local_address() const noexcept {
+        return conn ? conn->local_address() : ss::socket_address{};
+    }
 
 private:
     bool is_finished_parsing() const;

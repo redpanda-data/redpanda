@@ -11,6 +11,7 @@
 #include "kafka/server/handlers/delete_acls.h"
 
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/schemata/delete_acls_response.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/request_context.h"
@@ -62,14 +63,8 @@ ss::future<response_ptr> delete_acls_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    if (!ctx.authorized(
-          security::acl_operation::alter, security::default_cluster_name)) {
-        delete_acls_filter_result result;
-        result.error_code = error_code::cluster_authorization_failed;
-        delete_acls_response resp;
-        resp.data.filter_results.assign(request.data.filters.size(), result);
-        co_return co_await ctx.respond(std::move(resp));
-    }
+    auto authz = ctx.authorized(
+      security::acl_operation::alter, security::default_cluster_name);
 
     // <filter index> | error
     std::vector<std::variant<size_t, delete_acls_filter_result>> result_index;
@@ -90,6 +85,25 @@ ss::future<response_ptr> delete_acls_handler::handle(
               .error_message = e.what(),
             });
         }
+    }
+
+    const auto return_filters = [&filters]() { return filters; };
+
+    if (!ctx.audit(std::move(return_filters))) {
+        delete_acls_filter_result result;
+        result.error_code = error_code::broker_not_available;
+        result.error_message = "Broker not available - audit system failure";
+        delete_acls_response resp;
+        resp.data.filter_results.assign(request.data.filters.size(), result);
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
+    if (!authz) {
+        delete_acls_filter_result result;
+        result.error_code = error_code::cluster_authorization_failed;
+        delete_acls_response resp;
+        resp.data.filter_results.assign(request.data.filters.size(), result);
+        co_return co_await ctx.respond(std::move(resp));
     }
 
     const auto num_filters = filters.size();

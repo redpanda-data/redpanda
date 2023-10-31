@@ -125,8 +125,16 @@ ss::future<response_ptr> list_partition_reassignments_handler::handle(
     log_request(ctx.header(), request);
     list_partition_reassignments_response resp;
 
-    if (!ctx.authorized(
-          security::acl_operation::describe, security::default_cluster_name)) {
+    auto authz = ctx.authorized(
+      security::acl_operation::describe, security::default_cluster_name);
+
+    if (!ctx.audit()) {
+        resp.data.error_code = error_code::broker_not_available;
+        resp.data.error_message = "Broker not available - audit system failure";
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
+    if (!authz) {
         vlog(
           klog.debug,
           "Failed cluster authorization. Requires DESCRIBE permissions on the "

@@ -64,12 +64,16 @@ static const ss::sstring authz_success_ser{
   }
 })"};
 
-static const sa::api api_create_topic{.operation = "create_topic"};
+static const sa::api api_create_topic{
+  .operation = "create_topic", .service = {.name = "kafka rpc"}};
 
 static const ss::sstring api_create_topic_ser{
   R"(
 {
-  "operation": "create_topic"
+  "operation": "create_topic",
+  "service": {
+    "name": "kafka rpc"
+  }
 })"};
 
 static const sa::network_endpoint rp_kafka_endpoint{
@@ -206,6 +210,15 @@ static const ss::sstring test_product_ser{
 }
 )"};
 
+static const sa::service test_service{.name = "test"};
+
+static const ss::sstring test_service_ser{
+  R"(
+{
+  "name": "test"
+}
+  )"};
+
 BOOST_AUTO_TEST_CASE(validate_api_activity) {
     auto dst_endpoint = rp_kafka_endpoint;
     auto src_endpoint = client_kafka_endpoint;
@@ -278,6 +291,7 @@ BOOST_AUTO_TEST_CASE(validate_authentication_sasl_scram) {
       sa::authentication::used_cleartext::no,
       sa::authentication::used_mfa ::yes,
       std::move(src_endpoint),
+      test_service,
       sa::severity_id::informational,
       sa::authentication::status_id::success,
       std::nullopt,
@@ -303,7 +317,9 @@ BOOST_AUTO_TEST_CASE(validate_authentication_sasl_scram) {
 "dst_endpoint": )"
       + rp_kafka_endpoint_ser + R"(,
 "is_cleartext": false,
-"mfa": true,
+"is_mfa": true,
+"service": )"
+      + test_service_ser + R"(,
 "src_endpoint": )"
       + client_kafka_endpoint_ser + R"(,
 "status_id": 1,
@@ -329,6 +345,7 @@ BOOST_AUTO_TEST_CASE(validate_authentication_kerberos) {
       sa::authentication::used_cleartext::yes,
       sa::authentication::used_mfa ::no,
       std::move(src_endpoint),
+      test_service,
       sa::severity_id::informational,
       sa::authentication::status_id::failure,
       "Failure",
@@ -353,7 +370,9 @@ BOOST_AUTO_TEST_CASE(validate_authentication_kerberos) {
 "dst_endpoint": )"
       + rp_kafka_endpoint_ser + R"(,
 "is_cleartext": true,
-"mfa": false,
+"is_mfa": false,
+"service": )"
+      + test_service_ser + R"(,
 "src_endpoint": )"
       + client_kafka_endpoint_ser + R"(,
 "status_id": 2,
@@ -595,6 +614,7 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_cleartext::no,
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
+          test_service,
           sa::severity_id::informational,
           sa::authentication::status_id::success,
           std::nullopt,
@@ -607,6 +627,7 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_cleartext::no,
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
+          test_service,
           sa::severity_id::informational,
           sa::authentication::status_id::success,
           std::nullopt,
@@ -632,6 +653,7 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_cleartext::no,
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
+          test_service,
           sa::severity_id::informational,
           sa::authentication::status_id::failure,
           "Failure",
@@ -644,6 +666,7 @@ BOOST_AUTO_TEST_CASE(validate_authn_hash) {
           sa::authentication::used_cleartext::no,
           sa::authentication::used_mfa::no,
           client_kafka_endpoint,
+          test_service,
           sa::severity_id::informational,
           sa::authentication::status_id::failure,
           "Failure",
@@ -681,7 +704,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
       request_auth_result::superuser::no};
 
     auto api_activity = sa::make_api_activity_event(
-      req, auth_result, true, std::nullopt);
+      req, auth_result, "http", true, std::nullopt);
 
     auth_result.pass();
 
@@ -711,11 +734,15 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
     }}
   }},
   "api": {{
-    "operation": "{method}"
+    "operation": "{method}",
+    "service": {{
+      "name": "http"
+    }}
   }},
   "dst_endpoint": {{
     "ip": "10.1.1.1",
-    "port": 23456
+    "port": 23456,
+    "svc_name": "http"
   }},
   "http_request": {{
     "http_headers": [
@@ -777,6 +804,7 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
     const ss::sstring version = "1.1";
     const ss::sstring user_agent = "Mozilla";
     const ss::sstring username = "test";
+    const ss::sstring service_name = "http";
 
     auto req = ss::http::request::make(method, host_name, url);
     req.parse_query_param();
@@ -793,7 +821,7 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
       "sasl",
       request_auth_result::superuser::no};
 
-    auto authn = sa::make_authentication_event(req, auth_result);
+    auto authn = sa::make_authentication_event(req, auth_result, service_name);
     auth_result.pass();
 
     const auto expected = fmt::format(
@@ -810,10 +838,14 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
   "auth_protocol_id": 99,
   "dst_endpoint": {{
     "ip": "10.1.1.1",
-    "port": 23456
+    "port": 23456,
+    "svc_name": "{service_name}"
   }},
   "is_cleartext": false,
-  "mfa": false,
+  "is_mfa": false,
+  "service": {{
+    "name": "{service_name}"
+  }},
   "src_endpoint": {{
     "ip": "10.0.0.1",
     "port": 12345
@@ -826,6 +858,7 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
 }}
     ))",
       fmt::arg("metadata", metadata_ser),
+      fmt::arg("service_name", service_name),
       fmt::arg("time", ss::to_sstring(authn.get_time())),
       fmt::arg("username", username));
 
@@ -859,7 +892,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
       request_auth_result::auth_required::no};
 
     auto api_activity = sa::make_api_activity_event(
-      req, auth_result, true, std::nullopt);
+      req, auth_result, "http", true, std::nullopt);
 
     auth_result.pass();
 
@@ -889,11 +922,15 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
     }}
   }},
   "api": {{
-    "operation": "{method}"
+    "operation": "{method}",
+    "service": {{
+      "name": "http"
+    }}
   }},
   "dst_endpoint": {{
     "ip": "10.1.1.1",
-    "port": 23456
+    "port": 23456,
+    "svc_name": "http"
   }},
   "http_request": {{
     "http_headers": [
@@ -954,6 +991,7 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
     const ss::sstring version = "1.1";
     const ss::sstring user_agent = "Mozilla";
     const ss::sstring username = "test";
+    const ss::sstring service_name = "test-service";
 
     auto req = ss::http::request::make(method, host_name, url);
     req.parse_query_param();
@@ -965,7 +1003,7 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
     req.protocol_name = protocol_name;
 
     auto authn = sa::make_authentication_failure_event(
-      req, security::credential_user{username}, "FAILURE");
+      req, security::credential_user{username}, service_name, "FAILURE");
 
     const auto expected = fmt::format(
       R"(
@@ -980,10 +1018,14 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
   "auth_protocol_id": 0,
   "dst_endpoint": {{
     "ip": "10.1.1.1",
-    "port": 23456
+    "port": 23456,
+    "svc_name": "{service_name}"
   }},
   "is_cleartext": false,
-  "mfa": false,
+  "is_mfa": false,
+  "service": {{
+    "name": "{service_name}"
+  }},
   "src_endpoint": {{
     "ip": "10.0.0.1",
     "port": 12345
@@ -997,6 +1039,7 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
 }}
 )",
       fmt::arg("metadata", metadata_ser),
+      fmt::arg("service_name", service_name),
       fmt::arg("time", ss::to_sstring(authn.get_time())),
       fmt::arg("username", username));
 

@@ -156,6 +156,8 @@ using namespace std::chrono_literals;
 
 static ss::logger logger{"admin_api_server"};
 
+static constexpr auto audit_svc_name = "Redpanda Admin HTTP Server";
+
 // Helpers for partition routes
 namespace {
 
@@ -600,7 +602,7 @@ void admin_server::audit_authz(
   std::optional<std::string_view> reason) {
     vlog(logger.trace, "Attempting to audit authz for {}", req.format_url());
     auto api_event = security::audit::make_api_activity_event(
-      req, auth_result, bool(authorized), reason);
+      req, auth_result, audit_svc_name, bool(authorized), reason);
     auto success = _audit_mgr.local().enqueue_audit_event(
       security::audit::event_type::management, std::move(api_event));
     if (!success) {
@@ -643,7 +645,7 @@ void admin_server::audit_authz(
 void admin_server::audit_authn(
   ss::httpd::const_req req, const request_auth_result& auth_result) {
     auto authentication_event = security::audit::make_authentication_event(
-      req, auth_result);
+      req, auth_result, audit_svc_name);
 
     do_audit_authn(req, std::move(authentication_event));
 }
@@ -654,7 +656,7 @@ void admin_server::audit_authn_failure(
   const ss::sstring& reason) {
     auto authentication_event
       = security::audit::make_authentication_failure_event(
-        req, username, reason);
+        req, username, audit_svc_name, reason);
 
     do_audit_authn(req, std::move(authentication_event));
 }

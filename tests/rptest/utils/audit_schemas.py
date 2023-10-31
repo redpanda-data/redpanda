@@ -27,6 +27,27 @@ PRODUCT_SCHEMA = {
     'additionalProperties': False
 }
 
+USER_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'credential_uid': {
+            'type': 'string'
+        },
+        'domain': {
+            'type': 'string'
+        },
+        'name': {
+            'type': 'string'
+        },
+        'type_id': {
+            'type': 'number',
+            'enum': [0, 1, 2, 3, 99]
+        }
+    },
+    'required': ['name', 'type_id'],
+    'additionalProperties': False
+}
+
 OCSF_BASE_SCHEMA = {
     'type':
     'object',
@@ -190,26 +211,7 @@ API_ACTIVITY_SCHEMA = {
                         'additionalProperties': False
                     }
                 },
-                'user': {
-                    'type': 'object',
-                    'properties': {
-                        'credential_uid': {
-                            'type': 'string'
-                        },
-                        'domain': {
-                            'type': 'string'
-                        },
-                        'name': {
-                            'type': 'string'
-                        },
-                        'type_id': {
-                            'type': 'number',
-                            'enum': [0, 1, 2, 3, 99]
-                        }
-                    },
-                    'required': ['name', 'type_id'],
-                    'additionalProperties': False
-                }
+                'user': USER_SCHEMA
             },
             'required': ['authorizations', 'user'],
             'additionalProperties': False
@@ -219,9 +221,18 @@ API_ACTIVITY_SCHEMA = {
             'properties': {
                 'operation': {
                     'type': 'string'
+                },
+                'service': {
+                    'type': 'object',
+                    'properties': {
+                        'name': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': ['name']
                 }
             },
-            'required': ['operation'],
+            'required': ['operation', 'service'],
             'additionalProperties': False
         },
         'dst_endpoint': ENDPOINT_SCHEMA,
@@ -286,16 +297,19 @@ API_ACTIVITY_SCHEMA = {
             False
         },
         'resources': {
-            'type': 'object',
-            'properties': {
-                'name': {
-                    'type': 'string'
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'name': {
+                        'type': 'string'
+                    },
+                    'type': {
+                        'type': 'string'
+                    }
                 },
-                'type': {
-                    'type': 'string'
-                }
+                'required': ['name', 'type'],
             },
-            'required': ['name', 'type'],
             'additionalProperties': False
         },
         'src_endpoint': ENDPOINT_SCHEMA,
@@ -333,6 +347,55 @@ APPLICATION_ACTIVITY_SCHEMA = {
     'additionalProperties': False
 }
 
+AUTHENTICATION_SCHEMA = {
+    'type':
+    'object',
+    'properties': {
+        'activity_id': {
+            'type': 'number',
+            'enum': [0, 1, 2, 3, 4, 99]
+        },
+        'auth_protocol': {
+            'type': 'string'
+        },
+        'auth_protocol_id': {
+            'type': 'number',
+            'enum': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 99]
+        },
+        'dst_endpoint': ENDPOINT_SCHEMA,
+        'is_cleartext': {
+            'type': 'boolean'
+        },
+        'is_mfa': {
+            'type': 'boolean'
+        },
+        'service': {
+            'type': 'object',
+            'properties': {
+                'name': {
+                    'type': 'string'
+                }
+            },
+            'required': ['name']
+        },
+        'src_endpoint': ENDPOINT_SCHEMA,
+        'status_id': {
+            'type': 'number',
+            'enum': [0, 1, 2, 99]
+        },
+        'status_detail': {
+            'type': 'string'
+        },
+        'user': USER_SCHEMA
+    },
+    'required': [
+        'activity_id', 'auth_protocol_id', 'dst_endpoint', 'is_cleartext',
+        'is_mfa', 'service', 'src_endpoint', 'status_id'
+    ],
+    'additionalProperties':
+    False
+}
+
 
 # A proper schema is an application based schema + the fields that exist
 # in the OCSF base schema.
@@ -348,8 +411,8 @@ def _create_schema(schema):
 # All schemas outside of this list are nested within the supported structures
 # and are not expected to be observed as-is in the audit log
 VALID_AUDIT_SCHEMAS = [
-    _create_schema(schema)
-    for schema in [API_ACTIVITY_SCHEMA, APPLICATION_ACTIVITY_SCHEMA]
+    _create_schema(schema) for schema in
+    [API_ACTIVITY_SCHEMA, APPLICATION_ACTIVITY_SCHEMA, AUTHENTICATION_SCHEMA]
 ]
 
 

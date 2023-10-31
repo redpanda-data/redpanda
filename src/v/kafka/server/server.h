@@ -24,6 +24,7 @@
 #include "kafka/server/queue_depth_monitor.h"
 #include "net/server.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "security/audit/audit_log_manager.h"
 #include "security/fwd.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/krb5_configurator.h"

@@ -35,6 +35,14 @@ redpanda:
     - name: kerberoslistener
       address: "{{fqdn}}"
       port: {{kafka_kerberos_port}}
+    {% if audit_log_config is not none and audit_log_config.listener_port is not none %}
+    - name: audit_log_listener
+      address: "{{node.account.hostname}}"
+      port: {{audit_log_config.listener_port}}
+      {% if audit_log_config.listener_authn_method is not none %}
+      authentication_method: {{ audit_log_config.listener_authn_method }}
+      {% endif %}
+    {% endif %}
   admin:
     - address: 127.0.0.1
       port: 9644
@@ -101,7 +109,7 @@ pandaproxy_client:
 
   {% if pandaproxy_config.truststore_file is not none %}
   broker_tls:
-    enabled: true
+    enabled: {{ pandaproxy_config.enable_broker_tls }}
     require_client_auth: {{ pandaproxy_config.require_client_auth }}
     key_file: {{ pandaproxy_config.PP_TLS_CLIENT_KEY_FILE }}
     cert_file: {{ pandaproxy_config.PP_TLS_CLIENT_CRT_FILE }}
@@ -147,7 +155,7 @@ schema_registry_client:
 
   {% if schema_registry_config.truststore_file is not none %}
   broker_tls:
-    enabled: true
+    enabled: {{ schema_registry_config.enable_broker_tls }}
     require_client_auth: {{ schema_registry_config.require_client_auth }}
     key_file: {{ schema_registry_config.SR_TLS_CLIENT_KEY_FILE }}
     cert_file: {{ schema_registry_config.SR_TLS_CLIENT_CRT_FILE }}
@@ -160,6 +168,29 @@ schema_registry_client:
   sasl_mechanism: {{superuser[2]}}
   scram_username: {{superuser[0]}}
   scram_password: {{superuser[1]}}
+  {% endif %}
+{% endif %}
+
+{% if audit_log_config is not none %}
+audit_log_client:
+  brokers:
+    {% if audit_log_config.listener_port is not none %}
+      - address: "{{node.account.hostname}}"
+        port: {{audit_log_config.listener_port}}
+    {% else %}
+    {% for node in nodes.values() %}
+      - address: "{{node.account.hostname}}"
+        port: 9092
+    {% endfor %}
+    {% endif %}
+
+  {% if audit_log_config.trust_file is not none %}
+  broker_tls:
+    enabled: {{ audit_log_config.enable_broker_tls }}
+    require_client_auth: {{ audit_log_config.require_client_auth }}
+    key_file: {{ audit_log_config.AUDIT_LOG_TLS_CLIENT_KEY_FILE }}
+    cert_file: {{ audit_log_config.AUDIT_LOG_TLS_CLIENT_CRT_FILE }}
+    truststore_file: {{ audit_log_config.truststore_file }}
   {% endif %}
 {% endif %}
 

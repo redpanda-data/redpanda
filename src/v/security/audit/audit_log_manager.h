@@ -12,10 +12,14 @@
 #include "config/property.h"
 #include "kafka/client/fwd.h"
 #include "kafka/client/types.h"
+#include "kafka/protocol/types.h"
 #include "model/timeout_clock.h"
 #include "net/types.h"
 #include "security/audit/probe.h"
+#include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/schemas.h"
+#include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
 #include "ssx/semaphore.h"
 
@@ -79,6 +83,46 @@ public:
             return false;
         }
         return do_enqueue_audit_event(std::make_unique<T>(std::forward<T>(t)));
+    }
+
+    template<
+      security::audit::returns_auditable_resource_vector Func,
+      typename... Args>
+    bool
+    enqueue_authz_audit_event(kafka::api_key api, Func func, Args... args) {
+        if (
+          !_audit_enabled()
+          || !is_audit_event_enabled(kafka_api_to_event_type(api))) {
+            return true;
+        }
+
+        if (_as.abort_requested()) {
+            /// Prevent auditing new messages when shutdown starts that way the
+            /// queue may be entirely flushed before shutdown
+            return false;
+        }
+
+        return do_enqueue_audit_event(
+          std::make_unique<api_activity>(make_api_activity_event(
+            std::forward<Args>(args)..., create_resource_details(func()))));
+    }
+
+    template<typename... Args>
+    bool enqueue_authz_audit_event(kafka::api_key api, Args... args) {
+        if (
+          !_audit_enabled()
+          || !is_audit_event_enabled(kafka_api_to_event_type(api))) {
+            return true;
+        }
+
+        if (_as.abort_requested()) {
+            /// Prevent auditing new messages when shutdown starts that way the
+            /// queue may be entirely flushed before shutdown
+            return false;
+        }
+
+        return do_enqueue_audit_event(std::make_unique<api_activity>(
+          make_api_activity_event(std::forward<Args>(args)..., {})));
     }
 
     /// Enqueue an event to be produced onto an audit log partition.  This will

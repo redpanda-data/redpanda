@@ -118,6 +118,21 @@ ss::future<response_ptr> describe_transactions_handler::handle(
           return ctx.authorized(security::acl_operation::describe, tx_id);
       });
 
+    if (!ctx.audit()) {
+        response.data.transaction_states.reserve(
+          request.data.transactional_ids.size());
+        std::transform(
+          request.data.transactional_ids.begin(),
+          request.data.transactional_ids.end(),
+          std::back_inserter(response.data.transaction_states),
+          [](const kafka::transactional_id& id) {
+              return describe_transaction_state{
+                .error_code = error_code::broker_not_available,
+                .transactional_id = id};
+          });
+        co_return co_await ctx.respond(std::move(response));
+    }
+
     std::vector<kafka::transactional_id> unauthorized(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.transactional_ids.end()));

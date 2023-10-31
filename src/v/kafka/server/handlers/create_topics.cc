@@ -171,6 +171,36 @@ ss::future<response_ptr> create_topics_handler::handle(
         valid_range_end = unauthorized_it;
     }
 
+    auto additional_resources_func = [&request, has_cluster_auth]() {
+        std::vector<model::topic> topics;
+        if (!has_cluster_auth) {
+            return topics;
+        }
+        topics.reserve(request.data.topics.size());
+        std::transform(
+          request.data.topics.begin(),
+          request.data.topics.end(),
+          std::back_inserter(topics),
+          [](const creatable_topic& t) { return t.name; });
+
+        return topics;
+    };
+
+    if (!ctx.audit(std::move(additional_resources_func))) {
+        request.data.topics.erase(valid_range_end, request.data.topics.end());
+        create_topics_response err_resp(
+          error_code::broker_not_available,
+          "Broker not available - audit system failure",
+          std::move(response),
+          std::move(request));
+
+        if (ctx.header().version >= api_version(5)) {
+            append_topic_configs(ctx, err_resp);
+        }
+
+        co_return co_await ctx.respond(err_resp);
+    }
+
     // fill in defaults if necessary
     for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {
         // skip custom assigned topics

@@ -1013,6 +1013,26 @@ ss::future<response_ptr> describe_configs_handler::handle(
         }
     }
 
+    // If unable to audit, remove any trace of the response data
+    if (!ctx.audit()) {
+        describe_configs_response failure_resp;
+        failure_resp.data.results.reserve(response.data.results.size());
+        std::transform(
+          response.data.results.begin(),
+          response.data.results.end(),
+          std::back_inserter(failure_resp.data.results),
+          [](const describe_configs_result& r) {
+              return describe_configs_result{
+                .error_code = error_code::broker_not_available,
+                .error_message = "Broker not available - audit system failure",
+                .resource_type = r.resource_type,
+                .resource_name = r.resource_name,
+              };
+          });
+
+        return ctx.respond(std::move(failure_resp));
+    }
+
     return ctx.respond(std::move(response));
 }
 

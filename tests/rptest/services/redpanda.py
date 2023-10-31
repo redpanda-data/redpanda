@@ -726,6 +726,7 @@ class TlsConfig(AuthConfig):
         self.client_key: Optional[str] = None
         self.client_crt: Optional[str] = None
         self.require_client_auth: bool = True
+        self.enable_broker_tls: bool = True
 
     def maybe_write_client_certs(self, node, logger, tls_client_key_file: str,
                                  tls_client_crt_file: str):
@@ -759,6 +760,18 @@ class SchemaRegistryConfig(TlsConfig):
 
     def __init__(self):
         super(SchemaRegistryConfig, self).__init__()
+
+
+class AuditLogConfig(TlsConfig):
+    AUDIT_LOG_TLS_CLIENT_KEY_FILE = "/etc/redpanda/audit_log_client.key"
+    AUDIT_LOG_TLS_CLIENT_CRT_FILE = "/etc/redpanda/audit_log_client.crt"
+
+    def __init__(self,
+                 listener_port: Optional[int] = None,
+                 listener_authn_method: Optional[str] = None):
+        super(AuditLogConfig, self).__init__()
+        self.listener_port = listener_port
+        self.listener_authn_method = listener_authn_method
 
 
 class RedpandaServiceBase(Service):
@@ -1609,6 +1622,7 @@ class RedpandaService(RedpandaServiceBase):
                  skip_if_no_redpanda_log: bool = False,
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
+                 audit_log_config: Optional[AuditLogConfig] = None,
                  disable_cloud_storage_diagnostics=False,
                  cloud_storage_scrub_timeout_s=None):
         super(RedpandaService, self).__init__(
@@ -1625,6 +1639,7 @@ class RedpandaService(RedpandaServiceBase):
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
         self._schema_registry_config = schema_registry_config
+        self._audit_log_config = audit_log_config
         self._failure_injection_enabled = False
         self._tolerate_crashes = False
 
@@ -1719,6 +1734,9 @@ class RedpandaService(RedpandaServiceBase):
 
     def set_schema_registry_settings(self, settings: SchemaRegistryConfig):
         self._schema_registry_config = settings
+
+    def set_audit_log_settings(self, settings: AuditLogConfig):
+        self._audit_log_config = settings
 
     def _init_tls(self):
         """
@@ -2046,6 +2064,15 @@ class RedpandaService(RedpandaServiceBase):
                 self._schema_registry_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._schema_registry_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._schema_registry_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
+
+            if self._audit_log_config is not None:
+                self._audit_log_config.maybe_write_client_certs(
+                    node, self.logger,
+                    AuditLogConfig.AUDIT_LOG_TLS_CLIENT_KEY_FILE,
+                    AuditLogConfig.AUDIT_LOG_TLS_CLIENT_CRT_FILE)
+                self._audit_log_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
+                self._audit_log_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
+                self._audit_log_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
 
     def start_redpanda(self, node):
         preamble, res_args = self._resource_settings.to_cli(
@@ -3038,6 +3065,7 @@ class RedpandaService(RedpandaServiceBase):
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
                            pandaproxy_config=self._pandaproxy_config,
                            schema_registry_config=self._schema_registry_config,
+                           audit_log_config=self._audit_log_config,
                            superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled(),
                            endpoint_authn_method=self.endpoint_authn_method(),

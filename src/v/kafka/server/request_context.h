@@ -19,13 +19,19 @@
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"
+#include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/response.h"
 #include "kafka/server/server.h"
 #include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
+#include "model/namespace.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "seastarx.h"
+#include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/types.h"
+#include "security/audit/schemas/utils.h"
+#include "security/audit/types.h"
 #include "security/fwd.h"
 #include "ssx/abort_source.h"
 #include "vlog.h"
@@ -248,12 +254,93 @@ public:
         return _conn->server().credentials();
     }
 
+    template<security::audit::returns_auditable_resource_vector Func>
+    bool audit(Func&& f) {
+        auto key = _header.key;
+        auto operation_name = handler_for_key(key).value()->name();
+
+        auto& audit_mgr = _conn->server().audit_mgr();
+        _authz_results.erase(
+          std::remove_if(
+            _authz_results.begin(),
+            _authz_results.end(),
+            [this, operation_name, &audit_mgr, key, f = std::forward<Func>(f)](
+              const auto& val) -> bool {
+                return audit_mgr.enqueue_authz_audit_event(
+                  key,
+                  f,
+                  operation_name,
+                  val,
+                  _conn->local_address(),
+                  _conn->server().name(),
+                  _conn->client_host(),
+                  _conn->client_port(),
+                  _header.client_id);
+            }),
+          _authz_results.end());
+
+        if (!_authz_results.empty()) {
+            vlog(
+              klog.error,
+              "Failed to append to audit log - Unable to audit all messages: "
+              "{}",
+              _authz_results);
+            return false;
+        }
+        return true;
+    }
+
+    bool audit() {
+        auto key = _header.key;
+        auto operation_name = handler_for_key(key).value()->name();
+
+        auto& audit_mgr = _conn->server().audit_mgr();
+        _authz_results.erase(
+          std::remove_if(
+            _authz_results.begin(),
+            _authz_results.end(),
+            [this, operation_name, &audit_mgr, key](const auto& val) -> bool {
+                return audit_mgr.enqueue_authz_audit_event(
+                  key,
+                  operation_name,
+                  val,
+                  _conn->local_address(),
+                  _conn->server().name(),
+                  _conn->client_host(),
+                  _conn->client_port(),
+                  _header.client_id);
+            }),
+          _authz_results.end());
+
+        if (!_authz_results.empty()) {
+            vlog(
+              klog.error,
+              "Failed to append to audit log - Unable to audit all messages: "
+              "{}",
+              _authz_results);
+            return false;
+        }
+        return true;
+    }
+
     template<typename T>
     bool authorized(
       security::acl_operation operation,
       const T& name,
       authz_quiet quiet = authz_quiet{false}) {
-        return bool(_conn->authorized(operation, name, quiet));
+        if constexpr (std::is_same_v<T, model::topic>) {
+            if (name == model::kafka_audit_logging_topic) [[unlikely]] {
+                _request_contains_audit_topic = true;
+            }
+        }
+        auto result = _conn->authorized(operation, name, quiet);
+        auto resp = bool(result);
+        _authz_results.emplace_back(std::move(result));
+        return resp;
+    }
+
+    bool request_contains_audit_topic() const {
+        return _request_contains_audit_topic;
     }
 
     cluster::security_frontend& security_frontend() const {
@@ -298,6 +385,8 @@ private:
     request_header _header;
     protocol::decoder _reader;
     ss::lowres_clock::duration _throttle_delay;
+    std::vector<security::auth_result> _authz_results;
+    bool _request_contains_audit_topic{false};
 };
 
 // Executes the API call identified by the specified request_context.
