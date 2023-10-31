@@ -677,7 +677,6 @@ class HighThroughputTest(PreallocNodesTest):
                    timeout_sec=600,
                    backoff_sec=20)
 
-    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
         """
@@ -819,7 +818,6 @@ class HighThroughputTest(PreallocNodesTest):
                 consumer.stop()
                 consumer.wait(timeout_sec=600)
 
-    @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
         # create default topics
@@ -932,7 +930,7 @@ class HighThroughputTest(PreallocNodesTest):
     # The testcase occasionally fails on various parts:
     # - toing on `_consume_from_offset(self.topic, 1, p_id, "newest", 30)`
     # - failing to ensure all manifests are in the cloud in `stop_and_scrub_object_storage`
-    @ignore
+    @ok_to_fail
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume_miss_cache(self):
         # create default topics
