@@ -762,8 +762,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                             min_records=records)
 
     @cluster(num_nodes=4)
-    @matrix(enable_controller_snapshots=[False, True])
-    def test_stale_node(self, enable_controller_snapshots):
+    @matrix(frequent_controller_snapshots=[False, True])
+    def test_stale_node(self, frequent_controller_snapshots):
         """
         Test that a stale node rejoining the cluster can correctly restore info about
         in-progress partition movements and finish them.
@@ -774,11 +774,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         admin = Admin(self.redpanda)
 
-        if enable_controller_snapshots:
+        if frequent_controller_snapshots:
             self.redpanda.set_cluster_config(
                 {"controller_snapshot_max_age_sec": 1})
-        else:
-            admin.put_feature("controller_snapshots", {"state": "disabled"})
 
         spec = TopicSpec(partition_count=partition_count, replication_factor=3)
         self.client().create_topic(spec)

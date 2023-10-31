@@ -256,7 +256,7 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "controller_snapshots",
     feature::controller_snapshots,
-    feature_spec::available_policy::new_clusters_only,
+    feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{10},
