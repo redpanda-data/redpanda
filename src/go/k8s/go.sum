@@ -1255,8 +1255,8 @@ github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d h1:vfofYNRScrDd
 github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d/go.mod h1:RRCYJbIwD5jmqPI9XoAFR0OcDxqUctll6zUj/+B4S48=
 github.com/testcontainers/testcontainers-go v0.26.0 h1:uqcYdoOHBy1ca7gKODfBd9uTHVK3a7UL848z09MVZ0c=
 github.com/testcontainers/testcontainers-go v0.26.0/go.mod h1:ICriE9bLX5CLxL9OFQ2N+2N+f+803LNJ1utJb1+Inx0=
-github.com/testcontainers/testcontainers-go/modules/redpanda v0.25.0 h1:oxJmWOpIx2i8CIpiFUhfJLSDPR/cbM3F1S2XByd3910=
-github.com/testcontainers/testcontainers-go/modules/redpanda v0.25.0/go.mod h1:XD9Kyn+VtYlFhbKgrKktXQc/xqX48iGISsDxPhRsbCo=
+github.com/testcontainers/testcontainers-go/modules/redpanda v0.26.0 h1:sYoRVio/PrUccNTiEtxcPqTNTCEILFBGl9U1TcvUFqo=
+github.com/testcontainers/testcontainers-go/modules/redpanda v0.26.0/go.mod h1:FyZsQujd7Mx1+tjGfwjriThc57N3F+SuuVFrLVOxnJ0=
 github.com/thales-e-security/pool v0.0.2 h1:RAPs4q2EbWsTit6tpzuvTFlgFRJ3S8Evf5gtvVDbmPg=
 github.com/thales-e-security/pool v0.0.2/go.mod h1:qtpMm2+thHtqhLzTwgDBj/OuNnMpupY8mv0Phz0gjhU=
 github.com/theupdateframework/go-tuf v0.5.2 h1:habfDzTmpbzBLIFGWa2ZpVhYvFBoK0C1onC3a4zuPRA=
