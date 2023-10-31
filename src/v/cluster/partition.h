@@ -434,9 +434,29 @@ public:
 
     result<std::vector<raft::follower_metrics>> get_follower_metrics() const;
 
-    ss::future<> unsafe_reset_remote_partition_manifest(iobuf buf);
+    // Attempt to reset the partition manifest of a cloud storage partition
+    // from an iobuf containing the JSON representation of the manifest.
+    //
+    // Warning: in order to call this safely, one must stop the archiver
+    // manually whilst ensuring that the max collectible offset reported
+    // by the archival metadata STM remains stable. Prefer its sibling
+    // which resets from the cloud state.
+    //
+    // Returns a failed future if unsuccessful.
+    ss::future<>
+    unsafe_reset_remote_partition_manifest_from_json(iobuf json_buf);
+
+    // Attempt to reset the partition manifest of a cloud storage partition
+    // to the one last uploaded to cloud storage.
+    // Returns a failed future if unsuccessful.
+    ss::future<> unsafe_reset_remote_partition_manifest_from_cloud();
 
 private:
+    ss::future<>
+    replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
+
+    ss::future<> do_unsafe_reset_remote_partition_manifest_from_cloud();
+
     ss::future<std::optional<storage::timequery_result>>
       cloud_storage_timequery(storage::timequery_config);
 

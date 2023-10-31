@@ -4885,8 +4885,9 @@ admin_server::unsafe_reset_metadata(
               buf.append(content.data(), content.size());
               content = {};
 
-              return partition->unsafe_reset_remote_partition_manifest(
-                std::move(buf));
+              return partition
+                ->unsafe_reset_remote_partition_manifest_from_json(
+                  std::move(buf));
           });
     } catch (const std::runtime_error& err) {
         throw ss::httpd::server_error_exception(err.what());

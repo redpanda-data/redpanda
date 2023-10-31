@@ -25,6 +25,7 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
 
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
 #include <exception>
@@ -1089,8 +1090,52 @@ partition::get_follower_metrics() const {
     return _raft->get_follower_metrics();
 }
 
-ss::future<> partition::unsafe_reset_remote_partition_manifest(iobuf buf) {
-    vlog(clusterlog.info, "[{}] Unsafe manifest reset requested", ntp());
+ss::future<>
+partition::replicate_unsafe_reset(cloud_storage::partition_manifest manifest) {
+    vlog(
+      clusterlog.info,
+      "Replicating replace manifest command. New manifest details: {{ "
+      "start_offset: {}, last_offset: {}}}",
+      manifest.get_start_offset(),
+      manifest.get_last_offset());
+
+    // Replicate the reset command which contains the downloaded manifest
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+    auto replication_deadline = ss::lowres_clock::now() + sync_timeout;
+    std::vector<cluster::command_batch_builder> builders;
+
+    auto reset_builder = _archival_meta_stm->batch_start(
+      replication_deadline, _as);
+    reset_builder.replace_manifest(manifest.to_iobuf());
+
+    auto errc = co_await reset_builder.replicate();
+    if (errc) {
+        if (errc == raft::errc::shutting_down) {
+            // During shutdown, act like we hit an abort source rather
+            // than trying to log+handle this like a write error.
+            throw ss::abort_requested_exception();
+        }
+
+        vlog(
+          clusterlog.warn,
+          "[{}] Unsafe reset failed to update archival STM: "
+          "{}",
+          ntp(),
+          errc.message());
+        throw std::runtime_error(
+          fmt::format("Failed to update archival STM: {}", errc.message()));
+    }
+
+    vlog(
+      clusterlog.info,
+      "[{}] Unsafe reset replicated STM commands successfully",
+      ntp());
+}
+
+ss::future<>
+partition::unsafe_reset_remote_partition_manifest_from_json(iobuf json_buf) {
+    vlog(clusterlog.info, "[{}] Manual unsafe manifest reset requested", ntp());
 
     if (!(config::shard_local_cfg().cloud_storage_enabled()
           && _archival_meta_stm)) {
@@ -1112,45 +1157,121 @@ ss::future<> partition::unsafe_reset_remote_partition_manifest(iobuf buf) {
     // Deserialise provided manifest
     cloud_storage::partition_manifest req_m{
       _raft->ntp(), _raft->log_config().get_initial_revision()};
-    req_m.update_with_json(std::move(buf));
+    req_m.update_with_json(std::move(json_buf));
 
-    // A generous timeout of 60 seconds is used as it applies
-    // for the replication multiple batches.
-    auto deadline = ss::lowres_clock::now() + 60s;
-    std::vector<cluster::command_batch_builder> builders;
+    co_await replicate_unsafe_reset(std::move(req_m));
+}
 
-    auto reset_builder = _archival_meta_stm->batch_start(deadline, _as);
-
-    // Add command to replace manifest. When applied, the current manifest
-    // will be replaced with the one provided.
-    reset_builder.replace_manifest(req_m.to_iobuf());
-
+ss::future<> partition::unsafe_reset_remote_partition_manifest_from_cloud() {
     vlog(
       clusterlog.info,
-      "Replicating replace manifest command. New manifest start offset: {}",
-      req_m.get_start_offset());
+      "[{}] Unsafe manifest reset from cloud state requested",
+      ntp());
 
-    auto errc = co_await reset_builder.replicate();
-    if (errc) {
-        if (errc == raft::errc::shutting_down) {
-            // During shutdown, act like we hit an abort source rather
-            // than trying to log+handle this like a write error.
-            throw ss::abort_requested_exception();
-        }
-
+    if (!(config::shard_local_cfg().cloud_storage_enabled()
+          && _archival_meta_stm)) {
         vlog(
           clusterlog.warn,
-          "[{}] Unsafe reset failed to update archival STM: {}",
-          ntp(),
-          errc.message());
-        throw std::runtime_error(
-          fmt::format("Failed to update archival STM: {}", errc.message()));
+          "[{}] Archival STM not present. Skipping unsafe reset ...",
+          ntp());
+        throw std::runtime_error("Archival STM not present");
     }
 
-    vlog(
-      clusterlog.info,
-      "[{}] Unsafe reset replicated STM commands successfully",
-      ntp());
+    // Stop the archiver and its housekeeping jobs
+    if (_archiver) {
+        _upload_housekeeping.local().deregister_jobs(
+          _archiver->get_housekeeping_jobs());
+        co_await _archiver->stop();
+        _archiver = nullptr;
+    }
+
+    auto start_archiver = [this]() {
+        maybe_construct_archiver();
+        if (_archiver) {
+            // Topic configs may have changed while the archiver was
+            // stopped, so mark them as dirty just in case.
+            _archiver->notify_topic_config();
+            return _archiver->start();
+        }
+
+        return ss::now();
+    };
+
+    // Ensure that all commands on the log have been applied.
+    // No new archival commands should be replicated now.
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+    auto sync_result = co_await ss::coroutine::as_future(
+      _archival_meta_stm->sync(sync_timeout));
+    if (sync_result.failed() || sync_result.get() == false) {
+        vlog(
+          clusterlog.warn,
+          "[{}] Could not sync with log. Skipping unsafe reset ...",
+          ntp());
+
+        co_await start_archiver();
+        throw std::runtime_error("Could not sync with log");
+    }
+
+    // Attempt the reset
+    auto future_result = co_await ss::coroutine::as_future(
+      do_unsafe_reset_remote_partition_manifest_from_cloud());
+
+    // Reconstruct the archiver and start it if needed
+    co_await start_archiver();
+
+    // Rethrow the exception if we failed to reset
+    future_result.get();
+}
+
+ss::future<> partition::do_unsafe_reset_remote_partition_manifest_from_cloud() {
+    const auto initial_rev = _raft->log_config().get_initial_revision();
+    const auto bucket = [this]() {
+        if (is_read_replica_mode_enabled()) {
+            return get_read_replica_bucket();
+        }
+
+        const auto& bucket_config
+          = cloud_storage::configuration::get_bucket_config();
+        vassert(
+          bucket_config.value(),
+          "configuration property {} must be set",
+          bucket_config.name());
+
+        return cloud_storage_clients::bucket_name{
+          bucket_config.value().value()};
+    }();
+
+    // Download the current partition manifest from the cloud
+    cloud_storage::partition_manifest new_manifest{ntp(), initial_rev};
+
+    auto timeout
+      = config::shard_local_cfg().cloud_storage_manifest_upload_timeout_ms();
+    auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
+
+    retry_chain_node rtc(_as, timeout, backoff);
+    auto [res, res_fmt]
+      = co_await _cloud_storage_api.local().try_download_partition_manifest(
+        bucket, new_manifest, rtc);
+
+    if (res != cloud_storage::download_result::success) {
+        throw std::runtime_error(ssx::sformat(
+          "Failed to download partition manifest with error: {}", res));
+    }
+
+    const auto max_collectible
+      = _raft->log()->stm_manager()->max_collectible_offset();
+    if (new_manifest.get_last_offset() < max_collectible) {
+        throw std::runtime_error(ssx::sformat(
+          "Applying the cloud manifest would cause data loss since the last "
+          "offset in the downloaded manifest is below the max_collectible "
+          "offset "
+          "{} < {}",
+          new_manifest.get_last_offset(),
+          max_collectible));
+    }
+
+    co_await replicate_unsafe_reset(std::move(new_manifest));
 }
 
 std::ostream& operator<<(std::ostream& o, const partition& x) {
