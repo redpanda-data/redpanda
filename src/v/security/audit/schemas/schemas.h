@@ -102,6 +102,22 @@ protected:
       , _time(time)
       , _type_uid(get_ocsf_type(this->_class_uid, activity_id)) {}
 
+    template<typename T>
+    ocsf_base_event(
+      category_uid category_uid,
+      class_uid class_uid,
+      metadata metadata,
+      severity_id severity_id,
+      timestamp_t time,
+      T activity_id)
+      : _category_uid(category_uid)
+      , _class_uid(class_uid)
+      , _metadata(std::move(metadata))
+      , _severity_id(severity_id)
+      , _start_time(time)
+      , _time(time)
+      , _type_uid(get_ocsf_type(this->_class_uid, activity_id)) {}
+
     virtual size_t hash() const = 0;
 
     void rjson_serialize(::json::Writer<::json::StringBuffer>& w) const {

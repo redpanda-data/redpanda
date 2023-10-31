@@ -48,12 +48,14 @@ public:
       : ocsf_base_event(
         category_uid::application_activity,
         class_uid::api_activity,
+        ocsf_redpanda_metadata_cloud_profile(),
         severity_id,
         time,
         activity_id)
       , _activity_id(activity_id)
       , _actor(std::move(actor))
       , _api(std::move(api))
+      , _cloud(cloud{.provider = ""})
       , _dst_endpoint(std::move(dst_endpoint))
       , _http_request(std::move(http_request))
       , _resources(std::move(resources))
@@ -78,6 +80,7 @@ private:
     activity_id _activity_id;
     actor _actor;
     api _api;
+    cloud _cloud;
     network_endpoint _dst_endpoint;
     std::optional<http_request> _http_request;
     std::vector<resource_detail> _resources;
@@ -97,6 +100,8 @@ private:
         ::json::rjson_serialize(w, a._actor);
         w.Key("api");
         ::json::rjson_serialize(w, a._api);
+        w.Key("cloud");
+        ::json::rjson_serialize(w, a._cloud);
         w.Key("dst_endpoint");
         ::json::rjson_serialize(w, a._dst_endpoint);
         if (a._http_request) {
