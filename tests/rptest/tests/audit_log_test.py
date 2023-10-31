@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import confluent_kafka as ck
 from functools import partial, reduce
 import json
 import re
@@ -14,6 +15,8 @@ from typing import Any, Optional
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import ok_to_fail
+from rptest.clients.default import DefaultClient
+from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.services import tls
 from rptest.services.admin import Admin
@@ -348,6 +351,17 @@ class AuditLogTestsBase(RedpandaTest):
                     'resources']
 
     @staticmethod
+    def multi_api_resource_match(expected: list[dict[str, dict[str, str]]],
+                                 service_name, record):
+        for items in expected:
+            for expected_api_op, resource_entry in items.items():
+                if AuditLogTestsBase.api_resource_match(
+                        expected_api_op, resource_entry, service_name, record):
+                    return True
+
+        return False
+
+    @staticmethod
     def api_match(expected_api_op, service_name, record):
         return record['class_uid'] == 6003 and record['api']['service'][
             'name'] == service_name and record['api'][
@@ -441,6 +455,11 @@ class AuditLogTestsBase(RedpandaTest):
                     self.ocsf_server.validate_schema(record)
                     for record in new_records
                 ]
+                for r in new_records:
+                    if self.filter_fn(r):
+                        self.logger.info(f'Selected {r}')
+                    else:
+                        self.logger.info(f'DID NOT SELECT {r}')
                 self.records += [r for r in new_records if self.filter_fn(r)]
 
             def is_finished(self):
@@ -633,18 +652,61 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
                                                           'kafka': 'trace'
                                                       }))
 
-    @cluster(num_nodes=4)
+        self.kcl = KCL(self.redpanda)
+        self.default_client = DefaultClient(self.redpanda)
+
+    @cluster(num_nodes=5)
     def test_management(self):
         """Validates management messages
         """
 
         topic_name = 'test_mgmt_audit'
 
+        def alter_partition_reassignments_with_kcl(
+                kcl: KCL, topics: dict[str, dict[int, list[int]]]):
+
+            kcl.alter_partition_reassignments(topics=topics)
+
+        def alter_config(client, values: dict[str, Any], incremental: bool):
+            client.alter_broker_config(values, incremental)
+
         tests = [
             AbsoluteTestItem(
                 f'Create Topic {topic_name}',
                 lambda: self.rpk.create_topic(topic=topic_name),
                 partial(self.api_resource_match, "create_topics", {
+                    "name": f"{topic_name}",
+                    "type": "topic"
+                }, self.kafka_rpc_service_name), 1),
+            AbsoluteTestItem(
+                f'Add partitions to {topic_name}', lambda: self.rpk.
+                add_partitions(topic=topic_name, partitions=3),
+                partial(self.api_resource_match, "create_partitions", {
+                    "name": f"{topic_name}",
+                    "type": "topic"
+                }, self.kafka_rpc_service_name), 1),
+            AbsoluteTestItem(
+                f'Attempt group offset delete',
+                lambda: self.execute_command_ignore_error(
+                    partial(self.rpk.offset_delete, "fake", {topic_name: [0]})
+                ),
+                partial(self.api_resource_match, "offset_delete", {
+                    "name": "fake",
+                    "type": "group"
+                }, self.kafka_rpc_service_name),
+                5),  # expect five because rpk will retry
+            RangeTestItem(
+                f'Attempting delete records for {topic_name}',
+                lambda: self.execute_command_ignore_error(
+                    partial(self.rpk.trim_prefix, topic_name, 0)),
+                partial(self.api_resource_match, "delete_records", {
+                    "name": f"{topic_name}",
+                    "type": "topic"
+                }, self.kafka_rpc_service_name), 1, 3),
+            AbsoluteTestItem(
+                f'Delete Topic {topic_name}',
+                lambda: self.rpk.delete_topic(topic=topic_name),
+                partial(self.api_resource_match, "delete_topics", {
                     "name": f"{topic_name}",
                     "type": "topic"
                 }, self.kafka_rpc_service_name), 1),
@@ -687,6 +749,42 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
                         }
                     }, self.kafka_rpc_service_name), 1),
             AbsoluteTestItem(
+                f'Delete group test',
+                lambda: self.execute_command_ignore_error(
+                    partial(self.rpk.group_delete, "test")),
+                partial(self.api_resource_match, "delete_groups", {
+                    "name": "test",
+                    "type": "group"
+                }, self.kafka_rpc_service_name), 1),
+            AbsoluteTestItem(
+                f'Alter Partition Reassignments',
+                lambda: self.execute_command_ignore_error(
+                    partial(alter_partition_reassignments_with_kcl, self.kcl,
+                            {topic_name: {
+                                1: [0]
+                            }})),
+                partial(self.api_resource_match,
+                        "alter_partition_reassignments", {
+                            "name": topic_name,
+                            "type": "topic"
+                        }, self.kafka_rpc_service_name), 1),
+            AbsoluteTestItem(
+                f'Alter Config (not-incremental)',
+                lambda: self.execute_command_ignore_error(
+                    partial(alter_config, self.default_client, {
+                        "log_message_timestamp_type": "CreateTime"
+                    }, False)),
+                partial(self.api_match, "alter_configs",
+                        self.kafka_rpc_service_name), 1),
+            AbsoluteTestItem(
+                f'Incremental Alter Config',
+                lambda: self.execute_command_ignore_error(
+                    partial(alter_config, self.default_client, {
+                        "log_message_timestamp_type": "CreateTime"
+                    }, True)),
+                partial(self.api_match, "incremental_alter_configs",
+                        self.kafka_rpc_service_name), 1),
+            AbsoluteTestItem(
                 f'List ACLs (no item)', lambda: self.rpk.acl_list(),
                 partial(self.api_match, "list_acls",
                         self.kafka_rpc_service_name), 0)
@@ -695,6 +793,61 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
         # Enable management now
         self.logger.debug("Modifying event types")
         self.modify_audit_event_types(['management'])
+
+        for test in tests:
+            self.logger.info(f'Running test "{test.name}"')
+            test.generate_function()
+            _ = self.find_matching_record(test.filter_function,
+                                          test.valid_count, test.desc())
+
+    @cluster(num_nodes=5)
+    def test_produce(self):
+        """Validates produce audit messages
+        """
+
+        topic_name = 'test_produce_audit'
+        tx_topic_name = 'test_produce_tx_audit'
+
+        self.rpk.create_topic(topic=topic_name, partitions=3)
+        self.rpk.create_topic(topic=tx_topic_name, partitions=3)
+
+        def transaction_generate():
+            producer = ck.Producer({
+                'bootstrap.servers': self.redpanda.brokers(),
+                'transactional.id': '1'
+            })
+            producer.init_transactions()
+            producer.begin_transaction()
+            producer.produce(tx_topic_name, '0', '0', 1)
+            producer.produce(tx_topic_name, '0', '1', 2)
+            producer.flush()
+
+        tests = [
+            AbsoluteTestItem(
+                f'Produce one message to {topic_name}', lambda: self.rpk.
+                produce(topic_name, key='Test key', msg='Test msg'),
+                partial(self.api_resource_match, "produce", {
+                    "name": f'{topic_name}',
+                    "type": "topic"
+                }, self.kafka_rpc_service_name), 1),
+            AbsoluteTestItem(
+                f'Produce two messages to {tx_topic_name}',
+                lambda: transaction_generate(),
+                partial(self.multi_api_resource_match, [{
+                    "produce": {
+                        "name": f'{tx_topic_name}',
+                        "type": "topic"
+                    }
+                }, {
+                    "produce": {
+                        "name": "1",
+                        "type": "transactional_id"
+                    }
+                }], self.kafka_rpc_service_name), 4)
+        ]
+
+        self.logger.debug("Modifying event types")
+        self.modify_audit_event_types(['produce'])
 
         for test in tests:
             self.logger.info(f'Running test "{test.name}"')
