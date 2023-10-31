@@ -95,7 +95,7 @@ class CloudClusterUtils:
 
     def rpk_cloud_byoc_install(self, cluster_id):
         # Install proper cloud plugin version
-        self.logger.info("Installing byoc plugin according to cluster specs")
+        self.logger.debug("Installing byoc plugin according to cluster specs")
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", "install", f"--redpanda-id={cluster_id}"]
         out = self._exec(cmd)
@@ -103,7 +103,7 @@ class CloudClusterUtils:
         return out
 
     def rpk_cloud_apply(self, cluster_id):
-        self.logger.info("Deploying cluster agent")
+        self.logger.debug("Deploying cluster agent")
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", self.provider, "apply", f"--redpanda-id={cluster_id}"]
         if self.provider == 'gcp':
@@ -114,7 +114,7 @@ class CloudClusterUtils:
         return out
 
     def rpk_plugin_uninstall(self, plugin_name, sudo=False):
-        self.logger.info(f"Uninstalling plugin {plugin_name}")
+        self.logger.debug(f"Uninstalling plugin {plugin_name}")
         _plist = self.rpk.plugin_list()
         # parse plugin list
         _plist = self._parse_plugin_list(_plist)
@@ -128,7 +128,7 @@ class CloudClusterUtils:
                 return False
             else:
                 return True
-        self.logger.warning(f"No plugins with the name  '{plugin_name}' found")
+        self.logger.debug(f"No plugins with the name  '{plugin_name}' found")
         return False
 
     def rpk_cloud_agent_delete(self, cluster_id):
