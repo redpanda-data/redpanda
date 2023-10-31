@@ -35,6 +35,9 @@ func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 		return nil, errors.New("☠︎")
 	case "bomb":
 		panic("💥")
+	case "loop":
+		for {
+		}
 	case "allocate":
 		amt := binary.LittleEndian.Uint32(e.Record().Value)
 		allocated.Grow(int(amt))

@@ -69,7 +69,17 @@ constexpr size_t max_vm_guest_stack_usage = 64_KiB;
 constexpr size_t max_host_function_stack_usage = vm_stack_size
                                                  - max_vm_guest_stack_usage
                                                  - 4_KiB;
-constexpr uint64_t fuel_amount = 10'000'000'000;
+
+// The maximum amount of fuel we give for a single record transform (as well as
+// main setup). In experiments using an infinite loop on a x86_64 machine with
+// no other load this amount allowed for about 3 seconds of execution in total.
+//
+// It would be better to give the engine "infinite" fuel and make this both time
+// based and configurable, but until that work, this is the simpler option.
+constexpr uint64_t fuel_amount = 5'000'000'000;
+// This interval in the above experiment allowed for Wasm to take up CPU for no
+// more than 4 milliseconds max at once.
+constexpr uint64_t fuel_yield_interval = 10'000'000;
 
 template<typename T, auto fn>
 struct deleter {
@@ -487,6 +497,10 @@ private:
           /*tables=*/1,
           /*memories=*/1);
         auto* context = wasmtime_store_context(store.get());
+
+        wasmtime_context_fuel_async_yield_interval(
+          context, fuel_yield_interval);
+
         reset_fuel(context);
 
         _wasi_module.set_timestamp(model::timestamp::min());
