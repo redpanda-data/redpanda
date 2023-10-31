@@ -10,8 +10,8 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "ssx/metrics.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -31,8 +31,7 @@ private:
     uint64_t _records_read = 0;
     uint64_t _chunk_size = 0;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 
 class ts_read_path_probe {
@@ -96,10 +95,8 @@ private:
     hist_t _chunk_hydration_latency;
     size_t _downloads_throttled_sum = 0;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace cloud_storage

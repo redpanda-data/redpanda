@@ -164,29 +164,28 @@ void consensus::setup_metrics() {
 
     _probe->setup_metrics(_log->config().ntp());
     auto labels = probe::create_metric_labels(_log->config().ntp());
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
-      {sm::make_gauge(
-         "leader_for",
-         [this] { return is_elected_leader(); },
-         sm::description("Number of groups for which node is a leader"),
-         labels)
-         .aggregate(aggregate_labels),
-       sm::make_gauge(
-         "configuration_change_in_progress",
-         [this] {
-             return is_elected_leader()
-                    && _configuration_manager.get_latest().get_state()
-                         != configuration_state::simple;
-         },
-         sm::description("Indicates if current raft group configuration is in "
-                         "joint state i.e. configuration is being changed"),
-         labels)
-         .aggregate(aggregate_labels)});
+      {
+        sm::make_gauge(
+          "leader_for",
+          [this] { return is_elected_leader(); },
+          sm::description("Number of groups for which node is a leader"),
+          labels),
+        sm::make_gauge(
+          "configuration_change_in_progress",
+          [this] {
+              return is_elected_leader()
+                     && _configuration_manager.get_latest().get_state()
+                          != configuration_state::simple;
+          },
+          sm::description("Indicates if current raft group configuration is in "
+                          "joint state i.e. configuration is being changed"),
+          labels),
+      },
+      {},
+      {sm::shard_label});
 }
 
 void consensus::setup_public_metrics() {

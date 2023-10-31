@@ -11,8 +11,8 @@
 #include "cloud_storage/remote_probe.h"
 
 #include "cloud_storage/materialized_resources.h"
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/smp.hh>
@@ -159,7 +159,7 @@ remote_probe::remote_probe(
     }
 
     if (!public_disabled) {
-        auto direction_label = ssx::metrics::make_namespaced_label("direction");
+        auto direction_label = metrics::make_namespaced_label("direction");
 
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("cloud_storage"),

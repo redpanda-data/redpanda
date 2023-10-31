@@ -14,10 +14,10 @@
 #include "config/configuration.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -66,9 +66,9 @@ public:
             return;
         }
 
-        auto group_label = ssx::metrics::make_namespaced_label("group");
-        auto topic_label = ssx::metrics::make_namespaced_label("topic");
-        auto partition_label = ssx::metrics::make_namespaced_label("partition");
+        auto group_label = metrics::make_namespaced_label("group");
+        auto topic_label = metrics::make_namespaced_label("topic");
+        auto partition_label = metrics::make_namespaced_label("partition");
         std::vector<sm::label_instance> labels{
           group_label(group_id()),
           topic_label(tp.topic()),
@@ -86,10 +86,8 @@ public:
 
 private:
     model::offset& _offset;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 template<typename KeyType, typename ValType>
@@ -121,7 +119,7 @@ public:
             return;
         }
 
-        auto group_label = ssx::metrics::make_namespaced_label("group");
+        auto group_label = metrics::make_namespaced_label("group");
 
         std::vector<sm::label_instance> labels{group_label(group_id())};
 
@@ -146,8 +144,7 @@ private:
     member_map& _members;
     static_member_map& _static_members;
     offsets_map& _offsets;
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace kafka

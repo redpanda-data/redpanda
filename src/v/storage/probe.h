@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "ssx/metrics.h"
 #include "storage/fwd.h"
 #include "storage/logger.h"
 #include "storage/types.h"
@@ -46,8 +46,7 @@ public:
 
 private:
     disk_metrics _disk;
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _public_metrics;
 };
 
 // Per-NTP probe.
@@ -132,7 +131,6 @@ private:
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
     double _compaction_ratio = 1.0;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 } // namespace storage

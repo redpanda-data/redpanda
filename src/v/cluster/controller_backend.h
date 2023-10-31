@@ -439,8 +439,7 @@ private:
      * first created on current node before cross core move series
      */
     absl::node_hash_map<model::ntp, model::revision_id> _bootstrap_revisions;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 
 controller_backend::deltas_t calculate_bootstrap_deltas(

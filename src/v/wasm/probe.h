@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics.hh>
@@ -47,8 +47,7 @@ public:
 
 protected:
     // NOLINTNEXTLINE(*-non-private-member-variables-in-classes)
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _public_metrics;
 
 private:
     uint64_t _transform_errors{0};

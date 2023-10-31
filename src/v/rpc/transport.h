@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "net/transport.h"
 #include "outcome.h"
@@ -20,7 +21,6 @@
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/gate.hh>
@@ -202,8 +202,7 @@ private:
     absl::flat_hash_map<uint32_t, std::unique_ptr<response_entry>>
       _correlations;
     uint32_t _correlation_idx{0};
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
     /**
      * Ordered map containing requests to be sent over the wire. The map
      * preserves order of calling send_typed function. It is fine to use

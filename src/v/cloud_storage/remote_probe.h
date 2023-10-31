@@ -11,9 +11,9 @@
 #pragma once
 
 #include "cloud_storage/types.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -299,10 +299,8 @@ private:
     hist_t _client_acquisition_latency;
     hist_t _segment_download_latency;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace cloud_storage

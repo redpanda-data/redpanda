@@ -1,4 +1,4 @@
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
 #include "utils/hdr_hist.h"
 #include "utils/log_hist.h"
 
@@ -38,7 +38,7 @@ bool approximately_equal(double a, double b) {
 
 template<typename l_hist>
 void validate_public_histograms_equal(const hdr_hist& a, const l_hist& b) {
-    const auto logform_a = ssx::metrics::report_default_histogram(a);
+    const auto logform_a = metrics::report_default_histogram(a);
     const auto logform_b = b.public_histogram_logform();
 
     BOOST_CHECK_EQUAL(logform_a.sample_count, logform_b.sample_count);

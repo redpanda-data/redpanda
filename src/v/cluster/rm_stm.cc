@@ -15,6 +15,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_utils.h"
 #include "kafka/protocol/wire.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -24,7 +25,6 @@
 #include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
-#include "ssx/metrics.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 #include "utils/human.h"
@@ -2418,9 +2418,6 @@ void rm_stm::setup_metrics() {
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
 
     const auto& ntp = _raft->ntp();
     const std::vector<sm::label_instance> labels = {
@@ -2437,21 +2434,20 @@ void rm_stm::setup_metrics() {
           [this] { return _producers.size(); },
           sm::description(
             "Number of active producers (known producer_id seq number pairs)."),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "tx_num_inflight_requests",
           [this] { return _log_state.ongoing_map.size(); },
           sm::description("Number of ongoing transactional requests."),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_gauge(
           "tx_mem_tracker_consumption_bytes",
           [this] { return _tx_root_tracker.consumption(); },
           sm::description("Total memory bytes in use by tx subsystem."),
-          labels)
-          .aggregate(aggregate_labels),
-      });
+          labels),
+      },
+      {},
+      {sm::shard_label});
 }
 
 ss::future<> rm_stm::maybe_log_tx_stats() {

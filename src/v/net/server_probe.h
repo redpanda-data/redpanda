@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -71,10 +71,10 @@ public:
     }
 
     void
-    setup_metrics(ssx::metrics::metric_groups& mgs, std::string_view proto);
+    setup_metrics(metrics::internal_metric_groups& mgs, std::string_view proto);
 
     void setup_public_metrics(
-      ssx::metrics::metric_groups& mgs, std::string_view proto);
+      metrics::public_metric_groups& mgs, std::string_view proto);
 
 private:
     uint64_t _requests_completed = 0;

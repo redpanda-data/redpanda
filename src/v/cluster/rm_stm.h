@@ -19,13 +19,13 @@
 #include "config/configuration.h"
 #include "config/property.h"
 #include "features/feature_table.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
-#include "ssx/metrics.h"
 #include "storage/offset_translator_state.h"
 #include "storage/snapshot.h"
 #include "utils/available_promise.h"
@@ -630,8 +630,7 @@ private:
     using producers_t = mt::
       map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>;
     producers_t _producers;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
     ss::abort_source _as;
     ss::gate _gate;
     friend struct ::rm_stm_test_fixture;

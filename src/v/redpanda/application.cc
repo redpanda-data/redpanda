@@ -547,17 +547,17 @@ void application::setup_public_metrics() {
 
     seastar::metrics::replicate_metric_families(
       seastar::metrics::default_handle(),
-      {{"io_queue_total_read_ops", ssx::metrics::public_metrics_handle},
-       {"io_queue_total_write_ops", ssx::metrics::public_metrics_handle},
-       {"memory_allocated_memory", ssx::metrics::public_metrics_handle},
-       {"memory_free_memory", ssx::metrics::public_metrics_handle}})
+      {{"io_queue_total_read_ops", metrics::public_metrics_handle},
+       {"io_queue_total_write_ops", metrics::public_metrics_handle},
+       {"memory_allocated_memory", metrics::public_metrics_handle},
+       {"memory_free_memory", metrics::public_metrics_handle}})
       .get();
 
     _public_metrics.start().get();
 
-    const auto version_label = ssx::metrics::make_namespaced_label("version")(
+    const auto version_label = metrics::make_namespaced_label("version")(
       redpanda_git_version());
-    const auto revision_label = ssx::metrics::make_namespaced_label("revision")(
+    const auto revision_label = metrics::make_namespaced_label("revision")(
       redpanda_git_revision());
     const auto build_labels = {version_label, revision_label};
 
@@ -2296,6 +2296,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         _wasm_runtime->start(config).get();
         _transform_service.invoke_on_all(&transform::service::start).get();
     }
+
+    construct_service(_aggregate_metrics_watcher).get();
 
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
     _monitor_unsafe_log_flag->start().get();

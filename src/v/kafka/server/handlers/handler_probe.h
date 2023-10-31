@@ -12,7 +12,7 @@
 #pragma once
 
 #include "kafka/protocol/types.h"
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
 #include "utils/log_hist.h"
 
 #include <optional>
@@ -33,8 +33,8 @@ public:
     handler_probe(handler_probe&&) = delete;
     handler_probe& operator=(handler_probe&&) = delete;
     ~handler_probe() = default;
-    void setup_metrics(ssx::metrics::metric_groups&, api_key);
-    void setup_public_metrics(ssx::metrics::metric_groups&, api_key);
+    void setup_metrics(metrics::internal_metric_groups&, api_key);
+    void setup_public_metrics(metrics::public_metric_groups&, api_key);
 
     void sample_in_progress();
     void request_completed() {
@@ -93,10 +93,8 @@ public:
     handler_probe& get_probe(api_key key);
 
 private:
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
     std::vector<handler_probe> _probes;
 };
 

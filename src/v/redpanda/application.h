@@ -29,6 +29,8 @@
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/server.h"
+#include "metrics/aggregate_metrics_watcher.h"
+#include "metrics/metrics.h"
 #include "net/conn_quota.h"
 #include "net/fwd.h"
 #include "pandaproxy/fwd.h"
@@ -49,7 +51,6 @@
 #include "rpc/rpc_server.h"
 #include "seastarx.h"
 #include "ssx/fwd.h"
-#include "ssx/metrics.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "transform/fwd.h"
@@ -288,9 +289,8 @@ private:
     ss::sharded<transform::rpc::local_service> _transform_rpc_service;
     ss::sharded<transform::rpc::client> _transform_rpc_client;
 
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
+    metrics::internal_metric_groups _metrics;
+    ss::sharded<metrics::public_metrics_group_service> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 
     ss::sharded<resources::cpu_profiler> _cpu_profiler;
@@ -302,6 +302,8 @@ private:
 
     // run these first on destruction
     deferred_actions _deferred;
+
+    ss::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
 
     ss::sharded<ss::abort_source> _as;
 };

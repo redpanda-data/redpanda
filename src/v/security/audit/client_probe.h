@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -32,8 +32,7 @@ public:
     void setup_metrics(std::function<double()> get_usage_ratio);
 
 private:
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
 };
 
 } // namespace security::audit

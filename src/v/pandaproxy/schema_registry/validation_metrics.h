@@ -11,7 +11,7 @@
 #pragma once
 
 #include "config/configuration.h"
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -27,35 +27,32 @@ public:
             return;
         }
 
-        auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                                  ? std::vector<sm::label>{sm::shard_label}
-                                  : std::vector<sm::label>{};
-
         _metrics.add_group(
           "kafka_schema_id_cache",
-          {sm::make_counter(
-             "hits",
-             [this]() { return _hits; },
-             sm::description("Total number of hits for the server-side schema "
-                             "ID validation cache (see cluster config: "
-                             "kafka_schema_id_validation_cache_capacity)"),
-             {})
-             .aggregate(aggregate_labels),
-           sm::make_counter(
-             "misses",
-             [this]() { return _misses; },
-             sm::description("Total number of misses for the server-side "
-                             "schema ID validation cache (see cluster config: "
-                             "kafka_schema_id_validation_cache_capacity)"),
-             {})
-             .aggregate(aggregate_labels),
-           sm::make_counter(
-             "batches_decompressed",
-             [this]() { return _batches_decompressed; },
-             sm::description("Total number of batches decompressed for "
-                             "server-side schema ID validation"),
-             {})
-             .aggregate(aggregate_labels)});
+          {
+            sm::make_counter(
+              "hits",
+              [this]() { return _hits; },
+              sm::description("Total number of hits for the server-side schema "
+                              "ID validation cache (see cluster config: "
+                              "kafka_schema_id_validation_cache_capacity)"),
+              {}),
+            sm::make_counter(
+              "misses",
+              [this]() { return _misses; },
+              sm::description("Total number of misses for the server-side "
+                              "schema ID validation cache (see cluster config: "
+                              "kafka_schema_id_validation_cache_capacity)"),
+              {}),
+            sm::make_counter(
+              "batches_decompressed",
+              [this]() { return _batches_decompressed; },
+              sm::description("Total number of batches decompressed for "
+                              "server-side schema ID validation"),
+              {}),
+          },
+          {},
+          {sm::shard_label});
     }
 
     void hit() { ++_hits; }
@@ -63,8 +60,7 @@ public:
     void decompressed() { ++_batches_decompressed; }
 
 private:
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
+    metrics::internal_metric_groups _metrics;
     int64_t _hits;
     int64_t _misses;
     int64_t _batches_decompressed;

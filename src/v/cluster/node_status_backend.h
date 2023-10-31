@@ -15,11 +15,11 @@
 #include "cluster/node_status_table.h"
 #include "config/property.h"
 #include "features/feature_table.h"
+#include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "rpc/connection_set.h"
 #include "rpc/types.h"
 #include "seastarx.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>
@@ -79,7 +79,7 @@ private:
 
     ss::future<> maybe_create_client(model::node_id, net::unresolved_address);
 
-    void setup_metrics(ssx::metrics::metric_groups&);
+    void setup_metrics(metrics::metric_groups_base&);
 
     struct statistics {
         int64_t rpcs_sent;
@@ -114,10 +114,8 @@ private:
     notification_id_type _members_table_notification_handle;
 
     statistics _stats{};
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_internal();
-    ssx::metrics::metric_groups _public_metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 
     ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
     struct member_notification {

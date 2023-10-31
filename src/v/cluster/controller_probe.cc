@@ -14,8 +14,8 @@
 #include "cluster/controller.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
+#include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -61,8 +61,7 @@ void controller_probe::setup_metrics() {
         return;
     }
 
-    _public_metrics = std::make_unique<ssx::metrics::metric_groups>(
-      ssx::metrics::public_metrics_handle);
+    _public_metrics = std::make_unique<metrics::public_metric_groups>();
     _public_metrics->add_group(
       prometheus_sanitize::metrics_name("cluster"),
       {

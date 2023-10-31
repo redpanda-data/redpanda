@@ -56,7 +56,7 @@ handler_probe::handler_probe()
   : _last_recorded_in_progress(ss::lowres_clock::now()) {}
 
 void handler_probe::setup_metrics(
-  ssx::metrics::metric_groups& metrics, api_key key) {
+  metrics::internal_metric_groups& metrics, api_key key) {
     namespace sm = ss::metrics;
 
     if (config::shard_local_cfg().disable_metrics()) {
@@ -71,9 +71,6 @@ void handler_probe::setup_metrics(
     }
 
     std::vector<sm::label_instance> labels{sm::label("handler")(handler_name)};
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
 
     metrics.add_group(
       prometheus_sanitize::metrics_name("kafka_handler"),
@@ -82,45 +79,41 @@ void handler_probe::setup_metrics(
           "requests_completed_total",
           [this] { return _requests_completed; },
           sm::description("Number of kafka requests completed"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "requests_errored_total",
           [this] { return _requests_errored; },
           sm::description("Number of kafka requests errored"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "requests_in_progress_total",
           [this] { return _requests_in_progress_every_ns / 1'000'000'000; },
           sm::description("A running total of kafka requests in progress"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "received_bytes_total",
           [this] { return _bytes_received; },
           sm::description("Number of bytes received from kafka requests"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_counter(
           "sent_bytes_total",
           [this] { return _bytes_sent; },
           sm::description("Number of bytes sent in kafka replies"),
-          labels)
-          .aggregate(aggregate_labels),
+          labels),
         sm::make_histogram(
           "latency_microseconds",
           sm::description("Latency histogram of kafka requests"),
           labels,
-          [this] { return _latency.internal_histogram_logform(); })
-          .aggregate(aggregate_labels),
-      });
+          [this] { return _latency.internal_histogram_logform(); }),
+      },
+      {},
+      {seastar::metrics::shard_label});
 }
 
 // For public metrics we only expose a small subset of the metrics for produce
 // and fetch requests to keep the count of metrics low
 void handler_probe::setup_public_metrics(
-  ssx::metrics::metric_groups& metrics, api_key key) {
+  metrics::public_metric_groups& metrics, api_key key) {
     namespace sm = ss::metrics;
 
     if (config::shard_local_cfg().disable_public_metrics()) {

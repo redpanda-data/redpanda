@@ -25,8 +25,9 @@ namespace security::audit {
 void audit_probe::setup_metrics(std::function<double()> get_usage_ratio) {
     namespace sm = ss::metrics;
 
-    auto setup_common = [this](const std::vector<sm::label>& aggregate_labels) {
-        std::vector<sm::metric_definition> defs;
+    auto setup_common = [this]<typename MetricDef>(
+                          const std::vector<sm::label>& aggregate_labels) {
+        std::vector<MetricDef> defs;
         if (ss::this_shard_id() == audit_log_manager::client_shard_id) {
             defs.emplace_back(
               sm::make_counter(
@@ -49,21 +50,21 @@ void audit_probe::setup_metrics(std::function<double()> get_usage_ratio) {
     auto group_name = prometheus_sanitize::metrics_name("security_audit");
 
     if (!config::shard_local_cfg().disable_metrics()) {
-        auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                                  ? std::vector<sm::label>{sm::shard_label}
-                                  : std::vector<sm::label>{};
-        auto defs = setup_common(aggregate_labels);
+        auto defs = setup_common.template
+                    operator()<ss::metrics::impl::metric_definition_impl>({});
         defs.emplace_back(sm::make_gauge(
-                            "buffer_usage_ratio",
-                            [fn = std::move(get_usage_ratio)] { return fn(); },
-                            sm::description("Audit event buffer usage ratio."))
-                            .aggregate(aggregate_labels));
+          "buffer_usage_ratio",
+          [fn = std::move(get_usage_ratio)] { return fn(); },
+          sm::description("Audit event buffer usage ratio.")));
 
-        _metrics.add_group(group_name, defs);
+        _metrics.add_group(group_name, defs, {}, {sm::shard_label});
     }
 
     if (!config::shard_local_cfg().disable_public_metrics()) {
-        _public_metrics.add_group(group_name, setup_common({sm::shard_label}));
+        _public_metrics.add_group(
+          group_name,
+          setup_common.template operator()<ss::metrics::metric_definition>(
+            {sm::shard_label}));
     }
 }
 
@@ -74,18 +75,13 @@ void client_probe::setup_metrics(std::function<double()> get_usage_ratio) {
         return;
     }
 
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
-
     _metrics.add_group(
       prometheus_sanitize::metrics_name("security_audit_client"),
-      {
-        sm::make_gauge(
-          "buffer_usage_ratio",
-          [fn = std::move(get_usage_ratio)] { return fn(); },
-          sm::description("Audit client send buffer usage ratio"))
-          .aggregate(aggregate_labels),
-      });
+      {sm::make_gauge(
+        "buffer_usage_ratio",
+        [fn = std::move(get_usage_ratio)] { return fn(); },
+        sm::description("Audit client send buffer usage ratio"))},
+      {},
+      {sm::shard_label});
 }
 } // namespace security::audit

@@ -13,6 +13,7 @@ v_cc_library(
     Seastar::seastar
     absl::node_hash_map
     v::config
+    v::metrics
     v::rphashing
   )
 

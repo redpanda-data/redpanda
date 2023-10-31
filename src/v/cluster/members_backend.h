@@ -161,8 +161,7 @@ private:
     ss::circular_buffer<members_manager::node_update> _raft0_updates;
     std::chrono::milliseconds _retry_timeout;
     ss::condition_variable _new_updates;
-    ssx::metrics::metric_groups _metrics
-      = ssx::metrics::metric_groups::make_public();
+    metrics::public_metric_groups _metrics;
     config::binding<size_t> _max_concurrent_reallocations;
 };
 std::ostream&
