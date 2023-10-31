@@ -53,27 +53,33 @@ private:
     probe* _probe;
 };
 
-ss::future<ss::chunked_fifo<model::record_batch>>
-drain_queue(ss::queue<model::record_batch>* queue, probe* p) {
+struct drain_result {
+    ss::chunked_fifo<model::record_batch> batches;
+    kafka::offset latest_offset;
+};
+
+ss::future<drain_result>
+drain_queue(ss::queue<transformed_batch>* queue, probe* p) {
     static constexpr size_t max_batches_bytes = 1_MiB;
-    ss::chunked_fifo<model::record_batch> output;
     if (queue->empty()) {
         co_await queue->not_empty();
     }
+    drain_result result;
     size_t batches_size = 0;
     while (!queue->empty()) {
-        auto& batch = queue->front();
-        auto batch_size = batch.size_bytes();
-        batches_size += batch_size;
+        auto batch_size = queue->front().batch.size_bytes();
+        batches_size += queue->front().batch.size_bytes();
         // ensure if there is a large batch we make some progress
         // otherwise cap how much data we send to the sink at once.
-        if (!output.empty() && batches_size > max_batches_bytes) {
+        if (!result.batches.empty() && batches_size > max_batches_bytes) {
             break;
         }
         p->increment_write_bytes(batch_size);
-        output.push_back(queue->pop());
+        auto transformed = queue->pop();
+        result.latest_offset = transformed.input_offset;
+        result.batches.push_back(std::move(transformed.batch));
     }
-    co_return output;
+    co_return result;
 }
 
 /**
@@ -170,15 +176,17 @@ ss::future<> processor::run_consumer_loop() {
 ss::future<> processor::run_transform_loop() {
     while (!_as.abort_requested()) {
         auto batch = co_await _consumer_transform_pipe.pop_eventually();
+        auto offset = model::offset_cast(batch.last_offset());
         batch = co_await _engine->transform(std::move(batch), _probe);
-        co_await _transform_producer_pipe.push_eventually(std::move(batch));
+        co_await _transform_producer_pipe.push_eventually(
+          {.batch = std::move(batch), .input_offset = offset});
     }
 }
 
 ss::future<> processor::run_producer_loop() {
     while (!_as.abort_requested()) {
-        auto batches = co_await drain_queue(&_transform_producer_pipe, _probe);
-        co_await _sinks[0]->write(std::move(batches));
+        auto drained = co_await drain_queue(&_transform_producer_pipe, _probe);
+        co_await _sinks[0]->write(std::move(drained.batches));
     }
 }
 

@@ -28,6 +28,15 @@
 namespace transform {
 
 /**
+ * A holder of the result of a transform, along with the input offset the batch
+ * was read at.
+ */
+struct transformed_batch {
+    model::record_batch batch;
+    kafka::offset input_offset;
+};
+
+/**
  * A processor is the driver of a transform for a single partition.
  *
  * At it's heart it's a fiber that reads->transforms->writes batches
@@ -80,7 +89,7 @@ private:
     probe* _probe;
 
     ss::queue<model::record_batch> _consumer_transform_pipe;
-    ss::queue<model::record_batch> _transform_producer_pipe;
+    ss::queue<transformed_batch> _transform_producer_pipe;
 
     ss::abort_source _as;
     ss::future<> _task;
