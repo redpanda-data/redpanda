@@ -14,6 +14,8 @@
 #include "cluster/ephemeral_credential_frontend.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"
+#include "kafka/protocol/produce.h"
+#include "kafka/protocol/schemata/produce_response.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "security/acl.h"
 #include "security/audit/client_probe.h"
@@ -356,28 +358,39 @@ ss::future<> audit_client::produce(
            &probe,
            units = std::move(units),
            records = std::move(records)]() mutable {
+              const auto n_records = records.size();
               return _client
                 .produce_records(
                   model::kafka_audit_logging_topic, std::move(records))
-                .discard_result()
-                .then_wrapped([&probe](ss::future<> fut) {
-                    if (fut.failed()) {
+                .then([this, n_records, &probe](kafka::produce_response r) {
+                    bool errored = std::any_of(
+                      r.data.responses.cbegin(),
+                      r.data.responses.cend(),
+                      [](const kafka::topic_produce_response& tp) {
+                          return std::any_of(
+                            tp.partitions.cbegin(),
+                            tp.partitions.cend(),
+                            [](const kafka::partition_produce_response& p) {
+                                return p.error_code != kafka::error_code::none;
+                            });
+                      });
+                    if (errored) {
+                        if (_as.abort_requested()) {
+                            vlog(
+                              adtlog.warn,
+                              "{} audit records dropped, shutting down",
+                              n_records);
+                        } else {
+                            vlog(
+                              adtlog.error,
+                              "{} audit records dropped",
+                              n_records);
+                        }
                         probe.audit_error();
                     } else {
                         probe.audit_event();
                     }
-                    return fut;
                 })
-                .handle_exception_type(
-                  [](const kafka::client::partition_error& ex) {
-                      /// TODO: Possible optimization to retry with different
-                      /// partition strategy.
-                      ///
-                      /// If reached here non-mitigatable error occured, or
-                      /// attempts on mitigation had been used up.
-                      vlog(
-                        adtlog.error, "Audit records dropped, reason: {}", ex);
-                  })
                 .finally([units = std::move(units)] {});
           });
     } catch (const ss::broken_semaphore&) {
