@@ -66,6 +66,10 @@ type RedpandaClusterSpec struct {
 	ServiceAccount *ServiceAccount `json:"serviceAccount,omitempty"`
 
 	Monitoring *Monitoring `json:"monitoring,omitempty"`
+
+	// Force is used for allowing a change of TLS configuration. Using this value
+	// will result in a short period of downtime.
+	Force *bool `json:"force,omitempty"`
 }
 
 type ConfigWatcher struct {
