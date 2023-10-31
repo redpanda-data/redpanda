@@ -138,7 +138,9 @@ public:
                   .finally([this]() {
                       vlog(
                         klog.debug,
-                        "Connection input_shutdown; aborting operations");
+                        "Connection input_shutdown; aborting operations for "
+                        "client: {}",
+                        conn->addr);
                       return _as.request_abort_ex(std::system_error(
                         std::make_error_code(std::errc::connection_aborted)));
                   })
