@@ -176,7 +176,7 @@ request_auth_result request_authenticator::do_authenticate(
             throw ss::httpd::base_exception(
               "Unauthorized", ss::http::reply::status_type::unauthorized);
         }
-        auto principal = res.assume_value().name();
+        auto principal = res.assume_value().principal.name();
         const auto& superusers = _superusers();
         auto found = std::find(superusers.begin(), superusers.end(), principal);
         bool superuser = (found != superusers.end()) || (!require_auth);

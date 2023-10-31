@@ -19,7 +19,11 @@
 
 namespace security::oidc {
 
-result<acl_principal> authenticate(
+struct authentication_data {
+    acl_principal principal;
+    ss::lowres_system_clock::time_point expiry;
+};
+result<authentication_data> authenticate(
   jws const& jws,
   verifier const& verifier,
   std::string_view issuer,
@@ -27,7 +31,7 @@ result<acl_principal> authenticate(
   std::chrono::seconds clock_skew_tolerance,
   ss::lowres_system_clock::time_point now);
 
-result<acl_principal> authenticate(
+result<authentication_data> authenticate(
   jwt const& jwt,
   std::string_view issuer,
   std::string_view audience,
@@ -43,7 +47,7 @@ public:
     authenticator& operator=(authenticator const&) = delete;
     ~authenticator();
 
-    result<acl_principal> authenticate(std::string_view bearer_token);
+    result<authentication_data> authenticate(std::string_view bearer_token);
 
 private:
     class impl;
@@ -63,12 +67,17 @@ public:
     ~sasl_authenticator() override;
 
     ss::future<result<bytes>> authenticate(bytes) override;
+    std::optional<std::chrono::milliseconds>
+    credential_expires_in_ms() const override {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          _auth_data.expiry - ss::lowres_system_clock::now());
+    }
 
     bool complete() const override { return _state == state::complete; }
     bool failed() const override { return _state == state::failed; }
 
     const security::acl_principal& principal() const override {
-        return _principal;
+        return _auth_data.principal;
     }
 
 private:
@@ -76,7 +85,7 @@ private:
     operator<<(std::ostream& os, sasl_authenticator::state const s);
 
     authenticator _authenticator;
-    security::acl_principal _principal;
+    authentication_data _auth_data;
     state _state{state::init};
 };
 
