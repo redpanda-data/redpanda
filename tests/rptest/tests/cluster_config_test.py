@@ -169,9 +169,22 @@ class HasRedpandaAndAdmin(Protocol):
 
 class ClusterConfigHelpersMixin:
     def _check_value_everywhere(self: HasRedpandaAndAdmin, key, expect_value):
-        for node in self.redpanda.nodes:
-            actual_value = self.admin.get_cluster_config(node)[key]
-            assert actual_value == expect_value, f"Wrong value on node {node.account.hostname}: {key}={actual_value} (!={expect_value})"
+        values: dict[str, str] = {}
+
+        def _check_all():
+            nonlocal values
+            values = {
+                node.account.hostname: self.admin.get_cluster_config(node)[key]
+                for node in self.redpanda.nodes
+            }
+            return all(actual_value == expect_value
+                       for _, actual_value in values.items())
+
+        def _assert_msg():
+            nonlocal values
+            return f"Wrong value on some nodes: {key}!={expect_value} in {values}"
+
+        wait_until(_check_all, timeout_sec=5, err_msg=_assert_msg)
 
     def _check_propagated_and_persistent(self: HasRedpandaAndAdmin, key,
                                          expect_value):
