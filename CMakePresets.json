@@ -40,6 +40,13 @@
       }
     },
     {
+      "name": "sanitize",
+      "hidden": true,
+      "cacheVariables": {
+        "Redpanda_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
       "name": "release",
       "inherits": ["base", "release-type", "shared"]
     },
@@ -49,11 +56,11 @@
     },
     {
       "name": "debug",
-      "inherits": ["base", "debug-type", "shared"]
+      "inherits": ["base", "debug-type", "shared", "sanitize"]
     },
     {
       "name": "debug-static",
-      "inherits": ["base", "debug-type", "static"]
+      "inherits": ["base", "debug-type", "static", "sanitize"]
     }
   ],
   "buildPresets": [
