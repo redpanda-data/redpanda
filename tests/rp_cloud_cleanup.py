@@ -95,6 +95,17 @@ class CloudCleanup():
             # Just request deletion right away
             return self.cloudv2.delete_resource(handle)
         elif _type in ['BYOC']:
+            # Check if provider is the same
+            # This is relevant only for BYOC as
+            # rpk will not be able to delete it anyway
+            if _cluster['spec']['provider'].lower(
+            ) != self.config.provider.lower():
+                # Wrong provider, can't delete right now
+                self.log.info(
+                    f"# SKIP: Can't delete '{_cluster['spec']['provider']}' "
+                    f"cluster using '{self.config.provider}' credentials")
+                return False
+
             # Check status and act in steps
             # In most cases cluisters will be in 'deleting_agent' status
             # I.e. past 36h that we skip for namespaces,
@@ -130,6 +141,7 @@ class CloudCleanup():
                 self.log.warning(
                     f"# WARNING: Cluster deletion with status '{_state}' not yet implemented"
                 )
+                return False
         else:
             self.log.warning(f"# WARNING: Cloud type not supported: '{_type}'")
             return False
