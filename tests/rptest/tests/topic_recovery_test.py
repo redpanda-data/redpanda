@@ -1112,7 +1112,15 @@ class TopicRecoveryTest(RedpandaTest):
                 f"All data will be removed from node {node.account.hostname}")
             self.redpanda.remove_local_data(node)
 
-    def _collect_replaced_segments(self, replaced: dict[NTPR, list],
+    @staticmethod
+    def _normalize_lw_seg_key(key: str, lw_seg_meta: dict) -> str:
+        """adds archiver_term to key, to match the actual object key in cloud storage"""
+        if not key.endswith(".log"):
+            # key already has archiver term set in the name
+            return key
+        return f"{key}.{lw_seg_meta['archiver_term']}" if "archiver_term" in lw_seg_meta else key
+
+    def _collect_replaced_segments(self, replaced: dict[NTPR, dict[str, dict]],
                                    manifest_key: str):
         data = self.cloud_storage_client.get_object_data(
             self.s3_bucket, manifest_key)
@@ -1124,8 +1132,10 @@ class TopicRecoveryTest(RedpandaTest):
             manifest = json.loads(data)
         assert manifest is not None, f"failed to load manifest from path {manifest_key}"
         if replaced_segments := manifest.get('replaced'):
-            replaced[parse_s3_manifest_path(manifest_key)] = list(
-                replaced_segments.keys())
+            replaced[parse_s3_manifest_path(manifest_key)] = {
+                TopicRecoveryTest._normalize_lw_seg_key(k, v): v
+                for k, v in replaced_segments.items()
+            }
 
     def _wait_for_data_in_s3(self,
                              expected_topics,
@@ -1138,16 +1148,11 @@ class TopicRecoveryTest(RedpandaTest):
         total_partitions = sum([t.partition_count for t in expected_topics])
         tolerance = default_log_segment_size * total_partitions
         path_matcher = PathMatcher(expected_topics)
-        replaced_segments = {}
+        replaced_segments: dict[NTPR, dict[str, dict]] = {}
 
         def is_replaced(segment):
-            parsed = parse_s3_segment_path(
-                re.sub(r'log.\d+', 'log',
-                       gen_local_path_from_remote(segment.key)))
-            for k, v in replaced_segments.items():
-                if parsed.name in v and parsed.ntpr == k:
-                    return True
-            return False
+            parsed = parse_s3_segment_path(segment.key)
+            return parsed.name in replaced_segments.get(parsed.ntpr, {})
 
         """Wait until all topics are uploaded to S3"""
 
