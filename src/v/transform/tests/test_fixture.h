@@ -50,19 +50,19 @@ class fake_source : public source {
     static constexpr size_t max_queue_size = 64;
 
 public:
-    explicit fake_source(model::offset initial_offset)
+    explicit fake_source(kafka::offset initial_offset)
       : _batches(max_queue_size)
       , _latest_offset(initial_offset) {}
 
-    ss::future<model::offset> load_latest_offset() override;
+    ss::future<kafka::offset> load_latest_offset() override;
     ss::future<model::record_batch_reader>
-    read_batch(model::offset offset, ss::abort_source* as) override;
+    read_batch(kafka::offset offset, ss::abort_source* as) override;
 
     ss::future<> push_batch(model::record_batch batch);
 
 private:
     ss::queue<model::record_batch> _batches;
-    model::offset _latest_offset;
+    kafka::offset _latest_offset;
 };
 
 class fake_sink : public sink {
