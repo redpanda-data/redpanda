@@ -153,7 +153,7 @@ ss::future<> processor::poll_sleep() {
 }
 
 ss::future<> processor::run_consumer_loop() {
-    auto offset = co_await _source->load_latest_offset();
+    auto offset = _source->latest_offset();
     vlog(_logger.trace, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);

@@ -35,11 +35,12 @@ ss::future<model::record_batch> fake_sink::read() {
     _batches.pop_front();
     co_return batch;
 }
-ss::future<kafka::offset> fake_source::load_latest_offset() {
+
+kafka::offset fake_source::latest_offset() {
     if (_batches.empty()) {
-        co_return kafka::offset(0);
+        return kafka::offset(0);
     }
-    co_return kafka::next_offset(_batches.rbegin()->first);
+    return kafka::next_offset(_batches.rbegin()->first);
 }
 
 ss::future<model::record_batch_reader>

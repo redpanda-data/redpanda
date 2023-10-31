@@ -66,7 +66,7 @@ public:
     source& operator=(source&&) = delete;
     virtual ~source() = default;
 
-    virtual ss::future<kafka::offset> load_latest_offset() = 0;
+    virtual kafka::offset latest_offset() = 0;
     virtual ss::future<model::record_batch_reader>
     read_batch(kafka::offset, ss::abort_source*) = 0;
 

@@ -56,7 +56,7 @@ class fake_source : public source {
 public:
     explicit fake_source() = default;
 
-    ss::future<kafka::offset> load_latest_offset() override;
+    kafka::offset latest_offset() override;
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) override;
 
