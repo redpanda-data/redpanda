@@ -82,7 +82,7 @@ class HighThroughputTestTrafficGenerator:
             debug_logs=True,
             trace_logs=True)
 
-    def wait_for_traffic(self, acked=1, timeout_sec=30):
+    def wait_for_traffic(self, acked=1, timeout_sec=60):
         wait_until(lambda: self._producer.produce_status.acked >= acked,
                    timeout_sec=timeout_sec,
                    backoff_sec=1.0)
@@ -91,7 +91,8 @@ class HighThroughputTestTrafficGenerator:
         self._logger.info("Starting producer")
         self._producer.start()
         self._producer_start_time = time.time()
-        self.wait_for_traffic(acked=1, timeout_sec=10)
+        # Bump timeout to 120 with ARM and lowerTCO in mind
+        self.wait_for_traffic(acked=1, timeout_sec=120)
         # Give the producer a head start
         time.sleep(3)  # TODO: Edit maybe make this configurable?
         self._logger.info("Starting consumer")
@@ -99,7 +100,7 @@ class HighThroughputTestTrafficGenerator:
         self._consumer_start_time = time.time()
         wait_until(
             lambda: self._consumer.consumer_status.validator.total_reads >= 1,
-            timeout_sec=30)
+            timeout_sec=120)
 
     def stop(self):
         self._logger.info("Stopping all traffic generation")
@@ -770,7 +771,7 @@ class HighThroughputTest(PreallocNodesTest):
         )
         wait_until(
             lambda: topic_partitions_on_node() > nt_partitions_before / 2,
-            timeout_sec=max(60, decomm_time * 2),
+            timeout_sec=max(120, decomm_time * 2),
             backoff_sec=2,
             err_msg=
             f"{int(nt_partitions_before/2)} partitions failed to move to node {new_node_id} in {max(60, decomm_time*2)} s"
@@ -887,7 +888,7 @@ class HighThroughputTest(PreallocNodesTest):
                                    num_msgs=consume_count)
             consumer.start()
             wait_until(lambda: random_stop_check(consumer),
-                       timeout_sec=10,
+                       timeout_sec=30,
                        backoff_sec=0.001)
 
             consumer.stop()
@@ -1261,7 +1262,7 @@ class HighThroughputTest(PreallocNodesTest):
             self.logger.info(f"{number_left} messages still need to be sent.")
             return number_left <= 0
 
-        wait_until(producer_complete, timeout_sec=60, backoff_sec=1)
+        wait_until(producer_complete, timeout_sec=120, backoff_sec=1)
 
         self.logger.info("checking basic consumer functions")
         current_sent = producer.produce_status.sent
@@ -1273,7 +1274,7 @@ class HighThroughputTest(PreallocNodesTest):
                                num_msgs=consume_count)
         consumer.start()
         wait_until(lambda: consumer.message_count >= consume_count,
-                   timeout_sec=60,
+                   timeout_sec=120,
                    backoff_sec=1,
                    err_msg=f"Could not consume {consume_count} msgs in 1 min")
 
