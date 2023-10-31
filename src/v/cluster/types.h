@@ -425,7 +425,7 @@ struct fetch_tx_reply
 
         friend bool operator==(const tx_group&, const tx_group&) = default;
 
-        friend std::ostream& operator<<(std::ostream& o, const tx_partition& r);
+        friend std::ostream& operator<<(std::ostream& o, const tx_group& r);
 
         auto serde_fields() { return std::tie(group_id, etag); }
     };
