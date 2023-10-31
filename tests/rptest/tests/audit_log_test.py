@@ -19,12 +19,12 @@ from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services import redpanda
+from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, SecurityConfig
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until, wait_until_result
-from rptest.utils.audit_schemas import validate_audit_schema
 
 
 class BaseTestItem:
@@ -257,6 +257,7 @@ class AuditLogTestsBase(RedpandaTest):
         self.rpk = self.get_rpk()
         self.super_rpk = self.get_super_rpk()
         self.admin = Admin(self.redpanda)
+        self.ocsf_server = OcsfServer(test_context)
 
     def get_rpk_credentials(self, username: str, password: str,
                             mechanism: str) -> RpkTool:
@@ -300,6 +301,10 @@ class AuditLogTestsBase(RedpandaTest):
         """Initializes the Redpanda node and waits for audit log to be present
         """
         super().setUp()
+        self.ocsf_server.start()
+        self.logger.debug(
+            f'Running OCSF Server Version {self.ocsf_server.get_api_version(None)}'
+        )
         self.wait_for_audit_log()
 
     def wait_for_audit_log(self):
@@ -416,11 +421,12 @@ class AuditLogTestsBase(RedpandaTest):
             List of records as json objects
         """
         class MessageMapper():
-            def __init__(self, logger, filter_fn, stop_cond):
+            def __init__(self, logger, filter_fn, stop_cond, ocsf_server):
                 self.logger = logger
                 self.records = []
                 self.filter_fn = filter_fn
                 self.stop_cond = stop_cond
+                self.ocsf_server = ocsf_server
                 self.next_offset_ingest = 0
 
             def ingest(self, records):
@@ -431,13 +437,17 @@ class AuditLogTestsBase(RedpandaTest):
                 for rec in new_records:
                     self.logger.debug(f'{rec}')
                 self.logger.info(f"Ingested: {len(new_records)} records")
-                [validate_audit_schema(record) for record in new_records]
+                [
+                    self.ocsf_server.validate_schema(record)
+                    for record in new_records
+                ]
                 self.records += [r for r in new_records if self.filter_fn(r)]
 
             def is_finished(self):
                 return stop_cond(self.records)
 
-        mapper = MessageMapper(self.redpanda.logger, filter_fn, stop_cond)
+        mapper = MessageMapper(self.redpanda.logger, filter_fn, stop_cond,
+                               self.ocsf_server)
         consumer = self.get_rpk_consumer(topic=self.audit_log,
                                          offset=start_offset)
         consumer.start()
@@ -496,7 +506,7 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
                                                           'trace'
                                                       }))
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=5)
     def test_audit_log_functioning(self):
         """
         Ensures that the audit log can be produced to when the audit_enabled()
@@ -555,7 +565,7 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
         _ = number_of_records_matching(api_keys, 1000)
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/14565
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=4)
     def test_audit_log_metrics(self):
         """
         Confirm that audit log metrics are present
