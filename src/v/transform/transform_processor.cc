@@ -102,6 +102,7 @@ processor::processor(
   error_callback cb,
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,
+  std::unique_ptr<offset_tracker> offset_tracker,
   probe* p)
   : _id(id)
   , _ntp(std::move(ntp))
@@ -109,6 +110,7 @@ processor::processor(
   , _engine(std::move(engine))
   , _source(std::move(source))
   , _sinks(std::move(sinks))
+  , _offset_tracker(std::move(offset_tracker))
   , _error_callback(std::move(cb))
   , _probe(p)
   , _consumer_transform_pipe(1)

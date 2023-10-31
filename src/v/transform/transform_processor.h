@@ -55,6 +55,7 @@ public:
       error_callback,
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
+      std::unique_ptr<offset_tracker>,
       probe*);
     processor(const processor&) = delete;
     processor(processor&&) = delete;
@@ -85,6 +86,7 @@ private:
     ss::shared_ptr<wasm::engine> _engine;
     std::unique_ptr<source> _source;
     std::vector<std::unique_ptr<sink>> _sinks;
+    std::unique_ptr<offset_tracker> _offset_tracker;
     error_callback _error_callback;
     probe* _probe;
 

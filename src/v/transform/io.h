@@ -16,26 +16,6 @@
 #include "model/transform.h"
 
 namespace transform {
-namespace detail {
-
-/**
- * A factory for sources and sinks.
- *
- * Use sink::factory or source::factory instead.
- */
-template<typename T>
-class factory {
-public:
-    factory() = default;
-    factory(const factory&) = delete;
-    factory& operator=(const factory&) = delete;
-    factory(factory&&) = delete;
-    factory& operator=(factory&&) = delete;
-    virtual ~factory() = default;
-
-    virtual std::optional<std::unique_ptr<T>> create(model::ntp) = 0;
-};
-} // namespace detail
 
 /**
  * The output sink for Wasm transforms.
@@ -50,8 +30,6 @@ public:
     virtual ~sink() = default;
 
     virtual ss::future<> write(ss::chunked_fifo<model::record_batch>) = 0;
-
-    using factory = detail::factory<sink>;
 };
 
 /**
@@ -69,8 +47,6 @@ public:
     virtual kafka::offset latest_offset() = 0;
     virtual ss::future<model::record_batch_reader>
     read_batch(kafka::offset, ss::abort_source*) = 0;
-
-    using factory = detail::factory<source>;
 };
 
 /**

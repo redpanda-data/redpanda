@@ -21,6 +21,8 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
+
 namespace transform {
 namespace {
 class ProcessorTestFixture : public ::testing::Test {
@@ -34,6 +36,7 @@ public:
         std::vector<std::unique_ptr<transform::sink>> sinks;
         _sinks.push_back(sink.get());
         sinks.push_back(std::move(sink));
+        auto offset_tracker = std::make_unique<testing::fake_offset_tracker>();
         _p = std::make_unique<transform::processor>(
           testing::my_transform_id,
           testing::my_ntp,
@@ -45,6 +48,7 @@ public:
             const model::transform_metadata&) { ++_error_count; },
           std::move(src),
           std::move(sinks),
+          std::move(offset_tracker),
           &_probe);
         _p->start().get();
     }

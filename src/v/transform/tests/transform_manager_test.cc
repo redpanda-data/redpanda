@@ -194,6 +194,7 @@ class processor_tracker : public processor_factory {
             [](auto, auto, auto) {},
             std::make_unique<testing::fake_source>(),
             make_sink(),
+            std::make_unique<testing::fake_offset_tracker>(),
             p)
           , _track_fn(std::move(cb)) {
             _track_fn(lifecycle_status::created);
