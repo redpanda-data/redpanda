@@ -53,6 +53,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 		clusterNameWithLicense = "test-cluster-with-license"
 		licenseName            = "test-cluster-with-license"
 		licenseNamespace       = "default"
+
+		externalSuffix = "-external"
 	)
 
 	Context("When creating RedpandaCluster", func() {
@@ -77,7 +79,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Namespace: "default",
 			}
 			baseKey := types.NamespacedName{
-				Name:      key.Name + "-base",
+				Name:      key.Name + baseSuffix,
 				Namespace: "default",
 			}
 			clusterRoleKey := types.NamespacedName{
@@ -188,7 +190,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 			By("Creating NodePort Service")
 			Eventually(func() bool {
 				err := k8sClient.Get(context.Background(), types.NamespacedName{
-					Name:      key.Name + "-external",
+					Name:      key.Name + externalSuffix,
 					Namespace: key.Namespace,
 				}, &svc)
 				return err == nil &&
@@ -601,7 +603,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 			var svc corev1.Service
 			Eventually(func() bool {
 				err := k8sClient.Get(context.Background(), types.NamespacedName{
-					Name:      key.Name + "-external",
+					Name:      key.Name + externalSuffix,
 					Namespace: key.Namespace,
 				}, &svc)
 				return err == nil &&

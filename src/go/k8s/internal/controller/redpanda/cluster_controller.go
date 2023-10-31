@@ -1190,7 +1190,7 @@ func isRedpandaClusterManaged(
 	l logr.Logger, redpandaCluster *vectorizedv1alpha1.Cluster,
 ) bool {
 	log := l.WithName("isRedpandaClusterManaged")
-	managedAnnotationKey := vectorizedv1alpha1.GroupVersion.Group + "/managed"
+	managedAnnotationKey := vectorizedv1alpha1.GroupVersion.Group + managedPath
 	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == NotManaged {
 		log.Info(fmt.Sprintf("management is disabled; to enable it, change the '%s' annotation to true or remove it",
 			managedAnnotationKey))

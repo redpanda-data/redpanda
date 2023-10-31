@@ -38,6 +38,8 @@ import (
 const (
 	versionWithCentralizedConfiguration    = "v22.1.1-dev"
 	versionWithoutCentralizedConfiguration = "v21.11.1-dev" // no centralized config, shadow index enabled
+
+	baseSuffix = "-base"
 )
 
 var _ = Describe("RedpandaCluster configuration controller", func() {
@@ -902,7 +904,7 @@ func getInitialTestCluster(
 		Namespace: ns,
 	}
 	baseKey = types.NamespacedName{
-		Name:      name + "-base",
+		Name:      name + baseSuffix,
 		Namespace: ns,
 	}
 
