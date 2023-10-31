@@ -320,6 +320,10 @@ spec:
                       type:
                         type: string
                     type: object
+                  force:
+                    description: Force is used for allowing a change of TLS configuration.
+                      Using this value will result in a short period of downtime.
+                    type: boolean
                   fullNameOverride:
                     description: FullNameOverride is the override to give your redpanda
                       release
