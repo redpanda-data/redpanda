@@ -304,15 +304,15 @@
         },
         "maintenance_status": {
             "id": "maintenance_status",
-            "description": "Drain status",
+            "description": "Status of maintenance mode",
             "properties": {
                 "draining": {
                     "type": "boolean",
-                    "description": "in maintenance state"
+                    "description": "Flag indicating if maintenance mode is enabled."
                 },
                 "finished": {
                     "type": "boolean",
-                    "description": "drain finished"
+                    "description": "Indicates that draining is finished. Note that the draining flag will always be true if maintenance mode is enable and draining has finished."
                 },
                 "errors": {
                     "type": "boolean",
@@ -349,7 +349,7 @@
                     "description": "number of replicas left on a node"
                 },
                 "allocation_failures": {
-                    "type" : "array",
+                    "type": "array",
                     "items": {
                         "type": "string",
                         "description": "ntp"
