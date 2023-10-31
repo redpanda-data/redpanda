@@ -75,6 +75,7 @@ private:
     ss::future<> run_transform_loop();
     ss::future<> run_producer_loop();
     ss::future<> poll_sleep();
+    ss::future<kafka::offset> load_start_offset();
 
     template<typename... Future>
     ss::future<> when_all_shutdown(Future&&...);

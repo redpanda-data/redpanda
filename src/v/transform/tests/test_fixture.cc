@@ -12,6 +12,7 @@
 #include "transform/tests/test_fixture.h"
 
 #include "model/fundamental.h"
+#include "transform/logger.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>

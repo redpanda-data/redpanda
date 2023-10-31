@@ -157,8 +157,19 @@ ss::future<> processor::poll_sleep() {
     }
 }
 
+ss::future<kafka::offset> processor::load_start_offset() {
+    auto latest_committed = co_await _offset_tracker->load_committed_offset();
+    if (latest_committed) {
+        co_return kafka::next_offset(latest_committed.value());
+    }
+    auto latest = _source->latest_offset();
+    // We "commit" at the previous offset so that we resume at the latest.
+    co_await _offset_tracker->commit_offset(kafka::prev_offset(latest));
+    co_return latest;
+}
+
 ss::future<> processor::run_consumer_loop() {
-    auto offset = _source->latest_offset();
+    auto offset = co_await load_start_offset();
     vlog(_logger.trace, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);
@@ -192,6 +203,7 @@ ss::future<> processor::run_producer_loop() {
     while (!_as.abort_requested()) {
         auto drained = co_await drain_queue(&_transform_producer_pipe, _probe);
         co_await _sinks[0]->write(std::move(drained.batches));
+        co_await _offset_tracker->commit_offset(drained.latest_offset);
     }
 }
 

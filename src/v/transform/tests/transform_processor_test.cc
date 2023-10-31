@@ -37,6 +37,7 @@ public:
         _sinks.push_back(sink.get());
         sinks.push_back(std::move(sink));
         auto offset_tracker = std::make_unique<testing::fake_offset_tracker>();
+        _offset_tracker = offset_tracker.get();
         _p = std::make_unique<transform::processor>(
           testing::my_transform_id,
           testing::my_ntp,
@@ -51,6 +52,11 @@ public:
           std::move(offset_tracker),
           &_probe);
         _p->start().get();
+        // Wait for the initial offset to be committed so we know that the
+        // processor is actually ready, otherwise it could be possible that
+        // the processor picks up after the initial records are added to the
+        // partition.
+        _offset_tracker->wait_for_committed_offset({}).get();
     }
     void TearDown() override { _p->stop().get(); }
 
@@ -77,6 +83,7 @@ private:
     kafka::offset _offset = start_offset;
     std::unique_ptr<transform::processor> _p;
     testing::fake_source* _src;
+    testing::fake_offset_tracker* _offset_tracker;
     std::vector<testing::fake_sink*> _sinks;
     uint64_t _error_count = 0;
     probe _probe;

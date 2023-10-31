@@ -41,6 +41,13 @@ inline offset next_offset(offset p) {
     return p + offset{1};
 }
 
+inline constexpr offset prev_offset(offset o) {
+    if (o <= offset{0}) {
+        return offset{};
+    }
+    return o - offset{1};
+}
+
 } // namespace kafka
 
 namespace cloud_storage_clients {
