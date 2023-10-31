@@ -18,7 +18,7 @@
 #include "pandaproxy/server.h"
 #include "pandaproxy/util.h"
 #include "seastarx.h"
-#include "utils/request_auth.h"
+#include "security/request_auth.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>

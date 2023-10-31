@@ -14,7 +14,7 @@
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
-#include "utils/request_auth.h"
+#include "security/request_auth.h"
 
 #include <boost/algorithm/string/predicate.hpp>
 

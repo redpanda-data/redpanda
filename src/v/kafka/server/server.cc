@@ -52,6 +52,7 @@
 #include "security/exceptions.h"
 #include "security/gssapi_authenticator.h"
 #include "security/mtls.h"
+#include "security/oidc_authenticator.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
@@ -97,6 +98,7 @@ server::server(
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<security::authorizer>& authorizer,
   ss::sharded<security::audit::audit_log_manager>& audit_mgr,
+  ss::sharded<security::oidc::service>& oidc_service,
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
@@ -128,6 +130,7 @@ server::server(
   , _credentials(credentials)
   , _authorizer(authorizer)
   , _audit_mgr(audit_mgr)
+  , _oidc_service(oidc_service)
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -562,6 +565,18 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
                 ctx.connection()->server().gssapi_principal_mapper().rules(),
                 config::shard_local_cfg().sasl_kerberos_principal(),
                 config::shard_local_cfg().sasl_kerberos_keytab()));
+        }
+    }
+
+    if (supports(security::oidc::sasl_authenticator::name)) {
+        supported_sasl_mechanisms.emplace_back(
+          security::oidc::sasl_authenticator::name);
+
+        if (
+          request.data.mechanism == security::oidc::sasl_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::oidc::sasl_authenticator>(
+                ctx.connection()->server().oidc_service().local()));
         }
     }
 

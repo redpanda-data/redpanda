@@ -9,6 +9,7 @@ rp_test(
     license_test.cc
     gssapi_principal_mapper_test.cc
     jwt_test.cc
+    url_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka_protocol v::storage v::security
   LABELS kafka

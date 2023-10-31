@@ -14,8 +14,8 @@
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
+#include "security/request_auth.h"
 #include "security/types.h"
-#include "utils/request_auth.h"
 #include "utils/string_switch.h"
 
 #include <seastar/http/handlers.hh>

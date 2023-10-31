@@ -26,10 +26,10 @@
 #include "seastarx.h"
 #include "security/audit/schemas/iam.h"
 #include "security/fwd.h"
+#include "security/request_auth.h"
 #include "security/types.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
-#include "utils/request_auth.h"
 #include "utils/type_traits.h"
 
 #include <seastar/core/do_with.hh>

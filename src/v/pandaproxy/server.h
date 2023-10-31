@@ -20,7 +20,7 @@
 #include "pandaproxy/kafka_client_cache.h"
 #include "pandaproxy/types.h"
 #include "seastarx.h"
-#include "utils/request_auth.h"
+#include "security/request_auth.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

@@ -10,6 +10,8 @@
 #pragma once
 
 #include "json/document.h"
+#include "json/ostreamwrapper.h"
+#include "json/writer.h"
 #include "oncore.h"
 #include "outcome.h"
 #include "utils/string_switch.h"
@@ -27,19 +29,31 @@
 #include <cryptopp/osrng.h>
 #include <cryptopp/rsa.h>
 
+#include <iosfwd>
 #include <optional>
 #include <string_view>
 #include <system_error>
 
 namespace security::oidc {
 
-enum errc {
+enum class errc {
     success = 0,
     metadata_invalid,
     jwks_invalid,
     jwk_invalid,
-    jws_invalid,
-    jwt_invalid,
+    jws_invalid_parts,
+    jws_invalid_b64,
+    jws_invalid_sig,
+    jwt_invalid_json,
+    jwt_invalid_typ,
+    jwt_invalid_alg,
+    jwt_invalid_kid,
+    jwt_invalid_iss,
+    jwt_invalid_aud,
+    jwt_invalid_exp,
+    jwt_invalid_iat,
+    jwt_invalid_nbf,
+    jwt_invalid_sub,
     kid_not_found,
 };
 
@@ -56,10 +70,32 @@ struct errc_category final : public std::error_category {
             return "Invalid jwks";
         case errc::jwk_invalid:
             return "Invalid jwk";
-        case errc::jws_invalid:
-            return "Invalid jws";
-        case errc::jwt_invalid:
-            return "Invalid jwt";
+        case errc::jws_invalid_parts:
+            return "Invalid jws: Expected three parts, is the JWT signed?";
+        case errc::jws_invalid_b64:
+            return "Invalid jws: Base64UrlDecode failed";
+        case errc::jws_invalid_sig:
+            return "Invalid jws: Signature failed";
+        case errc::jwt_invalid_json:
+            return "Invalid jwt: Not JSON";
+        case errc::jwt_invalid_typ:
+            return "Invalid jwt.typ";
+        case errc::jwt_invalid_alg:
+            return "Invalid jwt.alg";
+        case errc::jwt_invalid_kid:
+            return "Invalid jwt.kid";
+        case errc::jwt_invalid_iss:
+            return "Invalid jwt.iss";
+        case errc::jwt_invalid_aud:
+            return "Invalid jwt.aud";
+        case errc::jwt_invalid_exp:
+            return "Invalid jwt.exp";
+        case errc::jwt_invalid_iat:
+            return "Invalid jwt.iat";
+        case errc::jwt_invalid_nbf:
+            return "Invalid jwt.nbf";
+        case errc::jwt_invalid_sub:
+            return "Invalid jwt.sub";
         case errc::kid_not_found:
             return "kid not found";
         }
@@ -256,7 +292,7 @@ public:
         // I.e., it's not an unsecured JWT (2 dots, empty signature) or a JWE (4
         // dots)
         if (encoded.ends_with('.') || absl::c_count(encoded, '.') != 2) {
-            return errc::jws_invalid;
+            return errc::jws_invalid_parts;
         }
         return jws{std::move(encoded)};
     }
@@ -275,21 +311,23 @@ class jwt {
 public:
     static result<jwt> make(json::Document header, json::Document payload) {
         if (header.HasParseError() || !header.IsObject()) {
-            return errc::jwt_invalid;
+            return errc::jwt_invalid_json;
         }
 
         if (payload.HasParseError() || !payload.IsObject()) {
-            return errc::jwt_invalid;
+            return errc::jwt_invalid_json;
         }
 
         if (detail::string_view(header, "typ") != "JWT") {
-            return errc::jwt_invalid;
+            return errc::jwt_invalid_typ;
         }
 
-        for (auto const& field : {"alg", "kid"}) {
-            auto f = detail::string_view(header, field);
+        for (auto const& field :
+             {std::make_pair("alg", errc::jwt_invalid_alg),
+              std::make_pair("kid", errc::jwt_invalid_kid)}) {
+            auto f = detail::string_view(header, field.first);
             if (!f || f->empty()) {
-                return jwt_invalid;
+                return field.second;
             }
         }
 
@@ -369,6 +407,18 @@ public:
     auto jti() const { return claim("jti"); }
 
 private:
+    friend std::ostream& operator<<(std::ostream& os, jwt const& jwt) {
+        const auto write = [](std::ostream& os, auto const& doc) {
+            json::OStreamWrapper osw(os);
+            json::Writer<json::OStreamWrapper> h{osw};
+            doc.Accept(h);
+        };
+        write(os, jwt._header);
+        os << '.';
+        write(os, jwt._payload);
+        return os;
+    }
+
     jwt(json::Document header, json::Document payload)
       : _header{std::move(header)}
       , _payload{std::move(payload)} {}
@@ -529,7 +579,7 @@ public:
           });
 
         if (jose_enc.size() != 3) {
-            return errc::jws_invalid;
+            return errc::jws_invalid_parts;
         }
 
         constexpr auto make_dom =
@@ -541,18 +591,18 @@ public:
                 dom.Parse(str.data(), str.length());
                 return dom;
             } catch (CryptoPP::Exception const& ex) {
-                return errc::jws_invalid;
+                return errc::jws_invalid_b64;
             }
         };
 
         auto header_dom = make_dom(jose_enc[0]);
         if (header_dom.has_error()) {
-            return header_dom.error();
+            return header_dom.assume_error();
         }
 
         auto payload_dom = make_dom(jose_enc[1]);
         if (payload_dom.has_error()) {
-            return payload_dom.error();
+            return payload_dom.assume_error();
         }
 
         auto signature = detail::base64_url_decode(jose_enc[2]);
@@ -561,7 +611,7 @@ public:
           std::move(header_dom).assume_value(),
           std::move(payload_dom).assume_value());
         if (jwt.has_error()) {
-            return jwt.error();
+            return jwt.assume_error();
         }
 
         auto verifier = _verifiers.find(jwt.assume_value().kid().value());
@@ -576,7 +626,7 @@ public:
         auto msg = sv.substr(0, second_dot);
         if (!verifier->second.verify(
               detail::char_view_cast<CryptoPP::byte>(msg), signature)) {
-            return errc::jws_invalid;
+            return errc::jws_invalid_sig;
         }
 
         return jwt;
@@ -586,7 +636,7 @@ public:
     result<void> update_keys(jwks const& keys) {
         auto verifiers = detail::make_verifiers(keys, _rng);
         if (verifiers.has_error()) {
-            return verifiers.error();
+            return verifiers.assume_error();
         }
         _verifiers = std::move(verifiers).assume_value();
         return outcome::success();

@@ -12,7 +12,6 @@ v_cc_library(
     vint.cc
     directory_walker.cc
     uuid.cc
-    request_auth.cc
     bottomless_token_bucket.cc
     utf8.cc
     log_hist.cc

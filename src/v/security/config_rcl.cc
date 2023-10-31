@@ -9,11 +9,14 @@
  */
 
 #include "security/gssapi_principal_mapper.h"
+#include "security/oidc_url_parser.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <re2/re2.h>
 
+#include <ada.h>
 #include <charconv>
+#include <system_error>
 
 namespace security {
 
@@ -140,4 +143,45 @@ validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept {
     return std::nullopt;
 }
 
+namespace oidc {
+std::ostream& operator<<(std::ostream& os, parsed_url const& url) {
+    fmt::print(os, "{}://{}:{}{}", url.scheme, url.host, url.port, url.target);
+    return os;
+}
+result<parsed_url> parse_url(std::string_view url_view) {
+    parsed_url result;
+    auto url = ada::parse<ada::url_aggregator>(url_view);
+    if (!url) {
+        return make_error_code(std::errc::invalid_argument);
+    }
+    auto proto = url->get_protocol();
+    result.scheme = ss::sstring{proto.substr(0, proto.length() - 1)};
+    if (result.scheme.empty()) {
+        result.scheme = "https";
+    }
+
+    if (!url->has_hostname()) {
+        return make_error_code(std::errc::invalid_argument);
+    }
+    result.host = ss::sstring{url->get_hostname()};
+
+    if (url->has_port()) {
+        auto port_str = url->get_port();
+        auto b = port_str.data();
+        auto e = b + port_str.length();
+        auto res = std::from_chars(b, e, result.port);
+        if (res.ec != std::errc{} || res.ptr != e) {
+            throw std::runtime_error("invalid url");
+        }
+    } else {
+        result.port = url->scheme_default_port();
+    }
+
+    result.target = ssx::sformat(
+      "{}{}{}", url->get_pathname(), url->get_search(), url->get_hash());
+
+    return result;
+}
+
+} // namespace oidc
 } // namespace security

@@ -15,10 +15,12 @@
 #include "net/inet_address_wrapper.h"
 #include "ssx/sformat.h"
 
+#include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_set.h>
 #include <fmt/format.h>
 
+#include <array>
 #include <optional>
 #include <unordered_map>
 
@@ -108,13 +110,30 @@ std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
 
 std::optional<ss::sstring>
 validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
-    static const absl::flat_hash_set<std::string_view> supported{
-      "GSSAPI", "SCRAM"};
+    constexpr auto supported = std::to_array<std::string_view>(
+      {"GSSAPI", "SCRAM", "OAUTHBEARER"});
 
     // Validate results
     for (const auto& m : mechanisms) {
-        if (!supported.contains(m)) {
+        if (absl::c_none_of(
+              supported, [&m](auto const& s) { return s == m; })) {
             return ssx::sformat("'{}' is not a supported SASL mechanism", m);
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
+validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms) {
+    constexpr auto supported = std::to_array<std::string_view>(
+      {"BASIC", "OIDC"});
+
+    // Validate results
+    for (const auto& m : mechanisms) {
+        if (absl::c_none_of(
+              supported, [&m](auto const& s) { return s == m; })) {
+            return ssx::sformat(
+              "'{}' is not a supported HTTP authentication mechanism", m);
         }
     }
     return std::nullopt;

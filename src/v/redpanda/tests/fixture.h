@@ -156,6 +156,7 @@ public:
             std::ref(app.controller->get_credential_store()),
             std::ref(app.controller->get_authorizer()),
             std::ref(app.audit_mgr),
+            std::ref(app.controller->get_oidc_service()),
             std::ref(app.controller->get_security_frontend()),
             std::ref(app.controller->get_api()),
             std::ref(app.tx_gateway_frontend),

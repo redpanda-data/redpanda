@@ -7,24 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
-import functools
-import json
+from ducktape.tests.test import Test
+from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import RpkTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.services.redpanda import SecurityConfig, make_redpanda_service
-from rptest.services.keycloak import KeycloakService
+from rptest.services.redpanda import LoggingConfig, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
+from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.cluster import cluster
 
-from ducktape.tests.test import Test
-from rptest.services.redpanda import make_redpanda_service
-from rptest.clients.rpk import RpkTool
-from rptest.util import expect_exception
-
-from confluent_kafka import KafkaException
+import requests
+from keycloak import KeycloakOpenID
+from urllib.parse import urlparse
 
 CLIENT_ID = 'myapp'
+TOKEN_AUDIENCE = 'account'
 EXAMPLE_TOPIC = 'foo'
+
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'security': 'trace',
+                               'pandaproxy': 'trace',
+                               'kafka/client': 'trace',
+                               'http': 'trace'
+                           })
 
 
 class RedpandaOIDCTestBase(Test):
@@ -33,21 +39,45 @@ class RedpandaOIDCTestBase(Test):
     """
     def __init__(self,
                  test_context,
-                 num_nodes=5,
+                 num_nodes=4,
                  sasl_mechanisms=['SCRAM', 'OAUTHBEARER'],
+                 http_authentication=["BASIC", "OIDC"],
                  **kwargs):
         super(RedpandaOIDCTestBase, self).__init__(test_context, **kwargs)
         self.produce_messages = []
         self.produce_errors = []
         num_brokers = num_nodes - 1
         self.keycloak = KeycloakService(test_context)
+        kc_node = self.keycloak.nodes[0]
+        try:
+            self.keycloak.start_node(kc_node)
+        except Exception as e:
+            self.logger.error(f"{e}")
+            self.keycloak.clean_node(kc_node)
+            assert False, "Keycloak failed to start"
 
         security = SecurityConfig()
         security.enable_sasl = True
         security.sasl_mechanisms = sasl_mechanisms
+        security.http_authentication = http_authentication
 
-        self.redpanda = make_redpanda_service(test_context, num_brokers)
-        self.redpanda.set_security_settings(security)
+        pandaproxy_config = PandaproxyConfig()
+        pandaproxy_config.authn_method = 'http_basic'
+
+        schema_reg_config = SchemaRegistryConfig()
+        schema_reg_config.authn_method = 'http_basic'
+
+        self.redpanda = make_redpanda_service(
+            test_context,
+            num_brokers,
+            extra_rp_conf={
+                "oidc_discovery_url": self.keycloak.get_discovery_url(kc_node),
+                "oidc_token_audience": TOKEN_AUDIENCE,
+            },
+            security=security,
+            pandaproxy_config=pandaproxy_config,
+            schema_registry_config=schema_reg_config,
+            log_config=log_config)
 
         self.su_username, self.su_password, self.su_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
@@ -64,15 +94,9 @@ class RedpandaOIDCTestBase(Test):
 
 
 class RedpandaOIDCTest(RedpandaOIDCTestBase):
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_init(self):
         kc_node = self.keycloak.nodes[0]
-        try:
-            self.keycloak.start_node(kc_node)
-        except Exception as e:
-            self.logger.error(f"{e}")
-            self.keycloak.clean_node(kc_node)
-            assert False, "Keycloak failed to start"
 
         self.keycloak.admin.create_user('norma',
                                         'desmond',
@@ -103,9 +127,52 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
                                     oauth_config=cfg)
         producer = k_client.get_producer()
 
-        # Expclicit poll triggers OIDC token flow. Required for librdkafka
+        # Explicit poll triggers OIDC token flow. Required for librdkafka
         # metadata requests to behave nicely.
         producer.poll(0.0)
 
-        with expect_exception(KafkaException, lambda _: True):
-            producer.list_topics(timeout=5)
+        expected_topics = set([EXAMPLE_TOPIC])
+        print(f'expected_topics: {expected_topics}')
+
+        wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
+                   == expected_topics,
+                   timeout_sec=5)
+
+        token_endpoint_url = urlparse(cfg.token_endpoint)
+        openid = KeycloakOpenID(
+            server_url=
+            f'{token_endpoint_url.scheme}://{token_endpoint_url.netloc}',
+            client_id=cfg.client_id,
+            client_secret_key=cfg.client_secret,
+            realm_name=DEFAULT_REALM,
+            verify=True)
+        token = openid.token(grant_type="client_credentials")
+
+        def check_pp_topics():
+            response = requests.get(
+                url=
+                f'http://{self.redpanda.nodes[0].account.hostname}:8082/topics',
+                headers={
+                    'Accept': 'application/vnd.kafka.v2+json',
+                    'Content-Type': 'application/vnd.kafka.v2+json',
+                    'Authorization': f'Bearer {token["access_token"]}'
+                },
+                timeout=5)
+            return response.status_code == requests.codes.ok and set(
+                response.json()) == expected_topics
+
+        def check_sr_subjects():
+            response = requests.get(
+                url=
+                f'http://{self.redpanda.nodes[0].account.hostname}:8081/subjects',
+                headers={
+                    'Accept': 'application/vnd.schemaregistry.v1+json',
+                    'Authorization': f'Bearer {token["access_token"]}'
+                },
+                timeout=5)
+            return response.status_code == requests.codes.ok and response.json(
+            ) == []
+
+        wait_until(check_pp_topics, timeout_sec=5)
+
+        wait_until(check_sr_subjects, timeout_sec=5)

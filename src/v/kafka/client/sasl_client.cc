@@ -11,6 +11,7 @@
 #include "kafka/client/sasl_client.h"
 
 #include "kafka/client/logger.h"
+#include "security/oidc_authenticator.h"
 #include "security/scram_authenticator.h"
 
 namespace kafka::client {
@@ -33,7 +34,8 @@ do_authenticate(shared_broker_t broker, const configuration& config) {
 
     if (
       mechanism != security::scram_sha256_authenticator::name
-      && mechanism != security::scram_sha512_authenticator::name) {
+      && mechanism != security::scram_sha512_authenticator::name
+      && mechanism != security::oidc::sasl_authenticator::name) {
         throw broker_error{
           broker->id(),
           error_code::sasl_authentication_failed,
@@ -69,6 +71,8 @@ do_authenticate(shared_broker_t broker, const configuration& config) {
     } else if (mechanism == security::scram_sha512_authenticator::name) {
         co_await do_authenticate_scram512(
           broker, std::move(username), std::move(password));
+    } else if (mechanism == security::oidc::sasl_authenticator::name) {
+        co_await do_authenticate_oauthbearer(broker, std::move(password));
     }
 }
 
@@ -205,6 +209,21 @@ ss::future<> do_authenticate_scram512(
   shared_broker_t broker, ss::sstring username, ss::sstring password) {
     return do_authenticate_scram<security::scram_sha512>(
       std::move(broker), std::move(username), std::move(password));
+}
+
+ss::future<>
+do_authenticate_oauthbearer(shared_broker_t broker, ss::sstring token) {
+    sasl_authenticate_request req;
+    req.data.auth_bytes = "n,,\1auth=";
+    req.data.auth_bytes += bytes{token.cbegin(), token.cend()};
+    req.data.auth_bytes += "\1\1";
+    auto res = co_await broker->dispatch(std::move(req));
+    if (res.data.errored()) {
+        throw broker_error{
+          broker->id(),
+          res.data.error_code,
+          res.data.error_message.value_or("<no error message>")};
+    }
 }
 
 } // namespace kafka::client

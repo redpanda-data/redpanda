@@ -17,6 +17,8 @@
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
+#include "security/oidc_url_parser.h"
+#include "ssx/sformat.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "units.h"
@@ -1110,7 +1112,8 @@ configuration::configuration()
   , sasl_mechanisms(
       *this,
       "sasl_mechanisms",
-      "A list of supported SASL mechanisms. `SCRAM` and `GSSAPI` are allowed.",
+      "A list of supported SASL mechanisms. `SCRAM`, `GSSAPI`, and "
+      "`OAUTHBEARER` are allowed.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"SCRAM"},
       validate_sasl_mechanisms)
@@ -2696,7 +2699,42 @@ configuration::configuration()
       "The sample period for the CPU profiler",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       100ms,
-      {.min = 1ms}) {}
+      {.min = 1ms})
+  , oidc_discovery_url(
+      *this,
+      "oidc_discovery_url",
+      "The URL pointing to the well-known discovery endpoint for the OIDC "
+      "provider.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      "https://auth.prd.cloud.redpanda.com/.well-known/openid-configuration",
+      [](auto const& v) -> std::optional<ss::sstring> {
+          auto res = security::oidc::parse_url(v);
+          if (res.has_error()) {
+              return res.error().message();
+          }
+          return std::nullopt;
+      })
+  , oidc_token_audience(
+      *this,
+      "oidc_token_audience",
+      "A string representing the intended recipient of the token.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      "redpanda")
+  , oidc_clock_skew_tolerance(
+      *this,
+      "oidc_clock_skew_tolerance",
+      "The amount of seconds to allow for when validating the exp, nbf, and "
+      "iat claims in the token.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::chrono::seconds{} * 30)
+  , http_authentication(
+      *this,
+      "http_authentication",
+      "A list of supported HTTP authentication mechanisms. `BASIC` and `OIDC` "
+      "are allowed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {"BASIC"},
+      validate_http_authn_mechanisms) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
