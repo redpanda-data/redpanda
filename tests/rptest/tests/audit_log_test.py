@@ -15,6 +15,7 @@ from typing import Optional
 from rptest.services.rpk_consumer import RpkConsumer
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.mark import ok_to_fail
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
@@ -178,6 +179,7 @@ class AuditLogTests(RedpandaTest):
         self.logger.debug("Finished 500 api calls with management disabled")
         _ = number_of_records_matching(api_keys, 1000)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/14565
     @cluster(num_nodes=3)
     def test_audit_log_metrics(self):
         """
