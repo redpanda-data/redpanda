@@ -12,7 +12,6 @@ v_cc_library(
     schema_registry.cc
     schema_registry_module.cc
     transform_module.cc
-    transform_module_v2.cc
     wasi.cc
     wasmtime.cc
     cache.cc
