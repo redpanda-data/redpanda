@@ -203,11 +203,9 @@ void transform_module_v2::start() {
 void transform_module_v2::stop(const std::exception_ptr& ex) {
     if (_guest_cond_var) {
         _guest_cond_var->broken(ex);
-        _guest_cond_var = std::nullopt;
     }
     if (_host_cond_var) {
         _host_cond_var->broken(ex);
-        _host_cond_var = std::nullopt;
     }
 }
 
