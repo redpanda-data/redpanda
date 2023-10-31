@@ -29,6 +29,13 @@ if(NOT HAVE_Redpanda_LINKER_FLAGS)
 endif()
 add_link_options(${Redpanda_LINKER_FLAGS})
 
+# enable sanitizers. will propogate to all targets, including dependencies
+option(Redpanda_ENABLE_SANITIZERS "Enable sanitizers (address, leak, undefined)" OFF)
+if(Redpanda_ENABLE_SANITIZERS)
+  add_link_options(-fsanitize=address,leak,undefined)
+  add_compile_options(-fsanitize=address,leak,undefined)
+endif()
+
 include(dependencies)
 include(v_library)
 include(testing)
