@@ -488,6 +488,9 @@ private:
     ss::future<std::unique_ptr<ss::http::reply>> unsafe_reset_metadata(
       std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<std::unique_ptr<ss::http::reply>>
+      unsafe_reset_metadata_from_cloud(
+        std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>>
       initiate_topic_scan_and_recovery(
         std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<ss::json::json_return_type>
