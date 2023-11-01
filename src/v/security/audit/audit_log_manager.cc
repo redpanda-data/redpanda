@@ -27,11 +27,14 @@
 #include "utils/retry.h"
 
 #include <seastar/core/sleep.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <memory>
 
 namespace security::audit {
+
+static constexpr std::string_view subsystem_name = "Audit System";
 
 std::ostream& operator<<(std::ostream& os, event_type t) {
     switch (t) {
@@ -621,6 +624,17 @@ ss::future<> audit_log_manager::start() {
     }
     _audit_enabled.watch([this] {
         try {
+            if (!enqueue_app_lifecycle_event(
+                  _audit_enabled() ? application_lifecycle::activity_id::start
+                                   : application_lifecycle::activity_id::stop,
+                  ss::sstring{subsystem_name})) {
+                vlog(adtlog.error, "Failed to enqueue audit lifecycle event");
+                if (_audit_enabled()) {
+                    throw std::runtime_error(
+                      "Failed to enqueue audit lifecycle event for audit "
+                      "system start");
+                }
+            }
             _sink->toggle(_audit_enabled());
         } catch (const ss::gate_closed_exception&) {
             vlog(
@@ -634,11 +648,25 @@ ss::future<> audit_log_manager::start() {
     });
     if (_audit_enabled()) {
         vlog(adtlog.info, "Starting audit_log_manager");
+        if (!this->enqueue_app_lifecycle_event(
+              application_lifecycle::activity_id::start,
+              ss::sstring{subsystem_name})) {
+            vlog(adtlog.error, "Failed to enqueue audit lifecycle start event");
+            // TODO I should error here, yeah?
+        }
         co_await _sink->start();
     }
 }
 
 ss::future<> audit_log_manager::stop() {
+    if (ss::this_shard_id() == client_shard_id) {
+        if (!enqueue_app_lifecycle_event(
+              application_lifecycle::activity_id::stop,
+              ss::sstring{subsystem_name})) {
+            vlog(
+              adtlog.error, "Failed to enqueue audit subsystem shutdown event");
+        }
+    }
     _drain_timer.cancel();
     _as.request_abort();
     if (ss::this_shard_id() == client_shard_id) {

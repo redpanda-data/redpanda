@@ -114,19 +114,43 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
                                 sa::event_type::management,
                                 make_random_audit_event());
                               if (enqueued) {
-                                  n_enqueued += 1;
+                                  n_enqueued++;
                               }
                           }
                           return n_enqueued;
                       })
                       .get();
 
+    // With a single CPU, we expect a total of 3 events to be enqueued
+    // There already exists a create topics event and a lifecycle event
+    // With two CPUs, we expect each to enqueue 4, where one shard has lifecycle
+    // and the other create topics
+    // With three or more CPUs, we would expect 2 CPUs to enqueue 4 and the
+    // others to enqueue 5
+
+    auto expected_count = [](uint32_t enqueue_count) {
+        if (enqueue_count == 3) {
+            return ss::smp::count == 1 ? 1 : 0;
+        } else if (enqueue_count == 4) {
+            return ss::smp::count == 1 ? 0 : 2;
+        } else if (enqueue_count == 5) {
+            return ss::smp::count > 2 ? int(ss::smp::count) - 2 : 0;
+        } else {
+            return 0;
+        }
+    };
+
     const auto equal_to = [](auto a) {
         return [a](auto b) { return std::equal_to<>()(a, b); };
     };
-    BOOST_CHECK_EQUAL(1, std::count_if(rs.cbegin(), rs.cend(), equal_to(4)));
+
     BOOST_CHECK_EQUAL(
-      ss::smp::count - 1, std::count_if(rs.cbegin(), rs.cend(), equal_to(5)));
+      expected_count(3), std::count_if(rs.cbegin(), rs.cend(), equal_to(3)));
+    BOOST_CHECK_EQUAL(
+      expected_count(4), std::count_if(rs.cbegin(), rs.cend(), equal_to(4)));
+    BOOST_CHECK_EQUAL(
+      expected_count(5), std::count_if(rs.cbegin(), rs.cend(), equal_to(5)));
+
     BOOST_CHECK_EQUAL(
       pending_audit_events(audit_mgr.local()).get0(),
       size_t(5 * ss::smp::count));
