@@ -255,16 +255,19 @@ class HighThroughputTest(PreallocNodesTest):
     def _add_resource_tracking(self, type, resource):
         self.resources.append({"type": type, "spec": resource})
 
-    def _create_topic_spec(self):
-        _spec = TopicSpec(
-            partition_count=self.tier_config.partitions_upper_limit,
-            replication_factor=3,
-            retention_bytes=-1)
+    def _create_topic_spec(self, partitions=None, replicas=None):
+        # defaulting to max partitions
+        _partitions = self.tier_config.partitions_upper_limit if partitions is None else partitions
+        _replicas = 3 if replicas is None else replicas
+        _spec = TopicSpec(partition_count=_partitions,
+                          replication_factor=_replicas,
+                          retention_bytes=-1)
         self.topics = [_spec]
         self._add_resource_tracking("topic", _spec)
 
-    def _create_default_topics(self):
-        self._create_topic_spec()
+    def _create_default_topics(self, num_partitions=None, num_replicas=None):
+        self._create_topic_spec(partitions=num_partitions,
+                                replicas=num_replicas)
         self._create_initial_topics()
 
     def _clean_resources(self):
@@ -383,10 +386,13 @@ class HighThroughputTest(PreallocNodesTest):
                 _list.append(_current)
         return _list
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=9)
     def test_max_connections(self):
-        # Consts
-        PRODUCER_TIMEOUT_MS = 5000
+        # Huge timeout for safety, 10 min
+        # Most of the tiers will end in <5 min
+        # Except for the 5-7 that will take >5 min
+        FINISH_TIMEOUT_SEC = 600
+        PRODUCER_TIMEOUT_MS = FINISH_TIMEOUT_SEC * 1000
 
         tier_config = self.redpanda.advertised_tier_config
 
@@ -400,10 +406,11 @@ class HighThroughputTest(PreallocNodesTest):
             producer_kwargs['min_record_size']) // 2
 
         # connections per node at max (tier-5) is ~3700
-        # We sending 10% above the limit to reach target
-        _target_per_node = int(tier_config.connections_limit //
-                               len(self.cluster.nodes))
-        _conn_per_node = int(_target_per_node * 1.1)
+        # Account for the metadata traffic of 1%
+        _target_total = tier_config.connections_limit
+        _target_per_node = int(_target_total // len(self.cluster.nodes))
+        _target_total = int(_target_total * 0.99)
+
         # No need to calculate message rate
         # Just use 1 msg per sec
         messages_per_sec_per_producer = 1
@@ -420,7 +427,10 @@ class HighThroughputTest(PreallocNodesTest):
             'messages_per_second_per_producer'] = messages_per_sec_per_producer
 
         # create default topics
-        self._create_default_topics()
+        # Use lower partitions limit
+        self._create_default_topics(
+            num_partitions=self.tier_config.partitions_min, num_replicas=3)
+
         # Initialize all 3 nodes with proper values
         swarm = []
         for idx in range(len(self.cluster.nodes), 0, -1):
@@ -428,7 +438,7 @@ class HighThroughputTest(PreallocNodesTest):
             _swarm_node = ProducerSwarm(self._ctx,
                                         self.redpanda,
                                         self.topic,
-                                        int(_conn_per_node),
+                                        int(_target_per_node),
                                         int(records_per_producer),
                                         timeout_ms=PRODUCER_TIMEOUT_MS,
                                         **producer_kwargs)
@@ -437,8 +447,9 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Start producing
         self.logger.warn(f"Start swarming from {len(swarm)} nodes: "
-                         f"{_conn_per_node} connections per node, "
-                         f"{records_per_producer} msg each producer")
+                         f"{_target_per_node} connections per node, "
+                         f"{records_per_producer} msg each producer, "
+                         f"{_target_total} total connections expected")
         # Total connections
         _total = 0
         connectMax = 0
@@ -464,12 +475,9 @@ class HighThroughputTest(PreallocNodesTest):
                              f"at {_now - _start:.3f}s")
             # Save maximum
             connectMax = _total if connectMax < _total else connectMax
-            # Once reaches _conn_per_node * idx,
-            # proceed to another one
-            _target = (_target_per_node * idx)
             # Check if target reached and break out if yes
-            if _total >= _target:
-                self.logger.warn(f"Reached target of {_target} "
+            if _total >= _target_total:
+                self.logger.warn(f"Reached target of {_target_total} "
                                  f"connections ({_total})")
                 break
             else:
@@ -479,7 +487,7 @@ class HighThroughputTest(PreallocNodesTest):
         # wait for the end
         self.logger.warn("Waiting for swarm to finish")
         for node in swarm:
-            node.wait(timeout_sec=1200)
+            node.wait(timeout_sec=FINISH_TIMEOUT_SEC)
         _now = time.time()
         self.logger.warn(f"Done swarming after {_now - _start}s")
 
@@ -487,10 +495,10 @@ class HighThroughputTest(PreallocNodesTest):
         _hwm = 0
         # Message count is producers * total connections
         expected_msg_count = records_per_producer * _total
-        # Since there is +10% on connections set
-        # Message count should be > expected * 0.9
-        # or _target connections number * per producer
-        reasonably_expected = records_per_producer * _target
+        # Since there is -1% on connections target set
+        # Message count should be < expected * 0.99
+        # or _target_total connections number * per producer
+        reasonably_expected = records_per_producer * _target_total
 
         for partition in self.rpk.describe_topic(self.topic):
             # Add currect high watermark for topic
@@ -503,10 +511,9 @@ class HighThroughputTest(PreallocNodesTest):
             f"Expected >{reasonably_expected} messages, actual {_hwm}"
 
         # Assert that target connection count is reached
-        self.logger.warn(
-            f"Reached {connectMax} of {tier_config.connections_limit} needed")
-        assert connectMax >= tier_config.connections_limit, \
-            f"Expected >{tier_config.connections_limit} connections, actual {connectMax}"
+        self.logger.warn(f"Reached {connectMax} of {_target_total} needed")
+        assert connectMax >= _target_total, \
+            f"Expected >{_target_total} connections, actual {connectMax}"
 
         return
 
