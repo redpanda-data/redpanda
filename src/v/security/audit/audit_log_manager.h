@@ -47,6 +47,8 @@ concept InheritsFromOCSFBase
 
 class audit_sink;
 
+using is_started = ss::bool_class<struct is_started_tag>;
+
 class audit_log_manager
   : public ss::peering_sharded_service<audit_log_manager> {
 public:
@@ -107,6 +109,16 @@ public:
           make_api_activity_event(std::forward<Args>(args)..., {})));
     }
 
+    template<typename... Args>
+    bool enqueue_app_lifecycle_event(Args&&... args) {
+        if (auto val = should_enqueue_audit_event(); val.has_value()) {
+            return (bool)*val;
+        }
+
+        return do_enqueue_audit_event(std::make_unique<application_lifecycle>(
+          make_application_lifecycle(std::forward<Args>(args)...)));
+    }
+
     /// Enqueue an event to be produced onto an audit log partition.  This will
     /// always enqueue the event (if auditing is enabled).  This is used for
     /// items like authentication events or application events.
@@ -132,6 +144,8 @@ public:
     ///
     /// NOTE: Only works on shard_id{0}, use in unit tests
     bool is_client_enabled() const;
+
+    bool report_redpanda_app_event(is_started);
 
 private:
     /// The following methods return nullopt in the case the event should

@@ -20,6 +20,8 @@
 #include "security/acl.h"
 #include "security/audit/client_probe.h"
 #include "security/audit/logger.h"
+#include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/types.h"
 #include "security/ephemeral_credential_store.h"
 #include "storage/parser_utils.h"
 #include "utils/retry.h"
@@ -681,6 +683,13 @@ bool audit_log_manager::is_client_enabled() const {
       ss::this_shard_id() == client_shard_id,
       "Must be called on audit client shard");
     return _sink->is_enabled();
+}
+
+bool audit_log_manager::report_redpanda_app_event(is_started app_started) {
+    return enqueue_app_lifecycle_event(
+      app_started == is_started::yes
+        ? application_lifecycle::activity_id::start
+        : application_lifecycle::activity_id::stop);
 }
 
 bool audit_log_manager::do_enqueue_audit_event(

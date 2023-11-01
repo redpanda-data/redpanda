@@ -685,4 +685,13 @@ api_activity make_api_activity_event(
       unmapped_data(auth_result)};
 }
 
+application_lifecycle
+make_application_lifecycle(application_lifecycle::activity_id activity_id) {
+    return {
+      activity_id,
+      redpanda_product(),
+      severity_id::informational,
+      create_timestamp_t()};
+}
+
 } // namespace security::audit
