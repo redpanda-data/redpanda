@@ -47,6 +47,13 @@
       }
     },
     {
+      "name": "coverage-type",
+      "hidden": true,
+      "cacheVariables": {
+        "Redpanda_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
       "name": "release",
       "inherits": ["base", "release-type", "shared"]
     },
@@ -61,6 +68,10 @@
     {
       "name": "debug-static",
       "inherits": ["base", "debug-type", "static", "sanitize"]
+    },
+    {
+      "name": "coverage",
+      "inherits": ["base", "release-type", "static", "coverage-type"]
     }
   ],
   "buildPresets": [

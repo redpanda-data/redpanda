@@ -40,4 +40,10 @@ include(dependencies)
 include(v_library)
 include(testing)
 
+option(Redpanda_ENABLE_COVERAGE "Enable coverage" OFF)
+if(Redpanda_ENABLE_COVERAGE)
+  add_compile_options(-O0 -g --coverage)
+  add_link_options(--coverage)
+endif()
+
 add_subdirectory(src)
