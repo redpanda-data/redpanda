@@ -8,7 +8,7 @@ v_cc_library(
     api.cc
     ffi.cc
     logger.cc
-    probe.cc
+    transform_probe.cc
     schema_registry.cc
     schema_registry_module.cc
     transform_module.cc

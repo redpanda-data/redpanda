@@ -16,8 +16,8 @@
 #include "units.h"
 #include "wasm/api.h"
 #include "wasm/logger.h"
-#include "wasm/probe.h"
 #include "wasm/schema_registry.h"
+#include "wasm/transform_probe.h"
 #include "wasm/wasmtime.h"
 
 #include <seastar/testing/perf_tests.hh>

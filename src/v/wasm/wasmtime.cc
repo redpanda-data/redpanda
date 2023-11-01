@@ -25,9 +25,9 @@
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
-#include "wasm/probe.h"
 #include "wasm/schema_registry_module.h"
 #include "wasm/transform_module.h"
+#include "wasm/transform_probe.h"
 #include "wasm/wasi.h"
 
 #include <seastar/core/align.hh>
@@ -1223,10 +1223,10 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
 void wasmtime_runtime::register_metrics() {
     namespace sm = ss::metrics;
     _public_metrics.add_group(
-      prometheus_sanitize::metrics_name("wasm"),
+      prometheus_sanitize::metrics_name("wasm_binary"),
       {
         sm::make_gauge(
-          "binary_executable_memory_usage",
+          "executable_memory_usage",
           [this] { return _total_executable_memory; },
           sm::description("The amount of executable memory used for "
                           "WebAssembly binaries"))
