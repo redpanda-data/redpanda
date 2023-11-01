@@ -134,6 +134,7 @@ private:
     ss::sharded<stack_allocator> _stack_allocator;
     size_t _total_executable_memory = 0;
     metrics::public_metric_groups _public_metrics;
+    ss::sharded<engine_probe_cache> _engine_probe_cache;
 };
 
 void check_error(const wasmtime_error_t* error) {
@@ -1218,6 +1219,7 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
         sigaddset(&mask, SIGFPE);
         ss::throw_pthread_error(::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
     });
+    co_await _engine_probe_cache.start();
     register_metrics();
 }
 
@@ -1237,6 +1239,7 @@ void wasmtime_runtime::register_metrics() {
 
 ss::future<> wasmtime_runtime::stop() {
     _public_metrics.clear();
+    co_await _engine_probe_cache.stop();
     co_await _alien_thread.stop();
     co_await _heap_allocator.stop();
     co_await _stack_allocator.stop();
