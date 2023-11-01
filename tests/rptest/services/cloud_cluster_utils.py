@@ -1,3 +1,4 @@
+import json
 from rptest.clients.rpk import RpkTool
 
 
@@ -45,7 +46,27 @@ class CloudClusterUtils:
                 "AWS_SECRET_ACCESS_KEY": infra_secret
             })
         elif self.provider == 'gcp':
+            self.gcp_project_id = self._get_gcp_project_id(infra_id)
+            self.logger.info(f"Using GCP project '{self.gcp_project_id}'")
             self.env.update({"GOOGLE_APPLICATION_CREDENTIALS": infra_id})
+
+    def _get_gcp_project_id(self, keyfilepath):
+        project_id = None
+        try:
+            with open(keyfilepath, "r") as kf:
+                _gcp_keyfile = json.load(kf)
+                project_id = _gcp_keyfile['project_id']
+        except FileNotFoundError:
+            # Just catch it and pass
+            pass
+        # Check if succeded
+        if project_id is None:
+            self.logger.warning("# WARNING: GCP keyfile not found at "
+                                f"'{keyfilepath}'. Check keyfile path "
+                                "in globals.json")
+            # Hardcoded project as a last resort
+            project_id = "devprod-cicd-infra"
+        return project_id
 
     def _parse_plugin_list(self, plist):
         """
@@ -107,8 +128,7 @@ class CloudClusterUtils:
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", self.provider, "apply", f"--redpanda-id={cluster_id}"]
         if self.provider == 'gcp':
-            # TODO: Research a way to get project-id from key file
-            cmd += ["--project-id=devprod-cicd-infra"]
+            cmd += ["--project-id=" + self.gcp_project_id]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
         return out
@@ -137,6 +157,8 @@ class CloudClusterUtils:
         cmd += [
             "byoc", self.provider, "destroy", f"--redpanda-id={cluster_id}"
         ]
+        if self.provider == 'gcp':
+            cmd += ["--project-id=" + self.gcp_project_id]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
         return out
