@@ -28,6 +28,15 @@
 namespace transform {
 
 /**
+ * A holder of the result of a transform, along with the input offset the batch
+ * was read at.
+ */
+struct transformed_batch {
+    model::record_batch batch;
+    kafka::offset input_offset;
+};
+
+/**
  * A processor is the driver of a transform for a single partition.
  *
  * At it's heart it's a fiber that reads->transforms->writes batches
@@ -46,6 +55,7 @@ public:
       error_callback,
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
+      std::unique_ptr<offset_tracker>,
       probe*);
     processor(const processor&) = delete;
     processor(processor&&) = delete;
@@ -65,6 +75,7 @@ private:
     ss::future<> run_transform_loop();
     ss::future<> run_producer_loop();
     ss::future<> poll_sleep();
+    ss::future<kafka::offset> load_start_offset();
 
     template<typename... Future>
     ss::future<> when_all_shutdown(Future&&...);
@@ -76,11 +87,12 @@ private:
     ss::shared_ptr<wasm::engine> _engine;
     std::unique_ptr<source> _source;
     std::vector<std::unique_ptr<sink>> _sinks;
+    std::unique_ptr<offset_tracker> _offset_tracker;
     error_callback _error_callback;
     probe* _probe;
 
     ss::queue<model::record_batch> _consumer_transform_pipe;
-    ss::queue<model::record_batch> _transform_producer_pipe;
+    ss::queue<transformed_batch> _transform_producer_pipe;
 
     ss::abort_source _as;
     ss::future<> _task;

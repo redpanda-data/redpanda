@@ -53,27 +53,33 @@ private:
     probe* _probe;
 };
 
-ss::future<ss::chunked_fifo<model::record_batch>>
-drain_queue(ss::queue<model::record_batch>* queue, probe* p) {
+struct drain_result {
+    ss::chunked_fifo<model::record_batch> batches;
+    kafka::offset latest_offset;
+};
+
+ss::future<drain_result>
+drain_queue(ss::queue<transformed_batch>* queue, probe* p) {
     static constexpr size_t max_batches_bytes = 1_MiB;
-    ss::chunked_fifo<model::record_batch> output;
     if (queue->empty()) {
         co_await queue->not_empty();
     }
+    drain_result result;
     size_t batches_size = 0;
     while (!queue->empty()) {
-        auto& batch = queue->front();
-        auto batch_size = batch.size_bytes();
-        batches_size += batch_size;
+        auto batch_size = queue->front().batch.size_bytes();
+        batches_size += queue->front().batch.size_bytes();
         // ensure if there is a large batch we make some progress
         // otherwise cap how much data we send to the sink at once.
-        if (!output.empty() && batches_size > max_batches_bytes) {
+        if (!result.batches.empty() && batches_size > max_batches_bytes) {
             break;
         }
         p->increment_write_bytes(batch_size);
-        output.push_back(queue->pop());
+        auto transformed = queue->pop();
+        result.latest_offset = transformed.input_offset;
+        result.batches.push_back(std::move(transformed.batch));
     }
-    co_return output;
+    co_return result;
 }
 
 /**
@@ -96,6 +102,7 @@ processor::processor(
   error_callback cb,
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,
+  std::unique_ptr<offset_tracker> offset_tracker,
   probe* p)
   : _id(id)
   , _ntp(std::move(ntp))
@@ -103,6 +110,7 @@ processor::processor(
   , _engine(std::move(engine))
   , _source(std::move(source))
   , _sinks(std::move(sinks))
+  , _offset_tracker(std::move(offset_tracker))
   , _error_callback(std::move(cb))
   , _probe(p)
   , _consumer_transform_pipe(1)
@@ -122,6 +130,9 @@ ss::future<> processor::start() {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
         _error_callback(_id, _ntp, _meta);
     }
+    _as = {};
+    _consumer_transform_pipe = ss::queue<model::record_batch>(1);
+    _transform_producer_pipe = ss::queue<transformed_batch>(1);
     _task = when_all_shutdown(
       run_consumer_loop(), run_transform_loop(), run_producer_loop());
 }
@@ -146,10 +157,24 @@ ss::future<> processor::poll_sleep() {
     }
 }
 
+ss::future<kafka::offset> processor::load_start_offset() {
+    auto latest_committed = co_await _offset_tracker->load_committed_offset();
+    if (latest_committed) {
+        co_return kafka::next_offset(latest_committed.value());
+    }
+    auto latest = _source->latest_offset();
+    // We "commit" at the previous offset so that we resume at the latest.
+    co_await _offset_tracker->commit_offset(kafka::prev_offset(latest));
+    co_return latest;
+}
+
 ss::future<> processor::run_consumer_loop() {
-    auto offset = co_await _source->load_latest_offset();
+    auto offset = co_await load_start_offset();
     vlog(_logger.trace, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
+        // TODO(rockwood): It's possible that the stored is deleted due to
+        // retention policy since the last successful commit. We should handle
+        // this by restarting from the low watermark.
         auto reader = co_await _source->read_batch(offset, &_as);
         auto last_offset = co_await std::move(reader).consume(
           queue_output_consumer(&_consumer_transform_pipe, _probe),
@@ -170,15 +195,18 @@ ss::future<> processor::run_consumer_loop() {
 ss::future<> processor::run_transform_loop() {
     while (!_as.abort_requested()) {
         auto batch = co_await _consumer_transform_pipe.pop_eventually();
+        auto offset = model::offset_cast(batch.last_offset());
         batch = co_await _engine->transform(std::move(batch), _probe);
-        co_await _transform_producer_pipe.push_eventually(std::move(batch));
+        co_await _transform_producer_pipe.push_eventually(
+          {.batch = std::move(batch), .input_offset = offset});
     }
 }
 
 ss::future<> processor::run_producer_loop() {
     while (!_as.abort_requested()) {
-        auto batches = co_await drain_queue(&_transform_producer_pipe, _probe);
-        co_await _sinks[0]->write(std::move(batches));
+        auto drained = co_await drain_queue(&_transform_producer_pipe, _probe);
+        co_await _sinks[0]->write(std::move(drained.batches));
+        co_await _offset_tracker->commit_offset(drained.latest_offset);
     }
 }
 

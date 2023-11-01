@@ -16,6 +16,7 @@
 #include "cluster/plugin_frontend.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
+#include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
@@ -35,6 +36,8 @@
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/optimized_optional.hh>
+
+#include <memory>
 
 namespace transform {
 
@@ -62,31 +65,18 @@ private:
     rpc::client* _client;
 };
 
-class rpc_client_factory final : public sink::factory {
-public:
-    explicit rpc_client_factory(rpc::client* c)
-      : _client(c) {}
-
-    std::optional<std::unique_ptr<sink>> create(model::ntp ntp) override {
-        return std::make_unique<rpc_client_sink>(ntp, _client);
-    };
-
-private:
-    rpc::client* _client;
-};
-
 class partition_source final : public source {
 public:
     explicit partition_source(kafka::partition_proxy p)
       : _partition(std::move(p)) {}
 
-    ss::future<kafka::offset> load_latest_offset() final {
+    kafka::offset latest_offset() final {
         auto result = _partition.last_stable_offset();
         if (result.has_error()) {
             throw std::runtime_error(
               kafka::make_error_code(result.error()).message());
         }
-        co_return model::offset_cast(result.value());
+        return model::offset_cast(result.value());
     }
 
     ss::future<model::record_batch_reader>
@@ -102,24 +92,6 @@ public:
 
 private:
     kafka::partition_proxy _partition;
-};
-
-class partition_source_factory final : public source::factory {
-public:
-    explicit partition_source_factory(cluster::partition_manager* manager)
-      : _manager(manager) {}
-
-    std::optional<std::unique_ptr<source>> create(model::ntp ntp) final {
-        auto p = _manager->get(ntp);
-        if (!p) {
-            return std::nullopt;
-        }
-        return std::make_unique<partition_source>(kafka::partition_proxy(
-          std::make_unique<kafka::replicated_partition>(p)));
-    };
-
-private:
-    cluster::partition_manager* _manager;
 };
 
 class registry_adapter : public registry {
@@ -160,6 +132,48 @@ private:
     cluster::partition_manager* _manager;
 };
 
+class offset_tracker_impl : public offset_tracker {
+public:
+    offset_tracker_impl(
+      model::transform_id tid, model::partition_id pid, rpc::client* client)
+      : _tid(tid)
+      , _pid(pid)
+      , _client(client) {}
+
+    ss::future<std::optional<kafka::offset>> load_committed_offset() override {
+        auto result = co_await _client->offset_fetch(
+          {.id = _tid, .partition = _pid});
+        if (result.has_error()) {
+            cluster::errc ec = result.error();
+            throw std::runtime_error(ss::format(
+              "error committing offset: {}",
+              cluster::error_category().message(int(ec))));
+        }
+        auto value = result.value();
+        if (!value) {
+            co_return std::nullopt;
+        }
+        co_return value->offset;
+    }
+
+    ss::future<> commit_offset(kafka::offset offset) override {
+        // TODO(rockwood): We should be batching commits so commiting scales
+        // with the number of cores, not the number of partitions.
+        cluster::errc ec = co_await _client->offset_commit(
+          {.id = _tid, .partition = _pid}, {.offset = offset});
+        if (ec != cluster::errc::success) {
+            throw std::runtime_error(ss::format(
+              "error committing offset: {}",
+              cluster::error_category().message(int(ec))));
+        }
+    }
+
+private:
+    model::transform_id _tid;
+    model::partition_id _pid;
+    rpc::client* _client;
+};
+
 using wasm_engine_factory = ss::noncopyable_function<
   ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>(
     model::transform_metadata)>;
@@ -168,11 +182,11 @@ class proc_factory : public processor_factory {
 public:
     proc_factory(
       wasm_engine_factory factory,
-      std::unique_ptr<source::factory> source_factory,
-      std::unique_ptr<sink::factory> sink_factory)
+      cluster::partition_manager* partition_manager,
+      rpc::client* client)
       : _wasm_engine_factory(std::move(factory))
-      , _source_factory(std::move(source_factory))
-      , _sink_factory(std::move(sink_factory)) {}
+      , _partition_manager(partition_manager)
+      , _client(client) {}
 
     ss::future<std::unique_ptr<processor>> create_processor(
       model::transform_id id,
@@ -184,37 +198,41 @@ public:
         if (!engine) {
             throw std::runtime_error("unable to create wasm engine");
         }
-        auto src = _source_factory->create(ntp);
-        if (!src) {
+        auto partition = kafka::make_partition_proxy(ntp, *_partition_manager);
+        if (!partition) {
             throw std::runtime_error("unable to create transform source");
         }
+        auto src = std::make_unique<partition_source>(*std::move(partition));
         vassert(
           meta.output_topics.size() == 1,
           "only a single output topic is supported");
         const auto& output_topic = meta.output_topics[0];
         std::vector<std::unique_ptr<sink>> sinks;
-        auto sink = _sink_factory->create(
-          model::ntp(output_topic.ns, output_topic.tp, ntp.tp.partition));
-        if (!sink) {
-            throw std::runtime_error("unable to create transform sink");
-        }
-        sinks.push_back(*std::move(sink));
+        auto sink = std::make_unique<rpc_client_sink>(
+          model::ntp(output_topic.ns, output_topic.tp, ntp.tp.partition),
+          _client);
+        sinks.push_back(std::move(sink));
+
+        auto offset_tracker = std::make_unique<offset_tracker_impl>(
+          id, ntp.tp.partition, _client);
+
         co_return std::make_unique<processor>(
           id,
           ntp,
           meta,
           *std::move(engine),
           std::move(cb),
-          *std::move(src),
+          std::move(src),
           std::move(sinks),
+          std::move(offset_tracker),
           p);
     }
 
 private:
     mutex _mu;
     wasm_engine_factory _wasm_engine_factory;
-    std::unique_ptr<source::factory> _source_factory;
-    std::unique_ptr<sink::factory> _sink_factory;
+    cluster::partition_manager* _partition_manager;
+    rpc::client* _client;
     absl::flat_hash_map<model::offset, std::unique_ptr<wasm::engine>> _cache;
 };
 
@@ -260,12 +278,6 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() {
-    std::unique_ptr<partition_source_factory> source_factory
-      = std::make_unique<partition_source_factory>(
-        &_partition_manager->local());
-    std::unique_ptr<sink::factory> sink_factory
-      = std::make_unique<rpc_client_factory>(&_rpc_client->local());
-
     _manager = std::make_unique<manager<ss::lowres_clock>>(
       _self,
       std::make_unique<registry_adapter>(
@@ -274,8 +286,8 @@ ss::future<> service::start() {
         [this](model::transform_metadata meta) {
             return create_engine(std::move(meta));
         },
-        std::move(source_factory),
-        std::move(sink_factory)));
+        &_partition_manager->local(),
+        &_rpc_client->local()));
     co_await _manager->start();
     register_notifications();
 }

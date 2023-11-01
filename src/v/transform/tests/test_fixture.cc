@@ -11,59 +11,81 @@
 
 #include "transform/tests/test_fixture.h"
 
+#include "model/fundamental.h"
+#include "transform/logger.h"
+
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/lowres_clock.hh>
 
 #include <gtest/gtest.h>
 
 #include <exception>
+#include <iostream>
 
 namespace transform::testing {
 ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
     for (auto& batch : batches) {
-        co_await _batches.push_eventually(std::move(batch));
+        _batches.push_back(std::move(batch));
     }
+    _cond_var.broadcast();
+    co_return;
 }
 ss::future<model::record_batch> fake_sink::read() {
-    return _batches.pop_eventually();
+    co_await _cond_var.wait(1s, [this] { return !_batches.empty(); });
+    auto batch = std::move(_batches.front());
+    _batches.pop_front();
+    co_return batch;
 }
-ss::future<kafka::offset> fake_source::load_latest_offset() {
-    co_return _latest_offset;
+
+kafka::offset fake_source::latest_offset() {
+    if (_batches.empty()) {
+        return kafka::offset(0);
+    }
+    return kafka::next_offset(_batches.rbegin()->first);
 }
+
 ss::future<model::record_batch_reader>
 fake_source::read_batch(kafka::offset offset, ss::abort_source* as) {
-    EXPECT_EQ(offset, _latest_offset);
-    if (!_batches.empty()) {
-        model::record_batch_reader::data_t batches;
-        while (!_batches.empty()) {
-            batches.push_back(_batches.pop());
+    auto sub = as->subscribe([this]() noexcept { _cond_var.broadcast(); });
+    co_await _cond_var.wait([this, as, offset] {
+        if (as->abort_requested()) {
+            return true;
         }
-        _latest_offset = model::offset_cast(
-          model::next_offset(batches.back().last_offset()));
-        co_return model::make_memory_record_batch_reader(std::move(batches));
-    }
-    auto sub = as->subscribe(
-      // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-      [this](const std::optional<std::exception_ptr>& ex) noexcept {
-          _batches.abort(ex.value_or(
-            std::make_exception_ptr(ss::abort_requested_exception())));
-      });
-    if (!sub) {
-        _batches.abort(
-          std::make_exception_ptr(ss::abort_requested_exception()));
-    }
-    auto batch = co_await _batches.pop_eventually();
-    _latest_offset = model::offset_cast(
-      model::next_offset(batch.last_offset()));
-    sub->unlink();
-    co_return model::make_memory_record_batch_reader(std::move(batch));
+        auto it = _batches.lower_bound(offset);
+        return it != _batches.end();
+    });
+    as->check();
+    auto it = _batches.lower_bound(offset);
+    co_return model::make_memory_record_batch_reader(it->second.copy());
 }
+
 ss::future<> fake_source::push_batch(model::record_batch batch) {
-    co_await _batches.push_eventually(std::move(batch));
+    _batches.emplace(model::offset_cast(batch.last_offset()), std::move(batch));
+    _cond_var.broadcast();
+    co_return;
 }
+
 uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
     return 64_KiB;
 };
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
+
+ss::future<> fake_offset_tracker::commit_offset(kafka::offset o) {
+    _committed = o;
+    _cond_var.broadcast();
+    co_return;
+}
+
+ss::future<std::optional<kafka::offset>>
+fake_offset_tracker::load_committed_offset() {
+    co_return _committed;
+}
+
+ss::future<> fake_offset_tracker::wait_for_committed_offset(kafka::offset o) {
+    return _cond_var.wait(
+      1s, [this, o] { return _committed && *_committed >= o; });
+}
+
 } // namespace transform::testing

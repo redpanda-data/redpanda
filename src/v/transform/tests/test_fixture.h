@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/record.h"
 #include "model/tests/randoms.h"
 #include "model/transform.h"
 #include "transform/io.h"
@@ -18,6 +19,9 @@
 #include "utils/notification_list.h"
 #include "wasm/api.h"
 #include "wasm/probe.h"
+
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/condition-variable.hh>
 
 namespace transform::testing {
 
@@ -50,31 +54,41 @@ class fake_source : public source {
     static constexpr size_t max_queue_size = 64;
 
 public:
-    explicit fake_source(kafka::offset initial_offset)
-      : _batches(max_queue_size)
-      , _latest_offset(initial_offset) {}
+    explicit fake_source() = default;
 
-    ss::future<kafka::offset> load_latest_offset() override;
+    kafka::offset latest_offset() override;
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) override;
 
     ss::future<> push_batch(model::record_batch batch);
 
 private:
-    ss::queue<model::record_batch> _batches;
-    kafka::offset _latest_offset;
+    absl::btree_map<kafka::offset, model::record_batch> _batches;
+    ss::condition_variable _cond_var;
 };
 
 class fake_sink : public sink {
-    static constexpr size_t max_queue_size = 64;
-
 public:
     ss::future<> write(ss::chunked_fifo<model::record_batch> batches) override;
 
     ss::future<model::record_batch> read();
 
 private:
-    ss::queue<model::record_batch> _batches{max_queue_size};
+    ss::chunked_fifo<model::record_batch> _batches;
+    ss::condition_variable _cond_var;
+};
+
+class fake_offset_tracker : public offset_tracker {
+public:
+    ss::future<std::optional<kafka::offset>> load_committed_offset() override;
+
+    ss::future<> commit_offset(kafka::offset o) override;
+
+    ss::future<> wait_for_committed_offset(kafka::offset);
+
+private:
+    std::optional<kafka::offset> _committed;
+    ss::condition_variable _cond_var;
 };
 
 } // namespace transform::testing

@@ -16,26 +16,6 @@
 #include "model/transform.h"
 
 namespace transform {
-namespace detail {
-
-/**
- * A factory for sources and sinks.
- *
- * Use sink::factory or source::factory instead.
- */
-template<typename T>
-class factory {
-public:
-    factory() = default;
-    factory(const factory&) = delete;
-    factory& operator=(const factory&) = delete;
-    factory(factory&&) = delete;
-    factory& operator=(factory&&) = delete;
-    virtual ~factory() = default;
-
-    virtual std::optional<std::unique_ptr<T>> create(model::ntp) = 0;
-};
-} // namespace detail
 
 /**
  * The output sink for Wasm transforms.
@@ -50,8 +30,6 @@ public:
     virtual ~sink() = default;
 
     virtual ss::future<> write(ss::chunked_fifo<model::record_batch>) = 0;
-
-    using factory = detail::factory<sink>;
 };
 
 /**
@@ -66,10 +44,35 @@ public:
     source& operator=(source&&) = delete;
     virtual ~source() = default;
 
-    virtual ss::future<kafka::offset> load_latest_offset() = 0;
+    virtual kafka::offset latest_offset() = 0;
     virtual ss::future<model::record_batch_reader>
     read_batch(kafka::offset, ss::abort_source*) = 0;
-
-    using factory = detail::factory<source>;
 };
+
+/**
+ * Transforms are at least once delivery, which we achieve by committing
+ * progress on the input topic offset periodically.
+ */
+class offset_tracker {
+public:
+    offset_tracker() = default;
+    offset_tracker(const offset_tracker&) = delete;
+    offset_tracker(offset_tracker&&) = delete;
+    offset_tracker& operator=(const offset_tracker&) = delete;
+    offset_tracker& operator=(offset_tracker&&) = delete;
+    virtual ~offset_tracker() = default;
+
+    /**
+     * Load the latest offset we've committed.
+     */
+    virtual ss::future<std::optional<kafka::offset>>
+    load_committed_offset() = 0;
+
+    /**
+     * Commit progress. The offset here is how far on the input partition we've
+     * transformed and successfully written to the output topic.
+     */
+    virtual ss::future<> commit_offset(kafka::offset) = 0;
+};
+
 } // namespace transform
