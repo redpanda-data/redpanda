@@ -240,8 +240,13 @@ class BatchIterator:
         self.idx = 0
 
     def __next__(self):
-        b = Batch.from_stream(self.file, self.idx)
-        if not b:
+        offset = self.file.tell()
+        try:
+            b = Batch.from_stream(self.file, self.idx)
+        except CorruptBatchError as e:
+            logger.info(f"Corrupt batch at {offset}: {e.batch.header}")
+            b = self.recover(offset)
+        if b is None:
             fsize = os.stat(self.path).st_size
             if fsize != self.file.tell():
                 logger.warn(
@@ -250,6 +255,33 @@ class BatchIterator:
             raise StopIteration()
         self.idx += 1
         return b
+
+    def recover(self, offset):
+        starting_offset = offset
+        while True:
+            offset += 1
+            logger.info(f"Trying offset {offset}")
+            self.file.seek(offset)
+            try:
+                b = Batch.from_stream(self.file, self.idx)
+                if b is not None:
+                    size = offset - starting_offset
+                    logger.info(f"Header size {HEADER_SIZE}")
+                    logger.info(f"Corrupt region size {size} - {starting_offset}~{offset}")
+                    new_offset = self.file.tell()
+                    self.file.seek(starting_offset)
+                    data = self.file.read(size)
+                    with open("corruption.bin", "wb") as f:
+                        f.write(data)
+                    assert self.file.tell() == starting_offset + size
+                    self.file.seek(new_offset)
+                    return b
+                continue
+            except CorruptBatchError:
+                continue
+            except ValueError:
+                continue
+        logger.info("Recover failed")
 
     def __del__(self):
         self.file.close()
