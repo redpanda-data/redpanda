@@ -500,14 +500,18 @@ class SISettings:
             self.GLOBAL_S3_REGION_KEY, None)
 
         # Enable S3 if AWS creds were given at globals
-        if cloud_storage_credentials_source == 'aws_instance_metadata':
+        if cloud_storage_credentials_source == 'aws_instance_metadata' or cloud_storage_credentials_source == 'gcp_instance_metadata':
             logger.info("Running on AWS S3, setting IAM roles")
             self.cloud_storage_credentials_source = cloud_storage_credentials_source
             self.cloud_storage_access_key = None
             self.cloud_storage_secret_key = None
             self.endpoint_url = None  # None so boto auto-gens the endpoint url
+            if test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
+                                        'aws') == 'gcp':
+                self.endpoint_url = 'https://storage.googleapis.com'
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
+            self.cloud_storage_api_endpoint_port = 443
         elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
             logger.info("Running on AWS S3, setting credentials")
             self.cloud_storage_access_key = cloud_storage_access_key
