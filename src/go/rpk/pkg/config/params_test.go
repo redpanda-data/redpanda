@@ -236,8 +236,16 @@ func TestRedpandaSampleFile(t *testing.T) {
 				Address: "0.0.0.0",
 				Port:    33145,
 			},
+			AdvertisedRPCAPI: &SocketAddress{
+				Address: "127.0.0.1",
+				Port:    33145,
+			},
 			KafkaAPI: []NamedAuthNSocketAddress{{
 				Address: "0.0.0.0",
+				Port:    9092,
+			}},
+			AdvertisedKafkaAPI: []NamedSocketAddress{{
+				Address: "127.0.0.1",
 				Port:    9092,
 			}},
 			AdminAPI: []NamedSocketAddress{{
@@ -289,6 +297,12 @@ func TestRedpandaSampleFile(t *testing.T) {
     admin:
         - address: 0.0.0.0
           port: 9644
+    advertised_rpc_api:
+        address: 127.0.0.1
+        port: 33145
+    advertised_kafka_api:
+        - address: 127.0.0.1
+          port: 9092
     developer_mode: true
 rpk:
     coredump_dir: /var/lib/redpanda/coredump
