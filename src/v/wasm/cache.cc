@@ -186,9 +186,7 @@ class engine_cache {
 public:
     void
     put(model::offset offset, const ss::shared_ptr<shared_engine>& engine) {
-        auto [_, inserted] = _cache.insert_or_assign(
-          offset, engine->weak_from_this());
-        vassert(inserted, "expected engine to be inserted");
+        _cache.insert_or_assign(offset, engine->weak_from_this());
     }
 
     ss::future<mutex::units> lock() { return _mu.get_units(); }
@@ -320,9 +318,7 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
     // cores, and we can't do that here because of the inheritance).
     auto created = ss::make_shared<cached_factory>(
       ss::make_foreign(std::move(factory)), offset, &_engine_caches);
-    auto [_, inserted] = _factory_cache.insert_or_assign(
-      offset, created->weak_from_this());
-    vassert(inserted, "expected factory to be inserted");
+    _factory_cache.insert_or_assign(offset, created->weak_from_this());
 
     co_return created;
 }
