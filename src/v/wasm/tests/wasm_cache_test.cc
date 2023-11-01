@@ -282,4 +282,29 @@ TEST_F(WasmCacheTest, GC) {
     EXPECT_EQ(gc(), 1);
 }
 
+TEST_F(WasmCacheTest, FactoryReplacementBeforeGC) {
+    auto meta = random_metadata();
+    auto factory = make_factory_async(meta).get();
+    EXPECT_EQ(state()->factories, 1);
+    factory = nullptr;
+    EXPECT_EQ(state()->factories, 0);
+    // Catches a bug when we were asserting incorrectly because a factory was
+    // replaced in the cache instead of being inserted.
+    factory = make_factory_async(meta).get();
+    EXPECT_EQ(state()->factories, 1);
+}
+
+TEST_F(WasmCacheTest, EngineReplacementBeforeGC) {
+    auto meta = random_metadata();
+    auto factory = ss::make_foreign(make_factory(meta));
+    auto engine = factory->make_engine().get();
+    EXPECT_EQ(state()->engines, 1);
+    engine = nullptr;
+    EXPECT_EQ(state()->engines, 0);
+    // Catches a bug when we were asserting incorrectly because an engine was
+    // replaced in the cache instead of being inserted.
+    engine = factory->make_engine().get();
+    EXPECT_EQ(state()->engines, 1);
+}
+
 } // namespace wasm
