@@ -443,7 +443,11 @@ class RpkTool:
                 headers=[],
                 partition=None,
                 timeout=None,
-                compression_type=TopicSpec.COMPRESSION_NONE):
+                compression_type=TopicSpec.COMPRESSION_NONE,
+                schema_id=None,
+                schema_key_id=None,
+                proto_msg=None,
+                proto_key_msg=None):
 
         if timeout is None:
             # For produce, we use a lower timeout than the general
@@ -455,15 +459,31 @@ class RpkTool:
             'produce', '--key', key, '-z', f'{compression_type}',
             '--delivery-timeout', f'{timeout}s', '-f', '%v', topic
         ]
+        use_schema_registry = False
         if headers:
             cmd += ['-H ' + h for h in headers]
         if partition is not None:
             cmd += ['-p', str(partition)]
+        if schema_id is not None:
+            cmd += ["--schema-id", f'{schema_id}']
+            use_schema_registry = True
+        if schema_key_id is not None:
+            cmd += ["--schema-key-id", f'{schema_key_id}']
+            use_schema_registry = True
+        if proto_msg is not None:
+            cmd += ["--proto-msg-type", proto_msg]
+            use_schema_registry = True
+        if proto_key_msg is not None:
+            cmd += ["--proto-key-msg-type", proto_key_msg]
+            use_schema_registry = True
 
         # Run remote process with a slightly higher timeout than the
         # rpk delivery timeout, so that we get a clean-ish rpk timeout
         # message rather than sigkilling the remote process.
-        out = self._run_topic(cmd, stdin=msg, timeout=timeout + 0.5)
+        out = self._run_topic(cmd,
+                              stdin=msg,
+                              timeout=timeout + 0.5,
+                              use_schema_registry=use_schema_registry)
 
         m = re.search(r"at offset (\d+)", out)
         assert m, f"Reported offset not found in: {out}"
@@ -612,7 +632,8 @@ class RpkTool:
                 fetch_max_bytes=None,
                 quiet=False,
                 format=None,
-                timeout=None):
+                timeout=None,
+                use_schema_registry=None):
         cmd = ["consume", topic]
         if group is not None:
             cmd += ["-g", group]
@@ -628,10 +649,15 @@ class RpkTool:
             cmd += ["-p", f"{partition}"]
         if quiet:
             cmd += ["-f", "_\\n"]
+        if use_schema_registry is not None:
+            cmd += ["--use-schema-registry=" + use_schema_registry]
         elif format is not None:
             cmd += ["-f", format]
 
-        return self._run_topic(cmd, timeout=timeout)
+        return self._run_topic(cmd,
+                               timeout=timeout,
+                               use_schema_registry=use_schema_registry
+                               is not None)
 
     def group_seek_to(self, group, to):
         cmd = ["seek", group, "--to", to]
@@ -844,8 +870,14 @@ class RpkTool:
         output = self._execute(cmd)
         return json.loads(output) if output_format == 'json' else output
 
-    def _run_topic(self, cmd, stdin=None, timeout=None):
+    def _run_topic(self,
+                   cmd,
+                   stdin=None,
+                   timeout=None,
+                   use_schema_registry=False):
         cmd = [self._rpk_binary(), "topic"] + self._kafka_conn_settings() + cmd
+        if use_schema_registry:
+            cmd = cmd + self._schema_registry_conn_settings()
         return self._execute(cmd, stdin=stdin, timeout=timeout)
 
     def _run_group(self, cmd, stdin=None, timeout=None):

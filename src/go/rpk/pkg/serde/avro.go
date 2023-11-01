@@ -18,32 +18,11 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-// newAvroEncoder will generate a serializer function that can encode the
-// provided record using the specified schema. If the schema includes
-// references, it retrieves them using the supplied client. The generated
-// function returns the record encoded in the protobuf wire format.
-func newAvroEncoder(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID int) (serdeFunc, error) {
-	schemaStr := schema.Schema
-	if len(schema.References) > 0 {
-		err := parseReferences(ctx, cl, schema)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse references: %v", err)
-		}
-
-		// We use hamba/avro to for the schema reference resolution.
-		refCodec, err := avro.Parse(schema.Schema)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse schema: %v", err)
-		}
-		schemaStr = refCodec.String()
-	}
-
-	// And goavro to manage unknown data types.
-	codec, err := goavro.NewCodec(schemaStr)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse schema: %v", err)
-	}
-
+// newAvroEncoder generates a serializer function that can encode the provided
+// record using the specified schema. If the schema includes references, it
+// retrieves them using the supplied client. The generated function returns the
+// record encoded in the protobuf wire format.
+func newAvroEncoder(codec *goavro.Codec, schemaID int) (serdeFunc, error) {
 	return func(record []byte) ([]byte, error) {
 		native, _, err := codec.NativeFromTextual(record)
 		if err != nil {
@@ -63,6 +42,44 @@ func newAvroEncoder(ctx context.Context, cl *sr.Client, schema *sr.Schema, schem
 		}
 		return append(h, binary...), nil
 	}, nil
+}
+
+// newAvroDecoder generates a deserializer function that decodes the given
+// avro-encoded record according to the schema. The generated function expects
+// the record bytes (without the wire format).
+func newAvroDecoder(codec *goavro.Codec) (serdeFunc, error) {
+	return func(record []byte) ([]byte, error) {
+		native, _, err := codec.NativeFromBinary(record)
+		if err != nil {
+			return nil, fmt.Errorf("unable to decode avro-encoded record: %v", err)
+		}
+
+		return codec.TextualFromNative(nil, native)
+	}, nil
+}
+
+// generateAvroCodec will generate an AVRO codec, parsing the references if
+// there are any.
+func generateAvroCodec(ctx context.Context, cl *sr.Client, schema *sr.Schema) (*goavro.Codec, error) {
+	schemaStr := schema.Schema
+	if len(schema.References) > 0 {
+		err := parseReferences(ctx, cl, schema)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse references: %v", err)
+		}
+
+		// We use hamba/avro to for the schema reference resolution.
+		refCodec, err := avro.Parse(schema.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse schema: %v", err)
+		}
+		schemaStr = refCodec.String()
+	}
+	codec, err := goavro.NewCodec(schemaStr)
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate codec for the given schema: %v", err)
+	}
+	return codec, nil
 }
 
 // parseReferences uses hamba/avro Parse method to parse every reference. We
