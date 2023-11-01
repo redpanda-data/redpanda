@@ -46,8 +46,6 @@ public:
 
     ss::future<> start() override;
     ss::future<> stop() override;
-
-    uint64_t memory_usage_size_bytes() const override;
 };
 
 class fake_source : public source {

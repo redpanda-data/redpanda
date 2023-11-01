@@ -59,11 +59,6 @@ TEST_F(WasmTestFixture, HandlesTransformErrors) {
     EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
 }
 
-TEST_F(WasmTestFixture, CanComputeMemoryUsage) {
-    load_wasm("identity.wasm");
-    ASSERT_GT(engine()->memory_usage_size_bytes(), 0);
-}
-
 namespace {
 std::string generate_example_avro_record(
   const pandaproxy::schema_registry::canonical_schema_definition& def) {

@@ -110,10 +110,6 @@ public:
         }
     }
 
-    uint64_t memory_usage_size_bytes() const override {
-        return _underlying->memory_usage_size_bytes();
-    }
-
 private:
     mutex _mu;
     size_t _ref_count = 0;

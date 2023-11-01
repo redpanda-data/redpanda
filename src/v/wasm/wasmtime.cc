@@ -372,25 +372,6 @@ public:
     wasmtime_engine& operator=(wasmtime_engine&&) = delete;
     ~wasmtime_engine() override = default;
 
-    uint64_t memory_usage_size_bytes() const final {
-        if (!_store) {
-            return 0;
-        }
-        std::string_view memory_export_name = "memory";
-        auto* ctx = wasmtime_store_context(_store.get());
-        wasmtime_extern_t memory_extern;
-        bool ok = wasmtime_instance_export_get(
-          ctx,
-          &_instance,
-          memory_export_name.data(),
-          memory_export_name.size(),
-          &memory_extern);
-        if (!ok || memory_extern.kind != WASMTIME_EXTERN_MEMORY) {
-            return 0;
-        }
-        return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
-    };
-
     ss::future<> start() final {
         _transform_module.start();
         co_await create_instance();
@@ -456,6 +437,25 @@ public:
     }
 
 private:
+    uint64_t memory_usage_size_bytes() const {
+        if (!_store) {
+            return 0;
+        }
+        std::string_view memory_export_name = "memory";
+        auto* ctx = wasmtime_store_context(_store.get());
+        wasmtime_extern_t memory_extern;
+        bool ok = wasmtime_instance_export_get(
+          ctx,
+          &_instance,
+          memory_export_name.data(),
+          memory_export_name.size(),
+          &memory_extern);
+        if (!ok || memory_extern.kind != WASMTIME_EXTERN_MEMORY) {
+            return 0;
+        }
+        return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
+    };
+
     void report_memory_usage() {
         _probe.report_memory_usage(memory_usage_size_bytes());
     }
