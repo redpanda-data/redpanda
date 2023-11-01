@@ -210,4 +210,7 @@ api_activity make_api_activity_event(
 application_lifecycle
 make_application_lifecycle(application_lifecycle::activity_id activity_id);
 
+application_lifecycle make_application_lifecycle(
+  application_lifecycle::activity_id activity_id, ss::sstring feature_name);
+
 } // namespace security::audit

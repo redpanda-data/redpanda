@@ -694,4 +694,16 @@ make_application_lifecycle(application_lifecycle::activity_id activity_id) {
       create_timestamp_t()};
 }
 
+application_lifecycle make_application_lifecycle(
+  application_lifecycle::activity_id activity_id, ss::sstring feature_name) {
+    auto product = redpanda_product();
+    product.feature = feature{.name = std::move(feature_name)};
+
+    return {
+      activity_id,
+      std::move(product),
+      severity_id::informational,
+      create_timestamp_t()};
+}
+
 } // namespace security::audit
