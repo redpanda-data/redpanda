@@ -96,10 +96,8 @@ class CloudCleanup():
             self.log.error(f"# ERROR: Provider {self.config.provider} "
                            "not supported")
             sys.exit(1)
-        self.utils = CloudClusterUtils(_fake_context, self.log,
-                                       _keyId,
-                                       _secret,
-                                       self.config.provider,
+        self.utils = CloudClusterUtils(_fake_context, self.log, _keyId,
+                                       _secret, self.config.provider,
                                        self.config.api_url, oauth_url_origin,
                                        self.config.oauth_audience)
         self.log.info("# Preparing rpk")
@@ -345,7 +343,7 @@ class CloudCleanup():
         # Use ThreadPool
         # Deletion can be done only in this order:
         # Peerings - > clusters -> networks -> namespaces
-        pool = ThreadPoolExecutor(max_workers=1)
+        pool = ThreadPoolExecutor(max_workers=5)
         self.log.info("\n\n# Cleaning up")
         # Delete network peerings
         if not self.delete_peerings:
