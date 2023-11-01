@@ -415,6 +415,12 @@ int application::run(int ac, char** av) {
                 wire_up_and_start(app_signal);
                 post_start_tasks();
                 app_signal.wait().get();
+                if (!audit_mgr.local().report_redpanda_app_event(
+                      security::audit::is_started::no)) {
+                    vlog(
+                      _log.warn,
+                      "Failed to enqueue Redpanda shutdown audit event!");
+                }
                 trigger_abort_source();
                 vlog(_log.info, "Stopping...");
             } catch (const ss::abort_requested_exception&) {
@@ -2285,6 +2291,15 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     }
 
     audit_mgr.invoke_on_all(&security::audit::audit_log_manager::start).get();
+
+    if (!audit_mgr.local().report_redpanda_app_event(
+          security::audit::is_started::yes)) {
+        vlog(
+          _log.error,
+          "Failed to enqueue startup audit event!  Possible issue with audit "
+          "system");
+        throw std::runtime_error("Failed to enqueue startup audit event!");
+    }
 
     start_kafka(node_id, app_signal);
     controller->set_ready().get();
