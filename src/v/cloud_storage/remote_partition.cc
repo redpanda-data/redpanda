@@ -227,6 +227,10 @@ public:
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
                 if (_reader) {
+                    vlog(
+                      _ctxlog.debug,
+                      "abort requested via config.abort_source for reader {}",
+                      _reader->identifier);
                     _partition->evict_segment_reader(std::move(_reader));
                 }
             });
@@ -826,7 +830,7 @@ ss::future<> remote_partition::start() {
 
 void remote_partition::evict_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
-    _eviction_pending.push_back(std::move(reader));
+    _eviction_pending.emplace_back(std::move(reader));
     _has_evictions_cvar.signal();
 }
 

@@ -332,6 +332,8 @@ class remote_segment_batch_reader final {
     friend class remote_segment_batch_consumer;
 
 public:
+    ss::sstring identifier;
+
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
       const storage::log_reader_config& config,

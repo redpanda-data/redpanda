@@ -48,6 +48,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <fmt/core.h>
 
 #include <exception>
@@ -1282,6 +1284,7 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   , _cur_rp_offset(_seg->get_base_rp_offset())
   , _cur_delta(_seg->get_base_offset_delta())
   , _units(std::move(units)) {
+    identifier = boost::uuids::to_string(boost::uuids::random_generator()());
     _ts_probe.segment_reader_created();
 }
 
@@ -1377,13 +1380,21 @@ ss::future<> remote_segment_batch_reader::stop() {
         co_return;
     }
 
-    vlog(_ctxlog.debug, "remote_segment_batch_reader::stop");
+    vlog(
+      _ctxlog.debug,
+      "remote_segment_batch_reader::stop for reader {}",
+      identifier);
     co_await _gate.close();
     if (_parser) {
         vlog(_ctxlog.debug, "remote_segment_batch_reader::stop - parser-close");
         co_await _parser->close();
         _parser.reset();
     }
+
+    vlog(
+      _ctxlog.debug,
+      "remote_segment_batch_reader::stop completed for reader {}",
+      identifier);
     _stopped = true;
 }
 
