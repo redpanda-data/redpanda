@@ -7,9 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import typing
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+from rptest.services.transform_verifier_service import TransformVerifierProduceConfig, TransformVerifierProduceStatus, TransformVerifierService, TransformVerifierConsumeConfig, TransformVerifierConsumeStatus
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
@@ -119,3 +122,44 @@ class DataTransformsTest(RedpandaTest):
         """
         self._deploy_wasm("identity-xform")
         self._delete_wasm("identity-xform")
+
+    def _produce_input_topic(self) -> TransformVerifierProduceStatus:
+        input_topic = self.topics[1]
+
+        status = TransformVerifierService.oneshot(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            config=TransformVerifierProduceConfig(
+                bytes_per_second='1MB',
+                max_batch_size='512KB',
+                max_bytes='10MB',
+                message_size='1KB',
+                topic=input_topic.name,
+            ))
+        return typing.cast(TransformVerifierProduceStatus, status)
+
+    def _consume_output_topic(
+        self, status: TransformVerifierProduceStatus
+    ) -> TransformVerifierConsumeStatus:
+        output_topic = self.topics[1]
+
+        result = TransformVerifierService.oneshot(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            config=TransformVerifierConsumeConfig(
+                topic=output_topic.name,
+                bytes_per_second='1MB',
+                validate=status,
+            ))
+        return typing.cast(TransformVerifierConsumeStatus, result)
+
+    @cluster(num_nodes=4)
+    def test_identity(self):
+        """
+        Test that a transform that only copies records from the input to the output topic works as intended.
+        """
+        self._deploy_wasm("identity-xform")
+        producer_status = self._produce_input_topic()
+        consumer_status = self._consume_output_topic(producer_status)
+        self.logger.info(f"{consumer_status}")
+        assert consumer_status.invalid_records == 0, "transform verification failed with invalid records: {consumer_status}"
