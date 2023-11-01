@@ -393,7 +393,7 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 		return nil, nil
 	}
 
-	tw := out.NewTable("Node-ID", "Status", "Kafka-Address", "Admin-Address", "Proxy-Address")
+	tw := out.NewTable("Node-ID", "Status", "Kafka-Address", "Admin-Address", "Proxy-Address", "Schema-Registry-Address")
 	defer tw.Flush()
 	sort.Slice(nodes, func(i, j int) bool {
 		return nodes[i].ID < nodes[j].ID
@@ -402,6 +402,7 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 		kafka := nodeAddr(node.HostKafkaPort)
 		admin := nodeAddr(node.HostAdminPort)
 		proxy := nodeAddr(node.HostProxyPort)
+		schema := nodeAddr(node.HostSchemaPort)
 		if node.HostKafkaPort == 0 {
 			kafka = "-"
 		}
@@ -411,12 +412,16 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 		if node.HostProxyPort == 0 {
 			proxy = "-"
 		}
+		if node.HostSchemaPort == 0 {
+			schema = "-"
+		}
 		tw.PrintStrings(
 			fmt.Sprint(node.ID),
 			node.Status,
 			kafka,
 			admin,
 			proxy,
+			schema,
 		)
 	}
 	return nodes, nil
