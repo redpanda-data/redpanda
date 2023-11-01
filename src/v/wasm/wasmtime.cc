@@ -22,6 +22,7 @@
 #include "vassert.h"
 #include "wasm/allocator.h"
 #include "wasm/api.h"
+#include "wasm/engine_probe.h"
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"

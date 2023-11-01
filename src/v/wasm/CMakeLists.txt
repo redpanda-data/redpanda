@@ -16,6 +16,7 @@ v_cc_library(
     wasmtime.cc
     cache.cc
     allocator.cc
+    engine_probe.cc
   DEPS
     wasmtime
     v::storage
