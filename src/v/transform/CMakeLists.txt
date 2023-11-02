@@ -6,6 +6,7 @@ v_cc_library(
     logger.h
     transform_processor.h
     transform_manager.h
+    commit_batcher.h
     io.h
   SRCS
     api.cc
@@ -13,6 +14,7 @@ v_cc_library(
     logger.cc
     transform_processor.cc
     transform_manager.cc
+    commit_batcher.cc
   DEPS
     v::wasm
     v::model
