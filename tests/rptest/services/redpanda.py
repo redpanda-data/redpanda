@@ -4028,22 +4028,7 @@ def make_redpanda_service(context: TestContext,
 
     else:
         if apply_cloud_tier_to_noncloud:
-            profiles = load_tier_profiles()
-            if not cloud_tier.value in profiles:
-                raise RuntimeError(
-                    f"The specified cloud tier {cloud_tier} "
-                    f"is not found in the {tiers_config_filename}")
-
-            new_extra_rp_conf = profiles[cloud_tier.value]['cluster_config']
-            if extra_rp_conf is not None:
-                new_extra_rp_conf |= extra_rp_conf
-            extra_rp_conf = new_extra_rp_conf
-
-            if profiles[cloud_tier.value]['nodes_count'] != num_brokers:
-                context.logger.warning(
-                    f"num_brokers requested for RedpandaService ({num_brokers}) "
-                    f"does not match the cloud profile ({profiles[cloud_tier.value]['nodes_count']})"
-                )
+            raise RuntimeError('applying cloud tier to noncloud not implemented yet')
 
         if num_brokers is None:
             assert cloud_tier is not None
