@@ -27,6 +27,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/indexed_by.hpp>
@@ -50,6 +51,9 @@ class audit_log_manager
   : public ss::peering_sharded_service<audit_log_manager> {
 public:
     static constexpr auto client_shard_id = ss::shard_id{0};
+
+    using audit_event_passthrough
+      = ss::bool_class<struct audit_event_permitted_tag>;
 
     audit_log_manager(
       cluster::controller* controller, kafka::client::configuration&);
@@ -75,13 +79,8 @@ public:
     /// return an error to the client.
     template<InheritsFromOCSFBase T>
     bool enqueue_audit_event(event_type type, T&& t) {
-        if (!_audit_enabled() || !is_audit_event_enabled(type)) {
-            return true;
-        }
-        if (_as.abort_requested()) {
-            /// Prevent auditing new messages when shutdown starts that way the
-            /// queue may be entirely flushed before shutdown
-            return false;
+        if (auto val = should_enqueue_audit_event(type); val.has_value()) {
+            return (bool)*val;
         }
         return do_enqueue_audit_event(std::make_unique<T>(std::forward<T>(t)));
     }
@@ -91,18 +90,9 @@ public:
       typename... Args>
     bool
     enqueue_authz_audit_event(kafka::api_key api, Func func, Args... args) {
-        if (
-          !_audit_enabled()
-          || !is_audit_event_enabled(kafka_api_to_event_type(api))) {
-            return true;
+        if (auto val = should_enqueue_audit_event(api); val.has_value()) {
+            return (bool)*val;
         }
-
-        if (_as.abort_requested()) {
-            /// Prevent auditing new messages when shutdown starts that way the
-            /// queue may be entirely flushed before shutdown
-            return false;
-        }
-
         return do_enqueue_audit_event(
           std::make_unique<api_activity>(make_api_activity_event(
             std::forward<Args>(args)..., create_resource_details(func()))));
@@ -110,18 +100,9 @@ public:
 
     template<typename... Args>
     bool enqueue_authz_audit_event(kafka::api_key api, Args... args) {
-        if (
-          !_audit_enabled()
-          || !is_audit_event_enabled(kafka_api_to_event_type(api))) {
-            return true;
+        if (auto val = should_enqueue_audit_event(api); val.has_value()) {
+            return (bool)*val;
         }
-
-        if (_as.abort_requested()) {
-            /// Prevent auditing new messages when shutdown starts that way the
-            /// queue may be entirely flushed before shutdown
-            return false;
-        }
-
         return do_enqueue_audit_event(std::make_unique<api_activity>(
           make_api_activity_event(std::forward<Args>(args)..., {})));
     }
@@ -136,13 +117,8 @@ public:
     /// return an error to the client.
     template<InheritsFromOCSFBase T>
     bool enqueue_mandatory_audit_event(T&& t) {
-        if (!_audit_enabled()) {
-            return true;
-        }
-        if (_as.abort_requested()) {
-            /// Prevent auditing new messages when shutdown starts that way the
-            /// queue may be entirely flushed before shutdown
-            return false;
+        if (auto val = should_enqueue_audit_event(); val.has_value()) {
+            return (bool)*val;
         }
         return do_enqueue_audit_event(std::make_unique<T>(std::forward<T>(t)));
     }
@@ -158,6 +134,16 @@ public:
     bool is_client_enabled() const;
 
 private:
+    /// The following methods return nullopt in the case the event should
+    /// be audited, otherwise the optional is filled with the value representing
+    /// whether it could not be enqueued due to error or due to the event
+    /// not having attributes of desired trackable events
+    std::optional<audit_event_passthrough> should_enqueue_audit_event() const;
+    std::optional<audit_event_passthrough>
+      should_enqueue_audit_event(kafka::api_key) const;
+    std::optional<audit_event_passthrough>
+      should_enqueue_audit_event(event_type) const;
+
     ss::future<> drain();
     ss::future<> pause();
     ss::future<> resume();

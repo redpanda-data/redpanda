@@ -669,4 +669,39 @@ ss::future<> audit_log_manager::drain() {
       });
 }
 
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event() const {
+    if (!_audit_enabled()) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    if (_as.abort_requested()) {
+        /// Prevent auditing new messages when shutdown starts that way the
+        /// queue may be entirely flushed before shutdown
+        return std::make_optional(audit_event_passthrough::no);
+    }
+    return std::nullopt;
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(kafka::api_key api) const {
+    if (auto val = should_enqueue_audit_event(); val.has_value()) {
+        return val;
+    }
+    if (!is_audit_event_enabled(kafka_api_to_event_type(api))) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    return std::nullopt;
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(event_type type) const {
+    if (auto val = should_enqueue_audit_event(); val.has_value()) {
+        return val;
+    }
+    if (!is_audit_event_enabled(type)) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    return std::nullopt;
+}
+
 } // namespace security::audit
