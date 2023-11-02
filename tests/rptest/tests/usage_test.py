@@ -86,9 +86,8 @@ def assert_usage_consistency(node, a, b):
         return {(x.begin, x.end): x for x in ws}
 
     def compare(x, y, fn):
-        return fn(x.bytes_sent, y.bytes_sent) and fn(
-            x.bytes_received, y.bytes_received) and fn(
-                x.bytes_in_cloud_storage, y.bytes_in_cloud_storage)
+        return fn(x.bytes_sent, y.bytes_sent) and fn(x.bytes_received,
+                                                     y.bytes_received)
 
     # Windows from group 'a' are expected to be from a previous request
     grp_a = group_windows(a)
@@ -97,8 +96,15 @@ def assert_usage_consistency(node, a, b):
         a_value = grp_a.get(key, None)
         if a_value is not None:
             fn = operator.le if a_value.is_open else operator.eq
-            assert compare(a_value, x,
-                           fn), f"node: {node} a: {str(a_value)} b:{str(x)}"
+            assert compare(
+                a_value, x, fn
+            ), f"Failed to compare historical values, node: {node} a: {str(a_value)} b:{str(x)}"
+
+            # Can only assert on value of cloud storage if the windows are closed, since across
+            # the time of an open window, leadership may change and the value of the cs_bytes field
+            # depends on if the broker is the controller leader or not
+            if a_value.is_closed and x.is_closed:
+                assert a_value.bytes_in_cloud_storage == x.bytes_in_cloud_storage, f"Failed bytes_in_cs compare node: {node} a: {str(a_value)} b:{str(x)}"
 
 
 class UsageTest(RedpandaTest):
