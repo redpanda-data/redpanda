@@ -26,9 +26,22 @@ class AuthenticationError(Exception):
         return repr(self.message)
 
 
-class ClusterAuthorizationError(Exception):
+class AuthorizationError(Exception):
     def __init__(self, message):
         self.message = message
+
+
+class ClusterAuthorizationError(AuthorizationError):
+    def __init__(self, message):
+        super().__init__(message)
+
+    def __str__(self):
+        return repr(self.message)
+
+
+class TopicAuthorizationError(AuthorizationError):
+    def __init__(self, message):
+        super().__init__(message)
 
     def __str__(self):
         return repr(self.message)
@@ -443,6 +456,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
                 raise AuthenticationError(e.output)
             if "ClusterAuthorizationException: Cluster authorization failed" in e.output:
                 raise ClusterAuthorizationError(e.output)
+            if "TopicAuthorizationException: Not authorized to access topic" in e.output:
+                raise TopicAuthorizationError(e.output)
             raise
 
     def _script(self, script):

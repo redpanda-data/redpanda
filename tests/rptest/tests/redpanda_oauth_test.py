@@ -10,17 +10,20 @@
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.kafka_cli_tools import KafkaCliTools, AuthorizationError
 from rptest.services.redpanda import LoggingConfig, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
 from rptest.services.keycloak import DEFAULT_REALM, DEFAULT_AT_LIFESPAN_S, KeycloakService
 from rptest.services.cluster import cluster
 from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
+from rptest.util import expect_exception
 
 import requests
 import time
 from keycloak import KeycloakOpenID
 from urllib.parse import urlparse
+import json
 
 CLIENT_ID = 'myapp'
 TOKEN_AUDIENCE = 'account'
@@ -183,6 +186,70 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
         wait_until(check_pp_topics, timeout_sec=5)
 
         wait_until(check_sr_subjects, timeout_sec=5)
+
+    @cluster(num_nodes=4)
+    def test_java_client(self):
+        kc_node = self.keycloak.nodes[0]
+
+        self.keycloak.admin.create_user('norma',
+                                        'desmond',
+                                        realm_admin=True,
+                                        email='10086@sunset.blvd')
+        self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
+        self.keycloak.admin.create_client(CLIENT_ID)
+
+        # add an email address to myapp client's service user. this should
+        # appear alongside the access token.
+        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
+                                        email='myapp@customer.com')
+
+        service_user_id = self.keycloak.admin_ll.get_user_id(
+            f'service-account-{CLIENT_ID}')
+
+        self.rpk.create_topic(EXAMPLE_TOPIC)
+        expected_topics = set([EXAMPLE_TOPIC])
+        wait_until(lambda: set(self.rpk.list_topics()) == expected_topics,
+                   timeout_sec=5)
+
+        cfg = self.keycloak.generate_oauth_config(kc_node, CLIENT_ID)
+        cli = KafkaCliTools(self.redpanda, oauth_cfg=cfg)
+
+        self.redpanda.logger.debug(
+            "Without an appropriate ACL, topic list empty, produce fails with an authZ error."
+        )
+
+        with expect_exception(AuthorizationError, lambda _: True):
+            cli.oauth_produce(EXAMPLE_TOPIC, 1)
+
+        assert len(cli.list_topics()) == 0
+
+        self.redpanda.logger.debug(
+            "Grant access to service user. We can see it in the list and produce now."
+        )
+
+        self.rpk.sasl_allow_principal(f'User:{service_user_id}', ['all'],
+                                      'topic', EXAMPLE_TOPIC, self.su_username,
+                                      self.su_password, self.su_algorithm)
+
+        assert set(cli.list_topics()) == set(expected_topics)
+
+        N_REC = 10
+        cli.oauth_produce(EXAMPLE_TOPIC, N_REC)
+        records = []
+        for i in range(0, N_REC):
+            rec = self.rpk.consume(EXAMPLE_TOPIC, n=1, offset=i)
+            records.append(json.loads(rec))
+
+        self.redpanda.logger.debug(json.dumps(records, indent=1))
+
+        assert len(
+            records) == N_REC, f"Expected {N_REC} records, got {len(records)}"
+
+        values = set([r['value'] for r in records])
+
+        assert len(values) == len(
+            records
+        ), f"Expected {len(records)} unique records, got {len(values)}"
 
 
 class OIDCReauthTest(RedpandaOIDCTestBase):
