@@ -5722,9 +5722,11 @@ admin_server::unsafe_reset_metadata_from_cloud(
           ntp));
     }
 
+    bool force = get_boolean_query_param(*request, "force");
+
     try {
         co_await _partition_manager.invoke_on(
-          *shard, [ntp = std::move(ntp), shard](auto& pm) {
+          *shard, [ntp = std::move(ntp), shard, force](auto& pm) {
               auto partition = pm.get(ntp);
               if (!partition) {
                   throw ss::httpd::not_found_exception(
@@ -5732,7 +5734,7 @@ admin_server::unsafe_reset_metadata_from_cloud(
               }
 
               return partition
-                ->unsafe_reset_remote_partition_manifest_from_cloud();
+                ->unsafe_reset_remote_partition_manifest_from_cloud(force);
           });
     } catch (const std::runtime_error& err) {
         throw ss::httpd::server_error_exception(err.what());

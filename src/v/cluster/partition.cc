@@ -1174,7 +1174,8 @@ partition::unsafe_reset_remote_partition_manifest_from_json(iobuf json_buf) {
     co_await replicate_unsafe_reset(std::move(req_m));
 }
 
-ss::future<> partition::unsafe_reset_remote_partition_manifest_from_cloud() {
+ss::future<>
+partition::unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
     vlog(
       clusterlog.info,
       "[{}] Unsafe manifest reset from cloud state requested",
@@ -1227,7 +1228,7 @@ ss::future<> partition::unsafe_reset_remote_partition_manifest_from_cloud() {
 
     // Attempt the reset
     auto future_result = co_await ss::coroutine::as_future(
-      do_unsafe_reset_remote_partition_manifest_from_cloud());
+      do_unsafe_reset_remote_partition_manifest_from_cloud(force));
 
     // Reconstruct the archiver and start it if needed
     co_await start_archiver();
@@ -1236,7 +1237,8 @@ ss::future<> partition::unsafe_reset_remote_partition_manifest_from_cloud() {
     future_result.get();
 }
 
-ss::future<> partition::do_unsafe_reset_remote_partition_manifest_from_cloud() {
+ss::future<>
+partition::do_unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
     const auto initial_rev = _raft->log_config().get_initial_revision();
     const auto bucket = [this]() {
         if (is_read_replica_mode_enabled()) {
@@ -1274,13 +1276,23 @@ ss::future<> partition::do_unsafe_reset_remote_partition_manifest_from_cloud() {
     const auto max_collectible
       = _raft->log()->stm_manager()->max_collectible_offset();
     if (new_manifest.get_last_offset() < max_collectible) {
-        throw std::runtime_error(ssx::sformat(
+        auto msg = ssx::sformat(
           "Applying the cloud manifest would cause data loss since the last "
           "offset in the downloaded manifest is below the max_collectible "
           "offset "
           "{} < {}",
           new_manifest.get_last_offset(),
-          max_collectible));
+          max_collectible);
+
+        if (!force) {
+            throw std::runtime_error(msg);
+        }
+
+        vlog(
+          clusterlog.warn,
+          "[{}] {}. Proceeding since the force flag was used.",
+          ntp(),
+          msg);
     }
 
     co_await replicate_unsafe_reset(std::move(new_manifest));

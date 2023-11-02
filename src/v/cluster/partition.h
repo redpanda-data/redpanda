@@ -466,14 +466,19 @@ public:
 
     // Attempt to reset the partition manifest of a cloud storage partition
     // to the one last uploaded to cloud storage.
+    //
+    // If `force` is true, the safety checks will be disregarded, which
+    // may lead to data loss.
+    //
     // Returns a failed future if unsuccessful.
-    ss::future<> unsafe_reset_remote_partition_manifest_from_cloud();
+    ss::future<> unsafe_reset_remote_partition_manifest_from_cloud(bool force);
 
 private:
     ss::future<>
     replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
 
-    ss::future<> do_unsafe_reset_remote_partition_manifest_from_cloud();
+    ss::future<>
+    do_unsafe_reset_remote_partition_manifest_from_cloud(bool force);
 
     ss::future<std::optional<storage::timequery_result>>
       cloud_storage_timequery(storage::timequery_config);
