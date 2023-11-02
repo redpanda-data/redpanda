@@ -51,6 +51,7 @@ ss::future<> cpu_profiler::start() {
 ss::future<> cpu_profiler::stop() {
     _query_timer.cancel();
     co_await _gate.close();
+    ss::engine().set_cpu_profiler_enabled(false);
 }
 
 ss::future<std::vector<cpu_profiler::shard_samples>>
