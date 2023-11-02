@@ -100,6 +100,8 @@ def cluster(log_allow_list=None,
 
                     redpanda.cloud_storage_diagnostics()
 
+                    redpanda.validate_broker_storage()
+
                     redpanda.raise_on_crash(log_allow_list=log_allow_list)
 
                 raise
@@ -131,6 +133,7 @@ def cluster(log_allow_list=None,
                     redpanda.logger.info(
                         f"Test passed, doing log checks on {redpanda.who_am_i()}..."
                     )
+                    redpanda.validate_broker_storage()
                     if check_allowed_error_logs:
                         # Only do log inspections on tests that are otherwise
                         # successful.  This executes *before* the end-of-test
