@@ -46,6 +46,10 @@ public:
         return _partition->is_elected_leader();
     }
 
+    model::offset log_end_offset() const final {
+        return model::next_offset(_partition->dirty_offset());
+    }
+
     bool is_leader() const final { return _partition->is_leader(); }
 
     kafka::leader_epoch leader_epoch() const final {
