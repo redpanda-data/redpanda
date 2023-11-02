@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import os
+import subprocess
 import sys
 
 from concurrent.futures import ThreadPoolExecutor
@@ -29,8 +30,25 @@ def setupLogger(level):
     return root
 
 
+def shell(cmd):
+    # Run single command
+    _cmd = cmd.split(" ")
+    p = subprocess.Popen(_cmd, stdout=subprocess.PIPE, text=True)
+    p.wait()
+    # Format outout as String object
+    _out = "\n".join(list(p.stdout)).strip()
+    _rcode = p.returncode
+    p.kill()
+    return _out
+
+
 class FakeContext():
     def __init__(self, globals):
+        # Check if rpk present
+        if not os.path.exists(globals['rp_install_path_root']):
+            # Get correct path
+            _path = shell("which rpk")
+            globals['rp_install_path_root'] = _path.replace('/bin/rpk', "")
         self.globals = globals
 
 
@@ -38,7 +56,7 @@ class CloudCleanup():
     _ns_pattern = f"{ns_name_prefix}"
     # At this point all is disabled except namespaces
     delete_clusters = True
-    delete_peerings = True
+    delete_peerings = False
     delete_networks = False
     delete_namespaces = True
 
@@ -68,12 +86,24 @@ class CloudCleanup():
         # Init Cloud Cluster Utils
         o = urlparse(self.config.oauth_url)
         oauth_url_origin = f'{o.scheme}://{o.hostname}'
-        self.utils = CloudClusterUtils(_fake_context, self.log,
-                                       ducktape_globals['s3_access_key'],
-                                       ducktape_globals['s3_secret_key'],
-                                       self.config.provider,
+        if self.config.provider.lower() == "aws":
+            _keyId = ducktape_globals['s3_access_key']
+            _secret = ducktape_globals['s3_secret_key']
+        elif self.config.provider.lower() == "gcp":
+            _keyId = self.config.gcp_keyfile
+            _secret = None
+        else:
+            self.log.error(f"# ERROR: Provider {self.config.provider} "
+                           "not supported")
+            sys.exit(1)
+        self.utils = CloudClusterUtils(_fake_context, self.log, _keyId,
+                                       _secret, self.config.provider,
                                        self.config.api_url, oauth_url_origin,
                                        self.config.oauth_audience)
+        self.log.info("# Preparing rpk")
+        self.utils.rpk_plugin_uninstall('byoc')
+        # Fugure out which time was 36h back
+        self.back_36h = datetime.now() - timedelta(hours=36)
 
     def load_globals(self, path):
         _gconfig = {}
@@ -86,52 +116,123 @@ class CloudCleanup():
         return _gconfig
 
     def _delete_cluster(self, handle):
+        def _ensure_date(creation_date):
+            # False if it is not old enough
+            if creation_date > self.back_36h:
+                return False
+            else:
+                return True
+
+        def _log_skip(_msg):
+            _msg += f"| skipped '{_cluster['name']}', 36h delay not passed"
+            self.log.info(_message)
+
+        def _log_deleted(_msg):
+            _msg += "| deleted"
+            self.log.info(_msg)
+
         # Function detects cluster type and deletes it
         _cluster = self.cloudv2.get_resource(handle)
         _id = _cluster['id']
         _type = _cluster['spec']['clusterType']
         _state = _cluster['state']
+        _createdDate = datetime.strptime(_cluster['createdAt'],
+                                         "%Y-%m-%dT%H:%M:%S.%fZ")
+        _message = f"-> cluster '{_cluster['name']}', " \
+                   f"{_cluster['createdAt']}, {_type} "
         if _type in ['FMC']:
-            # Just request deletion right away
-            return self.cloudv2.delete_resource(handle)
+            if _ensure_date(_createdDate):
+                _message += f"| skipped '{_cluster['name']}', " \
+                            "36h delay not passed"
+                self.log.info(_message)
+                return False
+            else:
+                # Just request deletion right away
+                out = self.cloudv2.delete_resource(handle)
+                _message += "| deleted"
+                self.log.info(_message)
+                return out
         elif _type in ['BYOC']:
+            # Check if provider is the same
+            # This is relevant only for BYOC as
+            # rpk will not be able to delete it anyway
+            if _cluster['spec']['provider'].lower(
+            ) != self.config.provider.lower():
+                # Wrong provider, can't delete right now
+                _message += "| SKIP: Can't delete " \
+                            f"'{_cluster['spec']['provider']}' " \
+                            f"cluster using '{self.config.provider}' creds"
+                self.log.info(_message)
+                return False
+
             # Check status and act in steps
             # In most cases cluisters will be in 'deleting_agent' status
             # I.e. past 36h that we skip for namespaces,
             # native CloudV2 cleaning will kick in and delete main cluster.
             # Only agent would be left
 
-            # TODO: Implement deletion on rare non-agent statuses
-
-            if _state in ['deleting_agent']:
+            # If the cluster in deleleting_agent, we should clean it
+            # regardless of time or anything else to clean up quota
+            if _cluster['state'] in ['deleting_agent']:
+                _message += f"| status: '{_cluster['state']}' "
                 # Login
                 try:
-                    self.log.info(f"-> {handle} -> cloud login")
+                    _message += "| cloud login "
                     out = self.utils.rpk_cloud_login(
                         self.config.oauth_client_id,
                         self.config.oauth_client_secret)
                 except Exception as e:
-                    self.log.error(
-                        f"# ERROR: failed to login as '{self.config.oauth_client_id}'"
-                    )
+                    _message += "| ERROR: failed to login as " \
+                                f"'{self.config.oauth_client_id}': {e}"
+                    self.log.error(_message)
+                    return False
+                # Uninstall/Install plugin
+                try:
+                    _message += "| update plugin "
+                    self.utils.rpk_plugin_uninstall('byoc')
+                    self.utils.rpk_cloud_byoc_install(_id)
+                except Exception as e:
+                    _message += "| ERROR: failed to update byoc plugin " \
+                                f"for '{_id}': {e}"
+                    self.log.error(_message)
                     return False
 
                 # Delete agent
                 try:
-                    self.log.info(f"-> {handle} -> delete agent")
+                    _message += "| delete agent "
                     out = self.utils.rpk_cloud_agent_delete(_id)
                 except Exception as e:
-                    self.log.error(
-                        f"# ERROR: failed to delete agent for cluster '{_id}'")
+                    _message += "| ERROR: failed to delete agent for " \
+                                f"cluster '{_id}': {e}"
+                    self.log.info(_message)
                     return False
                 # All good
+                _log_deleted(_message)
                 return True
+            if _state in ['creating_agent']:
+                _message += f"| status: '{_cluster['state']}' "
+                # Check date, and delete only old ones
+                if _ensure_date(_createdDate):
+                    _log_skip(_message)
+                    return False
+                # Just delete the cluster resource
+                out = self.cloudv2.delete_resource(handle)
+                _log_deleted()
+                self.log.debug(f"Returned:\n{out}")
+                return True
+            # All other states need to wait for 36h
+            if _ensure_date(_createdDate):
+                _log_skip(_message)
+                return False
+            # TODO: Implement deletion on rare non-agent statuses
             else:
-                self.log.warning(
-                    f"# WARNING: Cluster deletion with status '{_state}' not yet implemented"
-                )
+                _message += "| WARNING: Cluster deletion with status " \
+                            f"'{_state}' not yet implemented"
+                self.log.warning(_message)
+                return False
         else:
-            self.log.warning(f"# WARNING: Cloud type not supported: '{_type}'")
+            _message += f"| WARNING: Cloud type not supported: '{_type}'"
+            self.log.warning(_message)
             return False
 
     def _pooled_delete(self, pool, resource_name, func, queue):
@@ -141,12 +242,20 @@ class CloudCleanup():
             return
         else:
             self.log.info(f"# {resource_name}: amount to cleanup {_c}")
+            _ok = 0
+            _failed = 0
+            _unsure = 0
             for r in pool.map(func, queue):
                 if isinstance(r, bool):
                     if not r:
-                        self.log.warning(f"# {resource_name}: not deleted")
+                        _failed += 1
+                    else:
+                        _ok += 1
                 else:
+                    _unsure += 1
                     self.log.debug("  output:\n{r}")
+            self.log.info(f"# Clusters: {_ok} deleted, "
+                          f"{_failed} failed, {_unsure} other")
             return
 
     def clean_namespaces(self):
@@ -172,20 +281,17 @@ class CloudCleanup():
         # Processing namespaces
         self.log.info(
             f"# Searching for resources in {len(ns_list)} namespaces")
-        # Fugure out which time was 36h back
-        back_36h = datetime.now() - timedelta(hours=36)
         for ns in ns_list:
             # Filter out according to dates in name
             # Detect date
             ns_match = self.ns_regex.match(ns['name'])
             date = ns_match['date']
+            _ns_36h_skip_flag = False
             if date is not None:
                 # Parse date into datetime object
                 ns_creation_date = datetime.strptime(date, ns_name_date_fmt)
-                if ns_creation_date > back_36h:
-                    self.log.info(f"  skipped '{ns['name']}', "
-                                  "36h delay not passed")
-                    continue
+                if ns_creation_date > self.back_36h:
+                    _ns_36h_skip_flag = True
             # Check which ones are empty
             # The areas that are checked is clusters, networks and network-peerings
             clusters = self.cloudv2.list_clusters(ns_uuid=ns['id'])
@@ -227,8 +333,13 @@ class CloudCleanup():
                 # At this point, we should not add namespace to cleaning
                 # if it has any resources. Just leave it to the next run
                 continue
-            # Add ns delete handle to the list
-            ns_queue += [self.cloudv2.namespace_endpoint(uuid=ns['id'])]
+            if _ns_36h_skip_flag:
+                self.log.info(f"  skipped '{ns['name']}', "
+                              "36h delay not passed")
+                continue
+            else:
+                # Add ns delete handle to the list
+                ns_queue += [self.cloudv2.namespace_endpoint(uuid=ns['id'])]
         # Use ThreadPool
         # Deletion can be done only in this order:
         # Peerings - > clusters -> networks -> namespaces

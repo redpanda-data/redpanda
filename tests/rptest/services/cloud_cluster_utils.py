@@ -1,3 +1,4 @@
+import json
 from rptest.clients.rpk import RpkTool
 
 
@@ -45,7 +46,27 @@ class CloudClusterUtils:
                 "AWS_SECRET_ACCESS_KEY": infra_secret
             })
         elif self.provider == 'gcp':
+            self.gcp_project_id = self._get_gcp_project_id(infra_id)
+            self.logger.info(f"Using GCP project '{self.gcp_project_id}'")
             self.env.update({"GOOGLE_APPLICATION_CREDENTIALS": infra_id})
+
+    def _get_gcp_project_id(self, keyfilepath):
+        project_id = None
+        try:
+            with open(keyfilepath, "r") as kf:
+                _gcp_keyfile = json.load(kf)
+                project_id = _gcp_keyfile['project_id']
+        except FileNotFoundError:
+            # Just catch it and pass
+            pass
+        # Check if succeded
+        if project_id is None:
+            self.logger.warning("# WARNING: GCP keyfile not found at "
+                                f"'{keyfilepath}'. Check keyfile path "
+                                "in globals.json")
+            # Hardcoded project as a last resort
+            project_id = "devprod-cicd-infra"
+        return project_id
 
     def _parse_plugin_list(self, plist):
         """
@@ -95,7 +116,7 @@ class CloudClusterUtils:
 
     def rpk_cloud_byoc_install(self, cluster_id):
         # Install proper cloud plugin version
-        self.logger.info("Installing byoc plugin according to cluster specs")
+        self.logger.debug("Installing byoc plugin according to cluster specs")
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", "install", f"--redpanda-id={cluster_id}"]
         out = self._exec(cmd)
@@ -103,18 +124,17 @@ class CloudClusterUtils:
         return out
 
     def rpk_cloud_apply(self, cluster_id):
-        self.logger.info("Deploying cluster agent")
+        self.logger.debug("Deploying cluster agent")
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", self.provider, "apply", f"--redpanda-id={cluster_id}"]
         if self.provider == 'gcp':
-            # TODO: Research a way to get project-id from key file
-            cmd += ["--project-id=devprod-cicd-infra"]
+            cmd += ["--project-id=" + self.gcp_project_id]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
         return out
 
     def rpk_plugin_uninstall(self, plugin_name, sudo=False):
-        self.logger.info(f"Uninstalling plugin {plugin_name}")
+        self.logger.debug(f"Uninstalling plugin {plugin_name}")
         _plist = self.rpk.plugin_list()
         # parse plugin list
         _plist = self._parse_plugin_list(_plist)
@@ -128,7 +148,7 @@ class CloudClusterUtils:
                 return False
             else:
                 return True
-        self.logger.warning(f"No plugins with the name  '{plugin_name}' found")
+        self.logger.debug(f"No plugins with the name  '{plugin_name}' found")
         return False
 
     def rpk_cloud_agent_delete(self, cluster_id):
@@ -137,6 +157,8 @@ class CloudClusterUtils:
         cmd += [
             "byoc", self.provider, "destroy", f"--redpanda-id={cluster_id}"
         ]
+        if self.provider == 'gcp':
+            cmd += ["--project-id=" + self.gcp_project_id]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
         return out
