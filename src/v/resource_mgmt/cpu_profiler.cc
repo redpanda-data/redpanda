@@ -133,6 +133,10 @@ void cpu_profiler::on_enabled_change() {
         return;
     }
 
+    if (ss::engine().get_cpu_profiler_enabled() == is_enabled()) {
+        return;
+    }
+
     ss::engine().set_cpu_profiler_enabled(is_enabled());
     _query_timer.cancel();
 
@@ -148,7 +152,18 @@ void cpu_profiler::on_sample_period_change() {
         return;
     }
 
+    if (ss::engine().get_cpu_profiler_period() == _sample_period()) {
+        return;
+    }
+
     ss::engine().set_cpu_profiler_period(_sample_period());
+
+    if (is_enabled()) {
+        // Arm the timer to fire whenever the profiler collects
+        // the maximum number of traces it can retain.
+        _query_timer.rearm_periodic(
+          ss::max_number_of_traces * _sample_period());
+    }
 }
 
 ss::future<std::vector<cpu_profiler::shard_samples>>
