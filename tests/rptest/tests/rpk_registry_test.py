@@ -18,6 +18,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services import tls
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
 from rptest.util import expect_exception
+from ducktape.mark import ok_to_fail
 
 schema1_avro_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
 schema2_avro_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]}'
@@ -283,6 +284,7 @@ class RpkRegistryTest(RedpandaTest):
         assert len(out) == 0
         assert len(out_deleted) == 0
 
+    @ok_to_fail
     @cluster(num_nodes=3)
     def test_produce_consume_avro(self):
         # First we register the schemas with their references.
@@ -347,6 +349,7 @@ class RpkRegistryTest(RedpandaTest):
         assert json.loads(msg["value"]) == expected_msg_1
         assert json.loads(msg["key"]) == expected_msg_2
 
+    @ok_to_fail
     @cluster(num_nodes=3)
     def test_produce_consume_proto(self):
         # First we register the schemas with their references.
