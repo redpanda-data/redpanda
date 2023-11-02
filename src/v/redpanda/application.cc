@@ -211,6 +211,11 @@ static void set_auditing_kafka_client_defaults(
     if (!client_config.produce_ack_level.is_overriden()) {
         client_config.produce_ack_level.set_value(int16_t(1));
     }
+    /// explicity override the scram details as the client will need to use
+    /// broker generated ephemeral credentials
+    client_config.scram_password.reset();
+    client_config.scram_username.reset();
+    client_config.sasl_mechanism.reset();
 }
 
 application::application(ss::sstring logger_name)

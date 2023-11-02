@@ -184,6 +184,13 @@ private:
       = std::underlying_type_t<event_type>(event_type::num_elements);
     std::bitset<enabled_set_bitlength> _enabled_event_types{0};
 
+    /// This will be true when the client detects that there is an issue with
+    /// authorization configuration. Auth must be enabled so the client
+    /// principal can be queried. This is needed so that redpanda can give
+    /// special permission to the audit client to do things like produce to the
+    /// audit topic.
+    bool _auth_misconfigured{false};
+
     /// Shutdown primitives
     ss::gate _gate;
     ss::abort_source _as;
