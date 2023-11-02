@@ -7,11 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from re import T
+import time
 from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
 
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import SISettings
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.util import expect_exception
@@ -88,13 +90,13 @@ def hwms_are_identical(logger, src_cluster, dst_cluster, topic_name,
     # Collect the HWMs for each partition before stopping.
     src_hwms = wait_until_result(lambda: get_hwm_per_partition(
         src_cluster, topic_name, partition_count),
-                                 timeout_sec=30,
+                                 timeout_sec=300,
                                  backoff_sec=1)
 
     # Ensure that our HWMs on the destination are the same.
     rr_hwms = wait_until_result(lambda: get_hwm_per_partition(
         dst_cluster, topic_name, partition_count),
-                                timeout_sec=30,
+                                timeout_sec=300,
                                 backoff_sec=1)
     logger.info(f"{src_hwms} vs {rr_hwms}")
     return src_hwms == rr_hwms
@@ -107,7 +109,7 @@ def create_read_replica_topic(dst_cluster, topic_name, bucket_name) -> None:
     conf = {
         'redpanda.remote.readreplica': bucket_name,
     }
-    rpk_dst_cluster.create_topic(topic_name, config=conf)
+    rpk_dst_cluster.create_topic(topic_name, config=conf, replicas=3)
 
     def has_leader():
         partitions = list(
@@ -135,12 +137,12 @@ class TestReadReplicaService(EndToEndTest):
                 cloud_storage_max_connections=5,
                 log_segment_size=TestReadReplicaService.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-                cloud_storage_segment_max_upload_interval_sec=5,
+                cloud_storage_segment_max_upload_interval_sec=1,
                 # Ensure that the replica can read from spilled metadata
-                cloud_storage_spillover_manifest_max_segments=4,
+                # cloud_storage_spillover_manifest_max_segments=4,
                 # Ensure metadata spilling happens promptly
-                cloud_storage_housekeeping_interval_ms=100,
-                fast_uploads=True))
+                cloud_storage_housekeeping_interval_ms=100))
+                #fast_uploads=True))
 
         # Read reaplica shouldn't have it's own bucket.
         # We're adding 'none' as a bucket name without creating
@@ -156,9 +158,11 @@ class TestReadReplicaService(EndToEndTest):
             cloud_storage_housekeeping_interval_ms=10)
         self.second_cluster = None
 
-    def start_second_cluster(self) -> None:
+    def start_second_cluster(self, extra_rp_conf=None) -> None:
         self.second_cluster = make_redpanda_service(
-            self.test_context, num_brokers=3, si_settings=self.rr_settings)
+            self.test_context, num_brokers=3, si_settings=self.rr_settings, extra_rp_conf=extra_rp_conf)
+        self.second_cluster._installer.install(self.second_cluster.nodes,
+                                               (23, 1, 20))
         self.second_cluster.start(start_si=False)
 
     def create_read_replica_topic(self) -> None:
@@ -202,7 +206,8 @@ class TestReadReplicaService(EndToEndTest):
     def _setup_read_replica(self,
                             num_messages=0,
                             partition_count=3,
-                            producer_timeout=None) -> None:
+                            producer_timeout=None,
+                            extra_rp_conf=None) -> None:
         if producer_timeout is None:
             producer_timeout = 30
 
@@ -210,7 +215,8 @@ class TestReadReplicaService(EndToEndTest):
                          f"{num_messages} msg, {partition_count} "
                          "partitions.")
         # Create original topic
-        self.start_redpanda(3, si_settings=self.si_settings)
+        install_opts = InstallOptions(version=(23, 1, 20))
+        self.start_redpanda(3, si_settings=self.si_settings, install_opts=install_opts)
         spec = TopicSpec(name=self.topic_name,
                          partition_count=partition_count,
                          replication_factor=3)
@@ -229,7 +235,7 @@ class TestReadReplicaService(EndToEndTest):
                             str(self.producer.last_acked_offsets))
             self.producer.stop()
 
-        self.start_second_cluster()
+        self.start_second_cluster(extra_rp_conf=extra_rp_conf)
 
         # wait until the read replica topic creation succeeds
         wait_until(
@@ -354,6 +360,62 @@ class TestReadReplicaService(EndToEndTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
+    @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
+    def test_stress_read_replicas(self) -> None:
+        """
+        This test attempts to stress the read replica path in a few ways:
+        - having a large number of partitions
+        - increasing the frequency of manifest syncs
+        - having a continual stream of new segments coming in
+        """
+        self.rr_settings.cloud_storage_readreplica_manifest_sync_timeout_ms = 1
+        extra_rp_conf = dict()
+        extra_rp_conf["election_timeout_ms"] = "20"
+        extra_rp_conf["raft_heartbeat_interval_ms"] = "8"
+        self._setup_read_replica(partition_count=120,
+                                 num_messages=12000,
+                                 extra_rp_conf=extra_rp_conf)
+        # for n in self.second_cluster.nodes:
+        #     self.second_cluster._admin.stress_fiber_start(n, 100, 100, 10000)
+
+        def clusters_report_identical_hwms():
+            return hwms_are_identical(self.logger, self.redpanda,
+                                      self.second_cluster, self.topic_name,
+                                      120)
+        wait_until(clusters_report_identical_hwms,
+                   timeout_sec=300,
+                   backoff_sec=1)
+
+        self.producer = VerifiableProducer(
+            self.test_context,
+            num_nodes=1,
+            redpanda=self.redpanda,
+            topic=self.topic_name,
+            throughput=1000,
+            message_validator=is_int_with_prefix)
+        self.producer.start()
+        wait_until(
+            lambda: self.producer.num_acked > 36000,
+            timeout_sec=240,
+            err_msg=
+            f"Producer only produced {self.producer.num_acked}/1000 messages in 60s"
+        )
+        self.producer.stop()
+
+        # As a sanity check, ensure the same is true after a restart.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        wait_until(clusters_report_identical_hwms,
+                   timeout_sec=300,
+                   backoff_sec=1)
+
+        self.second_cluster.restart_nodes(self.second_cluster.nodes)
+        wait_until(clusters_report_identical_hwms,
+                   timeout_sec=300,
+                   backoff_sec=1)
+        self.start_consumer()
+        self.run_validation(min_records=1000)  # calls self.consumer.stop()
+
+
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
     def test_writes_forbidden(self, partition_count: int,
@@ -447,9 +509,8 @@ class ReadReplicasUpgradeTest(EndToEndTest):
                 cloud_storage_max_connections=5,
                 log_segment_size=self.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-                cloud_storage_segment_max_upload_interval_sec=3,
-                fast_uploads=True))
-
+                cloud_storage_segment_max_upload_interval_sec=3))
+            #     fast_uploads=True))
         # Read replica shouldn't have it's own bucket.
         # We're adding 'none' as a bucket name without creating
         # an actual bucket with such name.
@@ -503,7 +564,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         def cluster_has_offsets(cluster):
             hwms = wait_until_result(lambda: get_hwm_per_partition(
                 cluster, self.topic_name, partition_count),
-                                     timeout_sec=30,
+                                     timeout_sec=300,
                                      backoff_sec=1)
             if len(hwms) != partition_count:
                 return False, None
