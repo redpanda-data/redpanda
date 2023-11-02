@@ -383,8 +383,17 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
       unparsed.id.value_or(invalid_schema_id),
       is_deleted::no};
 
-    auto schema_id = co_await rq.service().writer().write_subject_version(
-      std::move(schema));
+    auto ids = co_await rq.service().schema_store().get_schema_version(schema);
+
+    schema_id schema_id{ids.id.value_or(invalid_schema_id)};
+    if (!ids.version.has_value()) {
+        schema.id = ids.id.value_or(invalid_schema_id);
+        schema.version = schema.version == invalid_schema_version
+                           ? ids.version.value_or(invalid_schema_version)
+                           : schema.version;
+        schema_id = co_await rq.service().writer().write_subject_version(
+          std::move(schema));
+    }
 
     auto json_rslt{
       json::rjson_serialize(post_subject_versions_response{.id{schema_id}})};
