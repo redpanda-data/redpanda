@@ -9,6 +9,7 @@ please keep this up to date with every new library use.
 | software        | license                            |
 | :----------     | :------------                      |
 | abseil          | Apache License 2                   |
+| ada             | Apache License 2 / MIT             |
 | avro            | Apache License 2                   |
 | base64          | BSD 2                              |
 | boost libraries | Boost Software License Version 1.0 |
