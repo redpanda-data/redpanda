@@ -82,7 +82,10 @@ cluster::errc map_errc(std::error_code ec) {
         case raft::errc::leadership_transfer_in_progress:
             return cluster::errc::not_leader;
         default:
-            vlog(log.error, "unexpected transform produce error: {}", raft_ec);
+            vlog(
+              log.error,
+              "unexpected transform produce raft error: {}",
+              ::rpc::error_category().message(int(raft_ec)));
             break;
         }
     } else if (ec.category() == ::rpc::error_category()) {
@@ -91,9 +94,14 @@ cluster::errc map_errc(std::error_code ec) {
         case ::rpc::errc::client_request_timeout:
         case ::rpc::errc::connection_timeout:
         case ::rpc::errc::disconnected_endpoint:
+        case ::rpc::errc::exponential_backoff:
+        case ::rpc::errc::shutting_down:
             return cluster::errc::timeout;
         default:
-            vlog(log.error, "unexpected transform produce error: {}", rpc_ec);
+            vlog(
+              log.error,
+              "unexpected transform produce rpc error: {}",
+              ::rpc::error_category().message(int(rpc_ec)));
             break;
         }
     } else {
