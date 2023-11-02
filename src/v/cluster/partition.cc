@@ -1051,8 +1051,12 @@ partition::transfer_leadership(transfer_leadership_request req) {
     auto archival_timeout
       = config::shard_local_cfg().cloud_storage_graceful_transfer_timeout_ms();
     if (_archiver && archival_timeout.has_value()) {
-        complete_archiver.emplace(
-          [a = _archiver.get()]() { a->complete_transfer_leadership(); });
+        complete_archiver.emplace([this]() {
+            if (_archiver) {
+                _archiver->complete_transfer_leadership();
+            }
+        });
+
         vlog(
           clusterlog.debug,
           "transfer_leadership[{}]: entering archiver prepare",
