@@ -170,6 +170,7 @@ class ClusterConfigHelpersMixin:
                 node.account.hostname: self.admin.get_cluster_config(node)[key]
                 for node in self.redpanda.nodes
             }
+            self.logger.debug(f"config {values=}, {expect_value=}")
             return all(actual_value == expect_value
                        for _, actual_value in values.items())
 
