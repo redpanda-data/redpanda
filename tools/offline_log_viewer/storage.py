@@ -48,6 +48,11 @@ class CorruptBatchError(Exception):
         self.batch = batch
 
 
+class CorruptBatchRecoveryError(Exception):
+    def __init__(self, corruption):
+        self.corruption = corruption
+
+
 class Record:
     def __init__(self, length, attrs, timestamp_delta, offset_delta, key,
                  value, headers):
@@ -211,6 +216,15 @@ class Batch:
             # fields in the header are zeros
             if all(map(lambda v: v == 0, header)):
                 return
+
+            # validate the the header crc to catch any issues before
+            # we base more decisions off its content such as the batch size
+            header_crc_bytes = struct.pack(
+                "<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC, *header[1:])
+            header_crc = crc32c.crc32c(header_crc_bytes)
+            if header.header_crc != header_crc:
+                raise CorruptBatchError(None)
+
             records_size = header.batch_size - HEADER_SIZE
             data = f.read(records_size)
             if len(data) < records_size:
@@ -234,33 +248,62 @@ class Batch:
 
 
 class BatchIterator:
-    def __init__(self, path):
+    def __init__(self, path, recover):
         self.path = path
         self.file = open(path, "rb")
         self.idx = 0
+        self.recover = recover
+        self.corruption = []
 
     def __next__(self):
-        b = Batch.from_stream(self.file, self.idx)
+        start_offset = self.file.tell()
+        try:
+            b = Batch.from_stream(self.file, self.idx)
+        except CorruptBatchError as e:
+            if not self.recover:
+                raise
+            b = self.try_recover(start_offset, e.batch)
         if not b:
             fsize = os.stat(self.path).st_size
             if fsize != self.file.tell():
                 logger.warn(
                     f"Incomplete read of {self.path}: {self.file.tell()}/{fsize}"
                 )
+            if self.corruption:
+                raise CorruptBatchRecoveryError(self.corruption)
             raise StopIteration()
         self.idx += 1
         return b
+
+    def try_recover(self, offset, batch):
+        # record corruption event that triggered recovery
+        self.corruption.append([offset, None, batch])
+
+        start_offset = offset
+        while True:
+            offset += 1
+            self.file.seek(offset)
+            try:
+                batch = Batch.from_stream(self.file, self.idx)
+                if batch is not None:
+                    self.corruption[-1][1] = offset
+                return batch
+            except CorruptBatchError:
+                continue
+            except ValueError:
+                continue
 
     def __del__(self):
         self.file.close()
 
 
 class Segment:
-    def __init__(self, path):
+    def __init__(self, path, recover=False):
         self.path = path
+        self.recover = recover
 
     def __iter__(self):
-        return BatchIterator(self.path)
+        return BatchIterator(self.path, self.recover)
 
 
 class Ntp:
