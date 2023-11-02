@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
@@ -35,17 +36,50 @@ class TSReadOpenmessagingTest(RedpandaTest):
                              extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=6)
-    @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
-                 workload_idx="RELEASE_CERT_SMOKE_LOAD_625k_BACKLOG")
-    def test_perf(self, driver_idx, workload_idx):
+    @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT")
+    def test_perf(self, driver_idx):
         """
-        This adds TS reads to the OMB perf regression tests
+        An OMB perf regression test that has TS reads.
         """
 
         assert self.redpanda.dedicated_nodes
 
-        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda,
-                                           driver_idx, workload_idx)
+        validator = {
+            OMBSampleConfigurations.PUB_LATENCY_MIN:
+            [OMBSampleConfigurations.lte(1)],
+            OMBSampleConfigurations.PUB_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(3)],
+            OMBSampleConfigurations.PUB_LATENCY_75PCT:
+            [OMBSampleConfigurations.lte(4)],
+            OMBSampleConfigurations.PUB_LATENCY_95PCT:
+            [OMBSampleConfigurations.lte(8)],
+            OMBSampleConfigurations.E2E_LATENCY_MIN:
+            [OMBSampleConfigurations.lte(1)],
+            OMBSampleConfigurations.E2E_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(4)],
+            OMBSampleConfigurations.E2E_LATENCY_75PCT:
+            [OMBSampleConfigurations.lte(6)],
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
+            [OMBSampleConfigurations.gte(600)]
+        }
+
+        workload = {
+            "name": "SmokeLoad625kReleaseCert",
+            "topics": 1,
+            "partitions_per_topic": 100,
+            "subscriptions_per_topic": 1,
+            "consumer_per_subscription": 8,
+            "producers_per_topic": 16,
+            "producer_rate": 625000,
+            "consumer_backlog_size_GB": 10,
+            "test_duration_minutes": 5,
+            "warmup_duration_minutes": 5,
+        }
+
+        benchmark = OpenMessagingBenchmark(self._ctx,
+                                           self.redpanda,
+                                           driver=driver_idx,
+                                           workload=[workload, validator])
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time(
         ) + TSReadOpenmessagingTest.BENCHMARK_WAIT_TIME_MIN
