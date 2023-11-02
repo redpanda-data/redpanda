@@ -499,16 +499,6 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
     partitions_dispatched.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
-        if (!octx.rctx.authorized(security::acl_operation::write, topic.name)) {
-            partitions_dispatched.push_back(ss::now());
-            partitions_produced.push_back(
-              ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = part.partition_index,
-                  .error_code = error_code::topic_authorization_failed}));
-            continue;
-        }
-
         const auto& kafka_noproduce_topics
           = config::shard_local_cfg().kafka_noproduce_topics();
         const auto is_noproduce_topic = std::find(
@@ -700,9 +690,13 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           || !ctx.authorized(
             security::acl_operation::write,
             transactional_id(*request.data.transactional_id))) {
+            auto ec = error_code::transactional_id_authorization_failed;
+
+            if (!ctx.audit()) [[unlikely]] {
+                ec = error_code::broker_not_available;
+            }
             return process_result_stages::single_stage(
-              ctx.respond(request.make_error_response(
-                error_code::transactional_id_authorization_failed)));
+              ctx.respond(request.make_error_response(ec)));
         }
         // <kafka>Note that authorization to a transactionalId implies
         // ProducerId authorization</kafka>
@@ -727,6 +721,58 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         return process_result_stages::single_stage(ctx.respond(
           request.make_error_response(error_code::invalid_required_acks)));
     }
+
+    // Must now validate if we are authorized, we will remove items from the
+    // request that are not authorized and create response entries for those.
+    // Once authz is checked, then attempt audit
+    auto unauthorized_it = std::partition(
+      request.data.topics.begin(),
+      request.data.topics.end(),
+      [&ctx](const topic_produce_data& t) {
+          return ctx.authorized(security::acl_operation::write, t.name);
+      });
+
+    const auto unauthorized_contains_topic = [&unauthorized_it,
+                                              &request](const model::topic& t) {
+        return std::any_of(
+          unauthorized_it,
+          request.data.topics.end(),
+          [t](const topic_produce_data& tp) { return tp.name == t; });
+    };
+
+    // We do not want to audit if the request contains the audit topic
+    // however we _definitely_ want to audit if it was contained in the
+    // unauthorized list
+    if (
+      !(ctx.request_contains_audit_topic()
+        && !unauthorized_contains_topic(model::kafka_audit_logging_topic))
+      && !ctx.audit()) {
+        return process_result_stages::single_stage(ctx.respond(
+          request.make_error_response(error_code::broker_not_available)));
+    }
+
+    resp.data.responses.reserve(
+      std::distance(unauthorized_it, request.data.topics.end()));
+    std::transform(
+      unauthorized_it,
+      request.data.topics.end(),
+      std::back_inserter(resp.data.responses),
+      [](const topic_produce_data& t) {
+          topic_produce_response r;
+          r.name = t.name;
+          r.partitions.reserve(t.partitions.size());
+          for (const auto& p : t.partitions) {
+              r.partitions.emplace_back(partition_produce_response{
+                .partition_index = p.partition_index,
+                .error_code = error_code::topic_authorization_failed,
+              });
+          }
+
+          return r;
+      });
+
+    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+
     ss::promise<> dispatched_promise;
     auto dispatched_f = dispatched_promise.get_future();
     auto produced_f = ss::do_with(
@@ -756,7 +802,10 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                     return when_all_succeed(produced.begin(), produced.end())
                       .then(
                         [&octx](std::vector<produce_response::topic> topics) {
-                            octx.response.data.responses = std::move(topics);
+                            std::move(
+                              topics.begin(),
+                              topics.end(),
+                              std::back_inserter(octx.response.data.responses));
                         })
                       .then([&octx] {
                           // send response immediately

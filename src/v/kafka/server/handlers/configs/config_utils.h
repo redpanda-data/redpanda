@@ -73,6 +73,49 @@ T make_error_alter_config_resource_response(
       .resource_type = resource.resource_type,
       .resource_name = resource.resource_name};
 }
+
+template<typename R, typename T>
+std::vector<std::vector<R>> make_audit_failure_response(
+  groupped_resources<T>&& resources, std::vector<R> unauthorized_responses) {
+    std::vector<R> responses;
+
+    auto gen_resp = [](const T& res) {
+        return make_error_alter_config_resource_response<R>(
+          res,
+          error_code::broker_not_available,
+          "Broker not available - audit system failure");
+    };
+
+    responses.reserve(
+      resources.broker_changes.size() + resources.topic_changes.size()
+      + unauthorized_responses.size());
+
+    std::transform(
+      resources.broker_changes.begin(),
+      resources.broker_changes.end(),
+      std::back_inserter(responses),
+      gen_resp);
+
+    std::transform(
+      resources.topic_changes.begin(),
+      resources.topic_changes.end(),
+      std::back_inserter(responses),
+      gen_resp);
+
+    std::for_each(
+      unauthorized_responses.begin(), unauthorized_responses.end(), [](R& r) {
+          r.error_code = error_code::broker_not_available;
+          r.error_message = "Broker not available - audit system failure";
+      });
+
+    std::move(
+      unauthorized_responses.begin(),
+      unauthorized_responses.end(),
+      std::back_inserter(responses));
+
+    return {responses};
+}
+
 /**
  * Authorizes groupped alter configuration resources, it returns not authorized
  * responsens and modifies passed in group_resources<T>

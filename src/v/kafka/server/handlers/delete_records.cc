@@ -52,9 +52,6 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         return make_partition_errors(t, error_code::policy_violation);
     }
 
-    const auto is_authorized = [&ctx](const delete_records_topic& t) {
-        return ctx.authorized(security::acl_operation::remove, t.name);
-    };
     const auto is_deletable = [](const cluster::topic_configuration& cfg) {
         if (cfg.is_read_replica()) {
             return false;
@@ -83,9 +80,6 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
       model::topic_namespace_view(model::kafka_namespace, t.name));
     if (!cfg) {
         return make_partition_errors(t, error_code::unknown_topic_or_partition);
-    }
-    if (!is_authorized(t)) {
-        return make_partition_errors(t, error_code::topic_authorization_failed);
     } else if (!is_deletable(*cfg)) {
         return make_partition_errors(t, error_code::policy_violation);
     } else if (is_nodelete_topic(t)) {
@@ -181,43 +175,88 @@ delete_records_handler::handle(request_context ctx, ss::smp_service_group) {
     log_request(ctx.header(), request);
 
     delete_records_response response;
-    std::vector<ss::future<result_t>> fs;
-    for (auto& topic : request.data.topics) {
-        /// Topic level validation, errors will be all the same for each
-        /// partition under the topic. Validation for individual partitions may
-        /// happen in the inner for loop below.
-        auto topic_level_errors = validate_at_topic_level(ctx, topic);
-        if (!topic_level_errors.empty()) {
-            response.data.topics.push_back(delete_records_topic_result{
-              .name = topic.name, .partitions = std::move(topic_level_errors)});
-            continue;
-        }
-        for (auto& partition : topic.partitions) {
-            auto ktp = model::ktp(topic.name, partition.partition_index);
-            auto shard = ctx.shards().shard_for(ktp);
-            if (!shard) {
-                fs.push_back(
-                  ss::make_ready_future<result_t>(make_partition_error(
-                    ktp, error_code::unknown_topic_or_partition)));
-                continue;
-            }
-            auto f
-              = ctx.partition_manager()
-                  .invoke_on(
-                    *shard,
-                    [ktp,
-                     timeout = request.data.timeout_ms,
-                     o = partition.offset](cluster::partition_manager& pm) {
-                        return prefix_truncate(pm, ktp, o, timeout);
-                    })
-                  .handle_exception([ktp](std::exception_ptr eptr) {
-                      vlog(klog.error, "Caught unexpected exception: {}", eptr);
-                      return make_partition_error(
-                        ktp, error_code::unknown_server_error);
-                  });
-            fs.push_back(std::move(f));
-        }
+
+    auto begin = request.data.topics.begin();
+    auto valid_range_end = request.data.topics.end();
+
+    const auto is_authorized = [&ctx](const delete_records_topic& t) {
+        return ctx.authorized(security::acl_operation::remove, t.name);
+    };
+
+    auto unauthorized_it = std::partition(
+      begin, valid_range_end, is_authorized);
+
+    if (!ctx.audit()) {
+        response.data.topics.reserve(request.data.topics.size());
+        std::transform(
+          request.data.topics.begin(),
+          request.data.topics.end(),
+          std::back_inserter(response.data.topics),
+          [](const delete_records_topic& t) {
+              auto errs = make_partition_errors(
+                t, error_code::broker_not_available);
+              return delete_records_topic_result{
+                .name = t.name, .partitions = std::move(errs)};
+          });
+
+        co_return co_await ctx.respond(std::move(response));
     }
+
+    std::transform(
+      unauthorized_it,
+      valid_range_end,
+      std::back_inserter(response.data.topics),
+      [](const delete_records_topic& t) {
+          auto errs = make_partition_errors(
+            t, error_code::topic_authorization_failed);
+          return delete_records_topic_result{
+            .name = t.name, .partitions = std::move(errs)};
+      });
+    valid_range_end = unauthorized_it;
+
+    std::vector<ss::future<result_t>> fs;
+
+    std::for_each(
+      begin,
+      valid_range_end,
+      [&fs, &ctx, &response, &request](const delete_records_topic& topic) {
+          /// Topic level validation, errors will be all the same for each
+          /// partition under the topic. Validation for individual partitions
+          /// may happen in the inner for loop below.
+          auto topic_level_errors = validate_at_topic_level(ctx, topic);
+          if (!topic_level_errors.empty()) {
+              response.data.topics.push_back(delete_records_topic_result{
+                .name = topic.name,
+                .partitions = std::move(topic_level_errors)});
+              return;
+          }
+          for (auto& partition : topic.partitions) {
+              auto ktp = model::ktp(topic.name, partition.partition_index);
+              auto shard = ctx.shards().shard_for(ktp);
+              if (!shard) {
+                  fs.push_back(
+                    ss::make_ready_future<result_t>(make_partition_error(
+                      ktp, error_code::unknown_topic_or_partition)));
+                  return;
+              }
+              auto f
+                = ctx.partition_manager()
+                    .invoke_on(
+                      *shard,
+                      [ktp,
+                       timeout = request.data.timeout_ms,
+                       o = partition.offset](cluster::partition_manager& pm) {
+                          return prefix_truncate(pm, ktp, o, timeout);
+                      })
+                    .handle_exception([ktp](std::exception_ptr eptr) {
+                        vlog(
+                          klog.error, "Caught unexpected exception: {}", eptr);
+                        return make_partition_error(
+                          ktp, error_code::unknown_server_error);
+                    });
+              fs.push_back(std::move(f));
+          }
+      });
 
     /// Perform prefix truncation on partitions
     auto results = co_await ss::when_all_succeed(fs.begin(), fs.end());

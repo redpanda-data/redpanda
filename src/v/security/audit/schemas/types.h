@@ -1,12 +1,11 @@
 /*
  * Copyright 2023 Redpanda Data, Inc.
  *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
 #pragma once
@@ -127,14 +126,26 @@ static inline const product& redpanda_product() {
 
 struct metadata {
     product product;
+    std::vector<ss::sstring> profiles;
     ss::sstring version;
 
-    auto equality_fields() const { return std::tie(product, version); }
+    auto equality_fields() const {
+        return std::tie(product, profiles, version);
+    }
 };
 
 static inline const metadata& ocsf_redpanda_metadata() {
     static const metadata ocsf_metadata{
       .product = redpanda_product(), .version = ss::sstring{ocsf_api_version}};
+
+    return ocsf_metadata;
+}
+
+static inline const metadata& ocsf_redpanda_metadata_cloud_profile() {
+    static const metadata ocsf_metadata{
+      .product = redpanda_product(),
+      .profiles = {"cloud"},
+      .version = ss::sstring{ocsf_api_version}};
 
     return ocsf_metadata;
 }
@@ -278,6 +289,12 @@ struct http_request {
         return std::tie(http_headers, http_method, url, user_agent, version);
     }
 };
+
+struct cloud {
+    ss::sstring provider;
+
+    auto equality_fields() const { return std::tie(provider); }
+};
 } // namespace security::audit
 
 namespace json {
@@ -315,6 +332,10 @@ inline void rjson_serialize(Writer<StringBuffer>& w, const sa::metadata& m) {
     w.StartObject();
     w.Key("product");
     rjson_serialize(w, m.product);
+    if (!m.profiles.empty()) {
+        w.Key("profiles");
+        rjson_serialize(w, m.profiles);
+    }
     w.Key("version");
     rjson_serialize(w, m.version);
     w.EndObject();
@@ -516,6 +537,13 @@ rjson_serialize(Writer<StringBuffer>& w, const sa::http_request& r) {
     rjson_serialize(w, r.user_agent);
     w.Key("version");
     rjson_serialize(w, r.version);
+    w.EndObject();
+}
+
+inline void rjson_serialize(Writer<StringBuffer>& w, const sa::cloud& c) {
+    w.StartObject();
+    w.Key("provider");
+    rjson_serialize(w, c.provider);
     w.EndObject();
 }
 } // namespace json

@@ -1,12 +1,11 @@
 /*
  * Copyright 2023 Redpanda Data, Inc.
  *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
 #include "json/json.h"
@@ -164,6 +163,20 @@ static const ss::sstring metadata_ser{
 }
 )"};
 
+static const ss::sstring metadata_cloud_profile_ser{
+  R"(
+{
+  "product": {
+    "name": "Redpanda",
+    "vendor_name": "Redpanda Data, Inc.",
+    "version": ")"
+  + ss::sstring{redpanda_git_version()} + R"("
+  },
+  "profiles": ["cloud"],
+  "version": "1.0.0"
+}
+  )"};
+
 static const sa::http_header test_header{
   .name = "Accept-Encoding", .value = "application/json"};
 
@@ -247,7 +260,7 @@ BOOST_AUTO_TEST_CASE(validate_api_activity) {
     "category_uid": 6,
     "class_uid": 6003,
     "metadata": )"
-      + metadata_ser + R"(,
+      + metadata_cloud_profile_ser + R"(,
     "severity_id": 1,
     "time": )"
       + ss::to_sstring(now) + R"(,
@@ -261,6 +274,7 @@ BOOST_AUTO_TEST_CASE(validate_api_activity) {
     },
     "api": )"
       + api_create_topic_ser + R"(,
+    "cloud": { "provider": "" },
     "dst_endpoint": )"
       + rp_kafka_endpoint_ser + R"(,
     "http_request": )"
@@ -739,6 +753,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
       "name": "http"
     }}
   }},
+  "cloud": {{ "provider": "" }},
   "dst_endpoint": {{
     "ip": "10.1.1.1",
     "port": 23456,
@@ -778,7 +793,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
   "unmapped": {{}}
 }}
     )",
-      fmt::arg("metadata", metadata_ser),
+      fmt::arg("metadata", metadata_cloud_profile_ser),
       fmt::arg("time", ss::to_sstring(api_activity.get_time())),
       fmt::arg("username", username),
       fmt::arg("method", method),
@@ -927,6 +942,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
       "name": "http"
     }}
   }},
+  "cloud": {{ "provider": "" }},
   "dst_endpoint": {{
     "ip": "10.1.1.1",
     "port": 23456,
@@ -966,7 +982,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
   "unmapped": {{}}
 }}
 )",
-      fmt::arg("metadata", metadata_ser),
+      fmt::arg("metadata", metadata_cloud_profile_ser),
       fmt::arg("time", ss::to_sstring(api_activity.get_time())),
       fmt::arg("method", method),
       fmt::arg("user_agent", user_agent),

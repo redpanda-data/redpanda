@@ -1,14 +1,12 @@
 /*
  * Copyright 2023 Redpanda Data, Inc.
  *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-
 #pragma once
 
 #include "security/audit/schemas/types.h"
@@ -97,6 +95,22 @@ protected:
       : _category_uid(category_uid)
       , _class_uid(class_uid)
       , _metadata(ocsf_redpanda_metadata())
+      , _severity_id(severity_id)
+      , _start_time(time)
+      , _time(time)
+      , _type_uid(get_ocsf_type(this->_class_uid, activity_id)) {}
+
+    template<typename T>
+    ocsf_base_event(
+      category_uid category_uid,
+      class_uid class_uid,
+      metadata metadata,
+      severity_id severity_id,
+      timestamp_t time,
+      T activity_id)
+      : _category_uid(category_uid)
+      , _class_uid(class_uid)
+      , _metadata(std::move(metadata))
       , _severity_id(severity_id)
       , _start_time(time)
       , _time(time)

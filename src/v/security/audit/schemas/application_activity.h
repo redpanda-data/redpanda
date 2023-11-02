@@ -1,12 +1,11 @@
 /*
  * Copyright 2023 Redpanda Data, Inc.
  *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
 #pragma once
@@ -48,12 +47,14 @@ public:
       : ocsf_base_event(
         category_uid::application_activity,
         class_uid::api_activity,
+        ocsf_redpanda_metadata_cloud_profile(),
         severity_id,
         time,
         activity_id)
       , _activity_id(activity_id)
       , _actor(std::move(actor))
       , _api(std::move(api))
+      , _cloud(cloud{.provider = ""})
       , _dst_endpoint(std::move(dst_endpoint))
       , _http_request(std::move(http_request))
       , _resources(std::move(resources))
@@ -78,6 +79,7 @@ private:
     activity_id _activity_id;
     actor _actor;
     api _api;
+    cloud _cloud;
     network_endpoint _dst_endpoint;
     std::optional<http_request> _http_request;
     std::vector<resource_detail> _resources;
@@ -97,6 +99,8 @@ private:
         ::json::rjson_serialize(w, a._actor);
         w.Key("api");
         ::json::rjson_serialize(w, a._api);
+        w.Key("cloud");
+        ::json::rjson_serialize(w, a._cloud);
         w.Key("dst_endpoint");
         ::json::rjson_serialize(w, a._dst_endpoint);
         if (a._http_request) {

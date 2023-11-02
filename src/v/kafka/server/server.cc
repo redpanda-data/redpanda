@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "features/feature_table.h"
+#include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/errors.h"
@@ -515,21 +516,43 @@ ss::future<response_ptr> list_groups_handler::handle(
     resp.data.error_code = error;
     resp.data.groups = std::move(groups);
 
-    if (ctx.authorized(
-          security::acl_operation::describe, security::default_cluster_name)) {
-        co_return co_await ctx.respond(std::move(resp));
+    auto cluster_authz = ctx.authorized(
+      security::acl_operation::describe, security::default_cluster_name);
+
+    if (!cluster_authz) {
+        // remove groups from response that should not be visible
+        auto non_visible_it = std::partition(
+          resp.data.groups.begin(),
+          resp.data.groups.end(),
+          [&ctx](const listed_group& group) {
+              return ctx.authorized(
+                security::acl_operation::describe, group.group_id);
+          });
+
+        resp.data.groups.erase(non_visible_it, resp.data.groups.end());
     }
 
-    // remove groups from response that should not be visible
-    auto non_visible_it = std::partition(
-      resp.data.groups.begin(),
-      resp.data.groups.end(),
-      [&ctx](const listed_group& group) {
-          return ctx.authorized(
-            security::acl_operation::describe, group.group_id);
-      });
+    auto additional_resources_func = [&resp, cluster_authz]() {
+        std::vector<kafka::group_id> groups;
+        if (!cluster_authz) {
+            return groups;
+        }
 
-    resp.data.groups.erase(non_visible_it, resp.data.groups.end());
+        groups.reserve(resp.data.groups.size());
+        std::transform(
+          resp.data.groups.begin(),
+          resp.data.groups.end(),
+          std::back_inserter(groups),
+          [](const listed_group& g) { return g.group_id; });
+
+        return groups;
+    };
+
+    if (!ctx.audit(std::move(additional_resources_func))) {
+        resp.data.groups.clear();
+        resp.data.error_code = error_code::broker_not_available;
+        co_return co_await ctx.respond(std::move(resp));
+    }
 
     co_return co_await ctx.respond(std::move(resp));
 }
@@ -631,7 +654,15 @@ process_result_stages join_group_handler::handle(
           ctx.respond(join_group_response(error_code::policy_violation)));
     }
 
-    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
+    auto authz = ctx.authorized(
+      security::acl_operation::read, request.data.group_id);
+
+    if (!ctx.audit()) {
+        return process_result_stages::single_stage(
+          ctx.respond(join_group_response(error_code::broker_not_available)));
+    }
+
+    if (!authz) {
         return process_result_stages::single_stage(ctx.respond(
           join_group_response(error_code::group_authorization_failed)));
     }
@@ -661,6 +692,21 @@ ss::future<response_ptr> delete_groups_handler::handle(
       [&ctx](const kafka::group_id& group) {
           return ctx.authorized(security::acl_operation::remove, group);
       });
+
+    if (!ctx.audit()) {
+        std::vector<deletable_group_result> resp;
+        resp.reserve(request.data.groups_names.size());
+        std::transform(
+          request.data.groups_names.begin(),
+          request.data.groups_names.end(),
+          std::back_inserter(resp),
+          [](const kafka::group_id& g) {
+              return deletable_group_result{
+                .group_id = g, .error_code = error_code::broker_not_available};
+          });
+
+        co_return co_await ctx.respond(delete_groups_response(std::move(resp)));
+    }
 
     std::vector<kafka::group_id> unauthorized(
       std::make_move_iterator(unauthorized_it),
@@ -899,8 +945,13 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
     log_request(ctx.header(), request);
     if (!ctx.authorized(
           security::acl_operation::describe, request.data.group_id)) {
-        co_return co_await ctx.respond(
-          offset_fetch_response(error_code::group_authorization_failed));
+        if (!ctx.audit()) {
+            co_return co_await ctx.respond(
+              offset_fetch_response(error_code::broker_not_available));
+        } else {
+            co_return co_await ctx.respond(
+              offset_fetch_response(error_code::group_authorization_failed));
+        }
     }
 
     /*
@@ -926,6 +977,13 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
                 topic.name,
                 authz_quiet{true});
           });
+
+        if (!ctx.audit()) {
+            resp.data.topics.clear();
+            resp.data.error_code = error_code::broker_not_available;
+            co_return co_await ctx.respond(std::move(resp));
+        }
+
         resp.data.topics.erase(unauthorized, resp.data.topics.end());
 
         co_return co_await ctx.respond(std::move(resp));
@@ -940,6 +998,11 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
       [&ctx](const offset_fetch_request_topic& topic) {
           return ctx.authorized(security::acl_operation::describe, topic.name);
       });
+
+    if (!ctx.audit()) {
+        co_return co_await ctx.respond(
+          offset_fetch_response(error_code::broker_not_available));
+    }
 
     std::vector<offset_fetch_request_topic> unauthorized(
       std::make_move_iterator(unauthorized_it),
@@ -972,8 +1035,13 @@ offset_delete_handler::handle(request_context ctx, ss::smp_service_group) {
     log_request(ctx.header(), request);
     if (!ctx.authorized(
           security::acl_operation::remove, request.data.group_id)) {
-        co_return co_await ctx.respond(
-          offset_fetch_response(error_code::group_authorization_failed));
+        if (!ctx.audit()) {
+            co_return co_await ctx.respond(
+              offset_delete_response(error_code::broker_not_available));
+        } else {
+            co_return co_await ctx.respond(
+              offset_delete_response(error_code::group_authorization_failed));
+        }
     }
 
     /// Remove unauthorized topics from request
@@ -983,6 +1051,11 @@ offset_delete_handler::handle(request_context ctx, ss::smp_service_group) {
       [&ctx](const offset_delete_request_topic& topic) {
           return ctx.authorized(security::acl_operation::read, topic.name);
       });
+
+    if (!ctx.audit()) {
+        co_return co_await ctx.respond(
+          offset_delete_response(error_code::broker_not_available));
+    }
 
     std::vector<offset_delete_request_topic> unauthorized(
       std::make_move_iterator(unauthorized_it),
@@ -1059,6 +1132,31 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
       [&ctx](const model::topic& topic) {
           return ctx.authorized(security::acl_operation::remove, topic);
       });
+
+    if (!ctx.audit()) {
+        delete_topics_response resp;
+        std::transform(
+          request.data.topic_names.begin(),
+          request.data.topic_names.end(),
+          std::back_inserter(resp.data.responses),
+          [](const model::topic& t) {
+              return deletable_topic_result{
+                .name = t, .error_code = error_code::broker_not_available};
+          });
+
+        std::transform(
+          request.data.topics.begin(),
+          request.data.topics.end(),
+          std::back_inserter(resp.data.responses),
+          [](const delete_topic_state& t) {
+              return deletable_topic_result{
+                .name = t.name,
+                .error_code = error_code::broker_not_available,
+              };
+          });
+
+        co_return co_await ctx.respond(std::move(resp));
+    }
 
     std::vector<model::topic> unauthorized(
       std::make_move_iterator(unauthorized_it),
@@ -1186,8 +1284,12 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                   security::acl_operation::write,
                   transactional_id(*request.data.transactional_id))) {
                 init_producer_id_response reply;
-                reply.data.error_code
-                  = error_code::transactional_id_authorization_failed;
+                if (!ctx.audit()) {
+                    reply.data.error_code = error_code::broker_not_available;
+                } else {
+                    reply.data.error_code
+                      = error_code::transactional_id_authorization_failed;
+                }
                 return ctx.respond(reply);
             }
 
@@ -1269,15 +1371,24 @@ ss::future<response_ptr> init_producer_id_handler::handle(
             }
         }
 
+        bool cluster_authorized = false;
+
         if (!permitted) {
-            if (!ctx.authorized(
-                  security::acl_operation::idempotent_write,
-                  security::default_cluster_name)) {
-                init_producer_id_response reply;
-                reply.data.error_code
-                  = error_code::cluster_authorization_failed;
-                return ctx.respond(reply);
-            }
+            cluster_authorized = ctx.authorized(
+              security::acl_operation::idempotent_write,
+              security::default_cluster_name);
+        }
+
+        if (!ctx.audit()) {
+            init_producer_id_response reply;
+            reply.data.error_code = error_code::broker_not_available;
+            return ctx.respond(std::move(reply));
+        }
+
+        if (!permitted && !cluster_authorized) {
+            init_producer_id_response reply;
+            reply.data.error_code = error_code::cluster_authorization_failed;
+            return ctx.respond(std::move(reply));
         }
 
         return ctx.id_allocator_frontend()
@@ -1534,6 +1645,27 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         }
     }
 
+    if (!octx.rctx.audit()) {
+        offset_commit_response resp(
+          octx.request, error_code::broker_not_available);
+        for (auto& unauthorized : octx.unauthorized_tps) {
+            offset_commit_response_topic tmp;
+            tmp.name = unauthorized.first;
+            tmp.partitions = std::move(unauthorized.second);
+            resp.data.topics.emplace_back(std::move(tmp));
+        }
+
+        for (auto& nonexistent : octx.nonexistent_tps) {
+            offset_commit_response_topic tmp;
+            tmp.name = nonexistent.first;
+            tmp.partitions = std::move(nonexistent.second);
+            resp.data.topics.emplace_back(std::move(tmp));
+        }
+
+        return process_result_stages::single_stage(
+          octx.rctx.respond(std::move(resp)));
+    }
+
     // all of the topics either don't exist or failed authorization
     if (unlikely(octx.request.data.topics.empty())) {
         offset_commit_response resp;
@@ -1615,6 +1747,21 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
       [&ctx](const group_id& id) {
           return ctx.authorized(security::acl_operation::describe, id);
       });
+
+    if (!ctx.audit()) {
+        describe_groups_response resp;
+        resp.data.groups.reserve(request.data.groups.size());
+        std::transform(
+          request.data.groups.begin(),
+          request.data.groups.end(),
+          std::back_inserter(resp.data.groups),
+          [](const kafka::group_id& g) {
+              return described_group{
+                .error_code = error_code::broker_not_available, .group_id = g};
+          });
+
+        co_return co_await ctx.respond(std::move(resp));
+    }
 
     std::vector<group_id> unauthorized(
       std::make_move_iterator(unauthorized_it),
@@ -1714,6 +1861,11 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
                 tx_state.transaction_state = ss::sstring(tx.get_status());
                 response.data.transaction_states.push_back(std::move(tx_state));
             }
+        }
+
+        if (!ctx.audit()) {
+            response.data.transaction_states.clear();
+            response.data.error_code = error_code::broker_not_available;
         }
     } else {
         // In this 2 errors not coordinator got request and we just return empty

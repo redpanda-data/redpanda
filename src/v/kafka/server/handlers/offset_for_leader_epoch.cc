@@ -231,11 +231,19 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
         request.data.topics.erase(it, request.data.topics.end());
     }
 
+    if (!ctx.audit()) {
+        co_return co_await ctx.respond(offset_for_leader_epoch_response(
+          error_code::broker_not_available,
+          std::move(request),
+          std::move(unauthorized)));
+    }
+
+    offset_for_leader_epoch_response response;
+
     // fetch offsets
     auto results = co_await get_offsets_for_leader_epochs(
       ctx, std::move(request.data.topics));
 
-    offset_for_leader_epoch_response response;
     response.data.topics = std::move(results);
 
     // merge with unauthorized topics
