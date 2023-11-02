@@ -166,7 +166,11 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm
       ->add_segments(
-        m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
+        m,
+        std::nullopt,
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
       .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
     BOOST_REQUIRE(
@@ -206,7 +210,11 @@ FIXTURE_TEST(
     });
     archival_stm
       ->add_segments(
-        m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
+        m,
+        std::nullopt,
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
       .get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -232,7 +240,11 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm
       ->add_segments(
-        m1, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
+        m1,
+        std::nullopt,
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
       .get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
@@ -249,7 +261,11 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .sname_format = cloud_storage::segment_name_format::v2});
     archival_stm
       ->add_segments(
-        m2, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
+        m2,
+        std::nullopt,
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
       .get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
@@ -469,7 +485,11 @@ FIXTURE_TEST(
     pm.advance_insync_offset(model::offset{4});
     archival_stm
       ->add_segments(
-        m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
+        m,
+        std::nullopt,
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
       .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 4);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
@@ -654,7 +674,7 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
     // Replicate add_segment_cmd command that adds segment with offset 0
     auto batcher = archival_stm->batch_start(
       ss::lowres_clock::now() + 10s, never_abort);
-    batcher.add_segments(m);
+    batcher.add_segments(m, cluster::segment_validated::yes);
     batcher.cleanup_metadata();
     batcher.replicate().get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
@@ -689,7 +709,7 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
     // Replicate add_segment_cmd command that adds segment with offset 0
     auto batcher = archival_stm->batch_start(
       ss::lowres_clock::now() + 10s, never_abort);
-    batcher.add_segments(m);
+    batcher.add_segments(m, cluster::segment_validated::yes);
     batcher.replicate().get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 3);
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(0));
@@ -787,7 +807,7 @@ FIXTURE_TEST(
     // Replicate add_segment_cmd command that adds segment with offset 0
     auto batcher1 = archival_stm->batch_start(
       ss::lowres_clock::now() + 10s, never_abort);
-    batcher1.add_segments(m);
+    batcher1.add_segments(m, cluster::segment_validated::yes);
     batcher1.replicate().get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 3);
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
@@ -853,7 +873,11 @@ FIXTURE_TEST(test_reset_metadata, archival_metadata_stm_fixture) {
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm
       ->add_segments(
-        m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
+        m,
+        std::nullopt,
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
       .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
 
@@ -867,7 +891,7 @@ FIXTURE_TEST(test_reset_metadata, archival_metadata_stm_fixture) {
       .archiver_term = model::term_id(2),
       .segment_term = model::term_id(2)});
     batcher.reset_metadata();
-    batcher.add_segments(std::move(m));
+    batcher.add_segments(std::move(m), cluster::segment_validated::yes);
     batcher.replicate().get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(100));

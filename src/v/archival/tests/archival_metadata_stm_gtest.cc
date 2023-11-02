@@ -140,7 +140,11 @@ TEST_F_CORO(archival_metadata_stm_gtest_fixture, test_archival_stm_happy_path) {
       cluster::archival_metadata_stm::state_dirty::dirty);
 
     co_await get_leader_stm().add_segments(
-      m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+      m,
+      std::nullopt,
+      ss::lowres_clock::now() + 10s,
+      never_abort,
+      cluster::segment_validated::yes);
 
     ASSERT_EQ_CORO(get_leader_stm().manifest().size(), 1);
     ASSERT_EQ_CORO(
@@ -187,7 +191,11 @@ TEST_F_CORO(
     auto res = co_await with_leader(
       10s, [this, &m, &never_abort](raft::raft_node_instance&) {
           return get_leader_stm().add_segments(
-            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+            m,
+            std::nullopt,
+            ss::lowres_clock::now() + 10s,
+            never_abort,
+            cluster::segment_validated::yes);
       });
 
     ASSERT_TRUE_CORO(!res);
@@ -217,7 +225,11 @@ TEST_F_CORO(
           }
 
           return get_leader_stm().add_segments(
-            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+            m,
+            std::nullopt,
+            ss::lowres_clock::now() + 10s,
+            never_abort,
+            cluster::segment_validated::yes);
       });
 
     co_await std::move(delay_applied);
@@ -268,7 +280,11 @@ TEST_F_CORO(
     auto res = co_await with_leader(
       10s, [this, &m, &never_abort](raft::raft_node_instance&) {
           return get_leader_stm().add_segments(
-            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+            m,
+            std::nullopt,
+            ss::lowres_clock::now() + 10s,
+            never_abort,
+            cluster::segment_validated::yes);
       });
 
     ASSERT_TRUE_CORO(!res);
@@ -298,7 +314,11 @@ TEST_F_CORO(
           }
 
           return get_leader_stm().add_segments(
-            m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort);
+            m,
+            std::nullopt,
+            ss::lowres_clock::now() + 10s,
+            never_abort,
+            cluster::segment_validated::yes);
       });
 
     co_await std::move(delay_applied);
