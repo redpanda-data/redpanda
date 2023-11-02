@@ -22,7 +22,6 @@
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 #include "wasm/api.h"
-#include "wasm/probe.h"
 #include "wasm/wasmtime.h"
 
 #include <seastar/util/file.hh>

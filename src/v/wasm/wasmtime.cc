@@ -22,12 +22,13 @@
 #include "vassert.h"
 #include "wasm/allocator.h"
 #include "wasm/api.h"
+#include "wasm/engine_probe.h"
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
-#include "wasm/probe.h"
 #include "wasm/schema_registry_module.h"
 #include "wasm/transform_module.h"
+#include "wasm/transform_probe.h"
 #include "wasm/wasi.h"
 
 #include <seastar/core/align.hh>
@@ -102,6 +103,8 @@ public:
 
     const heap_allocator* heap_allocator() const;
 
+    engine_probe_cache* engine_probe_cache();
+
 private:
     void register_metrics();
 
@@ -133,6 +136,7 @@ private:
     ss::sharded<stack_allocator> _stack_allocator;
     size_t _total_executable_memory = 0;
     metrics::public_metric_groups _public_metrics;
+    ss::sharded<wasm::engine_probe_cache> _engine_probe_cache;
 };
 
 void check_error(const wasmtime_error_t* error) {
@@ -358,6 +362,7 @@ public:
       : _runtime(runtime)
       , _meta(std::move(metadata))
       , _preinitialized(std::move(preinitialized))
+      , _probe(runtime->engine_probe_cache()->make_probe(_meta.name()))
       , _sr_module(sr)
       , _wasi_module({_meta.name()}, make_environment_vars(_meta), logger)
       , _transform_module(&_wasi_module) {}
@@ -367,30 +372,12 @@ public:
     wasmtime_engine& operator=(wasmtime_engine&&) = delete;
     ~wasmtime_engine() override = default;
 
-    uint64_t memory_usage_size_bytes() const final {
-        if (!_store) {
-            return 0;
-        }
-        std::string_view memory_export_name = "memory";
-        auto* ctx = wasmtime_store_context(_store.get());
-        wasmtime_extern_t memory_extern;
-        bool ok = wasmtime_instance_export_get(
-          ctx,
-          &_instance,
-          memory_export_name.data(),
-          memory_export_name.size(),
-          &memory_extern);
-        if (!ok || memory_extern.kind != WASMTIME_EXTERN_MEMORY) {
-            return 0;
-        }
-        return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
-    };
-
     ss::future<> start() final {
         _transform_module.start();
         co_await create_instance();
         _main_task = initialize_wasi();
         co_await _transform_module.await_ready();
+        report_memory_usage();
     }
 
     ss::future<> stop() final {
@@ -405,7 +392,8 @@ public:
           !_pending_host_function,
           "pending host functions should be awaited upon before stopping the "
           "engine");
-        co_return;
+        _probe.report_max_memory(0);
+        _probe.report_memory_usage(0);
     }
 
     ss::future<model::record_batch>
@@ -420,6 +408,7 @@ public:
         }
         ss::future<model::record_batch> fut = co_await ss::coroutine::as_future(
           invoke_transform(std::move(batch), probe));
+        report_memory_usage();
         if (fut.failed()) {
             probe->transform_error();
             std::rethrow_exception(fut.get_exception());
@@ -448,6 +437,29 @@ public:
     }
 
 private:
+    uint64_t memory_usage_size_bytes() const {
+        if (!_store) {
+            return 0;
+        }
+        std::string_view memory_export_name = "memory";
+        auto* ctx = wasmtime_store_context(_store.get());
+        wasmtime_extern_t memory_extern;
+        bool ok = wasmtime_instance_export_get(
+          ctx,
+          &_instance,
+          memory_export_name.data(),
+          memory_export_name.size(),
+          &memory_extern);
+        if (!ok || memory_extern.kind != WASMTIME_EXTERN_MEMORY) {
+            return 0;
+        }
+        return wasmtime_memory_data_size(ctx, &memory_extern.of.memory);
+    };
+
+    void report_memory_usage() {
+        _probe.report_memory_usage(memory_usage_size_bytes());
+    }
+
     void reset_fuel(wasmtime_context_t* ctx) {
         handle<wasmtime_error_t, wasmtime_error_delete> error(
           wasmtime_context_set_fuel(ctx, fuel_amount));
@@ -468,13 +480,16 @@ private:
         // We only ever create a single instance within this store, and we
         // expect that modules only have a single table and a single memory
         // instance declared.
+        uint32_t max_memory_size = _runtime->heap_allocator()->max_size();
         wasmtime_store_limiter(
           store.get(),
-          /*memory_size=*/int64_t(_runtime->heap_allocator()->max_size()),
+          /*memory_size=*/max_memory_size,
           /*table_elements=*/max_table_elements,
           /*instances=*/1,
           /*tables=*/1,
           /*memories=*/1);
+        _probe.report_max_memory(max_memory_size);
+        _probe.report_memory_usage(0);
         auto* context = wasmtime_store_context(store.get());
 
         wasmtime_context_fuel_async_yield_interval(
@@ -643,6 +658,7 @@ private:
     wasmtime_runtime* _runtime;
     model::transform_metadata _meta;
     ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>> _preinitialized;
+    engine_probe _probe;
 
     schema_registry_module _sr_module;
     wasi::preview1_module _wasi_module;
@@ -1217,16 +1233,17 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
         sigaddset(&mask, SIGFPE);
         ss::throw_pthread_error(::pthread_sigmask(SIG_UNBLOCK, &mask, nullptr));
     });
+    co_await _engine_probe_cache.start();
     register_metrics();
 }
 
 void wasmtime_runtime::register_metrics() {
     namespace sm = ss::metrics;
     _public_metrics.add_group(
-      prometheus_sanitize::metrics_name("wasm"),
+      prometheus_sanitize::metrics_name("wasm_binary"),
       {
         sm::make_gauge(
-          "binary_executable_memory_usage",
+          "executable_memory_usage",
           [this] { return _total_executable_memory; },
           sm::description("The amount of executable memory used for "
                           "WebAssembly binaries"))
@@ -1236,6 +1253,7 @@ void wasmtime_runtime::register_metrics() {
 
 ss::future<> wasmtime_runtime::stop() {
     _public_metrics.clear();
+    co_await _engine_probe_cache.stop();
     co_await _alien_thread.stop();
     co_await _heap_allocator.stop();
     co_await _stack_allocator.stop();
@@ -1301,6 +1319,9 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
 wasm_engine_t* wasmtime_runtime::engine() const { return _engine.get(); }
 const heap_allocator* wasmtime_runtime::heap_allocator() const {
     return &_heap_allocator.local();
+}
+engine_probe_cache* wasmtime_runtime::engine_probe_cache() {
+    return &_engine_probe_cache.local();
 }
 
 wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(

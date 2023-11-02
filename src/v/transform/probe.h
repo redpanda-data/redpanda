@@ -11,7 +11,7 @@
 #pragma once
 
 #include "model/transform.h"
-#include "wasm/probe.h"
+#include "wasm/transform_probe.h"
 
 #include <absl/container/flat_hash_map.h>
 

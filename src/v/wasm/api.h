@@ -35,8 +35,6 @@ public:
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;
 
-    virtual uint64_t memory_usage_size_bytes() const = 0;
-
     engine() = default;
     virtual ~engine() = default;
     engine(const engine&) = delete;

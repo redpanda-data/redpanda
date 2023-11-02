@@ -18,7 +18,7 @@
 #include "units.h"
 #include "utils/notification_list.h"
 #include "wasm/api.h"
-#include "wasm/probe.h"
+#include "wasm/transform_probe.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>
@@ -46,8 +46,6 @@ public:
 
     ss::future<> start() override;
     ss::future<> stop() override;
-
-    uint64_t memory_usage_size_bytes() const override;
 };
 
 class fake_source : public source {

@@ -89,6 +89,19 @@ rp_test(
 rp_test(
   UNIT_TEST
   GTEST
+  BINARY_NAME wasm_probe
+  SOURCES
+    wasm_probe_test.cc
+  LIBRARIES 
+    v::gtest_main
+    v::wasm
+  ARGS "-- -c 1"
+  LABELS wasm
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
   BINARY_NAME wasm_allocator
   SOURCES
     wasm_allocator_test.cc

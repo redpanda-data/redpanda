@@ -81,8 +81,6 @@ public:
         co_return batch;
     }
 
-    uint64_t memory_usage_size_bytes() const override { return 0; }
-
 private:
     bool _has_been_stopped = false;
     state* _state;

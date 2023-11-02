@@ -64,11 +64,6 @@ ss::future<> fake_source::push_batch(model::record_batch batch) {
     _cond_var.broadcast();
     co_return;
 }
-
-uint64_t fake_wasm_engine::memory_usage_size_bytes() const {
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    return 64_KiB;
-};
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
 

@@ -24,7 +24,11 @@
 
 namespace wasm {
 
-// Per transform probe
+/**
+ * A probe for wasm engines that implement record transforms.
+ *
+ * This probe allows for reporting errors and latency for transforms.
+ */
 class transform_probe {
 public:
     using hist_t = log_hist_public;
