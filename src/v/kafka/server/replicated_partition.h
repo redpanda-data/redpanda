@@ -136,10 +136,6 @@ public:
         return _translator->from_log_offset(maybe_lso);
     }
 
-    bool is_elected_leader() const final {
-        return _partition->is_elected_leader();
-    }
-
     bool is_leader() const final { return _partition->is_leader(); }
 
     ss::future<error_code>

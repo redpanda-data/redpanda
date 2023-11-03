@@ -42,7 +42,7 @@ public:
         virtual kafka::leader_epoch leader_epoch() const = 0;
         virtual ss::future<std::optional<model::offset>>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
-        virtual bool is_elected_leader() const = 0;
+
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
         virtual ss::future<error_code>
@@ -93,8 +93,6 @@ public:
     prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline) {
         return _impl->prefix_truncate(o, deadline);
     }
-
-    bool is_elected_leader() const { return _impl->is_elected_leader(); }
 
     bool is_leader() const { return _impl->is_leader(); }
 
