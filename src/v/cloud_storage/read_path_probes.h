@@ -78,6 +78,9 @@ public:
         return _downloads_throttled_sum;
     }
 
+    void hydration_started() { _hydrations_in_progress++; }
+    void hydration_finished() { _hydrations_in_progress--; }
+
 private:
     int32_t _cur_materialized_segments = 0;
 
@@ -94,9 +97,24 @@ private:
     size_t _chunks_hydrated = 0;
     hist_t _chunk_hydration_latency;
     size_t _downloads_throttled_sum = 0;
+    size_t _hydrations_in_progress = 0;
 
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
+};
+
+class track_hydration {
+public:
+    explicit track_hydration(ts_read_path_probe&);
+    ~track_hydration();
+
+    track_hydration(const track_hydration&) = delete;
+    track_hydration& operator=(const track_hydration&) = delete;
+    track_hydration(track_hydration&&) = delete;
+    track_hydration& operator=(track_hydration&&) = delete;
+
+private:
+    ts_read_path_probe& _probe;
 };
 
 } // namespace cloud_storage
