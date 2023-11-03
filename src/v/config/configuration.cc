@@ -40,7 +40,7 @@ configuration::configuration()
      .example = "2147483648",
      .visibility = visibility::tunable},
     128_MiB,
-    {.min = 1_MiB})
+    {.min = 1_KiB})
   , log_segment_size_min(
       *this,
       "log_segment_size_min",
