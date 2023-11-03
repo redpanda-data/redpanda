@@ -11,6 +11,8 @@ import random
 import re
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta
+from requests.exceptions import HTTPError
 
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
@@ -37,7 +39,7 @@ from rptest.util import (
     wait_for_local_storage_truncate,
 )
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP
+from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP, quiesce_uploads
 
 
 class EndToEndShadowIndexingBase(EndToEndTest):
@@ -425,6 +427,91 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         assert consumer.consumer_status.validator.invalid_reads == 0
         # validate that messages from the manifests that were removed from the manifest are not readable
         assert consumer.consumer_status.validator.valid_reads == messages_to_read
+
+    @cluster(
+        num_nodes=4,
+        log_allow_list=["Applying the cloud manifest would cause data loss"])
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_reset_from_cloud(self, cloud_storage_type):
+        """
+        Test the unsafe_reset_metadata_from_cloud endpoint by repeatedly
+        calling it to re-set the manifest from the uploaded one while
+        producing to the partition. Once the produce finishes, wait for
+        all uploads to complete and do a full read of the log to bubble
+        up any inconsistencies.
+        """
+        msg_size = 2056
+        self.redpanda.set_cluster_config({
+            "cloud_storage_housekeeping_interval_ms":
+            10000,
+            "cloud_storage_spillover_manifest_max_segments":
+            10
+        })
+
+        # Set a very low local retetion to race manifest resets wih retention
+        self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
+                                    self.segment_size * 1)
+
+        msg_per_segment = self.segment_size // msg_size
+        total_messages = 250 * msg_per_segment
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=msg_size,
+                                       msg_count=total_messages,
+                                       rate_limit_bps=1024 * 1024 * 5)
+
+        producer.start()
+
+        resets_done = 0
+        resets_refused = 0
+        resets_failed = 0
+
+        seconds_between_reset = 10
+        next_reset = datetime.now() + timedelta(seconds=seconds_between_reset)
+
+        # Repeatedly reset the manifest while producing to the partition
+        while not producer.is_complete():
+            now = datetime.now()
+            if now >= next_reset:
+                try:
+                    self.redpanda._admin.unsafe_reset_metadata_from_cloud(
+                        namespace="kafka", topic=self.topic, partition=0)
+                    resets_done += 1
+                except HTTPError as ex:
+                    if "would cause data loss" in ex.response.text:
+                        resets_refused += 1
+                    else:
+                        resets_failed += 1
+                    self.logger.info(f"Reset from cloud failed: {ex}")
+                next_reset = now + timedelta(seconds=seconds_between_reset)
+
+            time.sleep(2)
+
+        producer.wait(timeout_sec=120)
+        producer.free()
+
+        self.logger.info(
+            f"Producer workload complete: {resets_done=}, {resets_refused=}, {resets_failed=}"
+        )
+
+        assert resets_done + resets_refused > 0, "No resets done during the test"
+        assert resets_failed == 0, f"{resets_failed} resets failed during the test"
+
+        # Wait for all uploads to complete and read the log in full.
+        # This should highlight any data consistency issues.
+        # Note that we are re-using the node where the producer ran,
+        # which allows for validation of the consumed offests.
+        quiesce_uploads(self.redpanda, [self.topic], timeout_sec=120)
+
+        consumer = KgoVerifierSeqConsumer(self.test_context,
+                                          self.redpanda,
+                                          self.topic,
+                                          debug_logs=True,
+                                          trace_logs=True)
+
+        consumer.start()
+        consumer.wait(timeout_sec=120)
 
     @cluster(num_nodes=5)
     @matrix(cloud_storage_type=get_cloud_storage_type())

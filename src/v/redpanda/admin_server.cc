@@ -5094,8 +5094,9 @@ admin_server::unsafe_reset_metadata(
               buf.append(content.data(), content.size());
               content = {};
 
-              return partition->unsafe_reset_remote_partition_manifest(
-                std::move(buf));
+              return partition
+                ->unsafe_reset_remote_partition_manifest_from_json(
+                  std::move(buf));
           });
     } catch (const std::runtime_error& err) {
         throw ss::httpd::server_error_exception(err.what());
@@ -5699,6 +5700,50 @@ admin_server::get_cloud_storage_anomalies(
     co_return map_anomalies_to_json(ntp, *initial_rev, *status);
 }
 
+ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::unsafe_reset_metadata_from_cloud(
+  std::unique_ptr<ss::http::request> request,
+  std::unique_ptr<ss::http::reply> reply) {
+    reply->set_content_type("json");
+
+    auto ntp = parse_ntp_from_request(request->param);
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        vlog(
+          logger.info,
+          "Need to redirect unsafe reset metadata from cloud request");
+        throw co_await redirect_to_leader(*request, ntp);
+    }
+
+    const auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "{} could not be found on the node. Perhaps it has been moved "
+          "during the redirect.",
+          ntp));
+    }
+
+    bool force = get_boolean_query_param(*request, "force");
+
+    try {
+        co_await _partition_manager.invoke_on(
+          *shard, [ntp = std::move(ntp), shard, force](auto& pm) {
+              auto partition = pm.get(ntp);
+              if (!partition) {
+                  throw ss::httpd::not_found_exception(
+                    fmt::format("Could not find {} on shard {}", ntp, *shard));
+              }
+
+              return partition
+                ->unsafe_reset_remote_partition_manifest_from_cloud(force);
+          });
+    } catch (const std::runtime_error& err) {
+        throw ss::httpd::server_error_exception(err.what());
+    }
+
+    reply->set_status(ss::http::reply::status_type::ok);
+    co_return reply;
+}
+
 void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
@@ -5752,6 +5797,16 @@ void admin_server::register_shadow_indexing_routes() {
     register_route<user>(
       ss::httpd::shadow_indexing_json::get_cloud_storage_anomalies,
       [this](auto req) { return get_cloud_storage_anomalies(std::move(req)); });
+
+    request_handler_fn unsafe_reset_metadata_from_cloud_handler =
+      [this](auto req, auto reply) {
+          return unsafe_reset_metadata_from_cloud(
+            std::move(req), std::move(reply));
+      };
+
+    register_route<superuser>(
+      ss::httpd::shadow_indexing_json::unsafe_reset_metadata_from_cloud,
+      std::move(unsafe_reset_metadata_from_cloud_handler));
 }
 
 constexpr std::string_view to_string_view(service_kind kind) {

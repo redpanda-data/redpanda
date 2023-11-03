@@ -71,6 +71,7 @@ public:
     ss::future<> start(std::optional<topic_configuration>);
     ss::future<> stop();
 
+    bool should_construct_archiver();
     /// Part of constructor that we may sometimes need to do again
     /// after a configuration change.
     void maybe_construct_archiver();
@@ -452,9 +453,34 @@ public:
 
     result<std::vector<raft::follower_metrics>> get_follower_metrics() const;
 
-    ss::future<> unsafe_reset_remote_partition_manifest(iobuf buf);
+    // Attempt to reset the partition manifest of a cloud storage partition
+    // from an iobuf containing the JSON representation of the manifest.
+    //
+    // Warning: in order to call this safely, one must stop the archiver
+    // manually whilst ensuring that the max collectible offset reported
+    // by the archival metadata STM remains stable. Prefer its sibling
+    // which resets from the cloud state.
+    //
+    // Returns a failed future if unsuccessful.
+    ss::future<>
+    unsafe_reset_remote_partition_manifest_from_json(iobuf json_buf);
+
+    // Attempt to reset the partition manifest of a cloud storage partition
+    // to the one last uploaded to cloud storage.
+    //
+    // If `force` is true, the safety checks will be disregarded, which
+    // may lead to data loss.
+    //
+    // Returns a failed future if unsuccessful.
+    ss::future<> unsafe_reset_remote_partition_manifest_from_cloud(bool force);
 
 private:
+    ss::future<>
+    replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
+
+    ss::future<>
+    do_unsafe_reset_remote_partition_manifest_from_cloud(bool force);
+
     ss::future<std::optional<storage::timequery_result>>
       cloud_storage_timequery(storage::timequery_config);
 
@@ -486,7 +512,11 @@ private:
     ss::shared_ptr<cloud_storage::async_manifest_view>
       _cloud_storage_manifest_view;
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+
+    static constexpr auto archiver_reset_mutex_timeout = 10s;
+    ssx::semaphore _archiver_reset_mutex{1, "archiver_reset"};
     std::unique_ptr<archival::ntp_archiver> _archiver;
+
     std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{
       std::nullopt};
     bool _remote_delete_enabled{storage::ntp_config::default_remote_delete};

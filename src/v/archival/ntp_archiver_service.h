@@ -625,7 +625,7 @@ private:
     // Held while the inner segment upload/manifest sync loop is running,
     // to enable code that uses _paused to wait until ongoing activity
     // has stopped.
-    ss::semaphore _uploads_active{1};
+    ssx::named_semaphore<ss::lowres_clock> _uploads_active{1, "uploads_active"};
 
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;

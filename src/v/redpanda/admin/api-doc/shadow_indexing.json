@@ -218,6 +218,49 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/cloud_storage/unsafe_reset_metadata_from_cloud/{namespace}/{topic}/{partition}",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Resets the manifest to the one in cloud storage, updating all replicas with the given manifest. The request is refused if applying the change would cause data loss and the force query parameter is unspecified or false.",
+          "operationId": "unsafe_reset_metadata_from_cloud",
+          "nickname": "unsafe_reset_metadata_from_cloud",
+          "parameters": [
+            {
+              "name": "namespace",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "partition",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            },
+            {
+              "name": "force",
+              "in": "query",
+              "required": false,
+              "type": "boolean"
+            }
+          ],
+          "responseMessages": [
+            {
+              "code": 200,
+              "message": "Partition metadata is reset"
+            }
+          ]
+        }
+      ]
     }
   ],
   "models": {
