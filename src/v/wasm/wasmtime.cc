@@ -620,7 +620,6 @@ private:
     ss::future<model::record_batch>
     invoke_transform(model::record_batch batch, transform_probe* p) {
         std::unique_ptr<transform_probe::hist_t::measurement> m;
-        model::record_batch_header header = batch.header().copy();
         auto transformed = co_await _transform_module.for_each_record_async(
           std::move(batch),
           [this, &m, p, ctx = wasmtime_store_context(_store.get())]() {
@@ -628,38 +627,8 @@ private:
               m = p->latency_measurement();
           });
         m = nullptr;
-
-        model::record_batch::compressed_records serialized_records;
-        int32_t i = 0;
-        for (model::transformed_data& r : transformed) {
-            serialized_records.append_fragments(
-              std::move(r).to_serialized_record(
-                model::record_attributes(),
-                /*timestamp_delta=*/0,
-                /*offset_delta=*/i++));
-        }
-
-        header.record_count = i;
-        header.size_bytes = int32_t(
-          model::packed_record_batch_header_size
-          + serialized_records.size_bytes());
-
-        // mark the batch as created with broker time
-        header.attrs.set_timestamp_type(model::timestamp_type::append_time);
-        header.first_timestamp = model::timestamp::now();
-        header.max_timestamp = header.first_timestamp;
-
-        batch = model::record_batch(
-          header,
-          std::move(serialized_records),
-          model::record_batch::tag_ctor_ng{});
-
-        // Recompute the crc
-        batch.header().crc = model::crc_record_batch(batch);
-        batch.header().header_crc = model::internal_header_only_crc(
-          batch.header());
-
-        co_return batch;
+        co_return model::transformed_data::make_batch(
+          model::timestamp::now(), std::move(transformed));
     }
 
     wasmtime_runtime* _runtime;

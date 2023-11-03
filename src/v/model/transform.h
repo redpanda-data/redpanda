@@ -19,6 +19,7 @@
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
 
 #include <absl/container/btree_map.h>
@@ -225,6 +226,12 @@ public:
      * Create a transformed record - validating the format is correct.
      */
     static std::optional<transformed_data> create_validated(iobuf);
+
+    /**
+     * Create a batch from transformed_data.
+     */
+    static model::record_batch
+      make_batch(model::timestamp, ss::chunked_fifo<transformed_data>);
 
     /**
      * Generate a serialized record from the following metadata.

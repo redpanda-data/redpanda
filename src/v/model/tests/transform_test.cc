@@ -10,17 +10,22 @@
  */
 
 #include "model/fundamental.h"
+#include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
+#include "model/timestamp.h"
 #include "model/transform.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
 #include "units.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 #include <gtest/gtest.h>
 
 #include <initializer_list>
+#include <math.h>
 #include <utility>
 
 namespace model {
@@ -140,25 +145,27 @@ void append_vint_to_iobuf(iobuf& b, int64_t v) {
     auto vb = vint::to_bytes(v);
     b.append(vb.data(), vb.size());
 }
-} // namespace
-
-TEST(TransformedDataTest, Serialize) {
-    auto src = model::test::make_random_record(
-      0, random_generators::make_iobuf());
+std::optional<transformed_data> noop_transformed_data(const model::record& r) {
     iobuf payload;
-    append_vint_to_iobuf(payload, src.key_size());
-    payload.append(src.key().copy());
-    append_vint_to_iobuf(payload, src.value_size());
-    payload.append(src.value().copy());
-    append_vint_to_iobuf(payload, int64_t(src.headers().size()));
-    for (const auto& header : src.headers()) {
+    append_vint_to_iobuf(payload, r.key_size());
+    payload.append(r.key().copy());
+    append_vint_to_iobuf(payload, r.value_size());
+    payload.append(r.value().copy());
+    append_vint_to_iobuf(payload, int64_t(r.headers().size()));
+    for (const auto& header : r.headers()) {
         append_vint_to_iobuf(payload, header.key_size());
         payload.append(header.key().copy());
         append_vint_to_iobuf(payload, header.value_size());
         payload.append(header.value().copy());
     }
-    auto validated = model::transformed_data::create_validated(
-      std::move(payload));
+    return model::transformed_data::create_validated(std::move(payload));
+}
+} // namespace
+
+TEST(TransformedDataTest, Serialize) {
+    auto src = model::test::make_random_record(
+      0, random_generators::make_iobuf());
+    auto validated = noop_transformed_data(src);
     ASSERT_TRUE(validated.has_value());
     auto got = std::move(validated.value())
                  .to_serialized_record(
@@ -168,6 +175,46 @@ TEST(TransformedDataTest, Serialize) {
     EXPECT_EQ(got, want) << "GOT:\n"
                          << got.hexdump(1_KiB) << "\n\nWANT:\n"
                          << want.hexdump(1_KiB);
+}
+
+TEST(TransformedDataTest, MakeBatch) {
+    auto batch = test::make_random_batch({
+      .allow_compression = false,
+      .count = 4,
+    });
+    ss::chunked_fifo<transformed_data> transformed;
+    for (const auto& r : batch.copy_records()) {
+        transformed.push_back(noop_transformed_data(r).value());
+    }
+    auto now = model::timestamp::now();
+    auto transformed_batch = transformed_data::make_batch(
+      now, std::move(transformed));
+    EXPECT_EQ(transformed_batch.header().first_timestamp, now);
+    EXPECT_EQ(transformed_batch.header().max_timestamp, now);
+    EXPECT_EQ(transformed_batch.header().producer_id, -1);
+    EXPECT_EQ(
+      transformed_batch.header().type, model::record_batch_type::raft_data);
+    EXPECT_EQ(transformed_batch.header().record_count, 4);
+    EXPECT_EQ(
+      transformed_batch.header().crc,
+      model::crc_record_batch(transformed_batch));
+    EXPECT_EQ(
+      transformed_batch.header().header_crc,
+      model::internal_header_only_crc(transformed_batch.header()));
+    EXPECT_EQ(
+      transformed_batch.header().size_bytes, transformed_batch.size_bytes());
+    auto expected_records = batch.copy_records();
+    auto actual_records = transformed_batch.copy_records();
+    for (auto i = 0; i < expected_records.size(); ++i) {
+        EXPECT_EQ(actual_records[i].key(), expected_records[i].key());
+        EXPECT_EQ(actual_records[i].value(), expected_records[i].value());
+        EXPECT_EQ(actual_records[i].headers(), expected_records[i].headers());
+        EXPECT_EQ(
+          actual_records[i].offset_delta(), expected_records[i].offset_delta());
+        // Timestamps are different than what the test helper makes and that's
+        // OK.
+        EXPECT_EQ(actual_records[i].timestamp_delta(), 0);
+    }
 }
 
 } // namespace model
