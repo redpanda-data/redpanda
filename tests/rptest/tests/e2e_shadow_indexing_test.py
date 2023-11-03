@@ -1125,7 +1125,7 @@ class EndToEndSpilloverTest(RedpandaTest):
     def __init__(self, test_context):
         self.si_settings = SISettings(
             test_context,
-            log_segment_size=1024,
+            log_segment_size_min=1024,
             fast_uploads=True,
             cloud_storage_housekeeping_interval_ms=10000,
             cloud_storage_spillover_manifest_max_segments=10)
@@ -1216,6 +1216,7 @@ class EndToEndThrottlingTest(RedpandaTest):
         self.si_settings = SISettings(
             test_context,
             log_segment_size=1024,
+            log_segment_size_min=1024,
             fast_uploads=True,
             # Set small throughput limit to trigger throttling
             cloud_storage_max_throughput_per_shard=5 * 1024 * 1024)

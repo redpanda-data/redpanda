@@ -371,6 +371,7 @@ class SISettings:
                  test_context,
                  *,
                  log_segment_size: int = 16 * 1000000,
+                 log_segment_size_min: Optional[int] = None,
                  cloud_storage_cache_chunk_size: Optional[int] = None,
                  cloud_storage_credentials_source: str = 'config_file',
                  cloud_storage_access_key: str = 'panda-user',
@@ -432,6 +433,7 @@ class SISettings:
             assert False, f"Unexpected value provided for 'cloud_storage_type' injected arg: {self.cloud_storage_type}"
 
         self.log_segment_size = log_segment_size
+        self.log_segment_size_min = log_segment_size_min
         self.cloud_storage_cache_chunk_size = cloud_storage_cache_chunk_size
         self.cloud_storage_cache_size = cloud_storage_cache_size
         self.cloud_storage_cache_max_objects = cloud_storage_cache_max_objects
@@ -540,6 +542,9 @@ class SISettings:
                 'cloud_storage_azure_shared_key'] = self.cloud_storage_azure_shared_key
 
         conf["log_segment_size"] = self.log_segment_size
+        if self.log_segment_size_min is not None:
+            conf["log_segment_size_min"] = self.log_segment_size_min
+
         if (self.cloud_storage_cache_chunk_size):
             conf[
                 "cloud_storage_cache_chunk_size"] = self.cloud_storage_cache_chunk_size

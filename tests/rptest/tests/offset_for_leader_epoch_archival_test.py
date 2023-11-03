@@ -51,6 +51,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
             self.extra_rp_conf[
                 'cloud_storage_spillover_manifest_max_segments'] = 10
             self.si_settings.log_segment_size = 1024
+            self.si_settings.log_segment_size_min = 1024
             self.si_settings.fast_uploads = True,
             self.si_settings.cloud_storage_housekeeping_interval_ms = 10000
 
