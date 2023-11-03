@@ -15,6 +15,8 @@ namespace transform {
 class service;
 template<typename ClockType>
 class manager;
+template<typename ClockType>
+class commit_batcher;
 class processor;
 class probe;
 namespace rpc {
