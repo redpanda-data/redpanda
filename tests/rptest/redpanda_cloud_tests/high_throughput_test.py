@@ -206,11 +206,12 @@ class HighThroughputTest(PreallocNodesTest):
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
         # Get tier name
-        cloud_tier = get_tier_name(get_cloud_globals(self._ctx.globals))
+        self.config_profile_name = get_tier_name(
+            get_cloud_globals(self._ctx.globals))
         extra_rp_conf = None
         num_brokers = None
 
-        if cloud_tier == CloudTierName.DOCKER:
+        if self.config_profile_name == CloudTierName.DOCKER:
             # TODO: Bake the docker config into a higher layer that will
             # automatically load these settings upon call to make_rp_service
             config = AdvertisedTierConfigs[CloudTierName.DOCKER]
@@ -227,12 +228,12 @@ class HighThroughputTest(PreallocNodesTest):
                              node_prealloc_count=3,
                              num_brokers=num_brokers,
                              extra_rp_conf=extra_rp_conf,
-                             cloud_tier=cloud_tier,
+                             cloud_tier=self.config_profile_name,
                              disable_cloud_storage_diagnostics=True,
                              **kwargs)
 
         self.tier_config = self.redpanda.advertised_tier_config
-        if cloud_tier == CloudTierName.DOCKER:
+        if self.config_profile_name == CloudTierName.DOCKER:
             si_settings = SISettings(
                 test_ctx,
                 log_segment_size=self.min_segment_size,
@@ -241,7 +242,8 @@ class HighThroughputTest(PreallocNodesTest):
             self.redpanda.set_si_settings(si_settings)
             self.s3_port = si_settings.cloud_storage_api_endpoint_port
 
-        test_ctx.logger.info(f"Cloud tier {cloud_tier}: {self.tier_config}")
+        test_ctx.logger.info(
+            f"Cloud tier {self.config_profile_name}: {self.tier_config}")
 
         self.rpk = RpkTool(self.redpanda)
 
@@ -657,9 +659,8 @@ class HighThroughputTest(PreallocNodesTest):
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
-        cloud_tier = get_tier_name(get_cloud_globals(self._ctx.globals))
 
-        if cloud_tier == CloudTierName.DOCKER:
+        if self.config_profile_name == CloudTierName.DOCKER:
             with firewall_blocked(self.redpanda.nodes, self.s3_port):
                 # wait for the first cloud related failure + one minute
                 wait_until(lambda: not self._cloud_storage_no_new_errors(
