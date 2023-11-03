@@ -3431,6 +3431,8 @@ admin_server::get_partition_handler(std::unique_ptr<ss::http::request> req) {
             p.leader_id = *leader;
         }
 
+        p.disabled = _controller->get_topics_state().local().is_disabled(ntp);
+
         return _controller->get_api()
           .local()
           .get_reconciliation_state(ntp)
@@ -3465,6 +3467,10 @@ admin_server::get_topic_partitions_handler(
     std::vector<partition_t> partitions;
     const auto& assignments = tp_md->get().get_assignments();
     partitions.reserve(assignments.size());
+
+    const auto* disabled_set
+      = _controller->get_topics_state().local().get_topic_disabled_set(tp_ns);
+
     // Normal topic
     for (const auto& p_as : assignments) {
         partition_t p;
@@ -3482,6 +3488,7 @@ admin_server::get_topic_partitions_handler(
         if (leader) {
             p.leader_id = *leader;
         }
+        p.disabled = disabled_set && disabled_set->is_disabled(p_as.id);
         partitions.push_back(std::move(p));
     }
 

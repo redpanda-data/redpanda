@@ -455,6 +455,9 @@
                         "type": "assignment"
                     },
                     "description": "Replica assignments"
+                },
+                "disabled": {
+                    "type": "boolean"
                 }
             }
         },
