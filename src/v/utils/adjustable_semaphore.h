@@ -81,6 +81,15 @@ public:
         return ss::get_units(_sem, units);
     }
 
+    /**
+     * Blocking get units: will block until units are available or until abort
+     * source is triggered.
+     */
+    ss::future<ssx::semaphore_units>
+    get_units(size_t units, ss::abort_source& as) {
+        return ss::get_units(_sem, units, as);
+    }
+
     size_t current() const noexcept { return _sem.current(); }
     ssize_t available_units() const noexcept { return _sem.available_units(); }
 
