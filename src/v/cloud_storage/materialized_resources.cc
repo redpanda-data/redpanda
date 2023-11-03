@@ -419,8 +419,19 @@ void materialized_resources::register_segment(materialized_segment_state& s) {
     _materialized.push_back(s);
 }
 
+namespace {
+
+ss::future<ssx::semaphore_units> get_units_abortable(
+  adjustable_semaphore& sem, ssize_t units, storage::opt_abort_source_t as) {
+    return as.has_value() ? sem.get_units(units, as.value())
+                          : sem.get_units(units);
+}
+
+} // namespace
+
 ss::future<segment_reader_units>
-materialized_resources::get_segment_reader_units() {
+materialized_resources::get_segment_reader_units(
+  storage::opt_abort_source_t as) {
     // Estimate segment reader memory requirements
     auto size_bytes = projected_remote_segment_reader_memory_usage();
     if (_mem_units.available_units() <= size_bytes) {
@@ -431,19 +442,22 @@ materialized_resources::get_segment_reader_units() {
         trim_segment_readers(max_memory_utilization() / 2);
     }
 
-    auto semaphore_units = co_await _mem_units.get_units(size_bytes);
+    auto semaphore_units = co_await get_units_abortable(
+      _mem_units, size_bytes, as);
     co_return segment_reader_units{std::move(semaphore_units)};
 }
 
 ss::future<ssx::semaphore_units>
-materialized_resources::get_partition_reader_units() {
+materialized_resources::get_partition_reader_units(
+  storage::opt_abort_source_t as) {
     auto sz = projected_remote_partition_reader_memory_usage();
     if (_mem_units.available_units() <= sz) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
         _partition_readers_delayed += 1;
     }
-    return _mem_units.get_units(sz);
+
+    return get_units_abortable(_mem_units, sz, as);
 }
 
 ss::future<ssx::semaphore_units>
@@ -452,7 +466,8 @@ materialized_resources::get_hydration_units(size_t n) {
     co_return std::move(u);
 }
 
-ss::future<segment_units> materialized_resources::get_segment_units() {
+ss::future<segment_units>
+materialized_resources::get_segment_units(storage::opt_abort_source_t as) {
     auto sz = projected_remote_segment_memory_usage();
     if (_mem_units.available_units() <= sz) {
         // Update metrics counter if we are trying to acquire units while
@@ -461,7 +476,7 @@ ss::future<segment_units> materialized_resources::get_segment_units() {
 
         trim_segments(max_memory_utilization() / 2);
     }
-    auto semaphore_units = co_await _mem_units.get_units(sz);
+    auto semaphore_units = co_await get_units_abortable(_mem_units, sz, as);
     co_return segment_units{std::move(semaphore_units)};
 }
 
