@@ -93,6 +93,9 @@ func (r *IngressResource) WithAnnotations(
 func (r *IngressResource) WithTLS(
 	clusterIssuer, secretName string,
 ) *IngressResource {
+	if r.annotations == nil {
+		r.annotations = make(map[string]string, 2)
+	}
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
 	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = trueString
 
