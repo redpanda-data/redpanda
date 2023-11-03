@@ -442,7 +442,6 @@ private:
         get_leader_epoch_last_offset(kafka::leader_epoch) const final {
             throw std::runtime_error("unimplemented");
         }
-        bool is_elected_leader() const final { return true; }
         bool is_leader() const final { return true; }
         ss::future<std::error_code> linearizable_barrier() final {
             throw std::runtime_error("unimplemented");
