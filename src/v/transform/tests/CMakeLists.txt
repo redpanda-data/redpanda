@@ -39,3 +39,17 @@ rp_test(
   ARGS "-- -c 1"
   LABELS transform
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME
+    transform_commit_batcher
+  SOURCES
+    commit_batcher_test.cc
+  LIBRARIES 
+    v::gtest_main
+    v::transform
+  ARGS "-- -c 1"
+  LABELS transform
+)
