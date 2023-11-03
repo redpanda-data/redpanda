@@ -530,14 +530,21 @@ ss::future<> partition::stop() {
     vlog(clusterlog.debug, "Stopping partition: {}", partition_ntp);
     _as.request_abort();
 
-    if (_archiver) {
-        _upload_housekeeping.local().deregister_jobs(
-          _archiver->get_housekeeping_jobs());
-        vlog(
-          clusterlog.debug,
-          "Stopping archiver on partition: {}",
-          partition_ntp);
-        co_await _archiver->stop();
+    {
+        // `partition_manager::do_shutdown` (caller of stop) will assert
+        // out on any thrown exceptions. Hence, acquire the units without
+        // a timeout or abort source.
+        auto archiver_reset_guard = ss::get_units(_archiver_reset_mutex, 1);
+
+        if (_archiver) {
+            _upload_housekeeping.local().deregister_jobs(
+              _archiver->get_housekeeping_jobs());
+            vlog(
+              clusterlog.debug,
+              "Stopping archiver on partition: {}",
+              partition_ntp);
+            co_await _archiver->stop();
+        }
     }
 
     if (_archival_meta_stm) {
@@ -759,16 +766,20 @@ partition::local_timequery(storage::timequery_config cfg) {
     co_return result;
 }
 
-void partition::maybe_construct_archiver() {
+bool partition::should_construct_archiver() {
     // NOTE: construct and archiver even if shadow indexing isn't enabled, e.g.
     // in the case of read replicas -- we still need the archiver to drive
     // manifest updates, etc.
-    auto& ntp_config = _raft->log()->config();
-    if (
-      config::shard_local_cfg().cloud_storage_enabled()
-      && _cloud_storage_api.local_is_initialized()
-      && _raft->ntp().ns == model::kafka_namespace
-      && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled())) {
+    const auto& ntp_config = _raft->log()->config();
+    return config::shard_local_cfg().cloud_storage_enabled()
+           && _cloud_storage_api.local_is_initialized()
+           && _raft->ntp().ns == model::kafka_namespace
+           && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled());
+}
+
+void partition::maybe_construct_archiver() {
+    if (should_construct_archiver()) {
+        const auto& ntp_config = _raft->log()->config();
         _archiver = std::make_unique<archival::ntp_archiver>(
           ntp_config,
           _archival_conf,
@@ -860,6 +871,12 @@ ss::future<> partition::update_configuration(topic_properties properties) {
           "update_configuration[{}]: updating archiver for config {}",
           new_ntp_config,
           _raft->ntp());
+
+        auto archiver_reset_guard = co_await ssx::with_timeout_abortable(
+          ss::get_units(_archiver_reset_mutex, 1),
+          ss::lowres_clock::now() + archiver_reset_mutex_timeout,
+          _as);
+
         if (_archiver) {
             _upload_housekeeping.local().deregister_jobs(
               _archiver->get_housekeeping_jobs());
@@ -1173,6 +1190,8 @@ partition::unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
       "[{}] Unsafe manifest reset from cloud state requested",
       ntp());
 
+    _as.check();
+
     if (!(config::shard_local_cfg().cloud_storage_enabled()
           && _archival_meta_stm)) {
         vlog(
@@ -1180,6 +1199,14 @@ partition::unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
           "[{}] Archival STM not present. Skipping unsafe reset ...",
           ntp());
         throw std::runtime_error("Archival STM not present");
+    }
+
+    std::optional<ssx::semaphore_units> archiver_reset_guard;
+    if (should_construct_archiver()) {
+        archiver_reset_guard = co_await ssx::with_timeout_abortable(
+          ss::get_units(_archiver_reset_mutex, 1),
+          ss::lowres_clock::now() + archiver_reset_mutex_timeout,
+          _as);
     }
 
     // Stop the archiver and its housekeeping jobs
@@ -1217,6 +1244,8 @@ partition::unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
         co_await start_archiver();
         throw std::runtime_error("Could not sync with log");
     }
+
+    _as.check();
 
     // Attempt the reset
     auto future_result = co_await ss::coroutine::as_future(

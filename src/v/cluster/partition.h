@@ -64,6 +64,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    bool should_construct_archiver();
     /// Part of constructor that we may sometimes need to do again
     /// after a configuration change.
     void maybe_construct_archiver();
@@ -491,7 +492,11 @@ private:
     ss::shared_ptr<cloud_storage::async_manifest_view>
       _cloud_storage_manifest_view;
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+
+    static constexpr auto archiver_reset_mutex_timeout = 10s;
+    ssx::semaphore _archiver_reset_mutex{1, "archiver_reset"};
     std::unique_ptr<archival::ntp_archiver> _archiver;
+
     std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{
       std::nullopt};
     bool _remote_delete_enabled{storage::ntp_config::default_remote_delete};
