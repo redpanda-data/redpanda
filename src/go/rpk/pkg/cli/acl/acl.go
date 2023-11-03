@@ -181,9 +181,11 @@ PRODUCING/CONSUMING
 
     Metadata     DESCRIBE on TOPIC for topics
                  CREATE on CLUSTER for kafka-cluster (if automatically creating topics)
-                 CREATE on TOPIC for topics (if automatically creating topics)
+                 or, CREATE on TOPIC for topics (if automatically creating topics)
 
     InitProducerID  IDEMPOTENT_WRITE on CLUSTER
+                    or, WRITE on any TOPIC
+                    or, WRITE on TRANSACTIONAL_ID for transactional.id (if using transactions)
 
     OffsetForLeaderEpoch  DESCRIBE on TOPIC for topics
 
@@ -222,8 +224,8 @@ TRANSACTIONS (including FindCoordinator above)
 
 ADMIN
 
-    CreateTopics      CREATE on CLUSTER for kafka-cluster
-                      CREATE on TOPIC for topics
+    CreateTopics      CREATE on TOPIC for topics
+                      or, CREATE on CLUSTER for kafka-cluster
                       DESCRIBE_CONFIGS on TOPIC for topics, for returning topic configs on create
 
     CreatePartitions  ALTER on TOPIC for topics
@@ -240,13 +242,30 @@ ADMIN
 
     DeleteGroups      DELETE on GROUP for groups
 
+    CreateACLs        ALTER on CLUSTER for kafka-cluster
+    DeleteACLs        ALTER on CLUSTER for kafka-cluster
+    DescribeACLs      DESCRIBE on CLUSTER for kafka-cluster
+
     DescribeConfigs   DESCRIBE_CONFIGS on CLUSTER for kafka-cluster (broker describing)
                       DESCRIBE_CONFIGS on TOPIC for topics (topic describing)
 
     AlterConfigs      ALTER_CONFIGS on CLUSTER for kafka-cluster (broker altering)
-                      ALTER_CONFIGS on TOPIC for topics (topic altering)
+    (or Incremental)  ALTER_CONFIGS on TOPIC for topics (topic altering)
 
-    CreateACLs        ALTER on CLUSTER for kafka-cluster
-    DeleteACLs        ALTER on CLUSTER for kafka-cluster
-    DescribeACLs      DESCRIBE on CLUSTER for kafka-cluster
+    AlterPartitionAssignments   ALTER on CLUSTER for kafka-cluster
+    ListPartitionReassignments  DESCRIBE on CLUSTER for kafka-cluster
+
+    AlterReplicaLogDirs    ALTER on CLUSTER for kafka-cluster
+    DescribeLogDirs        DESCRIBE on CLUSTER for kafka-cluster
+
+    AlterClientQuotas      ALTER on CLUSTER for kafka-cluster
+    DescribeClientQuotas   DESCRIBE_CONFIGS on CLUSTER for kafka-cluster
+     
+    AlterUserScramCreds    ALTER on CLUSTER for kafka-cluster
+    DescribeUserScramCreds DESCRIBE_CONFIGS on CLUSTER for kafka-cluster
+
+    DescribeProducers      READ on TOPIC for topics
+    DescribeTransactions   DESCRIBE on TRANSACTIONAL_ID for transactional.id
+                           DESCRIBE on TOPIC for topics
+    ListTransactions       DESCRIBE on TRANSACTIONAL_ID for transactional.id
 `
