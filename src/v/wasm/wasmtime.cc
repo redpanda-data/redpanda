@@ -475,14 +475,20 @@ private:
     execute(handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut) {
         // Poll the call future to completion, yielding to the scheduler when
         // the future yields.
+        auto start = ss::steady_clock_type::now();
         while (!wasmtime_call_future_poll(fut.get())) {
+            auto end = ss::steady_clock_type::now();
+            _probe.increment_cpu_time(end - start);
             if (_pending_host_function) {
                 auto host_future = std::exchange(_pending_host_function, {});
                 co_await std::move(host_future).value();
-                continue;
+            } else {
+                co_await ss::coroutine::maybe_yield();
             }
-            co_await ss::coroutine::maybe_yield();
+            start = ss::steady_clock_type::now();
         }
+        auto end = ss::steady_clock_type::now();
+        _probe.increment_cpu_time(end - start);
     }
 
     ss::future<> create_instance() {
