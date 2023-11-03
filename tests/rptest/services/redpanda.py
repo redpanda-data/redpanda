@@ -1575,7 +1575,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         pass
 
     def sockets_clear(self, node):
-        True
+        return True
 
     def all_up(self):
         return self._cloud_cluster.isAlive
