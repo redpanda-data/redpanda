@@ -143,14 +143,23 @@ public:
       model::partition_id pid,
       rpc::client* client,
       commit_batcher<>* batcher)
-      : _tid(tid)
-      , _pid(pid)
+      : _key({.id = tid, .partition = pid})
       , _client(client)
       , _batcher(batcher) {}
 
+    ss::future<> start() override { return ss::now(); }
+
+    ss::future<> stop() override {
+        _batcher->unload(_key);
+        return ss::now();
+    }
+
+    ss::future<> wait_for_previous_flushes(ss::abort_source* as) override {
+        return _batcher->wait_for_previous_flushes(_key, as);
+    }
+
     ss::future<std::optional<kafka::offset>> load_committed_offset() override {
-        auto result = co_await _client->offset_fetch(
-          {.id = _tid, .partition = _pid});
+        auto result = co_await _client->offset_fetch(_key);
         if (result.has_error()) {
             cluster::errc ec = result.error();
             throw std::runtime_error(ss::format(
@@ -165,13 +174,11 @@ public:
     }
 
     ss::future<> commit_offset(kafka::offset offset) override {
-        return _batcher->commit_offset(
-          {.id = _tid, .partition = _pid}, {.offset = offset});
+        return _batcher->commit_offset(_key, {.offset = offset});
     }
 
 private:
-    model::transform_id _tid;
-    model::partition_id _pid;
+    model::transform_offsets_key _key;
     rpc::client* _client;
     commit_batcher<>* _batcher;
 };

@@ -80,6 +80,10 @@ private:
 
 class fake_offset_tracker : public offset_tracker {
 public:
+    ss::future<> start() override;
+    ss::future<> stop() override;
+    ss::future<> wait_for_previous_flushes(ss::abort_source*) override;
+
     ss::future<std::optional<kafka::offset>> load_committed_offset() override;
 
     ss::future<> commit_offset(kafka::offset o) override;
