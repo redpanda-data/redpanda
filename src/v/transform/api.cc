@@ -85,9 +85,21 @@ public:
 
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) final {
+        // It's possible to have the local log was truncated due to delete
+        // records, retention, etc. In this event, simply resume from the start
+        // of the log.
+        // TODO: This sync has a 5 second timeout, we should support passing an
+        // abort_source down as well.
+        auto result = co_await _partition.sync_effective_start();
+        if (result.has_error()) {
+            throw std::runtime_error(
+              kafka::make_error_code(result.error()).message());
+        }
+        model::offset start_offset = std::max(
+          result.value(), kafka::offset_cast(offset));
         auto translater = co_await _partition.make_reader(
           storage::log_reader_config(
-            /*start_offset=*/kafka::offset_cast(offset),
+            /*start_offset=*/start_offset,
             /*max_offset=*/model::offset::max(),
             /*prio=*/wasm_read_priority(),
             /*as=*/*as));

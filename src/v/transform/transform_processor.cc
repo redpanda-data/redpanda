@@ -175,9 +175,6 @@ ss::future<> processor::run_consumer_loop() {
     auto offset = co_await load_start_offset();
     vlog(_logger.trace, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
-        // TODO(rockwood): It's possible that the stored is deleted due to
-        // retention policy since the last successful commit. We should handle
-        // this by restarting from the low watermark.
         auto reader = co_await _source->read_batch(offset, &_as);
         auto last_offset = co_await std::move(reader).consume(
           queue_output_consumer(&_consumer_transform_pipe, _probe),
