@@ -63,8 +63,10 @@ ss::future<ss::stop_iteration>
 offset_to_filepos_consumer::operator()(::model::record_batch batch) {
     _prev = _accumulator;
     _accumulator += batch.size_bytes();
+    vlog(stlog.info, "AWONG batch {} filepos [{}, {}]", batch.base_offset(), _prev, _accumulator);
 
     if (_target_last_offset <= batch.base_offset()) {
+        vlog(stlog.info, "AWONG NEXT IS {} >= {}, RETURNING {}, FILEPOS {}", batch.base_offset(), _target_last_offset, _prev_batch_last_offset, _prev);
         _filepos = {_prev_batch_last_offset, _prev, _prev_batch_max_timestamp};
         co_return ss::stop_iteration::yes;
     }

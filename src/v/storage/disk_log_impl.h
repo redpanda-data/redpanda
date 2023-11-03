@@ -165,13 +165,13 @@ public:
       const compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
+
+    ss::future<model::record_batch_reader>
+      make_unchecked_reader(log_reader_config);
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
-
-    ss::future<model::record_batch_reader>
-      make_unchecked_reader(log_reader_config);
 
     ss::future<model::record_batch_reader>
       make_cached_reader(log_reader_config);

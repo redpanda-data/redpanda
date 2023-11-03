@@ -137,6 +137,7 @@ batch_cache::batch_cache(const reclaim_options& opts)
 
 batch_cache::entry
 batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
+    vlog(stlog.info, "AWONG PUT [{}, {}]", input.base_offset(), input.last_offset());
     // notify no matter what the exit path
     auto notify_guard = ss::defer([this] { _background_reclaimer.notify(); });
 
@@ -392,6 +393,7 @@ void batch_cache_index::truncate(model::offset offset) {
             ++it;
         }
         std::for_each(it, _index.end(), [this](index_type::value_type& e) {
+            vlog(stlog.info, "AWONG EVICT [{},{}]", e.second.batch().base_offset(), e.second.batch().last_offset());
             _cache->evict(std::move(e.second.range()));
         });
         _index.erase(it, _index.end());

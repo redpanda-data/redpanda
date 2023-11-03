@@ -514,6 +514,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
           b.header())));
     }
     const auto start_physical_offset = _appender->file_byte_offset();
+    vlog(stlog.info, "AWONG APPEND {} AT FILEPOS {}", b.base_offset(), start_physical_offset);
     _generation_id++;
     // proxy serialization to segment_appender
     auto write_fut = _appender->append(b).then(

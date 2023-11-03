@@ -125,13 +125,16 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
         auto ret = _consumer->accept_batch_start(*_header);
         switch (ret) {
         case batch_consumer::consume_result::stop_parser:
+            vlog(stlog.info, "AWONG STOP {}", _header->base_offset);
             co_return stop_parser::yes;
         case batch_consumer::consume_result::accept_batch:
+            vlog(stlog.info, "AWONG ACCEPT BATCH {}", _header->base_offset);
             _consumer->consume_batch_start(
               *_header, _physical_base_offset, _header->size_bytes);
             _physical_base_offset += _header->size_bytes;
             co_return stop_parser::no;
         case batch_consumer::consume_result::skip_batch:
+            vlog(stlog.info, "AWONG SKIP {}", _header->base_offset);
             _consumer->skip_batch_start(
               *_header, _physical_base_offset, _header->size_bytes);
             _physical_base_offset += _header->size_bytes;
