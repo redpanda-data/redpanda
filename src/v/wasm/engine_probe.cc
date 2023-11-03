@@ -20,6 +20,7 @@
 namespace wasm {
 
 namespace internal {
+
 engine_probe_impl::engine_probe_impl(
   engine_probe_cache* cache, ss::sstring name)
   : _name(std::move(name))
@@ -33,6 +34,14 @@ engine_probe_impl::engine_probe_impl(
     _public_metrics.add_group(
       prometheus_sanitize::metrics_name("wasm_engine"),
       {
+        sm::make_counter(
+          "cpu_seconds_total",
+          sm::description(
+            "Total CPU time (in seconds) spent inside a WebAssembly "
+            "function"),
+          labels,
+          [this] { return std::chrono::duration<double>(_cpu_time).count(); })
+          .aggregate({ss::metrics::shard_label}),
         sm::make_gauge(
           "memory_usage",
           sm::description("Amount of memory usage for a WebAssembly function"),
@@ -47,10 +56,12 @@ engine_probe_impl::engine_probe_impl(
           .aggregate({ss::metrics::shard_label}),
       });
 }
+
 engine_probe_impl::~engine_probe_impl() {
     // Remove from cache when deleted.
     _cache->remove_probe(_name);
 }
+
 void engine_probe_impl::report_memory_usage_delta(int64_t delta) {
     _memory_usage += delta;
 }
@@ -58,6 +69,11 @@ void engine_probe_impl::report_memory_usage_delta(int64_t delta) {
 void engine_probe_impl::report_max_memory_delta(int64_t delta) {
     _max_memory += delta;
 }
+
+void engine_probe_impl::increment_cpu_time(ss::steady_clock_type::duration d) {
+    _cpu_time += d;
+}
+
 } // namespace internal
 
 engine_probe::engine_probe(ss::lw_shared_ptr<internal::engine_probe_impl> impl)
@@ -81,6 +97,10 @@ void engine_probe::report_max_memory(uint32_t max) {
     int64_t delta = int64_t(max) - int64_t(_last_reported_max_memory);
     _impl->report_max_memory_delta(delta);
     _last_reported_max_memory = max;
+}
+
+void engine_probe::increment_cpu_time(ss::steady_clock_type::duration d) {
+    _impl->increment_cpu_time(d);
 }
 
 engine_probe engine_probe_cache::make_probe(const ss::sstring& name) {

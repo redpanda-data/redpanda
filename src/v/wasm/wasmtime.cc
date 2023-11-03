@@ -466,6 +466,31 @@ private:
         check_error(error.get());
     }
 
+    /**
+     * Run a WebAssembly call until completion, after the "future" is done
+     * completing the results from the computation (as well as errors) are
+     * available.
+     */
+    ss::future<>
+    execute(handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut) {
+        // Poll the call future to completion, yielding to the scheduler when
+        // the future yields.
+        auto start = ss::steady_clock_type::now();
+        while (!wasmtime_call_future_poll(fut.get())) {
+            auto end = ss::steady_clock_type::now();
+            _probe.increment_cpu_time(end - start);
+            if (_pending_host_function) {
+                auto host_future = std::exchange(_pending_host_function, {});
+                co_await std::move(host_future).value();
+            } else {
+                co_await ss::coroutine::maybe_yield();
+            }
+            start = ss::steady_clock_type::now();
+        }
+        auto end = ss::steady_clock_type::now();
+        _probe.increment_cpu_time(end - start);
+    }
+
     ss::future<> create_instance() {
         // The underlying "data" for this store is our engine, which is what
         // allows our host functions to access the actual module for that host
@@ -511,16 +536,7 @@ private:
             &trap_ptr,
             &error_ptr)};
 
-        // Poll the call future to completion, yielding to the scheduler when
-        // the future yields.
-        while (!wasmtime_call_future_poll(fut.get())) {
-            if (_pending_host_function) {
-                auto host_future = std::exchange(_pending_host_function, {});
-                co_await std::move(host_future).value();
-                continue;
-            }
-            co_await ss::coroutine::maybe_yield();
-        }
+        co_await execute(std::move(fut));
 
         // Now that the call future has returned as completed, we can assume the
         // out pointers have been set, we need to check them for errors.
@@ -551,16 +567,7 @@ private:
             &trap_ptr,
             &err_ptr)};
 
-        // Poll the call future to completion, yielding to the scheduler when
-        // the future yields.
-        while (!wasmtime_call_future_poll(fut.get())) {
-            if (_pending_host_function) {
-                auto host_future = std::exchange(_pending_host_function, {});
-                co_await std::move(host_future).value();
-                continue;
-            }
-            co_await ss::coroutine::maybe_yield();
-        }
+        co_await execute(std::move(fut));
 
         // Now that the call future has returned as completed, we can assume the
         // out pointers have been set, we need to check them for errors.

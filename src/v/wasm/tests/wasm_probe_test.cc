@@ -12,6 +12,7 @@
 #include "gmock/gmock.h"
 #include "metrics/metrics.h"
 #include "units.h"
+#include "utils/type_traits.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/metrics.hh>
@@ -24,12 +25,14 @@
 #include <wasm/engine_probe.h>
 
 #include <optional>
+#include <type_traits>
 
 namespace wasm {
 
 namespace {
 
-std::optional<uint64_t> find_guage_value(
+template<typename T>
+std::optional<T> find_metric_value(
   std::string_view metric_name, const ss::sstring& function_name) {
     auto metrics = ss::metrics::impl::get_value_map(
       metrics::public_metrics_handle);
@@ -47,16 +50,28 @@ std::optional<uint64_t> find_guage_value(
     ss::metrics::impl::metric_function metric_fn
       = family_it->second->get_function();
     seastar::metrics::impl::metric_value sample = metric_fn();
-    return sample.ui();
+    if constexpr (std::is_same_v<double, T>) {
+        return sample.d();
+    } else if constexpr (std::is_same_v<uint64_t, T>) {
+        return sample.ui();
+    } else {
+        static_assert(utils::unsupported_type<T>::value, "unsupported type");
+    }
 }
 
 std::optional<uint64_t>
 reported_memory_usage(const ss::sstring& function_name) {
-    return find_guage_value("wasm_engine_memory_usage", function_name);
+    return find_metric_value<uint64_t>(
+      "wasm_engine_memory_usage", function_name);
 }
 
 std::optional<uint64_t> reported_max_memory(const ss::sstring& function_name) {
-    return find_guage_value("wasm_engine_max_memory", function_name);
+    return find_metric_value<uint64_t>("wasm_engine_max_memory", function_name);
+}
+
+std::optional<double> reported_cpu_time(const ss::sstring& function_name) {
+    return find_metric_value<double>(
+      "wasm_engine_cpu_seconds_total", function_name);
 }
 
 } // namespace
@@ -65,7 +80,7 @@ using ::testing::Optional;
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
 
-TEST(EngineProbeTest, ReportsDeltas) {
+TEST(EngineProbeTest, MemoryReportsDeltas) {
     engine_probe_cache cache;
     std::optional<engine_probe> foobar_probe = cache.make_probe("foobar");
     EXPECT_THAT(reported_max_memory("foobar"), Optional(0));
@@ -83,7 +98,7 @@ TEST(EngineProbeTest, ReportsDeltas) {
     EXPECT_THAT(reported_memory_usage("foobar"), std::nullopt);
 }
 
-TEST(EngineProbeTest, SumsAcrossEngines) {
+TEST(EngineProbeTest, MemorySumsAcrossEngines) {
     engine_probe_cache cache;
     std::optional<engine_probe> p1 = cache.make_probe("foobar");
     std::optional<engine_probe> p2 = cache.make_probe("foobar");
@@ -100,6 +115,28 @@ TEST(EngineProbeTest, SumsAcrossEngines) {
     p2 = std::nullopt;
     EXPECT_THAT(reported_memory_usage("foobar"), 9_KiB);
     p3 = std::nullopt;
+    EXPECT_THAT(reported_memory_usage("foobar"), std::nullopt);
+}
+
+using namespace std::chrono;
+
+auto DoubleNear(double expected) {
+    return ::testing::DoubleNear(expected, 0.01);
+}
+
+TEST(EngineProbeTest, CpuSumsAcrossEngines) {
+    engine_probe_cache cache;
+    std::optional<engine_probe> p1 = cache.make_probe("foobar");
+    std::optional<engine_probe> p2 = cache.make_probe("foobar");
+    EXPECT_THAT(reported_cpu_time("foobar"), Optional(0));
+    p1->increment_cpu_time(500ms);
+    p2->increment_cpu_time(250ms);
+    EXPECT_THAT(reported_cpu_time("foobar"), Optional(DoubleNear(0.75)));
+    p2->increment_cpu_time(300ms);
+    EXPECT_THAT(reported_cpu_time("foobar"), Optional(DoubleNear(1.05)));
+    p1 = std::nullopt;
+    EXPECT_THAT(reported_cpu_time("foobar"), Optional(DoubleNear(1.05)));
+    p2 = std::nullopt;
     EXPECT_THAT(reported_memory_usage("foobar"), std::nullopt);
 }
 

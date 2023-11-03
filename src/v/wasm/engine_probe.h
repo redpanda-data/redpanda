@@ -36,12 +36,14 @@ public:
     ~engine_probe_impl();
     void report_memory_usage_delta(int64_t);
     void report_max_memory_delta(int64_t);
+    void increment_cpu_time(ss::steady_clock_type::duration d);
 
 private:
     ss::sstring _name;
     engine_probe_cache* _cache;
     int64_t _memory_usage = 0;
     int64_t _max_memory = 0;
+    ss::steady_clock_type::duration _cpu_time = std::chrono::seconds(0);
     metrics::public_metric_groups _public_metrics;
 };
 } // namespace internal
@@ -49,7 +51,10 @@ private:
 /**
  * A probe for all types of wasm engines.
  *
- * Used to track things like memory and CPU usage.
+ * Used to track things like memory and CPU usage across multiple engines. There
+ * are cases (ie deployment) where there maybe multiple versions of the same
+ * probe on the same core at once, so this class is a small utility around
+ * ensuring we only report the delta for gauges.
  */
 class engine_probe {
 public:
@@ -60,6 +65,7 @@ public:
     engine_probe& operator=(engine_probe&&) = default;
     ~engine_probe();
 
+    void increment_cpu_time(ss::steady_clock_type::duration);
     void report_memory_usage(uint32_t);
     void report_max_memory(uint32_t);
 
