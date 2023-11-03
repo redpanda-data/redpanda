@@ -12,6 +12,7 @@
 #include "transform/commit_batcher.h"
 
 #include "cluster/errc.h"
+#include "config/property.h"
 #include "rpc/backoff_policy.h"
 #include "ssx/sleep_abortable.h"
 #include "transform/logger.h"
@@ -21,15 +22,18 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 
+#include <chrono>
 #include <iterator>
+#include <utility>
 
 namespace transform {
 
 template<typename ClockType>
 commit_batcher<ClockType>::commit_batcher(
-  ClockType::duration commit_interval, std::unique_ptr<offset_committer> oc)
+  config::binding<std::chrono::milliseconds> commit_interval,
+  std::unique_ptr<offset_committer> oc)
   : _offset_committer(std::move(oc))
-  , _commit_interval(commit_interval)
+  , _commit_interval(std::move(commit_interval))
   , _timer(
       [this] { ssx::spawn_with_gate(_gate, [this] { return flush(); }); }) {}
 
@@ -104,7 +108,7 @@ ss::future<bool> commit_batcher<ClockType>::assign_coordinators() {
         _batched[coordinator].insert_or_assign(entry.key(), entry.mapped());
         _coordinator_cache[key] = coordinator;
         if (!_timer.armed()) {
-            _timer.arm(_commit_interval);
+            _timer.arm(_commit_interval());
         }
         it = _unbatched.upper_bound(key);
     }
@@ -124,7 +128,7 @@ template<typename ClockType>
 ss::future<> commit_batcher<ClockType>::wait_for_previous_flushes(
   model::transform_offsets_key, ss::abort_source* as) {
     try {
-        co_await ssx::sleep_abortable<ClockType>(_commit_interval, *as, _as);
+        co_await ssx::sleep_abortable<ClockType>(_commit_interval(), *as, _as);
     } catch (const ss::sleep_aborted&) {
         // do nothing as we're shutting down, callers will do the right thing
     }
@@ -157,7 +161,7 @@ ss::future<> commit_batcher<ClockType>::commit_offset(
     } else {
         _batched[it->second].insert_or_assign(k, v);
         if (!_timer.armed()) {
-            _timer.arm(_commit_interval);
+            _timer.arm(_commit_interval());
         }
     }
     return ss::now();

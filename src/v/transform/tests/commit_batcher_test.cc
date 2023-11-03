@@ -10,6 +10,7 @@
  */
 
 #include "cluster/errc.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/transform.h"
 #include "random/generators.h"
@@ -32,6 +33,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
@@ -185,7 +187,10 @@ public:
 
         _foc = foc.get();
         _batcher = std::make_unique<commit_batcher<ss::manual_clock>>(
-          commit_interval, std::move(foc));
+          config::mock_binding(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+              commit_interval)),
+          std::move(foc));
         _batcher->start().get();
         _batcher_running = true;
     }

@@ -15,6 +15,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "features/feature_table.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
@@ -47,7 +48,6 @@ namespace transform {
 namespace {
 constexpr auto wasm_binary_timeout = std::chrono::seconds(3);
 constexpr auto metadata_timeout = std::chrono::seconds(1);
-constexpr auto commit_interval = std::chrono::seconds(3);
 
 class rpc_client_sink final : public sink {
 public:
@@ -313,7 +313,7 @@ service::~service() = default;
 
 ss::future<> service::start() {
     _batcher = std::make_unique<commit_batcher<ss::lowres_clock>>(
-      commit_interval,
+      config::shard_local_cfg().data_transforms_commit_interval_ms.bind(),
       std::make_unique<rpc_offset_committer>(&_rpc_client->local()));
 
     _manager = std::make_unique<manager<ss::lowres_clock>>(

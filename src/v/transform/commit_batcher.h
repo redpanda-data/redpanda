@@ -12,11 +12,14 @@
 #pragma once
 
 #include "cluster/errc.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/transform.h"
 #include "outcome.h"
 
 #include <seastar/core/abort_source.hh>
+
+#include <chrono>
 
 namespace transform {
 
@@ -78,7 +81,8 @@ class commit_batcher {
 
 public:
     explicit commit_batcher(
-      ClockType::duration commit_interval, std::unique_ptr<offset_committer>);
+      config::binding<std::chrono::milliseconds> commit_interval,
+      std::unique_ptr<offset_committer>);
 
     ss::future<> start();
     ss::future<> stop();
@@ -153,7 +157,7 @@ private:
 
     ss::condition_variable _unbatched_cond_var;
     std::unique_ptr<offset_committer> _offset_committer;
-    ClockType::duration _commit_interval;
+    config::binding<std::chrono::milliseconds> _commit_interval;
     ss::timer<ClockType> _timer;
     ss::abort_source _as;
     ss::gate _gate;

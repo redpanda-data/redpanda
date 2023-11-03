@@ -152,6 +152,12 @@ configuration::configuration()
       "Enables WebAssembly powered Data Transforms directly in the broker",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
+  , data_transforms_commit_interval_ms(
+      *this,
+      "data_transforms_commit_interval_ms",
+      "The interval at which Data Transforms commits progress.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      3s)
   , wasm_per_core_memory_reservation(
       *this,
       "wasm_per_core_memory_reservation",
