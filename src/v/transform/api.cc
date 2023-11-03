@@ -40,9 +40,6 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/optimized_optional.hh>
 
-#include <memory>
-#include <stdexcept>
-
 namespace transform {
 
 namespace {
@@ -97,11 +94,19 @@ public:
         }
         model::offset start_offset = std::max(
           result.value(), kafka::offset_cast(offset));
+        // TODO(rockwood): This is currently an arbitrary value, but we should
+        // dynamically update this based on how much memory is available in the
+        // transform subsystem.
+        constexpr static size_t max_bytes = 128_KiB;
         auto translater = co_await _partition.make_reader(
           storage::log_reader_config(
             /*start_offset=*/start_offset,
             /*max_offset=*/model::offset::max(),
+            /*min_bytes=*/0,
+            /*max_bytes=*/max_bytes,
             /*prio=*/wasm_read_priority(),
+            /*type_filter=*/std::nullopt, // Overridden by partition
+            /*time=*/std::nullopt,        // Not doing a timequery
             /*as=*/*as));
         co_return std::move(translater).reader;
     }
