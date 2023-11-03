@@ -21,6 +21,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <fmt/ranges.h>
+
 #include <filesystem>
 #include <optional>
 
@@ -36,7 +38,7 @@ std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
 
 std::optional<tm_transaction>
 tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
-    vlog(txlog.trace, "looking for tx:{} etag:{}", tx_id, term);
+    vlog(txlog.trace, "[tx_id={}] looking for tx with term: {}", tx_id, term);
     if (_mem_term && _mem_term.value() == term) {
         // when a node fetches a tx withing a term it means that it was
         // elected as a leader with a higher term and the request should
@@ -48,9 +50,8 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
     if (entry_it == _state.end()) {
         vlog(
           txlog.trace,
-          "looking for tx:{} etag:{}: can't find term:{} in _state",
+          "[tx_id={}] looking for tx with etag: {}, term not found",
           tx_id,
-          term,
           term);
         // tm_stm_cache_entry isn't found it means a node memory was wiped
         // and we can't guess it's last state
@@ -72,18 +73,17 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
     if (log_it == _log_txes.end()) {
         vlog(
           txlog.trace,
-          "looking for tx:{} etag:{}: can't find tx:{} in log",
+          "[tx_id={}] looking for tx with etag: {}, can't find tx_id in log",
           tx_id,
-          term,
-          tx_id);
+          term);
         return std::nullopt;
     }
 
     if (log_it->second.tx.etag != term) {
         vlog(
           txlog.trace,
-          "looking for tx:{} etag:{}: found a tx with etag:{} pid:{} tx_seq:{} "
-          "(wrong etag)",
+          "[tx_id={}] looking for tx with etag: {}: found a tx with etag: {} "
+          "pid: {} tx_seq: {} (wrong etag)",
           tx_id,
           term,
           log_it->second.tx.etag,
@@ -91,7 +91,12 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
           log_it->second.tx.tx_seq);
         return std::nullopt;
     }
-
+    vlog(
+      txlog.trace,
+      "[tx_id={}] found tx with etag: {} - {}",
+      tx_id,
+      term,
+      log_it->second.tx);
     return log_it->second.tx;
 }
 
@@ -125,7 +130,7 @@ tm_stm_cache::find_log(kafka::transactional_id tx_id) {
 void tm_stm_cache::set_log(tm_transaction tx) {
     vlog(
       txlog.trace,
-      "saving tx:{} etag:{} pid:{} tx_seq:{} to log",
+      "[tx_id={}] saving tx with etag: {} pid: {} tx_seq: {} to log",
       tx.id,
       tx.etag,
       tx.pid,
@@ -156,7 +161,7 @@ void tm_stm_cache::erase_log(kafka::transactional_id tx_id) {
     auto& tx = tx_it->second.tx;
     vlog(
       txlog.trace,
-      "erasing tx:{} etag:{} pid:{} tx_seq:{} from log",
+      "[tx_id= {}] erasing tx with etag: {} pid: {} tx_seq: {} from log",
       tx.id,
       tx.etag,
       tx.pid,
@@ -174,11 +179,15 @@ fragmented_vector<tm_transaction> tm_stm_cache::get_log_transactions() {
 
 void tm_stm_cache::set_mem(
   model::term_id term, kafka::transactional_id tx_id, tm_transaction tx) {
-    auto entry_it = _state.find(term);
-    if (entry_it == _state.end()) {
-        _state[term] = tm_stm_cache_entry{.term = term};
-        entry_it = _state.find(term);
-    }
+    vlog(
+      txlog.trace,
+      "[tx_id={}] setting tx with etag: {} to {}",
+      tx_id,
+      term,
+      tx);
+    auto [entry_it, _] = _state.try_emplace(
+      term, tm_stm_cache_entry{.term = term});
+
     entry_it->second.txes[tx_id] = tx;
 
     if (!_mem_term) {
@@ -217,7 +226,7 @@ void tm_stm_cache::erase_mem(kafka::transactional_id tx_id) {
     auto tx = tx_it->second;
     vlog(
       txlog.trace,
-      "erasing tx:{} etag:{} pid:{} tx_seq:{} from mem",
+      "[tx_id={}] erasing tx with etag: {} pid: {} tx_seq: {} from mem",
       tx.id,
       tx.etag,
       tx.pid,

@@ -315,6 +315,7 @@ struct add_paritions_tx_request {
     struct topic {
         model::topic name{};
         std::vector<model::partition_id> partitions{};
+        friend std::ostream& operator<<(std::ostream&, const topic&);
     };
     kafka::transactional_id transactional_id{};
     kafka::producer_id producer_id{};
