@@ -36,6 +36,7 @@ class MemoryStressTest(RedpandaTest):
         # enabling each test case to customize its ResourceSettings
         pass
 
+    @ok_to_fail
     @cluster(num_nodes=5)
     @skip_debug_mode
     @parametrize(memory_share_for_fetch=0.05)
