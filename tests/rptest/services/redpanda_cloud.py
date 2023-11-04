@@ -16,21 +16,8 @@ from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
 from urllib.parse import urlparse
 
-rp_profiles_path = os.path.join(os.path.dirname(__file__),
-                                "rp_config_profiles")
-tiers_config_filename = os.path.join(rp_profiles_path,
-                                     "redpanda.cloud-tiers-config.yml")
 ns_name_prefix = "rp-ducktape-ns-"
 ns_name_date_fmt = "%Y-%m-%d-%H%M%S-"
-
-
-def load_tier_profiles():
-    with open(os.path.join(os.path.dirname(__file__), tiers_config_filename),
-              "r") as f:
-        # TODO: validate input
-        _profiles = yaml.safe_load(f)['config_profiles']
-    return _profiles
-
 
 SaslCredentials = collections.namedtuple("SaslCredentials",
                                          ["username", "password", "algorithm"])
@@ -43,18 +30,21 @@ PROVIDER_GCP = 'GCP'
 TIER_DEFAULTS = {PROVIDER_AWS: "tier-1-aws", PROVIDER_GCP: "tier-1-gcp"}
 
 
-def get_tier_name(config):
-    """
-    Gets tier name befor cluster creation
+def get_config_profile_name(config):
+    """Gets config profile name
+
+    Suitable to call before cluster creation.
+
+    :return: string name of config profile
     """
     if not config:
-        return CloudTierName("docker-local")
-    else:
+        return 'docker-local'
+
+    if config['config_profile_name'] == 'default':
         _provider = config['provider'].upper()
-        if config['config_profile_name'] == "default":
-            return CloudTierName(TIER_DEFAULTS[_provider])
-        else:
-            return CloudTierName(config['config_profile_name'])
+        return TIER_DEFAULTS[_provider]
+
+    return config['config_profile_name']
 
 
 class CloudTierName(Enum):
@@ -94,153 +84,6 @@ class CloudTierName(Enum):
     @classmethod
     def list(cls):
         return list(map(lambda c: c.value, cls))
-
-
-class AdvertisedTierConfig:
-    def __init__(self, ingress_rate: float, egress_rate: float,
-                 num_brokers: int, segment_size: int, cloud_cache_size: int,
-                 partitions_min: int, partitions_max: int,
-                 connections_limit: Optional[int],
-                 memory_per_broker: int) -> None:
-        self.ingress_rate = int(ingress_rate)
-        self.egress_rate = int(egress_rate)
-        self.num_brokers = num_brokers
-        self.segment_size = segment_size
-        self.cloud_cache_size = cloud_cache_size
-        self.partitions_min = partitions_min
-        self.partitions_max = partitions_max
-        self.connections_limit = connections_limit
-        self.memory_per_broker = memory_per_broker
-
-    @property
-    def partitions_upper_limit(self):
-        """
-        This value represents a rough value for the estimated maximum number
-        of partitions that can be made on a new cluster via 1st create topics req.
-
-        When attempting to issue create_topics request for the actual advertised
-        maximum, the request may fail because per shard partition limits are
-        exhausted. This may occur because other system topics may exist and the
-        fact that the partition allocator isn't guaranteed to perfectly distribute
-        the partitions across all shards evenly.
-        """
-        return int(self.partitions_max * 0.8)
-
-
-kiB = 1024
-MiB = kiB * kiB
-GiB = MiB * kiB
-
-# yapf: disable
-AdvertisedTierConfigs = {
-    #    +- ingress_rate
-    #    |        +- egress_rate
-    #    |        |        +- num_brokers
-    #    |        |        |   +- segment_size
-    #    |        |        |   |         +- cloud_cache_size
-    #    |        |        |   |         |          +- partitions_min
-    #    |        |        |   |         |          |   +- partitions_max
-    #    |        |        |   |         |          |   |      +- connections_limit
-    #    |        |        |   |         |          |   |      |     +- memory_per_broker
-    #    |        |        |   |         |          |   |      |     |
-    CloudTierName.AWS_1: AdvertisedTierConfig(
-         20*MiB,  60*MiB,  3,  64*MiB,  300*GiB,   20, 1000,  1500, 32*GiB
-    ),
-    CloudTierName.AWS_2: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  64*MiB,  500*GiB,   50, 2000,  3750, 64*GiB
-    ),
-    CloudTierName.AWS_3: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  64*MiB,  500*GiB,  100, 5000,  7500, 64*GiB
-    ),
-    CloudTierName.AWS_4: AdvertisedTierConfig(
-        200*MiB, 400*MiB,  6,    128*MiB, 1000*GiB,  100, 5000, 15000, 96*GiB
-    ),
-    CloudTierName.AWS_5: AdvertisedTierConfig(
-        400*MiB, 800*MiB,  9,    128*MiB, 1000*GiB,  150, 7500, 30000, 96*GiB
-    ),
-    CloudTierName.AWS_1_P5: AdvertisedTierConfig(
-         20*MiB,  60*MiB,  3,  64*MiB,  300*GiB,   20, 1000,  1500, 32*GiB
-    ),
-    CloudTierName.AWS_2_P5: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  64*MiB,  500*GiB,   50, 2000,  3750, 64*GiB
-    ),
-    CloudTierName.AWS_3_P5: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  128*MiB,  500*GiB,  100, 5000,  7500, 64*GiB
-    ),
-    CloudTierName.AWS_4_P5: AdvertisedTierConfig(
-        200*MiB, 400*MiB,  6,    128*MiB, 1000*GiB,  100, 5000, 15000, 96*GiB
-    ),
-    CloudTierName.AWS_5_P5: AdvertisedTierConfig(
-        400*MiB, 800*MiB,  9,    128*MiB, 1000*GiB,  150, 7500, 30000, 96*GiB
-    ),
-    CloudTierName.AWS_6_P5: AdvertisedTierConfig(
-        800*MiB, 1600*MiB,  9,    128*MiB, 1000*GiB,  150, 7500, 30000, 96*GiB
-    ),
-    CloudTierName.AWS_7_P5: AdvertisedTierConfig(
-        1200*MiB, 2400*MiB,  9,    128*MiB, 1000*GiB,  150, 7500, 30000, 96*GiB
-    ),
-    CloudTierName.AWS_1_P5_ARM: AdvertisedTierConfig(
-         20*MiB,  60*MiB,  3,  64*MiB,  300*GiB,   20, 1000,  1500, 32*GiB
-    ),
-    CloudTierName.AWS_2_P5_ARM: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  64*MiB,  500*GiB,   50, 2000,  3750, 64*GiB
-    ),
-    CloudTierName.AWS_3_P5_ARM: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  64*MiB,  500*GiB,  100, 5000,  7500, 64*GiB
-    ),
-    CloudTierName.AWS_4_P5_ARM: AdvertisedTierConfig(
-        200*MiB, 400*MiB,  6,    128*MiB, 1000*GiB,  100, 5000, 15000, 96*GiB
-    ),
-    CloudTierName.AWS_5_P5_ARM: AdvertisedTierConfig(
-        400*MiB, 800*MiB,  9,    128*MiB, 1000*GiB,  150, 7500, 30000, 96*GiB
-    ),
-    CloudTierName.AWS_6_P5_ARM: AdvertisedTierConfig(
-        800*MiB, 1600*MiB,  9,    128*MiB, 1000*GiB,  150, 7500, 30000, 96*GiB
-    ),
-    CloudTierName.AWS_7_P5_ARM: AdvertisedTierConfig(
-        1200*MiB, 2400*MiB,  9,    128*MiB, 1000*GiB,  150, 7500, 30000, 96*GiB
-    ),
-    CloudTierName.GCP_1: AdvertisedTierConfig(
-         20*MiB,  60*MiB,  3,  64*MiB,  150*GiB,   20,  500,  1500,  16*GiB
-    ),
-    CloudTierName.GCP_2: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  64*MiB,  300*GiB,   50, 1000,  3750, 32*GiB
-    ),
-    CloudTierName.GCP_3: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  64*MiB,  320*GiB,  100, 3000,  7500, 32*GiB
-    ),
-    CloudTierName.GCP_4: AdvertisedTierConfig(
-        200*MiB, 400*MiB,  9,  64*MiB,  350*GiB,  100, 5000, 15000, 32*GiB
-    ),
-    CloudTierName.GCP_5: AdvertisedTierConfig(
-        400*MiB, 600*MiB, 12,    128*MiB,  750*GiB,  100, 7500, 22500, 32*GiB
-    ),
-    CloudTierName.GCP_1_P5: AdvertisedTierConfig(
-         20*MiB,  60*MiB,  3,  64*MiB,  150*GiB,   20,  500,  1500,  16*GiB
-    ),
-    CloudTierName.GCP_2_P5: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  64*MiB,  300*GiB,   50, 1000,  3750, 32*GiB
-    ),
-    CloudTierName.GCP_3_P5: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  64*MiB,  320*GiB,  100, 3000,  7500, 32*GiB
-    ),
-    CloudTierName.GCP_4_P5: AdvertisedTierConfig(
-        200*MiB, 400*MiB,  9,  64*MiB,  350*GiB,  100, 5000, 15000, 32*GiB
-    ),
-    CloudTierName.GCP_5_P5: AdvertisedTierConfig(
-        400*MiB, 600*MiB, 12,    128*MiB,  750*GiB,  100, 7500, 22500, 32*GiB
-    ),
-    CloudTierName.GCP_6_P5: AdvertisedTierConfig(
-        800*MiB, 1600*MiB, 12,    128*MiB,  750*GiB,  100, 7500, 22500, 32*GiB
-    ),
-    CloudTierName.GCP_7_P5: AdvertisedTierConfig(
-        1200*MiB, 2400*MiB, 12,    128*MiB,  750*GiB,  100, 7500, 22500, 32*GiB
-    ),
-    CloudTierName.DOCKER: AdvertisedTierConfig(
-        3*MiB,   9*MiB,   3,   128*MiB,  20*GiB,   1,   25,   100,   2*GiB
-    ),
-}
-# yapf: enable
 
 
 @dataclass(kw_only=True)
@@ -1302,3 +1145,26 @@ class CloudCluster():
                 f"Cloud type '{self.config.type}' not supported")
 
         return
+
+    def get_product(self):
+        """ Get product information.
+
+        Returns dict with info of product, including advertised limits.
+        Returns none if product info for the tier is not found.
+        """
+
+        if self.config.install_pack_ver == 'latest':
+            install_pack_ver = self._get_latest_install_pack_ver()
+        params = {
+            'cloud_provider': self.config.provider,
+            'cluster_type': self.config.type,
+            'region': self.config.region,
+            'install_pack_version': install_pack_ver
+        }
+        products = self.cloudv2._http_get(
+            endpoint='/api/v1/clusters-resources/products', params=params)
+        for product in products:
+            if product[
+                    'redpandaConfigProfileName'] == self.config.config_profile_name:
+                return product
+        return None

@@ -54,7 +54,7 @@ from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
-from rptest.services.redpanda_cloud import CloudCluster, load_tier_profiles, tiers_config_filename, AdvertisedTierConfig, AdvertisedTierConfigs, CloudTierName
+from rptest.services.redpanda_cloud import CloudCluster, CloudTierName, get_config_profile_name
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
@@ -859,7 +859,6 @@ class RedpandaServiceBase(Service):
                  skip_if_no_redpanda_log: Optional[bool] = False,
                  disable_cloud_storage_diagnostics=True):
 
-        self.advertised_tier_config: AdvertisedTierConfig = None
         super(RedpandaServiceBase, self).__init__(context,
                                                   num_nodes=num_brokers,
                                                   cluster_spec=cluster_spec)
@@ -4008,7 +4007,7 @@ class RedpandaService(RedpandaServiceBase):
 def make_redpanda_service(context: TestContext,
                           num_brokers: Optional[int],
                           *,
-                          cloud_tier: Optional[CloudTierName] = None,
+                          cloud_tier: Optional[str] = None,
                           apply_cloud_tier_to_noncloud: bool = False,
                           extra_rp_conf=None,
                           **kwargs) -> RedpandaServiceBase:
@@ -4016,45 +4015,29 @@ def make_redpanda_service(context: TestContext,
 
     if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in context.globals:
         if cloud_tier is None:
-            cloud_tier = CloudTierName.AWS_1
+            cloud_tier = get_config_profile_name(context.globals[
+                RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG])
         if extra_rp_conf is not None:
             context.logger.info(
                 f"extra_rp_conf is ignored with RedpandaServiceCloud")
 
         service = RedpandaServiceCloud(context,
                                        num_brokers,
-                                       tier_name=cloud_tier.value,
+                                       tier_name=cloud_tier,
                                        **kwargs)
 
     else:
         if apply_cloud_tier_to_noncloud:
-            profiles = load_tier_profiles()
-            if not cloud_tier.value in profiles:
-                raise RuntimeError(
-                    f"The specified cloud tier {cloud_tier} "
-                    f"is not found in the {tiers_config_filename}")
-
-            new_extra_rp_conf = profiles[cloud_tier.value]['cluster_config']
-            if extra_rp_conf is not None:
-                new_extra_rp_conf |= extra_rp_conf
-            extra_rp_conf = new_extra_rp_conf
-
-            if profiles[cloud_tier.value]['nodes_count'] != num_brokers:
-                context.logger.warning(
-                    f"num_brokers requested for RedpandaService ({num_brokers}) "
-                    f"does not match the cloud profile ({profiles[cloud_tier.value]['nodes_count']})"
-                )
+            raise RuntimeError(
+                'applying cloud tier to noncloud not implemented yet')
 
         if num_brokers is None:
             assert cloud_tier is not None
-            num_brokers = AdvertisedTierConfigs[cloud_tier].num_brokers
+            num_brokers = 3
 
         service = RedpandaService(context,
                                   num_brokers,
                                   extra_rp_conf=extra_rp_conf,
                                   **kwargs)
-
-    if cloud_tier:
-        service.advertised_tier_config = AdvertisedTierConfigs[cloud_tier]
 
     return service

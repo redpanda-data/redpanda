@@ -17,6 +17,7 @@ import json
 from ducktape.mark import ignore, ok_to_fail, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
@@ -30,7 +31,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda_cloud import AdvertisedTierConfigs, CloudTierName, get_tier_name
+from rptest.services.redpanda_cloud import CloudTierName, get_config_profile_name
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
                                       SISettings, RedpandaServiceCloud)
 from rptest.services.rpk_consumer import RpkConsumer
@@ -46,6 +47,23 @@ MiB = KiB * KiB
 GiB = KiB * MiB
 minutes = 60
 hours = 60 * minutes
+
+MachineTypeMemory = {
+    'i3en.large': 16 * GiB,
+    'i3en.xlarge': 32 * GiB,
+    'i3en.2xlarge': 64 * GiB,
+    'i3en.3xlarge': 96 * GiB,
+    'i3en.6xlarge': 192 * GiB,
+    'im4gn.large': 8 * GiB,
+    'im4gn.xlarge': 16 * GiB,
+    'im4gn.8xlarge': 128 * GiB,
+    'n2d-standard-2': 8 * GiB,
+    'n2d-standard-4': 16 * GiB,
+    'n2d-standard-16': 64 * GiB,
+    'n2-standard-2': 8 * GiB,
+    'n2-standard-4': 16 * GiB,
+    'n2-standard-8': 32 * GiB,
+}
 
 
 class HighThroughputTestTrafficGenerator:
@@ -141,7 +159,8 @@ class HighThroughputTestTrafficGenerator:
 
 
 @contextmanager
-def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
+def traffic_generator(context, redpanda, expected_ingress_rate,
+                      expected_egress_rate, *args, **kwargs):
     tgen = HighThroughputTestTrafficGenerator(context, redpanda, *args,
                                               **kwargs)
     tgen.start()
@@ -160,10 +179,10 @@ def traffic_generator(context, redpanda, tier_cfg, *args, **kwargs):
         consumer_throughput = throughput['consumer']['egress_throughput']
         assert (
             producer_throughput / 0.1
-        ) >= tier_cfg.ingress_rate, f"Observed producer throughput {producer_throughput} too low, expected: {tier_cfg.ingress_rate}"
+        ) >= expected_ingress_rate, f"Observed producer throughput {producer_throughput} too low, expected: {expected_ingress_rate}"
         assert (
             consumer_throughput / 0.1
-        ) >= tier_cfg.egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {tier_cfg.egress_rate}"
+        ) >= expected_egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {expected_egress_rate}"
 
 
 @contextmanager
@@ -206,19 +225,19 @@ class HighThroughputTest(PreallocNodesTest):
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
         # Get tier name
-        cloud_tier = get_tier_name(get_cloud_globals(self._ctx.globals))
+        self.config_profile_name = get_config_profile_name(
+            get_cloud_globals(self._ctx.globals))
         extra_rp_conf = None
         num_brokers = None
 
-        if cloud_tier == CloudTierName.DOCKER:
+        if self.config_profile_name == CloudTierName.DOCKER:
             # TODO: Bake the docker config into a higher layer that will
             # automatically load these settings upon call to make_rp_service
-            config = AdvertisedTierConfigs[CloudTierName.DOCKER]
-            num_brokers = config.num_brokers
+            num_brokers = 3
             extra_rp_conf = {
-                'log_segment_size': config.segment_size,
-                'cloud_storage_cache_size': config.cloud_cache_size,
-                'kafka_connections_max': config.connections_limit,
+                'log_segment_size': 128 * MiB,
+                'cloud_storage_cache_size': 20 * GiB,
+                'kafka_connections_max': 100,
             }
 
         super(HighThroughputTest,
@@ -227,28 +246,65 @@ class HighThroughputTest(PreallocNodesTest):
                              node_prealloc_count=3,
                              num_brokers=num_brokers,
                              extra_rp_conf=extra_rp_conf,
-                             cloud_tier=cloud_tier,
+                             cloud_tier=self.config_profile_name,
                              disable_cloud_storage_diagnostics=True,
                              **kwargs)
 
-        self.tier_config = self.redpanda.advertised_tier_config
-        if cloud_tier == CloudTierName.DOCKER:
+        install_pack_client = InstallPackClient(
+            self.redpanda._cloud_cluster.config.install_pack_url_template,
+            self.redpanda._cloud_cluster.config.install_pack_auth_type,
+            self.redpanda._cloud_cluster.config.install_pack_auth)
+        install_pack_version = self.redpanda._cloud_cluster.config.install_pack_ver
+        install_pack = install_pack_client.getInstallPack(install_pack_version)
+        config_profile = install_pack['config_profiles'][
+            self.config_profile_name]
+        cluster_config = config_profile['cluster_config']
+
+        self._num_brokers = config_profile['nodes_count']
+        self._cluster_config_log_segment_size = int(
+            cluster_config['log_segment_size'])
+        self._memory_per_broker = MachineTypeMemory[
+            config_profile['machine_type']]
+
+        tier_product = self.redpanda._cloud_cluster.get_product()
+        """
+        The _partitions_upper_limit represents a rough value for the estimated
+        maximum number of partitions that can be made on a new cluster via 1st
+        create topics req.
+
+        When attempting to issue create_topics request for the actual advertised
+        maximum, the request may fail because per shard partition limits are
+        exhausted. This may occur because other system topics may exist and the
+        fact that the partition allocator isn't guaranteed to perfectly distribute
+        the partitions across all shards evenly.
+        """
+        self._partitions_upper_limit = int(
+            tier_product['advertisedMaxPartitionCount'] * 0.8)
+        self._partitions_min = tier_product['advertisedMaxPartitionCount'] // 50
+        self._advertised_max_ingress = tier_product['advertisedMaxIngress']
+        self._advertised_max_egress = tier_product['advertisedMaxEgress']
+        self._advertised_max_client_count = tier_product[
+            'advertisedMaxClientCount']
+
+        if self.config_profile_name == CloudTierName.DOCKER:
             si_settings = SISettings(
                 test_ctx,
                 log_segment_size=self.min_segment_size,
-                cloud_storage_cache_size=self.tier_config.cloud_cache_size,
+                cloud_storage_cache_size=cluster_config[
+                    'cloud_storage_cache_size'],
             )
             self.redpanda.set_si_settings(si_settings)
             self.s3_port = si_settings.cloud_storage_api_endpoint_port
 
-        test_ctx.logger.info(f"Cloud tier {cloud_tier}: {self.tier_config}")
+        test_ctx.logger.info(
+            f"config profile {self.config_profile_name}: {config_profile}")
 
         self.rpk = RpkTool(self.redpanda)
 
         # Calculate timeout for 10000 messages with a 50% gap
         self.msg_timeout = int(
-            self.msg_count //
-            (self.tier_config.ingress_rate // self.msg_size) * 1.5)
+            self.msg_count // (self._advertised_max_ingress // self.msg_size) *
+            1.5)
         # resources
         self.resources = []
 
@@ -257,7 +313,7 @@ class HighThroughputTest(PreallocNodesTest):
 
     def _create_topic_spec(self, partitions=None, replicas=None):
         # defaulting to max partitions
-        _partitions = self.tier_config.partitions_upper_limit if partitions is None else partitions
+        _partitions = self._partitions_upper_limit if partitions is None else partitions
         _replicas = 3 if replicas is None else replicas
         _spec = TopicSpec(partition_count=_partitions,
                           replication_factor=_replicas,
@@ -309,7 +365,7 @@ class HighThroughputTest(PreallocNodesTest):
         num_segments_per_partition = 100
         # Use half upper limit for projected number of segments in the cloud for 100% messages produced
         projected_cloud_segments = num_segments_per_partition * (
-            self.tier_config.partitions_upper_limit // 2)
+            self._partitions_upper_limit // 2)
         total_bytes_to_produce = projected_cloud_segments * cloud_segment_size
         total_messages = int((total_bytes_to_produce / self.msg_size) * 1.2)
         self.redpanda.logger.info(
@@ -328,11 +384,11 @@ class HighThroughputTest(PreallocNodesTest):
         # at the given tiers expected ingress rate. Add in a little more time to account
         # for any network hiccups or transitent errors
         estimated_produce_time_secs = int(
-            (total_bytes_to_produce / self.tier_config.ingress_rate) * 1.2)
+            (total_bytes_to_produce / self._advertised_max_ingress) * 1.2)
         # Use sensible target cloud segments number
         # based on ingress rate and amount of data can be produced in 10 min
         # on current tier
-        target_cloud_segments = self.tier_config.ingress_rate // cloud_segment_size * 600 // 4
+        target_cloud_segments = self._advertised_max_ingress // cloud_segment_size * 600 // 4
         try:
             producer.start()
             wait_until(lambda: nodes_report_cloud_segments(
@@ -345,10 +401,11 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Once some segments are generated, configure the topic to use more
         # realistic sizes.
-        retention_bytes = int(self.tier_config.ingress_rate * 6 * hours /
-                              self.tier_config.partitions_upper_limit)
-        self.adjust_topic_segment_properties(self.tier_config.segment_size,
-                                             retention_bytes)
+        retention_bytes = int(self._advertised_max_ingress * 6 * hours /
+                              self._partitions_upper_limit)
+        # adjust log segment size to half of what is configured for the tier
+        self.adjust_topic_segment_properties(
+            self._cluster_config_log_segment_size // 2, retention_bytes)
 
     def adjust_topic_segment_properties(self, segment_bytes: int,
                                         retention_local_bytes: int):
@@ -369,7 +426,8 @@ class HighThroughputTest(PreallocNodesTest):
         self._create_default_topics()
         # Generate traffic
         with traffic_generator(self.test_context, self.redpanda,
-                               self.tier_config, self.topic,
+                               self._advertised_max_ingress,
+                               self._advertised_max_egress, self.topic,
                                self.msg_size) as _:
             # Test will assert if advertised throughput isn't met
             time.sleep(15)
@@ -394,8 +452,6 @@ class HighThroughputTest(PreallocNodesTest):
         FINISH_TIMEOUT_SEC = 600
         PRODUCER_TIMEOUT_MS = FINISH_TIMEOUT_SEC * 1000
 
-        tier_config = self.redpanda.advertised_tier_config
-
         # setup ProducerSwarm parameters
         producer_kwargs = {}
         producer_kwargs['min_record_size'] = 64
@@ -407,7 +463,7 @@ class HighThroughputTest(PreallocNodesTest):
 
         # connections per node at max (tier-5) is ~3700
         # Account for the metadata traffic of 1%
-        _target_total = tier_config.connections_limit
+        _target_total = int(self._advertised_max_client_count)
         _target_per_node = int(_target_total // len(self.cluster.nodes))
         _target_total = int(_target_total * 0.99)
 
@@ -536,7 +592,8 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Generate a realistic number of segments per partition.
         with traffic_generator(self.test_context, self.redpanda,
-                               self.tier_config, self.topic,
+                               self._advertised_max_ingress,
+                               self._advertised_max_egress, self.topic,
                                self.msg_size) as tgen:
             # Wait until theres some traffic
             tgen.wait_for_traffic(acked=self.msg_count,
@@ -628,7 +685,8 @@ class HighThroughputTest(PreallocNodesTest):
             segment_bytes=segment_size, retention_local_bytes=segment_size)
 
         with traffic_generator(self.test_context, self.redpanda,
-                               self.tier_config, self.topic,
+                               self._advertised_max_ingress,
+                               self._advertised_max_egress, self.topic,
                                self.msg_size) as tgen:
             # Wait until theres some traffic
             tgen.wait_for_traffic(acked=self.msg_count,
@@ -657,9 +715,8 @@ class HighThroughputTest(PreallocNodesTest):
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
-        cloud_tier = get_tier_name(get_cloud_globals(self._ctx.globals))
 
-        if cloud_tier == CloudTierName.DOCKER:
+        if self.config_profile_name == CloudTierName.DOCKER:
             with firewall_blocked(self.redpanda.nodes, self.s3_port):
                 # wait for the first cloud related failure + one minute
                 wait_until(lambda: not self._cloud_storage_no_new_errors(
@@ -708,7 +765,7 @@ class HighThroughputTest(PreallocNodesTest):
                 self.topic,
                 msg_size=self.msg_size,
                 msg_count=5_000_000_000_000,
-                rate_limit_bps=self.tier_config.ingress_rate,
+                rate_limit_bps=self._advertised_max_ingress,
                 custom_node=[self.preallocated_nodes[0]])
             try:
                 producer.start()
@@ -798,7 +855,8 @@ class HighThroughputTest(PreallocNodesTest):
             segment_bytes=segment_size, retention_local_bytes=segment_size)
 
         with traffic_generator(self.test_context, self.redpanda,
-                               self.tier_config, self.topic,
+                               self._advertised_max_ingress,
+                               self._advertised_max_egress, self.topic,
                                self.msg_size) as tgen:
             tgen.wait_for_traffic(acked=self.msg_count,
                                   timeout_sec=self.msg_timeout)
@@ -844,7 +902,7 @@ class HighThroughputTest(PreallocNodesTest):
                 self.topic,
                 msg_size=self.msg_size,
                 msg_count=5_000_000_000_000,
-                rate_limit_bps=self.tier_config.ingress_rate,
+                rate_limit_bps=self._advertised_max_ingress,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
             wait_until(lambda: producer.produce_status.acked > self.msg_count,
@@ -957,7 +1015,7 @@ class HighThroughputTest(PreallocNodesTest):
                 self.topic,
                 msg_size=self.msg_size,
                 msg_count=5 * 1024 * 1024 * 1024 * 1024,
-                rate_limit_bps=self.tier_config.ingress_rate,
+                rate_limit_bps=self._advertised_max_ingress,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
             wait_until(lambda: producer.produce_status.acked > self.msg_count,
@@ -1003,8 +1061,8 @@ class HighThroughputTest(PreallocNodesTest):
         # For a test on 4x `is4gen.4xlarge` there is about 0.13 GiB/s of throughput per node.
         # This would mean we'd be waiting 90GiB / 0.13 GiB/s = 688s or 11.5 minutes to ensure
         # the cache has been filled by the producer.
-        produce_rate_per_node_bytes_s = self.tier_config.ingress_rate / self.tier_config.num_brokers
-        batch_cache_max_memory = self.tier_config.memory_per_broker
+        produce_rate_per_node_bytes_s = self._advertised_max_ingress / self._num_brokers
+        batch_cache_max_memory = self._memory_per_broker
         time_till_memory_full_per_node = batch_cache_max_memory / produce_rate_per_node_bytes_s
         required_wait_time_s = 1.5 * time_till_memory_full_per_node
 
@@ -1015,8 +1073,7 @@ class HighThroughputTest(PreallocNodesTest):
 
         current_sent = producer.produce_status.sent
         expected_sent = math.ceil(
-            (self.tier_config.num_brokers * batch_cache_max_memory) /
-            self.msg_size)
+            (self._num_brokers * batch_cache_max_memory) / self.msg_size)
 
         self.logger.info(
             f"{current_sent} currently sent messages. Waiting for {expected_sent} messages to be sent"
@@ -1119,7 +1176,7 @@ class HighThroughputTest(PreallocNodesTest):
     def _run_omb(self, produce_bps,
                  validator_overrides) -> OpenMessagingBenchmark:
         topic_count = 1
-        partitions_per_topic = self.tier_config.partitions_upper_limit
+        partitions_per_topic = self._partitions_upper_limit
         workload = {
             "name": "StabilityTest",
             "topics": topic_count,
@@ -1170,11 +1227,10 @@ class HighThroughputTest(PreallocNodesTest):
             'partition_autobalancing_mode': 'continuous',
             'raft_learner_recovery_rate': 10 * GiB,
         }
-        self.rpk.create_topic(
-            self.topic,
-            partitions=self.tier_config.partitions_upper_limit,
-            replicas=3,
-            config=config)
+        self.rpk.create_topic(self.topic,
+                              partitions=self._partitions_upper_limit,
+                              replicas=3,
+                              config=config)
 
         producer = KgoVerifierProducer(
             self.test_context,
@@ -1182,14 +1238,14 @@ class HighThroughputTest(PreallocNodesTest):
             self.topic,
             msg_size=self.msg_size,
             msg_count=5_000_000_000_000,
-            rate_limit_bps=self.tier_config.ingress_rate)
+            rate_limit_bps=self._advertised_max_ingress)
         producer.start()
 
         # produce 10 mins worth of consume data onto S3.
         produce_time_s = 4 * 60
         messages_to_produce = (produce_time_s * consume_rate) / self.msg_size
         time_to_wait = (messages_to_produce *
-                        self.msg_size) / self.tier_config.ingress_rate
+                        self.msg_size) / self._advertised_max_ingress
 
         wait_until(
             lambda: producer.produce_status.acked >= messages_to_produce,
@@ -1209,7 +1265,7 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Run a usual producer + consumer workload and a S3 producer + consumer workload concurrently
         # Ensure that the S3 workload doesn't effect the usual workload majorly.
-        benchmark = self._run_omb(self.tier_config.ingress_rate / 2,
+        benchmark = self._run_omb(self._advertised_max_ingress / 2,
                                   validator_overrides)
 
         # This consumer should largely be reading from S3
@@ -1321,8 +1377,8 @@ class HighThroughputTest(PreallocNodesTest):
         rampup_time = 1
         runtime = 30
         msg_size = 16 * KiB
-        rate = self.tier_config.ingress_rate // msg_size
-        producers = 1 * (self.tier_config.num_brokers // 3) + 1
+        rate = self._advertised_max_ingress // msg_size
+        producers = 1 * (self._num_brokers // 3) + 1
         consumers = producers * 2
 
         if partitions not in ["min", "max"]:
@@ -1341,9 +1397,9 @@ class HighThroughputTest(PreallocNodesTest):
         }
         # Select number of partitions
         if partitions == "min":
-            _num_partitions = self.tier_config.partitions_min
+            _num_partitions = self._partitions_min
         elif partitions == "max":
-            _num_partitions = self.tier_config.partitions_upper_limit
+            _num_partitions = self._partitions_upper_limit
 
         workload = self._prepare_omb_workload(rampup_time, runtime,
                                               _num_partitions, rate, msg_size,
