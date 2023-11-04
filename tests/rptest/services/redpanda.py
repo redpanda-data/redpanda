@@ -3956,10 +3956,19 @@ class RedpandaService(RedpandaServiceBase):
     def validate_broker_storage(self):
         viewer = OfflineLogViewer(self)
         for node in self.nodes:
-            output = viewer.validate_segments(node)
-            if output:
-                raise RuntimeError(
-                    f"Detected segment corruption on node {node}:\n{output}")
+            try:
+                stdout, stderr = viewer.validate_segments(node).decode("utf-8")
+            except RemoteCommandError as e:
+                for line in e.msg.decode("utf-8").splitlines():
+                    self.logger.info(line)
+                raise
+            if "Corruption detected" not in output:
+                continue
+            self.logger.debug(f"Corruption details for node {node.name}:")
+            for line in output.splitlines():
+                self.logger.debug(line)
+            raise RuntimeError(
+                f"Detected segment corruption on node {node}:\n{output}")
 
     def validate_controller_log(self):
         """

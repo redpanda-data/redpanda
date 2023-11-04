@@ -28,6 +28,8 @@ def validate(store):
                 for batch in segment:
                     pass
             except storage.CorruptBatchRecoveryError as e:
+                # The following print statement is used to signal detected
+                # corruption in the output to the caller. See redpanda.py.
                 print(f"Corruption detected in {path}")
                 for start, end, b in e.corruption:
                     print(
