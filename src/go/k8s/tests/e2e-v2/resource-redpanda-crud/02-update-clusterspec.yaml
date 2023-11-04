@@ -2,12 +2,21 @@
 apiVersion: cluster.redpanda.com/v1alpha1
 kind: Redpanda
 metadata:
-  finalizers:
-    - operator.redpanda.com/finalizer
   name: redpanda
 spec:
   chartRef:
-    chartVersion: "5.5.1"
+    chartVersion: "5.5.3"
   clusterSpec:
+    image:
+      tag: v23.2.11
+    logging:
+      logLevel: debug
     statefulset:
       replicas: 3
+      additionalRedpandaCmdFlags:
+        - --dump-memory-diagnostics-on-alloc-failure-kind=all
+        - --abort-on-seastar-bad-alloc
+        - --reserve-memory=120M
+    config:
+      cluster:
+        cluster_id: testID

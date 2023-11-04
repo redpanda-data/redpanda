@@ -1,7 +1,7 @@
 apiVersion: cluster.redpanda.com/v1alpha1
 kind: Redpanda
 metadata:
-  name: redpanda
+  name: values-check
 spec:
   clusterSpec:
     listeners:

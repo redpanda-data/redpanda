@@ -4,14 +4,14 @@ kind: Redpanda
 metadata:
   finalizers:
     - operator.redpanda.com/finalizer
-  name: redpanda
+  name: rollback
 status:
   conditions:
     - message: Redpanda reconciliation succeeded
       reason: RedpandaClusterDeployed
       status: "True"
       type: Ready
-  helmRelease: redpanda
+  helmRelease: rollback
   helmReleaseReady: true
   helmRepository: redpanda-repository
   helmRepositoryReady: true
@@ -19,7 +19,7 @@ status:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: redpanda
+  name: rollback
 status:
   availableReplicas: 1
   currentReplicas: 1

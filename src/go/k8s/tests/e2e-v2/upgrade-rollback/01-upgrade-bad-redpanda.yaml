@@ -2,7 +2,7 @@
 apiVersion: cluster.redpanda.com/v1alpha1
 kind: Redpanda
 metadata:
-  name: redpanda
+  name: rollback
 spec:
   chartRef:
     timeout: 1m

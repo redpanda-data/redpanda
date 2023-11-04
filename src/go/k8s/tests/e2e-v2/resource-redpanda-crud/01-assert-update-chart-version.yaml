@@ -7,10 +7,10 @@ metadata:
   name: redpanda
 spec:
   chartRef:
-    chartVersion: "5.5.1"
+    chartVersion: "5.5.2"
   clusterSpec:
     statefulset:
-      replicas: 1
+      replicas: 3
 status:
   conditions:
     - message: Redpanda reconciliation succeeded
@@ -21,6 +21,24 @@ status:
   helmReleaseReady: true
   helmRepository: redpanda-repository
   helmRepositoryReady: true
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: redpanda
+status:
+  conditions:
+    - message: Release reconciliation succeeded
+      reason: ReconciliationSucceeded
+      status: "True"
+      type: Ready
+    - message: Helm upgrade succeeded
+      reason: UpgradeSucceeded
+      status: "True"
+      type: Released
+  helmChart: redpanda/redpanda-redpanda
+  lastAppliedRevision: 5.5.2
+  lastAttemptedRevision: 5.5.2
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert

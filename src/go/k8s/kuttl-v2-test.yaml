@@ -20,7 +20,7 @@ commands:
        redpanda/operator --set rbac.createAdditionalControllerCRs=true --set additionalCmdFlags="{--additional-controllers=all}"
       --set rbac.createRPKBundleCRs=true
 artifactsDir: tests/_e2e_artifacts_v2
-timeout: 720
+timeout: 240
 reportFormat: xml
 parallel: 1
 namespace: redpanda
