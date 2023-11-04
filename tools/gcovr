@@ -5,4 +5,5 @@ root_dir=$(git -C ${script_dir} rev-parse --show-toplevel)
 
 gcovr --gcov-executable "llvm-cov gcov" --root ${root_dir} \
   --exclude "_deps/" --html-details \
-  --html-self-contained -o coverage.html
+  --html-self-contained -o coverage.html \
+  --txt - $@
