@@ -46,6 +46,12 @@ public:
       : std::runtime_error(m) {}
 };
 
+class sasl_session_expired_exception : public std::runtime_error {
+public:
+    explicit sasl_session_expired_exception(const std::string& m)
+      : std::runtime_error(m) {}
+};
+
 /*
  * authz failures should be quiet or logged at a reduced severity level.
  */

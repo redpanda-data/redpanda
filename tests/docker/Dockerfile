@@ -242,6 +242,8 @@ COPY --chown=0:0 --chmod=0755 tests/setup.py /root/tests/
 RUN python3 -m pip install --upgrade --force pip && \
     python3 -m pip install --force --no-cache-dir -e /root/tests/
 
+RUN python3 -m pip install --force-reinstall --no-cache-dir --no-binary :all: confluent-kafka==2.2.0
+
 # seastar addrress to line utility depends on 'file' pkg
 RUN apt update && \
     apt install -y file && \

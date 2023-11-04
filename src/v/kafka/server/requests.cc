@@ -249,6 +249,18 @@ process_result_stages process_request(
   request_context&& ctx,
   ss::smp_service_group g,
   const session_resources& sres) {
+    auto key = ctx.header().key;
+
+    if (
+      ctx.sasl() && ctx.sasl()->complete()
+      && key == sasl_handshake_handler::api::key) [[unlikely]] {
+        // This is a client-driven reauthentication
+        vlog(
+          klog.debug,
+          "SASL reauthentication detected - resetting authn server");
+        ctx.sasl_probe().session_reauth();
+        ctx.sasl()->reset();
+    }
     /*
      * requests are handled as normal when auth is disabled. otherwise no
      * request is handled until the auth process has completed.
@@ -266,8 +278,6 @@ process_result_stages process_request(
             }));
     }
 
-    auto& key = ctx.header().key;
-
     if (key == sasl_handshake_handler::api::key) {
         return process_result_stages::single_stage(ctx.respond(
           sasl_handshake_response(error_code::illegal_sasl_state, {})));
@@ -280,6 +290,13 @@ process_result_stages process_request(
         };
         return process_result_stages::single_stage(
           ctx.respond(sasl_authenticate_response(std::move(data))));
+    }
+
+    if (ctx.sasl() && ctx.sasl()->expired()) [[unlikely]] {
+        throw sasl_session_expired_exception(fmt::format(
+          "Session for client '{}' expired after {}",
+          ctx.header().client_id.value_or(""),
+          ctx.sasl()->max_reauth()));
     }
 
     if (auto handler = handler_for_key(key)) {

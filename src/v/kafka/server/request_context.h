@@ -103,6 +103,7 @@ public:
     protocol::decoder& reader() { return _reader; }
 
     latency_probe& probe() { return _conn->server().latency_probe(); }
+    sasl_probe& sasl_probe() { return _conn->server().sasl_probe(); }
 
     // used to reach for server_probe::produce_bad_timestamp
     net::server_probe& server_probe() { return _conn->server().probe(); }

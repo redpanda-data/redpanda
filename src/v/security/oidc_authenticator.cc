@@ -29,7 +29,7 @@
 
 namespace security::oidc {
 
-result<acl_principal> authenticate(
+result<authentication_data> authenticate(
   jwt const& jwt,
   std::string_view issuer,
   std::string_view audience,
@@ -46,7 +46,8 @@ result<acl_principal> authenticate(
     using clock = ss::lowres_system_clock;
     auto skew = clock_skew_tolerance;
 
-    if ((jwt.exp<clock>().value_or(now) + skew) < now) {
+    auto exp = jwt.exp<clock>().value_or(now);
+    if ((exp + skew) < now) {
         return errc::jwt_invalid_exp;
     }
 
@@ -63,10 +64,10 @@ result<acl_principal> authenticate(
         return errc::jwt_invalid_sub;
     }
 
-    return {principal_type::user, ss::sstring(sub)};
+    return authentication_data{{principal_type::user, ss::sstring(sub)}, exp};
 }
 
-result<acl_principal> authenticate(
+result<authentication_data> authenticate(
   jws const& jws,
   verifier const& verifier,
   std::string_view issuer,
@@ -97,7 +98,8 @@ public:
     explicit impl(oidc::service& service)
       : _service{service} {};
 
-    result<acl_principal> authenticate(std::string_view bearer_token) const {
+    result<authentication_data>
+    authenticate(std::string_view bearer_token) const {
         auto jws = oidc::jws::make(ss::sstring{bearer_token});
         if (jws.has_error()) {
             vlog(
@@ -132,7 +134,7 @@ authenticator::authenticator(service& service)
 
 authenticator::~authenticator() = default;
 
-result<acl_principal>
+result<authentication_data>
 authenticator::authenticate(std::string_view bearer_token) {
     return _impl->authenticate(bearer_token);
 }
@@ -175,13 +177,13 @@ ss::future<result<bytes>> sasl_authenticator::authenticate(bytes auth_bytes) {
     }
     auth_str = auth_str.substr(0, auth_str.length() - 2);
 
-    auto principal_res = _authenticator.authenticate(auth_str);
-    if (principal_res.has_error()) {
-        vlog(seclog.warn, "{}", principal_res.error());
+    auto auth_res = _authenticator.authenticate(auth_str);
+    if (auth_res.has_error()) {
+        vlog(seclog.warn, "{}", auth_res.error());
         co_return security::errc::invalid_credentials;
     }
 
-    _principal = principal_res.assume_value();
+    _auth_data = auth_res.assume_value();
     _state = state::complete;
 
     co_return bytes{};

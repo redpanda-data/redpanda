@@ -1143,6 +1143,19 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"DEFAULT"},
       security::validate_kerberos_mapping_rules)
+  , kafka_sasl_max_reauth_ms(
+      *this,
+      "kafka_sasl_max_reauth_ms",
+      "The maximum time between Kafka client reauthentications. If a client "
+      "has not reauthenticated a connection within this time frame, that "
+      "connection is torn down. Without this, a connection could live long "
+      "after the client's credentials are expired or revoked. Session expiry "
+      "is disabled if the value is null.",
+      {.needs_restart = needs_restart::no,
+       .example = "1000",
+       .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1000ms})
   , kafka_enable_authorization(
       *this,
       "kafka_enable_authorization",
