@@ -1051,7 +1051,7 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
     co_return ans;
 }
 
-ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
+ss::future<tx_errc> rm_stm::mark_expired(model::producer_identity pid) {
     return _state_lock.hold_read_lock().then(
       [this, pid](ss::basic_rwlock<>::holder unit) mutable {
           return get_tx_lock(pid.get_id())
@@ -1060,19 +1060,18 @@ ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
       });
 }
 
-ss::future<std::error_code>
-rm_stm::do_mark_expired(model::producer_identity pid) {
+ss::future<tx_errc> rm_stm::do_mark_expired(model::producer_identity pid) {
     if (!co_await sync(_sync_timeout)) {
-        co_return std::error_code(tx_errc::leader_not_found);
+        co_return tx_errc::leader_not_found;
     }
     if (!is_known_session(pid)) {
-        co_return std::error_code(tx_errc::pid_not_found);
+        co_return tx_errc::pid_not_found;
     }
 
     // We should delete information about expiration for pid, because inside
     // try_abort_old_tx it checks is tx expired or not.
     _log_state.expiration.erase(pid);
-    co_return std::error_code(co_await do_try_abort_old_tx(pid));
+    co_return co_await do_try_abort_old_tx(pid);
 }
 
 ss::future<result<kafka_result>> rm_stm::do_sync_and_transactional_replicate(

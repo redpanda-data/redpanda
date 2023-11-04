@@ -581,6 +581,11 @@ STRUCT_TYPES = [
     "DeleteRecordsPartition",
     "DeleteRecordsTopicResult",
     "DeleteRecordsPartitionResult",
+    "WritableTxnMarker",
+    "WritableTxnMarkerTopic",
+    "WritableTxnMarkerResult",
+    "WritableTxnMarkerTopicResult",
+    "WritableTxnMarkerPartitionResult",
 ]
 
 # a list of struct types which are ineligible to have default-generated
