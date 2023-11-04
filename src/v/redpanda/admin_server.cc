@@ -128,6 +128,7 @@
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
 #include <seastar/json/json_elements.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/short_streams.hh>
@@ -1584,6 +1585,8 @@ void admin_server::register_cluster_config_routes() {
       });
 }
 
+// NOTEANDREA patch is complex and could hide some problems highlighted by
+// aliases
 ss::future<ss::json::json_return_type>
 admin_server::patch_cluster_config_handler(
   std::unique_ptr<ss::http::request> req,
@@ -1626,15 +1629,9 @@ admin_server::patch_cluster_config_handler(
         // the real live configuration object, that will be updated
         // by config_manager much after config is written to controller
         // log.
-        config::configuration cfg;
-
-        // Populate the temporary config object with existing values
-        config::shard_local_cfg().for_each(
-          [&cfg](const config::base_property& p) {
-              auto& tmp_p = cfg.get(p.name());
-              tmp_p = p;
-          });
-
+        auto& cfg = config::shard_local_cfg();
+        auto prev_val = config::to_yaml(cfg, config::redact_secrets::no);
+        auto restore_prev_val = ss::defer([&] { cfg.read_yaml(prev_val, {}); });
         // Configuration properties cannot do multi-property validation
         // themselves, so there is some special casing here for critical
         // properties.
@@ -1652,7 +1649,6 @@ admin_server::patch_cluster_config_handler(
                 continue;
             }
             auto& property = cfg.get(yaml_name);
-
             try {
                 auto validation_err = property.validate(val);
                 if (validation_err.has_value()) {
@@ -1668,6 +1664,7 @@ admin_server::patch_cluster_config_handler(
                     // from it's value setter even after a non-throwing
                     // call to validate (if this happens validate() was
                     // implemented wrongly, but let's be safe)
+                    // NOTEANDREA this is probably the core of the issue
                     auto changed = property.set_value(val);
                     if (!changed) {
                         upsert_no_op_names.insert(yaml_name);
@@ -1732,6 +1729,7 @@ admin_server::patch_cluster_config_handler(
 
         // After checking each individual property, check for
         // any multi-property validation errors
+        // NOTEANDREA check this
         config_multi_property_validation(
           auth_state.get_username(), _schema_registry, update, cfg, errors);
 

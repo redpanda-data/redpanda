@@ -52,7 +52,7 @@ public:
      *        mix node & cluster config properties.
      * @return map of property name to error.  Empty on clean load.
      */
-    virtual error_map_t read_yaml(
+    error_map_t read_yaml(
       const YAML::Node& root_node,
       const std::set<std::string_view> ignore_missing = {}) {
         error_map_t errors;
@@ -70,42 +70,55 @@ public:
 
         for (auto const& node : root_node) {
             auto name = node.first.as<ss::sstring>();
-            auto found = _properties.find(name);
-            if (found == _properties.end()) {
-                found = _aliases.find(name);
-                if (found == _aliases.end()) {
-                    if (!ignore_missing.contains(name)) {
-                        throw std::invalid_argument(
-                          fmt::format("Unknown property {}", name));
-                    }
-                }
-            } else {
-                bool ok = false;
-                try {
-                    auto validation_err = found->second->validate(node.second);
-                    if (validation_err.has_value()) {
-                        errors[name] = fmt::format(
-                          "Validation error: {}",
-                          validation_err.value().error_message());
-                    }
-
-                    found->second->set_value(node.second);
-                    ok = true;
-                } catch (YAML::InvalidNode const& e) {
-                    errors[name] = fmt::format("Invalid syntax: {}", e);
-                } catch (YAML::ParserException const& e) {
-                    errors[name] = fmt::format("Invalid syntax: {}", e);
-                } catch (YAML::BadConversion const& e) {
-                    errors[name] = fmt::format("Invalid value: {}", e);
+            auto* prop = [&]() -> base_property* {
+                auto primary = _properties.find(name);
+                if (primary != _properties.end()) {
+                    return primary->second;
                 }
 
-                // A validation error is fatal if the property was required,
-                // e.g. if someone entered a non-integer node_id, or an invalid
-                // internal RPC address.
-                if (!ok && found->second->is_required()) {
-                    throw std::invalid_argument(fmt::format(
-                      "Property {} is required and has invalid value", name));
+                auto secondary = _aliases.find(name);
+                if (secondary != _aliases.end()) {
+                    return secondary->second;
                 }
+
+                if (ignore_missing.contains(name)) {
+                    return nullptr;
+                }
+
+                throw std::invalid_argument(
+                  fmt::format("Unknown property {}", name));
+            }();
+
+            if (prop == nullptr) {
+                continue;
+            }
+            bool ok = false;
+            try {
+                auto validation_err = prop->validate(node.second);
+                if (validation_err.has_value()) {
+                    errors[name] = fmt::format(
+                      "Validation error: {}",
+                      validation_err.value().error_message());
+                }
+
+                prop->set_value(node.second);
+                ok = true;
+            } catch (YAML::InvalidNode const& e) {
+                errors[name] = fmt::format("Invalid syntax: {}", e);
+            } catch (YAML::ParserException const& e) {
+                errors[name] = fmt::format("Invalid syntax: {}", e);
+            } catch (YAML::BadConversion const& e) {
+                errors[name] = fmt::format("Invalid value: {}", e);
+            }
+
+            // A validation error is fatal if the property was required,
+            // e.g. if someone entered a non-integer node_id, or an invalid
+            // internal RPC address.
+            if (!ok && prop->is_required()) {
+                throw std::invalid_argument(fmt::format(
+                  "Property {} is required and has invalid value, e: {}",
+                  name,
+                  errors[name]));
             }
         }
 
@@ -186,6 +199,14 @@ public:
         return result;
     }
 
+    std::set<std::string_view> property_aliases() const {
+        std::set<std::string_view> result;
+        for (const auto& i : _aliases) {
+            result.insert(i.first);
+        }
+
+        return result;
+    }
     friend std::ostream&
     operator<<(std::ostream& o, const config::config_store& c) {
         o << "{ ";
