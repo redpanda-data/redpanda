@@ -483,10 +483,11 @@ private:
     }
 
     ss::future<> init_cursor(storage::log_reader_config config) {
-        auto segment_unit
-          = co_await _partition->materialized().get_segment_units();
+        auto segment_unit = co_await _partition->materialized()
+                              .get_segment_units(config.abort_source);
         auto segment_reader_unit
-          = co_await _partition->materialized().get_segment_reader_units();
+          = co_await _partition->materialized().get_segment_reader_units(
+            config.abort_source);
 
         async_view_search_query_t query;
         if (config.first_timestamp.has_value()) {
@@ -661,11 +662,11 @@ private:
               _next_segment_base_offset,
               _view_cursor->get_status());
 
-            auto segment_unit
-              = co_await _partition->materialized().get_segment_units();
+            auto segment_unit = co_await _partition->materialized()
+                                  .get_segment_units(config.abort_source);
             auto segment_reader_unit
-              = co_await _partition->materialized().get_segment_reader_units();
-
+              = co_await _partition->materialized().get_segment_reader_units(
+                config.abort_source);
             auto maybe_manifest = _view_cursor->manifest();
             if (
               maybe_manifest.has_value()
@@ -933,7 +934,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
             // in a failure to materialise. This should be transient however.
             // One solution for this is to grab all the required segment units
             // up front at the start of the function.
-            auto segment_unit = co_await materialized().get_segment_units();
+            auto segment_unit = co_await materialized().get_segment_units(
+              std::nullopt);
             auto path = stm_manifest.generate_segment_path(*it);
             auto m = get_or_materialize_segment(
               path, *it, std::move(segment_unit));
@@ -981,7 +983,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
           });
 
         for (const auto& [meta, path] : meta_to_materialize) {
-            auto segment_unit = co_await materialized().get_segment_units();
+            auto segment_unit = co_await materialized().get_segment_units(
+              std::nullopt);
             auto m = get_or_materialize_segment(
               path, meta, std::move(segment_unit));
             auto tx = co_await m->second->segment->aborted_transactions(
@@ -1087,7 +1090,8 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       config,
       _segments.size());
 
-    auto units = co_await _api.materialized().get_partition_reader_units();
+    auto units = co_await _api.materialized().get_partition_reader_units(
+      config.abort_source);
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
       get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
