@@ -204,6 +204,10 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
         co_return errc::topic_not_exists;
     }
 
+    if (is_fully_disabled(cmd.key)) {
+        co_return errc::topic_disabled;
+    }
+
     // add partitions
     auto prev_partition_count = tp->second.get_configuration().partition_count;
     // update partitions count
@@ -264,6 +268,10 @@ ss::future<std::error_code> topic_table::do_apply(
     if (current_assignment_it == tp->second.get_assignments().end()) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
+    }
+
+    if (is_disabled(cmd_data.ntp)) {
+        return ss::make_ready_future<std::error_code>(errc::partition_disabled);
     }
 
     if (_updates_in_progress.contains(cmd_data.ntp)) {
@@ -386,6 +394,10 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         co_return errc::partition_not_exists;
     }
 
+    if (is_disabled(cmd.key)) {
+        co_return errc::partition_disabled;
+    }
+
     // update must be in progress to be able to cancel it
     auto in_progress_it = _updates_in_progress.find(cmd.key);
     if (in_progress_it == _updates_in_progress.end()) {
@@ -503,34 +515,45 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
 
     // We should check partition before create updates
 
-    if (std::any_of(
-          cmd.value.begin(),
-          cmd.value.end(),
-          [&tp](const auto& partition_and_replicas) {
-              return !tp->second.get_assignments().contains(
-                partition_and_replicas.partition);
-          })) {
+    const auto* disabled_set = get_topic_disabled_set(cmd.key);
+    if (disabled_set && disabled_set->is_fully_disabled()) {
         vlog(
           clusterlog.warn,
-          "topic: {}: Can not move replicas, becasue can not find "
-          "partitions",
+          "topic {}: Can not move replicas, topic disabled",
           cmd.key);
-        co_return errc::partition_not_exists;
+        co_return errc::topic_disabled;
     }
 
-    if (std::any_of(
-          cmd.value.begin(),
-          cmd.value.end(),
-          [this, key = cmd.key](const auto& partition_and_replicas) {
-              return _updates_in_progress.contains(
-                model::ntp(key.ns, key.tp, partition_and_replicas.partition));
-          })) {
-        vlog(
-          clusterlog.warn,
-          "topic: {}: Can not move replicas for topic, some updates in "
-          "progress",
-          cmd.key);
-        co_return errc::update_in_progress;
+    for (const auto& partition_and_replicas : cmd.value) {
+        auto partition = partition_and_replicas.partition;
+        if (!tp->second.get_assignments().contains(partition)) {
+            vlog(
+              clusterlog.warn,
+              "topic {}: Can not move replicas, partition {} not found",
+              cmd.key,
+              partition);
+            co_return errc::partition_not_exists;
+        }
+
+        if (disabled_set && disabled_set->is_disabled(partition)) {
+            vlog(
+              clusterlog.warn,
+              "topic {}: Can not move replicas, partition {} disabled",
+              cmd.key,
+              partition);
+            co_return errc::partition_disabled;
+        }
+
+        if (_updates_in_progress.contains(
+              model::ntp{cmd.key.ns, cmd.key.tp, partition})) {
+            vlog(
+              clusterlog.warn,
+              "topic {}: Can not move replicas, update for partition {} is in "
+              "progress",
+              cmd.key,
+              partition);
+            co_return errc::update_in_progress;
+        }
     }
 
     for (const auto& [partition_id, new_replicas] : cmd.value) {
@@ -565,6 +588,10 @@ topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
     if (current_assignment_it == tp->second.get_assignments().end()) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
+    }
+
+    if (is_disabled(cmd.key)) {
+        return ss::make_ready_future<std::error_code>(errc::partition_disabled);
     }
 
     if (auto it = _updates_in_progress.find(cmd.key);

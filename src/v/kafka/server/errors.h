@@ -49,6 +49,9 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::throttling_quota_exceeded;
     case cluster::errc::no_update_in_progress:
         return error_code::no_reassignment_in_progress;
+    case cluster::errc::topic_disabled:
+    case cluster::errc::partition_disabled:
+        return error_code::policy_violation;
     case cluster::errc::replication_error:
     case cluster::errc::shutting_down:
     case cluster::errc::join_request_dispatch_error:
