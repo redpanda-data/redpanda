@@ -23,7 +23,12 @@ result<acl_principal> principal_mapping_rule::apply(jwt const& jwt) const {
         return errc::jwt_invalid_principal;
     }
 
-    return {principal_type::user, ss::sstring{claim.value()}};
+    auto principal = _mapping.apply(claim.value());
+    if (principal.value_or("").empty()) {
+        return errc::jwt_invalid_principal;
+    }
+
+    return {principal_type::user, std::move(principal).value()};
 }
 
 } // namespace security::oidc

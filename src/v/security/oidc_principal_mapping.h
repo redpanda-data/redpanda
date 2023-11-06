@@ -14,6 +14,7 @@
 #include "seastarx.h"
 #include "security/acl.h"
 #include "security/fwd.h"
+#include "security/mtls.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -25,8 +26,9 @@ class principal_mapping_rule {
 public:
     principal_mapping_rule() = default;
 
-    explicit principal_mapping_rule(json::Pointer&& claim)
-      : _claim{} {
+    explicit principal_mapping_rule(json::Pointer&& claim, tls::rule mapping)
+      : _claim{}
+      , _mapping{std::move(mapping)} {
         swap(_claim, claim);
     }
 
@@ -34,6 +36,7 @@ public:
 
 private:
     json::Pointer _claim{"/sub"};
+    tls::rule _mapping;
 };
 
 result<principal_mapping_rule> parse_principal_mapping_rule(std::string_view);
