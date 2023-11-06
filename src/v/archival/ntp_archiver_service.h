@@ -11,6 +11,7 @@
 #pragma once
 #include "archival/archival_policy.h"
 #include "archival/probe.h"
+#include "archival/scrubber.h"
 #include "archival/types.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/fwd.h"
@@ -347,6 +348,8 @@ public:
       cloud_storage::scrub_status status,
       cloud_storage::anomalies detected);
 
+    ss::future<std::error_code> reset_scrubbing_metadata();
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";
@@ -647,7 +650,7 @@ private:
     std::unique_ptr<housekeeping_job> _local_segment_merger;
 
     // NTP level scrubbing job
-    std::unique_ptr<housekeeping_job> _scrubber;
+    std::unique_ptr<scrubber> _scrubber;
 
     // The archival metadata stm has its own clean/dirty mechanism, but it
     // is expensive to persistently mark it clean after each segment upload,

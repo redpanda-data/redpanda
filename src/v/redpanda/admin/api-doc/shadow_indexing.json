@@ -261,6 +261,37 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/cloud_storage/reset_scrubbing_metadata/{namespace}/{topic}/{partition}",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Reset scrubbing related metadata and anomalies for given partition",
+          "operationId": "reset_scrubbing_metadata",
+          "nickname": "reset_scrubbing_metadata",
+          "parameters": [
+            {
+              "name": "namespace",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "partition",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            }
+          ]
+        }
+      ]
     }
   ],
   "models": {
@@ -529,6 +560,10 @@
         "segment_metadata_anomalies": {
           "type": "array",
           "items": {"type": "metadata_anomaly"},
+          "nullable": true
+        },
+        "last_complete_scrub_at": {
+          "type": "long",
           "nullable": true
         }
       }

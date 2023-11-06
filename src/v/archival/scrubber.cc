@@ -20,7 +20,8 @@ scrubber::scrubber(
   cloud_storage::remote& remote,
   features::feature_table& feature_table,
   config::binding<bool> config_enabled,
-  config::binding<std::chrono::milliseconds> interval,
+  config::binding<std::chrono::milliseconds> partial_interval,
+  config::binding<std::chrono::milliseconds> full_interval,
   config::binding<std::chrono::milliseconds> jitter)
   : _root_rtc(_as)
   , _logger(archival_log, _root_rtc, archiver.get_ntp().path())
@@ -30,8 +31,20 @@ scrubber::scrubber(
   , _feature_table(feature_table)
   , _detector{_archiver.get_bucket_name(), _archiver.get_ntp(), _archiver.get_revision_id(), _remote, _logger, _as}
   , _scheduler(
-      [this] { return _archiver.manifest().last_partition_scrub(); },
-      std::move(interval),
+      [this] {
+          const auto at = _archiver.manifest().last_partition_scrub();
+          const auto offset = _archiver.manifest().last_scrubbed_offset();
+          cloud_storage::scrub_status status;
+          if (!offset && at != model::timestamp::missing()) {
+              status = cloud_storage::scrub_status::full;
+          } else {
+              status = cloud_storage::scrub_status::partial;
+          }
+
+          return std::make_tuple(at, status);
+      },
+      std::move(partial_interval),
+      std::move(full_interval),
       std::move(jitter)) {
     ssx::spawn_with_gate(_gate, [this] { return await_feature_enabled(); });
 }
@@ -159,7 +172,7 @@ void scrubber::release() {
 }
 
 ss::future<> scrubber::stop() {
-    vlog(archival_log.info, "Stopping scrubber ({})...", _gate.get_count());
+    vlog(_logger.info, "Stopping scrubber ({})...", _gate.get_count());
     _as.request_abort();
     return _gate.close();
 }
@@ -197,5 +210,7 @@ std::pair<bool, std::optional<ss::sstring>> scrubber::should_skip() const {
 
     return {false, std::nullopt};
 }
+
+void scrubber::reset_scheduler() { _scheduler.pick_next_scrub_time(); }
 
 } // namespace archival

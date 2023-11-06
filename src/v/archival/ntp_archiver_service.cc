@@ -187,7 +187,9 @@ static std::unique_ptr<scrubber> maybe_make_scrubber(
           remote,
           feature_table,
           config::shard_local_cfg().cloud_storage_enable_scrubbing.bind(),
-          config::shard_local_cfg().cloud_storage_scrubbing_interval_ms.bind(),
+          config::shard_local_cfg()
+            .cloud_storage_partial_scrub_interval_ms.bind(),
+          config::shard_local_cfg().cloud_storage_full_scrub_interval_ms.bind(),
           config::shard_local_cfg()
             .cloud_storage_scrubbing_interval_jitter_ms.bind());
         result->set_enabled(am_leader);
@@ -574,6 +576,26 @@ ss::future<std::error_code> ntp_archiver::process_anomalies(
           _rtclog.warn,
           "Failed to replicate process anomalies command: {}",
           error.message());
+    }
+
+    co_return error;
+}
+
+ss::future<std::error_code> ntp_archiver::reset_scrubbing_metadata() {
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+    auto deadline = ss::lowres_clock::now() + sync_timeout;
+    auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    batch.reset_scrubbing_metadata();
+    auto error = co_await batch.replicate();
+
+    if (error != cluster::errc::success) {
+        vlog(
+          _rtclog.warn,
+          "Failed to replicate reset scrubbing metadata command: {}",
+          error.message());
+    } else if (_scrubber) {
+        _scrubber->reset_scheduler();
     }
 
     co_return error;

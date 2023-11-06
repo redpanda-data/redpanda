@@ -5401,6 +5401,10 @@ map_anomalies_to_json(
     json.partition = ntp.tp.partition();
     json.revision_id = initial_rev();
 
+    if (detected.last_complete_scrub) {
+        json.last_complete_scrub_at = detected.last_complete_scrub->value();
+    }
+
     if (detected.missing_partition_manifest) {
         json.missing_partition_manifest = true;
     }
@@ -5744,6 +5748,50 @@ admin_server::unsafe_reset_metadata_from_cloud(
     co_return reply;
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::reset_scrubbing_metadata(std::unique_ptr<ss::http::request> req) {
+    const model::ntp ntp = parse_ntp_from_request(
+      req->param, model::kafka_namespace);
+
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, ntp);
+    }
+
+    const auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "{} could not be found on the node. Perhaps it has been moved "
+          "during the redirect.",
+          ntp));
+    }
+
+    auto status = co_await _partition_manager.invoke_on(
+      *shard, [&ntp, shard](const auto& pm) {
+          const auto& partitions = pm.partitions();
+          auto partition_iter = partitions.find(ntp);
+
+          if (partition_iter == partitions.end()) {
+              throw ss::httpd::not_found_exception(
+                fmt::format("{} could not be found on shard {}.", ntp, *shard));
+          }
+
+          auto archiver = partition_iter->second->archiver();
+          if (!archiver) {
+              throw ss::httpd::not_found_exception(
+                fmt::format("{} has no archiver on shard {}.", ntp, *shard));
+          }
+
+          return archiver.value().get().reset_scrubbing_metadata();
+      });
+
+    if (status != cluster::errc::success) {
+        throw ss::httpd::server_error_exception{
+          "Failed to replicate or apply scrubber metadata reset command"};
+    }
+
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
 void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
@@ -5807,6 +5855,10 @@ void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::unsafe_reset_metadata_from_cloud,
       std::move(unsafe_reset_metadata_from_cloud_handler));
+
+    register_route<user>(
+      ss::httpd::shadow_indexing_json::reset_scrubbing_metadata,
+      [this](auto req) { return reset_scrubbing_metadata(std::move(req)); });
 }
 
 constexpr std::string_view to_string_view(service_kind kind) {

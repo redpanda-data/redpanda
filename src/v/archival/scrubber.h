@@ -44,7 +44,8 @@ public:
       cloud_storage::remote& remote,
       features::feature_table& feature_table,
       config::binding<bool> config_enabled,
-      config::binding<std::chrono::milliseconds> interval,
+      config::binding<std::chrono::milliseconds> partial_interval,
+      config::binding<std::chrono::milliseconds> full_interval,
       config::binding<std::chrono::milliseconds> jitter);
 
     ss::future<> await_feature_enabled();
@@ -68,7 +69,8 @@ public:
 
     std::pair<bool, std::optional<ss::sstring>> should_skip() const;
 
-    model::timestamp next_scrub_at() const;
+    // Reset the scheduler and pick a new time-point for the next scrub
+    void reset_scheduler();
 
 private:
     ss::abort_source _as;

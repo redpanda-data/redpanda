@@ -62,7 +62,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             test_context=test_context,
             extra_rp_conf={
                 "cloud_storage_enable_scrubbing": True,
-                "cloud_storage_scrubbing_interval_ms": 1000,
+                "cloud_storage_partial_scrub_interval_ms": 1000,
+                "cloud_storage_full_scrub_interval_ms": 1000,
                 "cloud_storage_scrubbing_interval_jitter_ms": 100,
                 # Small quota forces partial scrubs
                 "cloud_storage_background_jobs_quota": 30,
@@ -116,6 +117,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             anomalies = admin.get_cloud_storage_anomalies(namespace="kafka",
                                                           topic=self.topic,
                                                           partition=pid)
+
+            anomalies.pop("last_complete_scrub_at", None)
 
             ntpr = NTPR(ns=anomalies["ns"],
                         topic=anomalies["topic"],
@@ -364,5 +367,7 @@ class CloudStorageScrubberTest(RedpandaTest):
         # This test deletes segments, spillover manifests
         # and fudges the manifest. rp-storage-tool also picks
         # up on some of these things.
-        self.redpanda.si_settings.set_expected_damage(
-            {"missing_segments", "metadata_offset_gaps"})
+        self.redpanda.si_settings.set_expected_damage({
+            "missing_segments", "metadata_offset_gaps",
+            "missing_spillover_manifests"
+        })

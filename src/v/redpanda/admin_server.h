@@ -508,6 +508,8 @@ private:
       std::unique_ptr<ss::http::reply> rep);
     ss::future<ss::json::json_return_type>
       get_cloud_storage_anomalies(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      reset_scrubbing_metadata(std::unique_ptr<ss::http::request>);
 
     /// Self test routes
     ss::future<ss::json::json_return_type>

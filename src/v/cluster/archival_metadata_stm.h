@@ -82,6 +82,7 @@ public:
       std::optional<model::offset> last_scrubbed_offset,
       cloud_storage::scrub_status status,
       cloud_storage::anomalies detected);
+    command_batch_builder& reset_scrubbing_metadata();
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
@@ -281,6 +282,7 @@ private:
     struct spillover_cmd;
     struct replace_manifest_cmd;
     struct process_anomalies_cmd;
+    struct reset_scrubbing_metadata;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -307,6 +309,7 @@ private:
     void apply_spillover(const spillover_cmd& so);
     void apply_replace_manifest(iobuf);
     void apply_process_anomalies(iobuf);
+    void apply_reset_scrubbing_metadata();
 
 private:
     prefix_logger _logger;

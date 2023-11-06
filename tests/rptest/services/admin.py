@@ -1118,3 +1118,13 @@ class Admin:
         return self._request(
             "GET",
             f"cloud_storage/anomalies/{namespace}/{topic}/{partition}").json()
+
+    def reset_scrubbing_metadata(self,
+                                 namespace: str,
+                                 topic: str,
+                                 partition: int,
+                                 node: Optional[ClusterNode] = None):
+        return self._request(
+            "POST",
+            f"cloud_storage/reset_scrubbing_metadata/{namespace}/{topic}/{partition}",
+            node=node)

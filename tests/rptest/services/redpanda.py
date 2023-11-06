@@ -619,6 +619,9 @@ class SISettings:
     def is_damage_expected(self, damage_types: set[str]):
         return (damage_types & self._expected_damage_types) == damage_types
 
+    def get_expected_damage(self):
+        return self._expected_damage_types
+
     @classmethod
     def cache_size_for_throughput(cls, throughput_bytes: int) -> int:
         """
@@ -3823,52 +3826,11 @@ class RedpandaService(RedpandaServiceBase):
         # :param run_timeout timeout for the execution of rp-storage-tool.
         # can be set to None for no timeout
 
-        def all_partitions_uploaded_manifest():
-            manifest_not_uploaded = []
-            for p in self.partitions():
-                try:
-                    status = self._admin.get_partition_cloud_storage_status(
-                        p.topic, p.index, node=p.leader)
-                except HTTPError as he:
-                    if he.response.status_code == 404:
-                        # Old redpanda, doesn't have this endpoint.  We can't
-                        # do our upload check.
-                        continue
-                    else:
-                        raise
-
-                remote_write = status["cloud_storage_mode"] in {
-                    "full", "write_only"
-                }
-                has_uploaded_manifest = status[
-                    "metadata_update_pending"] is False or status.get(
-                        'ms_since_last_manifest_upload', None) is not None
-                if remote_write and not has_uploaded_manifest:
-                    manifest_not_uploaded.append(p)
-
-            if len(manifest_not_uploaded) != 0:
-                self.logger.info(
-                    f"Partitions that haven't yet uploaded: {manifest_not_uploaded}"
-                )
-                return False
-
-            return True
-
-        # If any nodes are up, then we expect to be able to talk to the cluster and
-        # check tiered storage status to wait for uploads to complete.
-        if self._started:
-            # Aggressive retry because almost always this should already be done
-            # Each 1000 partititions add 30s of timeout
-            n_partitions = len(self.partitions())
-            timeout = 30 if n_partitions < 1000 else (n_partitions / 1000) * 30
-            wait_until(all_partitions_uploaded_manifest,
-                       timeout_sec=30 + timeout,
-                       backoff_sec=1)
-
         # We stop because the scrubbing routine would otherwise interpret
         # ongoing uploads as inconsistency.  In future, we may replace this
         # stop with a flush, when Redpanda gets an admin API for explicitly
         # flushing data to remote storage.
+        self.wait_for_manifest_uploads()
         self.stop()
 
         scrub_timeout = max(run_timeout, self.cloud_storage_scrub_timeout_s)
@@ -3909,6 +3871,200 @@ class RedpandaService(RedpandaServiceBase):
                 raise RuntimeError(
                     f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
                 )
+
+    def maybe_do_internal_scrub(self):
+        if not self._si_settings:
+            return
+
+        cloud_partitions = self.wait_for_manifest_uploads()
+        results = self.wait_for_internal_scrub(cloud_partitions)
+
+        if results:
+            self.logger.error("Fatal anomalies reported by internal scrub: "
+                              f"{json.dumps(results, indent=2)}")
+            raise RuntimeError(
+                f"Internal object storage scrub detected fatal anomalies: {results}"
+            )
+        else:
+            self.logger.info(f"No anomalies in internal object storage scrub")
+
+    def wait_for_manifest_uploads(self) -> set[Partition]:
+        cloud_storage_partitions: set[Partition] = set()
+
+        def all_partitions_uploaded_manifest():
+            manifest_not_uploaded = []
+            for p in self.partitions():
+                try:
+                    status = self._admin.get_partition_cloud_storage_status(
+                        p.topic, p.index, node=p.leader)
+                except HTTPError as he:
+                    if he.response.status_code == 404:
+                        # Old redpanda, doesn't have this endpoint.  We can't
+                        # do our upload check.
+                        continue
+                    else:
+                        raise
+
+                remote_write = status["cloud_storage_mode"] in {
+                    "full", "write_only"
+                }
+
+                if remote_write:
+                    # TODO(vlad): do this differently?
+                    # Create new partition tuples since the replicas list is not hashable
+                    cloud_storage_partitions.add(
+                        Partition(topic=p.topic,
+                                  index=p.index,
+                                  leader=p.leader,
+                                  replicas=None))
+
+                has_uploaded_manifest = status[
+                    "metadata_update_pending"] is False or status.get(
+                        'ms_since_last_manifest_upload', None) is not None
+                if remote_write and not has_uploaded_manifest:
+                    manifest_not_uploaded.append(p)
+
+            if len(manifest_not_uploaded) != 0:
+                self.logger.info(
+                    f"Partitions that haven't yet uploaded: {manifest_not_uploaded}"
+                )
+                return False
+
+            return True
+
+        # If any nodes are up, then we expect to be able to talk to the cluster and
+        # check tiered storage status to wait for uploads to complete.
+        if self._started:
+            # Aggressive retry because almost always this should already be done
+            # Each 1000 partititions add 30s of timeout
+            n_partitions = len(self.partitions())
+            timeout = 30 if n_partitions < 1000 else (n_partitions / 1000) * 30
+            wait_until(all_partitions_uploaded_manifest,
+                       timeout_sec=30 + timeout,
+                       backoff_sec=1)
+
+        return cloud_storage_partitions
+
+    def wait_for_internal_scrub(self, cloud_storage_partitions):
+        """
+        Configure the scrubber such that it will run aggresively
+        until the entire partition is scrubbed. Once that happens,
+        the scrubber will pause due to the `cloud_storage_full_scrub_interval_ms`
+        config. Returns the aggregated anomalies for all partitions after applying
+        filtering for expected damage.
+        """
+        if not cloud_storage_partitions:
+            return None
+
+        self.set_cluster_config({
+            "cloud_storage_partial_scrub_interval_ms":
+            100,
+            "cloud_storage_full_scrub_interval_ms":
+            1000 * 60 * 10,
+            "cloud_storage_scrubbing_interval_jitter_ms":
+            100,
+            "cloud_storage_background_jobs_quota":
+            5000,
+            "cloud_storage_housekeeping_interval_ms":
+            100,
+            # Segment merging may resolve gaps in the log, so disable it
+            "cloud_storage_enable_segment_merging":
+            False,
+            # Leadership moves may perturb the scrub, so disable it to
+            # streamline the actions below.
+            "enable_leader_balancer":
+            False
+        })
+
+        unavailable = set()
+        for p in cloud_storage_partitions:
+            try:
+                leader_id = self._admin.await_stable_leader(topic=p.topic,
+                                                            partition=p.index)
+
+                self._admin.reset_scrubbing_metadata(
+                    namespace="kafka",
+                    topic=p.topic,
+                    partition=p.index,
+                    node=self.get_node(leader_id))
+            except HTTPError as he:
+                if he.response.status_code == 404:
+                    # Old redpanda, doesn't have this endpoint.  We can't
+                    # do our upload check.
+                    unavailable.add(p)
+                    continue
+                else:
+                    raise
+
+        cloud_storage_partitions -= unavailable
+        scrubbed = set()
+        all_anomalies = []
+
+        allowed_keys = set([
+            "ns", "topic", "partition", "revision_id", "last_complete_scrub_at"
+        ])
+
+        expected_damage = self._si_settings.get_expected_damage()
+
+        def filter_anomalies(detected):
+            bad_delta_types = set(
+                ["non_monotonical_delta", "mising_delta", "end_delta_smaller"])
+
+            for anomaly_type in expected_damage:
+                if anomaly_type == "ntpr_no_manifest":
+                    detected.pop("missing_partition_manifest", None)
+                if anomaly_type == "missing_segments":
+                    detected.pop("missing_segments", None)
+                if anomaly_type == "missing_spillover_manifests":
+                    detected.pop("missing_spillover_manifests", None)
+                if anomaly_type == "ntpr_bad_deltas":
+                    if metas := detected.get("segment_metadata_anomalies"):
+                        metas = [
+                            m for m in metas
+                            if m["type"] not in bad_delta_types
+                        ]
+                        if metas:
+                            detected["segment_metadata_anomalies"] = metas
+                        else:
+                            detected.pop("segment_metadata_anomalies", None)
+                if anomaly_type == "ntpr_overlap_offsets":
+                    if metas := detected.get("segment_metadata_anomalies"):
+                        metas = [
+                            m for m in metas if m["type"] != "offset_overlap"
+                        ]
+                        if metas:
+                            detected["segment_metadata_anomalies"] = metas
+                        else:
+                            detected.pop("segment_metadata_anomalies", None)
+                if anomaly_type == "metadata_offset_gaps":
+                    if metas := detected.get("segment_metadata_anomalies"):
+                        metas = [m for m in metas if m["type"] != "offset_gap"]
+                        if metas:
+                            detected["segment_metadata_anomalies"] = metas
+                        else:
+                            detected.pop("segment_metadata_anomalies", None)
+
+        def all_partitions_scrubbed():
+            waiting_for = cloud_storage_partitions - scrubbed
+            self.logger.info(
+                f"Waiting for {len(waiting_for)} partitions to be scrubbed")
+            for p in waiting_for:
+                result = self._admin.get_cloud_storage_anomalies(
+                    namespace="kafka", topic=p.topic, partition=p.index)
+                if "last_complete_scrub_at" in result:
+                    scrubbed.add(p)
+
+                    filter_anomalies(result)
+                    if set(result.keys()) != allowed_keys:
+                        all_anomalies.append(result)
+
+            return len(waiting_for) == 0
+
+        n_partitions = len(cloud_storage_partitions)
+        timeout = (n_partitions // 100) * 60 + 120
+        wait_until(all_partitions_scrubbed, timeout_sec=timeout, backoff_sec=5)
+
+        return all_anomalies
 
     def set_expected_controller_records(self, max_records: Optional[int]):
         self._expect_max_controller_records = max_records
