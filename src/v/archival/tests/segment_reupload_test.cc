@@ -756,6 +756,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
 
     for (auto i : spec.compacted_segment_indices) {
         b.get_segment(i).mark_as_finished_self_compaction();
+        b.get_segment(i).mark_as_finished_windowed_compaction();
     }
 
     size_t max_size = b.get_segment(0).size_bytes()
@@ -837,10 +838,8 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
     b | storage::add_segment(*first)
       | storage::add_random_batch(*first, spec.last_segment_num_records);
 
-    // Compaction only works one segment at a time
-    for (auto i = 0; i < spec.compacted_segment_indices.size(); ++i) {
-        b.gc(model::timestamp::max(), std::nullopt).get();
-    }
+    // Compaction will rewrite each segment.
+    b.gc(model::timestamp::max(), std::nullopt).get();
 
     size_t max_size = b.get_segment(0).size_bytes()
                       + b.get_segment(1).size_bytes()
@@ -918,6 +917,7 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
     // segments for re-upload. The upload candidate should be a noop
     // since the selected reupload has the same size as the existing segment.
     b.get_segment(0).mark_as_finished_self_compaction();
+    b.get_segment(0).mark_as_finished_windowed_compaction();
 
     {
         archival::segment_collector collector{
@@ -957,6 +957,7 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
     // should be a no-op since the reupload of the two local segments
     // results in a segment of the same size as the one that should be replaced.
     b.get_segment(1).mark_as_finished_self_compaction();
+    b.get_segment(1).mark_as_finished_windowed_compaction();
 
     {
         archival::segment_collector collector{

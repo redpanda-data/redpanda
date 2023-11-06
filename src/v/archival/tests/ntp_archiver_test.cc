@@ -909,7 +909,7 @@ FIXTURE_TEST(
       ->housekeeping(storage::housekeeping_config(
         model::timestamp::now(),
         std::nullopt,
-        model::offset::max(),
+        model::offset{999},
         ss::default_priority_class(),
         as))
       .get0();
