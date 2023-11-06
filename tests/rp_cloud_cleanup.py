@@ -217,7 +217,7 @@ class CloudCleanup():
                     return False
                 # Just delete the cluster resource
                 out = self.cloudv2.delete_resource(handle)
-                _log_deleted()
+                _log_deleted(_message)
                 self.log.debug(f"Returned:\n{out}")
                 return True
             # All other states need to wait for 36h
