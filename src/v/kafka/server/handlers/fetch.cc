@@ -40,7 +40,9 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/range/irange.hpp>
@@ -51,6 +53,8 @@
 
 namespace kafka {
 static constexpr std::chrono::milliseconds default_fetch_timeout = 5s;
+static constexpr std::chrono::milliseconds safeguard_fetch_timeout = 600s;
+
 /**
  * Make a partition response error.
  */
@@ -104,8 +108,24 @@ static ss::future<read_result> read_from_partition(
     std::unique_ptr<iobuf> data;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
     try {
-        auto result = co_await rdr.reader.consume(
-          kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
+        auto failsafe_deadline = deadline ? *deadline + safeguard_fetch_timeout
+                                          : ss::lowres_clock::now()
+                                              + safeguard_fetch_timeout;
+        auto ts_deadline = deadline ? *deadline : model::no_timeout;
+        auto consume_fut = rdr.reader.consume(
+          kafka_batch_serializer(), ts_deadline);
+        auto result
+          = co_await ss::with_timeout(failsafe_deadline, std::move(consume_fut))
+              .handle_exception_type(
+                [&reader_config](const ss::timed_out_error& err) {
+                    vlog(
+                      klog.error,
+                      "Tiered-storage reader timed out. Reader config: {}",
+                      reader_config);
+                    return ss::make_exception_future<
+                      kafka::kafka_batch_serializer::result>(err);
+                });
+
         data = std::make_unique<iobuf>(std::move(result.data));
         part.probe().add_records_fetched(result.record_count);
         part.probe().add_bytes_fetched(data->size_bytes());
