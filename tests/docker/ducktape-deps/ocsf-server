@@ -26,5 +26,11 @@ mix local.hex --force && mix local.rebar --force
 
 pushd /opt/ocsf-server
 ./build_server.sh
+# The following is required because the server attempts to write logs
+# to the `dist/tmp` directory.  This is fine in docker ducktape as the user
+# who kicks it off is root, but in CDT, the user is not root so the server
+# fails to start causing audit log tests to fail
+mkdir dist/tmp
+chmod a+w dist/tmp
 openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -keyout server.key -out server.crt -subj "/O=Redpanda" -batch
 popd
