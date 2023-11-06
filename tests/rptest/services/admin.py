@@ -614,6 +614,10 @@ class Admin:
 
         return self._request('get', path, node=node).json()
 
+    def get_partition(self, ns: str, topic: str, id: int, node=None):
+        return self._request("GET", f"partitions/{ns}/{topic}/{id}",
+                             node=node).json()
+
     def get_transactions(self, topic, partition, namespace, node=None):
         """
         Get transaction for current partition
@@ -1128,3 +1132,31 @@ class Admin:
             "POST",
             f"cloud_storage/reset_scrubbing_metadata/{namespace}/{topic}/{partition}",
             node=node)
+
+    def get_cluster_partitions(self,
+                               ns: str | None = None,
+                               topic: str | None = None,
+                               disabled: bool | None = None,
+                               node=None):
+        if topic is not None:
+            assert ns is not None
+            req = f"cluster/partitions/{ns}/{topic}"
+        else:
+            assert ns is None
+            req = f"cluster/partitions"
+
+        if disabled is not None:
+            req += f"?disabled={disabled}"
+
+        return self._request("GET", req, node=node).json()
+
+    def set_partitions_disabled(self,
+                                ns: str | None = None,
+                                topic: str | None = None,
+                                partition: int | None = None,
+                                value: bool = True):
+        if partition is not None:
+            req = f"cluster/partitions/{ns}/{topic}/{partition}"
+        else:
+            req = f"cluster/partitions/{ns}/{topic}"
+        return self._request("POST", req, json={"disabled": value})

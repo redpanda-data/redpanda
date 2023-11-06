@@ -469,6 +469,11 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     co_return ec;
 }
 
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  set_topic_partitions_disabled_cmd cmd, model::offset base_offset) {
+    co_return co_await dispatch_updates_to_cores(cmd, base_offset);
+}
+
 topic_updates_dispatcher::in_progress_map
 topic_updates_dispatcher::collect_in_progress(
   const model::topic_namespace& tp_ns,

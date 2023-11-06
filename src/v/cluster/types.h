@@ -2891,6 +2891,27 @@ struct move_topic_replicas_data
     operator<<(std::ostream&, const move_topic_replicas_data&);
 };
 
+struct set_topic_partitions_disabled_cmd_data
+  : serde::envelope<
+      set_topic_partitions_disabled_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::topic_namespace ns_tp;
+    // if nullopt, applies to all partitions of the topic.
+    std::optional<model::partition_id> partition_id;
+    bool disabled = false;
+
+    auto serde_fields() { return std::tie(ns_tp, partition_id, disabled); }
+
+    friend bool operator==(
+      const set_topic_partitions_disabled_cmd_data&,
+      const set_topic_partitions_disabled_cmd_data&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const set_topic_partitions_disabled_cmd_data&);
+};
+
 struct feature_update_license_update_cmd_data
   : serde::envelope<
       feature_update_license_update_cmd_data,
@@ -4354,6 +4375,41 @@ struct update_partition_replicas_cmd_data
 
     friend std::ostream&
     operator<<(std::ostream&, const update_partition_replicas_cmd_data&);
+};
+
+struct topic_disabled_partitions_set
+  : serde::envelope<
+      topic_disabled_partitions_set,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // std::nullopt means that the topic is fully disabled.
+    // This is different from the partitions set containing all partition ids,
+    // as it will also affect partitions created later with create_partitions
+    // request.
+    std::optional<absl::node_hash_set<model::partition_id>> partitions;
+
+    topic_disabled_partitions_set() noexcept
+      : partitions(absl::node_hash_set<model::partition_id>{}) {}
+
+    friend bool operator==(
+      const topic_disabled_partitions_set&,
+      const topic_disabled_partitions_set&)
+      = default;
+
+    auto serde_fields() { return std::tie(partitions); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_disabled_partitions_set&);
+
+    bool is_disabled(model::partition_id id) const {
+        return !partitions || partitions->contains(id);
+    }
+    bool is_topic_disabled() const { return !partitions.has_value(); }
+    bool is_empty() const { return partitions && partitions->empty(); }
+
+    void add(model::partition_id id);
+    void remove(model::partition_id id, const assignments_set& all_partitions);
+    void set_topic_disabled() { partitions = std::nullopt; }
 };
 
 } // namespace cluster

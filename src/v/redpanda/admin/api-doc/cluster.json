@@ -66,6 +66,131 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/cluster/partitions",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get cluster-level metadata for all partitions in the cluster",
+                    "nickname": "get_cluster_partitions",
+                    "type": "array",
+                    "items": {
+                        "type": "cluster_partition"
+                    },
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "disabled",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "with_internal",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/cluster/partitions/{namespace}/{topic}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Disable/enable all partitions of a topic",
+                    "nickname": "post_cluster_partitions_topic",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "method": "GET",
+                    "summary": "Get cluster-level metadata for all partitions in a topic",
+                    "nickname": "get_cluster_partitions_topic",
+                    "type": "array",
+                    "items": {
+                        "type": "cluster_partition"
+                    },
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "disabled",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/cluster/partitions/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Disable/enable a single partition",
+                    "nickname": "post_cluster_partitions_topic_partition",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -180,6 +305,52 @@
             "properties": {
                 "cluster_uuid": {
                     "type": "string"
+                }
+            }
+        },
+        "replica_assignment": {
+            "id": "replica_assignment",
+            "description": "Replica assignment",
+            "properties": {
+                "node_id": {
+                    "type": "long",
+                    "description": "node id"
+                },
+                "core": {
+                    "type": "long",
+                    "description": "core"
+                }
+            }
+        },
+        "cluster_partition": {
+            "id": "cluster_partition",
+            "description": "high-level partition info known to all cluster nodes",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition_id": {
+                    "type": "long",
+                    "description": "partition"
+                },
+                "leader_id": {
+                    "type": "long",
+                    "description": "leader node id"
+                },
+                "replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "replica_assignment"
+                    },
+                    "description": "replica assignments"
+                },
+                "disabled": {
+                    "type": "boolean"
                 }
             }
         }

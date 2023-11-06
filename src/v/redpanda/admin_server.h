@@ -391,6 +391,7 @@ private:
     void register_usage_routes();
     void register_self_test_routes();
     void register_cluster_routes();
+    void register_cluster_partitions_routes();
     void register_shadow_indexing_routes();
     void register_wasm_transform_routes();
 
@@ -481,6 +482,17 @@ private:
     ss::future<ss::json::json_return_type>
       cancel_all_partitions_reconfigs_handler(
         std::unique_ptr<ss::http::request>);
+
+    /// Cluster partition routes
+    ss::future<ss::json::json_return_type>
+      post_cluster_partitions_topic_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      post_cluster_partitions_topic_partition_handler(
+        std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      get_cluster_partitions_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      get_cluster_partitions_topic_handler(std::unique_ptr<ss::http::request>);
 
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>

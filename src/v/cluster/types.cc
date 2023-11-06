@@ -1064,6 +1064,17 @@ operator<<(std::ostream& o, const force_partition_reconfiguration_cmd_data& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const set_topic_partitions_disabled_cmd_data& r) {
+    fmt::print(
+      o,
+      "{{topic: {}, partition_id: {}, disabled: {}}}",
+      r.ns_tp,
+      r.partition_id,
+      r.disabled);
+    return o;
+}
+
 std::ostream& operator<<(
   std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
     fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);
@@ -1317,6 +1328,44 @@ operator<<(std::ostream& o, const update_partition_replicas_cmd_data& data) {
       data.replicas,
       data.policy);
     return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const topic_disabled_partitions_set& disabled) {
+    if (disabled.partitions) {
+        fmt::print(
+          o,
+          "{{partitions: {}}}",
+          std::vector(
+            disabled.partitions->begin(), disabled.partitions->end()));
+    } else {
+        fmt::print(o, "{{partitions: all}}");
+    }
+    return o;
+}
+
+void topic_disabled_partitions_set::add(model::partition_id id) {
+    if (partitions) {
+        partitions->insert(id);
+    } else {
+        // do nothing, std::nullopt means all partitions are already
+        // disabled.
+    }
+}
+
+void topic_disabled_partitions_set::remove(
+  model::partition_id id, const assignments_set& all_partitions) {
+    if (!all_partitions.contains(id)) {
+        return;
+    }
+    if (!partitions) {
+        partitions = absl::node_hash_set<model::partition_id>{};
+        partitions->reserve(all_partitions.size());
+        for (const auto& p : all_partitions) {
+            partitions->insert(p.id);
+        }
+    }
+    partitions->erase(id);
 }
 
 } // namespace cluster
