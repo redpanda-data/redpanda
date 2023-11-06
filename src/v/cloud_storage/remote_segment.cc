@@ -499,6 +499,7 @@ ss::future<> remote_segment::do_hydrate_segment() {
     auto reservation = co_await _cache.reserve_space(
       _size + storage::segment_index::estimate_size(_size), 1);
 
+    track_hydration t{_ts_probe};
     auto res = co_await _api.download_segment(
       _bucket,
       _path,
@@ -951,6 +952,8 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
       *this, std::move(range)};
 
     auto measurement = _ts_probe.chunk_hydration_latency();
+    track_hydration t{_ts_probe};
+
     auto res = co_await _api.download_segment(
       _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
     if (res != download_result::success) {

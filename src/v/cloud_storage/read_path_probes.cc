@@ -148,7 +148,11 @@ ts_read_path_probe::ts_read_path_probe() {
               },
               sm::description("Chunk hydration latency histogram"))
               .aggregate(aggregate_labels),
-
+            sm::make_counter(
+              "hydrations_in_progress",
+              [this] { return _hydrations_in_progress; },
+              sm::description("Active hydrations in progress"))
+              .aggregate(aggregate_labels),
             sm::make_counter(
               "downloads_throttled_sum",
               [this] { return get_downloads_throttled_sum(); },
@@ -159,5 +163,12 @@ ts_read_path_probe::ts_read_path_probe() {
           });
     }
 }
+
+track_hydration::track_hydration(ts_read_path_probe& probe)
+  : _probe(probe) {
+    _probe.hydration_started();
+}
+
+track_hydration::~track_hydration() { _probe.hydration_finished(); }
 
 } // namespace cloud_storage
