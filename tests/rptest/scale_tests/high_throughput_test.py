@@ -26,6 +26,7 @@ from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST,
                                       MetricsEndpoint, SISettings)
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from ducktape.mark import ok_to_fail
+import re
 
 kiB = 1024
 MiB = kiB * kiB
