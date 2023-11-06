@@ -9,6 +9,7 @@
 
 #include "security/jwt.h"
 #include "security/oidc_authenticator.h"
+#include "security/oidc_principal_mapping.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -289,9 +290,12 @@ BOOST_DATA_TEST_CASE(test_oidc_authenticate, bdata::make(oidc_auth_data), d) {
     auto update = v.update_keys(std::move(jwks).assume_value());
     BOOST_REQUIRE(!update.has_error());
 
+    security::oidc::principal_mapping_rule mapping;
+
     auto auth = security::oidc::authenticate(
       std::move(jws).assume_value(),
       v,
+      mapping,
       d.issuer,
       d.audience,
       d.clock_skew_tolerance,
@@ -425,6 +429,7 @@ BOOST_DATA_TEST_CASE(
     BOOST_REQUIRE(!jwt.has_error());
     auto auth = oidc::authenticate(
       jwt.assume_value(),
+      security::oidc::principal_mapping_rule{},
       d.issuer,
       d.audience,
       d.clock_skew_tolerance,

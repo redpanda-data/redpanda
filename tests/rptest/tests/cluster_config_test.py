@@ -562,6 +562,9 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # Don't modify oidc_discovery_url, if it's invalid, logging will break the test.
         exclude_settings.add('oidc_discovery_url')
 
+        # Don't modify oidc_principal mapping, the value is complex and tested elsewhere.
+        exclude_settings.add('oidc_principal_mapping')
+
         initial_config = self.admin.get_cluster_config()
 
         for name, p in schema_properties.items():

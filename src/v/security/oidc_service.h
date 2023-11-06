@@ -28,7 +28,8 @@ public:
       config::binding<std::vector<ss::sstring>> http_authentication,
       config::binding<ss::sstring> discovery_url,
       config::binding<ss::sstring> token_audience,
-      config::binding<std::chrono::seconds> clock_skew_tolerance);
+      config::binding<std::chrono::seconds> clock_skew_tolerance,
+      config::binding<ss::sstring> mapping);
     service(service&&) = delete;
     service& operator=(service&&) = delete;
     service(service const&) = delete;
@@ -39,6 +40,7 @@ public:
     ss::future<> stop();
 
     verifier const& get_verifier() const;
+    principal_mapping_rule const& get_principal_mapping_rule() const;
     std::string_view audience() const;
     result<std::string_view> issuer() const;
     std::chrono::seconds clock_skew_tolerance() const;

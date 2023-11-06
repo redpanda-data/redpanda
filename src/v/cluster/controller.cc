@@ -141,6 +141,9 @@ ss::future<> controller::wire_up() {
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
                   .oidc_clock_skew_tolerance.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg().oidc_principal_mapping.bind();
             }));
       })
       .then([this] { return _tp_state.start(); })
