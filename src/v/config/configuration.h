@@ -379,7 +379,7 @@ struct configuration final : public config_store {
     bounded_property<uint16_t> space_management_max_segment_concurrency;
     property<std::optional<size_t>>
       initial_retention_local_target_bytes_default;
-    property<std::chrono::milliseconds>
+    property<std::optional<std::chrono::milliseconds>>
       initial_retention_local_target_ms_default;
 
     // Archival cache

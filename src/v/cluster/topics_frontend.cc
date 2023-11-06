@@ -28,6 +28,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -793,6 +794,7 @@ bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
 ss::future<std::error_code> topics_frontend::move_partition_replicas(
   model::ntp ntp,
   std::vector<model::broker_shard> new_replica_set,
+  reconfiguration_policy policy,
   model::timeout_clock::time_point tout,
   std::optional<model::term_id> term) {
     auto result = co_await stm_linearizable_barrier(tout);
@@ -803,8 +805,31 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
     if (_topics.local().is_update_in_progress(ntp)) {
         co_return errc::update_in_progress;
     }
+    const auto fast_reconfiguration_active = _features.local().is_active(
+      features::feature::fast_partition_reconfiguration);
 
-    move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
+    // fallback to old move command
+    if (!fast_reconfiguration_active) {
+        if (policy != reconfiguration_policy::full_local_retention) {
+            vlog(
+              clusterlog.warn,
+              "Trying to move partition {} to {} with reconfiguration policy "
+              "of {} but fast partition movement feature is not yet active",
+              ntp,
+              policy);
+        }
+        move_partition_replicas_cmd cmd(
+          std::move(ntp), std::move(new_replica_set));
+
+        co_return co_await replicate_and_wait(
+          _stm, _features, _as, std::move(cmd), tout, term);
+    }
+    update_partition_replicas_cmd cmd(
+      0, // unused
+      update_partition_replicas_cmd_data{
+        .ntp = std::move(ntp),
+        .replicas = std::move(new_replica_set),
+        .policy = policy});
 
     co_return co_await replicate_and_wait(
       _stm, _features, _as, std::move(cmd), tout, term);
@@ -1503,6 +1528,7 @@ topics_frontend::generate_reassignments(
 ss::future<std::error_code> topics_frontend::move_partition_replicas(
   model::ntp ntp,
   std::vector<model::node_id> new_replica_set,
+  reconfiguration_policy policy,
   model::timeout_clock::time_point tout,
   std::optional<model::term_id> term) {
     auto assignments = co_await generate_reassignments(
@@ -1522,7 +1548,7 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
     }
 
     co_return co_await move_partition_replicas(
-      ntp, std::move(assignments.value().front().replicas), tout, term);
+      ntp, std::move(assignments.value().front().replicas), policy, tout, term);
 }
 
 ss::future<result<partition_state_reply>>

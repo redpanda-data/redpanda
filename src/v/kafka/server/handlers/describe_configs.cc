@@ -981,9 +981,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
               resource,
               result,
               topic_property_initial_retention_local_target_ms,
-              std::make_optional(
-                ctx.metadata_cache()
-                  .get_default_initial_retention_local_target_ms()),
+              ctx.metadata_cache()
+                .get_default_initial_retention_local_target_ms(),
               topic_property_initial_retention_local_target_ms,
               topic_config->properties.initial_retention_local_target_ms,
               request.data.include_synonyms,

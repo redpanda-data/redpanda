@@ -1391,7 +1391,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::backend_operation data{
           .source_shard = random_generators::get_int<unsigned>(1000),
           .p_as = random_partition_assignments().front(),
-          .type = cluster::topic_table_delta::op_type::del,
+          .type = cluster::partition_operation_type::remove,
         };
         roundtrip_test(data);
     }
@@ -1401,7 +1401,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             backend_operations.push_back(cluster::backend_operation{
               .source_shard = random_generators::get_int<unsigned>(1000),
               .p_as = random_partition_assignments().front(),
-              .type = cluster::topic_table_delta::op_type::del,
+              .type = cluster::partition_operation_type::remove,
             });
         }
 
@@ -1421,7 +1421,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
                 backend_operations.push_back(cluster::backend_operation{
                   .source_shard = random_generators::get_int<unsigned>(1000),
                   .p_as = random_partition_assignments().front(),
-                  .type = cluster::topic_table_delta::op_type::del,
+                  .type = cluster::partition_operation_type::remove,
                 });
             }
             results.emplace_back(

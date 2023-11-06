@@ -72,7 +72,8 @@ public:
       cancel_moving_partition_replicas_cmd,
       move_topic_replicas_cmd,
       revert_cancel_partition_move_cmd,
-      force_partition_reconfiguration_cmd>();
+      force_partition_reconfiguration_cmd,
+      update_partition_replicas_cmd>();
 
     bool is_batch_applicable(const model::record_batch& batch) const {
         return batch.header().type
@@ -103,6 +104,8 @@ private:
       apply(revert_cancel_partition_move_cmd, model::offset);
     ss::future<std::error_code>
       apply(force_partition_reconfiguration_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(update_partition_replicas_cmd, model::offset);
 
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 

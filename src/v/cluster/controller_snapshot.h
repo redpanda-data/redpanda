@@ -142,7 +142,7 @@ struct topics_t
 
     struct update_t
       : public serde::
-          envelope<update_t, serde::version<0>, serde::compat_version<0>> {
+          envelope<update_t, serde::version<1>, serde::compat_version<0>> {
         /// NOTE: In the event of cancellation this remains the original target.
         std::vector<model::broker_shard> target_assignment;
         reconfiguration_state state;
@@ -150,12 +150,14 @@ struct topics_t
         model::revision_id revision;
         /// Revision of the last command in this update (cancellation etc.)
         model::revision_id last_cmd_revision;
+        /// Reconfiguration policy used with this update
+        reconfiguration_policy policy;
 
         friend bool operator==(const update_t&, const update_t&) = default;
 
         auto serde_fields() {
             return std::tie(
-              target_assignment, state, revision, last_cmd_revision);
+              target_assignment, state, revision, last_cmd_revision, policy);
         }
     };
 

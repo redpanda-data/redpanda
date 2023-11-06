@@ -15,6 +15,7 @@
 #include "cluster/fwd.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -244,6 +245,10 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<storage::api>&,
       ss::sharded<features::feature_table>&,
+      config::binding<std::optional<size_t>>
+        initial_retention_local_target_bytes,
+      config::binding<std::optional<std::chrono::milliseconds>>
+        initial_retention_local_target_ms,
       ss::sharded<seastar::abort_source>&);
 
     ss::future<> stop();
@@ -299,26 +304,21 @@ private:
     ss::future<std::error_code> execute_partition_op(const delta_metadata&);
     ss::future<std::error_code> process_partition_reconfiguration(
       uint64_t current_retry,
-      topic_table_delta::op_type,
+      partition_operation_type,
       model::ntp,
-      const partition_assignment& requested_assignment,
-      const std::vector<model::broker_shard>& previous_replica_set,
-      const replicas_revision_map&,
+      const delta_reconfiguration_data&,
       model::revision_id);
 
     ss::future<std::error_code> execute_reconfiguration(
-      topic_table_delta::op_type,
+      partition_operation_type,
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
-      const replicas_revision_map&,
-      const std::vector<model::broker_shard>&,
+      const delta_reconfiguration_data&,
       model::revision_id);
 
     ss::future<> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);
 
-    ss::future<>
-      process_partition_properties_update(model::ntp, partition_assignment);
+    ss::future<> process_partition_properties_update(model::ntp);
 
     ss::future<std::error_code> create_partition(
       model::ntp,
@@ -341,37 +341,35 @@ private:
     ss::future<std::error_code> reset_partition(
       model::ntp,
       const partition_assignment& target_assignment,
-      const std::vector<model::broker_shard>& prev_replicas,
+      const replicas_t& prev_replicas,
       const replicas_revision_map&,
       model::revision_id cmd_revision);
     template<typename Func>
     ss::future<std::error_code> apply_configuration_change_on_leader(
-      const model::ntp&,
-      const std::vector<model::broker_shard>&,
-      model::revision_id,
-      Func&& f);
+      const model::ntp&, const replicas_t&, model::revision_id, Func&& f);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       const replicas_revision_map&,
-      model::revision_id);
+      model::revision_id,
+      reconfiguration_policy);
     ss::future<std::error_code> cancel_replica_set_update(
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       const replicas_revision_map&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       model::revision_id);
 
     ss::future<std::error_code> force_abort_replica_set_update(
       const model::ntp&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       const replicas_revision_map&,
-      const std::vector<model::broker_shard>&,
+      const replicas_t&,
       model::revision_id);
 
     ss::future<std::error_code> force_replica_set_update(
       const model::ntp&,
-      const std::vector<model::broker_shard>& /*new replicas*/,
+      const replicas_t& /*new replicas*/,
       const replicas_revision_map&,
       model::revision_id);
 
@@ -398,8 +396,8 @@ private:
     bool can_finish_update(
       std::optional<model::node_id> current_leader,
       uint64_t current_retry,
-      topic_table_delta::op_type operation_type,
-      const std::vector<model::broker_shard>& requested_replicas);
+      partition_operation_type operation_type,
+      const replicas_t& requested_replicas);
 
     void housekeeping();
     void setup_metrics();
@@ -407,6 +405,9 @@ private:
     bool command_based_membership_active() const;
 
     bool should_skip(const model::ntp&) const;
+
+    std::optional<model::offset> calculate_learner_initial_offset(
+      const ss::lw_shared_ptr<partition>& partition) const;
 
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;
@@ -419,6 +420,10 @@ private:
     model::node_id _self;
     ss::sstring _data_directory;
     std::chrono::milliseconds _housekeeping_timer_interval;
+    config::binding<std::optional<size_t>>
+      _initial_retention_local_target_bytes;
+    config::binding<std::optional<std::chrono::milliseconds>>
+      _initial_retention_local_target_ms;
     ss::sharded<ss::abort_source>& _as;
     underlying_t _topic_deltas;
     ss::timer<> _housekeeping_timer;

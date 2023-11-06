@@ -81,6 +81,7 @@ public:
     ss::future<std::error_code> move_partition_replicas(
       model::ntp,
       std::vector<model::broker_shard>,
+      reconfiguration_policy,
       model::timeout_clock::time_point,
       std::optional<model::term_id> = std::nullopt);
 
@@ -98,6 +99,7 @@ public:
     ss::future<std::error_code> move_partition_replicas(
       model::ntp,
       std::vector<model::node_id>,
+      reconfiguration_policy,
       model::timeout_clock::time_point,
       std::optional<model::term_id> = std::nullopt);
 

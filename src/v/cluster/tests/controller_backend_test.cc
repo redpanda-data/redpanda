@@ -28,22 +28,53 @@ make_assignment(std::vector<model::broker_shard> replicas) {
       raft::group_id(1), model::partition_id(1), std::move(replicas)};
 }
 
-using op_t = cluster::topic_table::delta::op_type;
+using op_t = cluster::partition_operation_type;
 using delta_t = cluster::topic_table::delta;
 using meta_t = cluster::controller_backend::delta_metadata;
 using deltas_t = std::deque<meta_t>;
 
 meta_t make_delta(
   int64_t o,
-  cluster::topic_table::delta::op_type type,
+  op_t type,
   std::vector<model::broker_shard> replicas,
   std::vector<model::broker_shard> previous = {}) {
-    return meta_t(cluster::topic_table::delta(
-      test_ntp,
-      make_assignment(std::move(replicas)),
-      model::offset(o),
-      type,
-      previous.empty() ? std::nullopt : std::make_optional(previous)));
+    switch (type) {
+    case op_t::update:
+    case op_t::force_update:
+        return meta_t(cluster::topic_table_delta::create_cancel_update_delta(
+          test_ntp,
+          model::revision_id(o),
+          cluster::is_forced(type == op_t::force_update),
+          make_assignment(std::move(replicas)),
+          std::move(previous),
+          cluster::replicas_revision_map{}));
+    case op_t::cancel_update:
+    case op_t::force_cancel_update:
+        return meta_t(cluster::topic_table_delta::create_cancel_update_delta(
+          test_ntp,
+          model::revision_id(o),
+          cluster::is_forced(type == op_t::force_cancel_update),
+          make_assignment(std::move(replicas)),
+          std::move(previous),
+          cluster::replicas_revision_map{}));
+    case op_t::finish_update:
+        return meta_t(cluster::topic_table_delta::create_finish_update_delta(
+          test_ntp,
+          model::revision_id(o),
+          make_assignment(std::move(replicas))));
+    case op_t::remove:
+        return meta_t(cluster::topic_table_delta::create_remove_partition_delta(
+          test_ntp, model::revision_id(o)));
+    case op_t::add:
+        return meta_t(cluster::topic_table_delta::create_add_partition_delta(
+          test_ntp,
+          model::revision_id(o),
+          make_assignment(std::move(replicas)),
+          cluster::replicas_revision_map{}));
+    default:
+        vassert(false, "not supported operation type: {}", type);
+    }
+    __builtin_unreachable();
 };
 
 meta_t add_current = make_delta(
@@ -53,7 +84,7 @@ meta_t add_different = make_delta(
   2, op_t::add, {make_bs(3, 0), make_bs(2, 1), make_bs(1, 0)});
 
 meta_t delete_current = make_delta(
-  3, op_t::del, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
+  3, op_t::remove, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
 
 meta_t recreate_different = make_delta(4, op_t::add, {make_bs(3, 0)});
 
@@ -66,7 +97,7 @@ meta_t update_with_current = make_delta(
   {make_bs(9, 0), make_bs(10, 0)});
 
 meta_t finish_update_with_current = make_delta(
-  7, op_t::update_finished, {make_bs(0, 0), make_bs(10, 0)});
+  7, op_t::finish_update, {make_bs(0, 0), make_bs(10, 0)});
 
 meta_t update_without_current = make_delta(
   8,
@@ -75,22 +106,22 @@ meta_t update_without_current = make_delta(
   {make_bs(9, 0), make_bs(10, 0)});
 
 meta_t finish_update_without_current = make_delta(
-  9, op_t::update_finished, {make_bs(1, 0), make_bs(10, 0)});
+  9, op_t::finish_update, {make_bs(1, 0), make_bs(10, 0)});
 
 meta_t update_without_current_2 = make_delta(
   10, op_t::update, {make_bs(10, 0)}, {make_bs(9, 0)});
 
 meta_t finish_update_without_current_2 = make_delta(
-  11, op_t::update_finished, {make_bs(10, 0)});
+  11, op_t::finish_update, {make_bs(10, 0)});
 
 meta_t update_with_current_2 = make_delta(
   12, op_t::update, {make_bs(0, 0)}, {make_bs(1, 0)});
 
 meta_t finish_update_with_current_2 = make_delta(
-  13, op_t::update_finished, {make_bs(0, 0)});
+  13, op_t::finish_update, {make_bs(0, 0)});
 
 meta_t final_delete = make_delta(
-  100, op_t::del, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
+  100, op_t::remove, {make_bs(0, 0), make_bs(2, 1), make_bs(1, 0)});
 
 SEASTAR_THREAD_TEST_CASE(test_simple_bootstrap) {
     // add topic on current node
@@ -99,7 +130,8 @@ SEASTAR_THREAD_TEST_CASE(test_simple_bootstrap) {
       current_node, std::move(d_1));
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 1);
-    BOOST_REQUIRE_EQUAL(deltas.back().delta.offset, add_current.delta.offset);
+    BOOST_REQUIRE_EQUAL(
+      deltas.back().delta.revision(), add_current.delta.revision());
 
     // add topic on different node, should not include this
     deltas_t d_2{add_different};
@@ -119,7 +151,7 @@ SEASTAR_THREAD_TEST_CASE(test_simple_bootstrap) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 1);
     BOOST_REQUIRE_EQUAL(
-      deltas.back().delta.offset, recreate_current.delta.offset);
+      deltas.back().delta.revision(), recreate_current.delta.revision());
 
     // recreate topic on different node
     deltas_t d_5{add_current, delete_current, recreate_different};
@@ -143,13 +175,13 @@ SEASTAR_THREAD_TEST_CASE(update_including_current_node) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 3);
     BOOST_REQUIRE_EQUAL(
-      deltas.begin()->delta.offset, recreate_current.delta.offset);
+      deltas.begin()->delta.revision(), recreate_current.delta.revision());
     BOOST_REQUIRE_EQUAL(
-      std::next(deltas.begin())->delta.offset,
-      update_with_current.delta.offset);
+      std::next(deltas.begin())->delta.revision(),
+      update_with_current.delta.revision());
     BOOST_REQUIRE_EQUAL(
-      std::next(deltas.begin(), 2)->delta.offset,
-      finish_update_with_current.delta.offset);
+      std::next(deltas.begin(), 2)->delta.revision(),
+      finish_update_with_current.delta.revision());
 }
 
 SEASTAR_THREAD_TEST_CASE(update_excluding_current_node) {
@@ -199,10 +231,10 @@ SEASTAR_THREAD_TEST_CASE(move_back_to_current_node) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 2);
     BOOST_REQUIRE_EQUAL(
-      deltas.begin()->delta.offset, update_with_current_2.delta.offset);
+      deltas.begin()->delta.revision(), update_with_current_2.delta.revision());
     BOOST_REQUIRE_EQUAL(
-      std::next(deltas.begin())->delta.offset,
-      finish_update_with_current_2.delta.offset);
+      std::next(deltas.begin())->delta.revision(),
+      finish_update_with_current_2.delta.revision());
 }
 
 SEASTAR_THREAD_TEST_CASE(move_back_to_current_node_not_finished) {
@@ -222,5 +254,5 @@ SEASTAR_THREAD_TEST_CASE(move_back_to_current_node_not_finished) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 1);
     BOOST_REQUIRE_EQUAL(
-      deltas.begin()->delta.offset, update_with_current_2.delta.offset);
+      deltas.begin()->delta.revision(), update_with_current_2.delta.revision());
 }

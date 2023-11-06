@@ -36,6 +36,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <absl/container/node_hash_map.h>
 
@@ -174,21 +175,26 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
     const auto shards = boost::irange<ss::shard_id>(0, ss::smp::count);
     for (auto shard : shards) {
         auto local_deltas = co_await get_remote_core_deltas(ntp, shard);
+        for (auto& m : local_deltas) {
+            auto assignment = ss::visit(
+              m.delta.get_data(),
+              [](delta_reconfiguration_data& data) {
+                  return std::move(data.target_assignment);
+              },
+              [](delta_finish_update_data& data) {
+                  return std::move(data.target_assignment);
+              },
+              [](auto&) { return partition_assignment{}; });
 
-        std::transform(
-          local_deltas.begin(),
-          local_deltas.end(),
-          std::back_inserter(ops),
-          [shard](controller_backend::delta_metadata& m) {
-              return backend_operation{
-                .source_shard = shard,
-                .p_as = std::move(m.delta.new_assignment),
-                .type = m.delta.type,
-                .current_retry = m.retries,
-                .last_operation_result = m.last_error,
-                .revision_of_operation = model::revision_id(m.delta.offset),
-              };
-          });
+            ops.push_back(backend_operation{
+              .source_shard = shard,
+              .p_as = std::move(assignment),
+              .type = m.delta.type(),
+              .current_retry = m.retries,
+              .last_operation_result = m.last_error,
+              .revision_of_operation = m.delta.revision(),
+            });
+        }
     }
 
     // having any deltas is sufficient to state that reconciliation is still
@@ -330,6 +336,7 @@ controller_api::get_partitions_reconfiguration_state(
         state.current_assignment = std::move(p_as->replicas);
         state.previous_assignment = progress_it->second.get_previous_replicas();
         state.state = progress_it->second.get_state();
+        state.policy = progress_it->second.get_reconfiguration_policy();
         states.emplace(ntp, std::move(state));
 
         auto [tp_it, _] = partitions_filter.namespaces.try_emplace(

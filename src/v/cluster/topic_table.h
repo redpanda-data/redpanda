@@ -116,16 +116,18 @@ public:
     class in_progress_update {
     public:
         explicit in_progress_update(
-          std::vector<model::broker_shard> previous_replicas,
-          std::vector<model::broker_shard> target_replicas,
+          replicas_t previous_replicas,
+          replicas_t target_replicas,
           reconfiguration_state state,
           model::revision_id update_revision,
+          reconfiguration_policy policy,
           topic_table_probe& probe)
           : _previous_replicas(std::move(previous_replicas))
           , _target_replicas(std::move(target_replicas))
           , _state(state)
           , _update_revision(update_revision)
           , _last_cmd_revision(update_revision)
+          , _policy(policy)
           , _probe(probe) {
             _probe.handle_update(_previous_replicas, _target_replicas);
         }
@@ -159,10 +161,10 @@ public:
             _last_cmd_revision = rev;
         }
 
-        const std::vector<model::broker_shard>& get_previous_replicas() const {
+        const replicas_t& get_previous_replicas() const {
             return _previous_replicas;
         }
-        const std::vector<model::broker_shard>& get_target_replicas() const {
+        const replicas_t& get_target_replicas() const {
             return _target_replicas;
         }
 
@@ -174,12 +176,17 @@ public:
             return _last_cmd_revision;
         }
 
+        reconfiguration_policy get_reconfiguration_policy() const {
+            return _policy;
+        }
+
     private:
-        std::vector<model::broker_shard> _previous_replicas;
-        std::vector<model::broker_shard> _target_replicas;
+        replicas_t _previous_replicas;
+        replicas_t _target_replicas;
         reconfiguration_state _state;
         model::revision_id _update_revision;
         model::revision_id _last_cmd_revision;
+        reconfiguration_policy _policy;
         topic_table_probe& _probe;
     };
 
@@ -311,6 +318,8 @@ public:
       apply(revert_cancel_partition_move_cmd, model::offset);
     ss::future<std::error_code>
       apply(force_partition_reconfiguration_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(update_partition_replicas_cmd, model::offset);
 
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<>
@@ -440,15 +449,13 @@ public:
      * reconfigured. For reconfiguration from [1,2,3] to [2,3,4] this method
      * will return [1,2,3].
      */
-    std::optional<std::vector<model::broker_shard>>
-    get_previous_replica_set(const model::ntp&) const;
+    std::optional<replicas_t> get_previous_replica_set(const model::ntp&) const;
     /**
      * returns target replica set of partition if partition is currently being
      * reconfigured. For reconfiguration from [1,2,3] to [2,3,4] this method
      * will return [2,3,4].
      */
-    std::optional<std::vector<model::broker_shard>>
-    get_target_replica_set(const model::ntp&) const;
+    std::optional<replicas_t> get_target_replica_set(const model::ntp&) const;
 
     /**
      * Lists all NTPs that replicas are being move to a node
@@ -519,16 +526,19 @@ private:
 
     void change_partition_replicas(
       model::ntp ntp,
-      const std::vector<model::broker_shard>& new_assignment,
+      const replicas_t& new_assignment,
       topic_metadata_item& metadata,
       partition_assignment& current_assignment,
       model::offset o,
-      bool is_forced);
+      bool is_forced,
+      reconfiguration_policy policy);
 
     class snapshot_applier;
 
     std::error_code
     do_local_delete(model::topic_namespace nt, model::offset offset);
+    ss::future<std::error_code>
+      do_apply(update_partition_replicas_cmd_data, model::offset);
 
     underlying_t _topics;
     lifecycle_markers_t _lifecycle_markers;

@@ -517,15 +517,15 @@ struct instance_generator<cluster::backend_operation> {
           .source_shard = random_generators::get_int<unsigned>(),
           .p_as = instance_generator<cluster::partition_assignment>::random(),
           .type = random_generators::random_choice(
-            {cluster::topic_table_delta::op_type::add,
-             cluster::topic_table_delta::op_type::add_non_replicable,
-             cluster::topic_table_delta::op_type::del_non_replicable,
-             cluster::topic_table_delta::op_type::cancel_update,
-             cluster::topic_table_delta::op_type::force_abort_update,
-             cluster::topic_table_delta::op_type::update,
-             cluster::topic_table_delta::op_type::update_finished,
-             cluster::topic_table_delta::op_type::update_properties,
-             cluster::topic_table_delta::op_type::del}),
+            {cluster::partition_operation_type::add,
+             cluster::partition_operation_type::add_non_replicable,
+             cluster::partition_operation_type::del_non_replicable,
+             cluster::partition_operation_type::cancel_update,
+             cluster::partition_operation_type::force_cancel_update,
+             cluster::partition_operation_type::update,
+             cluster::partition_operation_type::finish_update,
+             cluster::partition_operation_type::update_properties,
+             cluster::partition_operation_type::remove}),
         };
     }
 

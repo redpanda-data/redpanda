@@ -400,6 +400,10 @@
                 "partition_size": {
                     "type": "long",
                     "description": "current size of partition"
+                },
+                "reconfiguration_policy": {
+                    "type": "string",
+                    "description": "Policy used to reconfigure partition replica set"
                 }
             }
         },

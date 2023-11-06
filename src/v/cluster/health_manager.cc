@@ -17,6 +17,7 @@
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/types.h"
 #include "model/namespace.h"
 #include "model/transform.h"
 #include "seastarx.h"
@@ -101,7 +102,10 @@ ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
     const auto& replicas = allocation.value().replicas();
 
     auto err = co_await _topics_frontend.local().move_partition_replicas(
-      ntp, replicas, model::timeout_clock::now() + set_replicas_timeout);
+      ntp,
+      replicas,
+      reconfiguration_policy::full_local_retention,
+      model::timeout_clock::now() + set_replicas_timeout);
     if (err) {
         vlog(
           clusterlog.warn,

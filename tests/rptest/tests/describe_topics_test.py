@@ -208,15 +208,19 @@ class DescribeTopicsTest(RedpandaTest):
                 config_type="LONG",
                 value="-1",
                 doc_string=
-                "Initial local retention size target for partitions of topics with cloud storage write enabled"
-            ),
+                "Initial local retention size target for partitions of topics with cloud "
+                "storage write enabled. If no initial local target retention is "
+                "configured all locally retained data will be delivered to learner when "
+                "joining partition replica set"),
             "initial.retention.local.target.ms":
             ConfigProperty(
                 config_type="LONG",
-                value="86400000",
+                value="-1",
                 doc_string=
-                "Initial local retention time target for partitions of topics with cloud storage write enabled"
-            ),
+                "Initial local retention time target for partitions of topics with cloud "
+                "storage write enabled. If no initial local target retention is "
+                "configured all locally retained data will be delivered to learner when "
+                "joining partition replica set"),
         }
 
         tp_spec = TopicSpec()

@@ -14,6 +14,7 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "model/metadata.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -25,6 +26,7 @@ namespace cluster {
 struct ntp_reassignment {
     model::ntp ntp;
     allocated_partition allocated;
+    reconfiguration_policy reconfiguration_policy;
 };
 
 struct planner_config {

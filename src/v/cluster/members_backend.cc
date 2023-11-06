@@ -619,6 +619,7 @@ ss::future<> members_backend::reconcile_reallocation_state(
           = co_await _topics_frontend.local().move_partition_replicas(
             ntp,
             meta.new_replica_set,
+            reconfiguration_policy::full_local_retention,
             model::timeout_clock::now() + _retry_timeout);
         if (error) {
             vlog(

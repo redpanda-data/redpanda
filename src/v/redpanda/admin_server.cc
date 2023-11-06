@@ -2576,6 +2576,7 @@ admin_server::get_decommission_progress_handler(
         if (already_moved == 0 && left_to_move == 0) {
             status.bytes_left_to_move = p.current_partition_size;
         }
+        status.reconfiguration_policy = ssx::sformat("{}", p.policy);
         ret.partitions.push(status);
     }
 
@@ -2980,7 +2981,7 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
           if (already_moved == 0 && left_to_move == 0) {
               r.bytes_left_to_move = s.current_partition_size;
           }
-
+          r.reconfiguration_policy = ssx::sformat("{}", s.policy);
           auto it = reconciliations->ntp_backend_operations.find(s.ntp);
           if (it != reconciliations->ntp_backend_operations.end()) {
               for (auto& node_ops : it->second) {
@@ -3176,6 +3177,7 @@ admin_server::set_partition_replicas_handler(
                  .move_partition_replicas(
                    ntp,
                    replicas,
+                   cluster::reconfiguration_policy::full_local_retention,
                    model::timeout_clock::now()
                      + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
 

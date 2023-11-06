@@ -38,6 +38,7 @@
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
@@ -47,6 +48,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
@@ -61,6 +63,7 @@ using transfer_leadership_reply = raft::transfer_leadership_reply;
 using cluster_version = named_type<int64_t, struct cluster_version_tag>;
 constexpr cluster_version invalid_version = cluster_version{-1};
 
+using replicas_t = std::vector<model::broker_shard>;
 struct allocate_id_request
   : serde::envelope<
       allocate_id_request,
@@ -1350,16 +1353,14 @@ struct partition_assignment
       serde::compat_version<0>> {
     partition_assignment() noexcept = default;
     partition_assignment(
-      raft::group_id group,
-      model::partition_id id,
-      std::vector<model::broker_shard> replicas)
+      raft::group_id group, model::partition_id id, replicas_t replicas)
       : group(group)
       , id(id)
       , replicas(std::move(replicas)) {}
 
     raft::group_id group;
     model::partition_id id;
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
 
     model::partition_metadata create_partition_metadata() const {
         auto p_md = model::partition_metadata(id);
@@ -2199,7 +2200,7 @@ struct finish_partition_update_request
       serde::version<0>,
       serde::compat_version<0>> {
     model::ntp ntp;
-    std::vector<model::broker_shard> new_replica_set;
+    replicas_t new_replica_set;
 
     friend bool operator==(
       const finish_partition_update_request&,
@@ -2303,6 +2304,36 @@ private:
     ss::sstring _msg;
 };
 
+enum class reconfiguration_policy {
+    /**
+     * Moving partition with full local retention policy will deliver all
+     * partition data available locally on the leader to newly joining learners.
+     * If tiered storage is disabled for a partition the move will always be
+     * executed with full local retention.
+     */
+    full_local_retention = 0,
+    /**
+     * With target initial retention partition move policy controller backend
+     * will calculate the learner start offset based on the configured learner
+     * initial retention configuration (either a global cluster property or
+     * topic override ) and partition max collectible offset. Max collectible
+     * offset is advanced after all the previous offsets were successfully
+     * uploaded to the cloud.
+     */
+    target_initial_retention = 1,
+    /*
+     * The min local retention policy, before requesting partition
+     * reconfiguration in the Raft layer will request log to be uploaded to the
+     * Object Store up to the active segment boundary. After all data are update
+     * the controller backend will request partition move setting learner
+     * initial offset to the active segment start offset, allowing all the data
+     * from not active segments to be skiped while recovering learners.
+     *
+     * (NOTE: not yet implemented)
+     */
+    min_local_retention = 2
+};
+
 /**
  * Replicas revision map is used to track revision of brokers in a replica
  * set. When a node is added into replica set its gets the revision assigned
@@ -2310,53 +2341,171 @@ private:
 using replicas_revision_map
   = absl::flat_hash_map<model::node_id, model::revision_id>;
 
+enum class partition_operation_type {
+    add,
+    remove,
+    update,
+    force_update,
+    finish_update,
+    update_properties,
+    add_non_replicable,
+    del_non_replicable,
+    cancel_update,
+    force_cancel_update,
+    reset,
+};
+std::ostream& operator<<(std::ostream&, const partition_operation_type&);
+/**
+ * Data objects specific for a particular type of topic_table_delta
+ */
+struct delta_add_partition_data {
+    partition_assignment target_assignment;
+    replicas_revision_map replica_revisions;
+
+    model::revision_id get_replica_revision(model::node_id) const;
+    friend std::ostream&
+    operator<<(std::ostream&, const delta_add_partition_data&);
+};
+struct delta_finish_update_data {
+    partition_assignment target_assignment;
+    friend std::ostream&
+    operator<<(std::ostream&, const delta_finish_update_data&);
+};
+struct delta_reconfiguration_data {
+    partition_assignment target_assignment;
+    replicas_t previous_replica_set;
+    replicas_revision_map replica_revisions;
+    reconfiguration_policy policy;
+
+    model::revision_id get_replica_revision(model::node_id) const;
+    friend std::ostream&
+    operator<<(std::ostream&, const delta_reconfiguration_data&);
+};
+struct delta_update_properties_data {
+    friend std::ostream&
+    operator<<(std::ostream&, const delta_update_properties_data&);
+};
+struct delta_remove_partition_data {
+    friend std::ostream&
+    operator<<(std::ostream&, const delta_remove_partition_data&);
+};
+
+using is_forced = ss::bool_class<struct forced_reconfiguration_tag>;
+
 // delta propagated to backend
-struct topic_table_delta {
-    enum class op_type {
-        add,
-        del,
-        update,
-        force_update,
-        update_finished,
-        update_properties,
-        add_non_replicable,
-        del_non_replicable,
-        cancel_update,
-        force_abort_update,
-        reset,
-    };
-
-    topic_table_delta(
-      model::ntp,
-      cluster::partition_assignment,
-      model::offset,
-      op_type,
-      std::optional<std::vector<model::broker_shard>> previous = std::nullopt,
-      std::optional<replicas_revision_map> = std::nullopt);
-
-    model::ntp ntp;
-    cluster::partition_assignment new_assignment;
-    model::offset offset;
-    op_type type;
-    std::optional<std::vector<model::broker_shard>> previous_replica_set;
-    std::optional<replicas_revision_map> replica_revisions;
+class topic_table_delta {
+public:
+    /**
+     * Depending on the context topic table delta will hold one of the specified
+     * data types, having a variant is convenient as we can use either a visitor
+     * pattern or simple switch case.
+     */
+    using data_t = std::variant<
+      delta_add_partition_data,
+      delta_finish_update_data,
+      delta_reconfiguration_data,
+      delta_remove_partition_data,
+      delta_update_properties_data>;
 
     model::topic_namespace_view tp_ns() const {
-        return model::topic_namespace_view(ntp);
+        return model::topic_namespace_view(_ntp);
     }
 
     bool is_reconfiguration_operation() const {
-        return type == op_type::update || type == op_type::force_update
-               || type == op_type::cancel_update
-               || type == op_type::force_abort_update;
+        return _type == partition_operation_type::update
+               || _type == partition_operation_type::force_update
+               || _type == partition_operation_type::cancel_update
+               || _type == partition_operation_type::force_cancel_update;
     }
 
-    /// Preconditions: delta is of type that has replica_revisions and the node
-    /// is in the new assignment.
-    model::revision_id get_replica_revision(model::node_id) const;
+    const model::ntp& ntp() const { return _ntp; }
+
+    partition_operation_type type() const { return _type; }
+
+    model::revision_id revision() const { return _revision; }
 
     friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
-    friend std::ostream& operator<<(std::ostream&, const op_type&);
+
+    const data_t& get_data() const { return _data; }
+
+    const delta_reconfiguration_data& get_reconfiguration_data() const {
+        vassert(
+          is_reconfiguration_operation()
+            || _type == partition_operation_type::reset,
+          "reconfiguration data can only be returned when operation is of "
+          "reconfiguration type");
+        return std::get<delta_reconfiguration_data>(_data);
+    }
+
+    delta_reconfiguration_data& get_reconfiguration_data() {
+        vassert(
+          is_reconfiguration_operation()
+            || _type == partition_operation_type::reset,
+          "reconfiguration data can only be returned when operation is of "
+          "reconfiguration type");
+        return std::get<delta_reconfiguration_data>(_data);
+    }
+
+    const delta_finish_update_data& get_finish_update_data() const {
+        vassert(
+          _type == partition_operation_type::finish_update,
+          "finish update data can only be returned when operation is of "
+          "finish type");
+
+        return std::get<delta_finish_update_data>(_data);
+    }
+
+    static topic_table_delta create_add_partition_delta(
+      model::ntp,
+      model::revision_id,
+      partition_assignment,
+      replicas_revision_map);
+
+    static topic_table_delta
+      create_remove_partition_delta(model::ntp, model::revision_id);
+
+    static topic_table_delta create_update_delta(
+      model::ntp,
+      model::revision_id,
+      is_forced,
+      partition_assignment,
+      replicas_t,
+      replicas_revision_map,
+      reconfiguration_policy);
+
+    static topic_table_delta create_finish_update_delta(
+      model::ntp, model::revision_id, partition_assignment);
+
+    static topic_table_delta
+      create_update_properties_delta(model::ntp, model::revision_id);
+
+    static topic_table_delta create_cancel_update_delta(
+      model::ntp,
+      model::revision_id,
+      is_forced,
+      partition_assignment,
+      replicas_t,
+      replicas_revision_map);
+
+    static topic_table_delta create_reset_delta(
+      model::ntp,
+      model::revision_id,
+      partition_assignment,
+      replicas_t,
+      replicas_revision_map);
+
+private:
+    /**
+     * Private constructor not to allow caller creating a delta in which data
+     * type is disconnected from operation type
+     */
+
+    topic_table_delta(
+      model::ntp, model::revision_id, partition_operation_type, data_t);
+    model::ntp _ntp;
+    model::revision_id _revision;
+    partition_operation_type _type;
+    data_t _data;
 };
 
 struct create_acls_cmd_data
@@ -2515,7 +2664,7 @@ struct backend_operation
       envelope<backend_operation, serde::version<1>, serde::compat_version<0>> {
     ss::shard_id source_shard;
     partition_assignment p_as;
-    topic_table_delta::op_type type;
+    partition_operation_type type;
 
     uint64_t current_retry;
     cluster::errc last_operation_result;
@@ -2706,11 +2855,10 @@ struct force_partition_reconfiguration_cmd_data
       serde::version<0>,
       serde::compat_version<0>> {
     force_partition_reconfiguration_cmd_data() noexcept = default;
-    explicit force_partition_reconfiguration_cmd_data(
-      std::vector<model::broker_shard> replicas)
+    explicit force_partition_reconfiguration_cmd_data(replicas_t replicas)
       : replicas(std::move(replicas)) {}
 
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
 
     auto serde_fields() { return std::tie(replicas); }
 
@@ -2730,12 +2878,12 @@ struct move_topic_replicas_data
       serde::compat_version<0>> {
     move_topic_replicas_data() noexcept = default;
     explicit move_topic_replicas_data(
-      model::partition_id partition, std::vector<model::broker_shard> replicas)
+      model::partition_id partition, replicas_t replicas)
       : partition(partition)
       , replicas(std::move(replicas)) {}
 
     model::partition_id partition;
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
 
     auto serde_fields() { return std::tie(partition, replicas); }
 
@@ -3982,14 +4130,16 @@ struct replica_bytes {
 struct partition_reconfiguration_state {
     model::ntp ntp;
     // assignments
-    std::vector<model::broker_shard> previous_assignment;
-    std::vector<model::broker_shard> current_assignment;
+    replicas_t previous_assignment;
+    replicas_t current_assignment;
     // state indicating if reconfiguration was cancelled or requested
     reconfiguration_state state;
     // amount of bytes already transferred to new replicas
     std::vector<replica_bytes> already_transferred_bytes;
     // current size of partition
     size_t current_partition_size{0};
+    // policy used to execute an update
+    reconfiguration_policy policy;
 };
 
 struct node_decommission_progress {
@@ -4182,34 +4332,6 @@ struct remove_plugin_response
     auto serde_fields() { return std::tie(uuid, ec); }
 };
 
-enum class reconfiguration_policy {
-    /**
-     * Moving partition with full local retention policy will deliver all
-     * partition data available locally on the leader to newly joining learners.
-     * If tiered storage is disabled for a partition the move will alawys be
-     * executed with full local retention.
-     */
-    full_local_retention = 0,
-    /**
-     * With target initial retention parittion move policy controller backend
-     * will calulate the learner start offset based on the configured learner
-     * initial retention configuration (either a global cluster property or
-     * topic override ) and partition max collectible offset. Max collectible
-     * offset is advanced after all the previous offsets were succesfully
-     * uploaded to the cloud.
-     */
-    target_initial_retention = 1,
-    /*
-     * The min local retention policy, before requesting partition
-     * reconfiguration in the Raft layer will request log to be uploaded to the
-     * Object Store up to the active segment boundry. After all data are update
-     * the controller backend will request partition move setting learner
-     * initial offset to the active segment start offset, allowing all the data
-     * from not active segments to be skiped while recoverying learners.
-     */
-    min_local_retention = 2
-};
-
 std::ostream& operator<<(std::ostream&, reconfiguration_policy);
 
 struct update_partition_replicas_cmd_data
@@ -4217,8 +4339,10 @@ struct update_partition_replicas_cmd_data
       update_partition_replicas_cmd_data,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
-    std::vector<model::broker_shard> replicas;
+    replicas_t replicas;
     reconfiguration_policy policy;
 
     friend bool operator==(
@@ -4226,7 +4350,7 @@ struct update_partition_replicas_cmd_data
       const update_partition_replicas_cmd_data&)
       = default;
 
-    auto serde_fields() { std::tie(ntp, replicas, policy); }
+    auto serde_fields() { return std::tie(ntp, replicas, policy); }
 
     friend std::ostream&
     operator<<(std::ostream&, const update_partition_replicas_cmd_data&);
@@ -4771,7 +4895,7 @@ struct adl<cluster::finish_partition_update_request> {
     }
     cluster::finish_partition_update_request from(iobuf_parser& in) {
         auto ntp = adl<model::ntp>{}.from(in);
-        auto new_replica_set = adl<std::vector<model::broker_shard>>{}.from(in);
+        auto new_replica_set = adl<cluster::replicas_t>{}.from(in);
         return {
           .ntp = std::move(ntp),
           .new_replica_set = std::move(new_replica_set),
@@ -4832,7 +4956,7 @@ struct adl<cluster::backend_operation> {
     cluster::backend_operation from(iobuf_parser& in) {
         auto source_shard = adl<ss::shard_id>{}.from(in);
         auto p_as = adl<cluster::partition_assignment>{}.from(in);
-        auto type = adl<cluster::topic_table_delta::op_type>{}.from(in);
+        auto type = adl<cluster::partition_operation_type>{}.from(in);
         return {
           .source_shard = source_shard,
           .p_as = std::move(p_as),

@@ -179,6 +179,32 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     }
     co_return ec;
 }
+
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  update_partition_replicas_cmd cmd, model::offset offset) {
+    const auto& ntp = cmd.value.ntp;
+    auto p_as = _topic_table.local().get_partition_assignment(ntp);
+    auto ec = co_await dispatch_updates_to_cores(cmd, offset);
+    if (!ec) {
+        vassert(
+          p_as.has_value(),
+          "Partition {} have to exist before successful "
+          "partition reallocation",
+          ntp);
+
+        update_allocations_for_reconfiguration(
+          p_as->replicas, cmd.value.replicas, get_allocation_domain(ntp));
+
+        _partition_balancer_state.local().handle_ntp_update(
+          ntp.ns,
+          ntp.tp.topic,
+          ntp.tp.partition,
+          p_as->replicas,
+          cmd.value.replicas);
+    }
+    co_return ec;
+}
+
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   cancel_moving_partition_replicas_cmd cmd, model::offset offset) {
     auto current_assignment = _topic_table.local().get_partition_assignment(
