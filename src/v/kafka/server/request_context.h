@@ -261,33 +261,33 @@ public:
         auto operation_name = handler_for_key(key).value()->name();
 
         auto& audit_mgr = _conn->server().audit_mgr();
-        _authz_results.erase(
-          std::remove_if(
-            _authz_results.begin(),
-            _authz_results.end(),
-            [this, operation_name, &audit_mgr, key, f = std::forward<Func>(f)](
-              const auto& val) -> bool {
-                return audit_mgr.enqueue_authz_audit_event(
-                  key,
-                  f,
-                  operation_name,
-                  val,
-                  _conn->local_address(),
-                  _conn->server().name(),
-                  _conn->client_host(),
-                  _conn->client_port(),
-                  _header.client_id);
-            }),
-          _authz_results.end());
-
-        if (!_authz_results.empty()) {
+        auto not_audited = std::partition(
+          _authz_results.begin(),
+          _authz_results.end(),
+          [this, operation_name, &audit_mgr, key, f = std::forward<Func>(f)](
+            const auto& val) -> bool {
+              return audit_mgr.enqueue_authz_audit_event(
+                key,
+                f,
+                operation_name,
+                val,
+                _conn->local_address(),
+                _conn->server().name(),
+                _conn->client_host(),
+                _conn->client_port(),
+                _header.client_id);
+          });
+        if (not_audited != _authz_results.end()) {
             vlog(
               klog.error,
-              "Failed to append to audit log - Unable to audit all messages: "
-              "{}",
-              _authz_results);
+              "Failed to append to audit log - Unable to audit all messages");
+            for (auto it = not_audited; it != _authz_results.end(); ++it) {
+                vlog(klog.error, "{}", *it);
+            }
+
             return false;
         }
+
         return true;
     }
 
@@ -296,31 +296,31 @@ public:
         auto operation_name = handler_for_key(key).value()->name();
 
         auto& audit_mgr = _conn->server().audit_mgr();
-        _authz_results.erase(
-          std::remove_if(
-            _authz_results.begin(),
-            _authz_results.end(),
-            [this, operation_name, &audit_mgr, key](const auto& val) -> bool {
-                return audit_mgr.enqueue_authz_audit_event(
-                  key,
-                  operation_name,
-                  val,
-                  _conn->local_address(),
-                  _conn->server().name(),
-                  _conn->client_host(),
-                  _conn->client_port(),
-                  _header.client_id);
-            }),
-          _authz_results.end());
+        auto not_audited = std::partition(
+          _authz_results.begin(),
+          _authz_results.end(),
+          [this, operation_name, &audit_mgr, key](const auto& val) -> bool {
+              return audit_mgr.enqueue_authz_audit_event(
+                key,
+                operation_name,
+                val,
+                _conn->local_address(),
+                _conn->server().name(),
+                _conn->client_host(),
+                _conn->client_port(),
+                _header.client_id);
+          });
 
-        if (!_authz_results.empty()) {
+        if (not_audited != _authz_results.end()) {
             vlog(
               klog.error,
-              "Failed to append to audit log - Unable to audit all messages: "
-              "{}",
-              _authz_results);
+              "Failed to append to audit log - Unable to audit all messages");
+            for (auto it = not_audited; it != _authz_results.end(); ++it) {
+                vlog(klog.error, "{}", *it);
+            }
             return false;
         }
+
         return true;
     }
 
@@ -386,7 +386,7 @@ private:
     request_header _header;
     protocol::decoder _reader;
     ss::lowres_clock::duration _throttle_delay;
-    std::vector<security::auth_result> _authz_results;
+    fragmented_vector<security::auth_result> _authz_results;
     bool _request_contains_audit_topic{false};
 };
 
