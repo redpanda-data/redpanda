@@ -451,6 +451,8 @@ class TransactionsTest(RedpandaTest):
                        backoff_sec=2,
                        err_msg="Failed to establish current leader")
 
+        # Issue a leadership transfer
+        graceful_transfer()
         # Add some records
         add_records()
         # Issue a leadership transfer
