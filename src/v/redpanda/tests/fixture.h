@@ -776,6 +776,7 @@ public:
         }
 
         kafka::request_header header{
+          .key = kafka::fetch_handler::api::key,
           .version = kafka::fetch_handler::max_supported};
 
         iobuf buf;
