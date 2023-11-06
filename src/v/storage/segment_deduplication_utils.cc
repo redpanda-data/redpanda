@@ -99,6 +99,9 @@ ss::future<model::offset> build_offset_map(
     // Build the key offset map by iterating on older and older data.
     auto iter = std::prev(segs.end());
     while (true) {
+        if (cfg.asrc) {
+            cfg.asrc->check();
+        }
         auto seg_fully_indexed = co_await build_offset_map_for_segment(
           cfg, *(iter->get()), m);
         if (!seg_fully_indexed) {

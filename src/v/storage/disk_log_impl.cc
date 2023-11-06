@@ -16,6 +16,7 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "ssx/future-util.h"
 #include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
 #include "storage/compaction_reducers.h"
@@ -46,6 +47,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <fmt/format.h>
 #include <roaring/roaring.hh>
@@ -138,6 +140,7 @@ ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
     // wait for compaction to finish
+    _compaction_as.request_abort();
     co_await _compaction_housekeeping_gate.close();
     // gets all the futures started in the background
     std::vector<ss::future<>> permanent_delete;
@@ -182,6 +185,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     }
     // wait for compaction to finish
     vlog(stlog.trace, "waiting for {} compaction to finish", config().ntp());
+    _compaction_as.request_abort();
     co_await _compaction_housekeeping_gate.close();
     vlog(stlog.trace, "stopping {} readers cache", config().ntp());
 
@@ -526,6 +530,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         co_return false;
     }
     for (auto& seg : segs) {
+        if (cfg.asrc) {
+            cfg.asrc->check();
+        }
         auto result = co_await storage::internal::self_compact_segment(
           seg,
           _stm_manager,
@@ -548,6 +555,11 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     try {
         idx_start_offset = co_await build_offset_map(cfg, segs, map);
     } catch (...) {
+        auto eptr = std::current_exception();
+        if (ssx::is_shutdown_exception(eptr)) {
+            // Pass through shutdown errors.
+            std::rethrow_exception(eptr);
+        }
         vlog(
           gclog.warn,
           "[{}] failed to build offset map. Stopping compaction: {}",
@@ -558,6 +570,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
     for (auto& seg : segs) {
+        if (cfg.asrc) {
+            cfg.asrc->check();
+        }
         if (seg->offsets().base_offset > map.max_offset()) {
             break;
         }
@@ -1031,9 +1046,23 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
+        // TODO: unify error handling.
         if (config::shard_local_cfg().log_compaction_use_sliding_window()) {
-            auto compacted = co_await sliding_window_compact(
-              cfg.compact, new_start_offset);
+            cfg.compact.asrc = &_compaction_as;
+            auto did_compact_fut = co_await ss::coroutine::as_future(
+              sliding_window_compact(cfg.compact, new_start_offset));
+            if (did_compact_fut.failed()) {
+                auto eptr = did_compact_fut.get_exception();
+                if (ssx::is_shutdown_exception(eptr)) {
+                    vlog(
+                      gclog.debug,
+                      "Compaction of {} stopped because of shutdown",
+                      config().ntp());
+                    co_return;
+                }
+                std::rethrow_exception(eptr);
+            }
+            bool compacted = did_compact_fut.get();
             if (!compacted) {
                 if (auto range = find_compaction_range(cfg.compact); range) {
                     auto r = co_await compact_adjacent_segments(

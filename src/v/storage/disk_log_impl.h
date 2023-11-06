@@ -268,6 +268,7 @@ private:
         ss::abort_source::subscription subscription;
     };
     bool _closed{false};
+    ss::abort_source _compaction_as;
     ss::gate _compaction_housekeeping_gate;
     log_manager& _manager;
     float _segment_size_jitter;
