@@ -74,6 +74,11 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         co_return begin_tx_reply{ntp, tx_errc::partition_not_exists};
     }
 
+    if (_metadata_cache.local().is_disabled(nt, ntp.tp.partition)) {
+        vlog(txlog.warn, "partition {} is disabled by user", ntp);
+        co_return begin_tx_reply{ntp, tx_errc::partition_disabled};
+    }
+
     auto leader_opt = _leaders.local().get_leader(ntp);
     if (!leader_opt) {
         vlog(txlog.warn, "{} is leaderless", ntp);
@@ -264,6 +269,11 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
           commit_tx_reply{tx_errc::partition_not_exists});
     }
 
+    if (_metadata_cache.local().is_disabled(nt, ntp.tp.partition)) {
+        return ss::make_ready_future<commit_tx_reply>(
+          commit_tx_reply{tx_errc::partition_disabled});
+    }
+
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
         vlog(txlog.warn, "can't find a leader for {} pid:{}", ntp, pid);
@@ -400,6 +410,11 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
         return ss::make_ready_future<abort_tx_reply>(
           abort_tx_reply{tx_errc::partition_not_exists});
+    }
+
+    if (_metadata_cache.local().is_disabled(nt, ntp.tp.partition)) {
+        return ss::make_ready_future<abort_tx_reply>(
+          abort_tx_reply{tx_errc::partition_disabled});
     }
 
     auto leader = _leaders.local().get_leader(ntp);
