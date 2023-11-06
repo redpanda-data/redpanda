@@ -9,6 +9,8 @@
  */
 
 #include "security/gssapi_principal_mapper.h"
+#include "security/oidc_error.h"
+#include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -16,6 +18,7 @@
 
 #include <ada.h>
 #include <charconv>
+#include <optional>
 #include <system_error>
 
 namespace security {
@@ -181,6 +184,32 @@ result<parsed_url> parse_url(std::string_view url_view) {
       "{}{}{}", url->get_pathname(), url->get_search(), url->get_hash());
 
     return result;
+}
+
+result<principal_mapping_rule>
+parse_principal_mapping_rule(std::string_view mapping) {
+    if (!mapping.starts_with("$.")) {
+        return errc::invalid_principal_mapping;
+    }
+    auto slash = mapping.find('/');
+    auto path = ss::sstring(mapping.substr(1, slash - 1));
+    std::replace(path.begin(), path.end(), '.', '/');
+
+    auto pointer = json::Pointer{path};
+    if (!pointer.IsValid()) {
+        return errc::invalid_principal_mapping;
+    }
+
+    return principal_mapping_rule{std::move(pointer)};
+}
+
+std::optional<ss::sstring>
+validate_principal_mapping_rule(ss::sstring const& rule) {
+    auto rule_res = parse_principal_mapping_rule(rule);
+    if (rule_res.has_error()) {
+        return rule_res.assume_error().message();
+    }
+    return std::nullopt;
 }
 
 } // namespace oidc

@@ -31,7 +31,9 @@ enum class errc {
     jwt_invalid_iat,
     jwt_invalid_nbf,
     jwt_invalid_sub,
+    jwt_invalid_principal,
     kid_not_found,
+    invalid_principal_mapping,
 };
 
 struct errc_category final : public std::error_category {
@@ -73,8 +75,12 @@ struct errc_category final : public std::error_category {
             return "Invalid jwt.nbf";
         case errc::jwt_invalid_sub:
             return "Invalid jwt.sub";
+        case errc::jwt_invalid_principal:
+            return "Invalid jwt claim, it must result in a non-empty string";
         case errc::kid_not_found:
             return "kid not found";
+        case errc::invalid_principal_mapping:
+            return "invalid principal mapping rule";
         }
     }
 };

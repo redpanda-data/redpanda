@@ -11,6 +11,7 @@
 
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
+#include "json/pointer.h"
 #include "json/writer.h"
 #include "oncore.h"
 #include "outcome.h"
@@ -252,6 +253,15 @@ public:
     // Retrieve the Claim named claim.
     auto claim(std::string_view claim) const {
         return detail::string_view(_payload, claim);
+    }
+
+    // Retrieve the Claim by JSON Pointer.
+    std::optional<std::string_view> claim(json::Pointer const& p) const {
+        auto claim = p.Get(_payload);
+        if (!claim || !claim->IsString()) {
+            return std::nullopt;
+        }
+        return detail::as_string_view(*claim);
     }
 
     // Retrieve the Algorithm Header Parameter
