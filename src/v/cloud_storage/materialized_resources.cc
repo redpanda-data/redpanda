@@ -151,8 +151,19 @@ void materialized_resources::register_segment(materialized_segment_state& s) {
     _materialized.push_back(s);
 }
 
+namespace {
+
+ss::future<ssx::semaphore_units> get_units_abortable(
+  adjustable_semaphore& sem, ssize_t units, storage::opt_abort_source_t as) {
+    return as.has_value() ? sem.get_units(units, as.value())
+                          : sem.get_units(units);
+}
+
+} // namespace
+
 ss::future<segment_reader_units>
-materialized_resources::get_segment_reader_units() {
+materialized_resources::get_segment_reader_units(
+  storage::opt_abort_source_t as) {
     if (_segment_reader_units.available_units() <= 0) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
@@ -161,21 +172,24 @@ materialized_resources::get_segment_reader_units() {
         trim_segment_readers(max_segment_readers() / 2);
     }
 
-    auto semaphore_units = co_await _segment_reader_units.get_units(1);
+    auto semaphore_units = co_await get_units_abortable(
+      _segment_reader_units, 1, as);
     co_return segment_reader_units{std::move(semaphore_units)};
 }
 
 ss::future<ssx::semaphore_units>
-materialized_resources::get_partition_reader_units(size_t n) {
+materialized_resources::get_partition_reader_units(
+  size_t n, storage::opt_abort_source_t as) {
     if (_partition_reader_units.available_units() <= 0) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
         _partition_readers_delayed += 1;
     }
-    return _partition_reader_units.get_units(n);
+    return get_units_abortable(_partition_reader_units, n, as);
 }
 
-ss::future<segment_units> materialized_resources::get_segment_units() {
+ss::future<segment_units>
+materialized_resources::get_segment_units(storage::opt_abort_source_t as) {
     if (_segment_units.available_units() <= 0) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
@@ -183,7 +197,7 @@ ss::future<segment_units> materialized_resources::get_segment_units() {
 
         trim_segments(max_segments() / 2);
     }
-    auto semaphore_units = co_await _segment_units.get_units(1);
+    auto semaphore_units = co_await get_units_abortable(_segment_units, 1, as);
     co_return segment_units{std::move(semaphore_units)};
 }
 

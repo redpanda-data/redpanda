@@ -58,11 +58,13 @@ public:
 
     void register_segment(materialized_segment_state& s);
 
-    ss::future<segment_reader_units> get_segment_reader_units();
+    ss::future<segment_reader_units>
+    get_segment_reader_units(storage::opt_abort_source_t as);
 
-    ss::future<ssx::semaphore_units> get_partition_reader_units(size_t);
+    ss::future<ssx::semaphore_units>
+    get_partition_reader_units(size_t, storage::opt_abort_source_t as);
 
-    ss::future<segment_units> get_segment_units();
+    ss::future<segment_units> get_segment_units(storage::opt_abort_source_t as);
 
     materialized_manifest_cache& get_materialized_manifest_cache();
 
