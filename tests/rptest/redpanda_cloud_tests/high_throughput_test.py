@@ -484,8 +484,8 @@ class HighThroughputTest(PreallocNodesTest):
 
         # create default topics
         # Use lower partitions limit
-        self._create_default_topics(
-            num_partitions=self.tier_config.partitions_min, num_replicas=3)
+        self._create_default_topics(num_partitions=self._partitions_min,
+                                    num_replicas=3)
 
         # Initialize all 3 nodes with proper values
         swarm = []
