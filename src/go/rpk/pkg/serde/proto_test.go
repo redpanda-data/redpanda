@@ -125,6 +125,14 @@ message Person {
 			expRecord: `{"name":"igor","id":123,"isAdmin":true,"email":"test@redpanda.com"}`,
 			expIdx:    []int{0},
 		}, {
+			name:      "simple - complete record, no FQN",
+			schema:    testSimpleSchema,
+			msgType:   "",
+			schemaID:  1,
+			record:    `{"name":"igor","id":123,"isAdmin":true,"email":"test@redpanda.com"}`,
+			expRecord: `{"name":"igor","id":123,"isAdmin":true,"email":"test@redpanda.com"}`,
+			expIdx:    []int{0},
+		}, {
 			name:      "simple - without optional field",
 			schema:    testSimpleSchema,
 			msgType:   "Person",
@@ -154,6 +162,12 @@ message Person {
 			record:    `{"name":"rogger","id":123,"email":"test@redpanda.com","phones":[{"number":"1111","type":0},{"number":"2222","type":1},{"number":"33333","type":2}]}`,
 			expRecord: `{"name":"rogger","id":123,"email":"test@redpanda.com","phones":[{"number":"1111"},{"number":"2222","type":"PHONE_TYPE_MOBILE"},{"number":"33333","type":"PHONE_TYPE_HOME"}]}`,
 			expIdx:    []int{0},
+		}, {
+			name:      "complex - complete record, no FQN should fail",
+			schema:    testComplexSchema,
+			schemaID:  3,
+			record:    `{"name":"rogger","id":123,"email":"test@redpanda.com","phones":[{"number":"1111","type":0},{"number":"2222","type":1},{"number":"33333","type":2}]}`,
+			expEncErr: true,
 		}, {
 			name:      "complex - complete record, using index 1 message",
 			schema:    testComplexSchema,

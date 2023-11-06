@@ -52,6 +52,11 @@ func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID in
 		if err != nil {
 			return nil, fmt.Errorf("unable to compile proto schema: %v", err)
 		}
+		// If the proto FQN is not provided, but we only have one message, we
+		// use that.
+		if protoFQN == "" && compiled.FindFileByPath(inMemFileName).Messages().Len() == 1 {
+			protoFQN = string(compiled.FindFileByPath(inMemFileName).Messages().Get(0).Name())
+		}
 		var encFn serdeFunc
 		// If there is no FQN, most likely we are trying to decode only.
 		if protoFQN != "" {
@@ -73,7 +78,7 @@ func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID in
 // EncodeRecord will encode the given record using the internal encodeFn.
 func (s *Serde) EncodeRecord(record []byte) ([]byte, error) {
 	if s.encodeFn == nil {
-		return nil, errors.New("encoder not found")
+		return nil, errors.New("encoder not found; please provide the fully qualified name of the message you are trying to encode")
 	}
 	return s.encodeFn(record)
 }
