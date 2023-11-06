@@ -908,6 +908,11 @@ iobuf_to_delete_objects_result(iobuf&& buf) {
           s3_log.error,
           "DeleteObjects response parse failed: {}",
           std::current_exception());
+        if (s3_log.is_enabled(ss::log_level::trace)) {
+            std::stringstream outs;
+            boost::property_tree::write_xml(outs, root);
+            vlog(s3_log.trace, "Response XML: {}", outs.str());
+        }
         throw;
     }
     return result;
