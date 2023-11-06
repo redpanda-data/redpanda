@@ -23,6 +23,7 @@
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/future-util.h"
 #include "transform/commit_batcher.h"
 #include "transform/io.h"
 #include "transform/logger.h"
@@ -82,16 +83,18 @@ public:
 
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) final {
-        // It's possible to have the local log was truncated due to delete
-        // records, retention, etc. In this event, simply resume from the start
-        // of the log.
-        // TODO: This sync has a 5 second timeout, we should support passing an
-        // abort_source down as well.
-        auto result = co_await _partition.sync_effective_start();
+        // There currently no way to abort the call to get the sync start, so
+        // instead we wrap the resulting future in our abort source.
+        auto result = co_await ssx::with_timeout_abortable(
+          _partition.sync_effective_start(), model::no_timeout, *as);
+
         if (result.has_error()) {
             throw std::runtime_error(
               kafka::make_error_code(result.error()).message());
         }
+        // It's possible to have the local log was truncated due to delete
+        // records, retention, etc. In this event, simply resume from the start
+        // of the log.
         model::offset start_offset = std::max(
           result.value(), kafka::offset_cast(offset));
         // TODO(rockwood): This is currently an arbitrary value, but we should
