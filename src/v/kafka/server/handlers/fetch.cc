@@ -41,7 +41,9 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/range/irange.hpp>
@@ -52,6 +54,8 @@
 
 namespace kafka {
 static constexpr std::chrono::milliseconds default_fetch_timeout = 5s;
+static constexpr std::chrono::milliseconds safeguard_fetch_timeout = 600s;
+
 /**
  * Make a partition response error.
  */
@@ -65,6 +69,27 @@ make_partition_response_error(model::partition_id p_id, error_code error) {
       .records = batch_reader(),
     };
 }
+
+namespace {
+/**
+ * Computes a deadline from a given time point by adding
+ * `safeguard_fetch_timeout` to it, avoiding overflow if a value equal
+ * or close to model::no_timeout is passed in. The computed deadline is used to
+ * control how long we wait for a read from partition.
+ */
+model::timeout_clock::time_point
+failsafe_deadline_from(const model::timeout_clock::time_point& t) {
+    if (t == model::no_timeout) {
+        return model::no_timeout;
+    }
+
+    if (unlikely(safeguard_fetch_timeout > model::no_timeout - t)) {
+        return model::no_timeout;
+    }
+
+    return t + safeguard_fetch_timeout;
+}
+} // namespace
 
 /**
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
@@ -106,8 +131,20 @@ static ss::future<read_result> read_from_partition(
     std::unique_ptr<iobuf> data;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
     try {
-        auto result = co_await rdr.reader.consume(
-          kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
+        const auto ts_deadline = deadline.value_or(model::no_timeout);
+        const auto failsafe_deadline = failsafe_deadline_from(ts_deadline);
+        auto consume_fut = rdr.reader.consume(
+          kafka_batch_serializer(), ts_deadline);
+        auto result
+          = co_await ss::with_timeout(failsafe_deadline, std::move(consume_fut))
+              .handle_exception_type(
+                [&reader_config](const ss::timed_out_error& err) {
+                    vlog(
+                      klog.error, "Reader config timed out: {}", reader_config);
+                    return ss::make_exception_future<
+                      kafka::kafka_batch_serializer::result>(err);
+                });
+
         data = std::make_unique<iobuf>(std::move(result.data));
         part.probe().add_records_fetched(result.record_count);
         part.probe().add_bytes_fetched(data->size_bytes());
