@@ -1155,6 +1155,8 @@ class CloudCluster():
 
         if self.config.install_pack_ver == 'latest':
             install_pack_ver = self._get_latest_install_pack_ver()
+        else:
+            install_pack_ver = self.config.install_pack_ver
         params = {
             'cloud_provider': self.config.provider,
             'cluster_type': self.config.type,
