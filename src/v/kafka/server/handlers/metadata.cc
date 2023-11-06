@@ -116,6 +116,7 @@ metadata_response::topic make_topic_response_from_topic_metadata(
     tp.is_internal = is_internal(tp_ns);
 
     const bool is_user_topic = model::is_user_topic(tp_ns);
+    const auto* disabled_set = md_cache.get_topic_disabled_set(tp_ns);
 
     for (const auto& p_as : tp_md.get_assignments()) {
         std::vector<model::node_id> replicas{};
@@ -130,6 +131,8 @@ metadata_response::topic make_topic_response_from_topic_metadata(
         p.error_code = error_code::none;
         if (recovery_mode_enabled && is_user_topic) {
             p.error_code = error_code::policy_violation;
+        } else if (disabled_set && disabled_set->is_disabled(p_as.id)) {
+            p.error_code = error_code::replica_not_available;
         }
         p.partition_index = p_as.id;
         p.leader_id = no_leader;

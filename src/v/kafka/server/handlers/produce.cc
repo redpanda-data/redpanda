@@ -498,7 +498,20 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
     partitions_produced.reserve(topic.partitions.size());
     partitions_dispatched.reserve(topic.partitions.size());
 
+    const auto* disabled_set
+      = octx.rctx.metadata_cache().get_topic_disabled_set(
+        model::topic_namespace_view{model::kafka_namespace, topic.name});
+
     for (auto& part : topic.partitions) {
+        auto push_error_response = [&](error_code errc) {
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition{
+                  .partition_index = part.partition_index,
+                  .error_code = errc}));
+        };
+
         const auto& kafka_noproduce_topics
           = config::shard_local_cfg().kafka_noproduce_topics();
         const bool is_noproduce_topic = std::find(
@@ -518,56 +531,38 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         if (
           (is_noproduce_topic || audit_produce_restricted)
           && !is_audit_produce) {
-            partitions_dispatched.push_back(ss::now());
-            partitions_produced.push_back(
-              ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = part.partition_index,
-                  .error_code = error_code::topic_authorization_failed}));
+            push_error_response(error_code::topic_authorization_failed);
             continue;
         }
 
         if (!octx.rctx.metadata_cache().contains(
               model::topic_namespace_view(model::kafka_namespace, topic.name),
               part.partition_index)) {
-            partitions_dispatched.push_back(ss::now());
-            partitions_produced.push_back(
-              ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = part.partition_index,
-                  .error_code = error_code::unknown_topic_or_partition}));
+            push_error_response(error_code::unknown_topic_or_partition);
+            continue;
+        }
+
+        if (unlikely(
+              disabled_set
+              && disabled_set->is_disabled(part.partition_index))) {
+            push_error_response(error_code::replica_not_available);
             continue;
         }
 
         // the record data on the wire was null value
         if (unlikely(!part.records)) {
-            partitions_dispatched.push_back(ss::now());
-            partitions_produced.push_back(
-              ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = part.partition_index,
-                  .error_code = error_code::invalid_record}));
+            push_error_response(error_code::invalid_record);
             continue;
         }
 
         // an error occurred handling legacy messages (magic 0 or 1)
         if (unlikely(part.records->adapter.legacy_error)) {
-            partitions_dispatched.push_back(ss::now());
-            partitions_produced.push_back(
-              ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = part.partition_index,
-                  .error_code = error_code::invalid_record}));
+            push_error_response(error_code::invalid_record);
             continue;
         }
 
         if (unlikely(!part.records->adapter.valid_crc)) {
-            partitions_dispatched.push_back(ss::now());
-            partitions_produced.push_back(
-              ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = part.partition_index,
-                  .error_code = error_code::corrupt_message}));
+            push_error_response(error_code::corrupt_message);
             continue;
         }
 
@@ -581,12 +576,7 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         if (unlikely(
               !part.records->adapter.v2_format
               || !part.records->adapter.batch)) {
-            partitions_dispatched.push_back(ss::now());
-            partitions_produced.push_back(
-              ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = part.partition_index,
-                  .error_code = error_code::invalid_record}));
+            push_error_response(error_code::invalid_record);
             continue;
         }
 

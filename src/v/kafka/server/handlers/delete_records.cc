@@ -230,8 +230,21 @@ delete_records_handler::handle(request_context ctx, ss::smp_service_group) {
                 .partitions = std::move(topic_level_errors)});
               return;
           }
+
+          const auto* disabled_set
+            = ctx.metadata_cache().get_topic_disabled_set(
+              model::topic_namespace_view{model::kafka_namespace, topic.name});
+
           for (auto& partition : topic.partitions) {
               auto ktp = model::ktp(topic.name, partition.partition_index);
+              if (
+                disabled_set
+                && disabled_set->is_disabled(partition.partition_index)) {
+                  fs.push_back(
+                    ss::make_ready_future<result_t>(make_partition_error(
+                      ktp, error_code::replica_not_available)));
+                  continue;
+              }
               auto shard = ctx.shards().shard_for(ktp);
               if (!shard) {
                   fs.push_back(
