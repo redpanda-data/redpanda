@@ -9,12 +9,15 @@
 
 import confluent_kafka as ck
 from functools import partial, reduce
+import time
+import threading
 import json
 import re
 import socket
 import requests
 from typing import Any, Optional
 
+from rptest.utils.rpk_config import read_redpanda_cfg
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import ok_to_fail
 from keycloak import KeycloakOpenID
@@ -28,7 +31,7 @@ from rptest.services.cluster import cluster
 from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
-from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
+from rptest.services.redpanda import AUDIT_LOG_ALLOW_LIST, LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
@@ -385,6 +388,21 @@ class AuditLogTestsBase(RedpandaTest):
         """Modifies the current audited events
         """
         self._modify_cluster_config({'audit_enabled_event_types': events})
+
+    def modify_node_config(self, node, update_fn, skip_readiness_check=True):
+        """Modifies the current node configuration, restarts the node for
+        changes to take effect
+        """
+        node_cfg = read_redpanda_cfg(node)
+        self.redpanda.logger.debug(f"Existing node cfg: {node_cfg}")
+        new_node_cfg = update_fn(node_cfg)
+
+        # Restart the node with the modified cfg, maybe skip readiness check as access
+        # to the health monitor will be blocked since error within auditing is detected
+        self.redpanda.stop_node(node, timeout=10, forced=True)
+        self.redpanda.start_node(node,
+                                 override_cfg_params=new_node_cfg,
+                                 skip_readiness_check=skip_readiness_check)
 
     @staticmethod
     def aggregate_count(records):
@@ -937,6 +955,70 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
             test.generate_function()
             _ = self.find_matching_record(test.filter_function,
                                           test.valid_count, test.desc())
+
+    @cluster(num_nodes=4, log_allow_list=AUDIT_LOG_ALLOW_LIST)
+    def test_no_auth_enabled(self):
+        """The expected behavior of the system when working with no auth
+        enabled is to omit warning logs and prevent any messages from being
+        enqueued, thus blocking all requests for which auditing is enabled for
+        """
+        stop_thread = False
+
+        def generate_async_audit_events():
+            while stop_thread is not True:
+                try:
+                    _ = [
+                        self.admin.get_license(node=node, timeout=1)
+                        for node in self.redpanda.nodes
+                    ]
+                except Exception as _:
+                    pass
+                time.sleep(1)
+
+        gen_event_thread = threading.Thread(target=generate_async_audit_events,
+                                            args=())
+        gen_event_thread.start()
+
+        def modify_auth_method(method, node_cfg):
+            node_kafka_cfg = node_cfg['redpanda']['kafka_api']
+            dnslistener = [
+                e for e in node_kafka_cfg if e['name'] == 'dnslistener'
+            ]
+            assert len(dnslistener) == 1
+            dnslistener = dnslistener[0]
+            assert 'authentication_method' in dnslistener, 'Expected auth enabled on interface'
+            dnslistener['authentication_method'] = method
+            return node_cfg['redpanda']
+
+        # Modify the node config to remove authentication on the listener of 9092
+        node = self.redpanda.nodes[0]
+        self.modify_node_config(node,
+                                partial(modify_auth_method, 'none'),
+                                skip_readiness_check=True)
+
+        # Observe that auditing is issuing warnings about misconfiguration
+        exc = None
+        try:
+            audit_misconfig_warn = '.*Audit message rejected due to misconfigured authorization'
+            wait_until(
+                lambda: self.redpanda.search_log_any(audit_misconfig_warn),
+                timeout_sec=30,
+                backoff_sec=2)
+        except Exception as e:
+            exc = e
+        finally:
+            stop_thread = True
+            gen_event_thread.join()
+
+            # Reset the configuration to what it was for clean shutdown
+            self.modify_node_config(node,
+                                    partial(
+                                        modify_auth_method,
+                                        self.security.endpoint_authn_method),
+                                    skip_readiness_check=False)
+
+        if exc is not None:
+            raise exc
 
 
 class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
