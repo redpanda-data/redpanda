@@ -572,8 +572,8 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
                 regex = re.compile(
                     "http:\/\/(?P<address>.*):(?P<port>\d+)\/v1\/(?P<handler>.*)"
                 )
-                match = regex.match(
-                        record['http_request']['url']['url_string'])
+                string = record['http_request']['url']['url_string']
+                match = regex.match(string)
                 if match is None:
                     raise RuntimeError(f'Record out of spec: {record}')
                 return match.group('handler') in matches
