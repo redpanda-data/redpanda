@@ -69,6 +69,7 @@ struct configuration final : public config_store {
 
     // Data Transforms
     property<bool> data_transforms_enabled;
+    property<std::chrono::milliseconds> data_transforms_commit_interval_ms;
 
     // Wasm
     bounded_property<size_t> wasm_per_core_memory_reservation;

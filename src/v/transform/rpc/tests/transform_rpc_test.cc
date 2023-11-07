@@ -860,8 +860,12 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
             ASSERT_EQ(read_result.value(), std::nullopt);
             auto request_val = model::transform_offsets_value{
               .offset = kafka::offset{j}};
-            auto result
-              = client()->offset_commit(request_key, request_val).get();
+            auto coordinator = client()->find_coordinator(request_key).get();
+            ASSERT_TRUE(coordinator.has_value());
+            auto result = client()
+                            ->batch_offset_commit(
+                              coordinator.value(), {{request_key, request_val}})
+                            .get();
             ASSERT_EQ(result, cluster::errc::success)
               << "request (" << i << "," << j << ")";
             read_result = client()->offset_fetch(request_key).get();

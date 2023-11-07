@@ -74,8 +74,11 @@ public:
       result<std::optional<model::transform_offsets_value>, cluster::errc>>
       offset_fetch(model::transform_offsets_key);
 
-    ss::future<cluster::errc> offset_commit(
-      model::transform_offsets_key, model::transform_offsets_value);
+    ss::future<cluster::errc> batch_offset_commit(
+      model::partition_id coordinator,
+      absl::btree_map<
+        model::transform_offsets_key,
+        model::transform_offsets_value>);
 
     ss::future<model::cluster_transform_report> generate_report();
 
@@ -120,8 +123,11 @@ private:
 
     ss::future<result<model::partition_id, cluster::errc>>
       find_coordinator_once(model::transform_offsets_key);
-    ss::future<cluster::errc> offset_commit_once(
-      model::transform_offsets_key, model::transform_offsets_value);
+    ss::future<cluster::errc> batch_offset_commit_once(
+      model::partition_id coordinator,
+      absl::btree_map<
+        model::transform_offsets_key,
+        model::transform_offsets_value>);
     ss::future<
       result<std::optional<model::transform_offsets_value>, cluster::errc>>
       offset_fetch_once(model::transform_offsets_key);

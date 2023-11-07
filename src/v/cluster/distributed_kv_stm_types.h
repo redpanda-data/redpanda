@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "serde/serde.h"
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <cstdint>
@@ -182,7 +183,7 @@ struct kv_data_value
 
 template<class Key, class Value>
 static simple_batch_builder
-make_kv_data_batch(absl::flat_hash_map<Key, Value> kvs) {
+make_kv_data_batch(absl::btree_map<Key, Value> kvs) {
     simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
     for (auto& [k, v] : kvs) {

@@ -51,7 +51,7 @@ FIXTURE_TEST(test_stm_basic, stm_test_fixture) {
     BOOST_REQUIRE(result2);
     BOOST_REQUIRE_EQUAL(result.value(), result2.value());
 
-    absl::flat_hash_map<test_key, test_value> kvs;
+    absl::btree_map<test_key, test_value> kvs;
     kvs[0] = 99;
     kvs[1] = 100;
 
@@ -81,7 +81,7 @@ FIXTURE_TEST(test_batched_put, stm_test_fixture) {
         BOOST_REQUIRE_EQUAL(result.value(), model::partition_id{0});
     }
 
-    absl::flat_hash_map<test_key, test_value> kvs;
+    absl::btree_map<test_key, test_value> kvs;
     for (int i = 0; i < 30; i++) {
         kvs[i] = test_value{i};
     }
@@ -151,7 +151,7 @@ FIXTURE_TEST(test_stm_snapshots, stm_test_fixture) {
 
     for (int i = 0; i < 99; i++) {
         for (int j = 0; j < 10; j++) {
-            absl::flat_hash_map<test_key, test_value> kvs;
+            absl::btree_map<test_key, test_value> kvs;
             kvs[i] = test_value{j};
             auto result = stm.put(kvs).get0();
             BOOST_REQUIRE(result == cluster::errc::success);

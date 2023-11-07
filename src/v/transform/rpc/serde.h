@@ -296,19 +296,18 @@ struct offset_commit_request
     using rpc_adl_exempt = std::true_type;
 
     offset_commit_request() = default;
-    explicit offset_commit_request(model::partition_id c)
-      : coordinator(c) {}
+    explicit offset_commit_request(
+      model::partition_id c,
+      absl::btree_map<
+        model::transform_offsets_key,
+        model::transform_offsets_value> kvs)
+      : coordinator(c)
+      , kvs(std::move(kvs)) {}
 
-    void
-    add(model::transform_offsets_key key, model::transform_offsets_value val) {
-        kvs.insert({key, val});
-    }
-
-    absl::flat_hash_map<
-      model::transform_offsets_key,
-      model::transform_offsets_value>
-      kvs;
     model::partition_id coordinator;
+    absl::
+      btree_map<model::transform_offsets_key, model::transform_offsets_value>
+        kvs;
 
     friend std::ostream&
     operator<<(std::ostream&, const offset_commit_request&);

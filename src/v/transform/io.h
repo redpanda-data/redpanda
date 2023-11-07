@@ -62,6 +62,18 @@ public:
     offset_tracker& operator=(offset_tracker&&) = delete;
     virtual ~offset_tracker() = default;
 
+    virtual ss::future<> start() = 0;
+    virtual ss::future<> stop() = 0;
+
+    /**
+     * When processors are moved, it's possible to still have pending flushes
+     * outstanding, so wait for those to be flushed.
+     *
+     * For more discussion on this method, see
+     * `commit_batcher::wait_for_previous_flushes`.
+     */
+    virtual ss::future<> wait_for_previous_flushes(ss::abort_source*) = 0;
+
     /**
      * Load the latest offset we've committed.
      */

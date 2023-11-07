@@ -67,6 +67,10 @@ ss::future<> fake_source::push_batch(model::record_batch batch) {
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
 
+ss::future<> fake_offset_tracker::stop() { co_return; }
+
+ss::future<> fake_offset_tracker::start() { co_return; }
+
 ss::future<> fake_offset_tracker::commit_offset(kafka::offset o) {
     _committed = o;
     _cond_var.broadcast();
@@ -83,4 +87,7 @@ ss::future<> fake_offset_tracker::wait_for_committed_offset(kafka::offset o) {
       1s, [this, o] { return _committed && *_committed >= o; });
 }
 
+ss::future<> fake_offset_tracker::wait_for_previous_flushes(ss::abort_source*) {
+    co_return;
+}
 } // namespace transform::testing

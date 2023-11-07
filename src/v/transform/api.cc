@@ -15,6 +15,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "features/feature_table.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
@@ -22,6 +23,7 @@
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
+#include "transform/commit_batcher.h"
 #include "transform/io.h"
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
@@ -31,6 +33,7 @@
 #include "wasm/api.h"
 #include "wasm/cache.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
@@ -38,6 +41,7 @@
 #include <seastar/util/optimized_optional.hh>
 
 #include <memory>
+#include <stdexcept>
 
 namespace transform {
 
@@ -135,14 +139,27 @@ private:
 class offset_tracker_impl : public offset_tracker {
 public:
     offset_tracker_impl(
-      model::transform_id tid, model::partition_id pid, rpc::client* client)
-      : _tid(tid)
-      , _pid(pid)
-      , _client(client) {}
+      model::transform_id tid,
+      model::partition_id pid,
+      rpc::client* client,
+      commit_batcher<>* batcher)
+      : _key({.id = tid, .partition = pid})
+      , _client(client)
+      , _batcher(batcher) {}
+
+    ss::future<> start() override { return ss::now(); }
+
+    ss::future<> stop() override {
+        _batcher->unload(_key);
+        return ss::now();
+    }
+
+    ss::future<> wait_for_previous_flushes(ss::abort_source* as) override {
+        return _batcher->wait_for_previous_flushes(_key, as);
+    }
 
     ss::future<std::optional<kafka::offset>> load_committed_offset() override {
-        auto result = co_await _client->offset_fetch(
-          {.id = _tid, .partition = _pid});
+        auto result = co_await _client->offset_fetch(_key);
         if (result.has_error()) {
             cluster::errc ec = result.error();
             throw std::runtime_error(ss::format(
@@ -157,21 +174,13 @@ public:
     }
 
     ss::future<> commit_offset(kafka::offset offset) override {
-        // TODO(rockwood): We should be batching commits so commiting scales
-        // with the number of cores, not the number of partitions.
-        cluster::errc ec = co_await _client->offset_commit(
-          {.id = _tid, .partition = _pid}, {.offset = offset});
-        if (ec != cluster::errc::success) {
-            throw std::runtime_error(ss::format(
-              "error committing offset: {}",
-              cluster::error_category().message(int(ec))));
-        }
+        return _batcher->commit_offset(_key, {.offset = offset});
     }
 
 private:
-    model::transform_id _tid;
-    model::partition_id _pid;
+    model::transform_offsets_key _key;
     rpc::client* _client;
+    commit_batcher<>* _batcher;
 };
 
 using wasm_engine_factory = ss::noncopyable_function<
@@ -183,10 +192,12 @@ public:
     proc_factory(
       wasm_engine_factory factory,
       cluster::partition_manager* partition_manager,
-      rpc::client* client)
+      rpc::client* client,
+      commit_batcher<>* batcher)
       : _wasm_engine_factory(std::move(factory))
       , _partition_manager(partition_manager)
-      , _client(client) {}
+      , _client(client)
+      , _batcher(batcher) {}
 
     ss::future<std::unique_ptr<processor>> create_processor(
       model::transform_id id,
@@ -214,7 +225,7 @@ public:
         sinks.push_back(std::move(sink));
 
         auto offset_tracker = std::make_unique<offset_tracker_impl>(
-          id, ntp.tp.partition, _client);
+          id, ntp.tp.partition, _client, _batcher);
 
         co_return std::make_unique<processor>(
           id,
@@ -234,6 +245,29 @@ private:
     cluster::partition_manager* _partition_manager;
     rpc::client* _client;
     absl::flat_hash_map<model::offset, std::unique_ptr<wasm::engine>> _cache;
+    commit_batcher<>* _batcher;
+};
+
+class rpc_offset_committer : public offset_committer {
+public:
+    explicit rpc_offset_committer(rpc::client* client)
+      : _client(client) {}
+
+    ss::future<result<model::partition_id, cluster::errc>>
+    find_coordinator(model::transform_offsets_key key) override {
+        return _client->find_coordinator(key);
+    }
+
+    ss::future<cluster::errc> batch_commit(
+      model::partition_id coordinator,
+      absl::btree_map<
+        model::transform_offsets_key,
+        model::transform_offsets_value> batch) override {
+        return _client->batch_offset_commit(coordinator, std::move(batch));
+    }
+
+private:
+    rpc::client* _client;
 };
 
 } // namespace
@@ -278,6 +312,10 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() {
+    _batcher = std::make_unique<commit_batcher<ss::lowres_clock>>(
+      config::shard_local_cfg().data_transforms_commit_interval_ms.bind(),
+      std::make_unique<rpc_offset_committer>(&_rpc_client->local()));
+
     _manager = std::make_unique<manager<ss::lowres_clock>>(
       _self,
       std::make_unique<registry_adapter>(
@@ -287,7 +325,9 @@ ss::future<> service::start() {
             return create_engine(std::move(meta));
         },
         &_partition_manager->local(),
-        &_rpc_client->local()));
+        &_rpc_client->local(),
+        _batcher.get()));
+    co_await _batcher->start();
     co_await _manager->start();
     register_notifications();
 }
@@ -367,6 +407,9 @@ ss::future<> service::stop() {
     // manager.
     if (_manager) {
         co_await _manager->stop();
+    }
+    if (_batcher) {
+        co_await _batcher->stop();
     }
 }
 

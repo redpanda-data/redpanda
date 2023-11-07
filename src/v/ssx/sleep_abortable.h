@@ -24,9 +24,9 @@
 
 namespace ssx {
 /// Same as seastar::abort_source but accepts multiple abort sources
-template<typename... AbortSource>
+template<typename Clock = seastar::lowres_clock, typename... AbortSource>
 seastar::future<>
-sleep_abortable(seastar::lowres_clock::duration dur, AbortSource&... src) {
+sleep_abortable(typename Clock::duration dur, AbortSource&... src) {
     struct as_state : seastar::weakly_referencable<as_state> {
         std::vector<
           seastar::optimized_optional<seastar::abort_source::subscription>>
@@ -48,7 +48,7 @@ sleep_abortable(seastar::lowres_clock::duration dur, AbortSource&... src) {
     state->subscriptions.reserve(sizeof...(AbortSource));
     as_callback cb(*state);
     (cb.state->subscriptions.push_back(src.subscribe(cb)), ...);
-    return seastar::sleep_abortable(dur, cb.state->as)
+    return seastar::sleep_abortable<Clock>(dur, cb.state->as)
       .finally([st = std::move(state)] {});
 }
 } // namespace ssx

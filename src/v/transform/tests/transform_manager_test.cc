@@ -2,6 +2,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/transform.h"
+#include "test_utils/async.h"
 #include "transform/logger.h"
 #include "transform/tests/test_fixture.h"
 #include "transform/transform_manager.h"
@@ -291,28 +292,8 @@ public:
         _manager = std::make_unique<manager<ss::manual_clock>>(
           /*self=*/model::node_id(0), std::move(r), std::move(t));
         _manager->start().get();
-        // This allows us to wait for the seastar queue to be drained.
-        //
-        // This is used because we need to know when manual_clock tasks are
-        // enqueued to ensure that task execution is deterministic. Because in
-        // debug mode seastar randomizes task order, so there is no way to wait
-        // for those tasks to be executed outside of draining the seastar queue.
-        ss::set_idle_cpu_handler([this](ss::work_waiting_on_reactor) {
-            if (_idle_waiter_task) {
-                _idle_waiter_task->set_value();
-                // this tells the reactor loop to go back and check
-                // for more work, which we should have just enqueued because of
-                // completing the promise above.
-                return ss::idle_cpu_handler_result::
-                  interrupted_by_higher_priority_task;
-            }
-            return ss::idle_cpu_handler_result::no_more_work;
-        });
     }
     void TearDown() override {
-        ss::set_idle_cpu_handler([](ss::work_waiting_on_reactor) {
-            return ss::idle_cpu_handler_result::no_more_work;
-        });
         _manager->stop().get();
         _registry = nullptr;
         _tracker = nullptr;
@@ -348,10 +329,9 @@ public:
         _manager->on_transform_error(entry->first, ntp, meta);
     }
     void drain_queue() {
-        // Wait for the reactor to tell us that the queue has been drained.
-        _idle_waiter_task.emplace();
-        _idle_waiter_task->get_future().get();
-        _idle_waiter_task.reset();
+        // Drain the seastar task queue to ensure manual clock tasks have
+        // processed, then drain the manager queue.
+        tests::drain_task_queue().get();
         _manager->drain_queue_for_test().get();
     }
     status_map status() {

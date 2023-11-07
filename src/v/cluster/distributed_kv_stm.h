@@ -219,7 +219,7 @@ public:
         co_return it->second;
     }
 
-    ss::future<errc> put(absl::flat_hash_map<Key, Value> kvs) {
+    ss::future<errc> put(absl::btree_map<Key, Value> kvs) {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
         if (!co_await sync(sync_timeout)) {
