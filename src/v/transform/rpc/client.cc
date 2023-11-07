@@ -199,6 +199,9 @@ client::client(
 
 ss::future<cluster::errc> client::produce(
   model::topic_partition tp, ss::chunked_fifo<model::record_batch> batches) {
+    if (batches.empty()) {
+        co_return cluster::errc::success;
+    }
     produce_request req;
     req.topic_data.emplace_back(std::move(tp), std::move(batches));
     req.timeout = timeout;

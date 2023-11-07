@@ -12,6 +12,8 @@
 #include "transform/tests/test_fixture.h"
 
 #include "model/fundamental.h"
+#include "model/record.h"
+#include "model/transform.h"
 #include "transform/logger.h"
 
 #include <seastar/core/abort_source.hh>
@@ -19,6 +21,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <exception>
 #include <iostream>
 
@@ -64,12 +67,28 @@ ss::future<> fake_source::push_batch(model::record_batch batch) {
     _cond_var.broadcast();
     co_return;
 }
+
 ss::future<> fake_wasm_engine::start() { return ss::now(); }
+
 ss::future<> fake_wasm_engine::stop() { return ss::now(); }
 
 ss::future<> fake_offset_tracker::stop() { co_return; }
 
 ss::future<> fake_offset_tracker::start() { co_return; }
+
+void fake_wasm_engine::set_mode(mode m) { _mode = m; }
+
+ss::future<model::record_batch>
+fake_wasm_engine::transform(model::record_batch batch, wasm::transform_probe*) {
+    switch (_mode) {
+    case mode::noop:
+        co_return batch;
+    case mode::filter: {
+        co_return model::transformed_data::make_batch(
+          batch.header().max_timestamp, {});
+    }
+    }
+}
 
 ss::future<> fake_offset_tracker::commit_offset(kafka::offset o) {
     _committed = o;

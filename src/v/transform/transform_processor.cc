@@ -77,7 +77,9 @@ drain_queue(ss::queue<transformed_batch>* queue, probe* p) {
         p->increment_write_bytes(batch_size);
         auto transformed = queue->pop();
         result.latest_offset = transformed.input_offset;
-        result.batches.push_back(std::move(transformed.batch));
+        if (transformed.batch.record_count() > 0) {
+            result.batches.push_back(std::move(transformed.batch));
+        }
     }
     co_return result;
 }

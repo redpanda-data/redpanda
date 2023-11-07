@@ -13,6 +13,8 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/fundamental.h"
+#include "model/record.h"
+#include "model/record_batch_types.h"
 #include "utils/vint.h"
 
 #include <seastar/core/print.hh>
@@ -157,6 +159,43 @@ std::optional<transformed_data> transformed_data::create_validated(iobuf buf) {
         return std::nullopt;
     }
     return transformed_data(std::move(buf));
+}
+
+model::record_batch transformed_data::make_batch(
+  model::timestamp timestamp, ss::chunked_fifo<transformed_data> records) {
+    model::record_batch::compressed_records serialized_records;
+    int32_t i = 0;
+    for (model::transformed_data& r : records) {
+        serialized_records.append_fragments(std::move(r).to_serialized_record(
+          model::record_attributes(),
+          /*timestamp_delta=*/0,
+          /*offset_delta=*/i++));
+    }
+
+    model::record_batch_header header;
+    header.type = record_batch_type::raft_data;
+    // mark the batch as created with broker time
+    header.attrs.set_timestamp_type(model::timestamp_type::append_time);
+    header.first_timestamp = timestamp;
+    header.max_timestamp = timestamp;
+    // disable idempotent producing, we don't currently use that within
+    // transforms.
+    header.producer_id = -1;
+
+    header.record_count = i;
+    header.size_bytes = int32_t(
+      model::packed_record_batch_header_size + serialized_records.size_bytes());
+
+    auto batch = model::record_batch(
+      header,
+      std::move(serialized_records),
+      model::record_batch::tag_ctor_ng{});
+
+    // Recompute the crc
+    batch.header().crc = model::crc_record_batch(batch);
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
+
+    return batch;
 }
 
 iobuf transformed_data::to_serialized_record(

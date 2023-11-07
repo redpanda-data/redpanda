@@ -28,8 +28,8 @@ namespace {
 class ProcessorTestFixture : public ::testing::Test {
 public:
     void SetUp() override {
-        ss::shared_ptr<wasm::engine> engine
-          = ss::make_shared<testing::fake_wasm_engine>();
+        auto engine = ss::make_shared<testing::fake_wasm_engine>();
+        _engine = engine.get();
         auto src = std::make_unique<testing::fake_source>();
         _src = src.get();
         auto sink = std::make_unique<testing::fake_sink>();
@@ -56,9 +56,21 @@ public:
         // processor is actually ready, otherwise it could be possible that
         // the processor picks up after the initial records are added to the
         // partition.
-        _offset_tracker->wait_for_committed_offset({}).get();
+        wait_for_committed_offset(kafka::offset{});
     }
     void TearDown() override { _p->stop().get(); }
+
+    void wait_for_committed_offset(model::offset o) {
+        wait_for_committed_offset(model::offset_cast(o));
+    }
+    void wait_for_committed_offset(kafka::offset o) {
+        _offset_tracker->wait_for_committed_offset(o).get();
+    }
+
+    using transform_mode = testing::fake_wasm_engine::mode;
+    void set_transform_mode(testing::fake_wasm_engine::mode m) {
+        _engine->set_mode(m);
+    }
 
     model::record_batch make_tiny_batch() {
         return model::test::make_random_batch(model::test::record_batch_spec{
@@ -82,6 +94,7 @@ private:
 
     kafka::offset _offset = start_offset;
     std::unique_ptr<transform::processor> _p;
+    testing::fake_wasm_engine* _engine;
     testing::fake_source* _src;
     testing::fake_offset_tracker* _offset_tracker;
     std::vector<testing::fake_sink*> _sinks;
@@ -141,6 +154,26 @@ TEST_F(ProcessorTestFixture, TracksOffsets) {
         EXPECT_EQ(b, returned);
     }
     EXPECT_EQ(error_count(), 0);
+}
+
+TEST_F(ProcessorTestFixture, HandlesEmptyBatches) {
+    auto batch_one = make_tiny_batch();
+    push_batch(batch_one.copy());
+    wait_for_committed_offset(batch_one.last_offset());
+    EXPECT_EQ(read_batch(), batch_one);
+
+    auto batch_two = make_tiny_batch();
+    set_transform_mode(transform_mode::filter);
+    push_batch(batch_two.copy());
+    // We never will read batch two, it was filtered out
+    // but we should still get a commit for batch two
+    wait_for_committed_offset(batch_two.last_offset());
+
+    auto batch_three = make_tiny_batch();
+    set_transform_mode(transform_mode::noop);
+    push_batch(batch_three.copy());
+    wait_for_committed_offset(batch_three.last_offset());
+    EXPECT_EQ(read_batch(), batch_three);
 }
 
 } // namespace transform
