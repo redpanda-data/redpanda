@@ -94,7 +94,13 @@ operator<<(std::ostream& os, const transform_offsets_value& value) {
 
 std::ostream&
 operator<<(std::ostream& os, const transform_report::processor& p) {
-    fmt::print(os, "{{id: {}, status: {}, node: {}}}", p.id, p.status, p.node);
+    fmt::print(
+      os,
+      "{{id: {}, status: {}, node: {}, lag: {}}}",
+      p.id,
+      p.status,
+      p.node,
+      p.lag);
     return os;
 }
 

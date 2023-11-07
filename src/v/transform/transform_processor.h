@@ -70,6 +70,7 @@ public:
     model::transform_id id() const;
     const model::ntp& ntp() const;
     const model::transform_metadata& meta() const;
+    int64_t current_lag() const;
 
 private:
     ss::future<> run_consumer_loop();

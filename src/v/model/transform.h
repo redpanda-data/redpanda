@@ -135,11 +135,12 @@ struct transform_report
         model::partition_id id;
         state status;
         model::node_id node;
+        int64_t lag;
         friend bool operator==(const processor&, const processor&) = default;
 
         friend std::ostream& operator<<(std::ostream&, const processor&);
 
-        auto serde_fields() { return std::tie(id, status, node); }
+        auto serde_fields() { return std::tie(id, status, node, lag); }
     };
 
     transform_report() = default;
