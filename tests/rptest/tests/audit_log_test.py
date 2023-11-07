@@ -21,7 +21,7 @@ from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -724,6 +724,17 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
                        password=password,
                        sasl_mechanism=mechanism)
         self.default_client = DefaultClient(self.redpanda)
+
+    @cluster(num_nodes=4)
+    def test_audit_topic_protections(self):
+        """Validates audit topic protections
+        """
+        try:
+            self.super_rpk.produce(self.audit_log, "key", "value")
+            assert False, 'Rpk was successfully allowed to produce to the audit log'
+        except RpkException as e:
+            if 'TOPIC_AUTHORIZATION_FAILED' not in e.stderr:
+                raise
 
     @cluster(num_nodes=5)
     def test_management(self):
