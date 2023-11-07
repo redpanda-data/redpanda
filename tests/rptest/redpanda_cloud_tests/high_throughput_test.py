@@ -14,6 +14,7 @@ import re
 import time
 import json
 
+from ducktape.errors import TimeoutError as TimeoutException
 from ducktape.mark import ignore, ok_to_fail, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
@@ -301,10 +302,21 @@ class HighThroughputTest(PreallocNodesTest):
 
         self.rpk = RpkTool(self.redpanda)
 
-        # Calculate timeout for 10000 messages with a 50% gap
+        # Calculate timeout for 10000 messages with a 300% gap
+        # Amount of data to push through is 2.5GB (10000 * 256KB)
+        # 2500MB / 20MB (MB/sec, lowest tier) = 125 sec
+        # reasonable timeout is 125 * 3 = 375 sec
+
+        # By default we expect worst scenario when ingress rate
+        # is affected by external factors, so half is used
+        # dividing that by number of brokers to account for broker
+        # traffic as well
+        _half_ingress_rate = self._advertised_max_ingress / 2
         self.msg_timeout = int(
-            self.msg_count // (self._advertised_max_ingress // self.msg_size) *
-            1.5)
+            self.msg_count /
+            (_half_ingress_rate / self.msg_size / self._num_brokers))
+        # Increase calculated timeout by 2
+        self.msg_timeout *= 2
         # resources
         self.resources = []
 
@@ -741,6 +753,19 @@ class HighThroughputTest(PreallocNodesTest):
                    timeout_sec=600,
                    backoff_sec=20)
 
+    def _wait_for_traffic(self, producer, acked, timeout=1800):
+        try:
+            self.logger.debug(
+                f"Waiting until {acked} messages produced in {timeout}")
+            wait_until(lambda: producer.produce_status.acked > acked,
+                       timeout_sec=timeout,
+                       backoff_sec=5.0)
+        except TimeoutException as e:
+            _throughput = producer.produce_status.acked * self.msg_size // timeout
+            raise RuntimeError(
+                f"Low throughput while preparing for the test: {_throughput}: {e}"
+            )
+
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
         """
@@ -767,21 +792,20 @@ class HighThroughputTest(PreallocNodesTest):
                 msg_count=5_000_000_000_000,
                 rate_limit_bps=self._advertised_max_ingress,
                 custom_node=[self.preallocated_nodes[0]])
-            try:
-                producer.start()
-                wait_until(
-                    lambda: producer.produce_status.acked > self.msg_count,
-                    timeout_sec=self.msg_timeout,
-                    backoff_sec=1.0)
 
-                # Decommission.
-                # Add node (after stage_decommission has freed up a node)
-                # and wait for partitions to move in.
-                self.stage_decommission_and_add()
-            finally:
-                producer.stop()
-                producer.wait(timeout_sec=600)
+            producer.start()
+            self._wait_for_traffic(producer,
+                                   self.msg_count,
+                                   timeout=self.msg_timeout)
+
+            # Decommission.
+            # Add node (after stage_decommission has freed up a node)
+            # and wait for partitions to move in.
+            self.stage_decommission_and_add()
+
         finally:
+            producer.stop()
+            producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
     def stage_decommission_and_add(self):
@@ -904,10 +928,11 @@ class HighThroughputTest(PreallocNodesTest):
                 msg_count=5_000_000_000_000,
                 rate_limit_bps=self._advertised_max_ingress,
                 custom_node=[self.preallocated_nodes[0]])
+
             producer.start()
-            wait_until(lambda: producer.produce_status.acked > self.msg_count,
-                       timeout_sec=self.msg_timeout,
-                       backoff_sec=1.0)
+            self._wait_for_traffic(producer,
+                                   self.msg_count,
+                                   timeout=self.msg_timeout)
 
             self.stage_lots_of_failed_consumers()
             self.stage_hard_restart(producer)
@@ -1017,10 +1042,11 @@ class HighThroughputTest(PreallocNodesTest):
                 msg_count=5 * 1024 * 1024 * 1024 * 1024,
                 rate_limit_bps=self._advertised_max_ingress,
                 custom_node=[self.preallocated_nodes[0]])
+
             producer.start()
-            wait_until(lambda: producer.produce_status.acked > self.msg_count,
-                       timeout_sec=self.msg_timeout,
-                       backoff_sec=1.0)
+            self._wait_for_traffic(producer,
+                                   self.msg_count,
+                                   timeout=self.msg_timeout)
 
             # this stage could have been a part of test_consume however one
             # of the checks requires nicely balanced replicas, and this is
