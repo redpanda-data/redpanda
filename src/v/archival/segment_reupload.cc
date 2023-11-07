@@ -175,7 +175,12 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         if (
           _segments.empty()
           && mode == segment_collector_mode::collect_compacted) {
-            _begin_inclusive = result.segment->offsets().base_offset;
+            // We may have found our first segment, but we can't always use its
+            // base offset -- it's possible the log has been prefix truncated
+            // within a segment (e.g. with delete records).
+            _begin_inclusive = std::max(
+              _log.offsets().start_offset,
+              result.segment->offsets().base_offset);
             align_begin_offset_to_manifest();
         }
         _segments.push_back(result.segment);
