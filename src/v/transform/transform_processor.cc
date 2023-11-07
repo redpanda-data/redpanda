@@ -126,6 +126,7 @@ processor::processor(
 ss::future<> processor::start() {
     try {
         co_await _engine->start();
+        co_await _source->start();
         co_await _offset_tracker->start();
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
@@ -144,8 +145,9 @@ ss::future<> processor::stop() {
     _consumer_transform_pipe.abort(ex);
     _transform_producer_pipe.abort(ex);
     co_await std::exchange(_task, ss::now());
-    co_await _engine->stop();
+    co_await _source->stop();
     co_await _offset_tracker->stop();
+    co_await _engine->stop();
 }
 
 ss::future<> processor::poll_sleep() {

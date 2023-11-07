@@ -72,6 +72,10 @@ public:
     explicit partition_source(kafka::partition_proxy p)
       : _partition(std::move(p)) {}
 
+    ss::future<> start() final { return ss::now(); }
+
+    ss::future<> stop() final { return _gate.close(); }
+
     kafka::offset latest_offset() final {
         auto result = _partition.last_stable_offset();
         if (result.has_error()) {
@@ -83,10 +87,15 @@ public:
 
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) final {
+        auto _ = _gate.hold();
         // There currently no way to abort the call to get the sync start, so
         // instead we wrap the resulting future in our abort source.
         auto result = co_await ssx::with_timeout_abortable(
-          _partition.sync_effective_start(), model::no_timeout, *as);
+          // Ensure we don't delete the partition until this has resolved if we
+          // end up timing out.
+          _partition.sync_effective_start().finally([holder = std::move(_)] {}),
+          model::no_timeout,
+          *as);
 
         if (result.has_error()) {
             throw std::runtime_error(
@@ -115,6 +124,9 @@ public:
     }
 
 private:
+    // This gate is only to guard against the case when the abort has fired and
+    // there is still a live future that holds a reference to _partition.
+    ss::gate _gate;
     kafka::partition_proxy _partition;
 };
 
