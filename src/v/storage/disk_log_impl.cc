@@ -616,7 +616,7 @@ ss::future<> disk_log_impl::sliding_window_compact(
           tmpname);
 
         auto rdr_holder = co_await _readers_cache->evict_segment_readers(seg);
-        auto write_lock = seg->write_lock();
+        auto write_lock = co_await seg->write_lock();
         if (initial_generation_id != seg->get_generation_id()) {
             throw std::runtime_error(fmt::format(
               "Aborting compaction of segment: {}, segment was mutated "
