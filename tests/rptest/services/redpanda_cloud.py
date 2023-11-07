@@ -585,9 +585,9 @@ class CloudCluster():
                 _id = cf.read()
         return _id
 
-    def _wait_for_cluster_id(self, uuid):
+    def _wait_for_cluster_id(self, uuid, timeout=120):
         wait_until(lambda: self._cluster_id_updated(uuid),
-                   timeout_sec=120,
+                   timeout_sec=timeout,
                    backoff_sec=10,
                    err_msg='Failed to get proper id '
                    f'of cloud cluster {self.current.name}')
@@ -667,13 +667,26 @@ class CloudCluster():
             # handle error on CloudV2 side
             if r is None:
                 raise RuntimeError(self.cloudv2.lasterror)
-            # In case of BYOC cluster, do some additional stuff to create it
-            if self.config.type == CLOUD_TYPE_BYOC:
+
+            try:
                 # At this point cluster has UUID instead of normal one
+
                 # For BYOC creation a non-uuid is needed
                 # It gets updated when spec makes it through
                 # the workslow, so just wait
+
+                # For FMC, we just make sure that cluster is created
+                # in API and its status is updated
                 _cluster_id = self._wait_for_cluster_id(r['id'])
+                c = self._get_cluster(_cluster_id)
+                self.current.last_status = c['state']
+            except Exception as e:
+                self.log.error()
+                raise RuntimeError(
+                    "# ERROR: Failed to get initial cluster spec")
+
+            # In case of BYOC cluster, do some additional stuff to create it
+            if self.config.type == CLOUD_TYPE_BYOC:
                 # Handle byoc creation
                 # Login without saving creds
                 self.utils.rpk_cloud_login(self.config.oauth_client_id,
@@ -685,6 +698,12 @@ class CloudCluster():
                 # Kick off cluster creation
                 # Timeout for this is half an hour as this is only agent
                 self.utils.rpk_cloud_apply(_cluster_id)
+            elif self.config.type == CLOUD_TYPE_FMC:
+                # Nothing to do here
+                pass
+            else:
+                raise RuntimeError("Cloud type not supported: "
+                                   f"'{self.config.type}'")
 
             # In case of FMC, just poll the cluster and wait when ready
             # Poll API and wait for the cluster creation
