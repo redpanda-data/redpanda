@@ -125,7 +125,7 @@ class cache_hook_accessor;
  * can query ghost queue membership using:
  *
  *     if (entry.hook.evicted()) {
- *         if (cache.on_ghost_queue(entry)) {
+ *         if (cache.ghost_queue_contains(entry)) {
  *             // can fully remove
  *         }
  *     }
@@ -387,7 +387,7 @@ public:
     /**
      * Returns true if the entry is on the ghost queue.
      */
-    [[nodiscard]] bool on_ghost_queue(const T& entry) const noexcept;
+    [[nodiscard]] bool ghost_queue_contains(const T& entry) const noexcept;
 
     /**
      * Evict one entry from the cache.
@@ -490,7 +490,7 @@ void cache<T, Hook, Evictor, Cost>::insert(T& entry) noexcept {
     }
 
     auto& hook = entry.*Hook;
-    if (on_ghost_queue(entry)) {
+    if (ghost_queue_contains(entry)) {
         // evict from ghost queue
         hook.insertion_time_.reset();
 
@@ -559,7 +559,7 @@ template<
   cache_hook T::*Hook,
   cache_evictor<T> Evictor,
   cache_cost<T> Cost>
-bool cache<T, Hook, Evictor, Cost>::on_ghost_queue(
+bool cache<T, Hook, Evictor, Cost>::ghost_queue_contains(
   const T& entry) const noexcept {
     /*
      * if the insertion time is unspecified then the entry is not on the ghost

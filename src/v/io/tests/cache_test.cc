@@ -108,7 +108,7 @@ TEST_F(CacheTest, DefaultState) {
 TEST_F(CacheTest, DefaultHookState) {
     entry e;
     EXPECT_TRUE(e.hook.evicted());
-    EXPECT_FALSE(cache->on_ghost_queue(e));
+    EXPECT_FALSE(cache->ghost_queue_contains(e));
 
     cleanup(e);
 }
@@ -136,14 +136,14 @@ TEST_F(CacheTest, Insert) {
     cache_insert_main(e0);
     EXPECT_EQ(cache->stat().main_queue_size, 1);
     EXPECT_EQ(cache->stat().small_queue_size, 0);
-    EXPECT_FALSE(cache->on_ghost_queue(e0));
+    EXPECT_FALSE(cache->ghost_queue_contains(e0));
     EXPECT_FALSE(e0.hook.evicted());
 
     entry e1;
     cache_insert_small(e1);
     EXPECT_EQ(cache->stat().small_queue_size, 1);
     EXPECT_EQ(cache->stat().main_queue_size, 1);
-    EXPECT_FALSE(cache->on_ghost_queue(e1));
+    EXPECT_FALSE(cache->ghost_queue_contains(e1));
     EXPECT_FALSE(e1.hook.evicted());
 
     cleanup(e0, e1);
@@ -386,15 +386,15 @@ TEST_F(CacheTest, EvictSmall) {
     EXPECT_EQ(cache->stat().small_queue_size, 4);
     EXPECT_EQ(cache->stat().main_queue_size, 0);
 
-    EXPECT_FALSE(cache->on_ghost_queue(e0));
-    EXPECT_FALSE(cache->on_ghost_queue(e1));
-    EXPECT_FALSE(cache->on_ghost_queue(e2));
-    EXPECT_FALSE(cache->on_ghost_queue(e3));
+    EXPECT_FALSE(cache->ghost_queue_contains(e0));
+    EXPECT_FALSE(cache->ghost_queue_contains(e1));
+    EXPECT_FALSE(cache->ghost_queue_contains(e2));
+    EXPECT_FALSE(cache->ghost_queue_contains(e3));
 
     // e0 is first evicted
     cache->evict();
     EXPECT_TRUE(e0.evicted);
-    EXPECT_TRUE(cache->on_ghost_queue(e0));
+    EXPECT_TRUE(cache->ghost_queue_contains(e0));
     EXPECT_FALSE(e1.evicted);
     EXPECT_FALSE(e2.evicted);
     EXPECT_FALSE(e3.evicted);
@@ -404,9 +404,9 @@ TEST_F(CacheTest, EvictSmall) {
     // then e1
     cache->evict();
     EXPECT_TRUE(e0.evicted);
-    EXPECT_TRUE(cache->on_ghost_queue(e0));
+    EXPECT_TRUE(cache->ghost_queue_contains(e0));
     EXPECT_TRUE(e1.evicted);
-    EXPECT_TRUE(cache->on_ghost_queue(e1));
+    EXPECT_TRUE(cache->ghost_queue_contains(e1));
     EXPECT_FALSE(e2.evicted);
     EXPECT_FALSE(e3.evicted);
     EXPECT_EQ(cache->stat().small_queue_size, 2);
@@ -463,7 +463,7 @@ TEST_F(CacheTest, EvictSmallPinned) {
     EXPECT_FALSE(e0.evicted);
     EXPECT_TRUE(e1.evicted);
     EXPECT_TRUE(e1.hook.evicted());
-    EXPECT_TRUE(cache->on_ghost_queue(e1));
+    EXPECT_TRUE(cache->ghost_queue_contains(e1));
     EXPECT_FALSE(e2.evicted);
     EXPECT_FALSE(e3.evicted);
     EXPECT_FALSE(e4.evicted);
@@ -475,10 +475,10 @@ TEST_F(CacheTest, EvictSmallPinned) {
     EXPECT_EQ(cache->stat().main_queue_size, 0);
     EXPECT_TRUE(e0.evicted);
     EXPECT_TRUE(e0.hook.evicted());
-    EXPECT_TRUE(cache->on_ghost_queue(e0));
+    EXPECT_TRUE(cache->ghost_queue_contains(e0));
     EXPECT_TRUE(e1.evicted);
     EXPECT_TRUE(e1.hook.evicted());
-    EXPECT_TRUE(cache->on_ghost_queue(e1));
+    EXPECT_TRUE(cache->ghost_queue_contains(e1));
     EXPECT_FALSE(e2.evicted);
     EXPECT_FALSE(e3.evicted);
     EXPECT_FALSE(e4.evicted);
@@ -488,13 +488,13 @@ TEST_F(CacheTest, EvictSmallPinned) {
     EXPECT_EQ(cache->stat().main_queue_size, 0);
     EXPECT_TRUE(e0.evicted);
     EXPECT_TRUE(e0.hook.evicted());
-    EXPECT_TRUE(cache->on_ghost_queue(e0));
+    EXPECT_TRUE(cache->ghost_queue_contains(e0));
     EXPECT_TRUE(e1.evicted);
     EXPECT_TRUE(e1.hook.evicted());
-    EXPECT_TRUE(cache->on_ghost_queue(e1));
+    EXPECT_TRUE(cache->ghost_queue_contains(e1));
     EXPECT_TRUE(e2.evicted);
     EXPECT_TRUE(e2.hook.evicted());
-    EXPECT_TRUE(cache->on_ghost_queue(e2));
+    EXPECT_TRUE(cache->ghost_queue_contains(e2));
     EXPECT_FALSE(e3.evicted);
     EXPECT_FALSE(e4.evicted);
 
