@@ -108,6 +108,11 @@ FetchContent_Declare(
   SYSTEM
   SOURCE_SUBDIR crates/c-api)
 
+set(ABSL_PROPAGATE_CXX_STD ON)
+fetch_dep(abseil
+  REPO https://github.com/abseil/abseil-cpp
+  TAG 20220623.0)
+
 FetchContent_MakeAvailable(
     fmt
     rapidjson
@@ -120,7 +125,8 @@ FetchContent_MakeAvailable(
     tinygo
     wasmtime
     hdrhistogram
-    ada)
+    ada
+    abseil)
 
 add_library(Crc32c::crc32c ALIAS crc32c)
 add_library(aklomp::base64 ALIAS base64)
