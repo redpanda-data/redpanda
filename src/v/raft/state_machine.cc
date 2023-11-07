@@ -163,7 +163,7 @@ ss::future<> state_machine::apply() {
       .handle_exception_type([](const ss::gate_closed_exception&) {})
       .handle_exception([this](const std::exception_ptr& e) {
           vlog(
-            _log.info,
+            _log.error,
             "State machine for ntp={} caught exception {}",
             _raft->ntp(),
             e);
