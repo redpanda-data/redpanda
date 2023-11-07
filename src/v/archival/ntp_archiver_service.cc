@@ -534,6 +534,12 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
                 break;
             }
         }
+        if (mdiff.empty()) {
+            vlog(
+              _rtclog.debug,
+              "No difference between cloud manifest and in-memory manifest");
+            co_return cloud_storage::download_result::success;
+        }
 
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
