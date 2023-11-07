@@ -13,7 +13,7 @@ import requests
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
-from rptest.util import wait_until_result
+from rptest.util import wait_until, wait_until_result
 
 SERVER_DIR = '/opt/ocsf-server'
 SCHEMA_DIR = '/opt/ocsf-schema'
@@ -141,6 +141,21 @@ class OcsfServer(Service):
         cmd = self._start_cmd()
         self.logger.debug(f'Starting OCSF Server with cmd "{cmd}"')
         node.account.ssh(cmd, allow_fail=False)
+
+        def _wait_for_version():
+            try:
+                _ = self.get_api_version()
+                return True
+            except Exception:
+                # Ignore exceptions as server may be coming up and
+                # connections may time out
+                pass
+            return False
+
+        wait_until(_wait_for_version,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg='Failed to get version from server during startup')
 
     def stop_node(self, node):
         cmd = self._stop_cmd()
