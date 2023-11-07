@@ -120,7 +120,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			keySchemaID, isKeyTopicName, err := parseSchemaIDFlag(keySchemaIDFLag)
 			out.MaybeDie(err, "unable to parse '--schema-key-id' flag: %v", err)
-			schemaID, isValTopicName, err := parseSchemaIDFlag(keySchemaIDFLag)
+			schemaID, isValTopicName, err := parseSchemaIDFlag(schemaIDFlag)
 			out.MaybeDie(err, "unable to parse '--schema-id' flag: %v", err)
 
 			isSchemaRegistry := isKeyTopicName || isValTopicName || keySchemaID >= 0 || schemaID >= 0
@@ -256,8 +256,8 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().BoolVar(&allowAutoTopicCreation, "allow-auto-topic-creation", false, "Auto-create non-existent topics; requires auto_create_topics_enabled on the broker")
 	cmd.Flags().StringVar(&schemaIDFlag, "schema-id", "", "Schema ID to encode the record value with, use 'topic' for TopicName strategy")
 	cmd.Flags().StringVar(&keySchemaIDFLag, "schema-key-id", "", "Schema ID to encode the record key with, use 'topic' for TopicName strategy")
-	cmd.Flags().StringVar(&protoFQN, "proto-msg-type", "", "Name of the protobuf message type to be used to encode the record value using schema registry")
-	cmd.Flags().StringVar(&protoKeyFQN, "proto-key-msg-type", "", "Name of the protobuf message type to be used to encode the record key using schema registry")
+	cmd.Flags().StringVar(&protoFQN, "schema-type", "", "Name of the protobuf message type to be used to encode the record value using schema registry")
+	cmd.Flags().StringVar(&protoKeyFQN, "schema-key-type", "", "Name of the protobuf message type to be used to encode the record key using schema registry")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
@@ -431,9 +431,12 @@ Produce to 'foo', encode using the latest schema in the subject 'foo-value':
     rpk topic produce foo --schema-id=topic
 
 For protobuf schemas, you can specify the fully qualified name of the message
-you want the record to be encoded with. Use the 'proto-msg-type' flag or
-'proto-key-msg-type'. If the schema contains only one message, specifying the
-message name is unnecessary.
+you want the record to be encoded with. Use the 'schema-type' flag or
+'schema-key-type'. If the schema contains only one message, specifying the
+message name is unnecessary. For example:
+
+Produce to 'foo', using schema ID 1, message FQN Person.Name
+    rpk topic produce foo --schema-id 1 --schema-type Person.Name
 
 EXAMPLES
 
