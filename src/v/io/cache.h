@@ -33,6 +33,15 @@ class cache_hook_accessor;
  * container for the small and main queues, and the user implements the ghost
  * queue and any required indexing.
  *
+ * The motivation for the ghost queue existing as a separate data structure
+ * provided by the application is that the ghost queue implementation can be a
+ * source for optimization depending on the usage context. For example, the page
+ * cache uses a btree_map because we want ordering for entries, but another
+ * application could use a hash table. Both of those are associative container,
+ * so in principle we could make the container type a template. However, the
+ * ghost fifo queue could also be implemented as a literal fifo queue, which may
+ * be how the open-file-handle cache ends up looking.
+ *
  * Usage
  * =====
  *
