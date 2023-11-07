@@ -816,6 +816,7 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
               "Trying to move partition {} to {} with reconfiguration policy "
               "of {} but fast partition movement feature is not yet active",
               ntp,
+              new_replica_set,
               policy);
         }
         move_partition_replicas_cmd cmd(
