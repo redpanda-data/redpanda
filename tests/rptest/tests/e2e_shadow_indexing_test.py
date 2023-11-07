@@ -233,6 +233,14 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_reset_spillover(self, cloud_storage_type):
+        """
+        Test the unsafe_reset_metadata endpoint for situations when
+        then partition manifest includes spillover entries. The test
+        waits for the cloud log to stabilise and then removes the first
+        entry from the spillover list from the downloaded manifest.
+        That's followed by a reupload and a check that the start offset
+        for the partition has been updated accordingly.
+        """
         msg_size = 2056
         self.redpanda.set_cluster_config({
             "cloud_storage_housekeeping_interval_ms":
@@ -268,7 +276,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                 self.manifest = None
                 self.spillover_manifests = None
 
-            def __call__(self) -> bool:
+            def cloud_log_stable(self) -> bool:
                 s3_snapshot = BucketView(self.test_instance.redpanda,
                                          topics=self.test_instance.topics)
                 self.manifest = s3_snapshot.manifest_for_ntp(
@@ -294,7 +302,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         manifests = Manifests(self)
         wait_until(
-            lambda: manifests(),
+            lambda: manifests.cloud_log_stable(),
             backoff_sec=1,
             timeout_sec=120,
             err_msg='Could not find suitable manifest and spillover combination'
@@ -303,7 +311,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         assert manifests.has_data(
         ), 'Manifests were not loaded from cloud storage'
         manifest = manifests.manifest
-        spillover_manifests = manifests.spillover_manifests
+        spill_metas = manifest["spillover"]
         # Enable aggressive local retention to remove local copy of the data
         self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
                                     self.segment_size * 5)
@@ -318,52 +326,27 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                                     'false')
         time.sleep(1)
 
-        # collect+sort all spillover manifests
-        all_spillover_manifests = sorted(spillover_manifests.values(),
-                                         key=lambda sm: sm['start_offset'])
+        # sort the list of spillover manifest metadata
+        spill_metas = sorted(spill_metas, key=lambda sm: sm['base_offset'])
 
-        first_left = None
-        manifest['spillover'] = []
-
-        # drop all the segments from first manifest
         self.logger.info(
-            f"Dropping first {all_spillover_manifests[0]} spillover manifest")
+            f"Removing {spill_metas[0]} from the spillover manifest list")
 
-        for s_manifest in all_spillover_manifests[1:]:
-            # sorted tuples (name, meta)
-            segments = sorted(s_manifest['segments'].items(),
-                              key=lambda e: e[1]['base_offset'])
-            if first_left is None:
-                first_left = segments[0][1]
+        manifest['spillover'] = spill_metas[1:]
 
-            total_size = sum([s['size_bytes'] for _, s in segments])
-            first_segment_meta = segments[0][1]
-            last_segment_meta = segments[-1][1]
-            manifest['spillover'].append({
-                'ntp_revision':
-                first_segment_meta['ntp_revision'],
-                'base_offset':
-                first_segment_meta['base_offset'],
-                'base_timestamp':
-                first_segment_meta['base_timestamp'],
-                'delta_offset':
-                first_segment_meta['delta_offset'],
-                'committed_offset':
-                last_segment_meta['committed_offset'],
-                'delta_offset_end':
-                last_segment_meta['delta_offset_end'],
-                'max_timestamp':
-                last_segment_meta['max_timestamp'],
-                'size_bytes':
-                total_size
-            })
+        # Adjust archive fields: the start archive start offsets move forward to
+        # the new first spillover manifset and the archive size decreases by
+        # the size of the removed spillover manifest.
+        manifest['archive_start_offset'] = manifest['spillover'][0][
+            'base_offset']
+        manifest['archive_clean_offset'] = manifest['spillover'][0][
+            'base_offset']
+        manifest['archive_start_offset_delta'] = manifest['spillover'][0][
+            'delta_offset']
+        manifest['archive_size_bytes'] -= spill_metas[0]['size_bytes']
 
-        # adjust archive fields
-        manifest['archive_start_offset'] = first_left['base_offset']
-        manifest['archive_clean_offset'] = first_left['base_offset']
-        manifest['archive_start_offset_delta'] = first_left['delta_offset']
-        for segment in all_spillover_manifests[0]['segments'].values():
-            manifest['archive_size_bytes'] -= segment['size_bytes']
+        expected_new_kafka_start_offset = BucketView.kafka_start_offset(
+            manifest)
 
         json_man = json.dumps(manifest)
         self.logger.info(f"Re-setting manifest to:{json_man}")
@@ -393,10 +376,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                    backoff_sec=5)
         rpk = RpkTool(self.redpanda)
         partitions = list(rpk.describe_topic(self.topic))
-        assert partitions[0].start_offset == (
-            first_left['base_offset'] - first_left['delta_offset']
-        ), f"Partition start offset must be equal to the reset start offset. \
-            expected: {first_left['base_offset']}, delta: {first_left['delta_offset']} current: {partitions[0].start_offset}"
+        assert partitions[0].start_offset == expected_new_kafka_start_offset \
+        , f"Partition start offset must be equal to the reset start offset. \
+            expected: {expected_new_kafka_start_offset} current: {partitions[0].start_offset}"
 
         # Read the whole partition once, consumer must not be able to consume data from removed spillover manifests
         consumer = KgoVerifierConsumerGroupConsumer(self.test_context,
