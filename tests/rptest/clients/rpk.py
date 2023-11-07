@@ -128,6 +128,7 @@ class RpkWasmListProcessorResponse(typing.NamedTuple):
     partition: int
     # running | inactive | errored | unknown
     status: str
+    lag: int
 
 
 class RpkWasmListResponse(typing.NamedTuple):
@@ -1584,6 +1585,7 @@ class RpkTool:
                 node_id=loaded["node_id"],
                 partition=loaded["partition"],
                 status=loaded["status"],
+                lag=loaded["lag"],
             )
 
         def transform_from_json(loaded):
