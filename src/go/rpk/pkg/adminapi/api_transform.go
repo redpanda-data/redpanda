@@ -44,6 +44,7 @@ type PartitionTransformStatus struct {
 	Partition int `json:"partition"`
 	// Status is an enum of: ["running", "inactive", "errored", "unknown"].
 	Status string `json:"status"`
+	Lag    int    `json:"lag"`
 }
 
 // EnvironmentVariable is a configuration key/value that can be injected into to a data transform.
