@@ -24,10 +24,13 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_map.h>
 #include <boost/outcome/success_failure.hpp>
+
+#include <chrono>
 
 namespace security::oidc {
 
@@ -138,7 +141,8 @@ struct service::impl {
       config::binding<ss::sstring> discovery_url,
       config::binding<ss::sstring> token_audience,
       config::binding<std::chrono::seconds> clock_skew_tolerance,
-      config::binding<ss::sstring> mapping)
+      config::binding<ss::sstring> mapping,
+      config::binding<std::chrono::seconds> jwks_refresh_interval)
       : _verifier{}
       , _sasl_mechanisms{std::move(sasl_mechanisms)}
       , _http_authentication{std::move(http_authentication)}
@@ -146,7 +150,11 @@ struct service::impl {
       , _token_audience{std::move(token_audience)}
       , _clock_skew_tolerance{std::move(clock_skew_tolerance)}
       , _mapping{std::move(mapping)}
-      , _rule{} {
+      , _rule{}
+      , _jwks_refresh_interval{std::move(jwks_refresh_interval)}
+      , _jwks_refresh{[this]() {
+          ssx::spawn_with_gate(_gate, [this] { return update(); });
+      }} {
         _sasl_mechanisms.watch([this]() {
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
@@ -158,13 +166,25 @@ struct service::impl {
         });
         _mapping.watch([this]() { update_rule(); });
         update_rule();
+        _jwks_refresh_interval.watch([this]() {
+            if (_gate.is_closed()) {
+                return;
+            }
+            auto now = ss::lowres_clock::now();
+            if (now + _jwks_refresh_interval() < _jwks_refresh.get_timeout()) {
+                _jwks_refresh.rearm(now + _jwks_refresh_interval());
+            }
+        });
     }
 
     ss::future<> start() {
         auto holder = _gate.hold();
         co_await update();
     }
-    ss::future<> stop() { return _gate.close(); }
+    ss::future<> stop() {
+        _jwks_refresh.cancel();
+        return _gate.close();
+    }
 
     probe& get_probe_for(parsed_url const& url) {
         auto& p = _probes[url.host];
@@ -257,6 +277,14 @@ struct service::impl {
     }
 
     ss::future<> update_jwks() {
+        constexpr auto default_retry = 5s;
+
+        std::chrono::seconds arm_duration = default_retry;
+        auto arm_timer = ss::defer([this, &arm_duration]() {
+            _jwks_refresh.cancel();
+            _jwks_refresh.arm(arm_duration);
+        });
+
         if (!_parsed_jwks_url.has_value()) {
             co_await return_exception(
               errc::metadata_invalid, "jwks_uri is not set");
@@ -289,6 +317,8 @@ struct service::impl {
             co_await return_exception(
               res.assume_error(), "Error updating keys");
         }
+
+        arm_duration = _jwks_refresh_interval();
     }
 
     void update_rule() {
@@ -364,9 +394,11 @@ struct service::impl {
     config::binding<std::chrono::seconds> _clock_skew_tolerance;
     config::binding<ss::sstring> _mapping;
     principal_mapping_rule _rule;
+    config::binding<std::chrono::seconds> _jwks_refresh_interval;
     std::optional<parsed_url> _parsed_discovery_url;
     std::optional<parsed_url> _parsed_jwks_url;
     std::optional<ss::sstring> _issuer;
+    ss::timer<ss::lowres_clock> _jwks_refresh;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
     absl::flat_hash_map<ss::sstring, std::unique_ptr<probe>> _probes;
 };
@@ -377,14 +409,16 @@ service::service(
   config::binding<ss::sstring> discovery_url,
   config::binding<ss::sstring> token_audience,
   config::binding<std::chrono::seconds> clock_skew_tolerance,
-  config::binding<ss::sstring> mapping)
+  config::binding<ss::sstring> mapping,
+  config::binding<std::chrono::seconds> keys_refresh_interval)
   : _impl{std::make_unique<impl>(
     std::move(sasl_mechanisms),
     std::move(http_authentication),
     std::move(discovery_url),
     std::move(token_audience),
     std::move(clock_skew_tolerance),
-    std::move(mapping))} {}
+    std::move(mapping),
+    std::move(keys_refresh_interval))} {}
 
 service::~service() noexcept = default;
 

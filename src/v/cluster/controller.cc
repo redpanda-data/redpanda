@@ -147,6 +147,10 @@ ss::future<> controller::wire_up() {
             }),
             ss::sharded_parameter([] {
                 return config::shard_local_cfg().oidc_principal_mapping.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .oidc_keys_refresh_interval.bind();
             }));
       })
       .then([this] { return _tp_state.start(); })
