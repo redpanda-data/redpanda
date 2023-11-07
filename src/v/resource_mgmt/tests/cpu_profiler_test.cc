@@ -14,7 +14,9 @@
 #include "resource_mgmt/cpu_profiler.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/internal/cpu_profiler.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/coroutine/all.hh>
@@ -137,4 +139,41 @@ SEASTAR_TEST_CASE(test_cpu_profiler_enable_override_abort) {
     auto end = ss::steady_clock_type::now();
 
     BOOST_REQUIRE(end - start < 1min);
+}
+
+SEASTAR_TEST_CASE(test_cpu_profiler_enable_override_filter_old_samples) {
+    // Ensures that cpu_profiler::override_and_get_results doesn't return
+    // samples collected before the function is called.
+
+    std::chrono::milliseconds sample_rate = 1ms;
+    auto one_poll_dur = ss::max_number_of_traces * sample_rate;
+
+    ss::sharded<resources::cpu_profiler> cp;
+    co_await cp.start(
+      config::mock_binding(false),
+      config::mock_binding<std::chrono::milliseconds>(sample_rate));
+    co_await cp.invoke_on_all(&resources::cpu_profiler::start);
+
+    auto wait_ms = 2 * one_poll_dur;
+    auto [results] = co_await ss::coroutine::all(
+      [&]() {
+          return cp.local().collect_results_for_period(wait_ms, std::nullopt);
+      },
+      [&]() { return busy_loop(wait_ms); });
+
+    BOOST_TEST(results[ss::this_shard_id()].samples.size() >= 1);
+
+    co_await busy_loop(2 * one_poll_dur);
+
+    wait_ms = 1ms;
+    auto [override_results] = co_await ss::coroutine::all(
+      [&]() {
+          return cp.local().collect_results_for_period(wait_ms, std::nullopt);
+      },
+      [&]() { return busy_loop(wait_ms); });
+
+    // Since we waited less then one poll duration no samples should of been
+    // returned. If samples were returned then they must've come from the
+    // previous override.
+    BOOST_TEST(override_results[ss::this_shard_id()].samples.size() == 0);
 }

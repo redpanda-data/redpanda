@@ -70,12 +70,18 @@ public:
 
     // Collects `shard_results()` for each shard in a node and returns
     // them as a vector.
-    ss::future<std::vector<shard_samples>>
-    results(std::optional<ss::shard_id> shard_id);
+    ss::future<std::vector<shard_samples>> results(
+      std::optional<ss::shard_id> shard_id,
+      std::optional<ss::lowres_clock::time_point> filter_before = std::nullopt);
 
     // Returns the samples and dropped samples from the shard this function
     // is called on.
-    shard_samples shard_results() const;
+    //
+    // `filter_before` will filter out any samples taken before a specified
+    // time_point before from the returned samples.
+    shard_samples shard_results(
+      std::optional<ss::lowres_clock::time_point> filter_before
+      = std::nullopt) const;
 
     // Enables the profiler for `timeout` milliseconds, then returns samples
     // collected during that time period.
@@ -99,6 +105,7 @@ private:
     struct profiler_result {
         size_t dropped_samples;
         std::vector<seastar::cpu_profiler_trace> samples;
+        ss::lowres_clock::time_point polled_time;
     };
 
     // Buffers to copy sampled traces from seastar into so
