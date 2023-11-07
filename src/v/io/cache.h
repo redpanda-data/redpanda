@@ -144,6 +144,20 @@ class cache_hook_accessor;
  * state of the hook should be preserved. The default copy-constructor will
  * handle this automatically.
  *
+ * Exceeding limits
+ * ================
+ *
+ * During eviction the algorithm may find that no item is evictable. An item
+ * being non-evictable is an application-specific choice. For example, a page
+ * cache may mark dirty pages as non-evictable. The eviction algorithm has made
+ * a policy decision that if this condition occurs that insertions are allowed
+ * to be proceed. There are three arguments for doing this. First, we expect
+ * users to make memory or resource reservations before insertion. Second, we
+ * believe this would be an exceedingly rare condition, especially for our
+ * primary use case as a large page cache. And finally, it is easier to build a
+ * robust / exception-safe insertion method and rely on the caller making the
+ * necessary resource reservations.
+ *
  * Differences from s3-fifo
  * ========================
  *
