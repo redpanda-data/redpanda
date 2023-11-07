@@ -475,7 +475,9 @@ cache<T, Hook, Evictor, Cost>::cache(
   , max_small_queue_size_(config.small_size)
   , max_main_queue_size_(max_cache_size_ - max_small_queue_size_)
   , evict_(evict)
-  , cost_(cost) {}
+  , cost_(cost) {
+    assert(max_cache_size_ > max_small_queue_size_);
+}
 
 template<
   typename T,
