@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "config/property.h"
 #include "rpc/backoff_policy.h"
+#include "ssx/semaphore.h"
 #include "ssx/sleep_abortable.h"
 #include "transform/logger.h"
 
@@ -171,9 +172,11 @@ template<typename ClockType>
 ss::future<> commit_batcher<ClockType>::flush() {
     absl::btree_map<model::partition_id, kv_map> batched;
     _batched.swap(batched);
-    co_await ss::parallel_for_each(
+    constexpr static size_t max_concurrent_flushes = 10;
+    co_await ss::max_concurrent_for_each(
       std::make_move_iterator(batched.begin()),
       std::make_move_iterator(batched.end()),
+      max_concurrent_flushes,
       [this](auto entry) {
           return do_flush(entry.first, std::move(entry.second));
       });
