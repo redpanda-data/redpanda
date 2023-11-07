@@ -127,6 +127,7 @@ class LiveClusterParams:
     connection_type: str = 'public'
     namespace_uuid: str = None
     name: str = None
+    last_status: str = ""
     consoleUrl: str = ""
     network_id: str = None
     network_cidr: str = None
@@ -354,11 +355,17 @@ class CloudCluster():
                                           params=params)
         for c in clusters:
             if c['name'] == self.current.name:
+                self._logger.debug(f"Cluster status: {c['state']}")
+                self.current.last_status = c['state']
                 if c['state'] == 'ready':
                     return True
                 elif c['state'] == 'unknown':
                     raise RuntimeError("Creation failed (state 'unknown') "
                                        f"for '{self.config.provider}'")
+                elif c['state'] == 'deleting':
+                    raise RuntimeError("Creation failed (state 'deleting') "
+                                       f"for '{self.config.provider}'")
+
         return False
 
     def _cluster_status(self, status):
@@ -690,7 +697,8 @@ class CloudCluster():
                        timeout_sec=self.CHECK_TIMEOUT_SEC,
                        backoff_sec=self.CHECK_BACKOFF_SEC,
                        err_msg='Unable to deterimine readiness '
-                       f'of cloud cluster {self.current.name}')
+                       f'of cloud cluster {self.current.name}; '
+                       f'last state {self.current.last_status}')
 
             self.config.id, self.current.network_id = \
                 self._get_cluster_id_and_network_id()
@@ -1155,6 +1163,8 @@ class CloudCluster():
 
         if self.config.install_pack_ver == 'latest':
             install_pack_ver = self._get_latest_install_pack_ver()
+        else:
+            install_pack_ver = self.config.install_pack_ver
         params = {
             'cloud_provider': self.config.provider,
             'cluster_type': self.config.type,

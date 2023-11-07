@@ -141,17 +141,19 @@ class CloudCleanup():
         _message = f"-> cluster '{_cluster['name']}', " \
                    f"{_cluster['createdAt']}, {_type} "
         if _type in ['FMC']:
-            if _ensure_date(_createdDate):
-                _message += f"| skipped '{_cluster['name']}', " \
-                            "36h delay not passed"
-                self.log.info(_message)
-                return False
+            _message += f"| status: '{_cluster['state']}' "
+            if _state in ['ready']:
+                if not _ensure_date(_createdDate):
+                    _log_skip(_message)
+                    return False
+                else:
+                    # Just request deletion right away
+                    out = self.cloudv2.delete_resource(handle)
+                    _log_deleted(_message)
+                    return out
             else:
-                # Just request deletion right away
-                out = self.cloudv2.delete_resource(handle)
-                _message += "| deleted"
+                _message += "| skipping non-ready FMC clouds"
                 self.log.info(_message)
-                return out
         elif _type in ['BYOC']:
             # Check if provider is the same
             # This is relevant only for BYOC as
@@ -217,7 +219,7 @@ class CloudCleanup():
                     return False
                 # Just delete the cluster resource
                 out = self.cloudv2.delete_resource(handle)
-                _log_deleted()
+                _log_deleted(_message)
                 self.log.debug(f"Returned:\n{out}")
                 return True
             # All other states need to wait for 36h
