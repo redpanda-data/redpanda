@@ -61,8 +61,8 @@ public:
     using cache_type = io::cache<entry, &entry::hook, evict, entry_cost>;
 
     void SetUp() override {
-        cache = std::make_unique<cache_type>(
-          cache_type::config{.capacity = cache_size, .small_size = small_size});
+        cache = std::make_unique<cache_type>(cache_type::config{
+          .cache_size = cache_size, .small_size = small_size});
     }
 
     void cache_insert_main(entry& e) const {
@@ -702,7 +702,7 @@ TEST(CacheTestCustom, CustomCost) {
       = io::cache<entry, &entry::hook, io::default_cache_evictor, entry_cost>;
 
     cache_type cache(
-      cache_type::config{.capacity = cache_size, .small_size = small_size});
+      cache_type::config{.cache_size = cache_size, .small_size = small_size});
 
     entry e1{.data = "."};
     entry e2{.data = ".."};

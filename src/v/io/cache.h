@@ -350,7 +350,7 @@ public:
      */
     struct config {
         /// Total capacity of the cache.
-        size_t capacity;
+        size_t cache_size;
         /// Total capacity of the small queue.
         size_t small_size;
     };
@@ -471,7 +471,7 @@ template<
   cache_cost<T> Cost>
 cache<T, Hook, Evictor, Cost>::cache(
   config config, const Evictor& evict, const Cost& cost) noexcept
-  : max_cache_size_(config.capacity)
+  : max_cache_size_(config.cache_size)
   , max_small_queue_size_(config.small_size)
   , max_main_queue_size_(max_cache_size_ - max_small_queue_size_)
   , evict_(evict)
