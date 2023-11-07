@@ -470,8 +470,8 @@ def ssh_output_stderr(source_service,
         exit_status = stdin.channel.recv_exit_status()
         if exit_status != 0:
             if not allow_fail:
-                raise RemoteCommandError(source_service, cmd, exit_status,
-                                         stderrdata)
+                msg = f"{stdoutdata.decode('utf-8')}\n{stderrdata.decode('utf-8')}"
+                raise RemoteCommandError(source_service, cmd, exit_status, msg)
             else:
                 source_service.logger.debug(
                     f"Running ssh command {cmd} exited with status {exit_status} and message: {stderrdata}"
