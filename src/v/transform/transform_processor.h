@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -76,6 +77,7 @@ private:
     ss::future<> run_producer_loop();
     ss::future<> poll_sleep();
     ss::future<kafka::offset> load_start_offset();
+    void report_lag(int64_t);
 
     template<typename... Future>
     ss::future<> when_all_shutdown(Future&&...);
@@ -97,5 +99,7 @@ private:
     ss::abort_source _as;
     ss::future<> _task;
     prefix_logger _logger;
+
+    int64_t _last_reported_lag = 0;
 };
 } // namespace transform
