@@ -993,6 +993,7 @@ ss::future<> rm_stm::stop() {
     _log_stats_timer.cancel();
     co_await _gate.close();
     co_await reset_producers();
+    _metrics.clear();
     co_await persisted_stm<>::stop();
 }
 
