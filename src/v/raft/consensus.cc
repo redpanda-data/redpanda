@@ -2904,7 +2904,6 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
 
 ss::future<>
 consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
-    auto lstats = _log->offsets();
     // Raft paper:
     //
     // If there exists an N such that N > commitIndex, a majority
@@ -2947,7 +2946,7 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
         // if we successfully acknowledged all quorum writes we can make pending
         // relaxed consistency requests visible
         if (_commit_index >= _last_quorum_replicated_index) {
-            maybe_update_last_visible_index(lstats.dirty_offset);
+            maybe_update_last_visible_index(_majority_replicated_index);
         } else {
             // still have to wait for some quorum consistency requests to be
             // committed
