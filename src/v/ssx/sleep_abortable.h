@@ -24,7 +24,7 @@
 
 namespace ssx {
 /// Same as seastar::abort_source but accepts multiple abort sources
-template<typename Clock = seastar::steady_clock_type, typename... AbortSource>
+template<typename Clock = seastar::lowres_clock, typename... AbortSource>
 seastar::future<>
 sleep_abortable(typename Clock::duration dur, AbortSource&... src) {
     struct as_state : seastar::weakly_referencable<as_state> {
