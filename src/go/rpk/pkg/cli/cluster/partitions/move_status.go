@@ -14,7 +14,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func newListPartitionMovementsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newPartitionMovementsStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		completion       int
 		all              bool
