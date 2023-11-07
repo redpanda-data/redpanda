@@ -90,7 +90,7 @@ class cache_hook_accessor;
  * Finally, instantiate the cache with a maximum capacity and the desired size
  * of the small queue (10% is a reasonable choice).
  *
- *     io::cache::config config{.capacity = 100, .small_size = 10};
+ *     io::cache::config config{.capacity = 250, .small_size = 25};
  *     cache_type cache{config};
  *
  * Call `cache::insert` to add an entry into the cache:
