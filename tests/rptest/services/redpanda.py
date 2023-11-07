@@ -3957,11 +3957,12 @@ class RedpandaService(RedpandaServiceBase):
         viewer = OfflineLogViewer(self)
         for node in self.nodes:
             try:
-                stdout, stderr = viewer.validate_segments(node).decode("utf-8")
+                stdout, stderr = viewer.validate_segments(node)
             except RemoteCommandError as e:
                 for line in e.msg.decode("utf-8").splitlines():
                     self.logger.info(line)
                 raise
+            output = f"{stdout.decode('utf-8')}\n{stderr.decode('utf-8')}"
             if "Corruption detected" not in output:
                 continue
             self.logger.debug(f"Corruption details for node {node.name}:")
