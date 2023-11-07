@@ -89,7 +89,7 @@ public:
       security::audit::returns_auditable_resource_vector Func,
       typename... Args>
     bool
-    enqueue_authz_audit_event(kafka::api_key api, Func func, Args... args) {
+    enqueue_authz_audit_event(kafka::api_key api, Func func, Args&&... args) {
         if (auto val = should_enqueue_audit_event(api); val.has_value()) {
             return (bool)*val;
         }
@@ -99,7 +99,7 @@ public:
     }
 
     template<typename... Args>
-    bool enqueue_authz_audit_event(kafka::api_key api, Args... args) {
+    bool enqueue_authz_audit_event(kafka::api_key api, Args&&... args) {
         if (auto val = should_enqueue_audit_event(api); val.has_value()) {
             return (bool)*val;
         }
