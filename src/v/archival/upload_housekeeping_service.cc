@@ -376,12 +376,13 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         _running.splice(_running.begin(), _pending, _pending.begin());
         {
             ss::gate::holder hh(_exec_gate);
+            auto job_name = _running.front().name();
             try {
                 auto r = exec_timer.time();
                 vlog(
                   archival_log.debug,
                   "Running job {} with quota {}",
-                  _running.front().name(),
+                  job_name,
                   quota);
 
                 auto& job = _running.front();
@@ -404,8 +405,9 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                 // Shutting down
             } catch (...) {
                 vlog(
-                  archival_log.warn,
-                  "upload housekeeping job error: {}",
+                  archival_log.error,
+                  "upload housekeeping job {} error: {}",
+                  job_name,
                   std::current_exception());
                 jobs_failed++;
                 maybe_update_probe(
