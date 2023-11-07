@@ -2727,10 +2727,16 @@ void partition_manifest::process_anomalies(
 
     auto& missing_spills = _detected_anomalies.missing_spillover_manifests;
 
-    erase_if(missing_spills, [this](const auto& spill_comp) {
-        return _spillover_manifests.find(spill_comp.base)
-               == _spillover_manifests.end();
-    });
+    const auto archive_start_offset = get_archive_start_offset();
+    erase_if(
+      missing_spills, [this, &archive_start_offset](const auto& spill_comp) {
+          // Remove the missing spill if lies below the start offset of the
+          // archive or if it doesn't match with any of the entries in the
+          // manifest.
+          return spill_comp.last < archive_start_offset
+                 || _spillover_manifests.find(spill_comp.base)
+                      == _spillover_manifests.end();
+      });
 
     auto first_kafka_offset = full_log_start_kafka_offset();
     auto& missing_segs = _detected_anomalies.missing_segments;
