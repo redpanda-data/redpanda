@@ -1368,6 +1368,44 @@ void topic_disabled_partitions_set::remove(
     partitions->erase(id);
 }
 
+std::ostream& operator<<(std::ostream& o, const fetch_tx_reply& r) {
+    fmt::print(
+      o,
+      "{{ec: {}, pid: {}, last_pid: {}, tx_seq: {}, timeout_ms: {}, status: "
+      "{}, partitions: {}, groups: {}}}",
+      r.ec,
+      r.pid,
+      r.last_pid,
+      r.tx_seq,
+      r.timeout_ms.count(),
+      r.status,
+      r.partitions,
+      r.groups);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const fetch_tx_reply::tx_group& g) {
+    fmt::print(o, "{{etag: {}, group_id: {}}}", g.etag, g.group_id);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const fetch_tx_reply::tx_partition& p) {
+    fmt::print(
+      o,
+      "{{etag: {}, ntp: {}, revision: {}}}",
+      p.etag,
+      p.ntp,
+      p.topic_revision);
+
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const add_paritions_tx_request::topic& t) {
+    fmt::print(o, "{{topic: {}, partitions: {}}}", t.name, t.partitions);
+    return o;
+}
 } // namespace cluster
 
 namespace reflection {
