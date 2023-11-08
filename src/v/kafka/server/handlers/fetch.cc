@@ -96,7 +96,8 @@ static ss::future<read_result> read_from_partition(
       std::nullopt,
       config.abort_source.has_value()
         ? config.abort_source.value().get().local()
-        : storage::opt_abort_source_t{});
+        : storage::opt_abort_source_t{},
+      config.client_address);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     auto rdr = co_await part.make_reader(reader_config);
@@ -790,6 +791,11 @@ class simple_fetch_planner final : public fetch_planner::impl {
                 bytes_left_in_plan -= max_bytes;
             }
 
+            const auto client_address = fmt::format(
+              "{}:{}",
+              octx.rctx.connection()->client_host(),
+              octx.rctx.connection()->client_port());
+
             fetch_config config{
               .start_offset = fp.fetch_offset,
               .max_offset = model::model_limits<model::offset>::max(),
@@ -802,6 +808,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
               .read_from_follower = octx.request.has_rack_id(),
               .consumer_rack_id = octx.request.data.rack_id,
               .abort_source = octx.rctx.abort_source(),
+              .client_address = model::client_address_t{client_address},
             };
 
             plan.fetches_per_shard[*shard].push_back({tp, config}, &(*resp_it));
