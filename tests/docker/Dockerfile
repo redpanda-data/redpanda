@@ -220,6 +220,12 @@ RUN /ocsf-server && rm /ocsf-server
 
 #################################
 
+FROM base as flink
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/apache-flink /
+RUN /apache-flink && rm /apache-flink
+
+#################################
+
 FROM librdkafka as final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/teleport /
@@ -298,6 +304,7 @@ COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
 COPY --from=wasi-transforms /opt/transforms/ /opt/transforms/
 COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
 COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
+COPY --from=flink /opt/apache-flink/ /opt/apache-flink/
 
 RUN ldconfig
 
