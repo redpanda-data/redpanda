@@ -1877,7 +1877,7 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
                 list_transaction_state tx_state;
                 tx_state.transactional_id = tx.id;
                 tx_state.producer_id = kafka::producer_id(tx.pid.id);
-                tx_state.transaction_state = ss::sstring(tx.get_status());
+                tx_state.transaction_state = ss::sstring(tx.get_kafka_status());
                 response.data.transaction_states.push_back(std::move(tx_state));
             }
         }
