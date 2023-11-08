@@ -100,7 +100,7 @@ ss::future<config_frontend::patch_result> config_frontend::do_patch(
           clusterlog.trace,
           "patch: writing delta with version {}",
           projected_version);
-        return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
+        return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
           .then([projected_version](std::error_code errc) {
               return patch_result{.errc = errc, .version = projected_version};
           });
@@ -123,8 +123,7 @@ ss::future<std::error_code> config_frontend::set_status(
     auto data = cluster_config_status_cmd_data();
     data.status = status;
     auto cmd = cluster_config_status_cmd(status.node, data);
-    co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), timeout);
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
 }
 
 /**

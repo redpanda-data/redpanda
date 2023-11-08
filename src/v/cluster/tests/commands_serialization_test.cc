@@ -135,7 +135,7 @@ FIXTURE_TEST(test_serde_only_cmd, cmd_test_fixture) {
 FIXTURE_TEST(test_create_topic_cmd_serialization, cmd_test_fixture) {
     auto cmd = make_create_topic_cmd("test_tp", 2, 3);
 
-    auto batch = cluster::serialize_cmd(cmd).get0();
+    auto batch = cluster::serde_serialize_cmd(cmd);
     auto deser = cluster::deserialize(
                    std::move(batch),
                    cluster::make_commands_list<cluster::create_topic_cmd>())
@@ -162,7 +162,7 @@ FIXTURE_TEST(test_create_topic_cmd_serialization, cmd_test_fixture) {
 FIXTURE_TEST(test_delete_topic_cmd_serialization, cmd_test_fixture) {
     auto cmd = make_delete_topic_cmd("test_tp");
 
-    auto batch = cluster::serialize_cmd(cmd).get0();
+    auto batch = cluster::serde_serialize_cmd(cmd);
     auto deser = cluster::deserialize(
                    std::move(batch),
                    cluster::make_commands_list<cluster::delete_topic_cmd>())
@@ -182,7 +182,7 @@ FIXTURE_TEST(test_move_partition_replicass_command, cmd_test_fixture) {
     };
     auto cmd = make_move_partition_replicas_cmd(ntp, replicas);
 
-    auto batch = cluster::serialize_cmd(cmd).get0();
+    auto batch = cluster::serde_serialize_cmd(cmd);
     auto deser
       = cluster::deserialize(
           std::move(batch),

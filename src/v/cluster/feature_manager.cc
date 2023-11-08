@@ -328,8 +328,7 @@ feature_manager::replicate_feature_update_cmd(feature_update_cmd_data data) {
     );
 
     auto timeout = model::timeout_clock::now() + status_retry;
-    auto err = co_await replicate_and_wait(
-      _stm, _feature_table, _as, std::move(cmd), timeout);
+    auto err = co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
     if (err == errc::not_leader) {
         // Harmless, we lost leadership so the new controller
         // leader is responsible for picking up where we left off.
@@ -527,8 +526,7 @@ feature_manager::update_license(security::license&& license) {
         .redpanda_license = license},
       0 // unused
     );
-    auto err = co_await replicate_and_wait(
-      _stm, _feature_table, _as, std::move(cmd), timeout);
+    auto err = co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
     if (err) {
         co_return err;
     }
@@ -602,8 +600,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
           std::move(data),
           0 // unused
         );
-        return replicate_and_wait(
-          _stm, _feature_table, _as, std::move(cmd), timeout);
+        return replicate_and_wait(_stm, _as, std::move(cmd), timeout);
     }
 }
 

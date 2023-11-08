@@ -1182,7 +1182,6 @@ ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
     // Otherwise, replicate a request to register the UUID.
     auto errc = co_await replicate_and_wait(
       _controller_stm,
-      _feature_table,
       _as,
       register_node_uuid_cmd(node_uuid, node_id),
       model::timeout_clock::now() + 30s);
@@ -1673,7 +1672,6 @@ ss::future<std::error_code> members_manager::add_node(model::broker broker) {
     }
     return replicate_and_wait(
       _controller_stm,
-      _feature_table,
       _as,
       add_node_cmd(0, std::move(broker)),
       _join_timeout + model::timeout_clock::now());
@@ -1686,7 +1684,6 @@ ss::future<std::error_code> members_manager::update_node(model::broker broker) {
 
     return replicate_and_wait(
       _controller_stm,
-      _feature_table,
       _as,
       update_node_cfg_cmd(0, std::move(broker)),
       _join_timeout + model::timeout_clock::now());

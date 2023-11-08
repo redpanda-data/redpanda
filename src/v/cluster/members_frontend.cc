@@ -119,7 +119,6 @@ members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
     if (leader == _self) {
         co_return co_await replicate_and_wait(
           _stm,
-          _feature_table,
           _as,
           maintenance_mode_cmd(id, enabled),
           _node_op_timeout + model::timeout_clock::now());
