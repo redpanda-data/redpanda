@@ -15,6 +15,17 @@ class KafkaControlRecordType(Enum):
     unknown = -1
 
 
+def decode_record(batch, header, record):
+    attrs = header["expanded_attrs"]
+    is_tx_ctrl = attrs["transactional"] and attrs[
+        "control_batch"]
+    record_dict = record.kv_dict()
+    if is_tx_ctrl:
+        record_dict["type"] = self.get_control_record_type(
+            record.key)
+    return record_dict
+
+
 class KafkaLog:
     def __init__(self, ntp, headers_only):
         self.ntp = ntp
@@ -34,14 +45,7 @@ class KafkaLog:
             yield header
             if not self.headers_only:
                 for record in batch:
-                    attrs = header["expanded_attrs"]
-                    is_tx_ctrl = attrs["transactional"] and attrs[
-                        "control_batch"]
-                    record_dict = record.kv_dict()
-                    if is_tx_ctrl:
-                        record_dict["type"] = self.get_control_record_type(
-                            record.key)
-                    yield record_dict
+                    yield decode_record(batch, header, record)
 
     def batches(self):
         for path in self.ntp.segments:
