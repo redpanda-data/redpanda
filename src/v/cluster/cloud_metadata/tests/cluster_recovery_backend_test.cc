@@ -27,11 +27,14 @@
 #include "redpanda/tests/fixture.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
+#include "ssx/future-util.h"
+#include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/util/defer.hh>
 
 using namespace cluster::cloud_metadata;
 namespace {
@@ -69,7 +72,34 @@ protected:
     model::cluster_uuid cluster_uuid;
 };
 
-TEST_F(ClusterRecoveryBackendTest, TestRecoveryControllerState) {
+class ClusterRecoveryBackendLeadershipParamTest
+  : public ClusterRecoveryBackendTest
+  , public ::testing::WithParamInterface<bool> {};
+
+namespace {
+
+ss::future<> leadership_change_fiber(bool& stop, cluster::partition& p) {
+    int num_stepdowns = 0;
+    while (!stop) {
+        co_await p.raft()->step_down("test");
+        RPTEST_REQUIRE_EVENTUALLY_CORO(
+          10s, [&] { return stop || p.raft()->is_leader(); });
+        if (stop) {
+            break;
+        }
+        // Increase the sleep times to allow for some progress to be made.
+        ++num_stepdowns;
+        auto sleep_ms = random_generators::get_int(
+          std::min(100, 10 * num_stepdowns));
+        co_await ss::sleep(sleep_ms * 1ms);
+    }
+}
+
+} // anonymous namespace
+
+TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
+    auto with_leadership_changes = GetParam();
+
     // Create a license.
     auto license = get_test_license();
     auto err = app.controller->get_feature_manager()
@@ -165,7 +195,24 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoveryControllerState) {
                          .get();
     ASSERT_TRUE(recover_err.has_value());
     ASSERT_EQ(recover_err.value(), cluster::errc::success);
-    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+
+    // If configured, start leadership transfers.
+    ss::gate gate;
+    bool stop_leadership_switches = false;
+    if (with_leadership_changes) {
+        auto controller
+          = app.partition_manager.local().get(model::controller_ntp).get();
+        ssx::spawn_with_gate(gate, [&] {
+            return leadership_change_fiber(
+              stop_leadership_switches, *controller);
+        });
+    }
+    auto close_gate = ss::defer([&] {
+        stop_leadership_switches = true;
+        gate.close().get();
+    });
+
+    RPTEST_REQUIRE_EVENTUALLY(with_leadership_changes ? 120s : 10s, [&] {
         return !app.controller->get_cluster_recovery_table()
                   .local()
                   .is_recovery_active();
@@ -199,6 +246,9 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoveryControllerState) {
         }
     };
     validate_post_recovery();
+    stop_leadership_switches = true;
+    gate.close().get();
+    close_gate.cancel();
 
     // Sanity check that the above invariants still hold after restarting.
     restart(should_wipe::no);
@@ -212,6 +262,11 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoveryControllerState) {
     });
     validate_post_recovery();
 }
+
+INSTANTIATE_TEST_SUITE_P(
+  WithLeadershipChanges,
+  ClusterRecoveryBackendLeadershipParamTest,
+  ::testing::Bool());
 
 TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedAction) {
     // Create a remote topic, but don't upload any of its manifests or anything.
