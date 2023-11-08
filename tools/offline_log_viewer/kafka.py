@@ -17,12 +17,14 @@ class KafkaControlRecordType(Enum):
 
 def decode_record(batch, header, record):
     attrs = header["expanded_attrs"]
-    is_tx_ctrl = attrs["transactional"] and attrs[
-        "control_batch"]
     record_dict = record.kv_dict()
+
+    is_txn = attrs["transactional"]
+    is_ctrl = attrs["control_batch"]
+    is_tx_ctrl = is_txn and is_ctrl
     if is_tx_ctrl:
-        record_dict["type"] = self.get_control_record_type(
-            record.key)
+        record_dict["type"] = self.get_control_record_type(record.key)
+
     return record_dict
 
 
