@@ -144,7 +144,8 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
         sm::make_total_bytes(
           "bytes_fetched_total",
           [this] { return _bytes_fetched; },
-          sm::description("Total number of bytes fetched"),
+          sm::description("Total number of bytes fetched (not all might be "
+                          "returned to the client)"),
           labels)
           .aggregate(aggregate_labels),
         sm::make_total_bytes(
@@ -248,7 +249,8 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
         sm::make_total_bytes(
           "request_bytes_total",
           [this] { return _bytes_fetched; },
-          sm::description("Total number of bytes consumed per topic"),
+          sm::description("Total number of bytes fetched (not all "
+                          "might be returned to the client)"),
           {request_label("consume"),
            ns_label(ntp.ns()),
            topic_label(ntp.tp.topic()),
