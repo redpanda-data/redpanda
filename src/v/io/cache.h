@@ -313,7 +313,7 @@ private:
     friend class testing_details::cache_hook_accessor;
 
     uint8_t freq_{0};
-    std::optional<uint64_t> insertion_time_;
+    std::optional<uint64_t> ghost_insertion_time_;
     location location_{};
     hook_type hook_;
 };
@@ -503,7 +503,7 @@ void cache<T, Hook, Evictor, Cost>::insert(T& entry) noexcept {
     auto& hook = entry.*Hook;
     if (ghost_queue_contains(entry)) {
         // evict from ghost queue
-        hook.insertion_time_.reset();
+        hook.ghost_insertion_time_.reset();
 
         main_fifo_.push_back(entry);
         hook.location_ = cache_hook::location::main;
@@ -577,13 +577,13 @@ bool cache<T, Hook, Evictor, Cost>::ghost_queue_contains(
      * queue. for example, it was evicted in insert, or has default-init hook.
      * otherwise, the entry is on the ghost queue if it hasn't yet "timed out":
      *
-     *    expires = insertion_time + main queue capacity
+     *    expires = ghost_insertion_time + main queue capacity
      *        now = ghost_inserted
      *   on_ghost = expires > now
      */
     const auto& hook = entry.*Hook;
-    if (hook.insertion_time_.has_value()) {
-        auto expires = *hook.insertion_time_ + max_main_queue_size_;
+    if (hook.ghost_insertion_time_.has_value()) {
+        auto expires = *hook.ghost_insertion_time_ + max_main_queue_size_;
         return expires > ghost_queue_age_;
     }
     return false;
@@ -625,7 +625,7 @@ bool cache<T, Hook, Evictor, Cost>::evict_small() noexcept {
             small_queue_size_ -= cost;
 
             // insert into ghost queue
-            hook.insertion_time_ = ghost_queue_age_;
+            hook.ghost_insertion_time_ = ghost_queue_age_;
             ghost_queue_age_ += cost;
             return true;
 

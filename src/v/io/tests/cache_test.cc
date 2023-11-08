@@ -20,12 +20,12 @@ class cache_hook_accessor {
 public:
     static std::optional<size_t>
     get_hook_insertion_time(const io::cache_hook& hook) {
-        return hook.insertion_time_;
+        return hook.ghost_insertion_time_;
     }
 
     static void
     set_hook_insertion_time(io::cache_hook& hook, std::optional<size_t> time) {
-        hook.insertion_time_ = time;
+        hook.ghost_insertion_time_ = time;
     }
 
     static uint8_t get_hook_freq(io::cache_hook& hook) { return hook.freq_; }
