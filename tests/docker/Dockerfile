@@ -208,7 +208,7 @@ ENV PATH="${PATH}:/usr/local/tinygo/bin"
 FROM tinygo as wasi-transforms
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tinygo-wasi-transforms /
-COPY --chown=0:0 --chmod=0755 src/go/transform-sdk /transform-sdk
+COPY --chown=0:0 --chmod=0755 src/transform-sdk /transform-sdk
 RUN /tinygo-wasi-transforms && \
     rm -rf /transform-sdk
 

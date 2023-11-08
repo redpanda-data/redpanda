@@ -4,7 +4,7 @@ set -x
 
 mkdir -p /opt/transforms/tinygo/
 
-cd /transform-sdk/internal/testdata
+cd /transform-sdk/go/internal/testdata
 
 tinygo build -target wasi -opt=z \
   -panic print -scheduler none \
