@@ -17,6 +17,7 @@
 #include "cloud_storage_clients/client_probe.h"
 #include "seastarx.h"
 #include "test_utils/async.h"
+#include "test_utils/test_macros.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/iostream.hh>
@@ -29,8 +30,6 @@
 #include <boost/core/noncopyable.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/xml_parser.hpp>
-#include <boost/test/tools/old/interface.hpp>
-#include <boost/test/unit_test.hpp>
 
 #include <charconv>
 
@@ -353,7 +352,7 @@ void s3_imposter_fixture::set_routes(
                 }
                 return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
             }
-            BOOST_FAIL("Unexpected request");
+            RPTEST_FAIL("Unexpected request");
             return "";
         }
         std::map<ss::sstring, expectation> expectations;
