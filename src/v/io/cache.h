@@ -110,7 +110,7 @@ class cache_hook_accessor;
  * detecting side effects from the eviction function, or by calling `evicted()`
  * on the entry's hook member.
  *
- * If ane entry has been evicted, it should be re-inserted into the cache after
+ * If an entry has been evicted, it should be re-inserted into the cache after
  * handling the cache miss. For example:
  *
  *     auto it = entries.find("e0");
