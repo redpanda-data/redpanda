@@ -476,7 +476,7 @@ class AuditLogTestsBase(RedpandaTest):
     def read_all_from_audit_log(self,
                                 filter_fn,
                                 stop_cond,
-                                timeout_sec: int = 30,
+                                timeout_sec: int = 60,
                                 backoff_sec: int = 1):
         """Reads all messages from the audit log
         
@@ -490,18 +490,12 @@ class AuditLogTestsBase(RedpandaTest):
             The function to use to check to stop.  Last argument must accept
             a list of records
         
-        start_offset: str, default='oldest'
-            Starting offset for the consumer
-            
         timeout_sec: int, default=30,
             How long to wait
             
         backoff_sec: int, default=1
             Backoff
             
-        consumer: Optional[RpkTool], default=None
-            The consumer to use, or None if to use a new one
-        
         Returns
         -------
         [str]
@@ -519,38 +513,37 @@ class AuditLogTestsBase(RedpandaTest):
             def ingest(self, records):
                 new_records = records[self.next_offset_ingest:]
                 self.next_offset_ingest = len(records)
-                new_records = [json.loads(msg['value']) for msg in new_records]
+                new_records = [json.loads(msg['value']) for msg in records]
+                self.logger.info(f"Ingested: {len(new_records)} records")
                 self.logger.debug(f'Ingested records:')
                 for rec in new_records:
                     self.logger.debug(f'{rec}')
-                self.logger.info(f"Ingested: {len(new_records)} records")
-                [
-                    self.ocsf_server.validate_schema(record)
-                    for record in new_records
-                ]
-                for r in new_records:
-                    if self.filter_fn(r):
-                        self.logger.info(f'Selected {r}')
+                    self.ocsf_server.validate_schema(rec)
+                    if self.filter_fn(rec):
+                        self.logger.debug(f'Selected {rec}')
+                        self.records.append(rec)
                     else:
-                        self.logger.info(f'DID NOT SELECT {r}')
-                self.records += [r for r in new_records if self.filter_fn(r)]
+                        self.logger.debug(f'DID NOT SELECT {rec}')
 
             def is_finished(self):
                 return stop_cond(self.records)
 
         mapper = MessageMapper(self.redpanda.logger, filter_fn, stop_cond,
                                self.ocsf_server)
-        consumer = self.get_rpk_consumer(topic=self.audit_log,
-                                         offset=start_offset)
+        consumer = self.get_rpk_consumer(topic=self.audit_log, offset='oldest')
         consumer.start()
 
         def predicate():
             mapper.ingest(consumer.messages)
             return mapper.is_finished()
 
-        wait_until(predicate, timeout_sec=timeout_sec, backoff_sec=backoff_sec)
-        consumer.stop()
-        consumer.free()
+        try:
+            wait_until(predicate,
+                       timeout_sec=timeout_sec,
+                       backoff_sec=backoff_sec)
+        finally:
+            consumer.stop()
+            consumer.free()
         return mapper.records
 
     def find_matching_record(self, filter_fn, valid_check_fn, desc):
