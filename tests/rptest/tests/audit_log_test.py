@@ -583,7 +583,6 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
         self.logger.debug("Finished 500 api calls with management disabled")
         _ = number_of_records_matching(api_keys, 1000)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/14565
     @cluster(num_nodes=4)
     def test_audit_log_metrics(self):
         """
@@ -597,7 +596,8 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
             def get_metrics_from_node_sync(patterns: list[str]):
                 samples = self.redpanda.metrics_samples(
                     patterns, [node], endpoint)
-                success = samples is not None
+                success = samples is not None and set(
+                    samples.keys()) == set(patterns)
                 return success, samples
 
             try:
@@ -620,14 +620,14 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
         for node in self.redpanda.nodes:
             samples = get_metrics_from_node(node, metrics)
             assert samples, f"Missing expected metrics from node {node.name}"
-            assert sorted(samples.keys()) == sorted(
+            assert set(samples.keys()) == set(
                 metrics), f"Metrics incomplete: {samples.keys()}"
 
         for node in self.redpanda.nodes:
-            samples = get_metrics_from_node(node, metrics,
+            samples = get_metrics_from_node(node, public_metrics,
                                             MetricsEndpoint.PUBLIC_METRICS)
             assert samples, f"Missing expected public metrics from node {node.name}"
-            assert sorted(samples.keys()) == sorted(
+            assert set(samples.keys()) == set(
                 public_metrics), f"Public metrics incomplete: {samples.keys()}"
 
         # Remove management setting
