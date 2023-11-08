@@ -67,6 +67,10 @@ std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
       << (cfg.abort_source.has_value()
             ? cfg.abort_source.value().get().abort_requested()
             : false);
+
+    if (cfg.client_address.has_value()) {
+        o << ", client_address:" << cfg.client_address.value();
+    }
     return o << "}";
 }
 

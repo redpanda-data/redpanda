@@ -222,23 +222,28 @@ struct append_result {
 using opt_abort_source_t
   = std::optional<std::reference_wrapper<ss::abort_source>>;
 
+using opt_client_address_t = std::optional<model::client_address_t>;
+
 struct timequery_config {
     timequery_config(
       model::timestamp t,
       model::offset o,
       ss::io_priority_class iop,
       std::optional<model::record_batch_type> type_filter,
-      opt_abort_source_t as = std::nullopt) noexcept
+      opt_abort_source_t as = std::nullopt,
+      opt_client_address_t client_addr = std::nullopt) noexcept
       : time(t)
       , max_offset(o)
       , prio(iop)
       , type_filter(type_filter)
-      , abort_source(as) {}
+      , abort_source(as)
+      , client_address(std::move(client_addr)) {}
     model::timestamp time;
     model::offset max_offset;
     ss::io_priority_class prio;
     std::optional<model::record_batch_type> type_filter;
     opt_abort_source_t abort_source;
+    opt_client_address_t client_address;
 
     friend std::ostream& operator<<(std::ostream& o, const timequery_config&);
 };
@@ -326,6 +331,8 @@ struct log_reader_config {
     // historical read-once workloads like compaction).
     bool skip_batch_cache{false};
 
+    opt_client_address_t client_address;
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,
@@ -334,7 +341,8 @@ struct log_reader_config {
       ss::io_priority_class prio,
       std::optional<model::record_batch_type> type_filter,
       std::optional<model::timestamp> time,
-      opt_abort_source_t as)
+      opt_abort_source_t as,
+      opt_client_address_t client_addr = std::nullopt)
       : start_offset(start_offset)
       , max_offset(max_offset)
       , min_bytes(min_bytes)
@@ -342,7 +350,8 @@ struct log_reader_config {
       , prio(prio)
       , type_filter(type_filter)
       , first_timestamp(time)
-      , abort_source(as) {}
+      , abort_source(as)
+      , client_address(std::move(client_addr)) {}
 
     /**
      * Read offsets [start, end].
@@ -351,7 +360,8 @@ struct log_reader_config {
       model::offset start_offset,
       model::offset max_offset,
       ss::io_priority_class prio,
-      opt_abort_source_t as = std::nullopt)
+      opt_abort_source_t as = std::nullopt,
+      opt_client_address_t client_addr = std::nullopt)
       : log_reader_config(
         start_offset,
         max_offset,
@@ -360,7 +370,8 @@ struct log_reader_config {
         prio,
         std::nullopt,
         std::nullopt,
-        as) {}
+        as,
+        std::move(client_addr)) {}
 
     friend std::ostream& operator<<(std::ostream& o, const log_reader_config&);
 };
