@@ -17,6 +17,7 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "net/tls.h"
+#include "net/tls_certificate_probe.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -316,11 +317,11 @@ ss::future<> refresh_credentials::impl::sleep_until_expiry() const {
     }
 }
 
-ss::future<http::client>
-refresh_credentials::impl::make_api_client(client_tls_enabled enable_tls) {
+ss::future<http::client> refresh_credentials::impl::make_api_client(
+  ss::sstring name, client_tls_enabled enable_tls) {
     if (enable_tls == client_tls_enabled::yes) {
         if (_tls_certs == nullptr) {
-            co_await init_tls_certs();
+            co_await init_tls_certs(std::move(name));
         }
 
         co_return http::client{
@@ -342,7 +343,7 @@ refresh_credentials::impl::make_api_client(client_tls_enabled enable_tls) {
       _as};
 }
 
-ss::future<> refresh_credentials::impl::init_tls_certs() {
+ss::future<> refresh_credentials::impl::init_tls_certs(ss::sstring name) {
     ss::tls::credentials_builder b;
     b.set_client_auth(ss::tls::client_auth::NONE);
 
@@ -365,7 +366,9 @@ ss::future<> refresh_credentials::impl::init_tls_certs() {
         co_await b.set_system_trust();
     }
 
-    _tls_certs = co_await b.build_reloadable_certificate_credentials();
+    _tls_certs = co_await net::build_reloadable_credentials_with_probe<
+      ss::tls::certificate_credentials>(
+      std::move(b), "cloud_provider_client", std::move(name));
 }
 
 refresh_credentials make_refresh_credentials(

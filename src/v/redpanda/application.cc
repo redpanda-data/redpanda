@@ -76,6 +76,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/server.h"
+#include "net/tls_certificate_probe.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
@@ -1745,7 +1746,8 @@ void application::wire_up_redpanda_services(
                 = config::shard_local_cfg().kafka_rpc_server_stream_recv_buf;
               auto& tls_config = config::node().kafka_api_tls.value();
               for (const auto& ep : config::node().kafka_api()) {
-                  ss::shared_ptr<ss::tls::server_credentials> credentails;
+                  ss::shared_ptr<ss::tls::server_credentials> credentials
+                    = nullptr;
                   // find credentials for this endpoint
                   auto it = find_if(
                     tls_config.begin(),
@@ -1754,30 +1756,27 @@ void application::wire_up_redpanda_services(
                         return cfg.name == ep.name;
                     });
                   // if tls is configured for this endpoint build reloadable
-                  // credentails
+                  // credentials
                   if (it != tls_config.end()) {
                       syschecks::systemd_message(
                         "Building TLS credentials for kafka")
                         .get();
-                      auto kafka_builder
-                        = it->config.get_credentials_builder().get0();
-                      credentails
-                        = kafka_builder
-                            ? kafka_builder
-                                ->build_reloadable_server_credentials(
-                                  [this, name = it->name](
-                                    const std::unordered_set<ss::sstring>&
-                                      updated,
-                                    const std::exception_ptr& eptr) {
-                                      rpc::log_certificate_reload_event(
-                                        _log, "Kafka RPC TLS", updated, eptr);
-                                  })
-                                .get0()
-                            : nullptr;
+                      credentials
+                        = net::build_reloadable_server_credentials_with_probe(
+                            it->config,
+                            "kafka",
+                            it->name,
+                            [this](
+                              const std::unordered_set<ss::sstring>& updated,
+                              const std::exception_ptr& eptr) {
+                                rpc::log_certificate_reload_event(
+                                  _log, "Kafka RPC TLS", updated, eptr);
+                            })
+                            .get();
                   }
 
                   c.addrs.emplace_back(
-                    ep.name, net::resolve_dns(ep.address).get0(), credentails);
+                    ep.name, net::resolve_dns(ep.address).get(), credentials);
               }
 
               c.disable_metrics = net::metrics_disabled(
@@ -1969,22 +1968,18 @@ void application::wire_up_bootstrap_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
-              auto rpc_builder = config::node()
-                                   .rpc_server_tls()
-                                   .get_credentials_builder()
-                                   .get0();
               auto credentials
-                = rpc_builder
-                    ? rpc_builder
-                        ->build_reloadable_server_credentials(
-                          [this](
-                            const std::unordered_set<ss::sstring>& updated,
-                            const std::exception_ptr& eptr) {
-                              rpc::log_certificate_reload_event(
-                                _log, "Internal RPC TLS", updated, eptr);
-                          })
-                        .get0()
-                    : nullptr;
+                = net::build_reloadable_server_credentials_with_probe(
+                    config::node().rpc_server_tls(),
+                    "rpc",
+                    "",
+                    [this](
+                      const std::unordered_set<ss::sstring>& updated,
+                      const std::exception_ptr& eptr) {
+                        rpc::log_certificate_reload_event(
+                          _log, "Internal RPC TLS", updated, eptr);
+                    })
+                    .get();
               c.addrs.emplace_back(rpc_server_addr, credentials);
           });
       })

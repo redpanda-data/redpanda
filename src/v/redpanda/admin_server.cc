@@ -68,6 +68,7 @@
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "net/dns.h"
+#include "net/tls_certificate_probe.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -128,6 +129,7 @@
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
 #include <seastar/json/json_elements.hh>
+#include <seastar/net/tls.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/short_streams.hh>
@@ -556,17 +558,16 @@ ss::future<> admin_server::configure_listeners() {
 
         ss::shared_ptr<ss::tls::server_credentials> cred;
         if (tls_it != _cfg.endpoints_tls.end()) {
-            auto builder = co_await tls_it->config.get_credentials_builder();
-            if (builder) {
-                cred = co_await builder->build_reloadable_server_credentials(
-                  [](
-                    const std::unordered_set<ss::sstring>& updated,
-                    const std::exception_ptr& eptr) {
-                      rpc::log_certificate_reload_event(
-                        logger, "API TLS", updated, eptr);
-                  });
-            }
-
+            cred = co_await net::build_reloadable_server_credentials_with_probe(
+              tls_it->config,
+              "admin",
+              tls_it->name,
+              [](
+                const std::unordered_set<ss::sstring>& updated,
+                const std::exception_ptr& eptr) {
+                  rpc::log_certificate_reload_event(
+                    logger, "API TLS", updated, eptr);
+              });
             if (!localhost && !tls_it->config.get_require_client_auth()) {
                 insecure_ep = ep;
             }

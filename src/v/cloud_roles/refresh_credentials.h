@@ -71,8 +71,9 @@ public:
 
     protected:
         /// Returns an http client with the API host and port applied
-        ss::future<http::client>
-        make_api_client(client_tls_enabled enable_tls = client_tls_enabled::no);
+        ss::future<http::client> make_api_client(
+          ss::sstring name = "",
+          client_tls_enabled enable_tls = client_tls_enabled::no);
 
         /// Helper to parse the iobuf returned from API into a credentials
         /// object, customized to API response structure
@@ -104,7 +105,7 @@ public:
     private:
         /// Initializes certificate_credentials on first client creation.
         /// Subsequent clients which are created will reuse the certs.
-        ss::future<> init_tls_certs();
+        ss::future<> init_tls_certs(ss::sstring name);
 
         /// The address to query for credentials. Can be overridden using env
         /// variable `RP_SI_CREDS_API_ADDRESS`

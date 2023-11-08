@@ -202,7 +202,7 @@ ss::future<api_response> aws_refresh_impl::fetch_instance_metadata_token() {
     token_request.target("/latest/api/token");
 
     co_return co_await make_request(
-      co_await make_api_client(), std::move(token_request));
+      co_await make_api_client("aws"), std::move(token_request));
 }
 
 ss::future<api_response> aws_refresh_impl::make_request_with_token(
@@ -210,7 +210,8 @@ ss::future<api_response> aws_refresh_impl::make_request_with_token(
     if (token.has_value()) {
         add_metadata_token_to_request(req, token.value());
     }
-    co_return co_await make_request(co_await make_api_client(), std::move(req));
+    co_return co_await make_request(
+      co_await make_api_client("aws"), std::move(req));
 }
 
 std::ostream& aws_refresh_impl::print(std::ostream& os) const {

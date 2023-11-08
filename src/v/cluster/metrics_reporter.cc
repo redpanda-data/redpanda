@@ -30,6 +30,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "net/tls.h"
+#include "net/tls_certificate_probe.h"
 #include "net/unresolved_address.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
@@ -39,6 +40,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/net/tls.hh>
 
 #include <absl/algorithm/container.h>
 #include <absl/container/node_hash_map.h>
@@ -400,7 +402,9 @@ ss::future<http::client> metrics_reporter::make_http_client() {
         }
 
         client_configuration.credentials
-          = co_await builder.build_reloadable_certificate_credentials();
+          = co_await net::build_reloadable_credentials_with_probe<
+            ss::tls::certificate_credentials>(
+            std::move(builder), "metrics_reporter", "httpclient");
         client_configuration.tls_sni_hostname = _address.host;
     }
     co_return http::client(client_configuration, _as.local());
