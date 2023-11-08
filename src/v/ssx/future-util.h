@@ -11,6 +11,7 @@
 
 #pragma once
 #include "utils/functional.h"
+#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -392,16 +393,23 @@ seastar::future<T...> with_timeout_abortable(
               sub = seastar::abort_source::subscription{};
               done.set_exception(seastar::timed_out_error{});
           }) {
-            auto maybe_sub = as.subscribe([this]() noexcept {
-                timer.cancel();
-                done.set_exception(seastar::abort_requested_exception{});
-            });
-            if (!maybe_sub) {
-                done.set_exception(seastar::abort_requested_exception{});
-            } else {
-                sub = std::move(*maybe_sub);
-                timer.arm(deadline);
+            try {
+                as.check();
+            } catch (...) {
+                done.set_to_current_exception();
+                return;
             }
+            auto maybe_sub = as.subscribe(
+              [this,
+               &as](const std::optional<std::exception_ptr>& ex) noexcept {
+                  timer.cancel();
+                  done.set_exception(ex.value_or(as.get_default_exception()));
+              });
+            vassert(
+              maybe_sub,
+              "abort_source was just checked this should never happen.");
+            sub = std::move(*maybe_sub);
+            timer.arm(deadline);
         }
     };
 

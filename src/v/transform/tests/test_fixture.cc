@@ -40,6 +40,10 @@ ss::future<model::record_batch> fake_sink::read() {
     co_return batch;
 }
 
+ss::future<> fake_source::start() { co_return; }
+
+ss::future<> fake_source::stop() { co_return; }
+
 kafka::offset fake_source::latest_offset() {
     if (_batches.empty()) {
         return kafka::offset(0);

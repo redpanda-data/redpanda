@@ -128,6 +128,7 @@ processor::processor(
 ss::future<> processor::start() {
     try {
         co_await _engine->start();
+        co_await _source->start();
         co_await _offset_tracker->start();
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
@@ -146,8 +147,9 @@ ss::future<> processor::stop() {
     _consumer_transform_pipe.abort(ex);
     _transform_producer_pipe.abort(ex);
     co_await std::exchange(_task, ss::now());
-    co_await _engine->stop();
+    co_await _source->stop();
     co_await _offset_tracker->stop();
+    co_await _engine->stop();
 }
 
 ss::future<> processor::poll_sleep() {
@@ -177,9 +179,6 @@ ss::future<> processor::run_consumer_loop() {
     auto offset = co_await load_start_offset();
     vlog(_logger.trace, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
-        // TODO(rockwood): It's possible that the stored is deleted due to
-        // retention policy since the last successful commit. We should handle
-        // this by restarting from the low watermark.
         auto reader = co_await _source->read_batch(offset, &_as);
         auto last_offset = co_await std::move(reader).consume(
           queue_output_consumer(&_consumer_transform_pipe, _probe),
