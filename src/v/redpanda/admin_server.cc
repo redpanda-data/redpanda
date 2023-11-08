@@ -6357,6 +6357,7 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
               s.partition = processor.id();
               s.node_id = processor.node();
               s.status = convert_transform_status(processor.status);
+              s.lag = processor.lag;
               meta.status.push(s);
           }
           return meta;

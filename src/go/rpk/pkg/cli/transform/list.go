@@ -74,6 +74,7 @@ type (
 		OutputTopics []string          `json:"output_topics"`
 		Environment  map[string]string `json:"environment"`
 		Running      string            `json:"running"`
+		Lag          int               `json:"lag"`
 	}
 )
 
@@ -90,10 +91,12 @@ func summarizedView(metadata []adminapi.TransformMetadata) (resp []summarizedTra
 	for _, meta := range metadata {
 		total := len(meta.Status)
 		running := 0
+		lag := 0
 		for _, v := range meta.Status {
 			if v.Status == "running" {
 				running++
 			}
+			lag += v.Lag
 		}
 		resp = append(resp, summarizedTransformMetadata{
 			Name:         meta.Name,
@@ -101,6 +104,7 @@ func summarizedView(metadata []adminapi.TransformMetadata) (resp []summarizedTra
 			OutputTopics: meta.OutputTopics,
 			Environment:  makeEnvMap(meta.Environment),
 			Running:      fmt.Sprintf("%d / %d", running, total),
+			Lag:          lag,
 		})
 	}
 	return
@@ -112,10 +116,10 @@ func printSummary(f config.OutFormatter, s []summarizedTransformMetadata, w io.W
 		fmt.Fprintf(w, "%s\n", t)
 		return
 	}
-	tw := out.NewTableTo(w, "Name", "Input Topic", "Output Topic", "Running")
+	tw := out.NewTableTo(w, "Name", "Input Topic", "Output Topic", "Running", "Lag")
 	defer tw.Flush()
 	for _, m := range s {
-		tw.Print(m.Name, m.InputTopic, strings.Join(m.OutputTopics, ", "), m.Running)
+		tw.Print(m.Name, m.InputTopic, strings.Join(m.OutputTopics, ", "), m.Running, m.Lag)
 	}
 }
 
@@ -147,9 +151,9 @@ func printDetailed(f config.OutFormatter, d []detailedTransformMetadata, w io.Wr
 		}
 		tw.Print(fmt.Sprintf("%s, %s → %s", m.Name, m.InputTopic, strings.Join(m.OutputTopics, ", ")))
 		// add an empty column to provide an indent
-		tw.Print("", "PARTITION", "NODE", "STATUS")
+		tw.Print("", "PARTITION", "NODE", "STATUS", "LAG")
 		for _, p := range m.Status {
-			tw.Print("", p.Partition, p.NodeID, p.Status)
+			tw.Print("", p.Partition, p.NodeID, p.Status, p.Lag)
 		}
 	}
 }

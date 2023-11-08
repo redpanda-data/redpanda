@@ -27,16 +27,19 @@ func setupTestData() []adminapi.TransformMetadata {
 					NodeID:    0,
 					Partition: 1,
 					Status:    "running",
+					Lag:       1,
 				},
 				{
 					NodeID:    0,
 					Partition: 2,
 					Status:    "running",
+					Lag:       1,
 				},
 				{
 					NodeID:    1,
 					Partition: 3,
 					Status:    "inactive",
+					Lag:       5,
 				},
 			},
 		},
@@ -52,6 +55,7 @@ func setupTestData() []adminapi.TransformMetadata {
 					NodeID:    0,
 					Partition: 1,
 					Status:    "errored",
+					Lag:       99,
 				},
 			},
 		},
@@ -91,9 +95,9 @@ func TestPrintSummaryView(t *testing.T) {
 	s := summarizedView(setupTestData())
 	cases := []testCase{
 		Text(`
-NAME      INPUT TOPIC  OUTPUT TOPIC     RUNNING
-foo2bar   foo          bar              2 / 3
-scrubber  pii          cleaned, munged  0 / 1
+NAME      INPUT TOPIC  OUTPUT TOPIC     RUNNING  LAG
+foo2bar   foo          bar              2 / 3    7
+scrubber  pii          cleaned, munged  0 / 1    99
 `),
 		JSON(t, s),
 		YAML(t, s),
@@ -111,14 +115,14 @@ func TestPrintDetailView(t *testing.T) {
 	cases := []testCase{
 		Text(`
 foo2bar, foo → bar
-      PARTITION  NODE  STATUS
-      1          0     running
-      2          0     running
-      3          1     inactive
+      PARTITION  NODE  STATUS    LAG
+      1          0     running   1
+      2          0     running   1
+      3          1     inactive  5
 
 scrubber, pii → cleaned, munged
-      PARTITION  NODE  STATUS
-      1          0     errored
+      PARTITION  NODE  STATUS   LAG
+      1          0     errored  99
 `),
 		JSON(t, d),
 		YAML(t, d),

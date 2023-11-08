@@ -463,6 +463,7 @@ model::cluster_transform_report manager<ClockType>::compute_report() const {
             .id = id,
             .status = entry.current_state(),
             .node = _self,
+            .lag = p->current_lag(),
           });
     }
     return report;

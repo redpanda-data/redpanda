@@ -130,6 +130,10 @@
           "type": "int",
           "description": "partition in the input topic"
         },
+        "lag": {
+          "type": "int",
+          "description": "number of records to be processed"
+        },
         "status": {
           "type": "string",
           "enum": [

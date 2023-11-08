@@ -44,6 +44,14 @@ void probe::setup_metrics(ss::sstring transform_name) {
         .aggregate({sm::shard_label}));
     metric_defs.emplace_back(
       sm::make_counter(
+        "processor_lag",
+        [this] { return _lag; },
+        sm::description("The pending available on the input topic that have "
+                        "yet to be processed"),
+        labels)
+        .aggregate({sm::shard_label}));
+    metric_defs.emplace_back(
+      sm::make_counter(
         "processor_failures",
         [this] { return _failures; },
         sm::description(
@@ -80,4 +88,6 @@ void probe::state_change(processor_state_change change) {
         _processor_state[*change.to] += 1;
     }
 }
+void probe::report_lag(int64_t delta) { _lag += delta; }
+
 } // namespace transform
