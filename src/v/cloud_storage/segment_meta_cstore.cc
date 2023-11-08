@@ -11,6 +11,7 @@
 #include "cloud_storage/segment_meta_cstore.h"
 
 #include "cloud_storage/types.h"
+#include "cloud_storage/logger.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -269,6 +270,9 @@ public:
     /// Add element to the store. The operation is transactional.
     void append(const segment_meta& meta) {
         auto ix = _base_offset.size();
+
+
+        vlog(cst_log.info, "column_store::append(base={}, last={})", meta.base_offset(), meta.committed_offset());
 
         try {
             details::tuple_map(
@@ -1093,6 +1097,9 @@ public:
         if (_write_buffer.empty()) {
             return;
         }
+
+        vlog(cst_log.info, "Flushing buffer of size: {}", _write_buffer.size());
+
         _col.insert_entries(_write_buffer.begin(), _write_buffer.end());
         _write_buffer.clear();
     }

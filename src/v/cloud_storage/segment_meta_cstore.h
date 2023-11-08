@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "utils/delta_for.h"
 
@@ -154,6 +155,7 @@ public:
     using hint_t = deltafor_stream_pos_t<value_t>;
 
     void append(value_t value) {
+        vlog(cst_log.info, "segment_meta_column_frame::append({})", value);
         auto ix = index_mask & _size++;
         _head.at(ix) = value;
         if ((_size & index_mask) == 0) {
@@ -162,6 +164,11 @@ public:
             }
             _last_row = _tail->get_position();
             _tail->add(_head);
+
+            vlog(
+              cst_log.info,
+              "segment_meta_column_frame::append({}) flushed",
+              value);
         }
     }
 

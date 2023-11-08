@@ -944,6 +944,92 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_single_replacement) {
     BOOST_CHECK(*store.begin() == replacement_segment);
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_always_flush) {
+    // only base/committed offset are interesting for this test
+    std::vector<segment_meta> metas;
+
+    auto make_seg = [](auto base){
+        return segment_meta{
+          .is_compacted = false,
+          .size_bytes = 812,
+          .base_offset = model::offset(base),
+          .committed_offset = model::offset(base + 9),
+          .base_timestamp = model::timestamp(1646430092103),
+          .max_timestamp = model::timestamp(1646430092103),
+          .delta_offset = model::offset_delta(0),
+          .archiver_term = model::term_id(2),
+          .segment_term = model::term_id(0),
+          .delta_offset_end = model::offset_delta(0),
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = 0,
+        };
+    };
+
+    segment_meta_cstore store{};
+
+    auto seg1 = make_seg(10);
+    auto seg2 = make_seg(3);
+
+    metas.push_back(seg2);
+    metas.push_back(seg1);
+
+    /*
+     * Normally, the segment meta store should be able to handle
+     * segment replacements and out of order additions.
+     *
+     * However, if we flush after every write we can effectively
+     * skip all the logic in `column_store::insert_entries` and force
+     * entries in the _head of the `column_store_frame`. When the frame fills
+     * up (after 16 entries -- like below), it will "flush" itself to the encoder.
+     *
+     * The encoder for the `base_offset` column will receive out of order
+     * data which it cannot handle and assert out.
+     */
+
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+    store.insert(seg1);
+    store.flush_write_buffer();
+    store.insert(seg2);
+    store.flush_write_buffer();
+
+    for (const auto& seg: store) {
+        auto iter = store.lower_bound(seg.base_offset);
+        BOOST_CHECK(iter != store.end());
+        BOOST_CHECK(iter->base_offset == seg.base_offset);
+    }
+
+    BOOST_CHECK_EQUAL(store.size(), 2);
+    BOOST_CHECK(*store.begin() == metas[0]);
+    BOOST_CHECK_EQUAL(store.last_segment().value(), metas[metas.size() - 1]);
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_whole_range_replacement) {
     segment_meta_cstore store{};
     // replacements either start before or exactly at 0
