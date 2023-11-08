@@ -134,7 +134,7 @@ class cache_hook_accessor;
  * can query ghost queue membership using:
  *
  *     if (entry.hook.evicted()) {
- *         if (cache.ghost_queue_contains(entry)) {
+ *         if (!cache.ghost_queue_contains(entry)) {
  *             // can fully remove
  *         }
  *     }
