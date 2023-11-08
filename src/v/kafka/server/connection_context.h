@@ -144,7 +144,8 @@ public:
                   .finally([this]() {
                       vlog(
                         klog.debug,
-                        "Connection input_shutdown; aborting operations");
+                        "Connection input_shutdown; aborting operations for {}",
+                        conn->addr);
                       return _as.request_abort_ex(std::system_error(
                         std::make_error_code(std::errc::connection_aborted)));
                   })
@@ -156,11 +157,16 @@ public:
 
     ss::future<> stop() {
         if (conn) {
+            vlog(klog.trace, "stopping connection context for {}", conn->addr);
             conn->shutdown_input();
         }
         co_await _wait_input_shutdown.get_future();
         co_await _as.request_abort_ex(ssx::connection_aborted_exception{});
         co_await _as.stop();
+
+        if (conn) {
+            vlog(klog.trace, "stopped connection context for {}", conn->addr);
+        }
     }
 
     /// The instance of \ref kafka::server on the shard serving the connection
