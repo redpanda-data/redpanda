@@ -268,7 +268,7 @@ class AuditLogTestSecurityConfig(SecurityConfig):
         return self._user_cert
 
 
-class AuditLogTestsBase(RedpandaTest):
+class AuditLogTestBase(RedpandaTest):
     """Base test object for testing the audit logs"""
     audit_log = "__audit_log"
     kafka_rpc_service_name = "kafka rpc protocol"
@@ -301,7 +301,7 @@ class AuditLogTestsBase(RedpandaTest):
                 self.security.principal_mapping_rules
             ]
 
-        super(AuditLogTestsBase,
+        super(AuditLogTestBase,
               self).__init__(test_context=test_context,
                              extra_rp_conf=self.extra_rp_conf,
                              log_config=self.log_config,
@@ -426,8 +426,9 @@ class AuditLogTestsBase(RedpandaTest):
                                  service_name, record):
         for items in expected:
             for expected_api_op, resource_entry in items.items():
-                if AuditLogTestsBase.api_resource_match(
-                        expected_api_op, resource_entry, service_name, record):
+                if AuditLogTestBase.api_resource_match(expected_api_op,
+                                                       resource_entry,
+                                                       service_name, record):
                     return True
 
         return False
@@ -595,11 +596,11 @@ class AuditLogTestsBase(RedpandaTest):
         return records
 
 
-class AuditLogTestsAdminApi(AuditLogTestsBase):
+class AuditLogTestAdminApi(AuditLogTestBase):
     """Validates that audit logs are generated from admin API
     """
     def __init__(self, test_context):
-        super(AuditLogTestsAdminApi,
+        super(AuditLogTestAdminApi,
               self).__init__(test_context=test_context,
                              log_config=LoggingConfig('info',
                                                       logger_levels={
@@ -721,12 +722,12 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
                               patch_result['config_version'])
 
 
-class AuditLogTestsKafkaApi(AuditLogTestsBase):
+class AuditLogTestKafkaApi(AuditLogTestBase):
     """Validates that the Kafka API generates audit messages
     """
     def __init__(self, test_context):
 
-        super(AuditLogTestsKafkaApi,
+        super(AuditLogTestKafkaApi,
               self).__init__(test_context=test_context,
                              audit_log_config=AuditLogConfig(num_partitions=1,
                                                              event_types=[]),
@@ -1021,7 +1022,7 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
             raise exc
 
 
-class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
+class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
     """Validates SASL/SCRAM authentication messages
     """
     username = 'test'
@@ -1029,7 +1030,7 @@ class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
     algorithm = 'SCRAM-SHA-256'
 
     def __init__(self, test_context):
-        super(AuditLogTestsKafkaAuthnApi, self).__init__(
+        super(AuditLogTestKafkaAuthnApi, self).__init__(
             test_context=test_context,
             audit_log_config=AuditLogConfig(num_partitions=1,
                                             event_types=['authenticate']),
@@ -1124,7 +1125,7 @@ class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
             records) == 1, f'Expected only one record, got {len(records)}'
 
 
-class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
+class AuditLogTestKafkaTlsApi(AuditLogTestBase):
     """
     Tests that validate audit log messages for users authenticated via mTLS
     """
@@ -1155,7 +1156,7 @@ class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
         self._audit_log_client_config.require_client_auth = False
         self._audit_log_client_config.enable_broker_tls = False
 
-        super(AuditLogTestsKafkaTlsApi, self).__init__(
+        super(AuditLogTestKafkaTlsApi, self).__init__(
             test_context=test_context,
             audit_log_config=AuditLogConfig(num_partitions=1,
                                             event_types=['authenticate']),
@@ -1206,7 +1207,7 @@ class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
             records) == 1, f'Expected only one record got {len(records)}'
 
 
-class AuditLogTestsOauth(AuditLogTestsBase):
+class AuditLogTestOauth(AuditLogTestBase):
     """
     Tests that validate audit log messages for users authenticated via OAUTH
     """
@@ -1223,7 +1224,7 @@ class AuditLogTestsOauth(AuditLogTestsBase):
 
         self.keycloak = KeycloakService(test_context)
 
-        super(AuditLogTestsOauth, self).__init__(
+        super(AuditLogTestOauth, self).__init__(
             test_context=test_context,
             audit_log_config=AuditLogConfig(num_partitions=1,
                                             event_types=['authenticate']),
