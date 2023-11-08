@@ -422,6 +422,8 @@ static_assert(
 
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
+using client_address_t = named_type<ss::sstring, struct client_address_tag>;
+
 } // namespace model
 
 namespace kafka {

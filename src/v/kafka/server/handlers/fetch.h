@@ -172,11 +172,12 @@ struct fetch_config {
     std::optional<model::rack_id> consumer_rack_id;
     std::optional<std::reference_wrapper<ssx::sharded_abort_source>>
       abort_source;
+    std::optional<model::client_address_t> client_address;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
         fmt::print(
           o,
-          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}, "abortable": {}, "aborted": {}}})",
+          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}, "abortable": {}, "aborted": {}, "client_address": {}}})",
           cfg.start_offset,
           cfg.max_offset,
           cfg.isolation_level,
@@ -189,7 +190,8 @@ struct fetch_config {
           cfg.abort_source.has_value(),
           cfg.abort_source.has_value()
             ? cfg.abort_source.value().get().abort_requested()
-            : false);
+            : false,
+          cfg.client_address.value_or(model::client_address_t{"unknown"}));
         return o;
     }
 };
