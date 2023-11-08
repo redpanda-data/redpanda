@@ -14,6 +14,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SISettings, get_cloud_storage_type
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, BucketView, NTP, NTPR
+from rptest.util import wait_until_result
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -21,6 +22,8 @@ from ducktape.utils.util import wait_until
 import json
 import random
 import time
+
+from requests.exceptions import HTTPError
 
 SCRUBBER_LOG_ALLOW_LIST = [
     # Attempts to compute the retention point for the cloud log will fail
@@ -109,14 +112,31 @@ class CloudStorageScrubberTest(RedpandaTest):
                    backoff_sec=10,
                    err_msg="Some or all partitions did not spill")
 
+    def _query_anomalies(self, admin, namespace: str, topic: str,
+                         partition: int):
+        def query():
+            try:
+                res = admin.get_cloud_storage_anomalies(namespace=namespace,
+                                                        topic=topic,
+                                                        partition=partition)
+                return True, res
+            except HTTPError as ex:
+                if ex.response.status_code == 404:
+                    return False
+                else:
+                    raise
+
+        return wait_until_result(query, timeout_sec=5, backoff_sec=1)
+
     def _collect_anomalies(self):
         anomalies_per_ntpr = {}
 
         admin = Admin(self.redpanda)
         for pid in range(self.partition_count):
-            anomalies = admin.get_cloud_storage_anomalies(namespace="kafka",
-                                                          topic=self.topic,
-                                                          partition=pid)
+            anomalies = self._query_anomalies(admin,
+                                              namespace="kafka",
+                                              topic=self.topic,
+                                              partition=pid)
 
             anomalies.pop("last_complete_scrub_at", None)
 
