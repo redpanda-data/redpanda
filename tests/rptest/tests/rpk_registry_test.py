@@ -284,7 +284,6 @@ class RpkRegistryTest(RedpandaTest):
         assert len(out) == 0
         assert len(out_deleted) == 0
 
-    @ok_to_fail
     @cluster(num_nodes=3)
     def test_produce_consume_avro(self):
         # First we register the schemas with their references.
@@ -349,7 +348,6 @@ class RpkRegistryTest(RedpandaTest):
         assert json.loads(msg["value"]) == expected_msg_1
         assert json.loads(msg["key"]) == expected_msg_2
 
-    @ok_to_fail
     @cluster(num_nodes=3)
     def test_produce_consume_proto(self):
         # First we register the schemas with their references.
