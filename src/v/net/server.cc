@@ -174,6 +174,7 @@ ss::future<> server::apply_proto(
         [this, conn, cq_units = std::move(cq_units)](ss::future<> f) {
             print_exceptional_future(
               std::move(f), "applying protocol", conn->addr);
+            vlog(_log.trace, "shutting down connection {}", conn->addr);
             return conn->shutdown().then_wrapped(
               [this, addr = conn->addr](ss::future<> f) {
                   print_exceptional_future(std::move(f), "shutting down", addr);

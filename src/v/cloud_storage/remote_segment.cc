@@ -1321,11 +1321,12 @@ remote_segment_batch_reader::read_some(
             const auto msg = fmt::format(
               "segment_reader is stuck, segment ntp: {}, _cur_rp_offset: "
               "{}, "
-              "_bytes_consumed: {}, parser error state: {}",
+              "_bytes_consumed: {}, parser error state: {}, client: {}",
               _seg->get_ntp(),
               _cur_rp_offset,
               _bytes_consumed,
-              _parser->error());
+              _parser->error(),
+              _config.client_address);
             if (_parser->error() == storage::parser_errc::end_of_stream) {
                 vlog(_ctxlog.info, "{}", msg);
             } else {
@@ -1345,14 +1346,23 @@ remote_segment_batch_reader::init_parser() {
     ss::gate::holder h(_gate);
     vlog(
       _ctxlog.debug,
-      "remote_segment_batch_reader::init_parser, start_offset: {}",
-      _config.start_offset);
+      "remote_segment_batch_reader::init_parser (creating stream), "
+      "start_offset: {}, client: {}",
+      _config.start_offset,
+      _config.client_address);
 
     auto stream_off = co_await _seg->offset_data_stream(
       model::offset_cast(_config.start_offset),
       model::offset_cast(_config.max_offset),
       _config.first_timestamp,
       priority_manager::local().shadow_indexing_priority());
+
+    vlog(
+      _ctxlog.debug,
+      "remote_segment_batch_reader::init_parser (stream created), "
+      "start_offset: {}, client: {}",
+      _config.start_offset,
+      _config.client_address);
 
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(

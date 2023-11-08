@@ -237,7 +237,16 @@ public:
                 _reader = {};
             }
         }
+
+        vlog(
+          _ctxlog.trace,
+          "partition_record_batch_reader_impl:: start: creating cursor: {}",
+          config);
         co_await init_cursor(config);
+        vlog(
+          _ctxlog.trace,
+          "partition_record_batch_reader_impl:: start: created cursor: {}",
+          config);
         _partition->_ts_probe.reader_created();
     }
 
@@ -306,7 +315,10 @@ public:
                 co_return storage_t{};
             }
             if (_reader->config().over_budget) {
-                vlog(_ctxlog.debug, "We're over-budget, stopping");
+                vlog(
+                  _ctxlog.debug,
+                  "We're over-budget, stopping, config: {}",
+                  _reader->config());
                 // We need to stop in such way that will keep the
                 // reader in the reusable state, so we could reuse
                 // it on next iteration
@@ -557,7 +569,9 @@ private:
       segment_reader_units segment_reader_unit) {
         vlog(
           _ctxlog.debug,
-          "partition_record_batch_reader_impl initialize reader state");
+          "partition_record_batch_reader_impl initialize reader state, config: "
+          "{}",
+          config);
         auto [reader, next_offset] = find_cached_reader(
           manifest,
           config,
@@ -572,7 +586,8 @@ private:
           _ctxlog.debug,
           "partition_record_batch_reader_impl initialize reader state - "
           "segment not "
-          "found");
+          "found, config: {}",
+          config);
         _reader = {};
         _next_segment_base_offset = {};
     }
@@ -1086,7 +1101,8 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
     std::ignore = deadline;
     vlog(
       _ctxlog.debug,
-      "remote partition make_reader invoked, config: {}, num segments {}",
+      "remote partition make_reader invoked (waiting for units), config: {}, "
+      "num segments {}",
       config,
       _segments.size());
 
@@ -1094,6 +1110,14 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       config.abort_source);
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
       get_ntp());
+
+    vlog(
+      _ctxlog.trace,
+      "remote partition make_reader invoked (units acquired), config: {}, "
+      "num segments {}",
+      config,
+      _segments.size());
+
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
       shared_from_this(), ot_state, std::move(units));
     co_await impl->start(config);
@@ -1120,7 +1144,8 @@ remote_partition::timequery(storage::timequery_config cfg) {
       cfg.prio,
       cfg.type_filter,
       cfg.time,
-      cfg.abort_source);
+      cfg.abort_source,
+      cfg.client_address);
 
     // Construct a reader that will skip to the requested timestamp
     // by virtue of log_reader_config::start_timestamp
