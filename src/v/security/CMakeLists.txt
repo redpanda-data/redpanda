@@ -17,6 +17,7 @@ v_cc_library(
     scram_authenticator.cc
     gssapi_authenticator.cc
     oidc_authenticator.cc
+    oidc_principal_mapping.cc
     oidc_service.cc
     credential.cc
     request_auth.cc

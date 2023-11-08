@@ -522,6 +522,7 @@ struct configuration final : public config_store {
     property<ss::sstring> oidc_discovery_url;
     property<ss::sstring> oidc_token_audience;
     property<std::chrono::seconds> oidc_clock_skew_tolerance;
+    property<ss::sstring> oidc_principal_mapping;
 
     // HTTP Authentication
     property<std::vector<ss::sstring>> http_authentication;

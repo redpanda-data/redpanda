@@ -17,6 +17,7 @@
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
+#include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 #include "ssx/sformat.h"
 #include "storage/chunk_cache.h"
@@ -2754,6 +2755,13 @@ configuration::configuration()
       "iat claims in the token.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::chrono::seconds{} * 30)
+  , oidc_principal_mapping(
+      *this,
+      "oidc_principal_mapping",
+      "Rule for mapping JWT Payload claim to a Redpanda User Principal",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      "$.sub",
+      security::oidc::validate_principal_mapping_rule)
   , http_authentication(
       *this,
       "http_authentication",

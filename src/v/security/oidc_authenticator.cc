@@ -14,6 +14,7 @@
 #include "security/errc.h"
 #include "security/jwt.h"
 #include "security/logger.h"
+#include "security/oidc_principal_mapping.h"
 #include "security/oidc_service.h"
 #include "vlog.h"
 
@@ -31,6 +32,7 @@ namespace security::oidc {
 
 result<authentication_data> authenticate(
   jwt const& jwt,
+  principal_mapping_rule const& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -59,17 +61,18 @@ result<authentication_data> authenticate(
         return errc::jwt_invalid_nbf;
     }
 
-    auto sub = jwt.sub().value_or("");
-    if (sub.empty()) {
-        return errc::jwt_invalid_sub;
+    auto principal = mapping.apply(jwt);
+    if (principal.has_error()) {
+        return principal.assume_error();
     }
 
-    return authentication_data{{principal_type::user, ss::sstring(sub)}, exp};
+    return authentication_data{std::move(principal).assume_value(), exp};
 }
 
 result<authentication_data> authenticate(
   jws const& jws,
   verifier const& verifier,
+  principal_mapping_rule const& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -81,7 +84,8 @@ result<authentication_data> authenticate(
     }
 
     auto jwt = std::move(jwt_res).assume_value();
-    auto a_res = authenticate(jwt, issuer, audience, clock_skew_tolerance, now);
+    auto a_res = authenticate(
+      jwt, mapping, issuer, audience, clock_skew_tolerance, now);
     if (a_res.has_error()) {
         vlog(
           seclog.warn,
@@ -119,6 +123,7 @@ public:
         return oidc::authenticate(
           jws.assume_value(),
           _service.get_verifier(),
+          _service.get_principal_mapping_rule(),
           issuer.assume_value(),
           _service.audience(),
           _service.clock_skew_tolerance(),

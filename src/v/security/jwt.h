@@ -11,9 +11,11 @@
 
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
+#include "json/pointer.h"
 #include "json/writer.h"
 #include "oncore.h"
 #include "outcome.h"
+#include "security/oidc_error.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
 
@@ -32,92 +34,6 @@
 #include <iosfwd>
 #include <optional>
 #include <string_view>
-#include <system_error>
-
-namespace security::oidc {
-
-enum class errc {
-    success = 0,
-    metadata_invalid,
-    jwks_invalid,
-    jwk_invalid,
-    jws_invalid_parts,
-    jws_invalid_b64,
-    jws_invalid_sig,
-    jwt_invalid_json,
-    jwt_invalid_typ,
-    jwt_invalid_alg,
-    jwt_invalid_kid,
-    jwt_invalid_iss,
-    jwt_invalid_aud,
-    jwt_invalid_exp,
-    jwt_invalid_iat,
-    jwt_invalid_nbf,
-    jwt_invalid_sub,
-    kid_not_found,
-};
-
-struct errc_category final : public std::error_category {
-    const char* name() const noexcept final { return "security::oidc::errc"; }
-
-    std::string message(int c) const final {
-        switch (static_cast<errc>(c)) {
-        case errc::success:
-            return "Success";
-        case errc::metadata_invalid:
-            return "Invalid metadata";
-        case errc::jwks_invalid:
-            return "Invalid jwks";
-        case errc::jwk_invalid:
-            return "Invalid jwk";
-        case errc::jws_invalid_parts:
-            return "Invalid jws: Expected three parts, is the JWT signed?";
-        case errc::jws_invalid_b64:
-            return "Invalid jws: Base64UrlDecode failed";
-        case errc::jws_invalid_sig:
-            return "Invalid jws: Signature failed";
-        case errc::jwt_invalid_json:
-            return "Invalid jwt: Not JSON";
-        case errc::jwt_invalid_typ:
-            return "Invalid jwt.typ";
-        case errc::jwt_invalid_alg:
-            return "Invalid jwt.alg";
-        case errc::jwt_invalid_kid:
-            return "Invalid jwt.kid";
-        case errc::jwt_invalid_iss:
-            return "Invalid jwt.iss";
-        case errc::jwt_invalid_aud:
-            return "Invalid jwt.aud";
-        case errc::jwt_invalid_exp:
-            return "Invalid jwt.exp";
-        case errc::jwt_invalid_iat:
-            return "Invalid jwt.iat";
-        case errc::jwt_invalid_nbf:
-            return "Invalid jwt.nbf";
-        case errc::jwt_invalid_sub:
-            return "Invalid jwt.sub";
-        case errc::kid_not_found:
-            return "kid not found";
-        }
-    }
-};
-
-inline const std::error_category& error_category() noexcept {
-    static errc_category e;
-    return e;
-}
-
-inline std::error_code make_error_code(errc e) noexcept {
-    return {static_cast<int>(e), error_category()};
-}
-
-} // namespace security::oidc
-
-namespace std {
-template<>
-struct is_error_code_enum<security::oidc::errc> : true_type {};
-
-} // namespace std
 
 namespace security::oidc {
 
@@ -337,6 +253,15 @@ public:
     // Retrieve the Claim named claim.
     auto claim(std::string_view claim) const {
         return detail::string_view(_payload, claim);
+    }
+
+    // Retrieve the Claim by JSON Pointer.
+    std::optional<std::string_view> claim(json::Pointer const& p) const {
+        auto claim = p.Get(_payload);
+        if (!claim || !claim->IsString()) {
+            return std::nullopt;
+        }
+        return detail::as_string_view(*claim);
     }
 
     // Retrieve the Algorithm Header Parameter

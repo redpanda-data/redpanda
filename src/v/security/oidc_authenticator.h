@@ -26,6 +26,7 @@ struct authentication_data {
 result<authentication_data> authenticate(
   jws const& jws,
   verifier const& verifier,
+  principal_mapping_rule const& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -33,6 +34,7 @@ result<authentication_data> authenticate(
 
 result<authentication_data> authenticate(
   jwt const& jwt,
+  principal_mapping_rule const& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,

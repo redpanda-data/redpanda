@@ -22,6 +22,7 @@ namespace oidc {
 class jws;
 class jwt;
 class service;
+class principal_mapping_rule;
 class verifier;
 
 } // namespace oidc

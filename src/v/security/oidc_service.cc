@@ -12,6 +12,7 @@
 #include "http/client.h"
 #include "security/jwt.h"
 #include "security/logger.h"
+#include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 #include "ssx/future-util.h"
 
@@ -88,13 +89,16 @@ struct service::impl {
       config::binding<std::vector<ss::sstring>> http_authentication,
       config::binding<ss::sstring> discovery_url,
       config::binding<ss::sstring> token_audience,
-      config::binding<std::chrono::seconds> clock_skew_tolerance)
+      config::binding<std::chrono::seconds> clock_skew_tolerance,
+      config::binding<ss::sstring> mapping)
       : _verifier{}
       , _sasl_mechanisms{std::move(sasl_mechanisms)}
       , _http_authentication{std::move(http_authentication)}
       , _discovery_url{std::move(discovery_url)}
       , _token_audience{std::move(token_audience)}
-      , _clock_skew_tolerance{std::move(clock_skew_tolerance)} {
+      , _clock_skew_tolerance{std::move(clock_skew_tolerance)}
+      , _mapping{std::move(mapping)}
+      , _rule{} {
         _sasl_mechanisms.watch([this]() {
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
@@ -104,6 +108,8 @@ struct service::impl {
         _discovery_url.watch([this]() {
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
+        _mapping.watch([this]() { update_rule(); });
+        update_rule();
     }
 
     ss::future<> start() {
@@ -203,6 +209,13 @@ struct service::impl {
         _jwks.emplace(std::move(jwks).assume_value());
     }
 
+    void update_rule() {
+        if (auto r = parse_principal_mapping_rule(_mapping()); r.has_error()) {
+            vlog(seclog.error, "Rule failed to parse: {}", _mapping());
+        } else {
+            _rule = std::move(r).assume_value();
+        }
+    }
     ss::gate _gate;
     verifier _verifier;
     config::binding<std::vector<ss::sstring>> _sasl_mechanisms;
@@ -210,6 +223,8 @@ struct service::impl {
     config::binding<ss::sstring> _discovery_url;
     config::binding<ss::sstring> _token_audience;
     config::binding<std::chrono::seconds> _clock_skew_tolerance;
+    config::binding<ss::sstring> _mapping;
+    principal_mapping_rule _rule;
     std::optional<ss::sstring> _issuer;
     std::optional<ss::sstring> _jwks_url;
     std::optional<oidc::jwks> _jwks;
@@ -220,13 +235,15 @@ service::service(
   config::binding<std::vector<ss::sstring>> http_authentication,
   config::binding<ss::sstring> discovery_url,
   config::binding<ss::sstring> token_audience,
-  config::binding<std::chrono::seconds> clock_skew_tolerance)
+  config::binding<std::chrono::seconds> clock_skew_tolerance,
+  config::binding<ss::sstring> mapping)
   : _impl{std::make_unique<impl>(
     std::move(sasl_mechanisms),
     std::move(http_authentication),
     std::move(discovery_url),
     std::move(token_audience),
-    std::move(clock_skew_tolerance))} {}
+    std::move(clock_skew_tolerance),
+    std::move(mapping))} {}
 
 service::~service() noexcept = default;
 
@@ -246,5 +263,9 @@ std::chrono::seconds service::clock_skew_tolerance() const {
 }
 
 verifier const& service::get_verifier() const { return _impl->_verifier; }
+
+principal_mapping_rule const& service::get_principal_mapping_rule() const {
+    return _impl->_rule;
+}
 
 } // namespace security::oidc

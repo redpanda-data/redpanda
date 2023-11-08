@@ -9,6 +9,9 @@
  */
 
 #include "security/gssapi_principal_mapper.h"
+#include "security/mtls.h"
+#include "security/oidc_error.h"
+#include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -16,6 +19,7 @@
 
 #include <ada.h>
 #include <charconv>
+#include <optional>
 #include <system_error>
 
 namespace security {
@@ -181,6 +185,75 @@ result<parsed_url> parse_url(std::string_view url_view) {
       "{}{}{}", url->get_pathname(), url->get_search(), url->get_hash());
 
     return result;
+}
+
+static constexpr std::string_view mapping_rule_pattern
+  = R"(\/((\\.|[^\\/])*)\/((\\.|[^\\/])*)\/([LU]?).*?|(.*?))";
+
+constexpr std::optional<std::string_view> make_sv(const std::csub_match& sm) {
+    return sm.matched
+             ? std::string_view{sm.first, static_cast<size_t>(sm.length())}
+             : std::optional<std::string_view>{std::nullopt};
+}
+
+result<principal_mapping_rule>
+parse_principal_mapping_rule(std::string_view mapping) {
+    if (!mapping.starts_with("$.")) {
+        return errc::invalid_principal_mapping;
+    }
+    auto slash = mapping.find('/');
+    auto path = ss::sstring(mapping.substr(1, slash - 1));
+    std::replace(path.begin(), path.end(), '.', '/');
+
+    auto pointer = json::Pointer{path};
+    if (!pointer.IsValid()) {
+        return errc::invalid_principal_mapping;
+    }
+
+    std::regex rule_parser{
+      mapping_rule_pattern.begin(),
+      mapping_rule_pattern.length(),
+      std::regex_constants::ECMAScript | std::regex_constants::optimize};
+
+    tls::rule rule;
+    if (slash != std::string_view::npos) {
+        auto rule_str = mapping.substr(slash);
+        std::cmatch components_match;
+        if (!std::regex_search(
+              rule_str.begin(),
+              rule_str.end(),
+              components_match,
+              rule_parser,
+              std::regex_constants::match_default)) {
+            return errc::invalid_principal_mapping;
+        }
+        if (components_match.prefix().matched) {
+            return errc::invalid_principal_mapping;
+        }
+        if (components_match.suffix().matched) {
+            return errc::invalid_principal_mapping;
+        }
+        if (!components_match[1].matched) {
+            return errc::invalid_principal_mapping;
+        }
+        const auto adjust_case = make_sv(components_match[5]);
+        rule = {
+          *make_sv(components_match[1]),
+          make_sv(components_match[3]),
+          tls::rule::make_lower{adjust_case == "L"},
+          tls::rule::make_upper{adjust_case == "U"}};
+    }
+
+    return principal_mapping_rule{std::move(pointer), std::move(rule)};
+}
+
+std::optional<ss::sstring>
+validate_principal_mapping_rule(ss::sstring const& rule) {
+    auto rule_res = parse_principal_mapping_rule(rule);
+    if (rule_res.has_error()) {
+        return rule_res.assume_error().message();
+    }
+    return std::nullopt;
 }
 
 } // namespace oidc
