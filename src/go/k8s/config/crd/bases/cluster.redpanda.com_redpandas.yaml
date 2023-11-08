@@ -2994,6 +2994,13 @@ spec:
                         type: string
                     type: object
                 type: object
+              migration:
+                description: 'Migration flag that adjust Kubernetes core resources
+                  with annotation and labels, so flux controller can import resources.
+                  Doc: https://docs.redpanda.com/current/upgrade/migrate/kubernetes/operator/'
+                type: boolean
+            required:
+            - migration
             type: object
           status:
             description: RedpandaStatus defines the observed state of Redpanda

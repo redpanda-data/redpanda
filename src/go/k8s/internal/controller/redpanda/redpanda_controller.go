@@ -21,6 +21,7 @@ import (
 	"github.com/fluxcd/pkg/apis/meta"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/go-logr/logr"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -145,6 +146,11 @@ func (r *RedpandaReconciler) Reconcile(c context.Context, req ctrl.Request) (ctr
 		}
 	}
 
+	if rp.Spec.Migration {
+		err := r.tryMigration(ctx, rp)
+		log.Error(err, "migration")
+	}
+
 	rp, result, err := r.reconcile(ctx, rp)
 
 	// Update status after reconciliation.
@@ -161,6 +167,97 @@ func (r *RedpandaReconciler) Reconcile(c context.Context, req ctrl.Request) (ctr
 	log.Info(durationMsg)
 
 	return result, err
+}
+
+func (r *RedpandaReconciler) tryMigration(ctx context.Context, rp *v1alpha1.Redpanda) error {
+	var pl v1.PodList
+	err := r.List(ctx, &pl, []client.ListOption{
+		client.InNamespace(rp.Namespace),
+		client.MatchingLabels(map[string]string{"app.kubernetes.io/instance": rp.Name}),
+	}...)
+	if err != nil {
+		return fmt.Errorf("listing pods: %w", err)
+	}
+
+	for i := range pl.Items {
+		newPod := pl.Items[i].DeepCopy()
+		if newPod.Labels == nil {
+			newPod.Labels = make(map[string]string)
+		}
+		newPod.Labels["app.kubernetes.io/component"] = "redpanda-statefulset"
+		err = r.Update(ctx, newPod)
+		if err != nil {
+			return fmt.Errorf("updating Pod (%s): %w", newPod.Name, err)
+		}
+	}
+
+	var svc v1.Service
+	err = r.Get(ctx, types.NamespacedName{
+		Namespace: rp.Namespace,
+		Name:      rp.Name,
+	}, &svc)
+	if err != nil {
+		return fmt.Errorf("get internal service: %w", err)
+	}
+
+	internalService := svc.DeepCopy()
+	setHelmLabelsAndResources(internalService, rp)
+
+	internalService.Spec.Selector = make(map[string]string)
+	internalService.Spec.Selector["app.kubernetes.io/instance"] = rp.Name
+	internalService.Spec.Selector["app.kubernetes.io/name"] = "redpanda"
+
+	err = r.Update(ctx, internalService)
+	if err != nil {
+		return fmt.Errorf("updating internal service (%s): %w", internalService.Name, err)
+	}
+
+	err = r.Get(ctx, types.NamespacedName{
+		Namespace: rp.Namespace,
+		Name:      fmt.Sprintf("%s-external", rp.Name),
+	}, &svc)
+	if err != nil {
+		return fmt.Errorf("get external service: %w", err)
+	}
+
+	externalService := svc.DeepCopy()
+	setHelmLabelsAndResources(externalService, rp)
+
+	err = r.Update(ctx, externalService)
+	if err != nil {
+		return fmt.Errorf("updating external service (%s): %w", externalService.Name, err)
+	}
+
+	var sa v1.ServiceAccount
+	err = r.Get(ctx, types.NamespacedName{
+		Namespace: rp.Namespace,
+		Name:      rp.Name,
+	}, &sa)
+	if err != nil {
+		return fmt.Errorf("get service account: %w", err)
+	}
+
+	annotatedSA := sa.DeepCopy()
+	setHelmLabelsAndResources(annotatedSA, rp)
+
+	err = r.Update(ctx, annotatedSA)
+	if err != nil {
+		return fmt.Errorf("updating service account (%s): %w", annotatedSA.Name, err)
+	}
+
+	return nil
+}
+
+func setHelmLabelsAndResources(object client.Object, rp *v1alpha1.Redpanda) {
+	const helm = "Helm"
+	labels := make(map[string]string)
+	labels["app.kubernetes.io/managed-by"] = helm
+	object.SetLabels(labels)
+
+	annotations := make(map[string]string)
+	annotations["meta.helm.sh/release-name"] = rp.Name
+	annotations["meta.helm.sh/release-namespace"] = rp.Namespace
+	object.SetAnnotations(annotations)
 }
 
 func (r *RedpandaReconciler) reconcile(ctx context.Context, rp *v1alpha1.Redpanda) (*v1alpha1.Redpanda, ctrl.Result, error) {

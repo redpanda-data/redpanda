@@ -46,6 +46,10 @@ type RedpandaSpec struct {
 	ChartRef ChartRef `json:"chartRef,omitempty"`
 	// ClusterSpec defines the values to use in the cluster
 	ClusterSpec *RedpandaClusterSpec `json:"clusterSpec,omitempty"`
+	// Migration flag that adjust Kubernetes core resources with annotation and labels, so
+	// flux controller can import resources.
+	// Doc: https://docs.redpanda.com/current/upgrade/migrate/kubernetes/operator/
+	Migration bool `json:"migration"`
 }
 
 // RedpandaStatus defines the observed state of Redpanda
