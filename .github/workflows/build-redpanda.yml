@@ -1,0 +1,35 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: build-redpanda
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: build redpanda
+    runs-on: ubuntu-latest-64
+    strategy:
+      matrix:
+        os: ["fedora:38", "ubuntu:mantic"]
+    container:
+      image: ${{ matrix.os }}
+    steps:
+        - name: checkout
+          uses: actions/checkout@v4
+        - name: dependencies
+          run: ./install-dependencies.sh
+        - name: configure
+          env:
+            CC: clang
+            CXX: clang++
+            CC_LD: lld
+            CXX_LD: lld
+          run: cmake --preset release
+        - name: build
+          run: ninja -C build/release
