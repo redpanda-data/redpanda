@@ -318,6 +318,10 @@ private:
     /// audit topic.
     bool _auth_misconfigured{false};
 
+    /// Represents whether the feature is actually active, not the
+    /// representation of the config variable
+    bool _effectively_enabled{false};
+
     /// Shutdown primitives
     ss::gate _gate;
     ss::abort_source _as;

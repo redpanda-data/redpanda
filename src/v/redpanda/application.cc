@@ -211,6 +211,9 @@ static void set_auditing_kafka_client_defaults(
     if (!client_config.produce_ack_level.is_overriden()) {
         client_config.produce_ack_level.set_value(int16_t(1));
     }
+    if (!client_config.produce_shutdown_delay.is_overriden()) {
+        client_config.produce_shutdown_delay.set_value(3000ms);
+    }
     /// explicity override the scram details as the client will need to use
     /// broker generated ephemeral credentials
     client_config.scram_password.reset();

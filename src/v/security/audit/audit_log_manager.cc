@@ -80,15 +80,19 @@ public:
     /// initialization completes with success.
     ss::future<> initialize();
 
-    /// Closes the gate and flushes all buffers before severing connection to
-    /// broker(s)
+    /// Shuts down the client, may wait for up to
+    /// kafka::config::produce_shutdown_delay_ms to complete
     ss::future<> shutdown();
 
     /// Produces to the audit topic, internal partitioner assigns partitions
     /// to the batches provided. Blocks if semaphore is exhausted.
     ss::future<>
-    produce(std::vector<kafka::client::record_essence>, audit_probe& probe);
+    produce(std::vector<kafka::client::record_essence>, audit_probe&);
 
+    /// Returns true if the configuration phase has completed which includes:
+    /// - Connecting to the broker(s) w/ ephemeral creds
+    /// - Creating ACLs
+    /// - Creating internal audit topic
     bool is_initialized() const { return _is_initialized; }
 
 private:
@@ -159,6 +163,11 @@ private:
     /// work occur in lock step
     ss::gate _gate;
     mutex _mutex;
+
+    /// In the case the client did not finish intialization this optional may be
+    /// fufilled by a fiber attempting to shutdown the client. The future will
+    /// then later be waited on by the fiber that was initializing the client.
+    std::optional<ss::future<>> _early_exit_future;
 
     /// Reference to audit manager so synchronization with its fibers may occur.
     /// Supports pausing and resuming these fibers so the client can safely be
@@ -416,12 +425,46 @@ ss::future<> audit_client::create_internal_topic() {
 }
 
 ss::future<> audit_client::shutdown() {
-    /// Repeated calls to shutdown() are possible, although unlikely
-    if (_as.abort_requested()) {
-        co_return;
-    }
-    vlog(adtlog.info, "Shutting down audit client");
+    /// On shutdown the best attempt to send all data residing in the queues
+    /// must be made, therefore we must:
+    /// - Send the data from all shards queues to the kafka/client
+    /// - Send the shutdown signal to the client
+    /// - client::stop() will make a best attempt to send records residing
+    ///   within its buffers
+    ///
+    /// _client->stop() must only be called when the records reside within the
+    /// client, otherwise the client upon call to stop() will have no records in
+    /// its buffer to send. Therefore client->stop() should only be called once
+    /// the records exist within the clients internal buffers, but how to
+    /// exactly know that? One could synchronously wait until
+    /// client->produce_records() has finished but this is not a good solution
+    /// because:
+    ///
+    /// 1. It returns when the data has been acked (waiting longer then
+    ///    necessary)
+    /// 2. If there is an error in produce it will permanently loop since
+    ///    the audit retry count is set high - deadlock can occur.
+    ///
+    /// Therefore the solution here is to on call to audit_client::shutdown,
+    /// wait until all outstanding requests complete within a fixed timeout
+    /// (since the semaphore units have been taken from the most recent call to
+    /// drain() via pause() during the shutdown sequence in do_toggle()
+    ///
+    /// If the timeout expires then the client will immediately send the
+    /// batch waiting another configurable amount of time before it abruptly
+    /// cancels the operation.
     _as.request_abort();
+    vlog(adtlog.info, "Waiting for audit client to shutdown");
+    static constexpr auto client_drain_wait_timeout = 3s;
+    try {
+        co_await _send_sem.wait(client_drain_wait_timeout, _max_buffer_size);
+    } catch (const ss::semaphore_timed_out&) {
+        vlog(
+          adtlog.warn,
+          "Timed out after {}ms waiting for records to be sent from the audit "
+          "client",
+          client_drain_wait_timeout);
+    }
     _send_sem.broken();
     co_await _client.stop();
     co_await _gate.close();
@@ -516,10 +559,8 @@ ss::future<> audit_sink::start() {
 }
 
 ss::future<> audit_sink::stop() {
-    _mutex.broken();
-    if (_client) {
-        co_await _client->shutdown();
-    }
+    vlog(adtlog.info, "stop() invoked on audit_sink");
+    toggle(false);
     co_await _gate.close();
 }
 
@@ -555,45 +596,61 @@ ss::future<> audit_sink::publish_app_lifecycle_event(
 }
 
 void audit_sink::toggle(bool enabled) {
-    ssx::spawn_with_gate(
-      _gate, [this, enabled]() { return do_toggle(enabled); });
+    vlog(adtlog.info, "Setting auditing enabled state to: {}", enabled);
+    ssx::spawn_with_gate(_gate, [this, enabled]() {
+        return _mutex.with(5s, [this, enabled] { return do_toggle(enabled); })
+          .handle_exception_type(
+            [this, enabled](const ss::semaphore_timed_out&) {
+                /// If within 5s the mutex cannot be aquired AND the client is
+                /// stuck in an initialization loop, then allow it to exit.
+                if (
+                  !enabled && _client && !_client->is_initialized()
+                  && !_early_exit_future.has_value()) {
+                    _early_exit_future = _client->shutdown();
+                }
+            });
+    });
 }
 
 ss::future<> audit_sink::do_toggle(bool enabled) {
-    try {
-        ssx::semaphore_units lock;
-        if (enabled && !_client) {
-            lock = co_await _mutex.get_units();
-            _client = std::make_unique<audit_client>(
-              this, _controller, _config);
-            co_await _client->initialize();
-            if (_client->is_initialized()) {
-                /// Only if shutdown succeeded before initializtion could
-                /// complete would this case evaluate to false
-                co_await _audit_mgr->resume();
-                co_await publish_app_lifecycle_event(
-                  application_lifecycle::activity_id::start);
-            }
-        } else if (!enabled && _client) {
-            /// Call to shutdown does not exist within the lock so that
-            /// shutting down isn't blocked on the lock held above in the
-            /// case initialize() doesn't complete. This is common if for
-            /// example the audit topic is improperly configured
-            /// intitialization will forever hang.
+    if (enabled && !_client) {
+        _client = std::make_unique<audit_client>(this, _controller, _config);
+        co_await _client->initialize();
+        if (_client->is_initialized()) {
             co_await publish_app_lifecycle_event(
-              application_lifecycle::activity_id::stop);
-            co_await _client->shutdown();
-            lock = co_await _mutex.get_units();
-            co_await _audit_mgr->pause();
+              application_lifecycle::activity_id::start);
+            co_await _audit_mgr->resume();
+            vlog(adtlog.info, "Auditing fibers started");
+        } else if (_early_exit_future.has_value()) {
+            /// This is for shutting down the client when initialize() hasn't
+            /// completed.
+            ///
+            /// This special future allows the shutdown method to still execute
+            /// under the scope the mutex, even though it was initiated outside
+            /// outside the scope of the mutex.
+            co_await std::move(*_early_exit_future);
+            _early_exit_future = std::nullopt;
             _client.reset(nullptr);
+        } else {
+            /// There is currently no known way this could occur, that is
+            /// because initialize() should loop forever in the case it cannot
+            /// fully succeed.
+            vlog(
+              adtlog.warn,
+              "Client initialization exited in an unexpected manner");
         }
-    } catch (const ss::broken_semaphore&) {
-        vlog(adtlog.info, "Failed to toggle audit status, shutting down");
-    } catch (...) {
+    } else if (!enabled && _client) {
+        co_await publish_app_lifecycle_event(
+          application_lifecycle::activity_id::stop);
+        co_await _audit_mgr->pause();
+        vlog(adtlog.info, "Auditing fibers stopped");
+        co_await _client->shutdown();
+        _client.reset(nullptr);
+    } else {
         vlog(
-          adtlog.error,
-          "Failed to toggle audit status: {}",
-          std::current_exception());
+          adtlog.info,
+          "Ignored update to audit_enabled(), auditing is already {}",
+          (enabled ? "enabled" : "disabled"));
     }
 }
 
@@ -738,10 +795,17 @@ ss::future<> audit_log_manager::stop() {
 
 ss::future<> audit_log_manager::pause() {
     return container().invoke_on_all([](audit_log_manager& mgr) {
+        mgr._effectively_enabled = false;
         /// Wait until drain() has completed, with timer cancelled it can be
         /// ensured no more work will be performed
         return ss::get_units(mgr._active_drain, 1).then([&mgr](auto) {
             mgr._drain_timer.cancel();
+            return mgr.drain().handle_exception(
+              [&mgr](const std::exception_ptr& e) {
+                  vlog(
+                    adtlog.warn, "Exception in audit_log_manager fiber: {}", e);
+                  mgr.probe().audit_error();
+              });
         });
     });
 }
@@ -752,6 +816,7 @@ ss::future<> audit_log_manager::resume() {
         vassert(
           !mgr._drain_timer.armed(),
           "Timer is already armed upon call to ::resume");
+        mgr._effectively_enabled = true;
         mgr._drain_timer.arm(mgr._queue_drain_interval_ms());
     });
 }
@@ -799,7 +864,7 @@ bool audit_log_manager::do_enqueue_audit_event(
 }
 
 ss::future<> audit_log_manager::drain() {
-    if (_queue.empty() || _as.abort_requested()) {
+    if (_queue.empty()) {
         co_return;
     }
 
