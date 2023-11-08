@@ -553,6 +553,8 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
         co_return tm_stm::op_status::unknown;
     }
 
+    _cache.local().set_mem(tx.etag, tx_id, tx);
+
     co_return tm_stm::op_status::success;
 }
 
