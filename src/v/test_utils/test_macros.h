@@ -11,6 +11,9 @@
 #pragma once
 
 #ifndef IS_GTEST
+#include <boost/test/tools/old/interface.hpp>
+#include <boost/test/unit_test.hpp>
+
 #define RPTEST_FAIL(m) BOOST_FAIL(m)
 #define RPTEST_FAIL_CORO(m) BOOST_FAIL(m)
 #else
