@@ -49,6 +49,84 @@ pub struct PartitionManifestSegment {
     pub delta_offset_end: Option<DeltaOffset>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(into = "PartitionManifestSegment")]
+pub struct SpilloverManifestMeta {
+    size_bytes: i64,
+    start_offset: RawOffset,
+    last_offset: RawOffset,
+    start_timestamp: Timestamp,
+    last_timestamp: Timestamp,
+    delta_offset: DeltaOffset,
+    delta_offset_end: DeltaOffset,
+    ntp_revision: u64,
+    start_term: RaftTerm,
+    last_term: RaftTerm,
+}
+
+impl From<SpilloverManifestMeta> for PartitionManifestSegment {
+    fn from(spill: SpilloverManifestMeta) -> Self {
+        PartitionManifestSegment {
+            base_offset: spill.start_offset,
+            committed_offset: spill.last_offset,
+            is_compacted: false,
+            size_bytes: spill.size_bytes,
+            archiver_term: spill.start_term,
+            delta_offset: Some(spill.delta_offset),
+            base_timestamp: Some(spill.start_timestamp),
+            max_timestamp: Some(spill.last_timestamp),
+            ntp_revision: Some(spill.ntp_revision),
+            sname_format: Some(3),
+            segment_term: Some(spill.last_term),
+            delta_offset_end: Some(spill.delta_offset_end),
+        }
+    }
+}
+
+impl TryFrom<PartitionManifestSegment> for SpilloverManifestMeta {
+    type Error = BucketReaderError;
+
+    fn try_from(seg: PartitionManifestSegment) -> Result<Self, Self::Error> {
+        let sname_format = seg.sname_format.ok_or(Self::Error::SyntaxError(format!(
+            "sname_format not present in {seg:?}"
+        )))?;
+
+        // Spillover manifests encoded in segment meta should be segment_name_format::v3
+        if sname_format != 3 {
+            return Err(Self::Error::SyntaxError(format!(
+                "expected segment_name_format::v3 in {seg:?}"
+            )));
+        }
+
+        Ok(SpilloverManifestMeta {
+            size_bytes: seg.size_bytes,
+            start_offset: seg.base_offset,
+            last_offset: seg.committed_offset,
+            start_timestamp: seg.base_timestamp.ok_or(Self::Error::SyntaxError(format!(
+                "base_timestamp not present in {seg:?}"
+            )))?,
+            last_timestamp: seg.max_timestamp.ok_or(Self::Error::SyntaxError(format!(
+                "base_timestamp not present in {seg:?}"
+            )))?,
+            delta_offset: seg.delta_offset.ok_or(Self::Error::SyntaxError(format!(
+                "delta_offset not present in {seg:?}"
+            )))?,
+            delta_offset_end: seg
+                .delta_offset_end
+                .ok_or(Self::Error::SyntaxError(format!(
+                    "delta_offset_end not present in {seg:?}"
+                )))?,
+            ntp_revision: seg.ntp_revision.ok_or(Self::Error::SyntaxError(format!(
+                "ntp_revision not present in {seg:?}"
+            )))?,
+            start_term: seg.archiver_term,
+            last_term: seg.segment_term.ok_or(Self::Error::SyntaxError(format!(
+                "segment term not present in {seg:?}"
+            )))?,
+        })
+    }
+}
+
 struct ColumnReader<A: DeltaAlg + 'static> {
     values: Vec<i64>,
     marker: PhantomData<&'static A>,
@@ -369,6 +447,10 @@ pub struct PartitionManifest {
     pub start_kafka_offset: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive_size_bytes: Option<u64>, // << Since v23.2.x
+
+    #[serde(default)] // If missing, deserialize as an empty Vec
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub spillover: Vec<SpilloverManifestMeta>,
 }
 
 impl PartitionManifest {
@@ -636,6 +718,7 @@ impl PartitionManifest {
             archive_clean_offset: Some(i64::MIN),
             start_kafka_offset: None,
             archive_size_bytes: Some(0),
+            spillover: Vec::new(),
         }
     }
 
@@ -727,6 +810,21 @@ impl PartitionManifest {
             None
         };
 
+        let spillover = if (reader.position() as u32) < envelope.size {
+            let spills_deserialized = read_iobuf(&mut reader)?;
+            let mut spills_as_segments = decode_colstore(spills_deserialized)?;
+
+            let mut spills: Vec<SpilloverManifestMeta> = spills_as_segments
+                .into_values()
+                .map(|seg| SpilloverManifestMeta::try_from(seg))
+                .collect::<Result<Vec<_>, _>>()?;
+            spills.sort_by(|lhs, rhs| lhs.start_offset.cmp(&rhs.start_offset));
+
+            spills
+        } else {
+            Vec::new()
+        };
+
         Ok(PartitionManifest {
             version: envelope.version as u32,
             namespace,
@@ -745,6 +843,7 @@ impl PartitionManifest {
             archive_clean_offset: Some(archive_clean_offset),
             start_kafka_offset: Some(start_kafka_offset),
             archive_size_bytes: archive_size_bytes,
+            spillover: spillover,
         })
 
         // TODO: respect envelope + skip any unread bytes
