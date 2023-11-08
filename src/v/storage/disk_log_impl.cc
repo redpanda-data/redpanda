@@ -88,7 +88,12 @@ bool deletion_exempt(const model::ntp& ntp) {
                                  || ntp.ns() == model::kafka_internal_namespace;
     bool is_tx_manager_ntp = ntp.ns == model::kafka_internal_namespace
                              && ntp.tp.topic == model::tx_manager_topic;
-    return !is_tx_manager_ntp && is_internal_namespace;
+    bool is_consumer_offsets_ntp = ntp.ns()
+                                     == model::kafka_consumer_offsets_nt.ns()
+                                   && ntp.tp.topic
+                                        == model::kafka_consumer_offsets_nt.tp;
+    return (!is_tx_manager_ntp && is_internal_namespace)
+           || is_consumer_offsets_ntp;
 }
 
 disk_log_impl::disk_log_impl(
@@ -1031,10 +1036,6 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
 
     cfg = apply_overrides(cfg);
 
-    if (!config().is_collectable()) {
-        co_return std::nullopt;
-    }
-
     /*
      * _cloud_gc_offset is used to communicate the intent to collect
      * partition data in excess of normal retention settings (and for infinite
@@ -1058,6 +1059,10 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
           cfg);
 
         co_return co_await request_eviction_until_offset(offset);
+    }
+
+    if (!config().is_collectable()) {
+        co_return std::nullopt;
     }
 
     vlog(
