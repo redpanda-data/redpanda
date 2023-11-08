@@ -314,6 +314,8 @@ class RpkTool:
 
     def sasl_allow_principal(self, principal, operations, resource,
                              resource_name, username, password, mechanism):
+        # TODO: This should use the credentials passed via the constructor
+        # instead of accepting them as parameters
         if resource == "topic":
             resource = "--topic"
         elif resource == "transactional-id":
@@ -354,9 +356,8 @@ class RpkTool:
 
         cmd = [
             "acl", "delete", "--allow-principal", principal, "--operation",
-            ",".join(operations), resource, resource_name, "--brokers",
-            self._redpanda.brokers(), "--no-confirm"
-        ]
+            ",".join(operations), resource, resource_name, "--no-confirm"
+        ] + self._kafka_conn_settings()
         return self._run(cmd)
 
     def _sasl_create_user_cmd(self, new_username, new_password, mechanism):
@@ -1300,7 +1301,7 @@ class RpkTool:
             "group",
             "offset-delete",
             group,
-        ] + request_args_w_flags
+        ] + self._kafka_conn_settings() + request_args_w_flags
 
         # Retry if NOT_COORDINATOR is observed when command exits 1
         return try_offset_delete(retries=5)
@@ -1375,9 +1376,7 @@ class RpkTool:
             "--offset",
             str(offset),
             "--no-confirm",
-            "-X",
-            "brokers=" + self._redpanda.brokers(),
-        ]
+        ] + self._kafka_conn_settings()
 
         if len(partitions) > 0:
             cmd += ["--partitions", ",".join([str(x) for x in partitions])]

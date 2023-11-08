@@ -168,9 +168,7 @@ def alter_partition_reassignments_with_kcl(
         timeout_s: int = 10):
     ok_re = re.compile(r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +OK$")
 
-    output = kcl.alter_partition_reassignments(topics,
-                                               user_cred=user_cred,
-                                               timeout_s=timeout_s)
+    output = kcl.alter_partition_reassignments(topics, timeout_s=timeout_s)
 
     for line in output:
         assert ok_re.match(line.strip()) is not None
@@ -533,18 +531,12 @@ class PartitionReassignmentsACLsTest(RedpandaTest):
         reassignments = {self.topic: {0: [1, 2, 3]}}
         self.logger.debug(f"New replica assignments: {reassignments}")
 
-        user_cred = {
-            "user": username,
-            "passwd": self.password,
-            "method": self.algorithm.lower().replace('-', '_')
-        }
-        kcl = KCL(self.redpanda)
+        method = self.algorithm.lower().replace('-', '_')
+        kcl = KCL(self.redpanda, username, self.password, method)
         try:
-            alter_partition_reassignments_with_kcl(kcl,
-                                                   reassignments,
-                                                   user_cred=user_cred)
+            alter_partition_reassignments_with_kcl(kcl, reassignments)
             raise Exception(
-                f'AlterPartition with user {user_cred} passed. Expected fail.')
+                f'AlterPartition with user {username} passed. Expected fail.')
         except subprocess.CalledProcessError as e:
             if e.output.startswith("CLUSTER_AUTHORIZATION_FAILED"):
                 pass
@@ -553,9 +545,9 @@ class PartitionReassignmentsACLsTest(RedpandaTest):
 
         tps_to_list = {self.topic: [0]}
         try:
-            kcl.list_partition_reassignments(tps_to_list, user_cred=user_cred)
+            kcl.list_partition_reassignments(tps_to_list)
             raise Exception(
-                f'ListPartition with user {user_cred} passed. Expected fail.')
+                f'ListPartition with user {username} passed. Expected fail.')
         except subprocess.CalledProcessError as e:
             if e.output.startswith("CLUSTER_AUTHORIZATION_FAILED"):
                 pass
@@ -563,18 +555,12 @@ class PartitionReassignmentsACLsTest(RedpandaTest):
                 raise
 
         super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
-        user_cred = {
-            "user": super_username,
-            "passwd": super_password,
-            "method": super_algorithm.lower().replace('-', '_')
-        }
-        alter_partition_reassignments_with_kcl(kcl,
-                                               reassignments,
-                                               user_cred=user_cred)
+        method = super_algorithm.lower().replace('-', '_')
+        kcl = KCL(self.redpanda, super_username, super_password, method)
+        alter_partition_reassignments_with_kcl(kcl, reassignments)
 
         def reassignments_done():
-            responses = kcl.list_partition_reassignments(tps_to_list,
-                                                         user_cred=user_cred)
+            responses = kcl.list_partition_reassignments(tps_to_list)
             self.logger.debug(responses)
 
             # Any response means the reassignment is on-going, so before

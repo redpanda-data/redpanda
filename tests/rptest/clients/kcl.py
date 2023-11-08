@@ -38,8 +38,22 @@ KclListPartitionReassignmentsResponse = namedtuple(
 
 
 class KCL:
-    def __init__(self, redpanda):
+    def __init__(self,
+                 redpanda,
+                 username: str = None,
+                 password: str = None,
+                 sasl_mechanism: str = None):
         self._redpanda = redpanda
+        self._username = username
+        self._password = password
+        self._sasl_mechanism = sasl_mechanism
+        if self._username is None:
+            assert self._password is None and self._sasl_mechanism is None, 'Incomplete KCL sasl credentials'
+        else:
+            assert self._password is not None and self._sasl_mechanism is not None, 'Incomplete KCL sasl credentials'
+
+    def sasl_enabled(self):
+        return self._username is not None
 
     def list_topics(self):
         return self._cmd(['topic', 'list'])
@@ -218,16 +232,12 @@ class KCL:
         cmd = ['group', 'offset-delete', "-j", group] + request_args_w_flags
         return json.loads(self._cmd(cmd, attempts=5))
 
-    def get_user_credentials_cmd(self,
-                                 user_cred: Optional[dict[str, str]] = None):
-        if user_cred is not None:
-            assert "user" in user_cred
-            assert "passwd" in user_cred
-            assert "method" in user_cred
+    def sasl_options(self):
+        if self.sasl_enabled():
             return [
-                "-X", f'sasl_user={user_cred["user"]}', "-X",
-                f'sasl_pass={user_cred["passwd"]}', "-X",
-                f'sasl_method={user_cred["method"]}'
+                "-X", f'sasl_user={self._username}', "-X",
+                f'sasl_pass={self._password}', "-X",
+                f'sasl_method={self._sasl_mechanism}'
             ]
 
         return []
@@ -242,9 +252,7 @@ class KCL:
                        to new replica assignments
         :return: list of KclAlterPartitionReassignmentsResponse
         """
-        cmd = self.get_user_credentials_cmd(user_cred) + [
-            "admin", "partas", "alter"
-        ]
+        cmd = ["admin", "partas", "alter"]
 
         for topic in topics:
             assert len(topics[topic]) > 0
@@ -317,17 +325,13 @@ class KCL:
 
     def list_partition_reassignments(self,
                                      topics: Optional[dict[str,
-                                                           list[int]]] = None,
-                                     user_cred: Optional[dict[str,
-                                                              str]] = None):
+                                                           list[int]]] = None):
         """
         :param topics: dict where topic name is the key and the value is the list
                        of partition IDs
         :return: list of KclListPartitionReassignmentsResponse
         """
-        cmd = self.get_user_credentials_cmd(user_cred) + [
-            "admin", "partas", "list"
-        ]
+        cmd = ["admin", "partas", "list"]
 
         lines = None
         if topics is None:
@@ -376,7 +380,7 @@ class KCL:
         """
         brokers = self._redpanda.brokers()
         cmd = ["kcl", "-X", f"seed_brokers={brokers}", "--no-config-file"
-               ] + cmd
+               ] + self.sasl_options() + cmd
         assert attempts > 0
         for retry in reversed(range(attempts)):
             try:
