@@ -532,6 +532,11 @@ class segment_meta_column_impl
         }
     }
 
+    // crtp helper
+    auto to_underlying() const -> decltype(auto) {
+        return *static_cast<Derived const*>(this);
+    }
+
 public:
     /// Position in the column, can be used by
     /// index lookup operations
@@ -694,18 +699,15 @@ public:
     const_iterator end() const { return const_iterator(); }
 
     const_iterator find(value_t value) const {
-        return static_cast<const Derived*>(this)
-          ->template pred_search<std::equal_to<value_t>>(value);
+        return to_underlying().pred_search(value, std::equal_to<>{});
     }
 
     const_iterator upper_bound(value_t value) const {
-        return static_cast<const Derived*>(this)
-          ->template pred_search<std::greater<value_t>>(value);
+        return to_underlying().pred_search(value, std::greater<>{});
     }
 
     const_iterator lower_bound(value_t value) const {
-        return static_cast<const Derived*>(this)
-          ->template pred_search<std::greater_equal<value_t>>(value);
+        return to_underlying().pred_search(value, std::greater_equal<>{});
     }
 
     std::optional<value_t> last_value() const {
@@ -782,12 +784,6 @@ public:
     }
 
 protected:
-    template<class PredT>
-    const_iterator pred_search_impl(value_t value) const {
-        return static_cast<const Derived*>(this)->template pred_search<PredT>(
-          value);
-    }
-
     auto get_frame_iterator_by_element_index(size_t ix) {
         return std::find_if(
           _frames.begin(), _frames.end(), [ix](frame_t const& f) mutable {
@@ -825,9 +821,8 @@ public:
     using base_t::base_t;
     using typename base_t::const_iterator;
 
-    template<class PredT>
-    const_iterator pred_search(value_t value) const {
-        PredT pred;
+    const_iterator pred_search(
+      value_t value, std::regular_invocable<value_t, value_t> auto pred) const {
         for (auto it = this->begin(); it != this->end(); ++it) {
             if (pred(*it, value)) {
                 return it;
@@ -860,9 +855,8 @@ public:
     using base_t::base_t;
     using typename base_t::const_iterator;
 
-    template<class PredT>
-    const_iterator pred_search(value_t value) const {
-        PredT pred;
+    const_iterator pred_search(
+      value_t value, std::regular_invocable<value_t, value_t> auto pred) const {
         auto it = this->_frames.begin();
         size_t index = 0;
         for (; it != this->_frames.end(); ++it) {
