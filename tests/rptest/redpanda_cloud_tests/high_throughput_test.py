@@ -11,6 +11,7 @@ import random
 import itertools
 import math
 import re
+import subprocess
 import time
 import json
 
@@ -28,7 +29,7 @@ from contextlib import contextmanager
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
-    KgoVerifierRandomConsumer)
+    KgoVerifierSeqConsumer, KgoVerifierRandomConsumer)
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
@@ -1032,8 +1033,8 @@ class HighThroughputTest(PreallocNodesTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
-    @ignore
-    @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @ok_to_fail
+    @cluster(num_nodes=8)
     def test_ts_resource_utilization(self):
         """
         In the AWS EC2 CDT testing env, this test is designed for
@@ -1041,7 +1042,74 @@ class HighThroughputTest(PreallocNodesTest):
         desired throughput to drive resource utilization.
         """
         self._create_topic_spec()
-        self.stage_tiered_storage_consuming()
+
+        # Disable redpanda-agent to prevent it overwriting custom settings that
+        # we currently need for this test scenario.
+        cmd = self.redpanda._kubectl._ssh_prefix() + [
+            'sudo systemctl disable --now redpanda-agent{,-init,-boot}.service'
+        ]
+        self.logger.debug(f"Running {cmd}")
+        res = subprocess.check_output(cmd)
+        self.logger.debug(f"Command result: {res}")
+
+        cmd = self.redpanda._kubectl._ssh_prefix() + [
+            'kubectl -n redpanda-system scale deployment redpanda-controller-manager --replicas 0'
+        ]
+        self.logger.debug(f"Running {cmd}")
+        res = subprocess.check_output(cmd)
+        self.logger.debug(f"Command result: {res}")
+
+        # Customize cluster configuration.
+        # Since tests here share the same cluster, we need to take extra care
+        # to restore the cluster configuration at the end.
+        retention_local_target_capacity_percent = float(
+            self.redpanda._kubectl.exec(
+                "rpk cluster config get retention_local_target_capacity_percent"
+            ))
+        cloud_storage_cache_size = int(
+            self.redpanda._kubectl.exec(
+                "rpk cluster config get cloud_storage_cache_size"))
+        self.redpanda._kubectl.exec(
+            "rpk cluster config set retention_local_target_capacity_percent 0.001"
+        )
+        self.redpanda._kubectl.exec(
+            f"rpk cluster config set cloud_storage_cache_size {2 * 1024 * 1024 * 1024}"
+        )
+
+        # Run the actual test. Catch any exceptions to allow cleanup,
+        # and rethrow the exception at the end.
+        test_run_exception = None
+        try:
+            self.stage_tiered_storage_consuming()
+        except BaseException as e:
+            self.logger.info(f"Test body failed, storing exception: {e}")
+            test_run_exception = e
+
+        # Reset orignal settings.
+        self.redpanda._kubectl.exec(
+            f"rpk cluster config set retention_local_target_capacity_percent {retention_local_target_capacity_percent}"
+        )
+        self.redpanda._kubectl.exec(
+            f"rpk cluster config set cloud_storage_cache_size {cloud_storage_cache_size}"
+        )
+
+        # Re-enable redpanda agent.
+        cmd = self.redpanda._kubectl._ssh_prefix() + [
+            'sudo systemctl enable --now redpanda-agent.service redpanda-agent-boot.service'
+        ]
+        self.logger.debug(f"Running {cmd}")
+        res = subprocess.check_output(cmd)
+        self.logger.debug(f"Command result: {res}")
+
+        cmd = self.redpanda._kubectl._ssh_prefix() + [
+            'kubectl -n redpanda-system scale deployment redpanda-controller-manager --replicas 1'
+        ]
+        self.logger.debug(f"Running {cmd}")
+        res = subprocess.check_output(cmd)
+        self.logger.debug(f"Command result: {res}")
+
+        if test_run_exception:
+            raise test_run_exception
 
     def stage_lots_of_failed_consumers(self):
         # This stage sequentially starts 1,000 consumers. Then allows
@@ -1296,10 +1364,20 @@ class HighThroughputTest(PreallocNodesTest):
 
             assert ok, "cache hit ratio is higher than expected"
 
-    def _run_omb(self, produce_bps,
-                 validator_overrides) -> OpenMessagingBenchmark:
+    def _run_omb(self,
+                 produce_bps,
+                 validator,
+                 *,
+                 partitions_per_topic=None,
+                 test_duration_minutes=None) -> OpenMessagingBenchmark:
         topic_count = 1
-        partitions_per_topic = self._partitions_upper_limit
+
+        if partitions_per_topic is None:
+            partitions_per_topic = self._partitions_upper_limit
+
+        if test_duration_minutes is None:
+            test_duration_minutes = 3
+
         workload = {
             "name": "StabilityTest",
             "topics": topic_count,
@@ -1311,17 +1389,13 @@ class HighThroughputTest(PreallocNodesTest):
             "message_size": 4 * KiB,
             "payload_file": "payload/payload-4Kb.data",
             "consumer_backlog_size_GB": 0,
-            "test_duration_minutes": 3,
+            "test_duration_minutes": test_duration_minutes,
             "warmup_duration_minutes": 1,
         }
 
-        bench_node = self.preallocated_nodes[0]
-        worker_nodes = self.preallocated_nodes[1:]
-
-        benchmark = OpenMessagingBenchmark(
-            self._ctx, self.redpanda, "SIMPLE_DRIVER",
-            (workload, OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
-             | validator_overrides))
+        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda,
+                                           "SIMPLE_DRIVER",
+                                           (workload, validator))
 
         benchmark.start()
         return benchmark
@@ -1336,8 +1410,7 @@ class HighThroughputTest(PreallocNodesTest):
 
         self.logger.info(f"Starting stage_tiered_storage_consuming")
 
-        segment_size = 128 * MiB  # 128 MiB
-        consume_rate = 1 * GiB  # 1 GiB/s
+        segment_size = self.min_segment_size
 
         # create a new topic with low local retention.
         config = {
@@ -1350,63 +1423,104 @@ class HighThroughputTest(PreallocNodesTest):
             'partition_autobalancing_mode': 'continuous',
             'raft_learner_recovery_rate': 10 * GiB,
         }
+
+        # Distribute the partition limit between the background workload and OMB.
+        # The biggest share of partitions is left for the TS load because it is the
+        # one introducing stress in the system.
+        # Higher of 10% or 100 partitions for OMB.
+        omb_partitions = max(100, self._partitions_upper_limit * 0.1)
+        # Leave the rest to the TS load.
+        ts_load_partitions = self._partitions_upper_limit - omb_partitions
+
         self.rpk.create_topic(self.topic,
-                              partitions=self._partitions_upper_limit,
+                              partitions=ts_load_partitions,
                               replicas=3,
                               config=config)
+
+        # Redpanda cloud tiers are asymmetric in ingress and egress limits. Ingress rate is usually lower than egress.
+        # Since we are interesting in introducing stress on the egress path, we need to adjust produce variables for that.
+        target_consume_time_s = 10 * 60
+        # Want to produce at least one full segment for each partition to trigger cloud uploads.
+        # Space management can force a segment roll but we aren't relying on in.
+        min_bytes_to_produce = 1.5 * segment_size * ts_load_partitions
+        num_bytes_for_consumer = max(
+            min_bytes_to_produce,
+            (target_consume_time_s * self._advertised_max_egress))
+        produce_timeout = 1.5 * num_bytes_for_consumer / self._advertised_max_ingress
+        num_messages_for_consumer = num_bytes_for_consumer // self.msg_size
 
         producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             self.topic,
             msg_size=self.msg_size,
-            msg_count=5_000_000_000_000,
+            msg_count=num_messages_for_consumer,
             rate_limit_bps=self._advertised_max_ingress)
         producer.start()
 
-        # produce 10 mins worth of consume data onto S3.
-        produce_time_s = 4 * 60
-        messages_to_produce = (produce_time_s * consume_rate) / self.msg_size
-        time_to_wait = (messages_to_produce *
-                        self.msg_size) / self._advertised_max_ingress
-
-        wait_until(
-            lambda: producer.produce_status.acked >= messages_to_produce,
-            timeout_sec=1.5 * time_to_wait,
-            backoff_sec=5,
-            err_msg=
-            f"Could not ack production of {messages_to_produce} messages in {1.5 * time_to_wait} s"
+        self.logger.info(
+            f"Producing {num_messages_for_consumer=} {num_bytes_for_consumer=}. ETA={produce_timeout}s."
         )
-        # continue to produce the rest of the test
 
-        validator_overrides = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(51)],
-            OMBSampleConfigurations.E2E_LATENCY_AVG:
-            [OMBSampleConfigurations.lte(145)],
+        producer.wait(produce_timeout)
+
+        self.logger.info("Launching OMB")
+
+        # All OMB validations are disabled until the following issues are resolved:
+        # 1. https://github.com/redpanda-data/core-internal/issues/546
+        # 2. https://github.com/redpanda-data/core-internal/issues/896
+        #
+        # We just validate a successful completion.
+        omb_validator = {
+            # OMBSampleConfigurations.E2E_LATENCY_50PCT:
+            # [OMBSampleConfigurations.lte(100)],
+            # OMBSampleConfigurations.E2E_LATENCY_AVG:
+            # [OMBSampleConfigurations.lte(100)],
         }
 
         # Run a usual producer + consumer workload and a S3 producer + consumer workload concurrently
         # Ensure that the S3 workload doesn't effect the usual workload majorly.
-        benchmark = self._run_omb(self._advertised_max_ingress / 2,
-                                  validator_overrides)
+        omb_test_duration_minutes = math.ceil(target_consume_time_s / 60)
+        benchmark = self._run_omb(
+            self._advertised_max_ingress / 2,
+            omb_validator,
+            partitions_per_topic=omb_partitions,
+            test_duration_minutes=omb_test_duration_minutes)
+
+        initial_cloud_storage_cache_op_put = self.redpanda.metric_sum(
+            "redpanda_cloud_storage_cache_op_put_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        self.logger.debug(f"{initial_cloud_storage_cache_op_put=}")
+
+        # 5x consumption time tolerance is arbitrary and needs to be tighten up.
+        consume_timeout = 5 * target_consume_time_s
+        self.logger.info(f"Launching batch consumer. ETA={consume_timeout}s")
 
         # This consumer should largely be reading from S3
-        consumer = RpkConsumer(self._ctx,
-                               self.redpanda,
-                               self.topic,
-                               offset="oldest",
-                               num_msgs=messages_to_produce)
-        consumer.start()
-        wait_until(
-            lambda: consumer.message_count >= messages_to_produce,
-            timeout_sec=5 * produce_time_s,
-            backoff_sec=5,
-            err_msg=
-            f"Could not consume {messages_to_produce} msgs in {5 * produce_time_s} s"
+        t1 = time.time()
+        consumer = KgoVerifierSeqConsumer.oneshot(
+            self._ctx,
+            self.redpanda,
+            self.topic,
+            loop=False,
+            max_msgs=num_messages_for_consumer,
+            timeout_sec=consume_timeout)
+        assert consumer.consumer_status.validator.valid_reads >= num_messages_for_consumer
+        consume_duration = time.time() - t1
+        consume_rate = num_bytes_for_consumer / consume_duration
+        self.logger.info(
+            f"Consumed {num_bytes_for_consumer} bytes in {consume_duration} seconds, {consume_rate/1000000.0:.2f}MB/s"
         )
-        consumer.stop()
-        consumer.free()
+
+        final_cloud_storage_cache_op_put = self.redpanda.metric_sum(
+            "redpanda_cloud_storage_cache_op_put_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        self.logger.debug(f"{final_cloud_storage_cache_op_put=}")
+
+        min_cache_op_put_delta = ts_load_partitions
+        assert (final_cloud_storage_cache_op_put -
+                initial_cloud_storage_cache_op_put >= min_cache_op_put_delta
+                ), f"Expected a minimum diff of {min_cache_op_put_delta}"
 
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
