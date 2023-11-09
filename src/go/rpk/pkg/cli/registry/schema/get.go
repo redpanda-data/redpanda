@@ -31,7 +31,7 @@ func newGetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		sversion   string
 	)
 	cmd := &cobra.Command{
-		Use:   "get",
+		Use:   "get [SUBJECT]",
 		Short: "Get a schema by version, ID, or by an existing schema",
 		Long: `Get a schema by version, ID, or by an existing schema.
 
