@@ -193,7 +193,11 @@ ss::future<> rpc_server::dispatch_method_once(
               method* m = it->get()->method_from_id(method_id);
 
               return m->handle(ctx->conn->input(), *ctx)
-                .then_wrapped([this, ctx, m, l = hist().auto_measure()](
+                .then_wrapped([this,
+                               ctx,
+                               m,
+                               method_id,
+                               l = hist().auto_measure()](
                                 ss::future<netbuf> fut) mutable {
                     bool error = true;
                     netbuf reply_buf;
@@ -241,7 +245,9 @@ ss::future<> rpc_server::dispatch_method_once(
                         reply_buf.set_status(rpc::status::request_timeout);
                     } catch (...) {
                         rpclog.error(
-                          "Service handler threw an exception: {}",
+                          "Service handler for method {} threw an exception: "
+                          "{}",
+                          method_id,
                           std::current_exception());
                         probe().service_error();
                         reply_buf.set_status(rpc::status::server_error);
