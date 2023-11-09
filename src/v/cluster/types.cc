@@ -413,10 +413,12 @@ std::ostream&
 operator<<(std::ostream& o, const delta_reconfiguration_data& data) {
     fmt::print(
       o,
-      "{{target_assignment: {}, previous_replicas: {} replica_revisions: {}}}",
+      "{{target_assignment: {}, previous_replicas: {}, replica_revisions: {}, "
+      "policy: {}}}",
       data.target_assignment,
       data.previous_replica_set,
-      data.replica_revisions);
+      data.replica_revisions,
+      data.policy);
     return o;
 }
 std::ostream&
