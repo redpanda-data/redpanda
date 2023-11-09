@@ -954,7 +954,6 @@ class HighThroughputTest(PreallocNodesTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
-    @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_ts_resource_utilization(self):
         """
@@ -1252,7 +1251,6 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.info(f"Starting stage_tiered_storage_consuming")
 
         segment_size = 128 * MiB  # 128 MiB
-        consume_rate = 1 * GiB  # 1 GiB/s
 
         # create a new topic with low local retention.
         config = {
@@ -1279,20 +1277,27 @@ class HighThroughputTest(PreallocNodesTest):
             rate_limit_bps=self._advertised_max_ingress)
         producer.start()
 
-        # produce 10 mins worth of consume data onto S3.
-        produce_time_s = 4 * 60
-        messages_to_produce = (produce_time_s * consume_rate) / self.msg_size
-        time_to_wait = (messages_to_produce *
-                        self.msg_size) / self._advertised_max_ingress
+        target_consume_time_s = 4 * 60
+        num_bytes_for_consumer = (target_consume_time_s *
+                                  self._advertised_max_egress)
+        num_messages_for_consumer = num_bytes_for_consumer / self.msg_size
+        produce_timeout = 1.5 * (num_messages_for_consumer *
+                                 self.msg_size) / self._advertised_max_ingress
+
+        self.logger.info(
+            f"Producing {num_messages_for_consumer=} {num_bytes_for_consumer=}"
+        )
 
         wait_until(
-            lambda: producer.produce_status.acked >= messages_to_produce,
-            timeout_sec=1.5 * time_to_wait,
+            lambda: producer.produce_status.acked >= num_messages_for_consumer,
+            timeout_sec=produce_timeout,
             backoff_sec=5,
             err_msg=
-            f"Could not ack production of {messages_to_produce} messages in {1.5 * time_to_wait} s"
+            f"Could not ack production of {num_messages_for_consumer} messages in {produce_timeout} s"
         )
         # continue to produce the rest of the test
+
+        self.logger.info("Launching OMB")
 
         validator_overrides = {
             OMBSampleConfigurations.E2E_LATENCY_50PCT:
@@ -1306,19 +1311,21 @@ class HighThroughputTest(PreallocNodesTest):
         benchmark = self._run_omb(self._advertised_max_ingress / 2,
                                   validator_overrides)
 
+        self.logger.info("Launching batch consumer")
+
         # This consumer should largely be reading from S3
         consumer = RpkConsumer(self._ctx,
                                self.redpanda,
                                self.topic,
                                offset="oldest",
-                               num_msgs=messages_to_produce)
+                               num_msgs=num_messages_for_consumer)
         consumer.start()
         wait_until(
-            lambda: consumer.message_count >= messages_to_produce,
-            timeout_sec=5 * produce_time_s,
+            lambda: consumer.message_count >= num_messages_for_consumer,
+            timeout_sec=5 * target_consume_time_s,
             backoff_sec=5,
             err_msg=
-            f"Could not consume {messages_to_produce} msgs in {5 * produce_time_s} s"
+            f"Could not consume {num_messages_for_consumer} msgs in {5 * target_consume_time_s} s"
         )
         consumer.stop()
         consumer.free()
