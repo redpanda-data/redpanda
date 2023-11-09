@@ -1109,6 +1109,199 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
       merged_result.end()));
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_in_gap) {
+    auto make_seg = [](auto base) {
+        return segment_meta{
+          .is_compacted = false,
+          .size_bytes = 812,
+          .base_offset = model::offset(base),
+          .committed_offset = model::offset(base + 9),
+          .base_timestamp = model::timestamp(1646430092103),
+          .max_timestamp = model::timestamp(1646430092103),
+          .delta_offset = model::offset_delta(0),
+          .archiver_term = model::term_id(2),
+          .segment_term = model::term_id(0),
+          .delta_offset_end = model::offset_delta(0),
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = 0,
+        };
+    };
+
+    std::vector<size_t> baseline_entries{0, 13, 16, 17, 29, 30, 31, 32};
+    for (size_t entries : baseline_entries) {
+        auto base_offset = 0;
+        std::vector<segment_meta> metas;
+        segment_meta_cstore store{};
+
+        // Insert different number of baseline entries to get differrent
+        // frame configurations.
+        for (size_t i = 0; i < entries; ++i) {
+            auto seg = make_seg(base_offset);
+            base_offset += 10;
+
+            metas.push_back(seg);
+            store.insert(seg);
+        }
+
+        auto next_seg = make_seg(base_offset);
+        auto next_next_seg = make_seg(base_offset + 10);
+        auto next_next_next_seg = make_seg(base_offset + 20);
+
+        metas.push_back(next_seg);
+        metas.push_back(next_next_seg);
+        metas.push_back(next_next_next_seg);
+
+        // Insert two segments and create a gap between them
+        store.insert(next_seg);
+        store.insert(next_next_next_seg);
+
+        // Flush the write buffer such that the next insert does
+        // not get re-ordered in the right place.
+        store.flush_write_buffer();
+
+        // Insert in the gap
+        store.insert(next_next_seg);
+
+        BOOST_CHECK_EQUAL(store.size(), metas.size());
+        BOOST_CHECK(*store.begin() == metas[0]);
+        BOOST_CHECK_EQUAL(
+          store.last_segment().value(), metas[metas.size() - 1]);
+
+        auto expected_iter = metas.begin();
+        auto cstore_iter = store.begin();
+
+        for (; expected_iter != metas.end(); ++expected_iter, ++cstore_iter) {
+            BOOST_CHECK_EQUAL(*expected_iter, *cstore_iter);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_overlap_no_replace) {
+    auto make_seg = [](auto base, std::optional<int64_t> last) {
+        return segment_meta{
+          .is_compacted = false,
+          .size_bytes = 812,
+          .base_offset = model::offset(base),
+          .committed_offset = model::offset(last ? *last : base + 9),
+          .base_timestamp = model::timestamp(1646430092103),
+          .max_timestamp = model::timestamp(1646430092103),
+          .delta_offset = model::offset_delta(0),
+          .archiver_term = model::term_id(2),
+          .segment_term = model::term_id(0),
+          .delta_offset_end = model::offset_delta(0),
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = 0,
+        };
+    };
+
+    std::vector<size_t> baseline_entries{1, 13, 16, 17, 29, 30, 31, 32};
+    for (size_t entries : baseline_entries) {
+        auto base_offset = 0;
+        std::vector<segment_meta> metas;
+        segment_meta_cstore store{};
+
+        // Insert different number of baseline entries to get differrent
+        // frame configurations.
+        for (size_t i = 0; i < entries; ++i) {
+            auto seg = make_seg(base_offset, std::nullopt);
+            base_offset += 10;
+
+            metas.push_back(seg);
+            store.insert(seg);
+        }
+
+        auto last_seg = store.last_segment();
+        BOOST_REQUIRE(last_seg.has_value());
+
+        // Select a segment that is fully contained by the last segment.
+        auto next_seg = make_seg(
+          last_seg->base_offset() - 5, last_seg->base_offset() + 5);
+        metas.insert(--metas.end(), next_seg);
+
+        // Flush the write buffer such that the next insert does
+        // not get re-ordered in the right place.
+        store.flush_write_buffer();
+
+        // Insert the overlapping segment
+        store.insert(next_seg);
+
+        BOOST_CHECK_EQUAL(store.size(), metas.size());
+        BOOST_CHECK(*store.begin() == metas[0]);
+        BOOST_CHECK_EQUAL(
+          store.last_segment().value(), metas[metas.size() - 1]);
+
+        auto expected_iter = metas.begin();
+        auto cstore_iter = store.begin();
+
+        for (; expected_iter != metas.end(); ++expected_iter, ++cstore_iter) {
+            BOOST_CHECK_EQUAL(*expected_iter, *cstore_iter);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_overlap_with_replace) {
+    auto make_seg = [](auto base, std::optional<int64_t> last) {
+        return segment_meta{
+          .is_compacted = false,
+          .size_bytes = 812,
+          .base_offset = model::offset(base),
+          .committed_offset = model::offset(last ? *last : base + 9),
+          .base_timestamp = model::timestamp(1646430092103),
+          .max_timestamp = model::timestamp(1646430092103),
+          .delta_offset = model::offset_delta(0),
+          .archiver_term = model::term_id(2),
+          .segment_term = model::term_id(0),
+          .delta_offset_end = model::offset_delta(0),
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = 0,
+        };
+    };
+
+    std::vector<size_t> baseline_entries{13, 16, 17, 29, 30, 31, 32};
+    for (size_t entries : baseline_entries) {
+        auto base_offset = 0;
+        std::vector<segment_meta> metas;
+        segment_meta_cstore store{};
+
+        // Insert different number of baseline entries to get differrent
+        // frame configurations.
+        for (size_t i = 0; i < entries; ++i) {
+            auto seg = make_seg(base_offset, std::nullopt);
+            base_offset += 10;
+
+            metas.push_back(seg);
+            store.insert(seg);
+        }
+
+        auto replaced_seg = metas[metas.size() - 2];
+
+        // Select a segment that fully includes the penultimate segment.
+        auto next_seg = make_seg(
+          replaced_seg.base_offset() - 5, replaced_seg.committed_offset() + 5);
+        metas.insert(metas.end() - 2, next_seg);
+        metas.erase(metas.end() - 2);
+
+        // Flush the write buffer such that the next insert does
+        // not get re-ordered in the right place.
+        store.flush_write_buffer();
+
+        // Insert the overlapping segment
+        store.insert(next_seg);
+
+        BOOST_CHECK_EQUAL(store.size(), metas.size());
+        BOOST_CHECK(*store.begin() == metas[0]);
+        BOOST_CHECK_EQUAL(
+          store.last_segment().value(), metas[metas.size() - 1]);
+
+        auto expected_iter = metas.begin();
+        auto cstore_iter = store.begin();
+
+        for (; expected_iter != metas.end(); ++expected_iter, ++cstore_iter) {
+            BOOST_CHECK_EQUAL(*expected_iter, *cstore_iter);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_retrieve_edge_case) {
     // test to trigger a corner case, where the _hints vector is misaligned with
     // the frames basically the first element of a frame is not tracked by a
