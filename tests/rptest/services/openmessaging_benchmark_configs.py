@@ -169,7 +169,7 @@ class OMBSampleConfigurations:
         "producer_config": {
             "enable.idempotence": "true",
             "acks": "all",
-            "liner.ms": 1,
+            "linger.ms": 1,
             "max.in.flight.requests.per.connection": 5,
             "batch.size": 131072,
         },
