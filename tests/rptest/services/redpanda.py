@@ -2998,8 +2998,12 @@ class RedpandaService(RedpandaServiceBase):
                 # The pid is listed first, that's all we need
                 return int(line.split()[0])
             return None
-        except (RemoteCommandError, ValueError):
-            return None
+        except RemoteCommandError as e:
+            # 1 - No processes matched or none of them could be signalled.
+            if e.exit_status == 1:
+                return None
+
+            raise e
 
     def started_nodes(self):
         return self._started
