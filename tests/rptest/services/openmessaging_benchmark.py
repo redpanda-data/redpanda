@@ -228,7 +228,7 @@ class OpenMessagingBenchmark(Service):
             self._ctx, num_workers=self.num_workers, nodes=self.worker_nodes)
         self.workers.start()
 
-    def start_node(self, node, timeout_sec=60, **kwargs):
+    def start_node(self, node, timeout_sec=5 * 60, **kwargs):
         idx = self.idx(node)
         self.logger.info("Open Messaging Benchmark: benchmark node - %d on %s",
                          idx, node.account.hostname)
