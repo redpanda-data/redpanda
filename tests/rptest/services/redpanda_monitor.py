@@ -34,9 +34,7 @@ class RedpandaMonitor(BackgroundThreadService):
                 try:
                     self.redpanda.logger.info(
                         f"RedpandaMonitor checking {n.account.hostname}")
-                    pid = self.redpanda.redpanda_pid(n,
-                                                     timeout=3,
-                                                     silent=False)
+                    pid = self.redpanda.redpanda_pid(n)
                     if pid is None:
                         started_dead_nodes.append(n)
 

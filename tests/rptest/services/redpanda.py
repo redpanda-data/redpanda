@@ -2984,7 +2984,7 @@ class RedpandaService(RedpandaServiceBase):
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
 
-    def redpanda_pid(self, node, timeout=None):
+    def redpanda_pid(self, node):
         try:
             cmd = "pgrep --list-full --exact redpanda"
             for line in node.account.ssh_capture(cmd, timeout_sec=10):
