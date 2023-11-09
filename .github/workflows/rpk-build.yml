@@ -11,13 +11,11 @@ name: rpk
 on:
   push:
     branches:
-      - '*'
-  pull_request:
-    branches:
-      - dev
-      - 'v*'
+      - 'dev'
     paths:
-      - .github/workflows/rpk-build.yml
+      - 'src/go/rpk/**'
+  pull_request:
+    paths:
       - 'src/go/rpk/**'
 
 jobs:
