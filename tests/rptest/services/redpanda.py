@@ -3995,7 +3995,7 @@ class RedpandaService(RedpandaServiceBase):
                     namespace="kafka",
                     topic=p.topic,
                     partition=p.index,
-                    node=self.get_node(leader_id))
+                    node=self.get_node_by_id(leader_id))
             except HTTPError as he:
                 if he.response.status_code == 404:
                     # Old redpanda, doesn't have this endpoint.  We can't
