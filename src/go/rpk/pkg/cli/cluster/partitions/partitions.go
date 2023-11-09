@@ -25,6 +25,7 @@ func NewPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	p.InstallSASLFlags(cmd)
 	cmd.AddCommand(
 		newBalancerStatusCommand(fs, p),
+		newListCommand(fs, p),
 		newMovementCancelCommand(fs, p),
 		newMovementCancelCommandHidden(fs, p),
 		newPartitionMovementsStatusCommand(fs, p),
