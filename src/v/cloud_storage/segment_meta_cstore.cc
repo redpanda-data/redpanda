@@ -1009,7 +1009,9 @@ public:
         if (_write_buffer.size() > 1) {
             auto not_replaced_segment = std::find_if(
               std::next(m_it), _write_buffer.end(), [&](auto& kv) {
-                  return kv.first > m.committed_offset;
+                  // first element with a committed offset that spans over the
+                  // range of m
+                  return kv.second.committed_offset > m.committed_offset;
               });
             // if(next(m_it) == not_replaced_segment) there is nothing to erase,
             // _write_buffer.erase would do nothing
