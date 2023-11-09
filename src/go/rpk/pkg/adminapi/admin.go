@@ -317,7 +317,7 @@ func (a *AdminAPI) sendAny(ctx context.Context, method, path string, body, into 
 
 		// If err is set, we are retrying after a failure on the previous node
 		if err != nil {
-			fmt.Printf("Request error, trying another node: %s\n", err.Error())
+			zap.L().Warn(fmt.Sprintf("Request error, trying another node: %s", err.Error()))
 			var httpErr *HTTPResponseError
 			if errors.As(err, &httpErr) {
 				status := httpErr.Response.StatusCode
