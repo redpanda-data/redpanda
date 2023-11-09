@@ -40,7 +40,8 @@ class RedpandaMonitor(BackgroundThreadService):
 
                 except Exception as e:
                     self.redpanda.logger.warn(
-                        f"Failed to fetch PID for node {n.account.hostname}")
+                        f"Failed to fetch PID for node {n.account.hostname}: {e}"
+                    )
 
             for n in started_dead_nodes:
                 self.redpanda.remove_from_started_nodes(n)
