@@ -28,34 +28,32 @@ void probe::setup_metrics(ss::sstring transform_name) {
     std::vector<sm::metric_definition> metric_defs;
     metric_defs.emplace_back(
       sm::make_counter(
-        "processor_read_bytes",
+        "read_bytes",
         [this] { return _read_bytes; },
-        sm::description(
-          "A counter for all the bytes that has been input to a transform"),
+        sm::description("The number of bytes input to the transform"),
         labels)
         .aggregate({sm::shard_label}));
     metric_defs.emplace_back(
       sm::make_counter(
-        "processor_write_bytes",
+        "write_bytes",
         [this] { return _write_bytes; },
-        sm::description("A counter for all the bytes that has been output "
-                        "from a transform"),
+        sm::description("The number of bytes output by the transform"),
         labels)
         .aggregate({sm::shard_label}));
     metric_defs.emplace_back(
-      sm::make_counter(
-        "processor_lag",
+      sm::make_gauge(
+        "lag",
         [this] { return _lag; },
-        sm::description("The pending available on the input topic that have "
-                        "yet to be processed"),
+        sm::description(
+          "The number of pending records on the input topic that have "
+          "not yet been processed by the transform"),
         labels)
         .aggregate({sm::shard_label}));
     metric_defs.emplace_back(
       sm::make_counter(
-        "processor_failures",
+        "failures",
         [this] { return _failures; },
-        sm::description(
-          "A counter for each time that a processor encounters a failure"),
+        sm::description("The number of processor failures"),
         labels)
         .aggregate({sm::shard_label}));
 
@@ -67,15 +65,15 @@ void probe::setup_metrics(ss::sstring transform_name) {
           state_label(model::processor_state_to_string(s)));
         metric_defs.emplace_back(
           sm::make_gauge(
-            "processor_state",
+            "state",
             [this, s] { return _processor_state[s]; },
             sm::description(
-              "The count of transform processors in a certain state"),
+              "The number of transform processors in a specific state"),
             state_labels)
             .aggregate({sm::shard_label}));
     }
     _public_metrics.add_group(
-      prometheus_sanitize::metrics_name("transform"), metric_defs);
+      prometheus_sanitize::metrics_name("transform_processor"), metric_defs);
 }
 void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
 void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
