@@ -1,0 +1,16 @@
+[package]
+name = "redpanda-transform-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "A Rust library for authoring Redpanda Data Transforms."
+homepage = "https://redpanda.com"
+repository = "https://github.com/redpanda-data/redpanda"
+license = "Apache-2.0"
+keywords = ["redpanda", "wasm", "kafka", "data-transform"]
+categories = ["wasm"]
+
+[dev-dependencies]
+quickcheck = "1"
+rand = "0.8"
+anyhow = "1.0.75"
+
