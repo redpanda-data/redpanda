@@ -168,7 +168,7 @@ metrics_reporter::make_header(const iobuf& buffer) {
     header.target(std::string(_address.path));
     header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(buffer.size_bytes()));
+      fmt::format("{}", buffer.size_bytes()));
     header.insert(
       boost::beast::http::field::host,
       fmt::format("{}:{}", _address.host, _address.port));

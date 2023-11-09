@@ -117,7 +117,7 @@ ss::future<api_response> make_request_with_payload(
   std::optional<std::chrono::milliseconds> timeout) {
     req.set(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(content.size_bytes()));
+      fmt::format("{}", content.size_bytes()));
 
     auto stream = make_iobuf_input_stream(std::move(content));
     auto tout = timeout.value_or(

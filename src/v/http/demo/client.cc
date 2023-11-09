@@ -99,7 +99,7 @@ http::client::request_header make_header(const test_conf& cfg) {
     header.target(cfg.target);
     header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(cfg.data.length()));
+      fmt::format("{}", cfg.data.length()));
     auto host = fmt::format("{}", cfg.client_cfg.server_addr);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_type, "application/json");

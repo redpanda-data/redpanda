@@ -364,7 +364,6 @@ ss::future<> ntp_archiver::upload_until_abort() {
           _conf->upload_scheduling_group,
           [this] { return upload_until_term_change(); })
           .handle_exception_type([](const ss::abort_requested_exception&) {})
-          .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
           .handle_exception_type([](const ss::broken_semaphore&) {})
           .handle_exception_type([](const ss::broken_named_semaphore&) {})
@@ -429,7 +428,6 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
                 [](const ss::abort_requested_exception&) {})
               .handle_exception_type([](const ss::broken_semaphore&) {})
               .handle_exception_type([](const ss::broken_named_semaphore&) {})
-              .handle_exception_type([](const ss::sleep_aborted&) {})
               .handle_exception_type([](const ss::gate_closed_exception&) {});
         } catch (const ss::semaphore_timed_out& e) {
             vlog(
@@ -2138,7 +2136,6 @@ ss::future<> ntp_archiver::housekeeping() {
             co_await apply_spillover();
         }
     } catch (const ss::abort_requested_exception&) {
-    } catch (const ss::sleep_aborted&) {
     } catch (const ss::gate_closed_exception&) {
     } catch (const ss::broken_semaphore&) {
     } catch (const ss::semaphore_timed_out&) {

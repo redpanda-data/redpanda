@@ -39,6 +39,7 @@
 #include <boost/beast/http/field.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
+#include <fmt/core.h>
 
 #include <exception>
 #include <initializer_list>
@@ -188,7 +189,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_POST_roundtrip) {
     header.target("/echo");
     header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(header, config.server_addr);
     header.insert(boost::beast::http::field::content_type, "application/json");
     test_http_request(
@@ -251,8 +252,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_GET_streaming_roundtrip) {
     header.method(boost::beast::http::verb::get);
     header.target("/get");
     header.insert(
-      boost::beast::http::field::content_length,
-      boost::beast::to_static_string(0));
+      boost::beast::http::field::content_length, fmt::format("{}", 0));
     header_set_host(header, config.server_addr);
     header.insert(boost::beast::http::field::content_type, "application/json");
     constexpr size_t skip_bytes = 100;
@@ -281,7 +281,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_POST_streaming_roundtrip) {
     header.target("/echo");
     header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(header, config.server_addr);
     header.insert(boost::beast::http::field::content_type, "application/json");
 
@@ -351,7 +351,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_PUT_roundtrip) {
     header.target("/put");
     header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(header, config.server_addr);
     header.insert(boost::beast::http::field::content_type, "application/json");
     test_http_request(
@@ -374,8 +374,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_PUT_empty_roundtrip) {
     header.method(boost::beast::http::verb::put);
     header.target("/empty");
     header.insert(
-      boost::beast::http::field::content_length,
-      boost::beast::to_static_string(0));
+      boost::beast::http::field::content_length, fmt::format("{}", 0));
     header_set_host(header, config.server_addr);
     header.insert(boost::beast::http::field::content_type, "application/json");
     iobuf empty;
@@ -562,7 +561,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor) {
     request_header.target("/");
     request_header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(request_header, config.server_addr);
     request_header.insert(
       boost::beast::http::field::content_type, "application/json");
@@ -574,7 +573,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor) {
     header_set_host(resp_hdr, config.server_addr);
     resp_hdr.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(response_data.size()));
+      fmt::format("{}", response_data.size()));
     auto full_response = get_response_header(resp_hdr) + response_data;
 
     // Run test case
@@ -603,7 +602,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_incorrect_reply) {
     request_header.target("/");
     request_header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(request_header, config.server_addr);
     request_header.insert(
       boost::beast::http::field::content_type, "application/json");
@@ -639,7 +638,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_chunked_encoding) {
     request_header.target("/");
     request_header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(request_header, config.server_addr);
     request_header.insert(
       boost::beast::http::field::content_type, "application/json");
@@ -704,7 +703,7 @@ void run_framing_test_using_impostor(
     request_header.target("/");
     request_header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(request_header, config.server_addr);
     request_header.insert(
       boost::beast::http::field::content_type, "application/json");
@@ -719,7 +718,7 @@ void run_framing_test_using_impostor(
     } else {
         resp_hdr.insert(
           boost::beast::http::field::content_length,
-          boost::beast::to_static_string(response_data.size()));
+          fmt::format("{}", response_data.size()));
     }
     header_set_host(resp_hdr, config.server_addr);
     auto header_str = get_response_header(resp_hdr);
@@ -795,7 +794,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_no_content_length) {
     request_header.target("/");
     request_header.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+      fmt::format("{}", std::strlen(httpd_server_reply)));
     header_set_host(request_header, config.server_addr);
     request_header.insert(
       boost::beast::http::field::content_type, "application/json");
