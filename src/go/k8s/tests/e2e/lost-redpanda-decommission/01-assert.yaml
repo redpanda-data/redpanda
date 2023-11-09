@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Pod
-metadata:
-  annotations:
-    operator.redpanda.com/node-id: "1"
-  name: lost-rp-decommission-1
