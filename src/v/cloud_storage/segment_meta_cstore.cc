@@ -336,37 +336,52 @@ public:
 
         // construct a column_store with the frames and hints that are before
         // the replacements
-        auto first_replacement_index = [&] {
+        auto first_replaced_frame_index = [&]() -> size_t {
             if (
               _base_offset.size() == 0
               || offset_seg_it->first() <= *_base_offset.at_index(0)) {
-                // replacements either start before or exactly at 0
+                // Don't need any frames
                 return size_t{0};
             }
-            auto candidate = _base_offset.find(offset_seg_it->first());
-            if (candidate.is_end()) {
-                // replacements are append only, return an index that will
-                // signal this
-                return std::numeric_limits<size_t>::max();
+
+            const auto first_base_to_insert = offset_seg_it->first();
+
+            size_t idx = 0;
+            for (const auto& f : _base_offset._frames) {
+                auto maybe_last = f.last_value();
+                if (maybe_last && *maybe_last >= first_base_to_insert) {
+                    return idx;
+                }
+
+                ++idx;
             }
-            // replacements are in the middle of current store
-            return candidate.index();
+
+            return idx;
         }();
+
+        auto get_frame_iter_at = [&](const auto& col, size_t at) {
+            vassert(
+              at <= col._frames.size(), "Attempt to get frame iter past end");
+            auto iter = col._frames.begin();
+            std::advance(iter, at);
+
+            return iter;
+        };
+
         // tuple of [begin, end] iterators to std::list<frame_t>
         auto to_clone_frames = std::apply(
           [&](auto&... col) {
               return std::tuple{std::tuple{
                 col._frames.begin(),
-                col.get_frame_iterator_by_element_index(
-                  first_replacement_index)}...};
+                get_frame_iter_at(col, first_replaced_frame_index)}...};
           },
           columns());
 
         // extract the end iterator for hints, to cover only the frames that
         // will be cloned
         auto last_hint_tosave = [&] {
-            auto frame_it = _base_offset.get_frame_iterator_by_element_index(
-              first_replacement_index);
+            auto frame_it = get_frame_iter_at(
+              _base_offset, first_replaced_frame_index);
             if (frame_it == _base_offset._frames.begin()) {
                 // no hint will be saved
                 return _hints.end();
@@ -415,7 +430,7 @@ public:
             auto old_seg = dereference(old_segments_it);
             // append old segments with committed offset smaller than
             // replacement
-            while (old_seg.committed_offset < replacement_base_offset) {
+            while (old_seg.base_offset < replacement_base_offset) {
                 replacement_store.append(old_seg);
                 details::increment_all(old_segments_it);
                 if (old_segments_it == old_segments_end) {
