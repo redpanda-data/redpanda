@@ -861,12 +861,13 @@ ss::future<> s3_client::do_delete_object(
       });
 }
 
-static std::variant<client::delete_objects_result, rest_error_response>
+std::variant<client::delete_objects_result, rest_error_response>
 iobuf_to_delete_objects_result(iobuf&& buf) {
     auto root = util::iobuf_to_ptree(std::move(buf), s3_log);
     auto result = client::delete_objects_result{};
     try {
-        if (root.count("Error.Code") > 0) {
+        if (auto error_code = root.get_optional<ss::sstring>("Error.Code");
+            error_code) {
             // This is an error response. S3 can reply with 200 error code and
             // error response in the body.
             constexpr const char* empty = "";

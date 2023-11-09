@@ -833,3 +833,56 @@ FIXTURE_TEST(test_client_pool_reconnect, client_pool_fixture) {
     auto count = std::count(result.begin(), result.end(), true);
     BOOST_REQUIRE(count == 20);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_parse_delete_object_response_infra_error) {
+    const ss::sstring xml_response
+      = "<Error><Code>SlowDown</Code><Message>Please reduce your request "
+        "rate.</Message><RequestId>R123</RequestId><HostId>H123</HostId></"
+        "Error>";
+
+    iobuf b;
+    b.append(xml_response.data(), xml_response.size());
+    const auto result = cloud_storage_clients::iobuf_to_delete_objects_result(
+      std::move(b));
+    const auto* error = std::get_if<cloud_storage_clients::rest_error_response>(
+      &result);
+    BOOST_REQUIRE_NE(error, nullptr);
+    BOOST_REQUIRE_EQUAL(error->code_string(), "SlowDown");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_parse_delete_object_response_key_error) {
+    const ss::sstring xml_response
+      = R"XML(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <Error>
+        <Key>0</Key>
+        <Code>TestFailure</Code>
+    </Error>
+    </DeleteResult>)XML";
+
+    iobuf b;
+    b.append(xml_response.data(), xml_response.size());
+    const auto result = cloud_storage_clients::iobuf_to_delete_objects_result(
+      std::move(b));
+    const auto* response
+      = std::get_if<cloud_storage_clients::client::delete_objects_result>(
+        &result);
+    BOOST_REQUIRE_NE(response, nullptr);
+    BOOST_REQUIRE_EQUAL(response->undeleted_keys.size(), 1);
+    BOOST_REQUIRE_EQUAL(response->undeleted_keys.front().reason, "TestFailure");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_parse_delete_object_response_no_error) {
+    const ss::sstring xml_response
+      = R"XML(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    </DeleteResult>)XML";
+
+    iobuf b;
+    b.append(xml_response.data(), xml_response.size());
+    const auto result = cloud_storage_clients::iobuf_to_delete_objects_result(
+      std::move(b));
+    const auto* response
+      = std::get_if<cloud_storage_clients::client::delete_objects_result>(
+        &result);
+    BOOST_REQUIRE_NE(response, nullptr);
+    BOOST_REQUIRE(response->undeleted_keys.empty());
+}
