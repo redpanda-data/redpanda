@@ -106,10 +106,13 @@ def print_tx_coordinator(store):
     logger.info("")
 
 
-def validate_path(path):
+def validate_path(options):
+    path = options.path
     if not os.path.exists(path):
         logger.error(f"Path doesn't exist {path}")
         sys.exit(1)
+    if options.force:
+        return
     controller = join(path, "redpanda", "controller")
     if not os.path.exists(controller):
         logger.error(
@@ -161,6 +164,9 @@ def main():
             '--dump',
             action='store_true',
             help='output binary dumps of keys and values being parsed')
+        parser.add_argument('--force',
+                            action='store_true',
+                            help='Skip data directory validation')
         return parser
 
     parser = generate_options()
@@ -171,7 +177,7 @@ def main():
         logging.basicConfig(level="INFO")
     logger.info(f"starting metadata viewer with options: {options}")
 
-    validate_path(options.path)
+    validate_path(options)
 
     store = Store(options.path)
     if options.type == "kvstore":
