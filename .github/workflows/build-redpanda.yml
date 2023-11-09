@@ -8,7 +8,17 @@
 # by the Apache License, Version 2.0
 
 name: build-redpanda
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    paths:
+      - 'src/v/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'install-dependencies.sh'
 
 jobs:
   build:
