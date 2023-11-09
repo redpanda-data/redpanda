@@ -243,4 +243,7 @@ private:
     ss::shared_ptr<client_probe> _probe;
 };
 
+std::variant<client::delete_objects_result, rest_error_response>
+iobuf_to_delete_objects_result(iobuf&& buf);
+
 } // namespace cloud_storage_clients
