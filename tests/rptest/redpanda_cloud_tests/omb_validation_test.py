@@ -108,10 +108,14 @@ class OMBValidationTest(RedpandaTest):
         return 5 * self.num_brokers * machine_config.num_shards
 
     def _producer_count(self, ingress_rate) -> int:
-        return max(ingress_rate // (4 * MiB), 8)
+        """Determine the number of producers based on the ingress rate.
+        We assume that each producer is capable of 5 MB/s."""
+        return max(ingress_rate // (5 * MB), 1)
 
     def _consumer_count(self, egress_rate) -> int:
-        return max(egress_rate // (4 * MiB), 8)
+        """Determine the number of consumers based on the egress rate.
+        We assume that each consumer is capable of 5 MB/s."""
+        return max(egress_rate // (5 * MB), 1)
 
     def _mb_to_mib(self, mb):
         return math.floor(0.9537 * mb)
