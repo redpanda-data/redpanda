@@ -7,6 +7,7 @@ v_cc_library (
     "adl.h"
   DEPS 
     Seastar::seastar
+    absl::btree
 ) 
 
 add_subdirectory(test)

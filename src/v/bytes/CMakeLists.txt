@@ -4,6 +4,7 @@ v_cc_library(
   SRCS
     "iobuf.cc"
   DEPS
+    absl::hash
     Seastar::seastar
   )
 add_subdirectory(tests)

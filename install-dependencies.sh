@@ -31,7 +31,6 @@ deb_deps=(
   git
   gnutls-dev
   golang
-  libabsl-dev
   libboost-all-dev
   libc-ares-dev
   libcrypto++-dev
@@ -58,7 +57,6 @@ deb_deps=(
   xfslibs-dev
 )
 fedora_deps=(
-  abseil-cpp-devel
   boost-devel
   c-ares-devel
   cargo
