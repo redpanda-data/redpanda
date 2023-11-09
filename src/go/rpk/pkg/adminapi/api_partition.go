@@ -15,6 +15,8 @@ import (
 	"net/http"
 )
 
+const partitionsBaseURL = "/v1/cluster/partitions"
+
 // Replica contains the information of a partition replica.
 type Replica struct {
 	NodeID int `json:"node_id"`
@@ -58,6 +60,20 @@ type ReconfigurationsResponse struct {
 	ReconciliationStatuses []Status  `json:"reconciliation_statuses"`
 }
 
+type ReplicaAssignment struct {
+	NodeID int `json:"node_id" yaml:"node_id"`
+	Core   int `json:"core" yaml:"core"`
+}
+
+type ClusterPartition struct {
+	Ns          string              `json:"ns" yaml:"ns"`
+	Topic       string              `json:"topic" yaml:"topic"`
+	PartitionID int                 `json:"partition_id" yaml:"partition_id"`
+	LeaderID    *int                `json:"leader_id,omitempty" yaml:"leader_id,omitempty"` // LeaderID may be missing in the response.
+	Replicas    []ReplicaAssignment `json:"replicas" yaml:"replicas"`
+	Disabled    bool                `json:"disabled" yaml:"disabled"`
+}
+
 // GetPartition returns detailed partition information.
 func (a *AdminAPI) GetPartition(
 	ctx context.Context, namespace, topic string, partition int,
@@ -75,4 +91,21 @@ func (a *AdminAPI) GetPartition(
 func (a *AdminAPI) Reconfigurations(ctx context.Context) ([]ReconfigurationsResponse, error) {
 	var rr []ReconfigurationsResponse
 	return rr, a.sendAny(ctx, http.MethodGet, "/v1/partitions/reconfigurations", nil, &rr)
+}
+
+// AllClusterPartitions returns cluster level metadata of all partitions in a
+// cluster. If withInternal is true, internal topics will be returned. If
+// disabled is true, only disabled partitions are returned.
+func (a *AdminAPI) AllClusterPartitions(ctx context.Context, withInternal, disabled bool) ([]ClusterPartition, error) {
+	var clusterPartitions []ClusterPartition
+	partitionsURL := fmt.Sprintf("%v?with_internal=%v&disabled=%v", partitionsBaseURL, withInternal, disabled)
+	return clusterPartitions, a.sendAny(ctx, http.MethodGet, partitionsURL, nil, &clusterPartitions)
+}
+
+// TopicClusterPartitions returns cluster level metadata of all partitions in
+// a given topic. If disabled is true, only disabled partitions are returned.
+func (a *AdminAPI) TopicClusterPartitions(ctx context.Context, namespace, topic string, disabled bool) ([]ClusterPartition, error) {
+	var clusterPartition []ClusterPartition
+	partitionURL := fmt.Sprintf("%v/%v/%v?disabled=%v", partitionsBaseURL, namespace, topic, disabled)
+	return clusterPartition, a.sendAny(ctx, http.MethodGet, partitionURL, nil, &clusterPartition)
 }
