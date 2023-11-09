@@ -220,6 +220,13 @@ ss::future<> audit_client::set_client_credentials() {
 
 ss::future<> audit_client::configure() {
     try {
+        const auto& feature_table = _controller->get_feature_table();
+        if (!feature_table.local().is_active(
+              features::feature::audit_logging)) {
+            throw std::runtime_error(
+              "Failing to create audit client until cluster has been fully "
+              "upgraded to the min supported version for audit_logging");
+        }
         co_await set_client_credentials();
         co_await set_auditing_permissions();
         co_await create_internal_topic();
@@ -839,6 +846,15 @@ audit_log_manager::should_enqueue_audit_event() const {
         /// Prevent auditing new messages when shutdown starts that way the
         /// queue may be entirely flushed before shutdown
         return std::make_optional(audit_event_passthrough::no);
+    }
+    const auto& feature_table = _controller->get_feature_table();
+    if (!feature_table.local().is_active(features::feature::audit_logging)) {
+        vlog(
+          adtlog.warn,
+          "Audit message passthrough active until cluster has been fully "
+          "upgraded to the min supported version for audit_logging");
+        _probe->audit_error();
+        return std::make_optional(audit_event_passthrough::yes);
     }
     if (_auth_misconfigured) {
         /// Audit logging depends on having auth enabled, if it is not
