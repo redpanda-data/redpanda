@@ -2984,7 +2984,7 @@ class RedpandaService(RedpandaServiceBase):
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
 
-    def redpanda_pid(self, node, timeout=None, silent=True):
+    def redpanda_pid(self, node, timeout=None):
         try:
             cmd = "pgrep --list-full --exact redpanda"
             for line in node.account.ssh_capture(cmd, timeout_sec=10):
@@ -2993,8 +2993,7 @@ class RedpandaService(RedpandaServiceBase):
                 if "--version" in line:
                     continue
 
-                if silent == False:
-                    self.logger.debug(f"pgrep output: {line}")
+                self.logger.debug(f"pgrep output: {line}")
 
                 # The pid is listed first, that's all we need
                 return int(line.split()[0])
