@@ -1,0 +1,44 @@
+name: Lint cpp
+
+on:
+  push:
+    branches:
+      - 'dev'
+    paths:
+      - '**.h'
+      - '**.cc'
+      - '**.cpp'
+      - '**.proto'
+      - '**.java'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths:
+      - '**.h'
+      - '**.cc'
+      - '**.cpp'
+      - '**.proto'
+      - '**.java'
+
+jobs:
+  cpp:
+    name: Lint files with clang-format
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Run clang-format
+      run: |
+        docker run \
+        -v $PWD:/redpanda ubuntu \
+        bash -c "cd /redpanda && \
+          apt update && \
+          apt install -y wget git lsb-release wget software-properties-common gnupg && \
+          wget https://apt.llvm.org/llvm.sh && \
+          chmod +x llvm.sh && \
+          ./llvm.sh 16 && \
+          apt-get install -y clang-format-16 && \
+          find . -type f -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-16 -i -style=file -fallback-style=none"
+        git diff --exit-code
