@@ -236,7 +236,7 @@ class Admin:
         When the timeout is exhaust it throws TimeoutException
         """
         if hosts == None:
-            hosts = [n.account.hostname for n in self.redpanda.nodes]
+            hosts = [n.account.hostname for n in self.redpanda.started_nodes()]
         hosts = list(hosts)
 
         def get_stable_configuration():
