@@ -48,38 +48,6 @@ builds:
         - cmd: quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
           env:
             - QUILL_LOG_FILE=dist/quill-{{ .Target }}.log
-  - id: migration-tool-windows-and-linux
-    dir: ./cluster-to-redpanda-migration/
-    main: ./main.go
-    binary: cluster-to-redpanda-migration
-    ldflags:
-      - -X github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/cmd/version.version={{.Tag}}
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - windows
-      - linux
-    goarch:
-      - amd64
-      - arm64
-  - id: migration-tool-darwin
-    dir: ./cluster-to-redpanda-migration/
-    main: ./main.go
-    binary: cluster-to-redpanda-migration
-    ldflags:
-      - -X github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/cmd/version.version={{.Tag}}
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - darwin
-    goarch:
-      - amd64
-      - arm64
-    hooks:
-      post:
-        - cmd: quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
-          env:
-            - QUILL_LOG_FILE=dist/quill-{{ .Target }}.log
 archives:
   - id: rpk
     builds:

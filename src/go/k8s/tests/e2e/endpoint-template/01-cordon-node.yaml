@@ -1,9 +1,0 @@
-apiVersion: kuttl.dev/v1beta1
-kind: TestStep
-commands:
-  - script: kubectl cordon $(kubectl get pod -n $NAMESPACE endpoint-template-1 -o
-      jsonpath='{.spec.nodeName}')
-  - command: kubectl delete pvc datadir-endpoint-template-1 --wait=false
-    namespaced: true
-  - command: kubectl delete pod endpoint-template-1
-    namespaced: true
