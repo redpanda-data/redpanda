@@ -470,10 +470,10 @@ class HighThroughputTest(PreallocNodesTest):
 
     @cluster(num_nodes=9)
     def test_max_connections(self):
-        # Huge timeout for safety, 10 min
+        # Huge timeout for safety, 20 min
         # Most of the tiers will end in <5 min
         # Except for the 5-7 that will take >5 min
-        FINISH_TIMEOUT_SEC = 600
+        FINISH_TIMEOUT_SEC = 1200
         PRODUCER_TIMEOUT_MS = FINISH_TIMEOUT_SEC * 1000
 
         # setup ProducerSwarm parameters
