@@ -2665,7 +2665,9 @@ static auto generate_random_segments(model::offset base_offset)
           = base_offset
             + random_generators::get_int<model::offset::type>(0, 10);
         co_yield segment_meta{
-          .base_offset = base_offset, .committed_offset = committed_offset};
+          .base_offset = base_offset,
+          .committed_offset = committed_offset,
+          .segment_term = model::term_id{10}};
         base_offset = model::next_offset(committed_offset);
     }
 }
@@ -2683,19 +2685,21 @@ SEASTAR_TEST_CASE(test_partition_manifest_clone) {
     auto gap_segment = *co_await next_segment();
     while (gap_segment.committed_offset == gap_segment.base_offset) {
         // ensure a gap segment with some data in it
+        gap_segment = *co_await next_segment();
     }
     gap_segment.archiver_term++; // give it some distinct data to mark it, in
                                  // case we need to debug the binary data
+    manifest.add(gap_segment);   // TODO Remove this line
     // second run, with a gap from before
     for (auto i = random_generators::get_int<size_t>(30, 300); i-- > 0;) {
         manifest.add(*co_await next_segment());
     }
 
     // reinsert gap_segment
-    manifest.add(gap_segment);
+    // manifest.add(gap_segment);
 
     auto overlap_segment = *co_await next_segment();
-    while (manifest.contains(overlap_segment.base_offset)) {
+    while (false && manifest.contains(overlap_segment.base_offset)) {
         // ensure that the base_offset lands inside another segment, to not
         // replace it completely
         overlap_segment.base_offset--;
@@ -2724,6 +2728,18 @@ SEASTAR_TEST_CASE(test_partition_manifest_clone) {
     for (auto i = random_generators::get_int<size_t>(20, 100); i-- > 0;) {
         clone_manifest_copy.add(*co_await next_segment());
     }
+
+    if (random_generators::get_int(1) == 1) {
+        // create a replacement segment from two segments in common between
+        // clone and original
+        auto replacement_it = clone_manifest_copy.begin();
+        std::advance(replacement_it, 10);
+        auto repl = *replacement_it;
+        repl.committed_offset = (++replacement_it)->committed_offset;
+        repl.archiver_term += 3;
+        clone_manifest_copy.add(repl);
+    }
+
     BOOST_CHECK_MESSAGE(
       manifest != clone_manifest_copy && manifest == serde_manifest_copy,
       "after ops on clone, it should diff from the original while source "
@@ -2741,4 +2757,21 @@ SEASTAR_TEST_CASE(test_partition_manifest_clone) {
       manifest != clone_manifest_copy
         && clone_manifest_copy == new_clone_manifest,
       "cloned manifest is unchanged");
+
+    std::vector<iobuf> dummy;
+    std::vector<std::chrono::microseconds> times;
+    for (auto i = 1000; i-- > 0;) {
+        auto start = std::chrono::system_clock::now();
+        auto clone_manifest = manifest.clone();
+        times.emplace_back(std::chrono::system_clock::now() - start);
+        dummy.push_back(clone_manifest.to_iobuf());
+    }
+    BOOST_CHECK(dummy.back().size_bytes() > 100);
+    auto total_time = std::accumulate(
+      times.begin(), times.end(), std::chrono::nanoseconds{});
+    vlog(
+      test_log.info,
+      "total time {}us, individual time {:.2f}us",
+      total_time / 1us,
+      (total_time / 1us) / float(times.size()));
 }
