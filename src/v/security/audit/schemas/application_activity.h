@@ -14,6 +14,8 @@
 #include "security/audit/schemas/types.h"
 
 namespace security::audit {
+// Describe generate CRUD API activities
+// https://schema.ocsf.io/1.0.0/classes/api_activity?extensions=
 class api_activity final : public ocsf_base_event<api_activity> {
 public:
     enum class activity_id : uint8_t {
@@ -122,6 +124,9 @@ private:
     }
 };
 
+// Reports the installation, removal, start, or stop of an application or
+// service
+// https://schema.ocsf.io/1.0.0/classes/application_lifecycle?extensions=
 class application_lifecycle final
   : public ocsf_base_event<application_lifecycle> {
 public:
