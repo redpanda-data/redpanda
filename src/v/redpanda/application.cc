@@ -589,7 +589,7 @@ void application::setup_public_metrics() {
       .invoke_on_all([](auto& public_metrics) {
           public_metrics.groups.add_group(
             "cpu",
-            {sm::make_gauge(
+            {sm::make_counter(
               "busy_seconds_total",
               [] {
                   return std::chrono::duration<double>(
