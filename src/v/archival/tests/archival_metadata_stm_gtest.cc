@@ -14,8 +14,13 @@
 #include "model/record.h"
 #include "raft/tests/raft_fixture.h"
 #include "test_utils/test.h"
+#include "utils/available_promise.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/shared_future.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
+#include <seastar/util/later.hh>
 
 using cloud_storage::segment_name;
 using segment_meta = cloud_storage::partition_manifest::segment_meta;
@@ -203,14 +208,26 @@ TEST_F_CORO(
 
     ASSERT_TRUE_CORO(!res);
 
-    auto [plagued_node, delay_applied] = co_await with_leader(
-      10s, [](raft::raft_node_instance& node) {
-          raft::response_delay fail{
-            .length = 100ms, .on_applied = ss::promise<>{}};
+    ss::shared_promise<> may_resume_append;
+    available_promise<bool> reached_dispatch_append;
 
-          auto delay_applied = fail.on_applied->get_future();
-          node.inject_failure(raft::msg_type::append_entries, std::move(fail));
-          return std::make_tuple(node.get_vnode(), std::move(delay_applied));
+    auto plagued_node = co_await with_leader(
+      10s,
+      [&reached_dispatch_append,
+       &may_resume_append](raft::raft_node_instance& node) {
+          node.on_dispatch(
+            [&reached_dispatch_append, &may_resume_append](raft::msg_type t) {
+                if (t == raft::msg_type::append_entries) {
+                    if (!reached_dispatch_append.available()) {
+                        reached_dispatch_append.set_value(true);
+                    }
+                    return may_resume_append.get_shared_future();
+                }
+
+                return ss::now();
+            });
+
+          return node.get_vnode();
       });
 
     m.clear();
@@ -236,8 +253,23 @@ TEST_F_CORO(
             cluster::segment_validated::yes);
       });
 
-    co_await std::move(delay_applied);
+    co_await reached_dispatch_append.get_future();
 
+    // Expecting this to fail as we have the replication blocked.
+    auto sync_result_before_replication = co_await with_leader(
+      10s, [this, &plagued_node](raft::raft_node_instance& node) mutable {
+          if (node.get_vnode() != plagued_node) {
+              throw std::runtime_error{"Leadership moved"};
+          }
+
+          return get_leader_stm().sync(10ms);
+      });
+    ASSERT_FALSE_CORO(sync_result_before_replication);
+
+    // Allow replication to progress.
+    may_resume_append.set_value();
+
+    // This sync will succeed and will wait for replication to progress.
     auto synced = co_await with_leader(
       10s, [this, &plagued_node](raft::raft_node_instance& node) mutable {
           if (node.get_vnode() != plagued_node) {
