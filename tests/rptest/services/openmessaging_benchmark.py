@@ -194,6 +194,10 @@ class OpenMessagingBenchmark(Service):
             self.workload = workload[0]
             self.validator = workload[1]
 
+        assert int(
+            self.workload.get("warmup_duration_minutes", '0')
+        ) >= 1, "must use non-zero warmup time as we rely on warm-up message to detect test start"
+
         self.logger.info("Using driver: %s, workload: %s", self.driver["name"],
                          self.workload["name"])
 
