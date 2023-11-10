@@ -135,6 +135,7 @@ public:
 
     channel& get_channel(model::node_id id);
 
+    void on_dispatch(ss::noncopyable_function<ss::future<>(msg_type)> f);
     void inject_failure(msg_type type, failure_t failure);
     void remove_failure(msg_type type);
 
@@ -146,6 +147,8 @@ private:
     ss::gate _gate;
     absl::flat_hash_map<model::node_id, std::unique_ptr<channel>> _channels;
     absl::flat_hash_map<msg_type, failure_t> _failures;
+    std::vector<ss::noncopyable_function<ss::future<>(msg_type)>>
+      _on_dispatch_handlers;
     raft_node_map& _nodes;
     prefix_logger& _logger;
 };
@@ -211,6 +214,17 @@ public:
 
     ss::future<model::offset> random_batch_base_offset(model::offset max);
 
+    /// \brief Sets a callback function to be invoked when the leader dispatches
+    /// a message to followers.
+    ///
+    /// It is invoked once for each follower. The dispatch process will proceed
+    /// once the returned future from the callback function is resolved.
+    ///
+    /// This method is handy for failure injection.
+    ///
+    //// \param f The callback function to be invoked when a message is
+    /// dispatched.
+    void on_dispatch(ss::noncopyable_function<ss::future<>(msg_type)> f);
     void inject_failure(msg_type type, failure_t failure);
     void remove_failure(msg_type type);
 
