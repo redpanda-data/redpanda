@@ -18,6 +18,8 @@
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "net/types.h"
+#include "security/audit/schemas/iam.h"
+#include "security/audit/schemas/utils.h"
 #include "utils/to_string.h"
 #include "vlog.h"
 
@@ -164,11 +166,14 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
     }
 
     default:
+        const auto reason = "Unexpected request during authentication";
+        ss::sstring audit_msg;
+        if (!ctx.audit_authn_failure(reason)) {
+            audit_msg = " - Failed to audit authentication audit message";
+        }
         return ss::make_exception_future<response_ptr>(
           kafka_authentication_exception(fmt_with_ctx(
-            fmt::format,
-            "Unexpected request during authentication: {}",
-            ctx.header().key)));
+            fmt::format, "{}: {}{}", ctx.header().key, reason, audit_msg)));
     }
 }
 
@@ -180,21 +185,41 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
 
     case security::sasl_server::sasl_state::handshake:
         if (unlikely(ctx.header().key != sasl_handshake_handler::api::key)) {
-            return ss::make_exception_future<response_ptr>(
-              kafka_authentication_exception(fmt_with_ctx(
-                fmt::format,
-                "Unexpected auth request {} expected handshake",
-                ctx.header().key)));
+            if (!ctx.audit_authn_failure(
+                  "Unexpected auth request, expected handshake")) {
+                return ss::make_exception_future<response_ptr>(
+                  kafka_authentication_exception(fmt_with_ctx(
+                    fmt::format,
+                    "Unexpected auth request {} expected handshake - Failed to "
+                    "audit authentication audit message",
+                    ctx.header().key)));
+            } else {
+                return ss::make_exception_future<response_ptr>(
+                  kafka_authentication_exception(fmt_with_ctx(
+                    fmt::format,
+                    "Unexpected auth request {} expected handshake",
+                    ctx.header().key)));
+            }
         }
         return handle_auth_handshake(std::move(ctx), g);
 
     case security::sasl_server::sasl_state::authenticate: {
         if (unlikely(ctx.header().key != sasl_authenticate_handler::api::key)) {
-            return ss::make_exception_future<response_ptr>(
-              kafka_authentication_exception(fmt_with_ctx(
-                fmt::format,
-                "Unexpected auth request {} expected authenticate",
-                ctx.header().key)));
+            if (!ctx.audit_authn_failure(
+                  "Unexpected auth request, expected authenticate")) {
+                return ss::make_exception_future<response_ptr>(
+                  kafka_authentication_exception(fmt_with_ctx(
+                    fmt::format,
+                    "Unexpected auth request {} expected authenticate - Failed "
+                    "to audit authentication audit message",
+                    ctx.header().key)));
+            } else {
+                return ss::make_exception_future<response_ptr>(
+                  kafka_authentication_exception(fmt_with_ctx(
+                    fmt::format,
+                    "Unexpected auth request {} expected authenticate",
+                    ctx.header().key)));
+            }
         }
         auto conn = ctx.connection();
         return do_process<sasl_authenticate_handler>(std::move(ctx), g)
@@ -279,15 +304,26 @@ process_result_stages process_request(
     }
 
     if (key == sasl_handshake_handler::api::key) {
-        return process_result_stages::single_stage(ctx.respond(
-          sasl_handshake_response(error_code::illegal_sasl_state, {})));
+        sasl_handshake_response resp(error_code::illegal_sasl_state, {});
+        if (!ctx.audit_authn_failure(
+              "Unexpected SASL handshake message encountered")) {
+            resp.data.error_code = error_code::broker_not_available;
+        }
+
+        return process_result_stages::single_stage(
+          ctx.respond(std::move(resp)));
     }
 
     if (key == sasl_authenticate_handler::api::key) {
-        sasl_authenticate_response_data data{
-          .error_code = error_code::illegal_sasl_state,
-          .error_message = "Authentication process already completed",
-        };
+        sasl_authenticate_response_data data;
+        if (!ctx.audit_authn_failure(
+              "Authentication process already completed")) {
+            data.error_code = error_code::broker_not_available;
+            data.error_message = "Broker not availaable - audit system failure";
+        } else {
+            data.error_code = error_code::illegal_sasl_state;
+            data.error_message = "Authentication process already completed";
+        }
         return process_result_stages::single_stage(
           ctx.respond(sasl_authenticate_response(std::move(data))));
     }

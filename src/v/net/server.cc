@@ -79,6 +79,7 @@ void server::start() {
     }
     for (const auto& endpoint : cfg.addrs) {
         ss::server_socket ss;
+        bool tls_enabled = bool(endpoint.credentials);
         try {
             ss::listen_options lo;
             lo.reuse_address = true;
@@ -100,8 +101,8 @@ void server::start() {
               endpoint,
               std::current_exception()));
         }
-        auto& b = _listeners.emplace_back(
-          std::make_unique<listener>(endpoint.name, std::move(ss)));
+        auto& b = _listeners.emplace_back(std::make_unique<listener>(
+          endpoint.name, std::move(ss), tls_enabled));
         listener& ref = *b;
         // background
         ssx::spawn_with_gate(
@@ -187,13 +188,13 @@ ss::future<> server::accept(listener& s) {
     return ss::repeat([this, &s]() mutable {
         return s.socket.accept().then_wrapped(
           [this, &s](ss::future<ss::accept_result> f_cs_sa) {
-              return accept_finish(s.name, std::move(f_cs_sa));
+              return accept_finish(s.name, std::move(f_cs_sa), s.tls_enabled);
           });
     });
 }
 
-ss::future<ss::stop_iteration>
-server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
+ss::future<ss::stop_iteration> server::accept_finish(
+  ss::sstring name, ss::future<ss::accept_result> f_cs_sa, bool tls_enabled) {
     if (_as.abort_requested()) {
         f_cs_sa.ignore_ready_future();
         co_return ss::stop_iteration::yes;
@@ -261,7 +262,8 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
       std::move(ar.connection),
       ar.remote_address,
       *_probe,
-      cfg.stream_recv_buf);
+      cfg.stream_recv_buf,
+      tls_enabled);
     vlog(
       _log.trace,
       "{} - Incoming connection from {} on \"{}\"",

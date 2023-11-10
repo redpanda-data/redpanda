@@ -265,6 +265,8 @@ public:
         return conn ? conn->local_address() : ss::socket_address{};
     }
 
+    bool tls_enabled() const { return conn->tls_enabled(); }
+
 private:
     bool is_finished_parsing() const;
 

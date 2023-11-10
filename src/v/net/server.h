@@ -150,15 +150,17 @@ private:
     struct listener {
         ss::sstring name;
         ss::server_socket socket;
+        bool tls_enabled;
 
-        listener(ss::sstring name, ss::server_socket socket)
+        listener(ss::sstring name, ss::server_socket socket, bool tls_enabled)
           : name(std::move(name))
-          , socket(std::move(socket)) {}
+          , socket(std::move(socket))
+          , tls_enabled(tls_enabled) {}
     };
 
     ss::future<> accept(listener&);
     ss::future<ss::stop_iteration>
-      accept_finish(ss::sstring, ss::future<ss::accept_result>);
+    accept_finish(ss::sstring, ss::future<ss::accept_result>, bool);
     void
     print_exceptional_future(ss::future<>, const char*, ss::socket_address);
     ss::future<>

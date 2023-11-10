@@ -127,14 +127,16 @@ connection::connection(
   ss::connected_socket f,
   ss::socket_address a,
   server_probe& p,
-  std::optional<size_t> in_max_buffer_size)
+  std::optional<size_t> in_max_buffer_size,
+  bool tls_enabled)
   : addr(a)
   , _hook(hook)
   , _name(std::move(name))
   , _fd(std::move(f))
   , _in(_fd.input())
   , _out(_fd.output())
-  , _probe(p) {
+  , _probe(p)
+  , _tls_enabled(tls_enabled) {
     if (in_max_buffer_size.has_value()) {
         auto in_config = ss::connected_socket_input_stream_config{};
         in_config.max_buffer_size = in_max_buffer_size.value();

@@ -11,23 +11,50 @@ import confluent_kafka as ck
 from functools import partial, reduce
 import json
 import re
+import socket
+import requests
 from typing import Any, Optional
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import ok_to_fail
+from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services import redpanda
+from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
-from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, SecurityConfig
+from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until, wait_until_result
+from urllib.parse import urlparse
+
+
+class MTLSProvider(TLSProvider):
+    """
+    Defines an mTLS provider
+    """
+    def __init__(self, tls):
+        self.tls = tls
+
+    @property
+    def ca(self):
+        return self.tls.ca
+
+    def create_broker_cert(self, redpanda, node):
+        assert node in redpanda.nodes
+        return self.tls.create_cert(node.name)
+
+    def create_service_client_cert(self, _, name):
+        return self.tls.create_cert(socket.gethostname(),
+                                    name=name,
+                                    common_name=name)
 
 
 class BaseTestItem:
@@ -238,9 +265,14 @@ class AuditLogTestsBase(RedpandaTest):
                 'info', logger_levels={'auditing': 'trace'}),
             security: AuditLogTestSecurityConfig = AuditLogTestSecurityConfig(
             ),
-            audit_log_client_config: Optional[redpanda.AuditLogConfig] = None):
+            audit_log_client_config: Optional[redpanda.AuditLogConfig] = None,
+            extra_rp_conf=None,
+            **kwargs):
         self.audit_log_config = audit_log_config
+
         self.extra_rp_conf = self.audit_log_config.to_conf()
+        if extra_rp_conf is not None:
+            self.extra_rp_conf = self.extra_rp_conf | extra_rp_conf
         self.log_config = log_config
         self.security = security
         self.audit_log_client_config = audit_log_client_config
@@ -255,7 +287,8 @@ class AuditLogTestsBase(RedpandaTest):
                              extra_rp_conf=self.extra_rp_conf,
                              log_config=self.log_config,
                              security=self.security,
-                             audit_log_config=self.audit_log_client_config)
+                             audit_log_config=self.audit_log_client_config,
+                             **kwargs)
 
         self.rpk = self.get_rpk()
         self.super_rpk = self.get_super_rpk()
@@ -854,3 +887,335 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
             test.generate_function()
             _ = self.find_matching_record(test.filter_function,
                                           test.valid_count, test.desc())
+
+
+class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
+    """Validates SASL/SCRAM authentication messages
+    """
+    username = 'test'
+    password = 'test12345'
+    algorithm = 'SCRAM-SHA-256'
+
+    def __init__(self, test_context):
+        super(AuditLogTestsKafkaAuthnApi, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(num_partitions=1,
+                                            event_types=['authenticate']),
+            security=AuditLogTestSecurityConfig(user_creds=(self.username,
+                                                            self.password,
+                                                            self.algorithm)),
+            log_config=LoggingConfig('info',
+                                     logger_levels={
+                                         'auditing': 'trace',
+                                         'kafka': 'trace',
+                                         'security': 'trace'
+                                     }))
+
+    def setup_cluster(self):
+        self.admin.create_user(self.username, self.password, self.algorithm)
+        self.super_rpk.sasl_allow_principal(
+            principal=self.username,
+            operations=['all'],
+            resource='topic',
+            resource_name="*",
+            username=self.redpanda.SUPERUSER_CREDENTIALS[0],
+            password=self.redpanda.SUPERUSER_CREDENTIALS[1],
+            mechanism=self.redpanda.SUPERUSER_CREDENTIALS[2])
+
+    @staticmethod
+    def authn_filter_function(service_name, username: str, protocol_id: int,
+                              protocol_name: Optional[str], record):
+        return record['class_uid'] == 3002 and record['service'][
+            'name'] == service_name and record['user'][
+                'name'] == username and record[
+                    'auth_protocol_id'] == protocol_id and (
+                        protocol_name is not None and record['auth_protocol']
+                        == protocol_name) and record['status_id'] == 1
+
+    @staticmethod
+    def authn_failure_filter_function(service_name, username: str,
+                                      protocol_id: int,
+                                      protocol_name: Optional[str],
+                                      error_msg: str, record):
+        return record['class_uid'] == 3002 and record['service'][
+            'name'] == service_name and record['user'][
+                'name'] == username and record[
+                    'auth_protocol_id'] == protocol_id and (
+                        protocol_name is not None
+                        and record['auth_protocol'] == protocol_name
+                    ) and record['status_id'] == 2 and record[
+                        'status_detail'] == error_msg
+
+    @cluster(num_nodes=5)
+    def test_authn_messages(self):
+        """Verifies that authentication messages are audited
+        """
+        self.setup_cluster()
+
+        # Now attempt to get the topic list as the regular user
+        user_rpk = self.get_rpk()
+
+        _ = user_rpk.list_topics()
+
+        records = self.read_all_from_audit_log(
+            partial(self.authn_filter_function, self.kafka_rpc_service_name,
+                    self.username, 99, "SASL-SCRAM"),
+            lambda records: self.aggregate_count(records) >= 1)
+
+        assert len(
+            records) == 1, f"Expected only one record got {len(records)}"
+
+    @cluster(num_nodes=5)
+    def test_authn_failure_messages(self):
+        """Validates that failed authentication messages are audited
+        """
+        self.setup_cluster()
+
+        user_rpk = self.get_rpk_credentials(username=self.username,
+                                            password="WRONG",
+                                            mechanism=self.algorithm)
+
+        try:
+            _ = user_rpk.list_topics()
+            assert 'This should fail'
+        except Exception:
+            pass
+
+        records = self.read_all_from_audit_log(
+            partial(
+                self.authn_failure_filter_function,
+                self.kafka_rpc_service_name, self.username, 99, "SASL-SCRAM",
+                'SASL authentication failed: security: Invalid credentials'),
+            lambda records: self.aggregate_count(records) >= 1)
+
+        assert len(
+            records) == 1, f'Expected only one record, got {len(records)}'
+
+
+class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
+    """
+    Tests that validate audit log messages for users authenticated via mTLS
+    """
+    username = 'test'
+    password = 'test12345'
+    algorithm = 'SCRAM-SHA-256'
+
+    def __init__(self, test_context):
+        self.test_context = test_context
+        self.tls = tls.TLSCertManager(self.logger)
+
+        self.user_cert = self.tls.create_cert(socket.gethostname(),
+                                              common_name=self.username,
+                                              name='base_client')
+        self.admin_user_cert = self.tls.create_cert(
+            socket.gethostname(),
+            common_name=RedpandaServiceBase.SUPERUSER_CREDENTIALS[0],
+            name='admin_client')
+
+        self._security_config = AuditLogTestSecurityConfig(
+            admin_cert=self.admin_user_cert, user_cert=self.user_cert)
+        self._security_config.tls_provider = MTLSProvider(self.tls)
+        self._security_config.principal_mapping_rules = 'RULE:.*CN=(.*).*/$1/'
+
+        self._audit_log_client_config = redpanda.AuditLogConfig(
+            listener_port=9192, listener_authn_method='sasl')
+
+        self._audit_log_client_config.require_client_auth = False
+        self._audit_log_client_config.enable_broker_tls = False
+
+        super(AuditLogTestsKafkaTlsApi, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(num_partitions=1,
+                                            event_types=['authenticate']),
+            security=self._security_config,
+            log_config=LoggingConfig('info',
+                                     logger_levels={
+                                         'auditing': 'trace',
+                                         'kafka': 'trace',
+                                         'security': 'trace'
+                                     }),
+            audit_log_client_config=self._audit_log_client_config)
+
+    def setup_cluster(self):
+        self.admin.create_user(self.username, self.password, self.algorithm)
+
+    @staticmethod
+    def mtls_authn_filter_function(service_name: str, username: str,
+                                   protocol_id: int,
+                                   protocol_name: Optional[str], dn: str,
+                                   record):
+        return record['class_uid'] == 3002 and record['service'][
+            'name'] == service_name and record['user'][
+                'name'] == username and record[
+                    'auth_protocol_id'] == protocol_id and (
+                        protocol_name is not None
+                        and record['auth_protocol'] == protocol_name
+                    ) and record['status_id'] == 1 and record['user'][
+                        'credential_uid'] == dn
+
+    @cluster(num_nodes=5)
+    def test_mtls(self):
+        """
+        Verify that mTLS authn users generate correct audit log entries
+        """
+        self.setup_cluster()
+
+        user_rpk = self.get_rpk()
+
+        _ = user_rpk.list_topics()
+
+        records = self.read_all_from_audit_log(
+            partial(self.mtls_authn_filter_function,
+                    self.kafka_rpc_service_name, self.username, 99, "mtls",
+                    f"O=Redpanda,CN={self.username}"),
+            lambda records: self.aggregate_count(records) >= 1)
+
+        assert len(
+            records) == 1, f'Expected only one record got {len(records)}'
+
+
+class AuditLogTestsOauth(AuditLogTestsBase):
+    """
+    Tests that validate audit log messages for users authenticated via OAUTH
+    """
+    client_id = 'myapp'
+    token_audience = 'account'
+    example_topic = 'foo'
+
+    def __init__(self, test_context):
+        security = AuditLogTestSecurityConfig(
+            user_creds=RedpandaServiceBase.SUPERUSER_CREDENTIALS)
+        security.enable_sasl = True
+        security.sasl_mechanisms = ['SCRAM', 'OAUTHBEARER']
+        security.http_authentication = ['BASIC', 'OIDC']
+
+        self.keycloak = KeycloakService(test_context)
+
+        super(AuditLogTestsOauth, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(num_partitions=1,
+                                            event_types=['authenticate']),
+            security=security,
+            log_config=LoggingConfig('info',
+                                     logger_levels={
+                                         'auditing': 'trace',
+                                         'kafka': 'trace',
+                                         'security': 'trace'
+                                     }))
+
+    def setUp(self):
+        super().setUp()
+
+        kc_node = self.keycloak.nodes[0]
+        try:
+            self.keycloak.start_node(kc_node)
+        except Exception as e:
+            self.logger.error(f'{e}')
+            self.keycloak.clean_node(kc_node)
+            assert False, f'Keycloak failed to start: {e}'
+
+        self._modify_cluster_config({
+            'oidc_discovery_url':
+            self.keycloak.get_discovery_url(kc_node),
+            "oidc_token_audience":
+            self.token_audience
+        })
+
+        self.keycloak.admin.create_user('norma',
+                                        'despond',
+                                        realm_admin=True,
+                                        email='10086@sunset.blvd')
+        self.keycloak.login_admin_user(kc_node, 'norma', 'despond')
+        self.keycloak.admin.create_client(self.client_id)
+        self.keycloak.admin.update_user(f'service-account-{self.client_id}',
+                                        email='myapp@customer.com')
+
+    @staticmethod
+    def oidc_authn_filter_function(service_name: str, username: str, record):
+        return record['class_uid'] == 3002 and record['service'][
+            'name'] == service_name and record[
+                'auth_protocol_id'] == 6 and record['user']['name'] == username
+
+    @cluster(num_nodes=6)
+    def test_kafka_oauth(self):
+        """
+        Validate that authentication events using OAUTH in Kafka
+        generate valid audit messages
+        """
+        kc_node = self.keycloak.nodes[0]
+        self.super_rpk.create_topic(self.example_topic)
+        service_user_id = self.keycloak.admin_ll.get_user_id(
+            f'service-account-{self.client_id}')
+        _ = self.super_rpk.sasl_allow_principal(
+            f'User:{service_user_id}', ['all'], 'topic', self.example_topic,
+            self.redpanda.SUPERUSER_CREDENTIALS[0],
+            self.redpanda.SUPERUSER_CREDENTIALS[1],
+            self.redpanda.SUPERUSER_CREDENTIALS[2])
+
+        cfg = self.keycloak.generate_oauth_config(kc_node, self.client_id)
+        assert cfg.client_secret is not None, "client_secret is None"
+        assert cfg.token_endpoint is not None, "token_endpoint is None"
+        k_client = PythonLibrdkafka(self.redpanda,
+                                    algorithm='OAUTHBEARER',
+                                    oauth_config=cfg)
+        producer = k_client.get_producer()
+
+        producer.poll(0.0)
+        expected_topics = set([self.example_topic])
+        wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
+                   == expected_topics,
+                   timeout_sec=5)
+
+        records = self.read_all_from_audit_log(
+            partial(self.oidc_authn_filter_function,
+                    self.kafka_rpc_service_name, service_user_id),
+            lambda records: self.aggregate_count(records) >= 1)
+
+        # There may exist multiple OAUTH entries but that could be due to the client
+        # connecting to more than one node.  In this situation the number of records
+        # should match a set of unique ips
+        ip_set = set()
+        [ip_set.add(r["dst_endpoint"]["ip"]) for r in records]
+
+        assert len(records) == len(
+            ip_set), f"Expected one record but received {len(records)}"
+
+    @cluster(num_nodes=6)
+    def test_admin_oauth(self):
+        """
+        Validate that authentication events using OAUTH in the Admin API
+        generate valid audit messages
+        """
+        kc_node = self.keycloak.nodes[0]
+        cfg = self.keycloak.generate_oauth_config(kc_node, self.client_id)
+        token_endpoint_url = urlparse(cfg.token_endpoint)
+        openid = KeycloakOpenID(
+            server_url=
+            f'{token_endpoint_url.scheme}://{token_endpoint_url.netloc}',
+            client_id=cfg.client_id,
+            client_secret_key=cfg.client_secret,
+            realm_name=DEFAULT_REALM,
+            verify=True)
+        token = openid.token(grant_type='client_credentials')
+        userinfo = openid.userinfo(token['access_token'])
+
+        def check_cluster_status():
+            response = requests.get(
+                url=
+                f'http://{self.redpanda.nodes[0].account.hostname}:9644/v1/status/ready',
+                headers={
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {token["access_token"]}'
+                },
+                timeout=5)
+            return response.status_code == requests.codes.ok
+
+        wait_until(check_cluster_status, timeout_sec=5)
+
+        records = self.read_all_from_audit_log(
+            partial(self.oidc_authn_filter_function, self.admin_audit_svc_name,
+                    userinfo['sub']),
+            lambda records: self.aggregate_count(records) >= 1)
+
+        assert len(records) == 1, f"Expected one record got {len(records)}"

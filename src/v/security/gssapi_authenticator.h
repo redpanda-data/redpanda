@@ -49,6 +49,10 @@ public:
         return std::nullopt;
     }
 
+    const audit::user& audit_user() const override { return _audit_user; }
+
+    const char* mechanism_name() const override { return name; }
+
 private:
     friend std::ostream&
     operator<<(std::ostream& os, gssapi_authenticator::state const s);
@@ -56,6 +60,7 @@ private:
     ssx::singleton_thread_worker& _worker;
     security::acl_principal _principal;
     std::optional<clock_type::time_point> _session_expiry;
+    audit::user _audit_user;
     state _state{state::init};
     class impl;
     std::unique_ptr<impl> _impl;

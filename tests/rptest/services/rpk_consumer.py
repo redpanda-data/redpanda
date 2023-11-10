@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import json
+import os
 import time
 import threading
 
@@ -63,6 +64,25 @@ class RpkConsumer(BackgroundThreadService):
         self._pass = password
         self._tls_cert = tls_cert
         self._tls_enabled = False if tls_enabled is None else tls_enabled
+
+        if self._tls_cert is not None:
+            node = self.nodes[0]
+            self.logger.info(
+                f'Writing RpkConsumer node tls key file: {self._tls_cert.key}')
+            node.account.mkdirs(os.path.dirname(self._tls_cert.key))
+            node.account.copy_to(self._tls_cert.key, self._tls_cert.key)
+
+            self.logger.info(
+                f'Writing RpkConsumer node tls cert file: {self._tls_cert.crt}'
+            )
+            node.account.mkdirs(os.path.dirname(self._tls_cert.crt))
+            node.account.copy_to(self._tls_cert.crt, self._tls_cert.crt)
+
+            self.logger.info(
+                f'Writing RpkConsumer node tls ca file: {self._tls_cert.ca.crt}'
+            )
+            node.account.mkdirs(os.path.dirname(self._tls_cert.ca.crt))
+            node.account.copy_to(self._tls_cert.ca.crt, self._tls_cert.ca.crt)
 
         # if testing redpanda cloud, override with default superuser
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):

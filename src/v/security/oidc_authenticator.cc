@@ -157,7 +157,8 @@ std::ostream& operator<<(std::ostream& os, sasl_authenticator::state const s) {
 }
 
 sasl_authenticator::sasl_authenticator(service& service)
-  : _authenticator{service} {}
+  : _authenticator{service}
+  , _audit_user() {}
 
 sasl_authenticator::~sasl_authenticator() = default;
 
@@ -189,6 +190,8 @@ ss::future<result<bytes>> sasl_authenticator::authenticate(bytes auth_bytes) {
     }
 
     _auth_data = auth_res.assume_value();
+    _audit_user.type_id = audit::user::type::user;
+    _audit_user.name = _auth_data.principal.name();
     _state = state::complete;
 
     co_return bytes{};

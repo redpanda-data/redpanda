@@ -29,6 +29,7 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "seastarx.h"
 #include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
 #include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
@@ -257,6 +258,62 @@ public:
     }
 
     bool audit() { return _audit_successful; }
+
+    bool audit_authn_failure(const ss::sstring& reason) {
+        return audit_authn_failure(reason, "");
+    }
+
+    bool audit_authn_failure(
+      const ss::sstring& reason, const ss::sstring& auth_protocol) {
+        return audit_authn_failure(
+          reason,
+          auth_protocol,
+          {.type_id = security::audit::user::type::unknown});
+    }
+
+    bool audit_authn_failure(
+      const ss::sstring& reason,
+      const ss::sstring& auth_protocol,
+      security::audit::user user) {
+        return audit(security::audit::make_authentication_failure_event(
+          auth_protocol,
+          connection()->local_address(),
+          connection()->server().name(),
+          connection()->client_host(),
+          connection()->client_port(),
+          header().client_id,
+          connection()->tls_enabled()
+            ? security::audit::authentication::used_cleartext::no
+            : security::audit::authentication::used_cleartext::yes,
+          reason,
+          std::move(user)));
+    }
+
+    bool audit_authn_success(
+      const ss::sstring& auth_protocol, security::audit::user user) {
+        return audit(security::audit::make_authentication_event(
+          auth_protocol,
+          connection()->local_address(),
+          connection()->server().name(),
+          connection()->client_host(),
+          connection()->client_port(),
+          header().client_id,
+          connection()->tls_enabled()
+            ? security::audit::authentication::used_cleartext::no
+            : security::audit::authentication::used_cleartext::yes,
+          std::move(user)));
+    }
+
+    bool audit(security::audit::authentication authn_event) {
+        if (!_conn->server().audit_mgr().enqueue_audit_event(
+              security::audit::event_type::authenticate,
+              std::move(authn_event))) {
+            vlog(
+              klog.error, "Failed to append authentication event to audit log");
+            return false;
+        }
+        return true;
+    }
 
     template<typename T>
     bool authorized(

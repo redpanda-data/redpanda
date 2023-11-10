@@ -130,12 +130,14 @@ public:
       std::vector<gssapi_rule> rules)
       : _krb_service_primary{std::move(krb_service_primary)}
       , _keytab{std::move(keytab)}
-      , _rules{std::move(rules)} {}
+      , _rules{std::move(rules)}
+      , _rp_audit_user() {}
 
     state_result<bytes> authenticate(bytes auth_bytes);
     const security::acl_principal& principal() const {
         return _rp_user_principal;
     }
+    const audit::user& audit_user() const { return _rp_audit_user; }
 
     std::optional<std::chrono::seconds> lifetime() const { return _lifetime_s; }
 
@@ -168,6 +170,7 @@ private:
     const std::vector<gssapi_rule> _rules;
     security::acl_principal _rp_user_principal;
     std::optional<std::chrono::seconds> _lifetime_s;
+    audit::user _rp_audit_user;
     state _state{state::init};
     gss::cred_id _server_creds;
     gss::ctx_id _context;
@@ -179,6 +182,7 @@ gssapi_authenticator::gssapi_authenticator(
   ss::sstring principal,
   ss::sstring keytab)
   : _worker{thread_worker}
+  , _audit_user()
   , _impl{std::make_unique<impl>(
       std::move(principal), std::move(keytab), std::move(rules))} {}
 
@@ -206,6 +210,8 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
       });
 
     _state = res.state;
+    _audit_user = co_await _worker.submit(
+      [this]() { return _impl->audit_user(); });
     if (_state == state::complete) {
         std::optional<std::chrono::seconds> lifetime;
         std::tie(_principal, lifetime) = co_await _worker.submit([this]() {
@@ -226,6 +232,7 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
     } else if (_state == state::failed) {
         co_await _worker.submit([this]() { _impl->reset(); });
     }
+
     co_return std::move(res.result);
 }
 
@@ -527,6 +534,8 @@ void gssapi_authenticator::impl::fail_impl(
 
 acl_principal gssapi_authenticator::impl::get_principal_from_name(
   std::string_view source_name) {
+    _rp_audit_user.credential_uid = ss::sstring{source_name};
+
     auto krb5_ctx = krb5::context::create();
     if (!krb5_ctx) {
         vlog(
@@ -560,6 +569,9 @@ acl_principal gssapi_authenticator::impl::get_principal_from_name(
         return {};
     }
 
+    _rp_audit_user.credential_uid = fmt::format("{}", parsed_name.value());
+    _rp_audit_user.domain = parsed_name.value().realm();
+
     auto mapped_name = gssapi_principal_mapper::apply(
       std::string_view{default_realm.assume_value()}, *parsed_name, _rules);
 
@@ -569,6 +581,8 @@ acl_principal gssapi_authenticator::impl::get_principal_from_name(
     }
 
     vlog(seclog.debug, "Mapped '{}' to '{}'", source_name, *mapped_name);
+    _rp_audit_user.name = _rp_user_principal.name();
+    _rp_audit_user.type_id = audit::user::type::user;
     return {principal_type::user, *mapped_name};
 }
 

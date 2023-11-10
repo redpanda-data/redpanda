@@ -82,12 +82,17 @@ public:
         return _auth_data.principal;
     }
 
+    const audit::user& audit_user() const override { return _audit_user; };
+
+    const char* mechanism_name() const override { return name; }
+
 private:
     friend std::ostream&
     operator<<(std::ostream& os, sasl_authenticator::state const s);
 
     authenticator _authenticator;
     authentication_data _auth_data;
+    security::audit::user _audit_user;
     state _state{state::init};
 };
 

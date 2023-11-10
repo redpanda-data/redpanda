@@ -72,13 +72,18 @@ private:
 
 class mtls_state {
 public:
-    explicit mtls_state(ss::sstring principal)
-      : _principal{principal_type::user, std::move(principal)} {}
+    explicit mtls_state(
+      ss::sstring principal, std::optional<ss::sstring> subject)
+      : _principal{principal_type::user, std::move(principal)}
+      , _subject(std::move(subject)) {}
 
-    const acl_principal& principal() { return _principal; }
+    const acl_principal& principal() const { return _principal; }
+
+    const std::optional<ss::sstring>& subject() const { return _subject; }
 
 private:
     acl_principal _principal;
+    std::optional<ss::sstring> _subject;
 };
 
 std::optional<ss::sstring>
