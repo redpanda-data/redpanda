@@ -25,21 +25,19 @@
 
 namespace cluster {
 
-using tx_hash_type = uint32_t;
-constexpr tx_hash_type tx_tm_hash_max
-  = std::numeric_limits<tx_hash_type>::max();
+using tx_id_hash = named_type<uint32_t, struct tx_hash_type_tag>;
 
-static tx_hash_type get_default_range_size(int32_t tm_partitions_amount) {
+static tx_id_hash get_default_tx_hash_range_size(int32_t tm_partitions_amount) {
     // integer division acts as div
     // size of last range can be larger than default range size
     // last range covers hashes up to tx_tm_hash_max
-    return tx_tm_hash_max / tm_partitions_amount;
+    return tx_id_hash(tx_id_hash::max() / tm_partitions_amount);
 }
 
 // Return hash of tx_id in range [0, tx_tm_hash_max]
-inline tx_hash_type get_tx_id_hash(const kafka::transactional_id& tx_id) {
+inline tx_id_hash get_tx_id_hash(const kafka::transactional_id& tx_id) {
     auto copy = ss::sstring(tx_id);
-    return murmur2(copy.data(), copy.size());
+    return tx_id_hash(murmur2(copy.data(), copy.size()));
 }
 
 enum class tx_hash_ranges_errc {
@@ -52,12 +50,12 @@ enum class tx_hash_ranges_errc {
 struct tx_hash_range
   : serde::
       envelope<tx_hash_range, serde::version<0>, serde::compat_version<0>> {
-    tx_hash_type first;
-    tx_hash_type last;
+    tx_id_hash first;
+    tx_id_hash last;
 
     tx_hash_range() = default;
 
-    tx_hash_range(tx_hash_type f, tx_hash_type l)
+    tx_hash_range(tx_id_hash f, tx_id_hash l)
       : first(f)
       , last(l) {}
 
@@ -66,7 +64,7 @@ struct tx_hash_range
 
     auto serde_fields() { return std::tie(first, last); }
 
-    bool contains(tx_hash_type v) const { return v >= first && v <= last; }
+    bool contains(tx_id_hash v) const { return v >= first && v <= last; }
 
     bool contains(tx_hash_range r) const {
         return r.first >= first && r.last <= last;
@@ -84,14 +82,16 @@ struct tx_hash_range
     }
 };
 
-inline tx_hash_range default_hash_range(
-  model::partition_id tm_partition, int32_t partitions_amount) {
-    tx_hash_type range_size = get_default_range_size(partitions_amount);
-    tx_hash_type hash_range_begin = range_size * tm_partition;
-    tx_hash_type hash_range_end = (tm_partition + 1) == partitions_amount
-                                    ? tx_tm_hash_max
-                                    : (range_size * (tm_partition + 1)) - 1;
-    return {hash_range_begin, hash_range_end};
+inline tx_hash_range
+default_hash_range(model::partition_id tm_partition, int32_t partition_cnt) {
+    const tx_id_hash range_size = get_default_tx_hash_range_size(partition_cnt);
+
+    tx_id_hash hash_range_end(
+      (tm_partition + 1) == partition_cnt
+        ? tx_id_hash::max()
+        : (range_size * (tm_partition + 1)) - 1);
+
+    return {tx_id_hash(range_size * tm_partition), hash_range_end};
 }
 
 struct tx_hash_ranges_set
@@ -112,7 +112,7 @@ struct tx_hash_ranges_set
 
     void add_range(tx_hash_range range) {
         auto merged_to = ranges.end();
-        if (range.first != 0) {
+        if (range.first != tx_id_hash(0)) {
             for (auto r_it = ranges.begin(); r_it != ranges.end(); ++r_it) {
                 if (r_it->last == range.first - 1) {
                     r_it->last = range.last;
@@ -121,9 +121,9 @@ struct tx_hash_ranges_set
                 }
             }
         }
-        if (range.last != tx_tm_hash_max) {
+        if (range.last != tx_id_hash::max()) {
             for (auto r_it = ranges.begin(); r_it != ranges.end(); ++r_it) {
-                if (r_it->first == range.last + 1) {
+                if (r_it->first == range.last + tx_id_hash(1)) {
                     if (merged_to != ranges.end()) {
                         merged_to->last = r_it->last;
                         ranges.erase(r_it);
@@ -140,7 +140,7 @@ struct tx_hash_ranges_set
         }
     }
 
-    bool contains(tx_hash_type v) const {
+    bool contains(tx_id_hash v) const {
         for (const auto& r : ranges) {
             if (r.contains(v)) {
                 return true;
@@ -212,7 +212,7 @@ exclude_transaction(T& self, const kafka::transactional_id& tx_id) {
           "hash_ranges must not contain included txes");
         return tx_hash_ranges_errc::success;
     }
-    tx_hash_type hash = get_tx_id_hash(tx_id);
+    tx_id_hash hash = get_tx_id_hash(tx_id);
     if (!self.hash_ranges.contains(hash)) {
         return tx_hash_ranges_errc::not_hosted;
     }
@@ -233,7 +233,7 @@ include_transaction(T& self, const kafka::transactional_id& tx_id) {
           "hash_ranges must contain excluded txes");
         return tx_hash_ranges_errc::success;
     }
-    tx_hash_type hash = get_tx_id_hash(tx_id);
+    tx_id_hash hash = get_tx_id_hash(tx_id);
     if (self.hash_ranges.contains(hash)) {
         return tx_hash_ranges_errc::intersection;
     }
@@ -247,13 +247,13 @@ tx_hash_ranges_errc add_range(T& self, const tx_hash_range& range) {
         return tx_hash_ranges_errc::intersection;
     }
     for (const auto& tx_id : self.excluded_transactions) {
-        tx_hash_type hash = get_tx_id_hash(tx_id);
+        tx_id_hash hash = get_tx_id_hash(tx_id);
         if (range.contains(hash)) {
             self.excluded_transactions.erase(tx_id);
         }
     }
     for (const auto& tx_id : self.included_transactions) {
-        tx_hash_type hash = get_tx_id_hash(tx_id);
+        tx_id_hash hash = get_tx_id_hash(tx_id);
         if (range.contains(hash)) {
             self.included_transactions.erase(tx_id);
         }
@@ -285,8 +285,8 @@ struct adl<cluster::tx_hash_range> {
         reflection::serialize(out, hr.first, hr.last);
     }
     cluster::tx_hash_range from(iobuf_parser& in) {
-        auto first = reflection::adl<cluster::tx_hash_type>{}.from(in);
-        auto last = reflection::adl<cluster::tx_hash_type>{}.from(in);
+        auto first = reflection::adl<cluster::tx_id_hash>{}.from(in);
+        auto last = reflection::adl<cluster::tx_id_hash>{}.from(in);
         return {first, last};
     }
 };

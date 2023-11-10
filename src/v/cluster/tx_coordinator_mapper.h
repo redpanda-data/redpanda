@@ -26,10 +26,10 @@
 namespace cluster {
 
 inline model::partition_id get_partition_from_default_distribution(
-  tx_hash_type tx_id_hash, int32_t partitions_amount) {
-    tx_hash_type default_partition_range_size = get_default_range_size(
+  tx_id_hash hash, int32_t partitions_amount) {
+    tx_id_hash default_partition_range_size = get_default_tx_hash_range_size(
       partitions_amount);
-    int32_t partition = int32_t(tx_id_hash / default_partition_range_size);
+    int32_t partition = int32_t(hash / default_partition_range_size);
 
     // Last partition in default distibuiton can have bigger range
     if (partition >= partitions_amount) {
@@ -71,7 +71,7 @@ public:
         }
         int32_t partitions_amount = cfg->partition_count;
 
-        tx_hash_type tx_id_hash = get_tx_id_hash(tx_id);
+        tx_id_hash tx_id_hash = get_tx_id_hash(tx_id);
         auto partition = get_partition_from_default_distribution(
           tx_id_hash, partitions_amount);
         co_return model::ntp(
