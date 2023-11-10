@@ -4,5 +4,8 @@ cd /opt/redpanda-tests/go/sarama/produce_test
 go mod tidy
 go build
 
+cd /opt/redpanda-tests/go/transform-verifier
+go build
+
 cd /opt/redpanda-tests/go/go-kafka-serde
 GOPATH=${HOME}/go make clean all
