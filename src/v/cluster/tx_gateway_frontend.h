@@ -45,7 +45,6 @@ public:
 
     std::optional<model::ntp> ntp_for_tx_id(const kafka::transactional_id&);
 
-    ss::future<bool> hosts(model::partition_id, kafka::transactional_id);
     ss::future<fetch_tx_reply> fetch_tx_locally(
       kafka::transactional_id, model::term_id, model::partition_id);
     ss::future<init_tm_tx_reply> init_tm_tx(
@@ -182,9 +181,6 @@ private:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
-    ss::future<bool> do_hosts(model::partition_id, kafka::transactional_id);
-    ss::future<tx_errc>
-      do_init_hosted_transactions(ss::shared_ptr<cluster::tm_stm>);
 
     ss::future<cluster::init_tm_tx_reply> init_tm_tx_locally(
       kafka::transactional_id,
