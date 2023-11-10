@@ -445,12 +445,7 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       {.visibility = visibility::user},
       10s)
-  , tx_registry_sync_timeout_ms(
-      *this,
-      "tx_registry_sync_timeout_ms",
-      "Time to wait state catch up before rejecting a request",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10s)
+  , tx_registry_sync_timeout_ms(*this, "tx_registry_sync_timeout_ms")
   , tm_violation_recovery_policy(*this, "tm_violation_recovery_policy")
   , rm_sync_timeout_ms(
       *this,
@@ -1002,13 +997,7 @@ configuration::configuration()
        .visibility = visibility::tunable},
       2,
       {.min = 1})
-  , tx_registry_log_capacity(
-      *this,
-      "tx_registry_log_capacity",
-      "Capacity of the tx_registry log in number of batches. "
-      "Once it reached tx_registry_stm truncates log's prefix.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      100)
+  , tx_registry_log_capacity(*this, "tx_registry_log_capacity")
   , id_allocator_log_capacity(
       *this,
       "id_allocator_log_capacity",
