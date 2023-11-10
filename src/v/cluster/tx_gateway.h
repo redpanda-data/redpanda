@@ -34,8 +34,7 @@ public:
       ss::smp_service_group,
       ss::sharded<cluster::tx_gateway_frontend>&,
       rm_group_proxy*,
-      ss::sharded<cluster::rm_partition_frontend>&,
-      ss::sharded<cluster::tx_registry_frontend>&);
+      ss::sharded<cluster::rm_partition_frontend>&);
 
     ss::future<init_tm_tx_reply>
     init_tm_tx(init_tm_tx_request&&, rpc::streaming_context&) override;
@@ -77,6 +76,5 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
-    ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
 };
 } // namespace cluster
