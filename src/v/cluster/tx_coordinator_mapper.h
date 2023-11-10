@@ -25,17 +25,26 @@
 
 namespace cluster {
 
-inline model::partition_id get_partition_from_default_distribution(
-  tx_id_hash hash, int32_t partitions_amount) {
-    tx_id_hash default_partition_range_size = get_default_tx_hash_range_size(
-      partitions_amount);
-    int32_t partition = int32_t(hash / default_partition_range_size);
+inline model::partition_id
+get_tx_coordinator_partition(tx_id_hash tx_id_hash, int32_t partition_cnt) {
+    auto default_partition_range_size = get_default_tx_hash_range_size(
+      partition_cnt);
+
+    auto partition = int32_t(tx_id_hash / default_partition_range_size);
 
     // Last partition in default distibuiton can have bigger range
-    if (partition >= partitions_amount) {
-        return model::partition_id(partitions_amount - 1);
+    if (partition >= partition_cnt) {
+        return model::partition_id(partition_cnt - 1);
     }
     return model::partition_id(partition);
+}
+
+inline model::ntp get_tx_coordinator_ntp(
+  const kafka::transactional_id& tx_id, int32_t partition_count) {
+    return {
+      model::tx_manager_nt.ns,
+      model::tx_manager_nt.tp,
+      get_tx_coordinator_partition(get_tx_id_hash(tx_id), partition_count)};
 }
 
 /**
@@ -72,7 +81,7 @@ public:
         int32_t partitions_amount = cfg->partition_count;
 
         tx_id_hash tx_id_hash = get_tx_id_hash(tx_id);
-        auto partition = get_partition_from_default_distribution(
+        auto partition = get_tx_coordinator_partition(
           tx_id_hash, partitions_amount);
         co_return model::ntp(
           model::tx_manager_nt.ns, model::tx_manager_nt.tp, partition);
