@@ -131,3 +131,21 @@ func (a *AdminAPI) MoveReplicas(ctx context.Context, ns string, topic string, pa
 		r,
 		nil)
 }
+
+// ToggleAllTopicPartitions will toggle all partitions in the given topic.
+func (a *AdminAPI) ToggleAllTopicPartitions(ctx context.Context, disabled bool, namespace, topic string) error {
+	disableURL := fmt.Sprintf("%v/%v/%v", partitionsBaseURL, namespace, topic)
+	body := struct {
+		Disabled bool `json:"disabled"`
+	}{disabled}
+	return a.sendToLeader(ctx, http.MethodPost, disableURL, body, nil)
+}
+
+// ToggleTopicPartitions will toggle the given partitions in the given topic.
+func (a *AdminAPI) ToggleTopicPartitions(ctx context.Context, disabled bool, namespace, topic string, partition int) error {
+	disableURL := fmt.Sprintf("%v/%v/%v/%v", partitionsBaseURL, namespace, topic, partition)
+	body := struct {
+		Disabled bool `json:"disabled"`
+	}{disabled}
+	return a.sendToLeader(ctx, http.MethodPost, disableURL, body, nil)
+}
