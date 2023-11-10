@@ -147,6 +147,25 @@ class KubectlTool:
             self._kubectl_installed = True
         return
 
+    def _run(self, cmd):
+        # Log and run
+        self._redpanda.logger.info(cmd)
+        res = subprocess.check_output(cmd)
+        return res
+
+    def run_kube_command(self, kcmd):
+        # prepare
+        self._install()
+        _ssh_prefix = self._ssh_prefix()
+        _kubectl = ["kubectl", '-n', self._namespace]
+
+        # Make it universal for str/list
+        _kcmd = kcmd if isinstance(kcmd, list) else kcmd.split()
+        # Format command
+        cmd = _ssh_prefix + _kubectl + _kcmd
+        # Log and run
+        return self._run(cmd)
+
     def exec(self, remote_cmd):
         self._install()
         ssh_prefix = self._ssh_prefix()
@@ -154,9 +173,7 @@ class KubectlTool:
             'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
             f'rp-{self._cluster_id}-0', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
-        self._redpanda.logger.info(cmd)
-        res = subprocess.check_output(cmd)
-        return res
+        return self._run(cmd)
 
     def exists(self, remote_path):
         self._install()
