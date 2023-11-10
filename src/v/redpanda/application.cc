@@ -50,7 +50,6 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_frontend.h"
-#include "cluster/tx_registry_frontend.h"
 #include "cluster/types.h"
 #include "compression/async_stream_zstd.h"
 #include "compression/stream_zstd.h"
@@ -882,7 +881,6 @@ void application::configure_admin_server() {
       _schema_registry.get(),
       std::ref(topic_recovery_service),
       std::ref(topic_recovery_status_frontend),
-      std::ref(tx_registry_frontend),
       std::ref(storage_node),
       std::ref(_memory_sampling),
       std::ref(shadow_index_cache),
@@ -1480,20 +1478,6 @@ void application::wire_up_redpanda_services(
       std::ref(controller))
       .get();
 
-    syschecks::systemd_message("Creating tx registry frontend").get();
-    construct_service(
-      tx_registry_frontend,
-      smp_service_groups.raft_smp_sg(),
-      std::ref(partition_manager),
-      std::ref(shard_table),
-      std::ref(metadata_cache),
-      std::ref(_connection_cache),
-      std::ref(controller->get_partition_leaders()),
-      std::ref(controller),
-      std::ref(tx_coordinator_ntp_mapper),
-      std::ref(feature_table))
-      .get();
-
     syschecks::systemd_message("Creating group resource manager frontend")
       .get();
     construct_service(
@@ -1704,7 +1688,6 @@ void application::wire_up_redpanda_services(
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
-        std::ref(tx_registry_frontend),
         qdc_config,
         std::ref(*thread_worker),
         std::ref(_schema_registry))
@@ -2214,8 +2197,7 @@ void application::start_runtime_services(
             smp_service_groups.raft_smp_sg(),
             std::ref(tx_gateway_frontend),
             _rm_group_proxy.get(),
-            std::ref(rm_partition_frontend),
-            std::ref(tx_registry_frontend)));
+            std::ref(rm_partition_frontend)));
 
           if (!start_raft_rpc_early) {
               runtime_services.push_back(std::make_unique<raft::service<

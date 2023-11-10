@@ -110,7 +110,6 @@ public:
 
     ss::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
-    ss::sharded<cluster::tx_registry_frontend> tx_registry_frontend;
     ss::sharded<cluster::metadata_cache> metadata_cache;
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;

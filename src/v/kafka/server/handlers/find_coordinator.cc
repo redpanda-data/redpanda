@@ -11,7 +11,6 @@
 
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
-#include "cluster/tx_registry_frontend.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/coordinator_ntp_mapper.h"

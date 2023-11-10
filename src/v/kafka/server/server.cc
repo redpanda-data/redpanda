@@ -11,7 +11,6 @@
 
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/topics_frontend.h"
-#include "cluster/tx_registry_frontend.h"
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
@@ -100,7 +99,6 @@ server::server(
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
   std::optional<qdc_monitor::config> qdc_config,
   ssx::thread_worker& tw,
   const std::unique_ptr<pandaproxy::schema_registry::api>& sr) noexcept
@@ -129,7 +127,6 @@ server::server(
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
-  , _tx_registry_frontend(tx_registry_frontend)
   , _mtls_principal_mapper(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
   , _gssapi_principal_mapper(
@@ -1629,16 +1626,6 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
         }
         return true;
     };
-
-    auto& tx_registry = ctx.tx_registry_frontend();
-    if (!co_await tx_registry.ensure_tx_topic_exists()) {
-        vlog(
-          klog.error,
-          "Can not return list of transactions. Failed to create {}",
-          model::tx_manager_nt);
-        response.data.error_code = kafka::error_code::unknown_server_error;
-        co_return co_await ctx.respond(std::move(response));
-    }
 
     auto& tx_frontend = ctx.tx_gateway_frontend();
     auto txs = co_await tx_frontend.get_all_transactions();
