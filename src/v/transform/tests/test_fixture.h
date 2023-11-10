@@ -53,6 +53,7 @@ public:
     ss::future<> stop() override;
 
 private:
+    bool _started = false;
     mode _mode = mode::noop;
 };
 

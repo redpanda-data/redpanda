@@ -124,9 +124,14 @@ processor::processor(
       _sinks.size() == 1,
       "expected only a single sink, got: {}",
       _sinks.size());
+    // The processor needs to protect against multiple stops (or calling stop
+    // before start), to do that we use the state in _as. Start out with an
+    // abort so that we handle being stopped before we're started.
+    _as.request_abort_ex(processor_shutdown_exception());
 }
 
 ss::future<> processor::start() {
+    _as = {};
     try {
         co_await _engine->start();
         co_await _source->start();
@@ -135,7 +140,6 @@ ss::future<> processor::start() {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
         _error_callback(_id, _ntp, _meta);
     }
-    _as = {};
     _consumer_transform_pipe = ss::queue<model::record_batch>(1);
     _transform_producer_pipe = ss::queue<transformed_batch>(1);
     _task = when_all_shutdown(
@@ -143,6 +147,11 @@ ss::future<> processor::start() {
 }
 
 ss::future<> processor::stop() {
+    // We reset the abort source when being started, so protect against double
+    // stops by checking if we've already requested being stopped.
+    if (_as.abort_requested()) {
+        co_return;
+    }
     auto ex = std::make_exception_ptr(processor_shutdown_exception());
     _as.request_abort_ex(ex);
     _consumer_transform_pipe.abort(ex);
