@@ -18,6 +18,7 @@
 #include "model/timestamp.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/fwd.h"
+#include "storage/key_offset_map.h"
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
 
@@ -395,11 +396,13 @@ struct compaction_config {
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
-      std::optional<size_t> max_keys = std::nullopt)
+      std::optional<size_t> max_keys = std::nullopt,
+      hash_key_offset_map* key_map = nullptr)
       : max_collectible_offset(max_collect_offset)
       , iopc(p)
       , sanitizer_config(std::move(san_cfg))
       , key_offset_map_max_keys(max_keys)
+      , hash_key_map(key_map)
       , asrc(&as) {}
 
     // Cannot delete or compact past this offset (i.e. for unresolved txn
@@ -412,6 +415,9 @@ struct compaction_config {
 
     // Limit the number of keys stored by a compaction's key-offset map.
     std::optional<size_t> key_offset_map_max_keys;
+
+    // Hash key-offset map to reuse across compactions.
+    hash_key_offset_map* hash_key_map;
 
     // abort source for compaction task
     ss::abort_source* asrc;
@@ -432,8 +438,10 @@ struct housekeeping_config {
       model::offset max_collect_offset,
       ss::io_priority_class p,
       ss::abort_source& as,
-      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt)
-      : compact(max_collect_offset, p, as, std::move(san_cfg))
+      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
+      hash_key_offset_map* key_map = nullptr)
+      : compact(
+        max_collect_offset, p, as, std::move(san_cfg), std::nullopt, key_map)
       , gc(upper, max_bytes_in_log) {}
 
     compaction_config compact;

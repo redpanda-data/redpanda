@@ -557,7 +557,17 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           result);
     }
 
-    simple_key_offset_map map(cfg.key_offset_map_max_keys);
+    // TODO: add configuration to use simple_key_offset_map.
+    std::unique_ptr<simple_key_offset_map> simple_map;
+    if (cfg.hash_key_map) {
+        co_await cfg.hash_key_map->reset();
+    } else {
+        simple_map = std::make_unique<simple_key_offset_map>(
+          cfg.key_offset_map_max_keys);
+    }
+    key_offset_map& map = cfg.hash_key_map
+                            ? dynamic_cast<key_offset_map&>(*cfg.hash_key_map)
+                            : dynamic_cast<key_offset_map&>(*simple_map);
     model::offset idx_start_offset;
     try {
         idx_start_offset = co_await build_offset_map(

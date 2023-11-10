@@ -24,6 +24,7 @@
 #include "storage/disk_log_impl.h"
 #include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
+#include "storage/key_offset_map.h"
 #include "storage/kvstore.h"
 #include "storage/log.h"
 #include "storage/logger.h"
@@ -52,6 +53,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/coroutine/switch_to.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/file.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -186,6 +188,11 @@ ss::future<> log_manager::stop() {
       });
     co_await _batch_cache.stop();
     co_await ssx::async_clear(_logs)();
+    if (_compaction_hash_key_map) {
+        // Clear memory used for the compaction hash map, if any.
+        co_await _compaction_hash_key_map->initialize(0);
+        _compaction_hash_key_map.reset();
+    }
 }
 
 /**
@@ -234,6 +241,16 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         co_await current_log.handle->apply_segment_ms();
     }
 
+    if (
+      config::shard_local_cfg().log_compaction_use_sliding_window.value()
+      && !_compaction_hash_key_map && !_logs_list.empty()
+      && is_not_set(_logs_list.front().flags, bflags::compacted)) {
+        auto compaction_map = std::make_unique<hash_key_offset_map>();
+        auto size_bytes
+          = config::shard_local_cfg().storage_compaction_key_map_memory.value();
+        co_await compaction_map->initialize(size_bytes);
+        _compaction_hash_key_map = std::move(compaction_map);
+    }
     while (!_logs_list.empty()
            && is_not_set(_logs_list.front().flags, bflags::compacted)) {
         if (_abort_source.abort_requested()) {
@@ -258,7 +275,8 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           current_log.handle->stm_manager()->max_collectible_offset(),
           _config.compaction_priority,
           _abort_source,
-          std::move(ntp_sanitizer_cfg)));
+          std::move(ntp_sanitizer_cfg),
+          _compaction_hash_key_map.get()));
 
         // bail out of compaction early in order to get back to gc
         if (_gc_triggered) {

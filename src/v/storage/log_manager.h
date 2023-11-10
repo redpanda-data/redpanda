@@ -20,6 +20,7 @@
 #include "seastarx.h"
 #include "storage/batch_cache.h"
 #include "storage/file_sanitizer_types.h"
+#include "storage/key_offset_map.h"
 #include "storage/log.h"
 #include "storage/log_housekeeping_meta.h"
 #include "storage/ntp_config.h"
@@ -274,6 +275,10 @@ private:
     logs_type _logs;
     compaction_list_type _logs_list;
     batch_cache _batch_cache;
+
+    // Hash key-map to use across multiple compactions to reuse reserved memory
+    // rather than reallocating repeatedly.
+    std::unique_ptr<hash_key_offset_map> _compaction_hash_key_map;
     ss::gate _open_gate;
     ss::abort_source _abort_source;
 
