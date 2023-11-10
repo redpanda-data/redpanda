@@ -1,4 +1,0 @@
-apiVersion: kuttl.dev/v1beta1
-kind: TestStep
-commands:
-  - command: kubectl uncordon -l any!=node

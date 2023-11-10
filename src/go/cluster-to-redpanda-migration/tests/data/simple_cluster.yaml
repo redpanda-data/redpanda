@@ -1,5 +1,0 @@
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
-metadata:
-  name: very-simple-cluster
-spec:
