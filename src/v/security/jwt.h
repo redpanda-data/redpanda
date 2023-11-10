@@ -234,7 +234,10 @@ public:
             return errc::jwt_invalid_json;
         }
 
-        if (detail::string_view(header, "typ") != "JWT") {
+        // typ header parameter is not required per RFC 7519:
+        // https://datatracker.ietf.org/doc/html/rfc7519#section-5.1
+        auto typ = detail::string_view(header, "typ");
+        if (typ.has_value() && typ != "JWT") {
             return errc::jwt_invalid_typ;
         }
 
@@ -451,11 +454,11 @@ make_verifiers(jwks const& jwks, CryptoPP::AutoSeededRandomPool& rng) {
     auto keys = jwks.keys();
     verifiers vs;
     for (auto const& key : keys) {
-        // Alg is required
-        auto alg = detail::string_view(key, "alg");
-        if (!alg) {
-            return errc::jwk_invalid;
-        }
+        // NOTE(oren): 'alg' field is optional per RFC 7517
+        // https://datatracker.ietf.org/doc/html/rfc7517#section-4.4
+        // In particular, Azure doesn't include it, so in its absence we can
+        // just try to verify as rs256 by default.
+        auto alg = detail::string_view(key, "alg").value_or(rs256_str);
 
         // Use is optional, but must be sig if it exists
         auto use = detail::string_view(key, "use");
@@ -465,7 +468,7 @@ make_verifiers(jwks const& jwks, CryptoPP::AutoSeededRandomPool& rng) {
 
         using factory = result<verifier> (*)(
           json::Value const&, CryptoPP::AutoSeededRandomPool&);
-        auto v = string_switch<std::optional<factory>>(*alg)
+        auto v = string_switch<std::optional<factory>>(alg)
                    .match(rs256_str, &make_rs256_verifier)
                    .default_match(std::optional<factory>{});
         if (!v) {
