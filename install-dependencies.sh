@@ -26,6 +26,7 @@ fi
 
 deb_deps=(
   cargo
+  ccache
   clang
   cmake
   git
@@ -60,6 +61,7 @@ fedora_deps=(
   boost-devel
   c-ares-devel
   cargo
+  ccache
   clang
   cmake
   compiler-rt
