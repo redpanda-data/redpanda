@@ -28,6 +28,7 @@
 #include "model/namespace.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "seastarx.h"
+#include "security/acl.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
@@ -49,6 +50,15 @@
 #include <type_traits>
 
 namespace kafka {
+
+/// Checks to see if the event is auditable.
+/// Current check will exclude any produce messages by the audit principal
+inline bool
+skip_auditing(api_key key, const security::acl_principal& principal) {
+    return security::audit::kafka_api_to_event_type(key)
+             == security::audit::event_type::produce
+           && principal == security::audit_principal;
+}
 
 constexpr auto request_header_size = sizeof(int16_t) + sizeof(int16_t)
                                      + sizeof(correlation_id::type)
@@ -324,6 +334,12 @@ public:
         auto resp = bool(result);
 
         auto key = _header.key;
+
+        // Not auditing produce authz attempts from audit principal
+        if (skip_auditing(key, result.principal)) [[unlikely]] {
+            return resp;
+        }
+
         // If we have reached this point, handler_for_key should already be
         // returning a value.  The only situations where it won't would be
         // in unit tests, so this is a "smoke test" to ensure that unit tests
@@ -358,6 +374,12 @@ public:
         auto resp = bool(result);
 
         auto key = _header.key;
+
+        // Not auditing produce authz attempts from audit principal
+        if (skip_auditing(key, result.principal)) [[unlikely]] {
+            return resp;
+        }
+
         auto operation_name = handler_for_key(key).value()->name();
         if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
               key,
