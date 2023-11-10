@@ -41,7 +41,7 @@ class OMBValidationTest(RedpandaTest):
         "payload_file": "payload/payload-1Kb.data",
         "consumer_backlog_size_GB": 0,
         "test_duration_minutes": 5,
-        "warmup_duration_minutes": 1,
+        "warmup_duration_minutes": 5,
     }
 
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
@@ -150,8 +150,8 @@ class OMBValidationTest(RedpandaTest):
                             1)
         total_producers = self._producer_count(producer_rate)
         total_consumers = self._consumer_count(producer_rate * subscriptions)
-        warmup_duration = 1  # minutes
-        test_duration = 5  # minutes
+        warmup_duration = self.WORKLOAD_DEFAULTS["warmup_duration_minutes"]
+        test_duration = self.WORKLOAD_DEFAULTS["test_duration_minutes"]
 
         workload = self.WORKLOAD_DEFAULTS | {
             "name": "MaxConnectionsTestWorkload",
@@ -161,8 +161,6 @@ class OMBValidationTest(RedpandaTest):
                                              1),
             "producers_per_topic": total_producers,
             "producer_rate": producer_rate // (1 * KiB),
-            "test_duration_minutes": test_duration,
-            "warmup_duration_minutes": warmup_duration,
         }
 
         driver = {
