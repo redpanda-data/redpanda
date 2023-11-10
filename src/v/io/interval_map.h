@@ -28,7 +28,30 @@ namespace experimental::io {
  */
 template<std::integral T, typename V>
 class interval_map {
-    using map_type = absl::btree_map<T, std::pair<T, V>>;
+    struct interval {
+        T start;
+        T end;
+    };
+
+    struct compare {
+        using is_transparent = void;
+
+        bool operator()(const interval& a, const interval& b) const {
+            return a.start < b.start;
+        }
+
+        bool operator()(const T& a, const interval& b) const {
+            return a < b.start;
+        }
+
+        bool operator()(const interval& a, const T& b) const {
+            return a.start < b;
+        }
+
+        bool operator()(const T& a, const T& b) const { return a < b; }
+    };
+
+    using map_type = absl::btree_map<interval, V, compare>;
 
 public:
     /**
@@ -103,35 +126,35 @@ interval_map<T, V>::insert(T start, T length, V value) {
          * than the starting offset of the interval being inserted.
          */
         if (map_.empty()) {
-            return map_.try_emplace(start, end, value);
+            return map_.try_emplace({start, end}, value);
         }
 
         // checks for overlap with the interval on the left
         it = std::prev(it);
-        if (it->second.first > start) {
+        if (it->first.end > start) {
             return {it, false};
         }
 
-        return {map_.try_emplace(it, start, end, value), true};
+        return {map_.try_emplace(it, {start, end}, value), true};
     }
 
     // checks for overlap with the interval on the right
-    if (end > it->first) {
+    if (end > it->first.start) {
         return {it, false};
     }
 
     // there are no intervals on the left
     if (it == map_.begin()) {
-        return map_.try_emplace(start, end, value);
+        return map_.try_emplace({start, end}, value);
     }
 
     // checks for overlap with the interval on the left
     it = std::prev(it);
-    if (it->second.first > start) {
+    if (it->first.end > start) {
         return {it, false};
     }
 
-    return {map_.try_emplace(it, start, end, value), true};
+    return {map_.try_emplace(it, {start, end}, value), true};
 }
 
 template<std::integral T, typename V>
@@ -143,7 +166,7 @@ interval_map<T, V>::const_iterator interval_map<T, V>::find(T index) const {
         }
         it = std::prev(it);
 
-    } else if (it->first == index) {
+    } else if (it->first.start == index) {
         return it;
 
     } else if (it == map_.cbegin()) {
@@ -157,8 +180,8 @@ interval_map<T, V>::const_iterator interval_map<T, V>::find(T index) const {
         --it;
     }
 
-    assert(it->first < index);
-    if (index < it->second.first) {
+    assert(it->first.start < index);
+    if (index < it->first.end) {
         return it;
     }
 

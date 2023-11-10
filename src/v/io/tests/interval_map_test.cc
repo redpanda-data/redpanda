@@ -147,8 +147,8 @@ TEST(IntervalMap, FindExact) {
     imap map;
     EXPECT_TRUE(map.insert(0, 10, 11).second);
     EXPECT_TRUE(map.insert(20, 5, 12).second);
-    EXPECT_EQ(map.find(0)->second.second, 11);
-    EXPECT_EQ(map.find(20)->second.second, 12);
+    EXPECT_EQ(map.find(0)->second, 11);
+    EXPECT_EQ(map.find(20)->second, 12);
 }
 
 TEST(IntervalMap, FindBeforeFirst) {
@@ -164,10 +164,10 @@ TEST(IntervalMap, FindMiddleNoGap) {
     EXPECT_TRUE(map.insert(0, 10, 3).second);
     EXPECT_TRUE(map.insert(10, 10, 4).second);
     EXPECT_TRUE(map.insert(20, 10, 5).second);
-    EXPECT_EQ(map.find(1)->second.second, 3);
-    EXPECT_EQ(map.find(9)->second.second, 3);
-    EXPECT_EQ(map.find(11)->second.second, 4);
-    EXPECT_EQ(map.find(19)->second.second, 4);
+    EXPECT_EQ(map.find(1)->second, 3);
+    EXPECT_EQ(map.find(9)->second, 3);
+    EXPECT_EQ(map.find(11)->second, 4);
+    EXPECT_EQ(map.find(19)->second, 4);
 }
 
 TEST(IntervalMap, FindMiddleWithGap) {
@@ -176,12 +176,12 @@ TEST(IntervalMap, FindMiddleWithGap) {
     EXPECT_TRUE(map.insert(0, 10, 3).second);
     EXPECT_TRUE(map.insert(20, 10, 4).second);
     EXPECT_TRUE(map.insert(40, 10, 5).second);
-    EXPECT_EQ(map.find(1)->second.second, 3);
-    EXPECT_EQ(map.find(9)->second.second, 3);
+    EXPECT_EQ(map.find(1)->second, 3);
+    EXPECT_EQ(map.find(9)->second, 3);
     EXPECT_EQ(map.find(10), map.end());
     EXPECT_EQ(map.find(19), map.end());
-    EXPECT_EQ(map.find(21)->second.second, 4);
-    EXPECT_EQ(map.find(29)->second.second, 4);
+    EXPECT_EQ(map.find(21)->second, 4);
+    EXPECT_EQ(map.find(29)->second, 4);
     EXPECT_EQ(map.find(30), map.end());
     EXPECT_EQ(map.find(39), map.end());
 }
@@ -307,7 +307,7 @@ TEST(IntervalMap, RandomIntervals) {
             auto v_idx = value_index(offset);
             if (v_idx.has_value()) {
                 ASSERT_NE(it, map.end());
-                EXPECT_EQ(it->second.second, values.at(v_idx.value()));
+                EXPECT_EQ(it->second, values.at(v_idx.value()));
             } else {
                 EXPECT_EQ(it, map.end());
             }
