@@ -336,9 +336,6 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
         return octx.rctx.respond(std::move(octx.response));
     }
 
-    auto authz = octx.rctx.authorized(
-      security::acl_operation::alter, security::default_cluster_name);
-
     auto additional_resources = [&octx]() {
         std::vector<model::topic> topics;
         topics.reserve(octx.request.data.topics.size());
@@ -351,7 +348,12 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
         return topics;
     };
 
-    if (!octx.rctx.audit(std::move(additional_resources))) {
+    auto authz = octx.rctx.authorized(
+      security::acl_operation::alter,
+      security::default_cluster_name,
+      std::move(additional_resources));
+
+    if (!octx.rctx.audit()) {
         octx.response.data.error_code = error_code::broker_not_available;
         octx.response.data.error_message
           = "Broker not available - audit system failure";

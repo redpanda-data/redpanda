@@ -152,8 +152,22 @@ ss::future<response_ptr> create_topics_handler::handle(
         co_return co_await ctx.respond(std::move(response));
     }
 
+    auto additional_resources_func = [&request]() {
+        std::vector<model::topic> topics;
+        topics.reserve(request.data.topics.size());
+        std::transform(
+          request.data.topics.begin(),
+          request.data.topics.end(),
+          std::back_inserter(topics),
+          [](const creatable_topic& t) { return t.name; });
+
+        return topics;
+    };
+
     const auto has_cluster_auth = ctx.authorized(
-      security::acl_operation::create, security::default_cluster_name);
+      security::acl_operation::create,
+      security::default_cluster_name,
+      std::move(additional_resources_func));
 
     if (!has_cluster_auth) {
         auto unauthorized_it = std::partition(
@@ -171,22 +185,7 @@ ss::future<response_ptr> create_topics_handler::handle(
         valid_range_end = unauthorized_it;
     }
 
-    auto additional_resources_func = [&request, has_cluster_auth]() {
-        std::vector<model::topic> topics;
-        if (!has_cluster_auth) {
-            return topics;
-        }
-        topics.reserve(request.data.topics.size());
-        std::transform(
-          request.data.topics.begin(),
-          request.data.topics.end(),
-          std::back_inserter(topics),
-          [](const creatable_topic& t) { return t.name; });
-
-        return topics;
-    };
-
-    if (!ctx.audit(std::move(additional_resources_func))) {
+    if (!ctx.audit()) {
         request.data.topics.erase(valid_range_end, request.data.topics.end());
         create_topics_response err_resp(
           error_code::broker_not_available,

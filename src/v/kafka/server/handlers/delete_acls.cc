@@ -63,9 +63,6 @@ ss::future<response_ptr> delete_acls_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    auto authz = ctx.authorized(
-      security::acl_operation::alter, security::default_cluster_name);
-
     // <filter index> | error
     std::vector<std::variant<size_t, delete_acls_filter_result>> result_index;
     result_index.reserve(request.data.filters.size());
@@ -87,9 +84,14 @@ ss::future<response_ptr> delete_acls_handler::handle(
         }
     }
 
-    const auto return_filters = [&filters]() { return filters; };
+    auto return_filters = [&filters]() { return filters; };
 
-    if (!ctx.audit(std::move(return_filters))) {
+    auto authz = ctx.authorized(
+      security::acl_operation::alter,
+      security::default_cluster_name,
+      std::move(return_filters));
+
+    if (!ctx.audit()) {
         delete_acls_filter_result result;
         result.error_code = error_code::broker_not_available;
         result.error_message = "Broker not available - audit system failure";

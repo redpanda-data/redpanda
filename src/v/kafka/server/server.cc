@@ -535,8 +535,22 @@ ss::future<response_ptr> list_groups_handler::handle(
     resp.data.error_code = error;
     resp.data.groups = std::move(groups);
 
+    auto additional_resources_func = [&resp]() {
+        std::vector<kafka::group_id> groups;
+        groups.reserve(resp.data.groups.size());
+        std::transform(
+          resp.data.groups.begin(),
+          resp.data.groups.end(),
+          std::back_inserter(groups),
+          [](const listed_group& g) { return g.group_id; });
+
+        return groups;
+    };
+
     auto cluster_authz = ctx.authorized(
-      security::acl_operation::describe, security::default_cluster_name);
+      security::acl_operation::describe,
+      security::default_cluster_name,
+      std::move(additional_resources_func));
 
     if (!cluster_authz) {
         // remove groups from response that should not be visible
@@ -551,23 +565,7 @@ ss::future<response_ptr> list_groups_handler::handle(
         resp.data.groups.erase(non_visible_it, resp.data.groups.end());
     }
 
-    auto additional_resources_func = [&resp, cluster_authz]() {
-        std::vector<kafka::group_id> groups;
-        if (!cluster_authz) {
-            return groups;
-        }
-
-        groups.reserve(resp.data.groups.size());
-        std::transform(
-          resp.data.groups.begin(),
-          resp.data.groups.end(),
-          std::back_inserter(groups),
-          [](const listed_group& g) { return g.group_id; });
-
-        return groups;
-    };
-
-    if (!ctx.audit(std::move(additional_resources_func))) {
+    if (!ctx.audit()) {
         resp.data.groups.clear();
         resp.data.error_code = error_code::broker_not_available;
         co_return co_await ctx.respond(std::move(resp));
@@ -1440,9 +1438,6 @@ ss::future<response_ptr> create_acls_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    bool authz = ctx.authorized(
-      security::acl_operation::alter, security::default_cluster_name);
-
     // <bindings index> | error
     std::vector<std::variant<size_t, creatable_acl_result>> result_index;
     result_index.reserve(request.data.creations.size());
@@ -1471,7 +1466,12 @@ ss::future<response_ptr> create_acls_handler::handle(
 
     auto get_bindings = [&bindings] { return bindings; };
 
-    if (!ctx.audit(std::move(get_bindings))) {
+    bool authz = ctx.authorized(
+      security::acl_operation::alter,
+      security::default_cluster_name,
+      std::move(get_bindings));
+
+    if (!ctx.audit()) {
         creatable_acl_result result;
         result.error_code = error_code::broker_not_available;
         result.error_message = "Broker not available - audit system failure";
