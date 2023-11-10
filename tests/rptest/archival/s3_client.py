@@ -3,6 +3,8 @@ import threading
 from rptest.archival.shared_client_utils import key_to_topic
 
 import boto3
+
+from botocore import UNSIGNED
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -55,7 +57,9 @@ class S3Client:
                  secret_key,
                  logger,
                  endpoint=None,
-                 disable_ssl=True):
+                 disable_ssl=True,
+                 signature_version='s3v4',
+                 before_call_headers=None):
 
         logger.debug(
             f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}"
@@ -66,22 +70,31 @@ class S3Client:
         self._secret_key = secret_key
         self._endpoint = endpoint
         self._disable_ssl = disable_ssl
+        if signature_version.lower() == "unsigned":
+            self._signature_version = UNSIGNED
+        else:
+            self._signature_version = signature_version
+        self._before_call_headers = before_call_headers
         self._cli = self.make_client()
         self.logger = logger
 
     def make_client(self):
         cfg = Config(region_name=self._region,
-                     signature_version='s3v4',
+                     signature_version=self._signature_version,
                      retries={
                          'max_attempts': 10,
                          'mode': 'adaptive'
                      })
-        return boto3.client('s3',
-                            config=cfg,
-                            aws_access_key_id=self._access_key,
-                            aws_secret_access_key=self._secret_key,
-                            endpoint_url=self._endpoint,
-                            use_ssl=not self._disable_ssl)
+        cl = boto3.client('s3',
+                          config=cfg,
+                          aws_access_key_id=self._access_key,
+                          aws_secret_access_key=self._secret_key,
+                          endpoint_url=self._endpoint,
+                          use_ssl=not self._disable_ssl)
+        if self._before_call_headers is not None:
+            event_system = cl.meta.events
+            event_system.register('before-call.s3.*', self._add_header)
+        return cl
 
     def create_bucket(self, name):
         """Create bucket in S3"""
@@ -458,3 +471,6 @@ class S3Client:
         except Exception as ex:
             self.logger.error(f'Error listing buckets: {ex}')
             raise
+
+    def _add_header(self, model, params, request_signer, **kwargs):
+        params['headers'].update(self._before_call_headers)
