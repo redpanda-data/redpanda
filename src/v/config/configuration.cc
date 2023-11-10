@@ -1847,7 +1847,7 @@ configuration::configuration()
       "replay logs with inconsistent tiered-storage metadata. Normally, this "
       "option should be disabled.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      true)
+      false)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
