@@ -175,7 +175,13 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         if (
           _segments.empty()
           && mode == segment_collector_mode::collect_compacted) {
-            _begin_inclusive = result.segment->offsets().base_offset;
+            // We may have found our first segment, but we can't always use its
+            // base offset:
+            // - it's possible the segment we found is below our reupload
+            //   target start offset (_begin_inclusive), e.g. if the target
+            //   start offset is in the middle of a segment.
+            _begin_inclusive = std::max(
+              {_begin_inclusive, result.segment->offsets().base_offset});
             align_begin_offset_to_manifest();
         }
         _segments.push_back(result.segment);
