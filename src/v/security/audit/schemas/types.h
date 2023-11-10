@@ -181,13 +181,13 @@ struct user {
         other = 99
     };
 
-    ss::sstring credential_uid;
     ss::sstring domain;
     ss::sstring name;
     type type_id{type::unknown};
+    ss::sstring uid;
 
     auto equality_fields() const {
-        return std::tie(credential_uid, domain, name, type_id);
+        return std::tie(domain, name, type_id, uid);
     }
 };
 
@@ -391,10 +391,6 @@ inline void rjson_serialize(
 
 inline void rjson_serialize(Writer<StringBuffer>& w, const sa::user& user) {
     w.StartObject();
-    if (!user.credential_uid.empty()) {
-        w.Key("credential_uid");
-        rjson_serialize(w, user.credential_uid);
-    }
     if (!user.domain.empty()) {
         w.Key("domain");
         rjson_serialize(w, user.domain);
@@ -403,6 +399,10 @@ inline void rjson_serialize(Writer<StringBuffer>& w, const sa::user& user) {
     rjson_serialize(w, user.name);
     w.Key("type_id");
     rjson_serialize(w, user.type_id);
+    if (!user.uid.empty()) {
+        w.Key("uid");
+        rjson_serialize(w, user.uid);
+    }
     w.EndObject();
 }
 

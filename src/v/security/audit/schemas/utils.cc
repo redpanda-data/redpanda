@@ -306,10 +306,9 @@ mechanism_string_to_auth_protocol(const ss::sstring& mech) {
 
 user mtls_to_user(const security::tls::mtls_state& mtls_state) {
     return {
-      .credential_uid = mtls_state.subject().value_or(""),
       .name = mtls_state.principal().name(),
       .type_id = user::type::user,
-    };
+      .uid = mtls_state.subject().value_or("")};
 }
 
 } // namespace

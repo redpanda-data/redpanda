@@ -1048,10 +1048,9 @@ class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
             'name'] == service_name and record['user'][
                 'name'] == username and record[
                     'auth_protocol_id'] == protocol_id and (
-                        protocol_name is not None
-                        and record['auth_protocol'] == protocol_name
-                    ) and record['status_id'] == 1 and record['user'][
-                        'credential_uid'] == dn
+                        protocol_name is not None and record['auth_protocol']
+                        == protocol_name) and record[
+                            'status_id'] == 1 and record['user']['uid'] == dn
 
     @cluster(num_nodes=5)
     def test_mtls(self):

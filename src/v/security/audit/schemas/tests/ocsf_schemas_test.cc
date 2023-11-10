@@ -33,18 +33,18 @@
 namespace sa = security::audit;
 
 static const sa::user default_user{
-  .credential_uid = "none",
   .domain = "redpanda.com",
   .name = "redpanda-user",
-  .type_id = sa::user::type::user};
+  .type_id = sa::user::type::user,
+  .uid = "none"};
 
 static const ss::sstring default_user_ser{
   R"(
 {
-"credential_uid": "none",
 "domain": "redpanda.com",
 "name": "redpanda-user",
-"type_id": 1
+"type_id": 1,
+"uid": "none"
 }
 )"};
 

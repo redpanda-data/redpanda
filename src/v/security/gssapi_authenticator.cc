@@ -534,7 +534,7 @@ void gssapi_authenticator::impl::fail_impl(
 
 acl_principal gssapi_authenticator::impl::get_principal_from_name(
   std::string_view source_name) {
-    _rp_audit_user.credential_uid = ss::sstring{source_name};
+    _rp_audit_user.uid = ss::sstring{source_name};
 
     auto krb5_ctx = krb5::context::create();
     if (!krb5_ctx) {
@@ -569,7 +569,7 @@ acl_principal gssapi_authenticator::impl::get_principal_from_name(
         return {};
     }
 
-    _rp_audit_user.credential_uid = fmt::format("{}", parsed_name.value());
+    _rp_audit_user.uid = fmt::format("{}", parsed_name.value());
     _rp_audit_user.domain = parsed_name.value().realm();
 
     auto mapped_name = gssapi_principal_mapper::apply(
