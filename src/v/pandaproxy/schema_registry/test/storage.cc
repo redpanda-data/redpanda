@@ -95,6 +95,16 @@ constexpr std::string_view config_value_sv{
 const pps::config_value config_value{
   .compat = pps::compatibility_level::forward_transitive};
 
+constexpr std::string_view config_value_sub_sv{
+  R"({
+  "subject": "my-kafka-value",
+  "compatibilityLevel": "FORWARD_TRANSITIVE"
+})"};
+const pps::config_value config_value_sub{
+
+  .compat = pps::compatibility_level::forward_transitive,
+  .sub{pps::subject{"my-kafka-value"}}};
+
 constexpr std::string_view delete_subject_key_sv{
   R"({
   "keytype": "DELETE_SUBJECT",
@@ -159,6 +169,15 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
 
         auto str = ppj::rjson_serialize(config_value);
         BOOST_CHECK_EQUAL(str, ::json::minify(config_value_sv));
+    }
+
+    {
+        auto val = ppj::rjson_parse(
+          config_value_sub_sv.data(), pps::config_value_handler<>{});
+        BOOST_CHECK_EQUAL(config_value_sub, val);
+
+        auto str = ppj::rjson_serialize(config_value_sub);
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_value_sub_sv));
     }
 
     {

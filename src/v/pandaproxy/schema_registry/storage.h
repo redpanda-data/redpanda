@@ -766,11 +766,16 @@ public:
 
 struct config_value {
     compatibility_level compat{compatibility_level::none};
+    std::optional<subject> sub;
 
     friend bool operator==(const config_value&, const config_value&) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const config_value& v) {
+        if (v.sub.has_value()) {
+            fmt::print(os, "subject: {}, ", v.sub.value());
+        }
         fmt::print(os, "compatibility: {}", to_string_view(v.compat));
+
         return os;
     }
 };
@@ -779,6 +784,10 @@ inline void rjson_serialize(
   ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::config_value& val) {
     w.StartObject();
+    if (val.sub.has_value()) {
+        w.Key("subject");
+        ::json::rjson_serialize(w, val.sub.value());
+    }
     w.Key("compatibilityLevel");
     ::json::rjson_serialize(w, to_string_view(val.compat));
     w.EndObject();
@@ -790,6 +799,7 @@ class config_value_handler : public json::base_handler<Encoding> {
         empty = 0,
         object,
         compatibility,
+        subject,
     };
     state _state = state::empty;
 
@@ -803,11 +813,12 @@ public:
 
     bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
-        if (_state == state::object && sv == "compatibilityLevel") {
-            _state = state::compatibility;
-            return true;
-        }
-        return false;
+        std::optional<state> s{
+          string_switch<std::optional<state>>(sv)
+            .match("compatibilityLevel", state::compatibility)
+            .match("subject", state::subject)
+            .default_match(std::nullopt)};
+        return s.has_value() && std::exchange(_state, *s) == state::object;
     }
 
     bool String(const Ch* str, ::json::SizeType len, bool) {
@@ -819,6 +830,10 @@ public:
                 _state = state::object;
             }
             return s.has_value();
+        } else if (_state == state::subject) {
+            result.sub.emplace(sv);
+            _state = state::object;
+            return true;
         }
         return false;
     }
