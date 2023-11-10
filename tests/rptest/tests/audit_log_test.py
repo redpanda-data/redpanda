@@ -787,7 +787,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                     "name": f"{topic_name}",
                     "type": "topic"
                 }, self.kafka_rpc_service_name), 1),
-            AbsoluteTestItem(
+            RangeTestItem(
                 f'Attempt group offset delete',
                 lambda: self.execute_command_ignore_error(
                     partial(self.super_rpk.offset_delete, "fake",
@@ -795,7 +795,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 partial(self.api_resource_match, "offset_delete", {
                     "name": "fake",
                     "type": "group"
-                }, self.kafka_rpc_service_name),
+                }, self.kafka_rpc_service_name), 1,
                 5),  # expect five because rpk will retry
             RangeTestItem(
                 f'Attempting delete records for {topic_name}',
