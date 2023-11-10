@@ -24,11 +24,12 @@ from rptest.services.redpanda import RedpandaService, make_redpanda_service
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 import confluent_kafka as ck
+
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.clients.rpk import RpkTool
 
-from rptest.tests.cluster_features_test import FeaturesTestBase
+from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 
 
 class TransactionsMixin:
@@ -1017,297 +1018,102 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         self.do_upgrade_with_tx(get_topic_leader)
 
 
-class StaticPartitioning_MixedVersionsTest(RedpandaTest, TransactionsMixin):
+def remote_path_exists(node, path):
+    wait_until(lambda: node.account.exists(path),
+               timeout_sec=20,
+               backoff_sec=2,
+               err_msg=f"Can't find \"{path}\" on {node.account.hostname}")
+
+
+class TxUpgradeTest(RedpandaTest):
+    """
+    Basic test verifying if mapping between transaction coordinator and transaction_id is preserved across the upgrades
+    """
     def __init__(self, test_context):
-        extra_rp_conf = {
-            "enable_leader_balancer": False,
-            "partition_autobalancing_mode": "off",
-            "enable_auto_rebalance_on_node_add": False,
-        }
-
-        environment = {
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 9,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        }
-
-        super(StaticPartitioning_MixedVersionsTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf,
-                             log_level="trace",
-                             environment=environment)
-
-        self.admin = Admin(self.redpanda)
-
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def find_coordinator_on_old_node_doesnt_create_tx_registry_test(self):
-        self.redpanda.set_environment({
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        })
-        old_node = self.redpanda.started_nodes()[0]
-        new_node = self.redpanda.started_nodes()[1]
-        self.redpanda.restart_nodes([new_node], stop_timeout=60)
-
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                assert not node.account.exists(path)
-
-        self.find_coordinator("tx0", node=old_node)
-
-        for node in self.redpanda.started_nodes():
-            path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                        "tx_registry")
-            assert not node.account.exists(path)
-            path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
-            assert node.account.exists(path)
-            assert node.account.isdir(path)
-
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def find_coordinator_on_new_node_doesnt_create_tx_registry_test(self):
-        self.redpanda.set_environment({
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        })
-        new_node = self.redpanda.started_nodes()[1]
-        self.redpanda.restart_nodes([new_node], stop_timeout=60)
-
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                assert not node.account.exists(path)
-
-        self.find_coordinator("tx0", node=new_node)
-
-        for node in self.redpanda.started_nodes():
-            path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                        "tx_registry")
-            assert not node.account.exists(path)
-            path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
-            assert node.account.exists(path)
-            assert node.account.isdir(path)
-
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def find_coordinator_creates_tx_topics_after_upgrade_test(self):
-        self.redpanda.set_environment({
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        })
-        nodes = list(self.redpanda.started_nodes())
-        self.redpanda.restart_nodes(nodes, stop_timeout=60)
-
-        FeaturesTestBase._wait_for_version_everywhere(self, 10)
-
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                assert not node.account.exists(path)
-
-        self.find_coordinator("tx0")
-
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                assert node.account.exists(path)
-                assert node.account.isdir(path)
-
-
-class StaticPartitioning_v23_1_UpgradeTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=1, replication_factor=3), )
-
-    def __init__(self, test_context):
-        extra_rp_conf = {
-            "enable_idempotence": True,
-            "enable_transactions": True,
-            "transaction_coordinator_replication": 3,
-            "id_allocator_replication": 1,
-            "enable_leader_balancer": False,
-            "kafka_enable_partition_reassignment": False,
-            "transaction_coordinator_log_segment_size": 100,
-        }
-
-        super(StaticPartitioning_v23_1_UpgradeTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf=extra_rp_conf)
-
+        super(TxUpgradeTest, self).__init__(test_context=test_context,
+                                            num_brokers=3)
         self.installer = self.redpanda._installer
-        self.producer_cur_index = 0
-
-    def on_delivery(self, err, msg):
-        assert err == None, msg
-
-    def check_consume(self, max_records):
-        topic_name = self.topics[0].name
-
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': f"consumer-{uuid.uuid4()}",
-            'auto.offset.reset': 'earliest',
-        })
-
-        consumer.subscribe([topic_name])
-        num_consumed = 0
-        prev_rec = bytes("0", 'UTF-8')
-
-        while num_consumed != max_records:
-            max_consume_records = 10
-            timeout = 10
-            records = consumer.consume(max_consume_records, timeout)
-
-            for record in records:
-                assert prev_rec == record.key(), f"{prev_rec}, {record.key()}"
-                prev_rec = bytes(str(int(prev_rec) + 1), 'UTF-8')
-
-            num_consumed += len(records)
-
-        consumer.close()
+        self.partition_count = 10
+        self.msg_sent = 0
+        self.producers_count = 100
 
     def setUp(self):
-        self.old_version, self.old_version_str = self.installer.install(
-            self.redpanda.nodes, (23, 1))
-        super(StaticPartitioning_v23_1_UpgradeTest, self).setUp()
+        self.old_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
 
-    def produce_and_consume(self, tx_amount=1):
+        self.old_version_str = f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        self.installer.install(self.redpanda.nodes, self.old_version)
+        super(TxUpgradeTest, self).setUp()
 
-        topic_name = self.topics[0].name
-        for _ in range(tx_amount):
+    def _tx_id(self, idx):
+        return f"test-producer-{idx}"
+
+    def _populate_tx_coordinator(self, topic):
+        def delivery_callback(err, msg):
+            if err:
+                assert False, "failed to deliver message: %s" % err
+
+        for i in range(self.producers_count):
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': '0',
+                'transactional.id': self._tx_id(i),
                 'transaction.timeout.ms': 10000,
             })
             producer.init_transactions()
             producer.begin_transaction()
-            producer.produce(topic_name, str(self.producer_cur_index),
-                             str(self.producer_cur_index), 0, self.on_delivery)
+            for m in range(random.randint(1, 50)):
+                producer.produce(topic,
+                                 f"p-{i}-key-{m}",
+                                 f"p-{i}-value-{m}",
+                                 random.randint(0, self.partition_count - 1),
+                                 callback=delivery_callback)
             producer.commit_transaction()
             producer.flush()
-            self.producer_cur_index += 1
 
-        self.check_consume(self.producer_cur_index)
-
-    def get_tx_coordinator(self):
+    def _get_tx_id_mapping(self):
+        mapping = {}
         admin = Admin(self.redpanda)
-        leader_id = admin.get_partition_leader(namespace="kafka_internal",
-                                               topic="tx",
-                                               partition=0)
-        return self.redpanda.get_node(leader_id)
+        for idx in range(self.producers_count):
+            c = admin.find_tx_coordinator(self._tx_id(idx))
+            mapping[self._tx_id(
+                idx)] = f"{c['ntp']['topic']}/{c['ntp']['partition']}"
 
+        return mapping
+
+    @skip_debug_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def do_upgrade_and_downgrade_one_node_test(self):
+    def upgrade_does_not_change_tx_coordinator_assignment_test(self):
+
+        if self.old_version[0] == 23 and self.old_version[1] <= 2:
+            cleanup_on_early_exit(self)
+            return
+
+        topic = TopicSpec(partition_count=self.partition_count)
+        self.client().create_topic(topic)
+
+        self._populate_tx_coordinator(topic=topic.name)
+        initial_mapping = self._get_tx_id_mapping()
+        self.logger.info(f"Initial mapping {initial_mapping}")
+
+        first_node = self.redpanda.nodes[0]
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert self.old_version_str in unique_versions, unique_versions
-        self.redpanda.logger.debug(
-            f"Initial version of cluster: {self.old_version_str}")
 
-        self.produce_and_consume(10)
-
-        node_to_upgrade = self.get_tx_coordinator()
-        node_to_upgrade_id = self.redpanda.idx(node_to_upgrade)
-        self.redpanda.logger.debug(
-            f"Initial tx coordinator node: {node_to_upgrade_id}")
-
-        # Update node with tx manager
-        self.redpanda.logger.debug(
-            f"Upgrading node {node_to_upgrade_id} to version {RedpandaInstaller.HEAD}"
-        )
+        # Upgrade one node to the head version.
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.restart_nodes(node_to_upgrade)
+        self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
         assert self.old_version_str in unique_versions, unique_versions
-        self.redpanda.logger.debug(
-            f"Cluster versions after upgrade: {unique_versions}")
+        assert self._get_tx_id_mapping(
+        ) == initial_mapping, "Mapping changed after upgrading one of the nodes"
 
-        self.produce_and_consume(100)
+        # verify if txs are handled correctly with mixed versions
+        self._populate_tx_coordinator(topic.name)
 
-        self.redpanda.logger.debug(
-            f"Txn coordinator node after upgrade: {self.redpanda.idx(self.get_tx_coordinator())}"
-        )
-        if self.get_tx_coordinator() != node_to_upgrade:
-            self.redpanda.logger.debug(
-                f"Moving txn coordinator node to: {node_to_upgrade_id}")
-            admin = Admin(self.redpanda)
-            admin.partition_transfer_leadership(namespace="kafka_internal",
-                                                topic="tx",
-                                                partition=0,
-                                                target_id=node_to_upgrade_id)
-            wait_until(lambda: self.redpanda.idx(self.get_tx_coordinator()) ==
-                       node_to_upgrade_id,
-                       timeout_sec=60,
-                       backoff_sec=2,
-                       err_msg="Leadership did not stabilize")
-
-        self.produce_and_consume(100)
-
-        self.redpanda.logger.debug(
-            f"Downgrade cluster version to: {self.old_version}")
-        self.installer.install(self.redpanda.nodes, self.old_version)
-        self.redpanda.restart_nodes(node_to_upgrade)
+        # Only once we upgrade the rest of the nodes do we converge on the new
+        # version.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert self.old_version_str in unique_versions, unique_versions
-
-        self.check_consume(self.producer_cur_index)
-
-        self.produce_and_consume(10)
-
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def do_upgrade_cluster_test(self):
-        unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert self.old_version_str in unique_versions, unique_versions
-        self.redpanda.logger.debug(
-            f"Initial version of cluster: {self.old_version_str}")
-
-        self.produce_and_consume(100)
-
-        # Update node with tx manager
-        self.redpanda.logger.debug(
-            f"Upgrading cluster to version {RedpandaInstaller.HEAD}")
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
-        self.produce_and_consume(100)
-
-    @cluster(
-        num_nodes=3,
-        log_allow_list=RESTART_LOG_ALLOW_LIST + [
-            "Incompatible downgrade detected", "unknown fence record version",
-            "unsupported tx_snapshot_header version",
-            "unsupported seq_snapshot_header version",
-            "assert - Backtrace below:",
-            "Version 5 is not supported. We only support versions up to 4"
-        ])
-    def fail_to_downgrade_full_cluster_test(self):
-        unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert self.old_version_str in unique_versions, unique_versions
-        self.redpanda.logger.debug(
-            f"Initial version of cluster: {self.old_version_str}")
-
-        self.produce_and_consume(10)
-
-        # Update node with tx manager
-        self.redpanda.logger.debug(
-            f"Upgrading cluster to version {RedpandaInstaller.HEAD}")
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
-        wait_until(lambda: self.old_version_str not in wait_for_num_versions(
-            self.redpanda, 1),
-                   timeout_sec=60,
-                   retry_on_exc=True)
-
-        self.produce_and_consume(100)
-
-        self.redpanda.logger.debug(
-            f"Downgrade cluster version to: {self.old_version}")
-        self.installer.install(self.redpanda.nodes, self.old_version)
-        try:
-            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                                start_timeout=30)
-        except Exception as e:
-            self.logger.info(f"As expected, redpanda failed to start ({e})")
-        else:
-            raise RuntimeError(
-                "Redpanda started: it should have failed to start!")
+        assert self.old_version_str not in unique_versions, unique_versions
+        assert self._get_tx_id_mapping(
+        ) == initial_mapping, "Mapping changed after full upgrade"
