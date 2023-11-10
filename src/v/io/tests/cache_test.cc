@@ -683,6 +683,20 @@ TEST_F(CacheTest, NoEvictable) {
     }
 }
 
+TEST_F(CacheTest, Formattable) {
+    entry e0;
+    entry e1;
+    entry e2;
+    EXPECT_EQ(fmt::format("{}", *cache), "main 0 small 0");
+    cache_insert_main(e0);
+    EXPECT_EQ(fmt::format("{}", *cache), "main 1 small 0");
+    cache_insert_small(e1);
+    EXPECT_EQ(fmt::format("{}", *cache), "main 1 small 1");
+    cache_insert_small(e2);
+    EXPECT_EQ(fmt::format("{}", *cache), "main 1 small 2");
+    cleanup(e0, e1, e2);
+}
+
 TEST(CacheTestCustom, CustomCost) {
     struct entry {
         io::cache_hook hook;

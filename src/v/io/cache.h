@@ -12,6 +12,8 @@
 
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/parent_from_member.hpp>
+#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <optional>
@@ -671,3 +673,23 @@ bool cache<T, Hook, Evictor, Cost>::evict_main() noexcept {
  */
 
 } // namespace experimental::io
+
+template<
+  typename T,
+  experimental::io::cache_hook T::*Hook,
+  experimental::io::cache_evictor<T> Evictor,
+  experimental::io::cache_cost<T> Cost>
+struct fmt::formatter<experimental::io::cache<T, Hook, Evictor, Cost>>
+  : fmt::formatter<std::string_view> {
+    template<typename FormatContext>
+    auto format(
+      const experimental::io::cache<T, Hook, Evictor, Cost>& cache,
+      FormatContext& ctx) const {
+        const auto stat = cache.stat();
+        return fmt::format_to(
+          ctx.out(),
+          "main {} small {}",
+          stat.main_queue_size,
+          stat.small_queue_size);
+    }
+};
