@@ -43,8 +43,8 @@ public:
       ss::sharded<cluster::tm_stm_cache_manager>&,
       config::binding<uint64_t> max_transactions_per_coordinator);
 
-    ss::future<std::optional<model::ntp>>
-      ntp_for_tx_id(kafka::transactional_id);
+    std::optional<model::ntp> ntp_for_tx_id(const kafka::transactional_id&);
+
     ss::future<bool> hosts(model::partition_id, kafka::transactional_id);
     ss::future<fetch_tx_reply> fetch_tx_locally(
       kafka::transactional_id, model::term_id, model::partition_id);
@@ -73,6 +73,9 @@ public:
 
     ss::future<tx_errc> delete_partition_from_tx(
       kafka::transactional_id, tm_transaction::tx_partition);
+
+    ss::future<find_coordinator_reply>
+      find_coordinator(kafka::transactional_id);
 
     ss::future<> stop();
 
@@ -124,6 +127,11 @@ private:
         }
     }
 
+    ss::future<std::optional<model::node_id>>
+    wait_for_leader(const model::ntp&);
+
+    ss::future<bool> try_create_coordinator_topic();
+    ss::future<errc> create_and_wait_for_coordinator_topic();
     ss::future<checked<tm_transaction, tx_errc>> get_tx(
       model::term_id,
       ss::shared_ptr<tm_stm>,

@@ -105,7 +105,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     @cluster(num_nodes=3)
     def find_coordinator_creates_tx_topics_test(self):
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
+            for tx_topic in ["tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert not node.account.exists(path)
@@ -113,7 +113,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         self.find_coordinator("tx0")
 
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
+            for tx_topic in ["tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert node.account.exists(path)
@@ -122,7 +122,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     @cluster(num_nodes=3)
     def init_transactions_creates_eos_topics_test(self):
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["id_allocator", "tx", "tx_registry"]:
+            for tx_topic in ["id_allocator", "tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert not node.account.exists(path)
@@ -136,7 +136,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer.init_transactions()
 
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["id_allocator", "tx", "tx_registry"]:
+            for tx_topic in ["id_allocator", "tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert node.account.exists(path)
