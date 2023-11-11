@@ -1,20 +1,10 @@
 set -e
 
-# update your system and install Java
-sudo apt -y update && sudo apt -y install openjdk-11-jdk
-
 # download the latest version of Apache Flink from the Apache website
 wget https://www.apache.org/dyn/closer.lua/flink/flink-1.18.0/flink-1.18.0-bin-scala_2.12.tgz
 
 # extract the Flink tarball
 mkdir flink && tar -xzf flink-1.18.0-bin-scala_2.12.tgz -C flink --strip-components 1
-sudo mv flink /opt/
-
-# add the Flink bin directory to your PATH environment variable
-echo "export PATH=$PATH:/opt/flink/bin" >> ~/.bashrc
-
-# source your .bashrc file
-source ~/.bashrc
 
 # verify that Flink is installed correctly by running the following command
-flink version
+/opt/flink/bin/flink version
