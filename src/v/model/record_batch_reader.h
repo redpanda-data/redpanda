@@ -321,6 +321,9 @@ record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
 record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
   ss::chunked_fifo<model::record_batch>);
 
+record_batch_reader make_fragmented_memory_record_batch_reader(
+  ss::chunked_fifo<model::record_batch>);
+
 record_batch_reader make_generating_record_batch_reader(
   ss::noncopyable_function<ss::future<record_batch_reader::data_t>()>);
 
