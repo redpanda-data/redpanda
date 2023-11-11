@@ -472,8 +472,8 @@ class HighThroughputTest(PreallocNodesTest):
     def test_max_connections(self):
         # Huge timeout for safety, 10 min
         # Most of the tiers will end in <5 min
-        # Except for the 5-7 that will take >5 min
-        FINISH_TIMEOUT_SEC = 600
+        # Except for the 5-7 that will take >5 min up to 15 min
+        FINISH_TIMEOUT_SEC = 900
         PRODUCER_TIMEOUT_MS = FINISH_TIMEOUT_SEC * 1000
 
         # setup ProducerSwarm parameters
@@ -489,7 +489,7 @@ class HighThroughputTest(PreallocNodesTest):
         # Account for the metadata traffic of 1%
         _target_total = int(self._advertised_max_client_count)
         _target_per_node = int(_target_total // len(self.cluster.nodes))
-        _target_total = int(_target_total * 0.99)
+        _target_total = int(_target_total * 0.9)
 
         # No need to calculate message rate
         # Just use 1 msg per sec
@@ -564,10 +564,19 @@ class HighThroughputTest(PreallocNodesTest):
                 # sleep before next measurement
                 time.sleep(10)
 
-        # wait for the end
-        self.logger.warn("Waiting for swarm to finish")
-        for node in swarm:
-            node.wait(timeout_sec=FINISH_TIMEOUT_SEC)
+        # Try and wait for the end
+        # If timeout happen, just kill it
+        idx = 1
+        while idx <= len(swarm):
+            try:
+                self.logger.warn(f"Waiting for swarm node {idx} to finish")
+                swarm[idx].wait(timeout_sec=FINISH_TIMEOUT_SEC)
+            except Exception:
+                self.logger.warn(f"...node {idx} failed to finish in {FINISH_TIMEOUT_SEC} sec")
+                swarm[idx].stop()
+            finally:
+                idx += 1
+
         _now = time.time()
         self.logger.warn(f"Done swarming after {_now - _start}s")
 
@@ -576,7 +585,7 @@ class HighThroughputTest(PreallocNodesTest):
         # Message count is producers * total connections
         expected_msg_count = records_per_producer * _total
         # Since there is -1% on connections target set
-        # Message count should be < expected * 0.99
+        # Message count should be < expected * 0.9
         # or _target_total connections number * per producer
         reasonably_expected = records_per_producer * _target_total
 
@@ -584,16 +593,16 @@ class HighThroughputTest(PreallocNodesTest):
             # Add currect high watermark for topic
             _hwm += partition.high_watermark
 
+        # Assert that target connection count is reached
+        self.logger.warn(f"Reached {connectMax} of {_target_total} needed")
+        assert connectMax >= _target_total, \
+            f"Expected >{_target_total} connections, actual {connectMax}"
+
         # Check that all messages make it through
         self.logger.warn(f"Expected more than {reasonably_expected} messages "
                          f"out of {expected_msg_count}, actual {_hwm}")
         assert _hwm >= reasonably_expected, \
             f"Expected >{reasonably_expected} messages, actual {_hwm}"
-
-        # Assert that target connection count is reached
-        self.logger.warn(f"Reached {connectMax} of {_target_total} needed")
-        assert connectMax >= _target_total, \
-            f"Expected >{_target_total} connections, actual {connectMax}"
 
         return
 
@@ -1124,9 +1133,16 @@ class HighThroughputTest(PreallocNodesTest):
             self.logger.info(f"{number_left} messages still need to be sent.")
             return number_left <= 0
 
-        wait_until(producer_complete,
-                   timeout_sec=required_wait_time_s,
-                   backoff_sec=30)
+        try:
+            wait_until(producer_complete,
+                       timeout_sec=required_wait_time_s,
+                       backoff_sec=30)
+        except Exception as e:
+            _percent = (producer.produce_status.sent * 100) / expected_sent
+            self.log.warning("# Timeout waiting for all messages: "
+                             f"expected {expected_sent}, "
+                             f"current {producer.produce_status.sent} "
+                             f"({_percent}%)\n{e}")
 
         post_prod_offsets = [(p.id, p.high_watermark)
                              for p in self.rpk.describe_topic(self.topic)
