@@ -19,12 +19,13 @@ class coordinator_ntp_mapper;
 class fetch_session_cache;
 class group_manager;
 class group_router;
+class partition_proxy;
 class quota_manager;
-class snc_quota_manager;
 class request_context;
 class rm_group_frontend;
 class rm_group_proxy_impl;
-class usage_manager;
 class snc_quota_context;
+class snc_quota_manager;
+class usage_manager;
 
 } // namespace kafka
