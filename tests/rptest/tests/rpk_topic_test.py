@@ -230,6 +230,7 @@ class RpkToolTest(RedpandaTest):
             self.redpanda.logger.debug(
                 f"Message count {len(c.messages)} retries {retries}")
             if cond():
+                self._rpk.delete_topic(topic)
                 return
             if len(c.messages) > prev_msg_count:
                 prev_msg_count = len(c.messages)
