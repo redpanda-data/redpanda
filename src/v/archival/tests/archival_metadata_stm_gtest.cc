@@ -11,6 +11,7 @@
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/archival_metadata_stm.h"
+#include "model/record.h"
 #include "raft/tests/raft_fixture.h"
 #include "test_utils/test.h"
 
@@ -142,6 +143,7 @@ TEST_F_CORO(archival_metadata_stm_gtest_fixture, test_archival_stm_happy_path) {
     co_await get_leader_stm().add_segments(
       m,
       std::nullopt,
+      model::producer_id{},
       ss::lowres_clock::now() + 10s,
       never_abort,
       cluster::segment_validated::yes);
@@ -193,6 +195,7 @@ TEST_F_CORO(
           return get_leader_stm().add_segments(
             m,
             std::nullopt,
+            model::producer_id{},
             ss::lowres_clock::now() + 10s,
             never_abort,
             cluster::segment_validated::yes);
@@ -227,6 +230,7 @@ TEST_F_CORO(
           return get_leader_stm().add_segments(
             m,
             std::nullopt,
+            model::producer_id{},
             ss::lowres_clock::now() + 10s,
             never_abort,
             cluster::segment_validated::yes);
@@ -282,6 +286,7 @@ TEST_F_CORO(
           return get_leader_stm().add_segments(
             m,
             std::nullopt,
+            model::producer_id{},
             ss::lowres_clock::now() + 10s,
             never_abort,
             cluster::segment_validated::yes);
@@ -316,6 +321,7 @@ TEST_F_CORO(
           return get_leader_stm().add_segments(
             m,
             std::nullopt,
+            model::producer_id{},
             ss::lowres_clock::now() + 10s,
             never_abort,
             cluster::segment_validated::yes);

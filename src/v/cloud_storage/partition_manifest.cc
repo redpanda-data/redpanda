@@ -760,6 +760,14 @@ void partition_manifest::unsafe_reset() {
     *this = partition_manifest{_ntp, _rev, _mem_tracker};
 }
 
+bool partition_manifest::advance_highest_producer_id(model::producer_id pid) {
+    if (_highest_producer_id >= pid) {
+        return false;
+    }
+    _highest_producer_id = pid;
+    return true;
+}
+
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     const auto previous_start_offset = _start_offset;
 
@@ -1175,7 +1183,8 @@ partition_manifest partition_manifest::clone() const {
       spillover,
       _last_partition_scrub,
       _last_scrubbed_offset,
-      _detected_anomalies);
+      _detected_anomalies,
+      _highest_producer_id);
     return tmp;
 }
 
@@ -2251,6 +2260,10 @@ void partition_manifest::serialize_begin(
         w.Key("last_scrubbed_offset");
         w.Int64(static_cast<int64_t>(*_last_scrubbed_offset));
     }
+    if (_highest_producer_id != model::producer_id{}) {
+        w.Key("highest_producer_id");
+        w.Int64(_highest_producer_id());
+    }
     cursor->prologue_done = true;
 }
 
@@ -2627,6 +2640,7 @@ struct partition_manifest_serde
     iobuf _spillover_manifests_serialized;
     model::timestamp _last_partition_scrub;
     std::optional<model::offset> _last_scrubbed_offset;
+    model::producer_id _highest_producer_id;
 };
 
 static_assert(

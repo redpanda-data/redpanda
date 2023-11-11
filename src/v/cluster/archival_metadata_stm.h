@@ -117,6 +117,7 @@ public:
     ss::future<std::error_code> add_segments(
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
+      model::producer_id highest_pid,
       ss::lowres_clock::time_point deadline,
       ss::abort_source&,
       segment_validated is_validated);
@@ -252,6 +253,7 @@ private:
     ss::future<std::error_code> do_add_segments(
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
+      model::producer_id highest_pid,
       ss::lowres_clock::time_point deadline,
       ss::abort_source&,
       segment_validated is_validated);
@@ -283,6 +285,7 @@ private:
     struct replace_manifest_cmd;
     struct process_anomalies_cmd;
     struct reset_scrubbing_metadata;
+    struct update_highest_producer_id_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -310,6 +313,7 @@ private:
     void apply_replace_manifest(iobuf);
     void apply_process_anomalies(iobuf);
     void apply_reset_scrubbing_metadata();
+    void apply_update_highest_producer_id(model::producer_id pid);
 
 private:
     prefix_logger _logger;

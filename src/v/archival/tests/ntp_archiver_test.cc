@@ -1129,6 +1129,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       ->add_segments(
         old_segments,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 1s,
         never_abort,
         cluster::segment_validated::yes)
@@ -1341,6 +1342,7 @@ static void test_partial_upload_impl(
       ->add_segments(
         all_segments,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 1s,
         never_abort,
         cluster::segment_validated::yes)
@@ -1700,6 +1702,7 @@ static void test_manifest_spillover_impl(
       ->add_segments(
         all_segments,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 1s,
         never_abort,
         cluster::segment_validated::yes)

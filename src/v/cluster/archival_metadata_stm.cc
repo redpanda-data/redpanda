@@ -169,6 +169,12 @@ struct archival_metadata_stm::reset_scrubbing_metadata {
     static constexpr cmd_key key{12};
 };
 
+struct archival_metadata_stm::update_highest_producer_id_cmd {
+    static constexpr cmd_key key{13};
+
+    using value = model::producer_id;
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<4>, serde::compat_version<0>> {
@@ -212,6 +218,8 @@ struct archival_metadata_stm::snapshot
     std::optional<model::offset> last_scrubbed_offset;
     // Anomalies detected by the scrubber
     cloud_storage::anomalies detected_anomalies;
+    // Highest producer ID used by this partition.
+    model::producer_id highest_producer_id;
 };
 
 inline archival_metadata_stm::segment
@@ -536,6 +544,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .archive_size_bytes = m.archive_size_bytes(),
       .start_kafka_offset = m.get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover),
+      .highest_producer_id = m.highest_producer_id(),
     });
 
     auto snapshot = stm_snapshot::create(
@@ -839,6 +848,7 @@ ss::future<std::error_code> archival_metadata_stm::mark_clean(
 ss::future<std::error_code> archival_metadata_stm::add_segments(
   std::vector<cloud_storage::segment_meta> segments,
   std::optional<model::offset> clean_offset,
+  model::producer_id highest_pid,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as,
   segment_validated is_validated) {
@@ -849,17 +859,24 @@ ss::future<std::error_code> archival_metadata_stm::add_segments(
       [this,
        s = std::move(segments),
        clean_offset,
+       highest_pid,
        deadline,
        &as,
        is_validated]() mutable {
           return do_add_segments(
-            std::move(s), clean_offset, deadline, as, is_validated);
+            std::move(s),
+            clean_offset,
+            highest_pid,
+            deadline,
+            as,
+            is_validated);
       });
 }
 
 ss::future<std::error_code> archival_metadata_stm::do_add_segments(
   std::vector<cloud_storage::segment_meta> add_segments,
   std::optional<model::offset> clean_offset,
+  model::producer_id highest_pid,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as,
   segment_validated is_validated) {
@@ -897,6 +914,13 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         b.add_raw_kv(std::move(key_buf), std::move(val_buf));
     }
 
+    if (highest_pid != model::producer_id{}) {
+        iobuf key_buf = serde::to_iobuf(
+          archival_metadata_stm::update_highest_producer_id_cmd::key);
+        iobuf val_buf = serde::to_iobuf(highest_pid());
+        b.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    }
+
     auto batch = std::move(b).build();
     auto ec = co_await do_replicate_commands(std::move(batch), as);
     if (ec) {
@@ -909,11 +933,12 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         vlog(
           _logger.info,
           "new remote segment added (name: {}, meta: {}"
-          "remote start_offset: {}, last_offset: {}",
+          "remote start_offset: {}, last_offset: {}, highest_producer_id: {})",
           name,
           meta,
           get_start_offset(),
-          get_last_offset());
+          get_last_offset(),
+          highest_pid);
     }
 
     co_return errc::success;
@@ -1011,6 +1036,11 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
                 break;
             case reset_scrubbing_metadata::key:
                 apply_reset_scrubbing_metadata();
+                break;
+            case update_highest_producer_id_cmd::key:
+                apply_update_highest_producer_id(
+                  serde::from_iobuf<update_highest_producer_id_cmd::value>(
+                    r.release_value()));
                 break;
             default:
                 throw std::runtime_error(fmt_with_ctx(
@@ -1125,17 +1155,18 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       snap.spillover_manifests,
       snap.last_partition_scrub,
       snap.last_scrubbed_offset,
-      snap.detected_anomalies);
+      snap.detected_anomalies,
+      snap.highest_producer_id);
 
     vlog(
       _logger.info,
       "applied snapshot at offset: {}, remote start_offset: {}, "
-      "last_offset: "
-      "{}, spillover map size: {}",
+      "last_offset: {}, spillover map size: {}, highest_producer_id: {}",
       header.offset,
       get_start_offset(),
       get_last_offset(),
-      _manifest->get_spillover_map().size());
+      _manifest->get_spillover_map().size(),
+      _manifest->highest_producer_id());
 
     if (snap.dirty == state_dirty::dirty) {
         _last_clean_at = model::offset{0};
@@ -1165,7 +1196,8 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
       .spillover_manifests = std::move(spillover),
       .last_partition_scrub = _manifest->last_partition_scrub(),
       .last_scrubbed_offset = _manifest->last_scrubbed_offset(),
-      .detected_anomalies = _manifest->detected_anomalies()});
+      .detected_anomalies = _manifest->detected_anomalies(),
+      .highest_producer_id = _manifest->highest_producer_id()});
 
     vlog(
       _logger.debug,
@@ -1334,6 +1366,19 @@ void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
 void archival_metadata_stm::apply_reset_metadata() {
     vlog(_logger.info, "Resetting manifest");
     _manifest->unsafe_reset();
+}
+
+void archival_metadata_stm::apply_update_highest_producer_id(
+  model::producer_id pid) {
+    if (_manifest->advance_highest_producer_id(pid)) {
+        vlog(_logger.debug, "Updated highest producer ID to {}", pid());
+    } else {
+        vlog(
+          _logger.debug,
+          "Highest producer ID not updated: {} <= {}",
+          pid(),
+          _manifest->highest_producer_id());
+    }
 }
 
 void archival_metadata_stm::apply_truncate_archive_init(
