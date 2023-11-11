@@ -28,7 +28,7 @@ namespace experimental::io {
  */
 template<std::integral T, typename V>
 class interval_map {
-    struct interval {
+    struct key {
         T start;
         T end;
     };
@@ -36,22 +36,16 @@ class interval_map {
     struct compare {
         using is_transparent = void;
 
-        bool operator()(const interval& a, const interval& b) const {
+        bool operator()(const key& a, const key& b) const {
             return a.start < b.start;
         }
 
-        bool operator()(const T& a, const interval& b) const {
-            return a < b.start;
-        }
-
-        bool operator()(const interval& a, const T& b) const {
-            return a.start < b;
-        }
-
+        bool operator()(const T& a, const key& b) const { return a < b.start; }
+        bool operator()(const key& a, const T& b) const { return a.start < b; }
         bool operator()(const T& a, const T& b) const { return a < b; }
     };
 
-    using map_type = absl::btree_map<interval, V, compare>;
+    using map_type = absl::btree_map<key, V, compare>;
 
 public:
     /**
