@@ -54,6 +54,16 @@ public:
     using const_iterator = map_type::const_iterator;
 
     /**
+     * An interval [start, start + length).
+     */
+    struct interval {
+        /// The start of the interval.
+        T start;
+        /// The length of the interval.
+        T length;
+    };
+
+    /**
      * Insert an interval [start, start+length) and value.
      *
      * If true is returned then the interval was inserted, and the corresponding
@@ -67,7 +77,7 @@ public:
      * Invalidates iterators.
      */
     [[nodiscard]] std::pair<const_iterator, bool>
-    insert(T start, T length, V value);
+    insert(interval interval, V value);
 
     /**
      * Find the interval containing \p index.
@@ -106,11 +116,13 @@ private:
 
 template<std::integral T, typename V>
 std::pair<typename interval_map<T, V>::const_iterator, bool>
-interval_map<T, V>::insert(T start, T length, V value) {
+interval_map<T, V>::insert(interval interval, V value) {
+    const auto length = interval.length;
     if (length <= 0) {
         return {map_.cend(), false};
     }
 
+    const auto start = interval.start;
     const auto end = start + length;
 
     auto it = map_.lower_bound(start);
