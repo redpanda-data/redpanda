@@ -22,6 +22,7 @@
 #include "kafka/server/replicated_partition.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
@@ -33,6 +34,7 @@
 #include "transform/rpc/deps.h"
 #include "transform/transform_manager.h"
 #include "transform/transform_processor.h"
+#include "transform/txn_reader.h"
 #include "wasm/api.h"
 #include "wasm/cache.h"
 
@@ -97,8 +99,13 @@ public:
     explicit partition_source(kafka::partition_proxy p)
       : _partition(std::move(p)) {}
 
-    ss::future<> start() final { return ss::now(); }
+    ss::future<> start() final {
+        _gate = {};
+        return ss::now();
+    }
 
+    // It is important that all outstanding readers have been deleted before
+    // stopping.
     ss::future<> stop() final { return _gate.close(); }
 
     kafka::offset latest_offset() final {
@@ -131,6 +138,14 @@ public:
         // of the log.
         model::offset start_offset = std::max(
           result.value(), kafka::offset_cast(offset));
+        model::offset max_offset = model::offset::max();
+        // Clamp reads to only committed transactions.
+        auto maybe_lso = _partition.last_stable_offset();
+        if (!maybe_lso) {
+            throw std::runtime_error(
+              kafka::make_error_code(maybe_lso.error()).message());
+        }
+        max_offset = model::prev_offset(maybe_lso.value());
         // TODO(rockwood): This is currently an arbitrary value, but we should
         // dynamically update this based on how much memory is available in the
         // transform subsystem.
@@ -138,14 +153,22 @@ public:
         auto translater = co_await _partition.make_reader(
           storage::log_reader_config(
             /*start_offset=*/start_offset,
-            /*max_offset=*/model::offset::max(),
+            /*max_offset=*/max_offset,
             /*min_bytes=*/0,
             /*max_bytes=*/max_bytes,
             /*prio=*/wasm_read_priority(),
             /*type_filter=*/std::nullopt, // Overridden by partition
             /*time=*/std::nullopt,        // Not doing a timequery
             /*as=*/*as));
-        co_return std::move(translater).reader;
+
+        // NOTE: It's a very important property that the source always outlives
+        // all readers it makes, as this takes a pointer to a member.
+        //
+        // This is documented as part of the contract for the source interface.
+        auto tracker = aborted_transaction_tracker::create_default(
+          &_partition, std::move(translater.ot_state));
+        co_return model::make_record_batch_reader<read_committed_reader>(
+          std::move(tracker), std::move(translater.reader));
     }
 
 private:
