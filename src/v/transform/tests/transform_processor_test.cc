@@ -85,9 +85,11 @@ public:
     uint64_t error_count() const { return _error_count; }
 
     void restart() {
-        _p->stop().get();
-        _p->start().get();
+        stop();
+        start();
     }
+    void stop() { _p->stop().get(); }
+    void start() { _p->start().get(); }
 
 private:
     static constexpr kafka::offset start_offset = kafka::offset(0);
@@ -102,6 +104,11 @@ private:
     probe _probe;
 };
 } // namespace
+
+TEST_F(ProcessorTestFixture, HandlesDoubleStops) {
+    stop();
+    stop();
+}
 
 TEST_F(ProcessorTestFixture, ProcessOne) {
     auto batch = make_tiny_batch();

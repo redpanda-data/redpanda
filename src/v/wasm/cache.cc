@@ -110,6 +110,11 @@ public:
         }
     }
 
+    ~shared_engine() override {
+        vassert(
+          _ref_count == 0, "expected engine to be stopped before destruction");
+    }
+
 private:
     mutex _mu;
     size_t _ref_count = 0;

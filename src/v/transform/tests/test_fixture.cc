@@ -72,9 +72,21 @@ ss::future<> fake_source::push_batch(model::record_batch batch) {
     co_return;
 }
 
-ss::future<> fake_wasm_engine::start() { return ss::now(); }
+ss::future<> fake_wasm_engine::start() {
+    if (_started) {
+        throw std::logic_error("starting already started wasm engine");
+    }
+    _started = true;
+    co_return;
+}
 
-ss::future<> fake_wasm_engine::stop() { return ss::now(); }
+ss::future<> fake_wasm_engine::stop() {
+    if (!_started) {
+        throw std::logic_error("stopping already stopped wasm engine");
+    }
+    _started = false;
+    co_return;
+}
 
 ss::future<> fake_offset_tracker::stop() { co_return; }
 
