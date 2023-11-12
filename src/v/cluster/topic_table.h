@@ -184,6 +184,9 @@ public:
             return _policy;
         }
 
+        friend std::ostream&
+        operator<<(std::ostream&, const in_progress_update&);
+
     private:
         replicas_t _previous_replicas;
         replicas_t _target_replicas;

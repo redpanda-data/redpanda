@@ -1628,4 +1628,19 @@ size_t topic_table::get_node_partition_count(model::node_id id) const {
     return cnt;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const topic_table::in_progress_update& u) {
+    fmt::print(
+      o,
+      "{{state: {}, update_rev: {}, last_cmd_rev: {}, previous: {}, target: "
+      "{}, policy: {}}}",
+      u._state,
+      u._update_revision,
+      u._last_cmd_revision,
+      u._previous_replicas,
+      u._target_replicas,
+      u._policy);
+    return o;
+}
+
 } // namespace cluster
