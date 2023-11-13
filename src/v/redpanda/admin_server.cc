@@ -1110,6 +1110,15 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Too many requests: {}", ec.message()),
               ss::http::reply::status_type::too_many_requests);
+        case cluster::errc::transform_does_not_exist:
+        case cluster::errc::transform_invalid_update:
+        case cluster::errc::transform_invalid_create:
+        case cluster::errc::transform_invalid_source:
+        case cluster::errc::transform_invalid_environment:
+        case cluster::errc::source_topic_not_exists:
+        case cluster::errc::source_topic_still_in_use:
+            throw ss::httpd::bad_request_exception(
+              fmt::format("{}", ec.message()));
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
