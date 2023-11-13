@@ -15,7 +15,7 @@ KC = os.path.join(KC_BIN_DIR, 'kc.sh')
 KCADM = os.path.join(KC_BIN_DIR, 'kcadm.sh')
 KC_ADMIN = 'admin'
 KC_ADMIN_PASSWORD = 'admin'
-KC_ROOT_LOG_LEVEL = 'TRACE'
+KC_ROOT_LOG_LEVEL = 'INFO'
 KC_LOG_HANDLER = 'console,file'
 KC_LOG_FILE = '/var/log/kc.log'
 KC_PORT = 8080
@@ -28,7 +28,7 @@ START_CMD_TMPL = """
 LAUNCH_JBOSS_IN_BACKGROUND=1 \
 KEYCLOAK_ADMIN={admin} \
 KEYCLOAK_ADMIN_PASSWORD={pw} \
-{kc} start-dev --http-port={port} --hostname-port={port} \
+{kc} start-dev --http-port={port} --hostname={host} --hostname-port={port} --http-enabled=true --proxy=passthrough \
 --log="{log_handler}" --log-file="{logfile}" --log-level="{log_level}" &
 """
 
@@ -163,14 +163,16 @@ class KeycloakService(Service):
     def admin_ll(self):
         return self.admin.kc_admin
 
-    def _start_cmd(self):
+    def _start_cmd(self, node):
         cmd = START_CMD_TMPL.format(admin=KC_ADMIN,
                                     pw=KC_ADMIN_PASSWORD,
                                     kc=KC,
                                     port=self.http_port,
                                     log_handler=KC_LOG_HANDLER,
                                     logfile=KC_LOG_FILE,
-                                    log_level=self.log_level)
+                                    log_level=self.log_level,
+                                    host=self.host(node))
+        self.logger.debug(f"KC START CMD: {cmd}")
         return cmd
 
     def host(self, node):
@@ -212,7 +214,7 @@ class KeycloakService(Service):
         node.account.ssh(f"touch {KC_LOG_FILE}", allow_fail=False)
 
         with node.account.monitor_log(KC_LOG_FILE) as monitor:
-            node.account.ssh_capture(self._start_cmd(), allow_fail=False)
+            node.account.ssh_capture(self._start_cmd(node), allow_fail=False)
             monitor.wait_until("Running the server in", timeout_sec=120)
 
         self.logger.debug(f"Keycloak PIDs: {self.pids(node)}")
