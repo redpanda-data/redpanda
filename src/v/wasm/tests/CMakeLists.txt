@@ -11,7 +11,7 @@ v_cc_library(
     v::gtest_main
 )
 
-set(TESTDATA_DIR "${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata")
+set(TESTDATA_DIR "${CMAKE_BINARY_DIR}/src/transform-sdk/go/internal/testdata")
 
 find_package(Avro)
 
