@@ -88,7 +88,7 @@ class TopicSpec:
                  partition_count=1,
                  replication_factor=3,
                  cleanup_policy=CLEANUP_DELETE,
-                 compression_type=COMPRESSION_PRODUCER,
+                 compression_type=None,
                  message_timestamp_type=TIMESTAMP_CREATE_TIME,
                  segment_bytes=None,
                  retention_bytes=None,
