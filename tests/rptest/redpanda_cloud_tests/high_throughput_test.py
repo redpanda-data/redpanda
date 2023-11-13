@@ -475,7 +475,7 @@ class HighThroughputTest(PreallocNodesTest):
             _hwm += partition.high_watermark
         return _hwm
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=9)
     def test_max_connections(self):
         def calc_alive_swarm_nodes(swarm):
             _bAlive = []
@@ -600,7 +600,8 @@ class HighThroughputTest(PreallocNodesTest):
             time.sleep(60)
 
         _now = time.time()
-        self.logger.warn(f"Done swarming after {_now - _start}s")
+        _elapsed = "{:>5,.1f}s".format(_now - _start)
+        self.logger.warn(f"Done swarming after {_elapsed}")
 
         # If timeout happen, just kill it
         self.logger.warn(f"Stopping swarm")
@@ -623,7 +624,7 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.warn(f"Expected more than {reasonably_expected} "
                          f"({_rpercent}%) messages "
                          f"out of {expected_msg_count}, actual {_hwm} "
-                         f"({_percent}%)")
+                         f"({_percent:.2f}%)")
         assert _hwm >= reasonably_expected, \
             f"Expected >{reasonably_expected} messages, actual {_hwm}"
 
