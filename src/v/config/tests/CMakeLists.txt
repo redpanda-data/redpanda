@@ -19,3 +19,14 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::config
   LABELS config
 )
+
+set(gtest_srcs
+    config_constraints_gtests.cc
+    validator_gtests.cc)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_configuration
+  SOURCES ${gtest_srcs}
+  LIBRARIES v::gtest_main v::config v::kafka)

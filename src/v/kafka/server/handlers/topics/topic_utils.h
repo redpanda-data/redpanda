@@ -189,5 +189,4 @@ ss::future<> wait_for_topics(
   std::vector<cluster::topic_result>,
   cluster::controller_api&,
   model::timeout_clock::time_point);
-
 } // namespace kafka

@@ -9,6 +9,7 @@
 from collections import namedtuple
 import json
 import logging
+import os
 import pprint
 import random
 import re
@@ -1865,3 +1866,98 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self.redpanda.set_cluster_config({self.key: expected})
 
         self._check_value_everywhere(self.key, expected)
+
+
+class ConfigConstraintsTest(RedpandaTest):
+    RETENTION_MS = 86400000  # 1 day
+    RETENTION_MS_MIN = RETENTION_MS // 2
+    RETENTION_MS_MAX = RETENTION_MS * 2
+    topics = [TopicSpec(retention_ms=RETENTION_MS)]
+
+    # All topics retention.ms must be in [min,max] range
+    LOG_RETENTION_CONSTRAINT = {
+        'name': 'log_retention_ms',
+        'type': 'restrict',
+        'min': RETENTION_MS_MIN,
+        'max': RETENTION_MS_MAX
+    }
+
+    # All topics cleanup policy must be cluster default (delete)
+    LOG_CLEANUP_CONSTRAINT = {
+        'name': 'log_cleanup_policy',
+        'type': 'restrict',
+        'enabled': True
+    }
+
+    def __init__(self, *args, **kwargs):
+        super(ConfigConstraintsTest, self).__init__(extra_rp_conf={
+            "constraints":
+            [self.LOG_RETENTION_CONSTRAINT, self.LOG_CLEANUP_CONSTRAINT]
+        },
+                                                    *args,
+                                                    **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_constraint_configs_persist(self):
+        # Check that configuration constraints persist between broker restart.
+
+        admin = Admin(self.redpanda)
+        target_broker = self.redpanda.nodes[0]
+
+        # After first boot, the preset constraints should be returned by the Admin API.
+        res = admin.get_cluster_config(node=target_broker)
+        assert 'constraints' in res
+        assert type(res['constraints']) == list
+        constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        self.logger.debug(json.dumps(constraints, indent=2))
+        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
+        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
+
+        self.redpanda.restart_nodes([target_broker])
+
+        # Admin API should report the same constraints after restart
+        res = admin.get_cluster_config(node=target_broker)
+        assert 'constraints' in res
+        assert type(res['constraints']) == list
+        constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        self.logger.debug(json.dumps(constraints, indent=2))
+        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
+        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
+
+        # Constraints should also appear in the config cache file
+        cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
+        assert target_broker.account.exists(cache_path)
+
+        cached_cluster_config = {}
+        with tempfile.TemporaryDirectory() as d:
+            target_broker.account.copy_from(cache_path, d)
+            with open(os.path.join(d, "config_cache.yaml")) as f:
+                cached_cluster_config = yaml.full_load(f.read())
+
+        self.logger.debug(json.dumps(cached_cluster_config, indent=2))
+
+        assert 'constraints' in cached_cluster_config
+        assert type(cached_cluster_config['constraints']) == str
+        constraints = json.loads(cached_cluster_config['constraints'])
+        assert type(constraints) == list
+        constraints = sorted(constraints, key=lambda con: con['name'])
+        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
+        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
+
+
+class ConfigConstraintsParseTest(RedpandaTest):
+    topics = [TopicSpec()]
+
+    LOG_RETENTION_CONSTRAINT = {'name': 'log_retention_ms', 'type': 'restrict'}
+
+    def __init__(self, *args, **kwargs):
+        super(ConfigConstraintsParseTest, self).__init__(
+            extra_rp_conf={"constraints": [self.LOG_RETENTION_CONSTRAINT]},
+            *args,
+            **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_failed_yaml_parse(self):
+        # Search for the yaml parse error
+        pattern = ".*Invalid bootstrap property 'constraints'.*TypedBadConversion<config::constraint_t>.*"
+        assert self.redpanda.search_log_all(pattern)
