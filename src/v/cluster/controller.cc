@@ -718,15 +718,11 @@ controller::create_cluster(const bootstrap_cluster_cmd_data cmd_data) {
         }
 
         vlog(clusterlog.info, "Creating cluster UUID {}", cmd_data.uuid);
-        model::record_batch b = serde_serialize_cmd(
-          bootstrap_cluster_cmd{0, cmd_data});
-        // cluster::replicate_and_wait() cannot be used here because it checks
-        // for serde_raft_0 feature to be enabled. Before a cluster is here,
-        // no feature is active, however the bootstrap_cluster_cmd is serde-only
-        const std::error_code errc = co_await _stm.local().replicate_and_wait(
-          std::move(b),
+        const std::error_code errc = co_await replicate_and_wait(
+          _stm,
+          _as,
+          bootstrap_cluster_cmd{0, cmd_data},
           model::timeout_clock::now() + 30s,
-          _as.local(),
           std::nullopt);
         if (errc == errc::success) {
             vlog(clusterlog.info, "Cluster UUID created {}", cmd_data.uuid);

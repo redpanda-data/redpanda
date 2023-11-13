@@ -115,16 +115,12 @@ FIXTURE_TEST(
   test_dispatching_happy_path_delete, topic_table_updates_dispatcher_fixture) {
     create_topics();
     dispatcher
-      .apply_update(
-        serialize_cmd(cluster::delete_topic_cmd(
-                        make_tp_ns("test_tp_2"), make_tp_ns("test_tp_2")))
-          .get0())
+      .apply_update(serde_serialize_cmd(cluster::delete_topic_cmd(
+        make_tp_ns("test_tp_2"), make_tp_ns("test_tp_2"))))
       .get0();
     dispatcher
-      .apply_update(
-        serialize_cmd(cluster::delete_topic_cmd(
-                        make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3")))
-          .get0())
+      .apply_update(serde_serialize_cmd(cluster::delete_topic_cmd(
+        make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3"))))
       .get0();
 
     auto md = table.local().all_topics_metadata();

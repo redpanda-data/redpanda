@@ -57,7 +57,6 @@ private:
       model::node_id id, std::optional<model::term_id> term = std::nullopt) {
         return replicate_and_wait(
           _stm,
-          _feature_table,
           _as,
           T(id, 0),
           _node_op_timeout + model::timeout_clock::now(),

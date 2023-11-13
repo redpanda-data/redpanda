@@ -2151,6 +2151,33 @@ SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
           deserialized_kvs_from_kvs[i].value);
     }
 }
+template<typename Cmd>
+requires cluster::ControllerCommand<Cmd>
+ss::future<model::record_batch> serialize_cmd(Cmd cmd) {
+    return ss::do_with(
+      iobuf{},
+      iobuf{},
+      [cmd = std::move(cmd)](iobuf& key_buf, iobuf& value_buf) mutable {
+          auto value_f
+            = reflection::async_adl<cluster::command_type>{}
+                .to(value_buf, Cmd::type)
+                .then([&value_buf, v = std::move(cmd.value)]() mutable {
+                    return reflection::adl<typename Cmd::value_t>{}.to(
+                      value_buf, std::move(v));
+                });
+          auto key_f = reflection::async_adl<typename Cmd::key_t>{}.to(
+            key_buf, std::move(cmd.key));
+          return ss::when_all_succeed(std::move(key_f), std::move(value_f))
+            .discard_result()
+            .then([&key_buf, &value_buf]() mutable {
+                cluster::simple_batch_builder builder(
+                  Cmd::batch_type, model::offset(0));
+                builder.add_raw_kv(std::move(key_buf), std::move(value_buf));
+                return std::move(builder).build();
+            });
+      });
+}
+
 template<typename Cmd, typename Key, typename Value>
 void serde_roundtrip_cmd(Key key, Value value) {
     auto cmd = Cmd(std::move(key), std::move(value));
@@ -2170,7 +2197,7 @@ void serde_roundtrip_cmd(Key key, Value value) {
 template<typename Cmd, typename Key, typename Value>
 void adl_roundtrip_cmd(Key key, Value value) {
     auto cmd = Cmd(std::move(key), std::move(value));
-    auto batch = cluster::serialize_cmd(cmd).get();
+    auto batch = serialize_cmd(cmd).get();
     auto deserialized = cluster::deserialize(
                           std::move(batch), cluster::make_commands_list<Cmd>())
                           .get();

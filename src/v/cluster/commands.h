@@ -421,32 +421,8 @@ using make_commands_list = commands_type_list<Commands...>;
 ///                  | command_type | value |
 ///                  +--------------+-------+
 ///
-template<typename Cmd>
-requires ControllerCommand<Cmd>
-ss::future<model::record_batch> serialize_cmd(Cmd cmd) {
-    return ss::do_with(
-      iobuf{},
-      iobuf{},
-      [cmd = std::move(cmd)](iobuf& key_buf, iobuf& value_buf) mutable {
-          auto value_f
-            = reflection::async_adl<command_type>{}
-                .to(value_buf, Cmd::type)
-                .then([&value_buf, v = std::move(cmd.value)]() mutable {
-                    return reflection::adl<typename Cmd::value_t>{}.to(
-                      value_buf, std::move(v));
-                });
-          auto key_f = reflection::async_adl<typename Cmd::key_t>{}.to(
-            key_buf, std::move(cmd.key));
-          return ss::when_all_succeed(std::move(key_f), std::move(value_f))
-            .discard_result()
-            .then([&key_buf, &value_buf]() mutable {
-                simple_batch_builder builder(Cmd::batch_type, model::offset(0));
-                builder.add_raw_kv(std::move(key_buf), std::move(value_buf));
-                return std::move(builder).build();
-            });
-      });
-}
-// flag indicating tha the command was serialized using serde serialization
+
+// flag indicating that the command was serialized using serde serialization
 static constexpr int8_t serde_serialized_cmd_flag = -1;
 
 template<typename Cmd>

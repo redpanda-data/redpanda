@@ -300,7 +300,7 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
         }
 
         auto ec = co_await replicate_and_wait(
-          _stm, _features, _as, std::move(cmd), timeout);
+          _stm, _as, std::move(cmd), timeout);
         co_return topic_result(std::move(update.tp_ns), map_errc(ec));
     } catch (...) {
         vlog(
@@ -498,7 +498,7 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
           random_generators::internal::gen);
     }
 
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
+    return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
       .then_wrapped([tp_ns = std::move(tp_ns), units = std::move(units)](
                       ss::future<std::error_code> f) mutable {
           try {
@@ -585,7 +585,7 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
           tp_ns);
         delete_topic_cmd cmd(tp_ns, tp_ns);
 
-        return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
+        return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
           .then_wrapped(
             [tp_ns = std::move(tp_ns)](ss::future<std::error_code> f) mutable {
                 try {
@@ -628,7 +628,7 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
       {.topic = {.nt = tp_ns, .initial_revision_id = remote_revision},
        .mode = mode});
 
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
+    return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
       .then_wrapped(
         [tp_ns = std::move(tp_ns)](ss::future<std::error_code> f) mutable {
             try {
@@ -685,7 +685,7 @@ ss::future<topic_result> topics_frontend::do_purged_topic(
     std::error_code repl_ec;
     try {
         repl_ec = co_await replicate_and_wait(
-          _stm, _features, _as, std::move(cmd), deadline);
+          _stm, _as, std::move(cmd), deadline);
     } catch (...) {
         vlog(
           clusterlog.warn,
@@ -823,7 +823,7 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
           std::move(ntp), std::move(new_replica_set));
 
         co_return co_await replicate_and_wait(
-          _stm, _features, _as, std::move(cmd), tout, term);
+          _stm, _as, std::move(cmd), tout, term);
     }
     update_partition_replicas_cmd cmd(
       0, // unused
@@ -833,7 +833,7 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
         .policy = policy});
 
     co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), tout, term);
+      _stm, _as, std::move(cmd), tout, term);
 }
 
 ss::future<std::error_code> topics_frontend::force_update_partition_replicas(
@@ -850,7 +850,7 @@ ss::future<std::error_code> topics_frontend::force_update_partition_replicas(
       force_partition_reconfiguration_cmd_data{std::move(new_replica_set)}};
 
     co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), tout, term);
+      _stm, _as, std::move(cmd), tout, term);
 }
 
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
@@ -870,7 +870,7 @@ ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
       cancel_moving_partition_replicas_cmd_data(force_abort_update::no));
 
     co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), timeout, term);
+      _stm, _as, std::move(cmd), timeout, term);
 }
 
 ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
@@ -890,7 +890,7 @@ ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
       cancel_moving_partition_replicas_cmd_data(force_abort_update::yes));
 
     co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), timeout, term);
+      _stm, _as, std::move(cmd), timeout, term);
 }
 
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
@@ -914,7 +914,7 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
         finish_moving_partition_replicas_cmd cmd(
           std::move(ntp), std::move(new_replica_set));
 
-        return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+        return replicate_and_wait(_stm, _as, std::move(cmd), tout);
     }
 
     return _connections.local()
@@ -956,7 +956,7 @@ ss::future<std::error_code> topics_frontend::revert_cancel_partition_move(
         revert_cancel_partition_move_cmd cmd(
           0, revert_cancel_partition_move_cmd_data{.ntp = std::move(ntp)});
 
-        return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+        return replicate_and_wait(_stm, _as, std::move(cmd), tout);
     }
 
     return _connections.local()
@@ -1056,8 +1056,7 @@ ss::future<std::error_code> topics_frontend::set_topic_partitions_disabled(
         .disabled = disabled,
       });
 
-    co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), timeout);
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
 }
 
 ss::future<bool>
@@ -1117,7 +1116,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
 
     try {
         auto ec = co_await replicate_and_wait(
-          _stm, _features, _as, std::move(cmd), timeout);
+          _stm, _as, std::move(cmd), timeout);
         co_return topic_result(tp_ns, map_errc(ec));
     } catch (...) {
         vlog(
@@ -1448,8 +1447,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
     move_topic_replicas_cmd cmd(topic, std::move(new_assignments));
 
-    co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), timeout);
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
 }
 
 ss::future<std::error_code> topics_frontend::decrease_replication_factor(
@@ -1496,8 +1494,7 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
 
     move_topic_replicas_cmd cmd(topic, std::move(new_assignments));
 
-    co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), timeout);
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
 }
 
 allocation_request make_allocation_request(

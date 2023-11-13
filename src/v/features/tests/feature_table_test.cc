@@ -313,7 +313,7 @@ FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
     snapshot.version = features::feature_table::get_earliest_logical_version();
     snapshot.states = {
       features::feature_state_snapshot{
-        .name = "serde_raft_0",
+        .name = "license",
         .state = feature_state::state::available,
       },
       features::feature_state_snapshot{
@@ -326,7 +326,7 @@ FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
 
     // Fast-forwarded feature should still be active.
     BOOST_CHECK(
-      ft.get_state(feature::serde_raft_0).get_state()
+      ft.get_state(feature::license).get_state()
       == feature_state::state::active);
     // A feature with explicit available_policy should be activated by the
     // snapshot.

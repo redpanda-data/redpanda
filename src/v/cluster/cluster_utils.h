@@ -178,37 +178,19 @@ bool are_replica_sets_equal(
 template<typename Cmd>
 ss::future<std::error_code> replicate_and_wait(
   ss::sharded<controller_stm>& stm,
-  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as,
   Cmd&& cmd,
   model::timeout_clock::time_point timeout,
   std::optional<model::term_id> term = std::nullopt) {
-    const bool use_serde_serialization = feature_table.local().is_active(
-      features::feature::serde_raft_0);
     return stm.invoke_on(
       controller_stm_shard,
-      [cmd = std::forward<Cmd>(cmd),
-       term,
-       &as = as,
-       timeout,
-       use_serde_serialization](controller_stm& stm) mutable {
+      [cmd = std::forward<Cmd>(cmd), term, &as = as, timeout](
+        controller_stm& stm) mutable {
           if (!stm.throttle<Cmd>()) {
               return ss::make_ready_future<std::error_code>(
                 errc::throttling_quota_exceeded);
           }
-          if constexpr (Cmd::serde_opts == serde_opts::adl_and_serde) {
-              if (unlikely(!use_serde_serialization)) {
-                  return serialize_cmd(std::forward<Cmd>(cmd))
-                    .then([&stm, timeout, term, &as](model::record_batch b) {
-                        return stm.replicate_and_wait(
-                          std::move(b), timeout, as.local(), term);
-                    });
-              }
-          }
-          vassert(
-            use_serde_serialization,
-            "serde_raft_0 feature not enabled while serializing a serde-only "
-            "controller command");
+
           auto b = serde_serialize_cmd(std::forward<Cmd>(cmd));
           return stm.replicate_and_wait(
             std::move(b), timeout, as.local(), term);
