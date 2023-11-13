@@ -14,7 +14,7 @@ import (
 //
 // This function is expected to be called at the start of most commands, and it
 // saves the token and client ID to the passed cloud config.
-func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client) (token string, err error) {
+func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, noUI bool) (token string, err error) {
 	// We want to avoid creating a root owned file. If the file exists, we
 	// just chmod with rpkos.ReplaceFile and keep old perms even with sudo.
 	// If the file does not exist, we will always be creating it to write
@@ -30,7 +30,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client) (
 	if authVir.HasClientCredentials() {
 		resp, err = ClientCredentialFlow(ctx, cl, authVir)
 	} else {
-		resp, err = DeviceFlow(ctx, cl, authVir)
+		resp, err = DeviceFlow(ctx, cl, authVir, noUI)
 	}
 	if err != nil {
 		return "", fmt.Errorf("unable to retrieve a cloud token: %w", err)

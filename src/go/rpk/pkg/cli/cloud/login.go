@@ -29,7 +29,7 @@ import (
 )
 
 func newLoginCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var save, noProfile bool
+	var save, noProfile, noBrowser bool
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to the Redpanda cloud",
@@ -48,6 +48,8 @@ SSO
 This will automatically launch your default web browser and prompt you to 
 authenticate via our Redpanda Cloud page. Once you have successfully 
 authenticated, you will be ready to use rpk cloud commands.
+
+You may opt out of auto-opening the browser by passing the '--no-browser' flag.
 
 CLIENT CREDENTIALS
 
@@ -82,7 +84,7 @@ want to disable automatic profile creation and selection, use --no-profile.
 			if auth != nil {
 				cc = auth.HasClientCredentials()
 			}
-			_, err = oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()))
+			_, err = oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), noBrowser)
 			if err != nil {
 				fmt.Printf("Unable to login to Redpanda Cloud (%v).\n", err)
 				if e := (*oauth.BadClientTokenError)(nil); errors.As(err, &e) && cc {
@@ -116,6 +118,7 @@ and then re-specify the client credentials next time you log in.`)
 
 	p.InstallCloudFlags(cmd)
 	cmd.Flags().BoolVar(&noProfile, "no-profile", false, "Skip automatic profile creation and any associated prompts")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Opt out of auto-opening authentication URL")
 	cmd.Flags().BoolVar(&save, "save", false, "Save environment or flag specified client ID and client secret to the configuration file")
 	return cmd
 }

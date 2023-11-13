@@ -73,7 +73,7 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 	if overrides.CloudToken != "" {
 		token = overrides.CloudToken
 	} else {
-		token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(overrides))
+		token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(overrides), false)
 		if err != nil {
 			return "", "", false, fmt.Errorf("unable to load the cloud token: %w", err)
 		}

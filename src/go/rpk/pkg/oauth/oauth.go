@@ -75,7 +75,7 @@ func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudA
 
 // DeviceFlow follows the OAuth 2.0 device authentication flow. First it
 // validates whether the configuration already have a valid token.
-func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth) (Token, error) {
+func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth, noUI bool) (Token, error) {
 	// We only validate the token if we have the client ID, if one of them is
 	// not present we just start the login flow again.
 	if auth.AuthToken != "" && auth.ClientID != "" {
@@ -95,12 +95,16 @@ func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth) (Toke
 	if !isURL(dcode.VerificationURLComplete) {
 		return Token{}, fmt.Errorf("authorization server returned an invalid URL: %s; please contact Redpanda support", dcode.VerificationURLComplete)
 	}
-	err = cl.URLOpener(dcode.VerificationURLComplete)
-	if err != nil {
-		return Token{}, fmt.Errorf("unable to open the web browser: %v", err)
-	}
 
-	fmt.Printf("Opening your browser for authentication, if does not open automatically, please open %q and proceed to login.\n", dcode.VerificationURLComplete)
+	if noUI {
+		fmt.Printf("For authentication, go to %q and log in.\n", dcode.VerificationURLComplete)
+	} else {
+		fmt.Printf("Opening your browser for authentication, if does not open automatically, please open %q and proceed to login.\n", dcode.VerificationURLComplete)
+		err = cl.URLOpener(dcode.VerificationURLComplete)
+		if err != nil {
+			return Token{}, fmt.Errorf("unable to open the web browser: %v; you may login using 'rpk cloud login --no-browser'", err)
+		}
+	}
 
 	token, err := waitForDeviceToken(ctx, cl, dcode)
 	if err != nil {

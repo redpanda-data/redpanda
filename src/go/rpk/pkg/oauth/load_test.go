@@ -87,7 +87,7 @@ func TestLoadFlow(t *testing.T) {
 			}
 			cfg, err := p.Load(fs)
 			require.NoError(t, err)
-			gotToken, err := LoadFlow(context.Background(), fs, cfg, &m)
+			gotToken, err := LoadFlow(context.Background(), fs, cfg, &m, false)
 			if tt.expErr {
 				require.Error(t, err)
 				return
