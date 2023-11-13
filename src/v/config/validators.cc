@@ -183,4 +183,25 @@ validate_audit_event_types(const std::vector<ss::sstring>& vs) {
     }
     return std::nullopt;
 }
+
+template<typename T>
+std::optional<ss::sstring>
+check_range(const range_values<T>& range, const ss::sstring& name) {
+    if ((range.min && range.max) && (*range.min > *range.max)) {
+        return ssx::sformat("Constraints failure[min > max]: name {}", name);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ss::sstring> validate_constraints(
+  const std::unordered_map<ss::sstring, config::constraint_t>& constraints) {
+    for (const auto& [name, args] : constraints) {
+        return ss::visit(
+          args.flags,
+          [](constraint_enabled_t) { return std::optional<ss::sstring>{}; },
+          [&name](const auto& range) { return check_range(range, name); });
+    }
+    return std::nullopt;
+}
 }; // namespace config

@@ -2775,7 +2775,17 @@ configuration::configuration()
       "are allowed.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"BASIC"},
-      validate_http_authn_mechanisms) {}
+      validate_http_authn_mechanisms)
+  , constraints(
+      *this,
+      "constraints",
+      "A sequence of constraints for cluster-level configs",
+      {.needs_restart = needs_restart::no,
+       .example
+       = R"([{'name': 'default_topic_replications','type': 'restrict','min': 3, 'max': 9}])",
+       .visibility = visibility::user},
+      {},
+      validate_constraints) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
