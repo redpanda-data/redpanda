@@ -75,7 +75,7 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 	} else {
 		token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(overrides), false)
 		if err != nil {
-			return "", "", false, fmt.Errorf("unable to load the cloud token: %w", err)
+			return "", "", false, fmt.Errorf("unable to load the cloud token: %w. You may need to logout with 'rpk cloud logout --clear-credentials' and try again", err)
 		}
 	}
 

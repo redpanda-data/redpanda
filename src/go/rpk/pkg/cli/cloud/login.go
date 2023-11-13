@@ -90,6 +90,8 @@ want to disable automatic profile creation and selection, use --no-profile.
 				if e := (*oauth.BadClientTokenError)(nil); errors.As(err, &e) && cc {
 					fmt.Println(`You may need to clear your client ID and secret with 'rpk cloud logout --clear-credentials',
 and then re-specify the client credentials next time you log in.`)
+				} else {
+					fmt.Println(`You may need to clear your credentials with 'rpk cloud logout --clear-credentials', and login again`)
 				}
 				os.Exit(1)
 			}
