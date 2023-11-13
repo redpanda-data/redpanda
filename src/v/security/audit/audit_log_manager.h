@@ -203,22 +203,6 @@ public:
           make_api_activity_event(req, user, svc_name)));
     }
 
-    /// Enqueue an event to be produced onto an audit log partition.  This will
-    /// always enqueue the event (if auditing is enabled).  This is used for
-    /// items like authentication events or application events.
-    ///
-    /// Returns: bool representing if the audit msg was successfully moved into
-    /// the queue or not. If unsuccessful this means the audit subsystem cannot
-    /// publish messages. Consumers of this API should react accordingly, i.e.
-    /// return an error to the client.
-    template<InheritsFromOCSFBase T>
-    bool enqueue_mandatory_audit_event(T&& t) {
-        if (auto val = should_enqueue_audit_event(); val.has_value()) {
-            return (bool)*val;
-        }
-        return do_enqueue_audit_event(std::make_unique<T>(std::forward<T>(t)));
-    }
-
     /// Returns the number of items pending to be written to auditing log
     ///
     /// Note does not include records already sent to client
