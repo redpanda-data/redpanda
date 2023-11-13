@@ -37,6 +37,12 @@ type_uid get_ocsf_type(class_uid class_uid, T activity_id) {
 
 class ocsf_base_impl {
 public:
+    /// Instances of this class are moveable but not copyable
+    ocsf_base_impl() = default;
+    ocsf_base_impl(ocsf_base_impl&&) = default;
+    ocsf_base_impl& operator=(ocsf_base_impl&&) = default;
+    ocsf_base_impl(const ocsf_base_impl&) = delete;
+    ocsf_base_impl& operator=(const ocsf_base_impl&) = delete;
     virtual ~ocsf_base_impl() = default;
 
     virtual ss::sstring to_json() const = 0;
