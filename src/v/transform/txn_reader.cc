@@ -99,6 +99,14 @@ struct drain_result {
 class drainer {
 public:
     explicit drainer(model::record_batch_reader::storage_t initial) {
+        // TODO(perf): This initial slice is iterated over twice, once to look
+        // for control/transactional batches, and another time here.
+        //
+        // It's possible to combine the passes at the cost of more complex code.
+        // If we do tackle this optimization one should ensure that the pass
+        // through of the originally loaded slices if there are no control/txn
+        // batches does not copy the batches over to a new buffer if it's not
+        // needed.
         ss::visit(
           initial,
           [this](model::record_batch_reader::data_t& d) {
