@@ -21,6 +21,7 @@ namespace security::oidc {
 
 struct authentication_data {
     acl_principal principal;
+    ss::sstring sub;
     ss::lowres_system_clock::time_point expiry;
 };
 result<authentication_data> authenticate(

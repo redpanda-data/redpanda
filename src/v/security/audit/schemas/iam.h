@@ -15,6 +15,8 @@
 #include "security/audit/schemas/types.h"
 
 namespace security::audit {
+// Event that reports authentication session activities
+// https://schema.ocsf.io/1.0.0/classes/authentication?extensions=
 class authentication final : public ocsf_base_event<authentication> {
 public:
     using used_cleartext = ss::bool_class<struct used_cleartext_tag>;

@@ -66,7 +66,10 @@ result<authentication_data> authenticate(
         return principal.assume_error();
     }
 
-    return authentication_data{std::move(principal).assume_value(), exp};
+    return authentication_data{
+      std::move(principal).assume_value(),
+      ss::sstring{jwt.sub().value_or("")},
+      exp};
 }
 
 result<authentication_data> authenticate(
@@ -192,6 +195,7 @@ ss::future<result<bytes>> sasl_authenticator::authenticate(bytes auth_bytes) {
     _auth_data = auth_res.assume_value();
     _audit_user.type_id = audit::user::type::user;
     _audit_user.name = _auth_data.principal.name();
+    _audit_user.uid = _auth_data.sub;
     _state = state::complete;
 
     co_return bytes{};

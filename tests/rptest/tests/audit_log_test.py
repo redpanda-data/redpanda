@@ -1181,10 +1181,9 @@ class AuditLogTestKafkaTlsApi(AuditLogTestBase):
             'name'] == service_name and record['user'][
                 'name'] == username and record[
                     'auth_protocol_id'] == protocol_id and (
-                        protocol_name is not None
-                        and record['auth_protocol'] == protocol_name
-                    ) and record['status_id'] == 1 and record['user'][
-                        'credential_uid'] == dn
+                        protocol_name is not None and record['auth_protocol']
+                        == protocol_name) and record[
+                            'status_id'] == 1 and record['user']['uid'] == dn
 
     @cluster(num_nodes=5)
     def test_mtls(self):
@@ -1264,10 +1263,13 @@ class AuditLogTestOauth(AuditLogTestBase):
                                         email='myapp@customer.com')
 
     @staticmethod
-    def oidc_authn_filter_function(service_name: str, username: str, record):
+    def oidc_authn_filter_function(service_name: str, username: str,
+                                   sub: Optional[str], record):
         return record['class_uid'] == 3002 and record['service'][
             'name'] == service_name and record[
-                'auth_protocol_id'] == 6 and record['user']['name'] == username
+                'auth_protocol_id'] == 6 and record['user'][
+                    'name'] == username and (record['user']['uid'] == sub
+                                             if sub is not None else True)
 
     @cluster(num_nodes=6)
     def test_kafka_oauth(self):
@@ -1301,7 +1303,8 @@ class AuditLogTestOauth(AuditLogTestBase):
 
         records = self.read_all_from_audit_log(
             partial(self.oidc_authn_filter_function,
-                    self.kafka_rpc_service_name, service_user_id),
+                    self.kafka_rpc_service_name, service_user_id,
+                    service_user_id),
             lambda records: self.aggregate_count(records) >= 1)
 
         # There may exist multiple OAUTH entries but that could be due to the client
@@ -1348,7 +1351,7 @@ class AuditLogTestOauth(AuditLogTestBase):
 
         records = self.read_all_from_audit_log(
             partial(self.oidc_authn_filter_function, self.admin_audit_svc_name,
-                    userinfo['sub']),
+                    userinfo['sub'], None),
             lambda records: self.aggregate_count(records) >= 1)
 
         assert len(records) == 1, f"Expected one record got {len(records)}"
