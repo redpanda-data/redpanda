@@ -4,6 +4,7 @@ v_cc_library(
     audit_log_manager.cc
     probes.cc
     logger.cc
+    schemas/utils.cc
   DEPS
     v::kafka_client
     v::bytes
