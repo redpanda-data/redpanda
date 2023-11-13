@@ -71,9 +71,12 @@ fetch_dep(GTest
   REPO https://github.com/google/googletest
   TAG v1.14.0)
 
+set(ADA_TESTING OFF)
+set(ADA_TOOLS OFF)
+set(ADA_BENCHMARKS OFF)
 fetch_dep(ada
   REPO https://github.com/ada-url/ada
-  TAG v2.7.2)
+  TAG v2.7.3)
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   set(TINYGO_TARBALL "tinygo-linux-amd64.tar.gz")
