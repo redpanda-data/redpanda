@@ -116,15 +116,24 @@ struct api {
     auto equality_fields() const { return std::tie(operation, service); }
 };
 
+// Information about the software product feature that generated the event
+// https://schema.ocsf.io/1.0.0/objects/feature?extensions=
+struct feature {
+    ss::sstring name;
+
+    auto equality_fields() const { return std::tie(name); }
+};
+
 // Characteristics of a software product
 // https://schema.ocsf.io/1.0.0/objects/product?extensions=
 struct product {
     ss::sstring name;
     ss::sstring vendor_name;
     ss::sstring version;
+    std::optional<feature> feature;
 
     auto equality_fields() const {
-        return std::tie(name, vendor_name, version);
+        return std::tie(name, vendor_name, version, feature);
     }
 };
 
@@ -357,8 +366,19 @@ inline void rjson_serialize(Writer<StringBuffer>& w, const sa::api& api) {
     w.EndObject();
 }
 
+inline void rjson_serialize(Writer<StringBuffer>& w, const sa::feature& f) {
+    w.StartObject();
+    w.Key("name");
+    rjson_serialize(w, f.name);
+    w.EndObject();
+}
+
 inline void rjson_serialize(Writer<StringBuffer>& w, const sa::product& p) {
     w.StartObject();
+    if (p.feature.has_value()) {
+        w.Key("feature");
+        rjson_serialize(w, p.feature.value());
+    }
     w.Key("name");
     rjson_serialize(w, p.name);
     w.Key("vendor_name");

@@ -13,8 +13,9 @@ import time
 import threading
 import json
 import re
-import socket
 import requests
+import socket
+import time
 from typing import Any, Optional
 
 from rptest.utils.rpk_config import read_redpanda_cfg
@@ -594,6 +595,35 @@ class AuditLogTestBase(RedpandaTest):
             self.aggregate_count(records)
         ), f'Expected {desc}, Actual: {self.aggregate_count(records)}'
         return records
+
+
+class AuditLogTestsAppLifecycle(AuditLogTestBase):
+    """Validates that app lifecycle events occur
+    """
+    def __init__(self, test_context):
+        super(AuditLogTestsAppLifecycle,
+              self).__init__(test_context=test_context,
+                             audit_log_config=AuditLogConfig(event_types=[]))
+
+    @cluster(num_nodes=5)
+    def test_app_lifecycle(self):
+        def is_lifecycle_match(feature: Optional[str], is_start: bool, record):
+            expected_activity_id = 3 if is_start else 4
+
+            return record['class_uid'] == 6002 and record[
+                'activity_id'] == expected_activity_id and (
+                    (feature is not None and 'feature' in record['app']
+                     and record['app']['feature']['name'] == feature) or
+                    (feature is None and 'feature' not in record['app']))
+
+        _ = self.find_matching_record(
+            partial(is_lifecycle_match, "Audit System",
+                    True), lambda record_count: record_count == 3,
+            "Single redpanda audit start event per node")
+
+        _ = self.find_matching_record(partial(is_lifecycle_match, None, True),
+                                      lambda record_count: record_count == 3,
+                                      "Single redpanda start event per node")
 
 
 class AuditLogTestAdminApi(AuditLogTestBase):

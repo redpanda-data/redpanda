@@ -62,6 +62,7 @@
 #include "security/request_auth.h"
 #include "security/scram_authenticator.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/smp.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -212,7 +213,7 @@ timestamp_t create_timestamp_t(std::chrono::time_point<Clock> time_point) {
                          .count());
 }
 
-template<typename Clock>
+template<typename Clock = ss::lowres_system_clock>
 timestamp_t create_timestamp_t() {
     return create_timestamp_t(Clock::now());
 }
@@ -524,7 +525,7 @@ api_activity make_api_activity_event(
       from_ss_endpoint(req.get_client_address()),
       authorized ? api_activity::status_id::success
                  : api_activity::status_id::failure,
-      create_timestamp_t<std::chrono::system_clock>(),
+      create_timestamp_t(),
       unmapped_data()};
 }
 
@@ -546,7 +547,7 @@ authentication make_authentication_event(
       r.is_authenticated() ? authentication::status_id::success
                            : authentication::status_id::failure,
       std::nullopt,
-      create_timestamp_t<std::chrono::system_clock>(),
+      create_timestamp_t(),
       user_from_request_auth_result(r)};
 }
 
@@ -613,7 +614,7 @@ authentication make_authentication_failure_event(
       severity_id::informational,
       authentication::status_id::failure,
       reason,
-      create_timestamp_t<std::chrono::system_clock>(),
+      create_timestamp_t(),
       user{.name = r, .type_id = user::type::unknown}};
 }
 
@@ -680,8 +681,29 @@ api_activity make_api_activity_event(
         .name = ss::sstring{client_id.value_or("")}},
       auth_result.authorized ? api_activity::status_id::success
                              : api_activity::status_id::failure,
-      create_timestamp_t<std::chrono::system_clock>(),
+      create_timestamp_t(),
       unmapped_data(auth_result)};
+}
+
+application_lifecycle
+make_application_lifecycle(application_lifecycle::activity_id activity_id) {
+    return {
+      activity_id,
+      redpanda_product(),
+      severity_id::informational,
+      create_timestamp_t()};
+}
+
+application_lifecycle make_application_lifecycle(
+  application_lifecycle::activity_id activity_id, ss::sstring feature_name) {
+    auto product = redpanda_product();
+    product.feature = feature{.name = std::move(feature_name)};
+
+    return {
+      activity_id,
+      std::move(product),
+      severity_id::informational,
+      create_timestamp_t()};
 }
 
 } // namespace security::audit

@@ -207,4 +207,10 @@ api_activity make_api_activity_event(
   std::optional<std::string_view> client_id,
   std::vector<resource_detail> additional_resources);
 
+application_lifecycle
+make_application_lifecycle(application_lifecycle::activity_id activity_id);
+
+application_lifecycle make_application_lifecycle(
+  application_lifecycle::activity_id activity_id, ss::sstring feature_name);
+
 } // namespace security::audit
