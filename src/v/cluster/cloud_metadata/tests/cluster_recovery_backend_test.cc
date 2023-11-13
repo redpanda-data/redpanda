@@ -261,6 +261,23 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
                     == cluster::recovery_stage::complete;
     });
     validate_post_recovery();
+
+    // Do one more validation when reading from the controller snapshot.
+    RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+        return app.controller->get_controller_stm()
+          .local()
+          .maybe_write_snapshot();
+    });
+    restart(should_wipe::no);
+    RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+        auto latest_recovery = app.controller->get_cluster_recovery_table()
+                                 .local()
+                                 .current_recovery();
+        return latest_recovery.has_value()
+               && latest_recovery.value().get().stage
+                    == cluster::recovery_stage::complete;
+    });
+    validate_post_recovery();
 }
 
 INSTANTIATE_TEST_SUITE_P(
