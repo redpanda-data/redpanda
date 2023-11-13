@@ -130,8 +130,8 @@ cache_probe::cache_probe() {
             sm::make_counter(
               "miss",
               [this] { return _num_miss_gets; },
-              sm::description("Number of get requests that are not satisfied "
-                              "from the cache."))
+              sm::description("Number of failed get requests because of "
+                              "missing object in the cache."))
               .aggregate(aggregate_labels),
             sm::make_gauge(
               "in_progress_files",
