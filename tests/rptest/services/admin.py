@@ -383,6 +383,7 @@ class Admin:
                              remove=None,
                              force=False,
                              dry_run=False,
+                             report_clamp_constraints=False,
                              node=None):
         if upsert is None:
             upsert = {}
@@ -395,6 +396,8 @@ class Admin:
             params['force'] = 'true'
         if dry_run:
             params['dry_run'] = 'true'
+        if report_clamp_constraints:
+            params['report_clamp_constraints'] = 'true'
 
         if params:
             joined = "&".join([f"{k}={v}" for k, v in params.items()])

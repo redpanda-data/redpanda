@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from collections import namedtuple
+from enum import Enum
 import json
 import logging
 import os
@@ -1895,7 +1896,10 @@ class ConfigConstraintsTest(RedpandaTest):
     RETENTION_MS = 86400000  # 1 day
     RETENTION_MS_MIN = RETENTION_MS // 2
     RETENTION_MS_MAX = RETENTION_MS * 2
-    topics = [TopicSpec(retention_ms=RETENTION_MS)]
+    topics = [
+        TopicSpec(compression_type=TopicSpec.COMPRESSION_GZIP,
+                  retention_ms=RETENTION_MS)
+    ]
 
     # All topics retention.ms must be in [min,max] range
     LOG_RETENTION_CONSTRAINT = {
@@ -1912,13 +1916,200 @@ class ConfigConstraintsTest(RedpandaTest):
         'enabled': True
     }
 
+    # Clamp topics compression type to cluster default (producer)
+    LOG_COMPRESSION_CONSTRAINT = {
+        'name': 'log_compression_type',
+        'type': 'clamp',
+        'enabled': True
+    }
+
     def __init__(self, *args, **kwargs):
         super(ConfigConstraintsTest, self).__init__(extra_rp_conf={
+            'log_compression_type':
+            TopicSpec.COMPRESSION_PRODUCER,
             "constraints":
             [self.LOG_RETENTION_CONSTRAINT, self.LOG_CLEANUP_CONSTRAINT]
         },
                                                     *args,
                                                     **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_config_constraints_admin_api_success(self):
+        admin = Admin(self.redpanda)
+        target_broker = self.redpanda.nodes[0]
+
+        res = admin.get_cluster_config(node=target_broker)
+        assert 'constraints' in res
+        assert type(res['constraints']) == list
+        assert len(res['constraints']) == 2
+        constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        self.logger.debug(json.dumps(constraints, indent=2))
+        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
+        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
+
+        # Unset cleanup constraint and max for retention constraint
+        self.LOG_RETENTION_CONSTRAINT['max'] = None
+        self.LOG_CLEANUP_CONSTRAINT['enabled'] = False
+        patch_result = admin.patch_cluster_config(upsert={
+            'constraints':
+            [self.LOG_RETENTION_CONSTRAINT, self.LOG_CLEANUP_CONSTRAINT]
+        },
+                                                  node=target_broker)
+        wait_for_version_sync(admin, self.redpanda,
+                              patch_result['config_version'])
+
+        # The broker should report constraints but enabled=False for the cleanup policy
+        # and max is missing for retention ms
+        del self.LOG_RETENTION_CONSTRAINT['max']
+        res = admin.get_cluster_config(node=target_broker)
+        assert 'constraints' in res
+        assert type(res['constraints']) == list
+        assert len(res['constraints']) == 2
+        constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        self.logger.debug(json.dumps(constraints, indent=2))
+        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
+        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
+
+        # Add compression to the current constraints list
+        patch_result = admin.patch_cluster_config(upsert={
+            'constraints': [
+                self.LOG_RETENTION_CONSTRAINT, self.LOG_CLEANUP_CONSTRAINT,
+                self.LOG_COMPRESSION_CONSTRAINT
+            ]
+        },
+                                                  node=target_broker)
+        wait_for_version_sync(admin, self.redpanda,
+                              patch_result['config_version'])
+
+        res = admin.get_cluster_config(node=target_broker)
+        assert 'constraints' in res
+        assert type(res['constraints']) == list
+        assert len(res['constraints']) == 3
+        constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        self.logger.debug(json.dumps(constraints, indent=2))
+        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
+        assert constraints[1] == self.LOG_COMPRESSION_CONSTRAINT
+        assert constraints[2] == self.LOG_RETENTION_CONSTRAINT
+
+        # Could remove all constraints by setting to empty list
+        patch_result = admin.patch_cluster_config(upsert={'constraints': []},
+                                                  node=target_broker)
+        wait_for_version_sync(admin, self.redpanda,
+                              patch_result['config_version'])
+
+        # Expect empty constraints list from the broker
+        res = admin.get_cluster_config(node=target_broker)
+        assert 'constraints' in res
+        assert type(res['constraints']) == list
+        assert len(res['constraints']) == 0
+
+    @cluster(
+        num_nodes=3,
+        log_allow_list=[
+            r"Constraints failure\[value out\-of\-range\]: topic property topic-[a-zA-Z]+\.retention\.ms, value {\d+}",
+            r"Constraints failure\[does not match the cluster property log_compression_type\]: topic property topic-[a-zA-Z]+\.compression\.type, value {gzip}"
+        ])
+    def test_config_constraints_admin_api_failures(self):
+        admin = Admin(self.redpanda)
+        target_broker = self.redpanda.nodes[0]
+
+        # Setting a constraint for unsupport config, expect 400 HTTP status
+        try:
+            admin.patch_cluster_config(upsert={
+                'constraints': [{
+                    'name': 'enable_rack_awareness',
+                    'type': 'restrict',
+                    'enabled': True
+                }]
+            },
+                                       node=target_broker)
+        except requests.exceptions.HTTPError as ex:
+            if ex.response.status_code == requests.codes.bad_request:
+                res_json = ex.response.json()
+                assert res_json[
+                    'constraints'] == 'Constraints failure[not supported]: properties enable_rack_awareness '
+            else:
+                raise
+
+        # Setting min > max, expect 400 HTTP status
+        try:
+            admin.patch_cluster_config(upsert={
+                'constraints': [{
+                    'name': 'default_topic_replications',
+                    'type': 'restrict',
+                    'min': 9,
+                    'max': 3
+                }]
+            },
+                                       node=target_broker)
+        except requests.exceptions.HTTPError as ex:
+            if ex.response.status_code == requests.codes.bad_request:
+                res_json = ex.response.json()
+                assert res_json[
+                    'constraints'] == 'Constraints failure[min > max]: name default_topic_replications', 'Expected min > max'
+            else:
+                raise
+
+        class ConstraintType(Enum):
+            RESTRIKT = 0
+            CLAMP = 1
+
+        def check_invalid_topics(constraint_type: ConstraintType):
+            try:
+                if constraint_type == ConstraintType.RESTRIKT:
+                    retention_constraint = self.LOG_RETENTION_CONSTRAINT.copy()
+                    retention_constraint['min'] = self.RETENTION_MS_MAX
+                    admin.patch_cluster_config(
+                        upsert={'constraints': [retention_constraint]},
+                        node=target_broker)
+                elif constraint_type == ConstraintType.CLAMP:
+                    compression_constraint = self.LOG_COMPRESSION_CONSTRAINT.copy(
+                    )
+                    admin.patch_cluster_config(
+                        upsert={'constraints': [compression_constraint]},
+                        report_clamp_constraints=True,
+                        node=target_broker)
+                else:
+                    raise RuntimeError(
+                        f'Invalid constraint type {constraint_type}')
+            except requests.exceptions.HTTPError as ex:
+                if ex.response.status_code == requests.codes.bad_request:
+                    res_json = ex.response.json()
+                    m = re.match(
+                        r'Constraints failure\[invalid topics\]: topics topic\-[a-zA-Z]+ , property (log_retention_ms|log_compression_type)',
+                        res_json['constraints'])
+                    assert m is not None, 'Expected invalid topic'
+                else:
+                    raise
+
+        check_invalid_topics(ConstraintType.RESTRIKT)
+        check_invalid_topics(ConstraintType.CLAMP)
+
+        # Min or Max must be defined
+        try:
+            retention_constraint = self.LOG_RETENTION_CONSTRAINT.copy()
+            retention_constraint['min'] = None
+            retention_constraint['max'] = None
+            admin.patch_cluster_config(
+                upsert={'constraints': [retention_constraint]},
+                node=target_broker)
+        except requests.exceptions.HTTPError as ex:
+            if ex.response.status_code == requests.codes.bad_request:
+                res_json = ex.response.json()
+                assert res_json[
+                    'constraints'] == "expected type config::constraint_t, for example '[{'name': 'default_topic_replications','type': 'restrict','min': 3, 'max': 9}]'", 'Expected example text'
+            else:
+                raise
+
+        # Constraints should still be the pre-set ones from broker startup
+        res = admin.get_cluster_config(node=target_broker)
+        assert 'constraints' in res
+        assert type(res['constraints']) == list
+        assert len(res['constraints']) == 2
+        constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        self.logger.debug(json.dumps(constraints, indent=2))
+        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
+        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
 
     @cluster(num_nodes=3)
     def test_constraint_configs_persist(self):
