@@ -238,10 +238,13 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
             if (ntp == model::controller_ntp) {
                 continue;
             }
-            if (p->archiver().has_value()) {
-                ASSERT_EQ(p->ntp().tp.topic(), "remote_foo");
+            auto& tp = p->ntp().tp.topic();
+            if (tp == "remote_foo") {
+                RPTEST_REQUIRE_EVENTUALLY(
+                  5s, [&] { return p->archiver().has_value(); });
             } else {
-                ASSERT_EQ(p->ntp().tp.topic(), "foo");
+                ASSERT_EQ(tp, "foo");
+                ASSERT_FALSE(p->archiver().has_value());
             }
         }
     };
