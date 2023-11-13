@@ -12,6 +12,7 @@
 #pragma once
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -42,14 +43,17 @@ template<typename Func, typename DurationType = std::chrono::seconds, typename P
   && BackoffPolicy<Policy>
 // clang-format on
 ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
-  int max_retries, Func&& f, DurationType base_backoff = DurationType{1}) {
+  int max_retries,
+  Func&& f,
+  DurationType base_backoff = DurationType{1},
+  std::optional<std::reference_wrapper<ss::abort_source>> as = std::nullopt) {
     using ss::stop_iteration;
     using ret = ss::futurize<std::invoke_result_t<Func>>;
     return ss::do_with(
       0,
       Policy{},
       (typename ret::promise_type){},
-      [f = std::forward<Func>(f), max_retries, base_backoff](
+      [f = std::forward<Func>(f), max_retries, as, base_backoff](
         int& attempt,
         Policy& backoff_policy,
         typename ret::promise_type& promise) mutable {
@@ -58,7 +62,17 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              &backoff_policy,
                              &promise,
                              max_retries,
+                             as,
                              base_backoff]() mutable {
+                     if (as.has_value()) {
+                         try {
+                             as->get().check();
+                         } catch (const std::exception& e) {
+                             promise.set_exception(e);
+                             return ss::make_ready_future<stop_iteration>(
+                               stop_iteration::yes);
+                         }
+                     }
                      attempt++;
                      return f()
                        .then([&promise](auto&&... vals) {
@@ -72,6 +86,7 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                          [&attempt,
                           &backoff_policy,
                           max_retries,
+                          as,
                           &promise,
                           base_backoff](std::exception_ptr e) mutable {
                              if (attempt > max_retries) {
@@ -84,9 +99,16 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              // retry
 
                              auto next = backoff_policy.next_backoff();
-                             return ss::sleep(base_backoff * next).then([] {
-                                 return stop_iteration::no;
-                             });
+                             auto sleep_dur = base_backoff * next;
+                             auto f = (as.has_value())
+                                        ? ss::sleep_abortable(sleep_dur, *as)
+                                        : ss::sleep(sleep_dur * next);
+                             return f.then([] { return stop_iteration::no; })
+                               .handle_exception(
+                                 [&promise](std::exception_ptr e) {
+                                     promise.set_exception(e);
+                                     return stop_iteration::yes;
+                                 });
                          });
                  })
             .then([&promise] { return promise.get_future(); });

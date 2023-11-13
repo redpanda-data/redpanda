@@ -35,19 +35,22 @@ public:
       const configuration& config,
       topic_cache& topic_cache,
       brokers& brokers,
+      int16_t acks,
       error_handler&& error_handler)
       : _config{config}
       , _partitions{}
       , _error_handler(std::move(error_handler))
       , _topic_cache(topic_cache)
-      , _brokers(brokers) {}
+      , _brokers(brokers)
+      , _acks(acks) {}
 
     ss::future<produce_response::partition>
     produce(model::topic_partition tp, model::record_batch&& batch);
 
     ss::future<> stop() {
+        _as.request_abort();
         return ssx::parallel_transform(
-          std::move(_partitions),
+          _partitions,
           [](partitions_t::value_type p) { return p.second->stop(); });
     }
 
@@ -80,6 +83,8 @@ private:
     error_handler _error_handler;
     topic_cache& _topic_cache;
     brokers& _brokers;
+    int16_t _acks;
+    ss::abort_source _as;
 };
 
 } // namespace kafka::client

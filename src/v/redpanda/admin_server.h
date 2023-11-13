@@ -146,8 +146,6 @@ private:
             }
         }();
 
-        audit_authn(req, auth_state);
-
         try {
             if constexpr (required_auth == auth_level::superuser) {
                 auth_state.require_superuser();
@@ -162,10 +160,12 @@ private:
             }
 
         } catch (const ss::httpd::base_exception& ex) {
+            audit_authn(req, auth_state);
             audit_authz(req, auth_state, httpd_authorized::no, ex.what());
             throw;
         }
 
+        audit_authn(req, auth_state);
         audit_authz(req, auth_state, httpd_authorized::yes);
 
         return auth_state;

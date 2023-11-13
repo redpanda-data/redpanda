@@ -53,7 +53,7 @@ client::client(const YAML::Node& cfg, external_mitigate mitigater)
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
       return update_metadata(tag);
   }}
-  , _producer{_config, _topic_cache, _brokers, [this](std::exception_ptr ex) {
+  , _producer{_config, _topic_cache, _brokers, _config.produce_ack_level(), [this](std::exception_ptr ex) {
       return mitigate_error(std::move(ex));
   }}
   , _external_mitigate(std::move(mitigater)) {}
@@ -82,7 +82,8 @@ ss::future<> client::connect() {
           [this, &retries](std::exception_ptr ex) {
               ++retries;
               return _external_mitigate(ex);
-          });
+          },
+          _as);
     });
 }
 
@@ -99,8 +100,9 @@ ss::future<> catch_and_log(client const& c, Func&& f) noexcept {
 } // namespace
 
 ss::future<> client::stop() noexcept {
-    co_await _gate.close();
+    _as.request_abort();
     co_await catch_and_log(*this, [this]() { return _producer.stop(); });
+    co_await _gate.close();
     for (auto& [id, group] : _consumers) {
         while (!group.empty()) {
             auto c = *group.begin();

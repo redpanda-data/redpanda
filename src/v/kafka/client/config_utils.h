@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "config/fwd.h"
 #include "kafka/client/fwd.h"
+#include "model/compression.h"
 #include "seastarx.h"
 #include "security/acl.h"
 
@@ -38,5 +39,7 @@ void set_client_credentials(
 ss::future<> set_client_credentials(
   kafka::client::configuration const& client_cfg,
   ss::sharded<kafka::client::client>& client);
+
+model::compression compression_from_str(std::string_view v);
 
 } // namespace kafka::client

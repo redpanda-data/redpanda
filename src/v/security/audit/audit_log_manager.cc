@@ -14,6 +14,8 @@
 #include "cluster/ephemeral_credential_frontend.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"
+#include "kafka/protocol/produce.h"
+#include "kafka/protocol/schemata/produce_response.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "security/acl.h"
 #include "security/audit/client_probe.h"
@@ -50,17 +52,15 @@ std::ostream& operator<<(std::ostream& os, event_type t) {
     }
 }
 
-/// TODO: Create a new ephemeral user for the audit principal so even clients
-/// instantiated by pandaproxy cannot modify or produce to the audit topic
-static const security::acl_principal audit_principal{
-  security::principal_type::ephemeral_user, "__auditing"};
+class audit_sink;
 
 /// Contains a kafka client and a sempahore to bound the memory allocated
 /// by it. This class may be allocated/deallocated on the owning shard depending
 /// on the value of the global audit toggle config option (audit_enabled)
 class audit_client {
 public:
-    audit_client(cluster::controller*, kafka::client::configuration&);
+    audit_client(
+      audit_sink* sink, cluster::controller*, kafka::client::configuration&);
 
     /// Initializes the client (with all necessary auth) and connects to the
     /// remote broker. If successful requests to create audit topic and all
@@ -80,21 +80,25 @@ public:
     bool is_initialized() const { return _is_initialized; }
 
 private:
+    ss::future<> update_status(kafka::error_code);
+    ss::future<> update_status(kafka::produce_response);
     ss::future<> configure();
     ss::future<> mitigate_error(std::exception_ptr);
     ss::future<> create_internal_topic();
     ss::future<> set_auditing_permissions();
     ss::future<> inform(model::node_id id);
     ss::future<> do_inform(model::node_id id);
+    ss::future<> set_client_credentials();
 
 private:
-    bool _has_ephemeral_credentials{false};
+    kafka::error_code _last_errc{kafka::error_code::unknown_server_error};
     ss::abort_source _as;
     ss::gate _gate;
     bool _is_initialized{false};
     size_t _max_buffer_size;
     ssx::semaphore _send_sem;
     kafka::client::client _client;
+    audit_sink* _sink;
     cluster::controller* _controller;
     std::unique_ptr<client_probe> _probe;
 };
@@ -105,6 +109,8 @@ private:
 /// started/stopped on demand.
 class audit_sink {
 public:
+    using auth_misconfigured_t = ss::bool_class<struct auth_misconfigured_tag>;
+
     audit_sink(
       audit_log_manager* audit_mgr,
       cluster::controller* controller,
@@ -128,6 +134,8 @@ public:
     bool is_enabled() const { return _client != nullptr; }
 
 private:
+    ss::future<> update_auth_status(auth_misconfigured_t);
+
     ss::future<> do_toggle(bool enabled);
 
     /// Primitives for ensuring background work and toggling of switch w/ async
@@ -144,15 +152,20 @@ private:
     std::unique_ptr<audit_client> _client;
     cluster::controller* _controller;
     kafka::client::configuration& _config;
+
+    friend class audit_client;
 };
 
 audit_client::audit_client(
-  cluster::controller* controller, kafka::client::configuration& client_config)
+  audit_sink* sink,
+  cluster::controller* controller,
+  kafka::client::configuration& client_config)
   : _max_buffer_size(config::shard_local_cfg().audit_client_max_buffer_size())
   , _send_sem(_max_buffer_size, "audit_log_producer_semaphore")
   , _client(
       config::to_yaml(client_config, config::redact_secrets::no),
       [this](std::exception_ptr eptr) { return mitigate_error(eptr); })
+  , _sink(sink)
   , _controller(controller) {}
 
 ss::future<> audit_client::initialize() {
@@ -179,19 +192,23 @@ ss::future<> audit_client::initialize() {
     }
 }
 
+ss::future<> audit_client::set_client_credentials() {
+    /// Set ephemeral credential
+    auto& frontend = _controller->get_ephemeral_credential_frontend().local();
+    auto pw = co_await frontend.get(audit_principal);
+    if (pw.err != cluster::errc::success) {
+        throw std::runtime_error(fmt::format(
+          "Failed to fetch credential for principal: {}", audit_principal));
+    }
+
+    _client.config().sasl_mechanism.set_value(pw.credential.mechanism());
+    _client.config().scram_username.set_value(pw.credential.user()());
+    _client.config().scram_password.set_value(pw.credential.password()());
+}
+
 ss::future<> audit_client::configure() {
     try {
-        auto config = co_await kafka::client::create_client_credentials(
-          *_controller,
-          config::shard_local_cfg(),
-          _client.config(),
-          audit_principal);
-        set_client_credentials(*config, _client);
-
-        auto const& store
-          = _controller->get_ephemeral_credential_store().local();
-        _has_ephemeral_credentials = store.has(store.find(audit_principal));
-
+        co_await set_client_credentials();
         co_await set_auditing_permissions();
         co_await create_internal_topic();
 
@@ -227,13 +244,55 @@ ss::future<> audit_client::set_auditing_permissions() {
       model::kafka_audit_logging_topic,
       security::pattern_type::literal};
 
-    /// TODO: Add rules for User:* deny to things like deleting the topic
-    /// and other unwanted behavior. User:* should be allowed to ::describe
-    /// and alter topic configs
     co_await _controller->get_security_frontend().local().create_acls(
       {security::acl_binding{audit_topic_pattern, acl_create_entry},
        security::acl_binding{audit_topic_pattern, acl_write_entry}},
       5s);
+}
+
+/// `update_auth_status` should not be called frequently since this method
+/// occurs on the hot path and calls to `update_auth_status` call will boil down
+/// to an invoke_on_all() call. Conditionals are wrapped around the call to
+/// `update_auth_status` so that its only called when the errc changes to/from
+/// a desired condition.
+ss::future<> audit_client::update_status(kafka::error_code errc) {
+    /// If the status changed to erraneous from anything else
+    if (errc == kafka::error_code::illegal_sasl_state) {
+        if (_last_errc != kafka::error_code::illegal_sasl_state) {
+            co_await _sink->update_auth_status(
+              audit_sink::auth_misconfigured_t::yes);
+        }
+    } else if (_last_errc == kafka::error_code::illegal_sasl_state) {
+        /// The status changed from erraneous to anything else
+        if (errc != kafka::error_code::illegal_sasl_state) {
+            co_await _sink->update_auth_status(
+              audit_sink::auth_misconfigured_t::no);
+        }
+    }
+    _last_errc = errc;
+}
+
+ss::future<> audit_client::update_status(kafka::produce_response response) {
+    /// This method should almost always call update_status() with a value of
+    /// no error code. That is because kafka client mitigation will be called in
+    /// the case there is a produce error, and an erraneous response will only
+    /// be returned when the retry count is exhausted, which will never occur
+    /// since it is artificially set high to have the effect of always retrying
+    absl::flat_hash_set<kafka::error_code> errcs;
+    for (const auto& topic_response : response.data.responses) {
+        for (const auto& partition_response : topic_response.partitions) {
+            errcs.emplace(partition_response.error_code);
+        }
+    }
+    if (errcs.empty()) {
+        vlog(seclog.warn, "Empty produce response recieved");
+        co_return;
+    }
+    auto errc = *errcs.begin();
+    if (errcs.contains(kafka::error_code::illegal_sasl_state)) {
+        errc = kafka::error_code::illegal_sasl_state;
+    }
+    co_await update_status(errc);
 }
 
 ss::future<> audit_client::mitigate_error(std::exception_ptr eptr) {
@@ -246,10 +305,13 @@ ss::future<> audit_client::mitigate_error(std::exception_ptr eptr) {
     try {
         std::rethrow_exception(eptr);
     } catch (kafka::client::broker_error const& ex) {
-        if (
-          ex.error == kafka::error_code::sasl_authentication_failed
-          && _has_ephemeral_credentials) {
-            f = inform(ex.node_id).then([this]() { return _client.connect(); });
+        f = update_status(ex.error);
+        if (ex.error == kafka::error_code::sasl_authentication_failed) {
+            f = f.then([this, ex]() {
+                return inform(ex.node_id).then([this]() {
+                    return _client.connect();
+                });
+            });
         } else {
             throw;
         }
@@ -334,6 +396,7 @@ ss::future<> audit_client::shutdown() {
     co_await _client.stop();
     co_await _gate.close();
     _probe.reset(nullptr);
+    vlog(adtlog.info, "Audit client stopped");
 }
 
 ss::future<> audit_client::produce(
@@ -364,28 +427,40 @@ ss::future<> audit_client::produce(
            &probe,
            units = std::move(units),
            records = std::move(records)]() mutable {
+              const auto n_records = records.size();
               return _client
                 .produce_records(
                   model::kafka_audit_logging_topic, std::move(records))
-                .discard_result()
-                .then_wrapped([&probe](ss::future<> fut) {
-                    if (fut.failed()) {
+                .then([this, n_records, &probe](kafka::produce_response r) {
+                    bool errored = std::any_of(
+                      r.data.responses.cbegin(),
+                      r.data.responses.cend(),
+                      [](const kafka::topic_produce_response& tp) {
+                          return std::any_of(
+                            tp.partitions.cbegin(),
+                            tp.partitions.cend(),
+                            [](const kafka::partition_produce_response& p) {
+                                return p.error_code != kafka::error_code::none;
+                            });
+                      });
+                    if (errored) {
+                        if (_as.abort_requested()) {
+                            vlog(
+                              adtlog.warn,
+                              "{} audit records dropped, shutting down",
+                              n_records);
+                        } else {
+                            vlog(
+                              adtlog.error,
+                              "{} audit records dropped",
+                              n_records);
+                        }
                         probe.audit_error();
                     } else {
                         probe.audit_event();
                     }
-                    return fut;
+                    return update_status(std::move(r));
                 })
-                .handle_exception_type(
-                  [](const kafka::client::partition_error& ex) {
-                      /// TODO: Possible optimization to retry with different
-                      /// partition strategy.
-                      ///
-                      /// If reached here non-mitigatable error occured, or
-                      /// attempts on mitigation had been used up.
-                      vlog(
-                        adtlog.error, "Audit records dropped, reason: {}", ex);
-                  })
                 .finally([units = std::move(units)] {});
           });
     } catch (const ss::broken_semaphore&) {
@@ -420,6 +495,14 @@ ss::future<> audit_sink::stop() {
 }
 
 ss::future<>
+audit_sink::update_auth_status(auth_misconfigured_t auth_misconfigured) {
+    return _audit_mgr->container().invoke_on_all(
+      [auth_misconfigured](audit_log_manager& mgr) {
+          mgr._auth_misconfigured = (bool)auth_misconfigured;
+      });
+}
+
+ss::future<>
 audit_sink::produce(std::vector<kafka::client::record_essence> records) {
     /// No locks/gates since the calls to this method are done in controlled
     /// context of other synchronization primitives
@@ -437,7 +520,8 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
         ssx::semaphore_units lock;
         if (enabled && !_client) {
             lock = co_await _mutex.get_units();
-            _client = std::make_unique<audit_client>(_controller, _config);
+            _client = std::make_unique<audit_client>(
+              this, _controller, _config);
             co_await _client->initialize();
             if (_client->is_initialized()) {
                 /// Only if shutdown succeeded before initializtion could
@@ -662,6 +746,50 @@ ss::future<> audit_log_manager::drain() {
       [recs = std::move(essences)](audit_log_manager& mgr) mutable {
           return mgr._sink->produce(std::move(recs));
       });
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event() const {
+    if (!_audit_enabled()) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    if (_as.abort_requested()) {
+        /// Prevent auditing new messages when shutdown starts that way the
+        /// queue may be entirely flushed before shutdown
+        return std::make_optional(audit_event_passthrough::no);
+    }
+    if (_auth_misconfigured) {
+        /// Audit logging depends on having auth enabled, if it is not
+        /// then messages are rejected for increased observability into why
+        /// things are not working.
+        vlog(
+          adtlog.warn,
+          "Audit message rejected due to misconfigured authorization");
+        return std::make_optional(audit_event_passthrough::no);
+    }
+    return std::nullopt;
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(kafka::api_key api) const {
+    if (auto val = should_enqueue_audit_event(); val.has_value()) {
+        return val;
+    }
+    if (!is_audit_event_enabled(kafka_api_to_event_type(api))) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    return std::nullopt;
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(event_type type) const {
+    if (auto val = should_enqueue_audit_event(); val.has_value()) {
+        return val;
+    }
+    if (!is_audit_event_enabled(type)) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    return std::nullopt;
 }
 
 } // namespace security::audit

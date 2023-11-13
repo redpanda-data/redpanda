@@ -24,8 +24,8 @@
 
 namespace kafka::client {
 
-produce_request
-make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
+produce_request make_produce_request(
+  model::topic_partition tp, model::record_batch&& batch, int16_t acks) {
     std::vector<produce_request::partition> partitions;
     partitions.emplace_back(produce_request::partition{
       .partition_index{tp.partition},
@@ -35,7 +35,6 @@ make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
     topics.emplace_back(produce_request::topic{
       .name{std::move(tp.topic)}, .partitions{std::move(partitions)}});
     std::optional<ss::sstring> t_id;
-    int16_t acks = -1;
     return produce_request(t_id, acks, std::move(topics));
 }
 
@@ -56,6 +55,10 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
         response.error_code = error_code::operation_not_attempted;
+    } catch (const ss::abort_requested_exception&) {
+        /// Could only occur when abort_source is triggered via stop()
+        vlog(kclog.debug, "sleep_aborted / abort_requested exception");
+        response.error_code = error_code::operation_not_attempted;
     } catch (const std::exception& ex) {
         vlog(kclog.warn, "std::exception {}", ex.what());
         response.error_code = error_code::unknown_server_error;
@@ -65,6 +68,12 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
 
 ss::future<produce_response::partition>
 producer::produce(model::topic_partition tp, model::record_batch&& batch) {
+    if (_as.abort_requested()) {
+        return ss::make_ready_future<produce_response::partition>(
+          make_produce_response(
+            tp.partition,
+            std::make_exception_ptr(ss::abort_requested_exception())));
+    }
     return get_context(std::move(tp))->produce(std::move(batch));
 }
 
@@ -73,7 +82,7 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
     auto leader = co_await _topic_cache.leader(tp);
     auto broker = co_await _brokers.find(leader);
     auto res = co_await broker->dispatch(
-      make_produce_request(std::move(tp), std::move(batch)));
+      make_produce_request(std::move(tp), std::move(batch), _acks));
     auto topic = std::move(res.data.responses[0]);
     auto partition = std::move(topic.partitions[0]);
     if (partition.error_code != error_code::none) {
@@ -110,7 +119,8 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
                                kclog.trace, "Error during mitigation: {}", ex);
                              // ignore failed mitigation
                          });
-                   });
+                   },
+                   _as);
              })
       .handle_exception([p_id](std::exception_ptr ex) {
           return make_produce_response(p_id, std::move(ex));

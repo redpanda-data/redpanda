@@ -93,7 +93,8 @@ public:
           _config.retries(),
           _config.retry_base_backoff(),
           std::move(func),
-          [this](std::exception_ptr ex) { return mitigate_error(ex); });
+          [this](std::exception_ptr ex) { return mitigate_error(ex); },
+          _as);
     }
 
     /// \brief Dispatch a request to any broker.
@@ -226,6 +227,7 @@ private:
 
     ss::noncopyable_function<ss::future<>(std::exception_ptr)>
       _external_mitigate;
+    ss::abort_source _as;
 };
 
 } // namespace kafka::client

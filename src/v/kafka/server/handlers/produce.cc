@@ -501,13 +501,15 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
     for (auto& part : topic.partitions) {
         const auto& kafka_noproduce_topics
           = config::shard_local_cfg().kafka_noproduce_topics();
-        const auto is_noproduce_topic = std::find(
+        const bool is_noproduce_topic = std::find(
                                           kafka_noproduce_topics.begin(),
                                           kafka_noproduce_topics.end(),
                                           topic.name)
                                         != kafka_noproduce_topics.end();
-
-        if (is_noproduce_topic) {
+        const bool audit_produce_restricted
+          = !octx.rctx.authorized_auditor()
+            && topic.name == model::kafka_audit_logging_topic();
+        if (is_noproduce_topic || audit_produce_restricted) {
             partitions_dispatched.push_back(ss::now());
             partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(

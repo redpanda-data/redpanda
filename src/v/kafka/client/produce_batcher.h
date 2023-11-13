@@ -50,7 +50,11 @@ class produce_batcher {
 public:
     using partition_response = produce_response::partition;
     explicit produce_batcher()
-      : _builder{make_builder()}
+      : produce_batcher(model::compression::none) {}
+
+    explicit produce_batcher(model::compression c)
+      : _c(c)
+      , _builder{make_builder()}
       , _client_reqs{}
       , _broker_reqs{} {}
 
@@ -113,9 +117,13 @@ public:
 
 private:
     storage::record_batch_builder make_builder() {
-        return {model::record_batch_type::raft_data, model::offset(0)};
+        auto builder = storage::record_batch_builder(
+          model::record_batch_type::raft_data, model::offset(0));
+        builder.set_compression(_c);
+        return builder;
     }
 
+    model::compression _c;
     storage::record_batch_builder _builder;
     // TODO(Ben): Maybe these should be a queue for backpressure
     ss::circular_buffer<client_context> _client_reqs;

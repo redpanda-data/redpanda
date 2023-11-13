@@ -484,8 +484,11 @@ class Admin:
     def put_feature(self, feature_name, body):
         return self._request("PUT", f"features/{feature_name}", json=body)
 
-    def get_license(self, node=None):
-        return self._request("GET", "features/license", node=node).json()
+    def get_license(self, node=None, timeout=None):
+        return self._request("GET",
+                             "features/license",
+                             node=node,
+                             timeout=timeout).json()
 
     def put_license(self, license):
         return self._request("PUT", "features/license", data=license)

@@ -50,7 +50,7 @@ ss::future<size_t> pending_audit_events(sa::audit_log_manager& m) {
 
 FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
     /// Initialize auditing configurations
-    ss::smp::invoke_on_all([] {
+    ss::smp::invoke_on_all([this] {
         std::vector<ss::sstring> enabled_types{"management", "consume"};
         config::shard_local_cfg().get("audit_enabled").set_value(false);
         config::shard_local_cfg()
@@ -65,6 +65,12 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
         config::shard_local_cfg()
           .get("audit_enabled_event_types")
           .set_value(enabled_types);
+        auto& node_config = config::node();
+        node_config.get("kafka_api")
+          .set_value(std::vector<config::broker_authn_endpoint>{
+            config::broker_authn_endpoint{
+              .address = net::unresolved_address("127.0.0.1", kafka_port),
+              .authn_method = config::broker_authn_method::sasl}});
     }).get();
 
     ss::global_logger_registry().set_logger_level(
@@ -100,32 +106,27 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
 
     /// Verify auditing can enqueue up until the max configured, and further
     /// calls to enqueue return false, signifying action did not occur.
-    bool success = audit_mgr
-                     .map_reduce0(
-                       [](sa::audit_log_manager& m) {
-                           bool success = true;
-                           for (auto i = 0; i < 20; ++i) {
-                               /// Should always return true, auditing is
-                               /// disabled
-                               bool enqueued = m.enqueue_audit_event(
-                                 sa::event_type::management,
-                                 make_random_audit_event());
-                               // There is already a message in there from
-                               // the topic creation from the audit log manager
-                               if (i >= 4) {
-                                   /// Assert that when the max is reached data
-                                   /// cannot be entered into the system
-                                   enqueued = !enqueued;
-                               }
-                               success = success && enqueued;
-                           }
-                           return success;
-                       },
-                       true,
-                       std::logical_and<>())
-                     .get0();
+    const auto rs = audit_mgr
+                      .map([](sa::audit_log_manager& m) {
+                          uint32_t n_enqueued = 0;
+                          for (auto i = 0; i < 20; ++i) {
+                              bool enqueued = m.enqueue_audit_event(
+                                sa::event_type::management,
+                                make_random_audit_event());
+                              if (enqueued) {
+                                  n_enqueued += 1;
+                              }
+                          }
+                          return n_enqueued;
+                      })
+                      .get();
 
-    BOOST_CHECK(success);
+    const auto equal_to = [](auto a) {
+        return [a](auto b) { return std::equal_to<>()(a, b); };
+    };
+    BOOST_CHECK_EQUAL(1, std::count_if(rs.cbegin(), rs.cend(), equal_to(4)));
+    BOOST_CHECK_EQUAL(
+      ss::smp::count - 1, std::count_if(rs.cbegin(), rs.cend(), equal_to(5)));
     BOOST_CHECK_EQUAL(
       pending_audit_events(audit_mgr.local()).get0(),
       size_t(5 * ss::smp::count));

@@ -27,7 +27,7 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST, get_cloud_storage_type, RedpandaService
+from rptest.services.redpanda import CloudStorageType, SISettings, AUDIT_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST, get_cloud_storage_type, RedpandaService
 from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersionLine
 from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
@@ -531,7 +531,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # Should not succeed!
                 assert False
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=AUDIT_LOG_ALLOW_LIST)
     def test_valid_settings(self):
         """
         Bulk exercise of all config settings & the schema endpoint:

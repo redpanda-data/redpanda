@@ -18,6 +18,7 @@
 #include "kafka/client/configuration.h"
 #include "seastarx.h"
 #include "security/acl.h"
+#include "utils/string_switch.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/coroutine/exception.hh>
@@ -82,6 +83,16 @@ ss::future<> set_client_credentials(
         client.config().scram_username.set_value(client_cfg.scram_username());
         client.config().scram_password.set_value(client_cfg.scram_password());
     });
+}
+
+model::compression compression_from_str(std::string_view v) {
+    return string_switch<model::compression>(v)
+      .match("none", model::compression::none)
+      .match("gzip", model::compression::gzip)
+      .match("snappy", model::compression::snappy)
+      .match("lz4", model::compression::lz4)
+      .match("zstd", model::compression::zstd)
+      .default_match(model::compression::none);
 }
 
 } // namespace kafka::client

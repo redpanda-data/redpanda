@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/client/config_utils.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/produce_batcher.h"
@@ -32,7 +33,7 @@ public:
 
     produce_partition(const configuration& config, consumer&& c)
       : _config{config}
-      , _batcher{}
+      , _batcher{compression_from_str(config.produce_compression_type())}
       , _timer{[this]() { try_consume(true); }}
       , _consumer{std::move(c)} {}
 

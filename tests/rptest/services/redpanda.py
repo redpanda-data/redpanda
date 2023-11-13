@@ -163,6 +163,12 @@ PREV_VERSION_LOG_ALLOW_LIST = [
     "abs - .*FeatureNotYetSupportedForHierarchicalNamespaceAccounts"
 ]
 
+AUDIT_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
+    re.compile(".*Failed to audit authentication.*"),
+    re.compile(".*Failed to append authz event to audit log.*"),
+    re.compile(".*Failed to append authentication event to audit log.*")
+]
+
 # Path to the LSAN suppressions file
 LSAN_SUPPRESSIONS_FILE = "/opt/lsan_suppressions.txt"
 

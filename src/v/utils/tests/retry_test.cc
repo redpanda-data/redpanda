@@ -47,3 +47,31 @@ SEASTAR_THREAD_TEST_CASE(retry_then_fail) {
         .get0(),
       std::logic_error);
 };
+
+SEASTAR_THREAD_TEST_CASE(retry_then_fail_when_cancelled) {
+    ss::abort_source as;
+    auto retry_count = retry_with_backoff(
+      5, retry_counter(10), std::chrono::milliseconds(1), as);
+    auto cancel = ss::sleep(std::chrono::milliseconds(5)).then([&as] {
+        as.request_abort();
+    });
+
+    /// When the retry_with_backoff() method is exited early due to the abort
+    /// source request, it will return with an exceptional future
+    auto cancelled = ss::when_all_succeed(
+                       std::move(retry_count), std::move(cancel))
+                       .then([](auto) { return false; })
+                       .handle_exception([](std::exception_ptr eptr) {
+                           try {
+                               std::rethrow_exception(eptr);
+                           } catch (const ss::abort_requested_exception&) {
+                               return true;
+                           } catch (const ss::sleep_aborted&) {
+                               return true;
+                           } catch (...) {
+                               return false;
+                           }
+                       })
+                       .get();
+    BOOST_REQUIRE(cancelled);
+};

@@ -9,26 +9,29 @@
 
 import confluent_kafka as ck
 from functools import partial, reduce
+import time
+import threading
 import json
 import re
 import socket
 import requests
 from typing import Any, Optional
 
+from rptest.utils.rpk_config import read_redpanda_cfg
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import ok_to_fail
 from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
-from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
+from rptest.services.redpanda import AUDIT_LOG_ALLOW_LIST, LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
@@ -238,6 +241,20 @@ class AuditLogTestSecurityConfig(SecurityConfig):
             self.endpoint_authn_method = 'mtls_identity'
             self.require_client_auth = True
 
+    @staticmethod
+    def default_credentials():
+        username = 'username'
+        password = 'password'
+        algorithm = 'SCRAM-SHA-256'
+        return AuditLogTestSecurityConfig(user_creds=(username, password,
+                                                      algorithm))
+
+    def check_configuration(self):
+        """Used by test harness to ensure auth is sufficent for audit logging
+        """
+        return self._user_creds is not None or (self._user_cert is not None and
+                                                self._admin_cert is not None)
+
     @property
     def admin_cert(self) -> Optional[tls.Certificate]:
         return self._admin_cert
@@ -251,7 +268,7 @@ class AuditLogTestSecurityConfig(SecurityConfig):
         return self._user_cert
 
 
-class AuditLogTestsBase(RedpandaTest):
+class AuditLogTestBase(RedpandaTest):
     """Base test object for testing the audit logs"""
     audit_log = "__audit_log"
     kafka_rpc_service_name = "kafka rpc protocol"
@@ -263,11 +280,13 @@ class AuditLogTestsBase(RedpandaTest):
             audit_log_config: AuditLogConfig = AuditLogConfig(),
             log_config: LoggingConfig = LoggingConfig(
                 'info', logger_levels={'auditing': 'trace'}),
-            security: AuditLogTestSecurityConfig = AuditLogTestSecurityConfig(
-            ),
+            security: AuditLogTestSecurityConfig = AuditLogTestSecurityConfig.
+        default_credentials(),
             audit_log_client_config: Optional[redpanda.AuditLogConfig] = None,
             extra_rp_conf=None,
             **kwargs):
+        assert (security.check_configuration()
+                ), "No auth enabled, test harness misconfigured"
         self.audit_log_config = audit_log_config
 
         self.extra_rp_conf = self.audit_log_config.to_conf()
@@ -282,7 +301,7 @@ class AuditLogTestsBase(RedpandaTest):
                 self.security.principal_mapping_rules
             ]
 
-        super(AuditLogTestsBase,
+        super(AuditLogTestBase,
               self).__init__(test_context=test_context,
                              extra_rp_conf=self.extra_rp_conf,
                              log_config=self.log_config,
@@ -337,6 +356,10 @@ class AuditLogTestsBase(RedpandaTest):
         """Initializes the Redpanda node and waits for audit log to be present
         """
         super().setUp()
+        if self.security.sasl_enabled():
+            self.super_rpk.sasl_create_user(self.security.user_creds[0],
+                                            self.security.user_creds[1],
+                                            self.security.user_creds[2])
         self.ocsf_server.start()
         self.logger.debug(
             f'Running OCSF Server Version {self.ocsf_server.get_api_version(None)}'
@@ -366,6 +389,21 @@ class AuditLogTestsBase(RedpandaTest):
         """
         self._modify_cluster_config({'audit_enabled_event_types': events})
 
+    def modify_node_config(self, node, update_fn, skip_readiness_check=True):
+        """Modifies the current node configuration, restarts the node for
+        changes to take effect
+        """
+        node_cfg = read_redpanda_cfg(node)
+        self.redpanda.logger.debug(f"Existing node cfg: {node_cfg}")
+        new_node_cfg = update_fn(node_cfg)
+
+        # Restart the node with the modified cfg, maybe skip readiness check as access
+        # to the health monitor will be blocked since error within auditing is detected
+        self.redpanda.stop_node(node, timeout=10, forced=True)
+        self.redpanda.start_node(node,
+                                 override_cfg_params=new_node_cfg,
+                                 skip_readiness_check=skip_readiness_check)
+
     @staticmethod
     def aggregate_count(records):
         """Aggregate count of records by checking for 'count' field
@@ -388,8 +426,9 @@ class AuditLogTestsBase(RedpandaTest):
                                  service_name, record):
         for items in expected:
             for expected_api_op, resource_entry in items.items():
-                if AuditLogTestsBase.api_resource_match(
-                        expected_api_op, resource_entry, service_name, record):
+                if AuditLogTestBase.api_resource_match(expected_api_op,
+                                                       resource_entry,
+                                                       service_name, record):
                     return True
 
         return False
@@ -432,11 +471,31 @@ class AuditLogTestsBase(RedpandaTest):
                            tls_cert=tls_cert,
                            tls_enabled=self.security.mtls_identity_enabled())
 
+    def get_ck_producer(self) -> ck.Producer:
+        config_opts = {
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '1'
+        }
+
+        if self.security.sasl_enabled():
+            (username, password,
+             mechanism) = self.redpanda.SUPERUSER_CREDENTIALS
+            config_opts['sasl.username'] = username
+            config_opts['sasl.password'] = password
+            config_opts['sasl.mechanism'] = mechanism
+            config_opts['security.protocol'] = 'SASL_PLAINTEXT'
+        elif self.security.mtls_identity_enabled():
+            config_opts['ssl.key.location'] = self.security.admin_cert.key
+            config_opts[
+                'ssl.certificate.location'] = self.security.admin_cert.crt
+            config_opts['ssl.ca.location'] = self.security.admin_cert.ca.crt
+
+        return ck.Producer(config_opts)
+
     def read_all_from_audit_log(self,
                                 filter_fn,
                                 stop_cond,
-                                start_offset: str = 'oldest',
-                                timeout_sec: int = 30,
+                                timeout_sec: int = 60,
                                 backoff_sec: int = 1):
         """Reads all messages from the audit log
         
@@ -450,18 +509,12 @@ class AuditLogTestsBase(RedpandaTest):
             The function to use to check to stop.  Last argument must accept
             a list of records
         
-        start_offset: str, default='oldest'
-            Starting offset for the consumer
-            
         timeout_sec: int, default=30,
             How long to wait
             
         backoff_sec: int, default=1
             Backoff
             
-        consumer: Optional[RpkTool], default=None
-            The consumer to use, or None if to use a new one
-        
         Returns
         -------
         [str]
@@ -479,38 +532,37 @@ class AuditLogTestsBase(RedpandaTest):
             def ingest(self, records):
                 new_records = records[self.next_offset_ingest:]
                 self.next_offset_ingest = len(records)
-                new_records = [json.loads(msg['value']) for msg in new_records]
+                new_records = [json.loads(msg['value']) for msg in records]
+                self.logger.info(f"Ingested: {len(new_records)} records")
                 self.logger.debug(f'Ingested records:')
                 for rec in new_records:
                     self.logger.debug(f'{rec}')
-                self.logger.info(f"Ingested: {len(new_records)} records")
-                [
-                    self.ocsf_server.validate_schema(record)
-                    for record in new_records
-                ]
-                for r in new_records:
-                    if self.filter_fn(r):
-                        self.logger.info(f'Selected {r}')
+                    self.ocsf_server.validate_schema(rec)
+                    if self.filter_fn(rec):
+                        self.logger.debug(f'Selected {rec}')
+                        self.records.append(rec)
                     else:
-                        self.logger.info(f'DID NOT SELECT {r}')
-                self.records += [r for r in new_records if self.filter_fn(r)]
+                        self.logger.debug(f'DID NOT SELECT {rec}')
 
             def is_finished(self):
                 return stop_cond(self.records)
 
         mapper = MessageMapper(self.redpanda.logger, filter_fn, stop_cond,
                                self.ocsf_server)
-        consumer = self.get_rpk_consumer(topic=self.audit_log,
-                                         offset=start_offset)
+        consumer = self.get_rpk_consumer(topic=self.audit_log, offset='oldest')
         consumer.start()
 
         def predicate():
             mapper.ingest(consumer.messages)
             return mapper.is_finished()
 
-        wait_until(predicate, timeout_sec=timeout_sec, backoff_sec=backoff_sec)
-        consumer.stop()
-        consumer.free()
+        try:
+            wait_until(predicate,
+                       timeout_sec=timeout_sec,
+                       backoff_sec=backoff_sec)
+        finally:
+            consumer.stop()
+            consumer.free()
         return mapper.records
 
     def find_matching_record(self, filter_fn, valid_check_fn, desc):
@@ -544,11 +596,11 @@ class AuditLogTestsBase(RedpandaTest):
         return records
 
 
-class AuditLogTestsAdminApi(AuditLogTestsBase):
+class AuditLogTestAdminApi(AuditLogTestBase):
     """Validates that audit logs are generated from admin API
     """
     def __init__(self, test_context):
-        super(AuditLogTestsAdminApi,
+        super(AuditLogTestAdminApi,
               self).__init__(test_context=test_context,
                              log_config=LoggingConfig('info',
                                                       logger_levels={
@@ -572,8 +624,8 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
                 regex = re.compile(
                     "http:\/\/(?P<address>.*):(?P<port>\d+)\/v1\/(?P<handler>.*)"
                 )
-                match = regex.match(
-                        record['http_request']['url']['url_string'])
+                string = record['http_request']['url']['url_string']
+                match = regex.match(string)
                 if match is None:
                     raise RuntimeError(f'Record out of spec: {record}')
                 return match.group('handler') in matches
@@ -670,12 +722,12 @@ class AuditLogTestsAdminApi(AuditLogTestsBase):
                               patch_result['config_version'])
 
 
-class AuditLogTestsKafkaApi(AuditLogTestsBase):
+class AuditLogTestKafkaApi(AuditLogTestBase):
     """Validates that the Kafka API generates audit messages
     """
     def __init__(self, test_context):
 
-        super(AuditLogTestsKafkaApi,
+        super(AuditLogTestKafkaApi,
               self).__init__(test_context=test_context,
                              audit_log_config=AuditLogConfig(num_partitions=1,
                                                              event_types=[]),
@@ -685,8 +737,23 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
                                                           'kafka': 'trace'
                                                       }))
 
-        self.kcl = KCL(self.redpanda)
+        (username, password, mechanism) = self.redpanda.SUPERUSER_CREDENTIALS
+        self.kcl = KCL(self.redpanda,
+                       username=username,
+                       password=password,
+                       sasl_mechanism=mechanism)
         self.default_client = DefaultClient(self.redpanda)
+
+    @cluster(num_nodes=4)
+    def test_audit_topic_protections(self):
+        """Validates audit topic protections
+        """
+        try:
+            self.super_rpk.produce(self.audit_log, "key", "value")
+            assert False, 'Rpk was successfully allowed to produce to the audit log'
+        except RpkException as e:
+            if 'TOPIC_AUTHORIZATION_FAILED' not in e.stderr:
+                raise
 
     @cluster(num_nodes=5)
     def test_management(self):
@@ -700,55 +767,60 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
 
             kcl.alter_partition_reassignments(topics=topics)
 
-        def alter_config(client, values: dict[str, Any], incremental: bool):
-            client.alter_broker_config(values, incremental)
+        def alter_config_with_kcl(kcl: KCL, values: dict[str, Any],
+                                  incremental: bool):
+            kcl.alter_broker_config(values, incremental)
 
         tests = [
             AbsoluteTestItem(
                 f'Create Topic {topic_name}',
-                lambda: self.rpk.create_topic(topic=topic_name),
+                lambda: self.super_rpk.create_topic(topic=topic_name),
                 partial(self.api_resource_match, "create_topics", {
                     "name": f"{topic_name}",
                     "type": "topic"
                 }, self.kafka_rpc_service_name), 1),
             AbsoluteTestItem(
-                f'Add partitions to {topic_name}', lambda: self.rpk.
-                add_partitions(topic=topic_name, partitions=3),
+                f'Add partitions to {topic_name}',
+                lambda: self.super_rpk.add_partitions(topic=topic_name,
+                                                      partitions=3),
                 partial(self.api_resource_match, "create_partitions", {
                     "name": f"{topic_name}",
                     "type": "topic"
                 }, self.kafka_rpc_service_name), 1),
-            AbsoluteTestItem(
+            RangeTestItem(
                 f'Attempt group offset delete',
                 lambda: self.execute_command_ignore_error(
-                    partial(self.rpk.offset_delete, "fake", {topic_name: [0]})
-                ),
+                    partial(self.super_rpk.offset_delete, "fake",
+                            {topic_name: [0]})),
                 partial(self.api_resource_match, "offset_delete", {
                     "name": "fake",
                     "type": "group"
-                }, self.kafka_rpc_service_name),
+                }, self.kafka_rpc_service_name), 1,
                 5),  # expect five because rpk will retry
             RangeTestItem(
                 f'Attempting delete records for {topic_name}',
                 lambda: self.execute_command_ignore_error(
-                    partial(self.rpk.trim_prefix, topic_name, 0)),
+                    partial(self.super_rpk.trim_prefix, topic_name, 0)),
                 partial(self.api_resource_match, "delete_records", {
                     "name": f"{topic_name}",
                     "type": "topic"
                 }, self.kafka_rpc_service_name), 1, 3),
             AbsoluteTestItem(
                 f'Delete Topic {topic_name}',
-                lambda: self.rpk.delete_topic(topic=topic_name),
+                lambda: self.super_rpk.delete_topic(topic=topic_name),
                 partial(self.api_resource_match, "delete_topics", {
                     "name": f"{topic_name}",
                     "type": "topic"
                 }, self.kafka_rpc_service_name), 1),
             AbsoluteTestItem(
-                f'Create ACL',
-                lambda: self.rpk.allow_principal(principal="test",
-                                                 operations=["all"],
-                                                 resource="topic",
-                                                 resource_name="test"),
+                f'Create ACL', lambda: self.super_rpk.sasl_allow_principal(
+                    principal="test",
+                    operations=["all"],
+                    resource="topic",
+                    resource_name="test",
+                    username=self.redpanda.SUPERUSER_CREDENTIALS[0],
+                    password=self.redpanda.SUPERUSER_CREDENTIALS[1],
+                    mechanism=self.redpanda.SUPERUSER_CREDENTIALS[2]),
                 partial(
                     self.api_resource_match, "create_acls", {
                         "name": "create acl",
@@ -765,10 +837,10 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
                     }, self.kafka_rpc_service_name), 1),
             AbsoluteTestItem(
                 f'Delete ACL',
-                lambda: self.rpk.delete_principal(principal="test",
-                                                  operations=["all"],
-                                                  resource="topic",
-                                                  resource_name="test"),
+                lambda: self.super_rpk.delete_principal(principal="test",
+                                                        operations=["all"],
+                                                        resource="topic",
+                                                        resource_name="test"),
                 partial(
                     self.api_resource_match, "delete_acls", {
                         "name": "delete acl",
@@ -784,7 +856,7 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
             AbsoluteTestItem(
                 f'Delete group test',
                 lambda: self.execute_command_ignore_error(
-                    partial(self.rpk.group_delete, "test")),
+                    partial(self.super_rpk.group_delete, "test")),
                 partial(self.api_resource_match, "delete_groups", {
                     "name": "test",
                     "type": "group"
@@ -804,7 +876,7 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
             AbsoluteTestItem(
                 f'Alter Config (not-incremental)',
                 lambda: self.execute_command_ignore_error(
-                    partial(alter_config, self.default_client, {
+                    partial(alter_config_with_kcl, self.kcl, {
                         "log_message_timestamp_type": "CreateTime"
                     }, False)),
                 partial(self.api_match, "alter_configs",
@@ -812,13 +884,13 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
             AbsoluteTestItem(
                 f'Incremental Alter Config',
                 lambda: self.execute_command_ignore_error(
-                    partial(alter_config, self.default_client, {
+                    partial(alter_config_with_kcl, self.kcl, {
                         "log_message_timestamp_type": "CreateTime"
                     }, True)),
                 partial(self.api_match, "incremental_alter_configs",
                         self.kafka_rpc_service_name), 1),
             AbsoluteTestItem(
-                f'List ACLs (no item)', lambda: self.rpk.acl_list(),
+                f'List ACLs (no item)', lambda: self.super_rpk.acl_list(),
                 partial(self.api_match, "list_acls",
                         self.kafka_rpc_service_name), 0)
         ]
@@ -841,14 +913,11 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
         topic_name = 'test_produce_audit'
         tx_topic_name = 'test_produce_tx_audit'
 
-        self.rpk.create_topic(topic=topic_name, partitions=3)
-        self.rpk.create_topic(topic=tx_topic_name, partitions=3)
+        self.super_rpk.create_topic(topic=topic_name, partitions=3)
+        self.super_rpk.create_topic(topic=tx_topic_name, partitions=3)
 
         def transaction_generate():
-            producer = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': '1'
-            })
+            producer = self.get_ck_producer()
             producer.init_transactions()
             producer.begin_transaction()
             producer.produce(tx_topic_name, '0', '0', 1)
@@ -857,7 +926,7 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
 
         tests = [
             AbsoluteTestItem(
-                f'Produce one message to {topic_name}', lambda: self.rpk.
+                f'Produce one message to {topic_name}', lambda: self.super_rpk.
                 produce(topic_name, key='Test key', msg='Test msg'),
                 partial(self.api_resource_match, "produce", {
                     "name": f'{topic_name}',
@@ -888,8 +957,72 @@ class AuditLogTestsKafkaApi(AuditLogTestsBase):
             _ = self.find_matching_record(test.filter_function,
                                           test.valid_count, test.desc())
 
+    @cluster(num_nodes=4, log_allow_list=AUDIT_LOG_ALLOW_LIST)
+    def test_no_auth_enabled(self):
+        """The expected behavior of the system when working with no auth
+        enabled is to omit warning logs and prevent any messages from being
+        enqueued, thus blocking all requests for which auditing is enabled for
+        """
+        stop_thread = False
 
-class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
+        def generate_async_audit_events():
+            while stop_thread is not True:
+                try:
+                    _ = [
+                        self.admin.get_license(node=node, timeout=1)
+                        for node in self.redpanda.nodes
+                    ]
+                except Exception as _:
+                    pass
+                time.sleep(1)
+
+        gen_event_thread = threading.Thread(target=generate_async_audit_events,
+                                            args=())
+        gen_event_thread.start()
+
+        def modify_auth_method(method, node_cfg):
+            node_kafka_cfg = node_cfg['redpanda']['kafka_api']
+            dnslistener = [
+                e for e in node_kafka_cfg if e['name'] == 'dnslistener'
+            ]
+            assert len(dnslistener) == 1
+            dnslistener = dnslistener[0]
+            assert 'authentication_method' in dnslistener, 'Expected auth enabled on interface'
+            dnslistener['authentication_method'] = method
+            return node_cfg['redpanda']
+
+        # Modify the node config to remove authentication on the listener of 9092
+        node = self.redpanda.nodes[0]
+        self.modify_node_config(node,
+                                partial(modify_auth_method, 'none'),
+                                skip_readiness_check=True)
+
+        # Observe that auditing is issuing warnings about misconfiguration
+        exc = None
+        try:
+            audit_misconfig_warn = '.*Audit message rejected due to misconfigured authorization'
+            wait_until(
+                lambda: self.redpanda.search_log_any(audit_misconfig_warn),
+                timeout_sec=30,
+                backoff_sec=2)
+        except Exception as e:
+            exc = e
+        finally:
+            stop_thread = True
+            gen_event_thread.join()
+
+            # Reset the configuration to what it was for clean shutdown
+            self.modify_node_config(node,
+                                    partial(
+                                        modify_auth_method,
+                                        self.security.endpoint_authn_method),
+                                    skip_readiness_check=False)
+
+        if exc is not None:
+            raise exc
+
+
+class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
     """Validates SASL/SCRAM authentication messages
     """
     username = 'test'
@@ -897,7 +1030,7 @@ class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
     algorithm = 'SCRAM-SHA-256'
 
     def __init__(self, test_context):
-        super(AuditLogTestsKafkaAuthnApi, self).__init__(
+        super(AuditLogTestKafkaAuthnApi, self).__init__(
             test_context=test_context,
             audit_log_config=AuditLogConfig(num_partitions=1,
                                             event_types=['authenticate']),
@@ -992,7 +1125,7 @@ class AuditLogTestsKafkaAuthnApi(AuditLogTestsBase):
             records) == 1, f'Expected only one record, got {len(records)}'
 
 
-class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
+class AuditLogTestKafkaTlsApi(AuditLogTestBase):
     """
     Tests that validate audit log messages for users authenticated via mTLS
     """
@@ -1023,7 +1156,7 @@ class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
         self._audit_log_client_config.require_client_auth = False
         self._audit_log_client_config.enable_broker_tls = False
 
-        super(AuditLogTestsKafkaTlsApi, self).__init__(
+        super(AuditLogTestKafkaTlsApi, self).__init__(
             test_context=test_context,
             audit_log_config=AuditLogConfig(num_partitions=1,
                                             event_types=['authenticate']),
@@ -1074,7 +1207,7 @@ class AuditLogTestsKafkaTlsApi(AuditLogTestsBase):
             records) == 1, f'Expected only one record got {len(records)}'
 
 
-class AuditLogTestsOauth(AuditLogTestsBase):
+class AuditLogTestOauth(AuditLogTestBase):
     """
     Tests that validate audit log messages for users authenticated via OAUTH
     """
@@ -1091,7 +1224,7 @@ class AuditLogTestsOauth(AuditLogTestsBase):
 
         self.keycloak = KeycloakService(test_context)
 
-        super(AuditLogTestsOauth, self).__init__(
+        super(AuditLogTestOauth, self).__init__(
             test_context=test_context,
             audit_log_config=AuditLogConfig(num_partitions=1,
                                             event_types=['authenticate']),
