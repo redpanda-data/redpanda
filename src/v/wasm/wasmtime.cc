@@ -78,8 +78,8 @@ constexpr size_t max_host_function_stack_usage = vm_stack_size
 // based and configurable, but until that work, this is the simpler option.
 constexpr uint64_t fuel_amount = 5'000'000'000;
 // This interval in the above experiment allowed for Wasm to take up CPU for no
-// more than 4 milliseconds max at once.
-constexpr uint64_t fuel_yield_interval = 10'000'000;
+// more than 1 millisecond max at once.
+constexpr uint64_t fuel_yield_interval = 2'000'000;
 
 template<typename T, auto fn>
 struct deleter {
