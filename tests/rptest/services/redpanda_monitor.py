@@ -34,15 +34,14 @@ class RedpandaMonitor(BackgroundThreadService):
                 try:
                     self.redpanda.logger.info(
                         f"RedpandaMonitor checking {n.account.hostname}")
-                    pid = self.redpanda.redpanda_pid(n,
-                                                     timeout=3,
-                                                     silent=False)
+                    pid = self.redpanda.redpanda_pid(n)
                     if pid is None:
                         started_dead_nodes.append(n)
 
                 except Exception as e:
                     self.redpanda.logger.warn(
-                        f"Failed to fetch PID for node {n.account.hostname}")
+                        f"Failed to fetch PID for node {n.account.hostname}: {e}"
+                    )
 
             for n in started_dead_nodes:
                 self.redpanda.remove_from_started_nodes(n)
