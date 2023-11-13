@@ -21,7 +21,7 @@ message(STATUS "RP_ENABLE_BENCHMARK_TESTS=${RP_ENABLE_BENCHMARK_TESTS}")
 
 function (rp_test)
   set(options
-    FIXTURE_TEST UNIT_TEST BENCHMARK_TEST GTEST)
+    FIXTURE_TEST UNIT_TEST BENCHMARK_TEST GTEST USE_CWD)
   set(oneValueArgs BINARY_NAME TIMEOUT PREPARE_COMMAND POST_COMMAND)
   set(multiValueArgs
     INCLUDES
@@ -126,10 +126,15 @@ function (rp_test)
       set(gtest_option "--gtest")
   endif()
 
+  set(root_option "--root /dev/shm/vectorized_io")
+  if (RP_TEST_USE_CWD)
+      set(root_option "")
+  endif()
+
   if(NOT skip_test)
     add_test (
       NAME ${RP_TEST_BINARY_NAME}
-      COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${gtest_option} ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
+      COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${gtest_option} ${root_option} ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
       )
     set_tests_properties(${RP_TEST_BINARY_NAME} PROPERTIES LABELS "${RP_TEST_LABELS}")
     if(RP_TEST_TIMEOUT)

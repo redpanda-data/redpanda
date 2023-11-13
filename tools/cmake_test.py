@@ -176,7 +176,7 @@ class BacktraceCapture(threading.Thread):
 
 
 class TestRunner():
-    def __init__(self, prepare_command, post_command, binary, repeat,
+    def __init__(self, root, prepare_command, post_command, binary, repeat,
                  copy_files, gtest, *args):
         self.prepare_command = prepare_command
         self.post_command = post_command
@@ -184,7 +184,7 @@ class TestRunner():
         self.repeat = repeat if repeat is not None else 1
         self.copy_files = copy_files
         self.gtest = gtest
-        self.root = "/dev/shm/vectorized_io"
+        self.root = root
         os.makedirs(self.root, exist_ok=True)
 
         # make args a list
@@ -381,10 +381,17 @@ def main():
                             action="append",
                             help='copy file to test execution directory')
         parser.add_argument('--gtest', action='store_true')
+        parser.add_argument('--root',
+                            type=str,
+                            default=None,
+                            help="Working directory (default = cwd)")
         return parser
 
     parser = generate_options()
     options, program_options = parser.parse_known_args()
+
+    if options.root is None:
+        options.root = os.getcwd()
 
     if not options.binary:
         parser.print_help()
@@ -395,9 +402,9 @@ def main():
     logger.setLevel(getattr(logging, options.log.upper()))
     logger.info("%s *args=%s" % (options, program_options))
 
-    runner = TestRunner(options.pre, options.post, options.binary,
-                        options.repeat, options.copy_file, options.gtest,
-                        *program_options)
+    runner = TestRunner(options.root, options.pre, options.post,
+                        options.binary, options.repeat, options.copy_file,
+                        options.gtest, *program_options)
     runner.run()
     return 0
 
