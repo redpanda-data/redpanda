@@ -48,6 +48,7 @@
 #include "cluster/tx_registry_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/constraints.h"
 #include "config/endpoint_tls_config.h"
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
@@ -1546,6 +1547,72 @@ void config_multi_property_validation(
           "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
 }
+
+/**
+ * A helper method to check constraints in the request. Throws if
+ * a topic violates a requested constraint
+ */
+void check_constraints_against_topics(
+  config::configuration& updated_config,
+  bool report_clamp_constraints,
+  const cluster::topic_table& topic_table,
+  std::map<ss::sstring, ss::sstring>& errors) {
+    auto constraints_property_name = ss::sstring{
+      updated_config.constraints.name().data(),
+      updated_config.constraints.name().size()};
+    const auto& constraints = updated_config.constraints();
+    const auto supported_properties = config::constraint_supported_properties();
+    ss::sstring unsupported_properties;
+
+    // To support compatibility, topics that break clamp constraints do not
+    // generate an error by default
+    auto generates_error =
+      [&report_clamp_constraints](const config::constraint_t& constraint) {
+          if (
+            constraint.type == config::constraint_type::clamp
+            && !report_clamp_constraints) {
+              vlog(adminlog.warn, "Ignorning constraint {}", constraint);
+              return false;
+          }
+
+          return true;
+      };
+
+    for (const auto& [property_name, constraint] : constraints) {
+        auto found = std::find_if(
+          supported_properties.begin(),
+          supported_properties.end(),
+          [&property_name](const auto name) { return property_name == name; });
+        if (found == supported_properties.end()) {
+            unsupported_properties = unsupported_properties + property_name
+                                     + " ";
+        }
+
+        ss::sstring invalid_topics;
+        for (auto& [tp_ns, tp_md] : topic_table.all_topics_metadata()) {
+            if (
+              generates_error(constraint)
+              && !config::topic_config_satisfies_constraint(
+                tp_md.get_configuration(), constraint)) {
+                invalid_topics = invalid_topics + tp_ns.tp() + " ";
+            }
+        }
+
+        if (!invalid_topics.empty()) {
+            errors[constraints_property_name] = fmt::format(
+              "Constraints failure[invalid topics]: topics {}, "
+              "property {}",
+              invalid_topics,
+              property_name);
+        }
+    }
+
+    if (!unsupported_properties.empty()) {
+        errors[constraints_property_name] = fmt::format(
+          "Constraints failure[not supported]: properties {}",
+          unsupported_properties);
+    }
+}
 } // namespace
 
 void admin_server::register_cluster_config_routes() {
@@ -1752,6 +1819,12 @@ admin_server::patch_cluster_config_handler(
         // any multi-property validation errors
         config_multi_property_validation(
           auth_state.get_username(), _schema_registry, update, cfg, errors);
+
+        check_constraints_against_topics(
+          cfg,
+          get_boolean_query_param(*req, "report_clamp_constraints"),
+          _controller->get_topics_state().local(),
+          errors);
 
         if (!errors.empty()) {
             json::StringBuffer buf;

@@ -553,6 +553,31 @@ void constraint_clamp_topic_config(
             *archival_enabled_opt, *fetch_enabled_opt);
     }
 }
+
+std::vector<std::string_view> constraint_supported_properties() {
+    std::vector<std::string_view> names;
+    names.push_back(config::shard_local_cfg().default_topic_partitions.name());
+    names.push_back(config::shard_local_cfg().default_topic_replication.name());
+    names.push_back(config::shard_local_cfg().log_compression_type.name());
+    names.push_back(config::shard_local_cfg().log_cleanup_policy.name());
+    names.push_back(
+      config::shard_local_cfg().log_message_timestamp_type.name());
+    names.push_back(config::shard_local_cfg().log_segment_size.name());
+    names.push_back(config::shard_local_cfg().retention_bytes.name());
+    names.push_back(config::shard_local_cfg().log_retention_ms.name());
+    names.push_back(
+      config::shard_local_cfg().cloud_storage_enable_remote_read.name());
+    names.push_back(
+      config::shard_local_cfg().cloud_storage_enable_remote_write.name());
+    names.push_back(config::shard_local_cfg().kafka_batch_max_bytes.name());
+    names.push_back(
+      config::shard_local_cfg().retention_local_target_bytes_default.name());
+    names.push_back(
+      config::shard_local_cfg().retention_local_target_ms_default.name());
+    names.push_back(config::shard_local_cfg().log_segment_ms.name());
+
+    return names;
+}
 } // namespace config
 
 namespace YAML {

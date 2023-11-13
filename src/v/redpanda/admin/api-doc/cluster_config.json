@@ -29,6 +29,13 @@
               "schema": {"type": "integer"},
               "required": false,
               "description": "If nonzero, do not apply any changes (but still do validation and return 400 on errors)"
+            },
+            {
+              "in": "query",
+              "name": "report_clamp_constraints",
+              "schema": {"type": "boolean"},
+              "required": false,
+              "description": "If true, topics that break clamp constraints generate errors, otherwise a message is logged"
             }
           ],
           "responses": {

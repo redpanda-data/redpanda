@@ -100,6 +100,11 @@ bool topic_config_satisfies_constraint(
 void constraint_clamp_topic_config(
   cluster::topic_configuration&, const constraint_t&);
 
+/**
+ * List properties that support constraints
+ */
+std::vector<std::string_view> constraint_supported_properties();
+
 namespace detail {
 
 template<>
