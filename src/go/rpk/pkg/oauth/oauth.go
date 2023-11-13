@@ -64,7 +64,7 @@ func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudA
 	if auth.AuthToken != "" && auth.ClientID != "" {
 		expired, err := ValidateToken(auth.AuthToken, cl.Audience(), auth.ClientID)
 		if err != nil {
-			return Token{}, err
+			return Token{}, fmt.Errorf("unable to validate your authorization token: %v", err)
 		}
 		if !expired {
 			return Token{AccessToken: auth.AuthToken}, nil

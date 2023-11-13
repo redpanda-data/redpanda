@@ -39,7 +39,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 	// We want to update the actual auth.
 	yAct, err := cfg.ActualRpkYamlOrEmpty()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("unable to load your rpk.yaml file: %v", err)
 	}
 	authAct := yAct.Auth(yAct.CurrentCloudAuth)
 	if authAct == nil {
