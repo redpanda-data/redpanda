@@ -190,4 +190,21 @@ ss::future<> wait_for_topics(
   cluster::controller_api&,
   model::timeout_clock::time_point);
 
+template<typename ErrResponse, typename ErrIter>
+void apply_constraint(
+  cluster::topic_configuration& topic_cfg,
+  const config::constraint_t& constraint,
+  ErrResponse err,
+  ErrIter out_it) {
+    if (!topic_config_satisfies_constraint(topic_cfg, constraint)) {
+        if (constraint.type == config::constraint_type::restrikt) {
+            err.error_code = error_code::invalid_config;
+            err.error_message = ssx::sformat(
+              "Configuration breaks constraint {}", constraint.name);
+            out_it = err;
+        } else if (constraint.type == config::constraint_type::clamp) {
+            constraint_clamp_topic_config(topic_cfg, constraint);
+        }
+    }
+}
 } // namespace kafka
