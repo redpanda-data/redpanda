@@ -97,16 +97,6 @@ model::record_batch tm_stm::serialize_tx(tm_transaction tx) {
     return do_serialize_tx(old_tx);
 }
 
-model::record_batch
-tm_stm::serialize_hosted_transactions(locally_hosted_txs hr) {
-    storage::record_batch_builder b(
-      model::record_batch_type::tx_tm_hosted_trasactions, model::offset(0));
-    b.add_raw_kv(
-      serde::to_iobuf(model::record_batch_type::tx_tm_hosted_trasactions),
-      serde::to_iobuf(hr));
-    return std::move(b).build();
-}
-
 tm_stm::tm_stm(
   ss::logger& logger,
   raft::consensus* c,
@@ -121,84 +111,6 @@ tm_stm::tm_stm(
   , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {}
 
 ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
-
-bool tm_stm::hosted_transactions_inited() const { return _hosted_txes.inited; }
-
-ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
-  model::term_id term, int32_t tx_coordinator_partition_amount) {
-    if (_hosted_txes.inited) {
-        co_return op_status::success;
-    }
-    if (!_feature_table.local().is_active(
-          features::feature::transaction_partitioning)) {
-        co_return tm_stm::op_status::success;
-    }
-
-    auto units = co_await _cache->write_lock();
-    if (_hosted_txes.inited) {
-        co_return op_status::success;
-    }
-
-    vlog(
-      _ctx_log.trace,
-      "initing hosted transactions, term: {}, partition count: {}",
-      term,
-      tx_coordinator_partition_amount);
-
-    model::partition_id partition = get_partition();
-    auto initial_hash_range = default_hash_range(
-      partition, tx_coordinator_partition_amount);
-    locally_hosted_txs initial_hosted_transactions{};
-    auto res = hosted_transactions::add_range(
-      initial_hosted_transactions, initial_hash_range);
-    if (res == tx_hash_ranges_errc::success) {
-        initial_hosted_transactions.inited = true;
-        co_return co_await update_hosted_transactions(
-          term, std::move(initial_hosted_transactions));
-    } else {
-        co_return op_status::conflict;
-    }
-}
-
-ss::future<tm_stm::op_status> tm_stm::include_hosted_transaction(
-  model::term_id term, kafka::transactional_id tx_id) {
-    vlog(
-      _ctx_log.trace,
-      "[tx_id={}] including hosted transactions in term: {}",
-      tx_id,
-      term);
-    if (!_hosted_txes.inited) {
-        co_return op_status::unknown;
-    }
-    auto new_hosted_tx = _hosted_txes;
-    auto res = hosted_transactions::include_transaction(new_hosted_tx, tx_id);
-    if (res == tx_hash_ranges_errc::success) {
-        co_return co_await update_hosted_transactions(
-          term, std::move(new_hosted_tx));
-    } else {
-        co_return op_status::conflict;
-    }
-}
-
-ss::future<tm_stm::op_status> tm_stm::exclude_hosted_transaction(
-  model::term_id term, kafka::transactional_id tx_id) {
-    vlog(
-      _ctx_log.trace,
-      "[tx_id={}] excluding hosted transactions in term: {}",
-      tx_id,
-      term);
-    if (!_hosted_txes.inited) {
-        co_return op_status::unknown;
-    }
-    auto new_hosted_tx = _hosted_txes;
-    auto res = hosted_transactions::exclude_transaction(new_hosted_tx, tx_id);
-    if (res == tx_hash_ranges_errc::success) {
-        co_return co_await update_hosted_transactions(
-          term, std::move(new_hosted_tx));
-    } else {
-        co_return op_status::conflict;
-    }
-}
 
 uint8_t tm_stm::active_snapshot_version() {
     if (_feature_table.local().is_active(
@@ -341,53 +253,6 @@ tm_stm::do_sync(model::timeout_clock::duration timeout) {
         _cache->clear_mem();
     }
     co_return _insync_term;
-}
-
-ss::future<tm_stm::op_status>
-tm_stm::update_hosted_transactions(model::term_id term, locally_hosted_txs hr) {
-    auto gh = _gate.hold();
-    co_return co_await do_update_hosted_transactions(term, std::move(hr));
-}
-
-ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
-  model::term_id term, locally_hosted_txs hr) {
-    auto batch = serialize_hosted_transactions(std::move(hr));
-
-    auto r = co_await replicate_quorum_ack(term, std::move(batch));
-    if (!r) {
-        vlog(_ctx_log.info, "got error {} on updating hash_ranges", r.error());
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down(
-              "txn coordinator update_hash_ranges replication error");
-        }
-        if (r.error() == raft::errc::shutting_down) {
-            co_return op_status::timeout;
-        }
-        co_return op_status::unknown;
-    }
-
-    auto offset = model::offset(r.value().last_offset());
-    if (!co_await wait_no_throw(
-          offset, model::timeout_clock::now() + _sync_timeout)) {
-        vlog(
-          _ctx_log.info,
-          "timeout on waiting until {} is applied on updating hosted "
-          "transactions",
-          offset);
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down("txn coordinator apply timeout");
-        }
-        co_return op_status::unknown;
-    }
-    if (_c->term() != term) {
-        vlog(
-          _ctx_log.info,
-          "lost leadership while waiting until {} is applied on updating "
-          "hosted transactions",
-          offset);
-        co_return op_status::unknown;
-    }
-    co_return op_status::success;
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
@@ -865,14 +730,6 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
     co_return tm_stm::op_status::success;
 }
 
-bool tm_stm::hosts(const kafka::transactional_id& tx_id) {
-    if (!_feature_table.local().is_active(
-          features::feature::transaction_partitioning)) {
-        return true;
-    }
-    return hosted_transactions::contains(_hosted_txes, tx_id);
-}
-
 ss::future<>
 tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     vassert(
@@ -903,13 +760,8 @@ tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
         }
         _last_snapshot_offset = data.offset;
         _insync_offset = data.offset;
-        _hosted_txes = std::move(data.hash_ranges);
-        _hosted_txes.inited = true;
-        vlog(
-          _ctx_log.trace,
-          "Applied snapshot at offset: {}, hosted txes: {}",
-          hdr.offset,
-          _hosted_txes);
+
+        vlog(_ctx_log.trace, "Applied snapshot at offset: {}", hdr.offset);
     }
 
     return ss::now();
@@ -923,15 +775,6 @@ ss::future<stm_snapshot> tm_stm::take_snapshot() {
         if (sync_res.has_error()) {
             throw std::runtime_error(fmt::format(
               "Cannot sync before taking snapshot, err: {}", sync_res.error()));
-        }
-        auto term = sync_res.value();
-        auto update_hash_ranges_res = co_await update_hosted_transactions(
-          term, _hosted_txes);
-        if (update_hash_ranges_res != op_status::success) {
-            throw std::runtime_error(fmt::format(
-              "Cannot update hash ranges on term {}. Got {} err",
-              _insync_term,
-              update_hash_ranges_res));
         }
     }
     co_return co_await ss::with_gate(
@@ -954,7 +797,6 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
         tm_snapshot tm_ss;
         tm_ss.offset = _insync_offset;
         tm_ss.transactions = _cache->get_log_transactions();
-        tm_ss.hash_ranges = _hosted_txes;
 
         iobuf tm_ss_buf;
         reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
@@ -1067,39 +909,12 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     return ss::now();
 }
 
-ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
-    auto records = b.copy_records();
-    vassert(
-      !records.empty(), "Cannot decode empty tx_tm_hosted_trasactions batch");
-    auto& rec = records.front();
-    auto key = serde::from_iobuf<model::record_batch_type>(rec.release_key());
-    vassert(
-      key == model::record_batch_type::tx_tm_hosted_trasactions,
-      "tx_tm_hosted_trasactions batch does not contain expected key {}: found "
-      "{}",
-      model::record_batch_type::tx_tm_hosted_trasactions,
-      key);
-    auto hash_ranges = serde::from_iobuf<locally_hosted_txs>(
-      rec.release_value());
-    _hosted_txes = hash_ranges;
-    vlog(
-      _ctx_log.trace,
-      "Applied hosted txes batch from log, offset: {}, ranges: {}",
-      b.base_offset(),
-      _hosted_txes);
-    return ss::now();
-}
-
 ss::future<> tm_stm::apply(model::record_batch b) {
     const auto& hdr = b.header();
     _insync_offset = b.last_offset();
 
     if (hdr.type == model::record_batch_type::tm_update) {
         return apply_tm_update(std::move(hdr), std::move(b));
-    }
-
-    if (hdr.type == model::record_batch_type::tx_tm_hosted_trasactions) {
-        return apply_hosted_transactions(std::move(b));
     }
 
     return ss::now();

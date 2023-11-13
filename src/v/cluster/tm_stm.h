@@ -255,7 +255,6 @@ public:
         }
         return r;
     }
-    bool hosts(const kafka::transactional_id& tx_id);
 
     ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>
@@ -263,13 +262,6 @@ public:
     ss::future<checked<model::term_id, tm_stm::op_status>> sync() {
         return sync(_sync_timeout);
     }
-    bool hosted_transactions_inited() const;
-    ss::future<tm_stm::op_status> try_init_hosted_transactions(
-      model::term_id, int32_t tx_coordinator_partition_amount);
-    ss::future<tm_stm::op_status>
-      include_hosted_transaction(model::term_id, kafka::transactional_id);
-    ss::future<tm_stm::op_status>
-      exclude_hosted_transaction(model::term_id, kafka::transactional_id);
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _cache->read_lock();
@@ -356,12 +348,12 @@ private:
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
-    locally_hosted_txs _hosted_txes;
+
     mutex _tx_thrashing_lock;
     prefix_logger _ctx_log;
 
     ss::future<> apply(model::record_batch b) override;
-    ss::future<> apply_hosted_transactions(model::record_batch b);
+
     ss::future<>
     apply_tm_update(model::record_batch_header hdr, model::record_batch b);
 
@@ -370,10 +362,7 @@ private:
       do_sync(model::timeout_clock::duration);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       do_update_tx(tm_transaction, model::term_id);
-    ss::future<tm_stm::op_status>
-      update_hosted_transactions(model::term_id, locally_hosted_txs);
-    ss::future<tm_stm::op_status>
-      do_update_hosted_transactions(model::term_id, locally_hosted_txs);
+
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
       kafka::transactional_id,
@@ -400,7 +389,6 @@ private:
     }
 
     model::record_batch serialize_tx(tm_transaction tx);
-    model::record_batch serialize_hosted_transactions(locally_hosted_txs hr);
 };
 
 inline txlock_unit::~txlock_unit() noexcept {
