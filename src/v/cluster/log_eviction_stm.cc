@@ -120,8 +120,6 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
         } catch (const ss::gate_closed_exception&) {
             // ignore gate closed exception, shutting down
         } catch (const ss::broken_semaphore&) {
-        } catch (const ss::sleep_aborted&) {
-            // ignore broken sem exception, shutting down
         } catch (const std::exception& e) {
             vlog(
               _log.error,

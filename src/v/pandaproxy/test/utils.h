@@ -14,6 +14,7 @@
 #include "pandaproxy/json/types.h"
 
 #include <boost/beast/core/string_type.hpp>
+#include <fmt/core.h>
 #include <http/client.h>
 
 using serialization_format = pandaproxy::json::serialization_format;
@@ -50,7 +51,7 @@ inline http::client::request_header make_header(
     hdr.target(target);
     hdr.insert(
       boost::beast::http::field::content_length,
-      boost::beast::to_static_string(body.size_bytes()));
+      fmt::format("{}", body.size_bytes()));
     if (content != serialization_format::none) {
         hdr.insert(
           boost::beast::http::field::content_type, to_header_value(content));

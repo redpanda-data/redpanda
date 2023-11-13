@@ -276,7 +276,6 @@ ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
     } catch (const seastar::broken_semaphore&) {
     } catch (const seastar::broken_promise&) {
     } catch (const seastar::broken_condition_variable&) {
-    } catch (const seastar::sleep_aborted&) {
     }
 }
 
@@ -293,8 +292,6 @@ inline bool is_shutdown_exception(const std::exception_ptr& e) {
     } catch (const seastar::broken_promise&) {
         return true;
     } catch (const seastar::broken_condition_variable&) {
-        return true;
-    } catch (const seastar::sleep_aborted&) {
         return true;
     } catch (...) {
     }
