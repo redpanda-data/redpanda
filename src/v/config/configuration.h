@@ -14,6 +14,7 @@
 #include "config/broker_endpoint.h"
 #include "config/client_group_byte_rate_quota.h"
 #include "config/config_store.h"
+#include "config/constraints.h"
 #include "config/convert.h"
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
@@ -528,6 +529,9 @@ struct configuration final : public config_store {
 
     // HTTP Authentication
     property<std::vector<ss::sstring>> http_authentication;
+
+    // Constraints
+    one_or_many_map_property<constraint_t> constraints;
 
     configuration();
 
