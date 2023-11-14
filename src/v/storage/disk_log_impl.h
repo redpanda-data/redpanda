@@ -161,7 +161,7 @@ public:
     ss::future<> adjacent_merge_compact(
       compaction_config, std::optional<model::offset> = std::nullopt);
 
-    ss::future<> sliding_window_compact(
+    ss::future<bool> sliding_window_compact(
       const compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
@@ -268,6 +268,7 @@ private:
         ss::abort_source::subscription subscription;
     };
     bool _closed{false};
+    ss::abort_source _compaction_as;
     ss::gate _compaction_housekeeping_gate;
     log_manager& _manager;
     float _segment_size_jitter;

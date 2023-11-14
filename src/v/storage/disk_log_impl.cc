@@ -16,6 +16,7 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "ssx/future-util.h"
 #include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
 #include "storage/compaction_reducers.h"
@@ -46,6 +47,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <fmt/format.h>
 #include <roaring/roaring.hh>
@@ -138,6 +140,7 @@ ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
     // wait for compaction to finish
+    _compaction_as.request_abort();
     co_await _compaction_housekeeping_gate.close();
     // gets all the futures started in the background
     std::vector<ss::future<>> permanent_delete;
@@ -182,6 +185,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     }
     // wait for compaction to finish
     vlog(stlog.trace, "waiting for {} compaction to finish", config().ntp());
+    _compaction_as.request_abort();
     co_await _compaction_housekeeping_gate.close();
     vlog(stlog.trace, "stopping {} readers cache", config().ntp());
 
@@ -517,15 +521,18 @@ segment_set disk_log_impl::find_sliding_range(
     return segs;
 }
 
-ss::future<> disk_log_impl::sliding_window_compact(
+ss::future<bool> disk_log_impl::sliding_window_compact(
   const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
     vlog(gclog.info, "[{}] running sliding window compaction", config().ntp());
     auto segs = find_sliding_range(cfg, new_start_offset);
     if (segs.empty()) {
         vlog(gclog.info, "[{}] no more segments to compact", config().ntp());
-        co_return;
+        co_return false;
     }
     for (auto& seg : segs) {
+        if (cfg.asrc) {
+            cfg.asrc->check();
+        }
         auto result = co_await storage::internal::self_compact_segment(
           seg,
           _stm_manager,
@@ -548,16 +555,24 @@ ss::future<> disk_log_impl::sliding_window_compact(
     try {
         idx_start_offset = co_await build_offset_map(cfg, segs, map);
     } catch (...) {
+        auto eptr = std::current_exception();
+        if (ssx::is_shutdown_exception(eptr)) {
+            // Pass through shutdown errors.
+            std::rethrow_exception(eptr);
+        }
         vlog(
           gclog.warn,
           "[{}] failed to build offset map. Stopping compaction: {}",
           config().ntp(),
           std::current_exception());
-        co_return;
+        co_return false;
     }
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
     for (auto& seg : segs) {
+        if (cfg.asrc) {
+            cfg.asrc->check();
+        }
         if (seg->offsets().base_offset > map.max_offset()) {
             break;
         }
@@ -616,7 +631,7 @@ ss::future<> disk_log_impl::sliding_window_compact(
           tmpname);
 
         auto rdr_holder = co_await _readers_cache->evict_segment_readers(seg);
-        auto write_lock = seg->write_lock();
+        auto write_lock = co_await seg->write_lock();
         if (initial_generation_id != seg->get_generation_id()) {
             throw std::runtime_error(fmt::format(
               "Aborting compaction of segment: {}, segment was mutated "
@@ -648,7 +663,7 @@ ss::future<> disk_log_impl::sliding_window_compact(
         seg->advance_generation();
     }
     _last_compaction_window_start_offset = idx_start_offset;
-    co_return;
+    co_return true;
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
@@ -731,6 +746,14 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     auto segments = std::vector<ss::lw_shared_ptr<segment>>(
       range.first, range.second);
 
+    bool all_window_compacted = true;
+    for (const auto& seg : segments) {
+        if (!seg->finished_windowed_compaction()) {
+            all_window_compacted = false;
+            break;
+        }
+    }
+
     if (gclog.is_enabled(ss::log_level::debug)) {
         std::stringstream segments_str;
         for (size_t i = 0; i < segments.size(); i++) {
@@ -765,6 +788,9 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // tracking needs to be adjusted as compaction routines assume the segment
     // size is already contained in the partition size probe
     replacement->mark_as_compacted_segment();
+    if (all_window_compacted) {
+        replacement->mark_as_finished_windowed_compaction();
+    }
     _probe->add_initial_segment(*replacement.get());
     auto ret = co_await storage::internal::self_compact_segment(
       replacement,
@@ -1020,7 +1046,45 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
-        co_await adjacent_merge_compact(cfg.compact, new_start_offset);
+        // TODO: unify error handling.
+        if (config::shard_local_cfg().log_compaction_use_sliding_window()) {
+            cfg.compact.asrc = &_compaction_as;
+            auto did_compact_fut = co_await ss::coroutine::as_future(
+              sliding_window_compact(cfg.compact, new_start_offset));
+            if (did_compact_fut.failed()) {
+                auto eptr = did_compact_fut.get_exception();
+                if (ssx::is_shutdown_exception(eptr)) {
+                    vlog(
+                      gclog.debug,
+                      "Compaction of {} stopped because of shutdown",
+                      config().ntp());
+                    co_return;
+                }
+                std::rethrow_exception(eptr);
+            }
+            bool compacted = did_compact_fut.get();
+            if (!compacted) {
+                if (auto range = find_compaction_range(cfg.compact); range) {
+                    auto r = co_await compact_adjacent_segments(
+                      std::move(*range), cfg.compact);
+                    vlog(
+                      gclog.debug,
+                      "Adjacent segments of {}, compaction result: {}",
+                      config().ntp(),
+                      r);
+                    if (r.did_compact()) {
+                        _compaction_ratio.update(r.compaction_ratio());
+                    }
+                } else {
+                    vlog(
+                      gclog.debug,
+                      "Adjacent segments of {}, no adjacent pair",
+                      config().ntp());
+                }
+            }
+        } else {
+            co_await adjacent_merge_compact(cfg.compact, new_start_offset);
+        }
     }
 
     _probe->set_compaction_ratio(_compaction_ratio.get());

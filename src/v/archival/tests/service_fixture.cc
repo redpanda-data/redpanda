@@ -119,9 +119,13 @@ segment_layout write_random_batches(
 
     auto leftover_records = records % records_per_batch;
     int full_batches_count = records / records_per_batch;
+    // If the segment already includes records, start at the next offset.
     auto full_batches = model::test::make_random_batches(
       model::test::record_batch_spec{
-        .offset = seg->offsets().base_offset,
+        .offset = seg->offsets().committed_offset == model::offset{}
+                    ? seg->offsets().base_offset
+                    : (
+                      seg->offsets().committed_offset + model::offset_delta{1}),
         .allow_compression = true,
         .count = full_batches_count,
         .records = records_per_batch,
@@ -521,6 +525,7 @@ void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
 
     for (auto i : spec.compacted_segment_indices) {
         b.get_segment(i).mark_as_finished_self_compaction();
+        b.get_segment(i).mark_as_finished_windowed_compaction();
     }
 }
 

@@ -663,6 +663,7 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     o << "{offset_tracker:" << h._tracker
       << ", compacted_segment=" << h.is_compacted_segment()
       << ", finished_self_compaction=" << h.finished_self_compaction()
+      << ", finished_windowed_compaction=" << h.finished_windowed_compaction()
       << ", generation=" << h.get_generation_id() << ", reader=";
     if (h._reader) {
         o << *h._reader;

@@ -731,6 +731,12 @@ configuration::configuration()
       "to simplify testing and shouldn't be set in production.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       false)
+  , log_compaction_use_sliding_window(
+      *this,
+      "log_compaction_use_sliding_window",
+      "Use sliding window compaction.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      true)
   , retention_bytes(
       *this,
       "retention_bytes",

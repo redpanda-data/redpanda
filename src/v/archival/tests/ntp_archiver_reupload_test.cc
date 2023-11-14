@@ -138,9 +138,9 @@ struct reupload_fixture : public archiver_fixture {
         }
         wait_for_partition_leadership(manifest_ntp);
         auto part = app.partition_manager.local().get(manifest_ntp);
-        tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        RPTEST_REQUIRE_EVENTUALLY(10s, [part]() mutable {
             return part->high_watermark() >= model::offset(1);
-        }).get();
+        });
         init_archiver();
     }
 
@@ -218,7 +218,8 @@ struct reupload_fixture : public archiver_fixture {
           manifest_view);
     }
 
-    ss::lw_shared_ptr<storage::segment> self_compact_next_segment() {
+    ss::lw_shared_ptr<storage::segment> self_compact_next_segment(
+      model::offset max_collectible = model::offset::max()) {
         auto& seg_set = disk_log_impl()->segments();
         auto size_before = seg_set.size();
 
@@ -226,7 +227,7 @@ struct reupload_fixture : public archiver_fixture {
           ->housekeeping(storage::housekeeping_config{
             model::timestamp::max(),
             std::nullopt,
-            model::offset::max(),
+            max_collectible,
             ss::default_priority_class(),
             abort_source})
           .get();
@@ -313,7 +314,8 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     // Mark first segment compacted, and re-upload, now only one segment is
     // uploaded.
     reset_http_call_state();
-    auto seg = self_compact_next_segment();
+    auto seg = self_compact_next_segment(
+      stm_manifest.first_addressable_segment()->committed_offset);
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected);
@@ -330,7 +332,8 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     BOOST_REQUIRE_EQUAL(replaced[0].base_offset, model::offset{0});
 
     // Mark second segment as compacted and re-upload.
-    seg = self_compact_next_segment();
+    seg = self_compact_next_segment(
+      std::next(stm_manifest.first_addressable_segment())->committed_offset);
 
     reset_http_call_state();
 
@@ -386,7 +389,6 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
     // Mark both segments compacted, and re-upload. One concatenated segment is
     // uploaded.
     reset_http_call_state();
-    self_compact_next_segment();
     auto seg = self_compact_next_segment();
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
@@ -427,8 +429,8 @@ FIXTURE_TEST(
 
     listen();
 
-    self_compact_next_segment();
-    auto seg = self_compact_next_segment();
+    // Self-compact just the first couple segments.
+    self_compact_next_segment(model::offset{999});
 
     archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected);
@@ -527,8 +529,12 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
 
     // Self-compact the first segment and re-upload. One
     // compacted and one non-compacted segments are uploaded.
+    //
+    // NOTE: we can only compact up to what's been uploaded, since that
+    // determines the max collectible offset.
     reset_http_call_state();
-    auto seg = self_compact_next_segment();
+    auto seg = self_compact_next_segment(
+      manifest.first_addressable_segment()->committed_offset);
 
     expected = archival::ntp_archiver::batch_result{{1, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected, model::offset::max());
@@ -593,7 +599,8 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     // Self-compact the first segment and re-upload. One compacted
     // and one non-compacted segments are uploaded.
     reset_http_call_state();
-    auto seg = self_compact_next_segment();
+    auto seg = self_compact_next_segment(
+      disk_log_impl()->segments().begin()->get()->offsets().committed_offset);
 
     // Fail the first compacted upload
     fail_request_if(
@@ -723,12 +730,13 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
 }
 
 FIXTURE_TEST(test_upload_limit, reupload_fixture) {
+    // NOTE: different terms so compaction leaves one segment each.
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1), 10, 2},
-      {manifest_ntp, model::offset(10), model::term_id(1), 10, 2},
-      {manifest_ntp, model::offset(20), model::term_id(1), 10, 2},
-      {manifest_ntp, model::offset(30), model::term_id(1), 10, 2},
-      {manifest_ntp, model::offset(40), model::term_id(1), 10, 2},
+      {manifest_ntp, model::offset(10), model::term_id(2), 10, 2},
+      {manifest_ntp, model::offset(20), model::term_id(3), 10, 2},
+      {manifest_ntp, model::offset(30), model::term_id(4), 10, 2},
+      {manifest_ntp, model::offset(40), model::term_id(5), 10, 2},
     };
 
     initialize(segments);
@@ -747,9 +755,9 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
       get_targets().find(manifest_url)->second.content);
 
     verify_segment_request("0-1-v1.log", manifest);
-    verify_segment_request("10-1-v1.log", manifest);
-    verify_segment_request("20-1-v1.log", manifest);
-    verify_segment_request("30-1-v1.log", manifest);
+    verify_segment_request("10-2-v1.log", manifest);
+    verify_segment_request("20-3-v1.log", manifest);
+    verify_segment_request("30-4-v1.log", manifest);
 
     BOOST_REQUIRE(part->archival_meta_stm());
     const cloud_storage::partition_manifest& stm_manifest
@@ -759,6 +767,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
 
     // Create four non-compacted segments to starve out the upload limit.
+    // NOTE: uploaded 4 segments, so offset is 54 at the start
     for (auto i = 0; i < 3; ++i) {
         auto& last_segment = disk_log_impl()->segments().back();
         write_random_batches(last_segment, 10, 2);
@@ -768,7 +777,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
         create_segment(
           {manifest_ntp,
            last_segment->offsets().committed_offset + model::offset{1},
-           model::term_id{2},
+           model::term_id{6},
            10});
     }
 
@@ -776,22 +785,20 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
 
     // Mark four segments as compacted, so they are valid for upload
     ss::lw_shared_ptr<storage::segment> seg;
-    for (size_t i = 0; i < 4; ++i) {
-        seg = self_compact_next_segment();
-    }
+    seg = self_compact_next_segment(model::offset(39));
 
     expected = archival::ntp_archiver::batch_result{{4, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected, model::offset::max());
     BOOST_REQUIRE_EQUAL(get_requests().size(), 9);
 
     verify_segment_request(
-      "40-1-v1.log", part->archival_meta_stm()->manifest());
+      "40-5-v1.log", part->archival_meta_stm()->manifest());
     verify_segment_request(
-      "50-2-v1.log", part->archival_meta_stm()->manifest());
+      "50-6-v1.log", part->archival_meta_stm()->manifest());
     verify_segment_request(
-      "60-2-v1.log", part->archival_meta_stm()->manifest());
+      "65-6-v1.log", part->archival_meta_stm()->manifest());
     verify_segment_request(
-      "70-2-v1.log", part->archival_meta_stm()->manifest());
+      "85-6-v1.log", part->archival_meta_stm()->manifest());
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
@@ -808,9 +815,9 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     verify_concat_segment_request(
       {
         "0-1-v1.log",
-        "10-1-v1.log",
-        "20-1-v1.log",
-        "30-1-v1.log",
+        "10-2-v1.log",
+        "20-3-v1.log",
+        "30-4-v1.log",
       },
       part->archival_meta_stm()->manifest());
 

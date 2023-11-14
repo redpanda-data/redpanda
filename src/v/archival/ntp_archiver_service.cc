@@ -1102,7 +1102,8 @@ remote_segment_path ntp_archiver::segment_path_for_candidate(
     auto front = candidate.sources.front();
     cloud_storage::partition_manifest::value val{
       .is_compacted = front->is_compacted_segment()
-                      && front->finished_self_compaction(),
+                      && archival_policy::eligible_for_compacted_reupload(
+                        *front),
       .size_bytes = candidate.content_length,
       .base_offset = candidate.starting_offset,
       .committed_offset = candidate.final_offset,
@@ -1565,7 +1566,8 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto upl_fut = aggregate_upload_results(std::move(all_uploads));
 
     auto is_compacted = first_source->is_compacted_segment()
-                        && first_source->finished_self_compaction();
+                        && archival_policy::eligible_for_compacted_reupload(
+                          *first_source);
     co_return scheduled_upload{
       .result = std::move(upl_fut),
       .inclusive_last_offset = offset,
@@ -2840,7 +2842,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
     auto [upload, locks] = std::move(upload_locks);
 
     for (const auto& s : upload.sources) {
-        if (s->finished_self_compaction()) {
+        if (archival_policy::eligible_for_compacted_reupload(*s)) {
             vlog(
               _rtclog.warn,
               "Upload {} requested contains compacted segments.",

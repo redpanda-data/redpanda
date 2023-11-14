@@ -1544,10 +1544,9 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
       ss::default_priority_class(),
       as);
 
+    // There are 4 segments, and the last is the active segments. The first two
+    // will merge, and the third will be compacted but not merged.
     log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
-    // Self compactions complete.
     BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
 
     // Check if it honors max_compactible offset by resetting it to the base
@@ -1557,16 +1556,15 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
 
-    // reset
+    // The segment count will be reduced again.
     c_cfg.compact.max_collectible_offset = model::offset::max();
-
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(log->segment_count(), 3);
 
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(log->segment_count(), 2);
 
-    // no change since we can't combine with appender segment
+    // No change since we can't combine with appender segment.
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(log->segment_count(), 2);
     all_have_broker_timestamp();
@@ -1613,10 +1611,7 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
       ss::default_priority_class(),
       as);
 
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
+    // compact all the individual segments
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
 
@@ -1625,7 +1620,6 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
 
     // no more pairs with the same term
-    log->housekeeping(c_cfg).get0();
     log->housekeeping(c_cfg).get0();
     log->housekeeping(c_cfg).get0();
     log->housekeeping(c_cfg).get0();
@@ -1691,10 +1685,6 @@ FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
       as);
 
     // self compaction steps
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
 
@@ -1905,9 +1895,6 @@ FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
         + 2 * segments[2]->size_bytes() + segments[3]->size_bytes()
         + self_seg_compaction_sz);
     // self compaction steps
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
-    log->housekeeping(c_cfg).get0();
     log->housekeeping(c_cfg).get0();
 
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
@@ -3027,6 +3014,7 @@ struct compact_test_args {
     long num_compactable_msg;
     long msg_per_segment;
     long segments;
+    long expected_compacted_segments;
 };
 
 static void
@@ -3105,9 +3093,10 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
     tlog.info("post-compact stats: {}, analysis: {}", final_stats, final_gaps);
     BOOST_REQUIRE_EQUAL(
       final_stats.committed_offset, args.segments * args.msg_per_segment);
+
     // we used the same key for all messages, so we should have one huge gap at
-    // the beginning of the log
-    BOOST_REQUIRE_EQUAL(final_gaps.num_gaps, 1);
+    // the beginning of each compacted segment
+    BOOST_REQUIRE_EQUAL(final_gaps.num_gaps, args.expected_compacted_segments);
     BOOST_REQUIRE_EQUAL(final_gaps.first_gap_start, model::offset(0));
 
     // If adjacent segment compaction worked in order from oldest to newest, we
@@ -3132,7 +3121,8 @@ FIXTURE_TEST(test_max_compact_offset_mid_segment, storage_test_fixture) {
       {.max_compact_offs = model::offset(150),
        .num_compactable_msg = 100,
        .msg_per_segment = 100,
-       .segments = 3},
+       .segments = 3,
+       .expected_compacted_segments = 1},
       *this);
 }
 
@@ -3144,7 +3134,8 @@ FIXTURE_TEST(test_max_compact_offset_unset, storage_test_fixture) {
        // after writing the third segment.
        .num_compactable_msg = 200,
        .msg_per_segment = 100,
-       .segments = 3},
+       .segments = 3,
+       .expected_compacted_segments = 3},
       *this);
 }
 

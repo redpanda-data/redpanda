@@ -99,8 +99,18 @@ ss::future<model::offset> build_offset_map(
     // Build the key offset map by iterating on older and older data.
     auto iter = std::prev(segs.end());
     while (true) {
+        if (cfg.asrc) {
+            cfg.asrc->check();
+        }
+        const auto& seg = iter->get();
+        auto read_lock = co_await seg->read_lock();
+        if (seg->is_closed()) {
+            // Stop early if the segment e.g. has been prefix truncated. We'll
+            // make do with the offset map we have so far.
+            break;
+        }
         auto seg_fully_indexed = co_await build_offset_map_for_segment(
-          cfg, *(iter->get()), m);
+          cfg, *seg, m);
         if (!seg_fully_indexed) {
             // The offset map is full. Note that we may have only partially
             // indexed a segment, but it's safe to use this index. If no new
@@ -108,7 +118,7 @@ ss::future<model::offset> build_offset_map(
             // from this segment for completeness.
             break;
         }
-        min_segment_fully_indexed = iter->get()->offsets().base_offset;
+        min_segment_fully_indexed = seg->offsets().base_offset;
         if (iter == segs.begin()) {
             break;
         }
