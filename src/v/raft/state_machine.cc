@@ -9,11 +9,15 @@
 
 #include "raft/state_machine.h"
 
+#include "likely.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
+#include "ssx/future-util.h"
 #include "storage/log.h"
 #include "storage/record_batch_builder.h"
+
+#include <exception>
 
 namespace raft {
 
@@ -124,17 +128,29 @@ ss::future<result<replicate_result>> state_machine::quorum_write_empty_batch(
           });
       });
 }
+ss::future<> state_machine::maybe_apply_raft_snapshot() {
+    // a loop here is required as install snapshot request may be processed by
+    // Raft while handling the other snapshot. In this case a new snapshot
+    // should be applied to the STM.
 
+    while (_next < _raft->start_offset()) {
+        try {
+            co_await handle_raft_snapshot();
+        } catch (...) {
+            const auto& e = std::current_exception();
+            if (!ssx::is_shutdown_exception(e)) {
+                vlog(_log.error, "Error applying Raft snapshot - {}", e);
+            }
+            std::rethrow_exception(e);
+        }
+    }
+}
 ss::future<> state_machine::apply() {
     // wait until consensus commit index is >= _next
     return _raft->events()
       .wait(_next, model::no_timeout, _as)
       .then([this] {
-          auto f = ss::now();
-          if (_next < _raft->start_offset()) {
-              f = handle_raft_snapshot();
-          }
-          return f.then([this] {
+          return maybe_apply_raft_snapshot().then([this] {
               /**
                * Raft make_reader method allows callers reading up to
                * last_visible index. In order to make the STMs safe and working
