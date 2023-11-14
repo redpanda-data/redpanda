@@ -86,7 +86,8 @@ uint64_t disk_persistence::disk_file::disk_read_dma_alignment() const noexcept {
     return file_.disk_read_dma_alignment();
 }
 
-uint64_t disk_persistence::disk_file::disk_write_dma_alignment() const noexcept {
+uint64_t
+disk_persistence::disk_file::disk_write_dma_alignment() const noexcept {
     return file_.disk_write_dma_alignment();
 }
 
@@ -115,7 +116,8 @@ disk_persistence::open(std::filesystem::path path) noexcept {
 }
 
 memory_persistence::memory_persistence()
-  : memory_persistence(default_alignment, default_alignment, default_alignment) {}
+  : memory_persistence(
+    default_alignment, default_alignment, default_alignment) {}
 
 memory_persistence::memory_persistence(
   // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -215,7 +217,9 @@ seastar::future<size_t> memory_persistence::memory_file::dma_write(
     });
 }
 
-seastar::future<> memory_persistence::memory_file::close() noexcept { co_return; }
+seastar::future<> memory_persistence::memory_file::close() noexcept {
+    co_return;
+}
 
 uint64_t
 memory_persistence::memory_file::disk_read_dma_alignment() const noexcept {
@@ -227,11 +231,13 @@ memory_persistence::memory_file::disk_write_dma_alignment() const noexcept {
     return persistence_->disk_write_dma_alignment_;
 }
 
-uint64_t memory_persistence::memory_file::memory_dma_alignment() const noexcept {
+uint64_t
+memory_persistence::memory_file::memory_dma_alignment() const noexcept {
     return persistence_->memory_dma_alignment_;
 }
 
-seastar::future<> memory_persistence::memory_file::ensure_capacity(size_t size) {
+seastar::future<>
+memory_persistence::memory_file::ensure_capacity(size_t size) {
     // futurized to avoid reactor stalls for large capacity expansions
     return seastar::do_until(
       [this, size] { return capacity_ >= size; },
@@ -280,8 +286,8 @@ memory_persistence::memory_file::read(uint64_t pos, char* buffer, size_t len) {
     co_return bytes_read;
 }
 
-seastar::future<size_t>
-memory_persistence::memory_file::write(uint64_t pos, const char* buf, size_t len) {
+seastar::future<size_t> memory_persistence::memory_file::write(
+  uint64_t pos, const char* buf, size_t len) {
     if (len == 0) {
         // don't expand capacity with a zero-length write at @pos
         co_return 0;
