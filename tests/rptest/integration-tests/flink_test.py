@@ -1,10 +1,5 @@
 from workloads import Workload
 
-
-
-
-
-
 from rptest.services.cluster import cluster
 from rptest.clients.default import DefaultClient
 
@@ -20,7 +15,6 @@ from rptest.services.redpanda import ResourceSettings
 # Import the Workload classes
 from lib.workload import Workload, \
     NumberIncrementalWorkload  # RealtimeWordCountWorkload, StreamAggregationWorkload, GeospatialDataProcessingWorkload
-
 
 # class FlinkTest(RedpandaTest):
 #     def __init__(self, test_context):

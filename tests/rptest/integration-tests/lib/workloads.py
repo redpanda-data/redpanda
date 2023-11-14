@@ -17,8 +17,7 @@ class TestProducer:
         self.topic = topic
         self.producer = KafkaProducer(
             bootstrap_servers="localhost:9092",
-            value_serializer=lambda m: json.dumps(m).encode('ascii')
-        )
+            value_serializer=lambda m: json.dumps(m).encode('ascii'))
 
     def send_callback(self, num_records, callback):
         """
@@ -46,9 +45,11 @@ class TestConsumer:
             'group_id': group_id,
             'auto_offset_reset': 'earliest',
         }
-        self.consumer = KafkaConsumer(value_deserializer=lambda m: json.loads(m.decode('utf-8')), **conf)
+        self.consumer = KafkaConsumer(
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')), **conf)
 
-    def consume_fixed_number_of_messages(self, topics, num_messages_to_consume):
+    def consume_fixed_number_of_messages(self, topics,
+                                         num_messages_to_consume):
         """
         Consume a fixed number of messages from Kafka topics.
 
@@ -135,7 +136,8 @@ class NumberIncrementalWorkload(Workload):
     def __init__(self):
         super().__init__(
             name="Number Incremental Workload with Timestamp",
-            description="Generates a stream of numbers with incremental values and timestamps."
+            description=
+            "Generates a stream of numbers with incremental values and timestamps."
         )
 
     def generate_data(self):
@@ -174,10 +176,14 @@ class NumberIncrementalWorkload(Workload):
         sink_consumer = KafkaConsumer('test-sink-topic', **kafka_settings)
 
         print("Reading topics...")
-        source_topic_records = read_events_and_store(source_consumer, 'test-source-topic', num_records)
+        source_topic_records = read_events_and_store(source_consumer,
+                                                     'test-source-topic',
+                                                     num_records)
         import time
         time.sleep(5)
-        sink_topic_records = read_events_and_store(sink_consumer, 'test-sink-topic', num_records)
+        sink_topic_records = read_events_and_store(sink_consumer,
+                                                   'test-sink-topic',
+                                                   num_records)
         # print(f"source_topic_records : {source_topic_records}")
         # print(f"sink_topic_records : {sink_topic_records}")
 
@@ -185,9 +191,11 @@ class NumberIncrementalWorkload(Workload):
         if len(source_topic_records) == len(sink_topic_records):
             for source_key, source_value in source_topic_records.items():
                 if source_key in sink_topic_records.keys():
-                    if str(source_value["source_sum"]) == str(sink_topic_records[source_key]["sink_sum"]):
+                    if str(source_value["source_sum"]) == str(
+                            sink_topic_records[source_key]["sink_sum"]):
                         print(
-                            f"Event match: source_sum = {source_value['source_sum']}, sink_sum = {sink_topic_records[source_key]['sink_sum']}")
+                            f"Event match: source_sum = {source_value['source_sum']}, sink_sum = {sink_topic_records[source_key]['sink_sum']}"
+                        )
                     else:
 
                         msg = f"Event mismatch: {source_value['source_sum']}, {sink_topic_records[source_key]['sink_sum']}"
@@ -245,7 +253,8 @@ if __name__ == '__main__':
     prod = TestProducer()
 
     num_events = 8
-    workload = NumberIncrementalWorkload()  # Replace with the desired workload class
+    workload = NumberIncrementalWorkload(
+    )  # Replace with the desired workload class
 
     prod.send_callback(num_events, workload.generate_data)
 

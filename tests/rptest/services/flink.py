@@ -12,9 +12,9 @@ from pyflink.datastream.functions import FlatMapFunction
 from pyflink.common.typeinfo import Types
 from pyflink.common import Row
 
-
 # Get the absolute path to the JAR file
 # jar_path = "file://" + os.path.abspath("../integration-tests/flink-connector-kafka-3.0.1-1.18.jar")
+
 
 # change the output type as specified
 class SumNumbers(FlatMapFunction):
@@ -35,7 +35,10 @@ class SumNumbers(FlatMapFunction):
         logging.info(f"Sum:{sum}")
 
         # Return the sum as a string
-        yield Row(id=events["id"], num_a=str(num1), num_b=str(num2), sink_sum=str(sum))
+        yield Row(id=events["id"],
+                  num_a=str(num1),
+                  num_b=str(num2),
+                  sink_sum=str(sum))
 
 
 def flink_job(env):
@@ -50,37 +53,42 @@ def flink_job(env):
         .build()
 
     # Read the data as a stream of strings
-    data_stream = env.from_source(redpanda_source, WatermarkStrategy.no_watermarks(), "kafka source")
+    data_stream = env.from_source(redpanda_source,
+                                  WatermarkStrategy.no_watermarks(),
+                                  "kafka source")
     KafkaSource.builder().set_topics("test-source-topic")
 
     # specify output type
     sum_stream = data_stream.flat_map(
         SumNumbers(),
-        output_type=Types.ROW_NAMED(field_names=["id", "num_a", "num_b", "sink_sum"],
-                                    field_types=[Types.STRING(), Types.STRING(), Types.STRING(), Types.STRING()]),
+        output_type=Types.ROW_NAMED(
+            field_names=["id", "num_a", "num_b", "sink_sum"],
+            field_types=[
+                Types.STRING(),
+                Types.STRING(),
+                Types.STRING(),
+                Types.STRING()
+            ]),
     )
 
     # Define the output type for the sum_stream
-    output_type = Types.ROW_NAMED(field_names=["id", "num_a", "num_b", "sink_sum"],
-                                  field_types=[Types.STRING(), Types.STRING(), Types.STRING(), Types.STRING()])
+    output_type = Types.ROW_NAMED(
+        field_names=["id", "num_a", "num_b", "sink_sum"],
+        field_types=[
+            Types.STRING(),
+            Types.STRING(),
+            Types.STRING(),
+            Types.STRING()
+        ])
 
     # set value serialization schema
-    redpanda_sink = (
-        KafkaSink.builder()
-        .set_bootstrap_servers("localhost:9092")
-        .set_record_serializer(
-            KafkaRecordSerializationSchema.builder()
-            .set_topic("test-sink-topic")
-            .set_value_serialization_schema(
-                JsonRowSerializationSchema.builder()
-                .with_type_info(output_type)
-                .build()
-            )
-            .build()
-        )
-        .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-        .build()
-    )
+    redpanda_sink = (KafkaSink.builder().set_bootstrap_servers(
+        "localhost:9092").set_record_serializer(
+            KafkaRecordSerializationSchema.builder().set_topic(
+                "test-sink-topic").set_value_serialization_schema(
+                    JsonRowSerializationSchema.builder().with_type_info(
+                        output_type).build()).build()).set_delivery_guarantee(
+                            DeliveryGuarantee.AT_LEAST_ONCE).build())
 
     # Write the transformed data to the output topic
     sum_stream.sink_to(redpanda_sink)
@@ -91,7 +99,9 @@ def flink_job(env):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
+    logging.basicConfig(stream=sys.stdout,
+                        level=logging.INFO,
+                        format="%(message)s")
 
     # create a StreamExecutionEnvironment
     env = StreamExecutionEnvironment.get_execution_environment()
