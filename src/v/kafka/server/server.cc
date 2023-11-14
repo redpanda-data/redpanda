@@ -742,11 +742,37 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
 
+        if (!ctx.authorized(
+              security::acl_operation::write,
+              transactional_id{request.data.transactional_id})) {
+            add_partitions_to_txn_response response{
+              request, error_code::transactional_id_authorization_failed};
+            return ctx.respond(std::move(response));
+        }
+
+        absl::flat_hash_set<model::topic> unauthorized_topics;
+        for (const auto& topic : request.data.topics) {
+            if (!ctx.authorized(security::acl_operation::write, topic.name)) {
+                unauthorized_topics.emplace(topic.name);
+            }
+        }
+
+        if (!unauthorized_topics.empty()) {
+            add_partitions_to_txn_response response{
+              request, [&unauthorized_topics](const auto& tp) {
+                  return unauthorized_topics.contains(tp)
+                           ? error_code::topic_authorization_failed
+                           : error_code::operation_not_attempted;
+              }};
+            return ctx.respond(response);
+        }
+
         cluster::add_paritions_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,
           .producer_epoch = request.data.producer_epoch};
         tx_request.topics.reserve(request.data.topics.size());
+
         for (auto& topic : request.data.topics) {
             cluster::add_paritions_tx_request::topic tx_topic{
               .name = std::move(topic.name),
