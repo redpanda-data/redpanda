@@ -343,7 +343,7 @@ public:
                 // replacements either start before or exactly at 0
                 return size_t{0};
             }
-            auto candidate = _base_offset.find(offset_seg_it->first());
+            auto candidate = _base_offset.lower_bound(offset_seg_it->first());
             if (candidate.is_end()) {
                 // replacements are append only, return an index that will
                 // signal this
@@ -398,12 +398,11 @@ public:
           last_hint_tosave,
           _hints.end()};
 
-        auto unchanged_committed_offset
-          = replacement_store.last_committed_offset().value_or(
-            model::offset::min());
+        auto unchanged_base_offset = replacement_store._base_offset.last_value()
+                                       .value_or(model::offset::min()());
 
         // iterator pointing to first segment not cloned into replacement_store
-        auto old_segments_it = upper_bound(unchanged_committed_offset());
+        auto old_segments_it = upper_bound(unchanged_base_offset);
         auto old_segments_end = end();
 
         // merge replacements and old segments into new store
@@ -413,9 +412,9 @@ public:
             ++offset_seg_it;
 
             auto old_seg = dereference(old_segments_it);
-            // append old segments with committed offset smaller than
+            // append old segments with base_offset smaller than
             // replacement
-            while (old_seg.committed_offset < replacement_base_offset) {
+            while (old_seg.base_offset < replacement_base_offset) {
                 replacement_store.append(old_seg);
                 details::increment_all(old_segments_it);
                 if (old_segments_it == old_segments_end) {
@@ -1010,7 +1009,9 @@ public:
         if (_write_buffer.size() > 1) {
             auto not_replaced_segment = std::find_if(
               std::next(m_it), _write_buffer.end(), [&](auto& kv) {
-                  return kv.first > m.committed_offset;
+                  // first element with a committed offset that spans over the
+                  // range of m
+                  return kv.second.committed_offset > m.committed_offset;
               });
             // if(next(m_it) == not_replaced_segment) there is nothing to erase,
             // _write_buffer.erase would do nothing
