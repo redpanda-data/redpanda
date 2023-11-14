@@ -37,7 +37,7 @@ def shell(cmd):
     p.wait()
     # Format outout as String object
     _out = "\n".join(list(p.stdout)).strip()
-    _rcode = p.returncode
+    # _rcode = p.returncode
     p.kill()
     return _out
 
@@ -120,7 +120,7 @@ class CloudCleanup():
 
         def _log_skip(_msg):
             _msg += f"| skipped '{_cluster['name']}', 36h delay not passed"
-            self.log.info(_message)
+            self.log.info(_msg)
 
         def _log_deleted(_msg):
             _msg += "| deleted"
@@ -390,7 +390,6 @@ def cleanup_entrypoint():
 
     # Namespaces
     cleaner.clean_namespaces(ns_name_prefix, 8)
-    # cleaner.clean_namespaces("certification-test-", 7)
 
     return
 
