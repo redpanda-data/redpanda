@@ -62,6 +62,8 @@ namespace cloud_storage {
 struct topic_recovery_service;
 }
 
+extern ss::logger adminlog;
+
 class admin_server {
 public:
     explicit admin_server(
@@ -126,6 +128,38 @@ private:
     void do_audit_authn(
       ss::httpd::const_req req,
       security::audit::authentication authentication_event);
+
+    static model::ntp
+    parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns);
+    static model::ntp parse_ntp_from_request(ss::httpd::parameters& param);
+
+    static ss::future<json::Document> parse_json_body(ss::http::request* req);
+
+    constexpr std::string_view to_string_view(service_kind kind) {
+        switch (kind) {
+        case service_kind::schema_registry:
+            return "schema-registry";
+        case service_kind::http_proxy:
+            return "http-proxy";
+        }
+        return "invalid";
+    }
+
+    template<typename E>
+    std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
+      from_string_view(std::string_view);
+
+    template<>
+    constexpr std::optional<service_kind>
+    from_string_view<service_kind>(std::string_view sv) {
+        return string_switch<std::optional<service_kind>>(sv)
+          .match(
+            to_string_view(service_kind::schema_registry),
+            service_kind::schema_registry)
+          .match(
+            to_string_view(service_kind::http_proxy), service_kind::http_proxy)
+          .default_match(std::nullopt);
+    }
 
     /**
      * Authenticate, and raise if `required_auth` is not met by

@@ -42,6 +42,7 @@ v_cc_library(
     ${swag_files}
     cluster_config_schema_util.cc
     admin_server.cc
+    admin_debug.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc

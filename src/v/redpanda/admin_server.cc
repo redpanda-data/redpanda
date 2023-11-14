@@ -154,7 +154,7 @@
 
 using namespace std::chrono_literals;
 
-static ss::logger logger{"admin_api_server"};
+ss::logger adminlog{"admin_api_server"};
 
 static constexpr auto audit_svc_name = "Redpanda Admin HTTP Server";
 
@@ -185,8 +185,10 @@ struct string_conversion_exception : public default_control_character_thrower {
           + get_sanitized_string());
     }
 };
+} // namespace
 
-model::ntp parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns) {
+model::ntp admin_server::parse_ntp_from_request(
+  ss::httpd::parameters& param, model::ns ns) {
     auto topic = model::topic(param["topic"]);
 
     model::partition_id partition;
@@ -205,10 +207,11 @@ model::ntp parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns) {
     return {std::move(ns), std::move(topic), partition};
 }
 
-model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
+model::ntp admin_server::parse_ntp_from_request(ss::httpd::parameters& param) {
     return parse_ntp_from_request(param, model::ns(param["namespace"]));
 }
 
+namespace {
 model::ntp
 parse_ntp_from_query_param(const std::unique_ptr<ss::http::request>& req) {
     auto ns = req->get_query_param("namespace");
@@ -301,7 +304,7 @@ ss::future<> admin_server::start() {
     co_await configure_listeners();
 
     vlog(
-      logger.info,
+      adminlog.info,
       "Started HTTP admin service listening at {}",
       _cfg.endpoints);
 }
@@ -391,6 +394,7 @@ json::validator make_set_replicas_validator() {
 )";
     return json::validator(schema);
 }
+} // namespace
 
 /**
  * A helper around rapidjson's Parse that checks for errors & raises
@@ -398,7 +402,8 @@ json::validator make_set_replicas_validator() {
  * as an empty request body causes a redpanda crash via a rapidjson
  * assertion when trying to GetObject on the resulting document.
  */
-ss::future<json::Document> parse_json_body(ss::http::request* req) {
+ss::future<json::Document>
+admin_server::parse_json_body(ss::http::request* req) {
     json::Document doc;
     auto content = co_await ss::util::read_entire_stream_contiguous(
       *req->content_stream);
@@ -411,6 +416,7 @@ ss::future<json::Document> parse_json_body(ss::http::request* req) {
     }
 }
 
+namespace {
 /**
  * A helper to apply a schema validator to a request and on error,
  * string-ize any schema errors in the 400 response to help
@@ -563,7 +569,7 @@ ss::future<> admin_server::configure_listeners() {
                     const std::unordered_set<ss::sstring>& updated,
                     const std::exception_ptr& eptr) {
                       rpc::log_certificate_reload_event(
-                        logger, "API TLS", updated, eptr);
+                        adminlog, "API TLS", updated, eptr);
                   });
             }
 
@@ -587,7 +593,7 @@ ss::future<> admin_server::configure_listeners() {
       && !config::shard_local_cfg().admin_api_require_auth()) {
         auto& ep = insecure_ep.value();
         vlog(
-          logger.warn,
+          adminlog.warn,
           "Insecure Admin API listener on {}:{}, consider enabling "
           "`admin_api_require_auth`",
           ep.address.host(),
@@ -600,7 +606,7 @@ void admin_server::audit_authz(
   const request_auth_result& auth_result,
   httpd_authorized authorized,
   std::optional<std::string_view> reason) {
-    vlog(logger.trace, "Attempting to audit authz for {}", req.format_url());
+    vlog(adminlog.trace, "Attempting to audit authz for {}", req.format_url());
     auto api_event = security::audit::make_api_activity_event(
       req, auth_result, audit_svc_name, bool(authorized), reason);
     auto success = _audit_mgr.local().enqueue_audit_event(
@@ -627,7 +633,7 @@ void admin_server::audit_authz(
 
         if (!is_allowed) {
             vlog(
-              logger.error,
+              adminlog.error,
               "Failed to audit authorization request for endpoint: {}",
               req.format_url());
             throw ss::httpd::base_exception(
@@ -636,7 +642,7 @@ void admin_server::audit_authz(
         }
 
         vlog(
-          logger.error,
+          adminlog.error,
           "Request to modify or view cluster configuration was not audited due "
           "to audit queues being full");
     }
@@ -664,14 +670,14 @@ void admin_server::audit_authn_failure(
 void admin_server::do_audit_authn(
   ss::httpd::const_req req,
   security::audit::authentication authentication_event) {
-    vlog(logger.trace, "Attempting to audit authn for {}", req.format_url());
+    vlog(adminlog.trace, "Attempting to audit authn for {}", req.format_url());
     auto success = _audit_mgr.local().enqueue_audit_event(
       security::audit::event_type::authenticate,
       std::move(authentication_event));
 
     if (!success) {
         vlog(
-          logger.error,
+          adminlog.error,
           "Failed to audit authentication request for endpoint: {}",
           req.format_url());
         throw ss::httpd::base_exception(
@@ -683,7 +689,7 @@ void admin_server::do_audit_authn(
 void admin_server::log_request(
   const ss::http::request& req, const request_auth_result& auth_state) const {
     vlog(
-      logger.debug,
+      adminlog.debug,
       "[{}] {} {}",
       auth_state.get_username().size() > 0 ? auth_state.get_username()
                                            : "_anonymous",
@@ -721,12 +727,12 @@ void admin_server::log_exception(
     } catch (ss::httpd::base_exception& ex) {
         const auto status = static_cast<http_status_ut>(ex.status());
         if (ex.status() == http_status::internal_server_error) {
-            vlog(logger.error, "{}", log_ex(status));
+            vlog(adminlog.error, "{}", log_ex(status));
         } else if (status >= 400) {
-            vlog(logger.warn, "{}", log_ex(status));
+            vlog(adminlog.warn, "{}", log_ex(status));
         }
     } catch (...) {
-        vlog(logger.error, "{}", log_ex());
+        vlog(adminlog.error, "{}", log_ex());
     }
 }
 
@@ -749,7 +755,7 @@ void admin_server::log_level_timer_handler() {
     for (auto it = _log_level_resets.begin(); it != _log_level_resets.end();) {
         if (it->second.expires <= ss::timer<>::clock::now()) {
             vlog(
-              logger.info,
+              adminlog.info,
               "Expiring log level for {{{}}} to {}",
               it->first,
               it->second.level);
@@ -768,7 +774,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
 
     if (!leader_id_opt.has_value()) {
-        vlog(logger.info, "Can't redirect, no leader for ntp {}", ntp);
+        vlog(adminlog.info, "Can't redirect, no leader for ntp {}", ntp);
 
         throw ss::httpd::base_exception(
           fmt::format(
@@ -778,7 +784,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
 
     if (leader_id_opt.value() == *config::node().node_id()) {
         vlog(
-          logger.info,
+          adminlog.info,
           "Can't redirect to leader from leader node ({})",
           leader_id_opt.value());
         throw ss::httpd::base_exception(
@@ -823,7 +829,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
 
     if (host_hdr.empty()) {
         vlog(
-          logger.debug,
+          adminlog.debug,
           "redirect: Missing Host header, falling back to internal RPC "
           "address");
 
@@ -859,7 +865,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
               = leader.broker.kafka_advertised_listeners();
             if (leader_advertised_addrs.size() < listener_idx + 1) {
                 vlog(
-                  logger.debug,
+                  adminlog.debug,
                   "redirect: leader has no advertised address at matching "
                   "index for {}, "
                   "falling back to internal RPC address",
@@ -871,7 +877,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
             }
         } else {
             vlog(
-              logger.debug,
+              adminlog.debug,
               "redirect: {} did not match any kafka listeners, redirecting to "
               "peer's internal RPC address",
               req_hostname);
@@ -883,7 +889,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
       "{}://{}{}{}", req.get_protocol_name(), target_host, port, req._url);
 
     vlog(
-      logger.info, "Redirecting admin API call to {} leader at {}", ntp, url);
+      adminlog.info, "Redirecting admin API call to {} leader at {}", ntp, url);
 
     co_return ss::httpd::redirect_exception(
       url, ss::http::reply::status_type::temporary_redirect);
@@ -1342,7 +1348,7 @@ void admin_server::register_config_routes() {
           }
 
           vlog(
-            logger.info,
+            adminlog.info,
             "Set log level for {{{}}}: {} -> {}",
             name,
             cur_level,
@@ -1547,7 +1553,7 @@ void admin_server::register_cluster_config_routes() {
                   res;
 
                 for (const auto& s : statuses) {
-                    vlog(logger.trace, "status: {}", s.second);
+                    vlog(adminlog.trace, "status: {}", s.second);
                     auto& rs = res.emplace_back();
                     rs.node_id = s.first;
                     rs.restart = s.second.restart;
@@ -1658,7 +1664,7 @@ admin_server::patch_cluster_config_handler(
                 if (validation_err.has_value()) {
                     errors[yaml_name] = validation_err.value().error_message();
                     vlog(
-                      logger.warn,
+                      adminlog.warn,
                       "Invalid {}: '{}' ({})",
                       yaml_name,
                       property.format_raw(yaml_value),
@@ -1705,7 +1711,7 @@ admin_server::patch_cluster_config_handler(
 
                 errors[yaml_name] = message;
                 vlog(
-                  logger.warn,
+                  adminlog.warn,
                   "Invalid {}: '{}' ({})",
                   yaml_name,
                   property.format_raw(yaml_value),
@@ -1714,7 +1720,7 @@ admin_server::patch_cluster_config_handler(
                 auto message = fmt::format("{}", std::current_exception());
                 errors[yaml_name] = message;
                 vlog(
-                  logger.warn,
+                  adminlog.warn,
                   "Invalid {}: '{}' ({})",
                   yaml_name,
                   property.format_raw(yaml_value),
@@ -1771,7 +1777,7 @@ admin_server::patch_cluster_config_handler(
       update.upsert.size() == upsert_no_op_names.size()
       && update.remove.empty()) {
         vlog(
-          logger.trace,
+          adminlog.trace,
           "patch_cluster_config: ignoring request, {} upserts resulted "
           "in no-ops",
           update.upsert.size());
@@ -1785,7 +1791,7 @@ admin_server::patch_cluster_config_handler(
     }
 
     vlog(
-      logger.trace,
+      adminlog.trace,
       "patch_cluster_config: {} upserts, {} removes",
       update.upsert.size(),
       update.remove.size());
@@ -1840,7 +1846,7 @@ admin_server::raft_transfer_leadership_handler(
     }
 
     vlog(
-      logger.info,
+      adminlog.info,
       "Leadership transfer request for raft group {} to node {}",
       group_id,
       target);
@@ -2000,7 +2006,7 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
     if (is_no_op_user_write(
           _controller->get_credential_store().local(), username, credential)) {
         vlog(
-          logger.debug,
+          adminlog.debug,
           "User {} already exists with matching credential",
           username);
         co_return ss::json::json_return_type(ss::json::json_void());
@@ -2010,7 +2016,7 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
       = co_await _controller->get_security_frontend().local().create_user(
         username, credential, model::timeout_clock::now() + 5s);
     vlog(
-      logger.debug, "Creating user '{}' {}:{}", username, err, err.message());
+      adminlog.debug, "Creating user '{}' {}:{}", username, err, err.message());
 
     if (err == cluster::errc::user_exists) {
         // Idempotency: if user is same as one that already exists,
@@ -2039,14 +2045,14 @@ admin_server::delete_user_handler(std::unique_ptr<ss::http::request> req) {
     auto user = security::credential_user(req->param["user"]);
 
     if (!_controller->get_credential_store().local().contains(user)) {
-        vlog(logger.debug, "User '{}' already gone during deletion", user);
+        vlog(adminlog.debug, "User '{}' already gone during deletion", user);
         co_return ss::json::json_return_type(ss::json::json_void());
     }
 
     auto err
       = co_await _controller->get_security_frontend().local().delete_user(
         user, model::timeout_clock::now() + 5s);
-    vlog(logger.debug, "Deleting user '{}' {}:{}", user, err, err.message());
+    vlog(adminlog.debug, "Deleting user '{}' {}:{}", user, err, err.message());
     if (err == cluster::errc::user_does_not_exist) {
         // Idempotency: removing a non-existent user is successful.
         co_return ss::json::json_return_type(ss::json::json_void());
@@ -2072,7 +2078,7 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
     if (is_no_op_user_write(
           _controller->get_credential_store().local(), user, credential)) {
         vlog(
-          logger.debug,
+          adminlog.debug,
           "User {} already exists with matching credential",
           user);
         co_return ss::json::json_return_type(ss::json::json_void());
@@ -2081,7 +2087,7 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
     auto err
       = co_await _controller->get_security_frontend().local().update_user(
         user, credential, model::timeout_clock::now() + 5s);
-    vlog(logger.debug, "Updating user {}:{}", err, err.message());
+    vlog(adminlog.debug, "Updating user {}:{}", err, err.message());
     co_await throw_on_error(*req, err, model::controller_ntp);
     co_return ss::json::json_return_type(ss::json::json_void());
 }
@@ -2147,7 +2153,7 @@ admin_server::kafka_transfer_leadership_handler(
     }
 
     vlog(
-      logger.info,
+      adminlog.info,
       "Leadership transfer request for leader of topic-partition {} to node {}",
       ntp,
       target);
@@ -2278,7 +2284,7 @@ admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
           == ss::httpd::features_json::feature_state::feature_state_state::
             active) {
             vlog(
-              logger.info,
+              adminlog.info,
               "Ignoring request to activate feature '{}', already active",
               feature_name);
             co_return ss::json::json_void();
@@ -2290,7 +2296,7 @@ admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
           == ss::httpd::features_json::feature_state::feature_state_state::
             disabled) {
             vlog(
-              logger.info,
+              adminlog.info,
               "Ignoring request to disable feature '{}', already disabled",
               feature_name);
             co_return ss::json::json_void();
@@ -2345,7 +2351,7 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
             /// Loaded license is idential to license in request, do
             /// nothing and return 200(OK)
             vlog(
-              logger.info,
+              adminlog.info,
               "Attempted to load identical license, doing nothing: {}",
               license);
             co_return ss::json::json_void();
@@ -2383,7 +2389,7 @@ void admin_server::register_features_routes() {
           for (const auto& fs : ft.get_feature_state()) {
               ss::httpd::features_json::feature_state item;
               vlog(
-                logger.trace,
+                adminlog.trace,
                 "feature_state: {} {}",
                 fs.spec.name,
                 fs.get_state());
@@ -2858,7 +2864,7 @@ admin_server::mark_transaction_expired_handler(
           fmt::format, "Transaction epoch must be an integer: {}", node));
     }
 
-    vlog(logger.info, "Mark transaction expired for pid:{}", pid);
+    vlog(adminlog.info, "Mark transaction expired for pid:{}", pid);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*req, ntp);
@@ -2929,7 +2935,7 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
 
     if (reconfiguration_states.has_error()) {
         vlog(
-          logger.info,
+          adminlog.info,
           "unable to get reconfiguration status: {}({})",
           reconfiguration_states.error().message(),
           reconfiguration_states.error());
@@ -3021,7 +3027,7 @@ admin_server::cancel_partition_reconfig_handler(
           fmt::format("Can't cancel controller reconfiguration"));
     }
     vlog(
-      logger.debug,
+      adminlog.debug,
       "Requesting cancelling of {} partition reconfiguration",
       ntp);
 
@@ -3046,7 +3052,7 @@ admin_server::unclean_abort_partition_reconfig_handler(
           "Can't unclean abort controller reconfiguration");
     }
     vlog(
-      logger.warn,
+      adminlog.warn,
       "Requesting unclean abort of {} partition reconfiguration",
       ntp);
 
@@ -3096,7 +3102,7 @@ admin_server::force_set_partition_replicas_handler(
         const auto& current_replicas = current_assignment->replicas;
         if (current_replicas == replicas) {
             vlog(
-              logger.info,
+              adminlog.info,
               "Request to change ntp {} replica set to {}, no change",
               ntp,
               replicas);
@@ -3117,7 +3123,7 @@ admin_server::force_set_partition_replicas_handler(
     }
 
     vlog(
-      logger.info,
+      adminlog.info,
       "Request to force update ntp {} replica set to {}",
       ntp,
       replicas);
@@ -3131,7 +3137,7 @@ admin_server::force_set_partition_replicas_handler(
                      + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
 
     vlog(
-      logger.debug,
+      adminlog.debug,
       "Request to change ntp {} replica set to {}: err={}",
       ntp,
       replicas,
@@ -3162,7 +3168,7 @@ admin_server::set_partition_replicas_handler(
     // that will do nothing.
     if (current_assignment && current_assignment->replicas == replicas) {
         vlog(
-          logger.info,
+          adminlog.info,
           "Request to change ntp {} replica set to {}, no change",
           ntp,
           replicas);
@@ -3170,7 +3176,10 @@ admin_server::set_partition_replicas_handler(
     }
 
     vlog(
-      logger.info, "Request to change ntp {} replica set to {}", ntp, replicas);
+      adminlog.info,
+      "Request to change ntp {} replica set to {}",
+      ntp,
+      replicas);
 
     auto err = co_await _controller->get_topics_frontend()
                  .local()
@@ -3182,7 +3191,7 @@ admin_server::set_partition_replicas_handler(
                      + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
 
     vlog(
-      logger.debug,
+      adminlog.debug,
       "Request to change ntp {} replica set to {}: err={}",
       ntp,
       replicas,
@@ -3564,7 +3573,7 @@ void admin_server::register_hbadger_routes() {
           auto p = req->param["point"];
           auto type = req->param["type"];
           vlog(
-            logger.info,
+            adminlog.info,
             "Request to set failure probe of type '{}' in  '{}' at point "
             "'{}'",
             type,
@@ -3604,7 +3613,7 @@ void admin_server::register_hbadger_routes() {
           auto m = req->param["module"];
           auto p = req->param["point"];
           vlog(
-            logger.info,
+            adminlog.info,
             "Request to unset failure probe '{}' at point '{}'",
             m,
             p);
@@ -3821,7 +3830,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
       .ntp = ntp, .etag = model::term_id(etag)};
 
     vlog(
-      logger.info,
+      adminlog.info,
       "Delete partition(ntp: {}, etag: {}) from transaction({})",
       ntp,
       etag,
@@ -3896,7 +3905,7 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
     static thread_local json::validator self_test_start_validator(
       make_self_test_start_validator());
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        vlog(logger.debug, "Need to redirect self_test_start request");
+        vlog(adminlog.debug, "Need to redirect self_test_start request");
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
     auto doc = co_await parse_json_body(req.get());
@@ -3941,7 +3950,7 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
           [r, ids](auto& self_test_frontend) {
               return self_test_frontend.start_test(r, ids);
           });
-        vlog(logger.info, "Request to start self test succeeded: {}", tid);
+        vlog(adminlog.info, "Request to start self test succeeded: {}", tid);
         co_return ss::json::json_return_type(tid);
     } catch (const std::exception& ex) {
         throw ss::httpd::base_exception(
@@ -3953,7 +3962,7 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
 ss::future<ss::json::json_return_type>
 admin_server::self_test_stop_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        vlog(logger.info, "Need to redirect self_test_stop request");
+        vlog(adminlog.info, "Need to redirect self_test_stop request");
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
     auto r = co_await _self_test_frontend.invoke_on(
@@ -3966,7 +3975,7 @@ admin_server::self_test_stop_handler(std::unique_ptr<ss::http::request> req) {
             r.active_participant_ids()),
           ss::http::reply::status_type::service_unavailable);
     }
-    vlog(logger.info, "Request to stop self test succeeded");
+    vlog(adminlog.info, "Request to stop self test succeeded");
     co_return ss::json::json_void();
 }
 
@@ -4043,53 +4052,6 @@ void admin_server::register_self_test_routes() {
       });
 }
 
-ss::future<ss::json::json_return_type>
-admin_server::cloud_storage_usage_handler(
-  std::unique_ptr<ss::http::request> req) {
-    auto batch_size
-      = cluster::topic_table_partition_generator::default_batch_size;
-    if (auto batch_size_param = req->get_query_param("batch_size");
-        !batch_size_param.empty()) {
-        try {
-            batch_size = std::stoi(batch_size_param);
-        } catch (...) {
-            throw ss::httpd::bad_param_exception(fmt::format(
-              "batch_size must be an integer: {}", batch_size_param));
-        }
-    }
-
-    auto retries_allowed
-      = cluster::cloud_storage_size_reducer::default_retries_allowed;
-    if (auto retries_param = req->get_query_param("retries_allowed");
-        !retries_param.empty()) {
-        try {
-            retries_allowed = std::stoi(retries_param);
-        } catch (...) {
-            throw ss::httpd::bad_param_exception(fmt::format(
-              "retries_allowed must be an integer: {}", retries_param));
-        }
-    }
-
-    cluster::cloud_storage_size_reducer reducer(
-      _controller->get_topics_state(),
-      _controller->get_members_table(),
-      _controller->get_partition_leaders(),
-      _connection_cache,
-      batch_size,
-      retries_allowed);
-
-    auto res = co_await reducer.reduce();
-
-    if (res) {
-        co_return ss::json::json_return_type(res.value());
-    } else {
-        throw ss::httpd::base_exception(
-          fmt::format("Failed to generate total cloud storage usage. "
-                      "Please retry."),
-          ss::http::reply::status_type::service_unavailable);
-    }
-}
-
 namespace {
 ss::json::json_return_type raw_data_to_usage_response(
   const std::vector<kafka::usage_window>& total_usage, bool include_open) {
@@ -4133,7 +4095,7 @@ void admin_server::register_usage_routes() {
           bool include_open = false;
           auto include_open_str = req->get_query_param("include_open_bucket");
           vlog(
-            logger.info,
+            adminlog.info,
             "Request to observe usage info, include_open_bucket={}",
             include_open_str);
           if (!include_open_str.empty()) {
@@ -4266,7 +4228,7 @@ void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::stress_fiber_stop,
       [this](std::unique_ptr<ss::http::request>) {
-          vlog(logger.info, "Stopping stress fiber");
+          vlog(adminlog.info, "Stopping stress fiber");
           return _stress_fiber_manager
             .invoke_on_all([](auto& stress_mgr) { return stress_mgr.stop(); })
             .then(
@@ -4276,7 +4238,7 @@ void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::stress_fiber_start,
       [this](std::unique_ptr<ss::http::request> req) {
-          vlog(logger.info, "Requested stress fiber");
+          vlog(adminlog.info, "Requested stress fiber");
           stress_config cfg;
           const auto parse_int =
             [&](const ss::sstring& param, std::optional<int>& val) {
@@ -4355,9 +4317,9 @@ void admin_server::register_debug_routes() {
             .invoke_on_all([cfg](auto& stress_mgr) {
                 auto ran = stress_mgr.start(cfg);
                 if (ran) {
-                    vlog(logger.info, "Started stress fiber...");
+                    vlog(adminlog.info, "Started stress fiber...");
                 } else {
-                    vlog(logger.info, "Stress fiber already running...");
+                    vlog(adminlog.info, "Stress fiber already running...");
                 }
             })
             .then(
@@ -4367,7 +4329,7 @@ void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
       [this](std::unique_ptr<ss::http::request>) {
-          vlog(logger.info, "Request to reset leaders info");
+          vlog(adminlog.info, "Request to reset leaders info");
           return _metadata_cache
             .invoke_on_all([](auto& mc) { mc.reset_leaders(); })
             .then(
@@ -4377,13 +4339,13 @@ void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::refresh_disk_health_info,
       [this](std::unique_ptr<ss::http::request>) {
-          vlog(logger.info, "Request to refresh disk health info");
+          vlog(adminlog.info, "Request to refresh disk health info");
           return _metadata_cache.local().refresh_health_monitor().then_wrapped(
             [](ss::future<> f) {
                 if (f.failed()) {
                     auto eptr = f.get_exception();
                     vlog(
-                      logger.error,
+                      adminlog.error,
                       "failed to refresh disk health info: {}",
                       eptr);
                     return ss::make_exception_future<
@@ -4399,7 +4361,7 @@ void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::get_leaders_info,
       [this](std::unique_ptr<ss::http::request>) {
-          vlog(logger.info, "Request to get leaders info");
+          vlog(adminlog.info, "Request to get leaders info");
           using result_t = ss::httpd::debug_json::leader_info;
           std::vector<result_t> ans;
 
@@ -4517,7 +4479,7 @@ void admin_server::register_debug_routes() {
           auto curr = ss::engine().get_blocked_reactor_notify_ms();
 
           vlog(
-            logger.info,
+            adminlog.info,
             "Setting blocked_reactor_notify_ms from {} to {} for {} "
             "(default={})",
             curr,
@@ -4649,75 +4611,6 @@ admin_server::get_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
     co_return disk;
 }
 
-ss::future<ss::json::json_return_type>
-admin_server::get_local_offsets_translated_handler(
-  std::unique_ptr<ss::http::request> req) {
-    static const std::string_view to_kafka = "kafka";
-    static const std::string_view to_rp = "redpanda";
-    const model::ntp ntp = parse_ntp_from_request(req->param);
-    const auto shard = _controller->get_shard_table().local().shard_for(ntp);
-    auto translate_to = to_kafka;
-    if (auto e = req->get_query_param("translate_to"); !e.empty()) {
-        if (e != to_kafka && e != to_rp) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "'translate_to' parameter must be one of either {} or {}",
-              to_kafka,
-              to_rp));
-        }
-        translate_to = e;
-    }
-    if (!shard) {
-        throw ss::httpd::not_found_exception(
-          fmt::format("ntp {} could not be found on the node", ntp));
-    }
-    const auto doc = co_await parse_json_body(req.get());
-    if (!doc.IsArray()) {
-        throw ss::httpd::bad_request_exception(
-          "Request body must be JSON array of integers");
-    }
-    std::vector<model::offset> input;
-    for (auto& item : doc.GetArray()) {
-        if (!item.IsInt()) {
-            throw ss::httpd::bad_request_exception(
-              "Offsets must all be integers");
-        }
-        input.emplace_back(item.GetInt());
-    }
-    co_return co_await _controller->get_partition_manager().invoke_on(
-      *shard,
-      [ntp, translate_to, input = std::move(input)](
-        cluster::partition_manager& pm) {
-          auto partition = pm.get(ntp);
-          if (!partition) {
-              return ss::make_exception_future<ss::json::json_return_type>(
-                ss::httpd::not_found_exception(fmt::format(
-                  "partition with ntp {} could not be found on the node",
-                  ntp)));
-          }
-          const auto ots = partition->get_offset_translator_state();
-          std::vector<ss::httpd::debug_json::translated_offset> result;
-          for (const auto offset : input) {
-              try {
-                  ss::httpd::debug_json::translated_offset to;
-                  if (translate_to == to_kafka) {
-                      to.kafka_offset = ots->from_log_offset(offset);
-                      to.rp_offset = offset;
-                  } else {
-                      to.rp_offset = ots->to_log_offset(offset);
-                      to.kafka_offset = offset;
-                  }
-                  result.push_back(std::move(to));
-              } catch (const std::runtime_error&) {
-                  throw ss::httpd::bad_request_exception(fmt::format(
-                    "Offset provided {} was out of offset translator range",
-                    offset));
-              }
-          }
-          return ss::make_ready_future<ss::json::json_return_type>(
-            std::move(result));
-      });
-}
-
 namespace {
 json::validator make_disk_stat_overrides_validator() {
     const std::string schema = R"(
@@ -4822,7 +4715,7 @@ admin_server::get_local_storage_usage_handler(
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_balancer_status_handler(
   std::unique_ptr<ss::http::request> req) {
-    vlog(logger.debug, "Requested partition balancer status");
+    vlog(adminlog.debug, "Requested partition balancer status");
 
     using result_t = std::variant<
       cluster::partition_balancer_overview_reply,
@@ -4852,7 +4745,7 @@ admin_server::get_partition_balancer_status_handler(
     } else if (std::holds_alternative<model::node_id>(result)) {
         auto node_id = std::get<model::node_id>(result);
         vlog(
-          logger.debug,
+          adminlog.debug,
           "proxying the partition_balancer_overview call to node {}",
           node_id);
         auto rpc_result
@@ -4918,7 +4811,8 @@ ss::future<ss::json::json_return_type>
 admin_server::cancel_all_partitions_reconfigs_handler(
   std::unique_ptr<ss::http::request> req) {
     vlog(
-      logger.info, "Requested cancellation of all ongoing partition movements");
+      adminlog.info,
+      "Requested cancellation of all ongoing partition movements");
 
     auto res = co_await _controller->get_topics_frontend()
                  .local()
@@ -4935,7 +4829,7 @@ void admin_server::register_cluster_routes() {
     register_route<publik>(
       ss::httpd::cluster_json::get_cluster_health_overview,
       [this](std::unique_ptr<ss::http::request>) {
-          vlog(logger.debug, "Requested cluster status");
+          vlog(adminlog.debug, "Requested cluster status");
           return _controller->get_health_monitor()
             .local()
             .get_cluster_health_overview(
@@ -4999,7 +4893,7 @@ void admin_server::register_cluster_routes() {
     register_route_sync<publik>(
       ss::httpd::cluster_json::get_cluster_uuid,
       [this](ss::httpd::const_req) -> ss::json::json_return_type {
-          vlog(logger.debug, "Requested cluster UUID");
+          vlog(adminlog.debug, "Requested cluster UUID");
           const std::optional<model::cluster_uuid>& cluster_uuid
             = _controller->get_storage().local().get_cluster_uuid();
           if (cluster_uuid) {
@@ -5025,10 +4919,10 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
         std::optional<cloud_storage::partition_manifest> _manifest;
     };
 
-    vlog(logger.info, "Requested bucket syncup");
+    vlog(adminlog.info, "Requested bucket syncup");
     auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        vlog(logger.info, "Need to redirect bucket syncup request");
+        vlog(adminlog.info, "Need to redirect bucket syncup request");
         throw co_await redirect_to_leader(*request, ntp);
     } else {
         auto result = co_await _partition_manager.map_reduce(
@@ -5043,13 +4937,13 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
               return ss::make_ready_future<
                 std::optional<cloud_storage::partition_manifest>>(std::nullopt);
           });
-        vlog(logger.info, "Requested bucket syncup completed");
+        vlog(adminlog.info, "Requested bucket syncup completed");
         if (result) {
             std::stringstream sts;
             result->serialize_json(sts);
-            vlog(logger.info, "Requested bucket syncup result {}", sts.str());
+            vlog(adminlog.info, "Requested bucket syncup result {}", sts.str());
         } else {
-            vlog(logger.info, "Requested bucket syncup result empty");
+            vlog(adminlog.info, "Requested bucket syncup result empty");
         }
     }
     co_return ss::json::json_return_type(ss::json::json_void());
@@ -5063,7 +4957,7 @@ admin_server::unsafe_reset_metadata(
 
     auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        vlog(logger.info, "Need to redirect unsafe reset metadata request");
+        vlog(adminlog.info, "Need to redirect unsafe reset metadata request");
         throw co_await redirect_to_leader(*request, ntp);
     }
     if (request->content_length <= 0) {
@@ -5310,7 +5204,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
     case cloud_storage::anomaly_type::non_monotonical_delta: {
         if (!meta.previous) {
             vlog(
-              logger.error,
+              adminlog.error,
               "Invalid anomaly metadata of type {} at {}",
               meta.type,
               meta.at);
@@ -5350,7 +5244,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
     case cloud_storage::anomaly_type::offset_gap: {
         if (!meta.previous) {
             vlog(
-              logger.error,
+              adminlog.error,
               "Invalid anomaly metadata of type {} at {}",
               meta.type,
               meta.at);
@@ -5370,7 +5264,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
     case cloud_storage::anomaly_type::offset_overlap: {
         if (!meta.previous) {
             vlog(
-              logger.error,
+              adminlog.error,
               "Invalid anomaly metadata of type {} at {}",
               meta.type,
               meta.at);
@@ -5444,50 +5338,6 @@ map_anomalies_to_json(
     return json;
 }
 } // namespace
-
-ss::future<ss::json::json_return_type>
-admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
-    vlog(logger.info, "Request to sampled cpu profile");
-
-    std::optional<size_t> shard_id;
-    if (auto e = req->get_query_param("shard"); !e.empty()) {
-        try {
-            shard_id = boost::lexical_cast<size_t>(e);
-        } catch (const boost::bad_lexical_cast&) {
-            throw ss::httpd::bad_param_exception(
-              fmt::format("Invalid parameter 'shard_id' value {{{}}}", e));
-        }
-    }
-
-    if (shard_id.has_value()) {
-        auto all_cpus = ss::smp::all_cpus();
-        auto max_shard_id = std::max_element(all_cpus.begin(), all_cpus.end());
-        if (*shard_id > *max_shard_id) {
-            throw ss::httpd::bad_param_exception(fmt::format(
-              "Shard id too high, max shard id is {}", *max_shard_id));
-        }
-    }
-
-    auto profiles = co_await _cpu_profiler.local().results(shard_id);
-
-    std::vector<ss::httpd::debug_json::cpu_profile_shard_samples> response{
-      profiles.size()};
-    for (size_t i = 0; i < profiles.size(); i++) {
-        response[i].shard_id = profiles[i].shard;
-        response[i].dropped_samples = profiles[i].dropped_samples;
-
-        for (auto& sample : profiles[i].samples) {
-            ss::httpd::debug_json::cpu_profile_sample s;
-            s.occurrences = sample.occurrences;
-            s.user_backtrace = sample.user_backtrace;
-
-            response[i].samples.push(s);
-        }
-    }
-
-    co_return co_await ss::make_ready_future<ss::json::json_return_type>(
-      std::move(response));
-}
 
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_cloud_storage_status(
@@ -5715,7 +5565,7 @@ admin_server::unsafe_reset_metadata_from_cloud(
     auto ntp = parse_ntp_from_request(request->param);
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         vlog(
-          logger.info,
+          adminlog.info,
           "Need to redirect unsafe reset metadata from cloud request");
         throw co_await redirect_to_leader(*request, ntp);
     }
@@ -5863,31 +5713,6 @@ void admin_server::register_shadow_indexing_routes() {
       [this](auto req) { return reset_scrubbing_metadata(std::move(req)); });
 }
 
-constexpr std::string_view to_string_view(service_kind kind) {
-    switch (kind) {
-    case service_kind::schema_registry:
-        return "schema-registry";
-    case service_kind::http_proxy:
-        return "http-proxy";
-    }
-    return "invalid";
-}
-
-template<typename E>
-std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
-  from_string_view(std::string_view);
-
-template<>
-constexpr std::optional<service_kind>
-from_string_view<service_kind>(std::string_view sv) {
-    return string_switch<std::optional<service_kind>>(sv)
-      .match(
-        to_string_view(service_kind::schema_registry),
-        service_kind::schema_registry)
-      .match(to_string_view(service_kind::http_proxy), service_kind::http_proxy)
-      .default_match(std::nullopt);
-}
-
 namespace {
 template<typename service_t>
 ss::future<>
@@ -5902,7 +5727,7 @@ try_service_restart(service_t* svc, std::string_view service_str_view) {
         co_await svc->restart();
     } catch (const std::exception& ex) {
         vlog(
-          logger.error,
+          adminlog.error,
           "Unknown issue restarting {}: {}",
           service_str_view,
           ex.what());
@@ -5921,64 +5746,6 @@ ss::future<> admin_server::restart_redpanda_service(service_kind service) {
         co_await try_service_restart(_http_proxy, to_string_view(service));
         break;
     }
-}
-
-ss::future<ss::json::json_return_type>
-admin_server::restart_service_handler(std::unique_ptr<ss::http::request> req) {
-    auto service_param = req->get_query_param("service");
-    std::optional<service_kind> service = from_string_view<service_kind>(
-      service_param);
-    if (!service.has_value()) {
-        throw ss::httpd::not_found_exception(
-          fmt::format("Invalid service: {}", service_param));
-    }
-
-    vlog(logger.info, "Restart redpanda service: {}", to_string_view(*service));
-    co_await restart_redpanda_service(*service);
-    co_return ss::json::json_return_type(ss::json::json_void());
-}
-
-ss::future<ss::json::json_return_type>
-admin_server::sampled_memory_profile_handler(
-  std::unique_ptr<ss::http::request> req) {
-    vlog(logger.info, "Request to sampled memory profile");
-
-    std::optional<size_t> shard_id;
-    if (auto e = req->get_query_param("shard"); !e.empty()) {
-        try {
-            shard_id = boost::lexical_cast<size_t>(e);
-        } catch (const boost::bad_lexical_cast&) {
-            throw ss::httpd::bad_param_exception(
-              fmt::format("Invalid parameter 'shard_id' value {{{}}}", e));
-        }
-    }
-
-    if (shard_id.has_value()) {
-        auto max_shard_id = ss::smp::count;
-        if (*shard_id > max_shard_id) {
-            throw ss::httpd::bad_param_exception(fmt::format(
-              "Shard id too high, max shard id is {}", max_shard_id));
-        }
-    }
-
-    auto profiles = co_await _memory_sampling_service.local()
-                      .get_sampled_memory_profiles(shard_id);
-
-    std::vector<ss::httpd::debug_json::memory_profile> resp(profiles.size());
-    for (size_t i = 0; i < resp.size(); ++i) {
-        resp[i].shard = profiles[i].shard_id;
-
-        for (auto& allocation_sites : profiles[i].allocation_sites) {
-            ss::httpd::debug_json::allocation_site allocation_site;
-            allocation_site.size = allocation_sites.size;
-            allocation_site.count = allocation_sites.count;
-            allocation_site.backtrace = std::move(allocation_sites.backtrace);
-            resp[i].allocation_sites.push(allocation_site);
-        }
-    }
-
-    co_return co_await ss::make_ready_future<ss::json::json_return_type>(
-      std::move(resp));
 }
 
 void admin_server::register_wasm_transform_routes() {
@@ -6023,7 +5790,7 @@ ss::httpd::transform_json::partition_transform_status::
     case model_status::unknown:
         return json_status::unknown;
     }
-    vlog(logger.error, "unknown transform status: {}", uint8_t(model_state));
+    vlog(adminlog.error, "unknown transform status: {}", uint8_t(model_state));
     return json_status::unknown;
 }
 } // namespace
