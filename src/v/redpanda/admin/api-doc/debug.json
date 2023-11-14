@@ -353,7 +353,7 @@
             "operations": [
                 {
                     "method": "GET",
-                    "summary": "Get partition state for current node",
+                    "summary": "Get low level debug information (on any node) of all replicas of a given partition",
                     "type": "partition_state",
                     "nickname": "get_partition_state",
                     "produces": [
