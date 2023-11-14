@@ -675,6 +675,21 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
 
+        if (!ctx.authorized(
+              security::acl_operation::write,
+              transactional_id{request.data.transactional_id})) {
+            add_offsets_to_txn_response response;
+            response.data.error_code
+              = error_code::transactional_id_authorization_failed;
+            return ctx.respond(response);
+        } else if (!ctx.authorized(
+                     security::acl_operation::read,
+                     group_id{request.data.group_id})) {
+            add_offsets_to_txn_response response;
+            response.data.error_code = error_code::group_authorization_failed;
+            return ctx.respond(response);
+        }
+
         cluster::add_offsets_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,
