@@ -399,19 +399,18 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                 jobs_executed++;
                 quota = res.remaining;
                 maybe_update_probe(res);
-            } catch (const ss::gate_closed_exception&) {
-                // Shutting down
-            } catch (const ss::abort_requested_exception&) {
-                // Shutting down
             } catch (...) {
-                vlog(
-                  archival_log.error,
-                  "upload housekeeping job {} error: {}",
-                  job_name,
-                  std::current_exception());
-                jobs_failed++;
-                maybe_update_probe(
-                  {.status = housekeeping_job::run_status::failed});
+                auto eptr = std::current_exception();
+                if (!ssx::is_shutdown_exception(eptr)) {
+                    vlog(
+                      archival_log.error,
+                      "upload housekeeping job {} error: {}",
+                      job_name,
+                      eptr);
+                    jobs_failed++;
+                    maybe_update_probe(
+                      {.status = housekeeping_job::run_status::failed});
+                }
             }
             if (!_running.front().interrupted()) {
                 // The job is pushed to the executed list to be
