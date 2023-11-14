@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller.h"
 #include "cluster/shard_table.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
@@ -124,4 +125,51 @@ admin_server::get_local_offsets_translated_handler(
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(result));
       });
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::cloud_storage_usage_handler(
+  std::unique_ptr<ss::http::request> req) {
+    auto batch_size
+      = cluster::topic_table_partition_generator::default_batch_size;
+    if (auto batch_size_param = req->get_query_param("batch_size");
+        !batch_size_param.empty()) {
+        try {
+            batch_size = std::stoi(batch_size_param);
+        } catch (...) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "batch_size must be an integer: {}", batch_size_param));
+        }
+    }
+
+    auto retries_allowed
+      = cluster::cloud_storage_size_reducer::default_retries_allowed;
+    if (auto retries_param = req->get_query_param("retries_allowed");
+        !retries_param.empty()) {
+        try {
+            retries_allowed = std::stoi(retries_param);
+        } catch (...) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "retries_allowed must be an integer: {}", retries_param));
+        }
+    }
+
+    cluster::cloud_storage_size_reducer reducer(
+      _controller->get_topics_state(),
+      _controller->get_members_table(),
+      _controller->get_partition_leaders(),
+      _connection_cache,
+      batch_size,
+      retries_allowed);
+
+    auto res = co_await reducer.reduce();
+
+    if (res) {
+        co_return ss::json::json_return_type(res.value());
+    } else {
+        throw ss::httpd::base_exception(
+          fmt::format("Failed to generate total cloud storage usage. "
+                      "Please retry."),
+          ss::http::reply::status_type::service_unavailable);
+    }
 }
