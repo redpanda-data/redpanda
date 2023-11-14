@@ -62,6 +62,8 @@ namespace cloud_storage {
 struct topic_recovery_service;
 }
 
+extern ss::logger adminlog;
+
 class admin_server {
 public:
     explicit admin_server(
