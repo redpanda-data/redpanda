@@ -734,21 +734,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           return ctx.authorized(security::acl_operation::write, t.name);
       });
 
-    const auto unauthorized_contains_topic = [&unauthorized_it,
-                                              &request](const model::topic& t) {
-        return std::any_of(
-          unauthorized_it,
-          request.data.topics.end(),
-          [t](const topic_produce_data& tp) { return tp.name == t; });
-    };
-
-    // We do not want to audit if the request contains the audit topic
-    // however we _definitely_ want to audit if it was contained in the
-    // unauthorized list
-    if (
-      !(ctx.request_contains_audit_topic()
-        && !unauthorized_contains_topic(model::kafka_audit_logging_topic))
-      && !ctx.audit()) {
+    if (!ctx.audit()) {
         return process_result_stages::single_stage(ctx.respond(
           request.make_error_response(error_code::broker_not_available)));
     }

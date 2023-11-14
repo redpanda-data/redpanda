@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 from rptest.utils.rpk_config import read_redpanda_cfg
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.errors import TimeoutError
 from ducktape.mark import ok_to_fail
 from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
@@ -1109,6 +1110,12 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
                     ) and record['status_id'] == 2 and record[
                         'status_detail'] == error_msg
 
+    @staticmethod
+    def authz_api_filter_function(service_name, username: str, record):
+        return record['class_uid'] == 6003 and record['api']['service'][
+            'name'] == service_name and record['actor']['user'][
+                'name'] == username
+
     @cluster(num_nodes=5)
     def test_authn_messages(self):
         """Verifies that authentication messages are audited
@@ -1153,6 +1160,42 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
 
         assert len(
             records) == 1, f'Expected only one record, got {len(records)}'
+
+    @cluster(num_nodes=5)
+    def test_no_audit_user_authn(self):
+        """
+        Validates that no audit user authz events occur, but authn
+        events should
+        """
+        self.setup_cluster()
+        self.modify_audit_event_types([
+            'management', 'produce', 'consume', 'describe', 'heartbeat',
+            'authenticate'
+        ])
+
+        _ = self.get_rpk_credentials(username=self.username,
+                                     password=self.password,
+                                     mechanism=self.algorithm).list_topics()
+
+        authn_records = self.read_all_from_audit_log(
+            partial(self.authn_filter_function, self.kafka_rpc_service_name,
+                    "__auditing", 99, "SASL-SCRAM"),
+            lambda records: self.aggregate_count(records) >= 1)
+
+        assert len(
+            authn_records
+        ) >= 1, f"Expected at least one authn record for audit user, but got none"
+
+        try:
+            recs = self.read_all_from_audit_log(
+                partial(self.authz_api_filter_function,
+                        self.kafka_rpc_service_name, "__auditing"),
+                lambda records: self.aggregate_count(records) >= 1,
+                timeout_sec=5)
+            assert f'Should not have received any authn from __auditing but received {len(recs)}'
+        except TimeoutError:
+            # Good!  Should not have seen any!
+            pass
 
 
 class AuditLogTestKafkaTlsApi(AuditLogTestBase):
