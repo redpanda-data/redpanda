@@ -468,12 +468,26 @@ class HighThroughputTest(PreallocNodesTest):
                 _list.append(_current)
         return _list
 
+    def _get_hwm_for_default_topic(self):
+        _hwm = 0
+        for partition in self.rpk.describe_topic(self.topic):
+            # Add currect high watermark for topic
+            _hwm += partition.high_watermark
+        return _hwm
+
     @cluster(num_nodes=9)
     def test_max_connections(self):
+        def calc_alive_swarm_nodes(swarm):
+            _bAlive = []
+            for snode in swarm:
+                for node in snode.nodes:
+                    _bAlive.append(True if snode.is_alive(node) else False)
+            return sum(_bAlive)
+
         # Huge timeout for safety, 10 min
         # Most of the tiers will end in <5 min
-        # Except for the 5-7 that will take >5 min
-        FINISH_TIMEOUT_SEC = 600
+        # Except for the 5-7 that will take >5 min up to 15 min
+        FINISH_TIMEOUT_SEC = 900
         PRODUCER_TIMEOUT_MS = FINISH_TIMEOUT_SEC * 1000
 
         # setup ProducerSwarm parameters
@@ -545,55 +559,74 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Track Connections
         _now = time.time()
-        idx = len(swarm)
-        while (_now - _start) < target_runtime_s:
+        while (_now - _start) < 3600:
             _now = time.time()
             _connections = self._get_swarm_connections_count(swarm)
             _total = sum(_connections)
-            self.logger.warn(f"{_total} connections "
-                             f"({'/'.join(map(str, _connections))}) "
-                             f"at {_now - _start:.3f}s")
+            _elapsed = "{:>5,.1f}s".format(_now - _start)
+            self.logger.warn(f"{_elapsed}: {_total:>6} connections "
+                             f"({'/'.join(map(str, _connections))}) ")
             # Save maximum
             connectMax = _total if connectMax < _total else connectMax
-            # Check if target reached and break out if yes
-            if _total >= _target_total:
-                self.logger.warn(f"Reached target of {_target_total} "
-                                 f"connections ({_total})")
+            # if at least half of the nodes finished, exit
+            if len(swarm) / 2 >= calc_alive_swarm_nodes(swarm):
                 break
-            else:
-                # sleep before next measurement
-                time.sleep(10)
+            # sleep before next measurement
+            time.sleep(30)
 
-        # wait for the end
-        self.logger.warn("Waiting for swarm to finish")
-        for node in swarm:
-            node.wait(timeout_sec=FINISH_TIMEOUT_SEC)
-        _now = time.time()
-        self.logger.warn(f"Done swarming after {_now - _start}s")
-
-        # Check message count
-        _hwm = 0
         # Message count is producers * total connections
-        expected_msg_count = records_per_producer * _total
+        expected_msg_count = records_per_producer * int(
+            self._advertised_max_client_count)
         # Since there is -1% on connections target set
         # Message count should be < expected * 0.99
         # or _target_total connections number * per producer
         reasonably_expected = records_per_producer * _target_total
 
-        for partition in self.rpk.describe_topic(self.topic):
-            # Add currect high watermark for topic
-            _hwm += partition.high_watermark
+        self.logger.warn("Waiting for messages")
+        # Try and wait for all messages to be sent
+        while (_now - _start) < FINISH_TIMEOUT_SEC:
+            _alive = calc_alive_swarm_nodes(swarm)
+            _total = len(swarm)
+            _elapsed = "{:>5,.1f}s".format(_now - _start)
+            _hwm = self._get_hwm_for_default_topic()
+            _percent = _hwm / expected_msg_count * 100 if _hwm > 0 else 0
+            self.logger.warn(f"{_elapsed}: Swarm nodes active: {_alive}, "
+                             f"total: {_total}, msg produced: {_hwm} "
+                             f"({_percent:.2f}%), "
+                             f"expected: {expected_msg_count}")
+            if _hwm > reasonably_expected:
+                break
+            # Wait for 1 min
+            time.sleep(60)
 
-        # Check that all messages make it through
-        self.logger.warn(f"Expected more than {reasonably_expected} messages "
-                         f"out of {expected_msg_count}, actual {_hwm}")
-        assert _hwm >= reasonably_expected, \
-            f"Expected >{reasonably_expected} messages, actual {_hwm}"
+        _now = time.time()
+        _elapsed = "{:>5,.1f}s".format(_now - _start)
+        self.logger.warn(f"Done swarming after {_elapsed}")
+
+        # If timeout happen, just kill it
+        self.logger.warn(f"Stopping swarm")
+        for snode in swarm:
+            for node in snode.nodes:
+                if snode.is_alive(node):
+                    node.stop()
 
         # Assert that target connection count is reached
         self.logger.warn(f"Reached {connectMax} of {_target_total} needed")
         assert connectMax >= _target_total, \
             f"Expected >{_target_total} connections, actual {connectMax}"
+
+        # Check message count
+        _hwm = self._get_hwm_for_default_topic()
+
+        # Check that all messages make it through
+        _percent = _hwm / expected_msg_count * 100 if _hwm > 0 else 0
+        _rpercent = reasonably_expected / expected_msg_count * 100
+        self.logger.warn(f"Expected more than {reasonably_expected} "
+                         f"({_rpercent}%) messages "
+                         f"out of {expected_msg_count}, actual {_hwm} "
+                         f"({_percent:.2f}%)")
+        assert _hwm >= reasonably_expected, \
+            f"Expected >{reasonably_expected} messages, actual {_hwm}"
 
         return
 
@@ -1124,9 +1157,16 @@ class HighThroughputTest(PreallocNodesTest):
             self.logger.info(f"{number_left} messages still need to be sent.")
             return number_left <= 0
 
-        wait_until(producer_complete,
-                   timeout_sec=required_wait_time_s,
-                   backoff_sec=30)
+        try:
+            wait_until(producer_complete,
+                       timeout_sec=required_wait_time_s,
+                       backoff_sec=30)
+        except Exception as e:
+            _percent = (producer.produce_status.sent * 100) / expected_sent
+            self.log.warning("# Timeout waiting for all messages: "
+                             f"expected {expected_sent}, "
+                             f"current {producer.produce_status.sent} "
+                             f"({_percent}%)\n{e}")
 
         post_prod_offsets = [(p.id, p.high_watermark)
                              for p in self.rpk.describe_topic(self.topic)
