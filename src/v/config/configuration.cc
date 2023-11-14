@@ -170,7 +170,7 @@ configuration::configuration()
       {
         .needs_restart = needs_restart::yes,
         .example = std::to_string(25_MiB),
-        .visibility = visibility::tunable,
+        .visibility = visibility::user,
       },
       20_MiB,
       {.min = 64_KiB, .max = 100_GiB})
@@ -185,7 +185,7 @@ configuration::configuration()
       {
         .needs_restart = needs_restart::yes,
         .example = std::to_string(5_MiB),
-        .visibility = visibility::tunable,
+        .visibility = visibility::user,
       },
       2_MiB,
       // WebAssembly uses 64KiB pages and has a 32bit address space
