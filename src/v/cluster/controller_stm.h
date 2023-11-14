@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/bootstrap_backend.h"
+#include "cluster/cluster_recovery_manager.h"
 #include "cluster/config_manager.h"
 #include "cluster/controller_log_limiter.h"
 #include "cluster/feature_backend.h"
@@ -35,7 +36,8 @@ class controller_stm final
       config_manager,
       feature_backend,
       bootstrap_backend,
-      plugin_backend> {
+      plugin_backend,
+      cluster_recovery_manager> {
 public:
     template<typename... Args>
     controller_stm(

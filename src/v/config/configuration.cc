@@ -1683,6 +1683,13 @@ configuration::configuration()
       "set in production.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , disable_cluster_recovery_loop_for_tests(
+      *this,
+      "disable_cluster_recovery_loop_for_tests",
+      "Disables the cluster recovery loop. The property exists to simplify "
+      "testing and shouldn't be set in production.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , enable_cluster_metadata_upload_loop(
       *this,
       "enable_cluster_metadata_upload_loop",

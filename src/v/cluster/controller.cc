@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/bootstrap_backend.h"
+#include "cluster/cloud_metadata/cluster_recovery_backend.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_recovery_table.h"
@@ -81,6 +82,7 @@ controller::controller(
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<cloud_storage::cache>& cloud_cache,
   ss::sharded<node_status_table>& node_status_table,
   ss::sharded<cluster::metadata_cache>& metadata_cache)
   : _config_preload(std::move(config_preload))
@@ -98,6 +100,7 @@ controller::controller(
   , _raft_manager(raft_manager)
   , _feature_table(feature_table)
   , _cloud_storage_api(cloud_storage_api)
+  , _cloud_cache(cloud_cache)
   , _node_status_table(node_status_table)
   , _metadata_cache(metadata_cache)
   , _probe(*this) {}
@@ -206,6 +209,16 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_feature_backend));
       })
       .then([this] { return _recovery_table.start(); })
+      .then([this] {
+          return _recovery_manager.start_single(
+            std::ref(_as),
+            std::ref(_stm),
+            std::ref(_feature_table),
+            std::ref(_cloud_storage_api),
+            std::ref(_recovery_table),
+            std::ref(_storage),
+            _raft0);
+      })
       .then([this] { return _plugin_table.start(); })
       .then([this] { return _plugin_backend.start_single(&_plugin_table); })
       .then([this] {
@@ -269,7 +282,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_config_manager),
             std::ref(_feature_backend),
             std::ref(_bootstrap_backend),
-            std::ref(_plugin_backend));
+            std::ref(_plugin_backend),
+            std::ref(_recovery_manager));
       })
       .then([this] {
           return _members_frontend.start(
@@ -604,6 +618,27 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
           if (config::shard_local_cfg().enable_cluster_metadata_upload_loop()) {
               _metadata_uploader->start();
           }
+          _recovery_backend
+            = std::make_unique<cloud_metadata::cluster_recovery_backend>(
+              _recovery_manager.local(),
+              _raft_manager.local(),
+              _cloud_storage_api.local(),
+              _cloud_cache.local(),
+              _members_table.local(),
+              _feature_table.local(),
+              _credentials.local(),
+              _authorizer.local().store(),
+              _tp_state.local(),
+              _feature_manager.local(),
+              _config_frontend.local(),
+              _security_frontend.local(),
+              _tp_frontend.local(),
+              std::ref(_recovery_table),
+              _raft0);
+          if (!config::shard_local_cfg()
+                 .disable_cluster_recovery_loop_for_tests()) {
+              _recovery_backend->start();
+          }
       });
 }
 
@@ -651,6 +686,13 @@ ss::future<> controller::stop() {
               return ss::make_ready_future();
           })
           .then([this] { return _recovery_table.stop(); })
+          .then([this] { return _recovery_manager.stop(); })
+          .then([this] {
+              if (_recovery_backend) {
+                  return _recovery_backend->stop_and_wait();
+              }
+              return ss::make_ready_future();
+          })
           .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })
           .then([this] { return _feature_manager.stop(); })

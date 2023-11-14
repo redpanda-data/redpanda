@@ -118,6 +118,7 @@ v_cc_library(
     security_manager.cc
     security_frontend.cc
     cluster_discovery.cc
+    cluster_recovery_manager.cc
     cluster_recovery_table.cc
     cluster_recovery_reconciler.cc
     controller_api.cc
@@ -184,6 +185,7 @@ v_cc_library(
     ../archival/purger.cc
     ../archival/scrubber.cc
     cloud_metadata/cluster_manifest.cc
+    cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc
     cloud_metadata/manifest_downloads.cc
     cloud_metadata/uploader.cc

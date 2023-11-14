@@ -32,3 +32,18 @@ rp_test(
   ARGS "-- -c 1"
   LABELS cluster
 )
+
+
+rp_test(
+  FIXTURE_TEST
+  GTEST
+  BINARY_NAME gtest_cluster_cloud_metadata
+  SOURCES cluster_recovery_backend_test.cc
+  LIBRARIES
+    v::application
+    v::kafka_test_utils
+    v::gtest_main
+    v::s3_imposter
+  ARGS "-- -c 1"
+  LABELS cluster
+)

@@ -507,6 +507,10 @@ private:
         std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<ss::json::json_return_type>
     query_automated_recovery(std::unique_ptr<ss::http::request> req);
+    ss::future<std::unique_ptr<ss::http::reply>> initialize_cluster_recovery(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<ss::json::json_return_type>
+    get_cluster_recovery(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type>
     get_partition_cloud_storage_status(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type>
