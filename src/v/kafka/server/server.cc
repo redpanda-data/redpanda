@@ -48,6 +48,7 @@
 #include "kafka/server/response.h"
 #include "kafka/server/usage_manager.h"
 #include "net/connection.h"
+#include "security/acl.h"
 #include "security/errc.h"
 #include "security/exceptions.h"
 #include "security/gssapi_authenticator.h"
@@ -631,6 +632,14 @@ ss::future<response_ptr> end_txn_handler::handle(
         end_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
+        if (!ctx.authorized(
+              security::acl_operation::write,
+              transactional_id{request.data.transactional_id})) {
+            end_txn_response response;
+            response.data.error_code
+              = error_code::transactional_id_authorization_failed;
+            return ctx.respond(response);
+        }
         cluster::end_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,
