@@ -22,12 +22,13 @@ on:
 
 jobs:
   build:
+    if: github.event.pull_request.draft == false
     name: build redpanda
     runs-on: ubuntu-latest-64
     timeout-minutes: 30
     strategy:
       matrix:
-        os: ["fedora:38", "ubuntu:mantic"]
+        os: ["ubuntu:mantic", "fedora:38"]
     container:
       image: ${{ matrix.os }}
     steps:
@@ -35,12 +36,23 @@ jobs:
           uses: actions/checkout@v4
         - name: dependencies
           run: ./install-dependencies.sh
+        - name: cache directory
+          run: mkdir /mnt/ccache
+        - name: ccache
+          uses: actions/cache@v3
+          with:
+            path: /mnt/ccache
+            key: ${{ github.job }}-${{ matrix.os }}
+        - name: update path
+          run: |
+            echo "/usr/lib/ccache" >> $GITHUB_PATH
+            echo "/usr/lib64/ccache" >> $GITHUB_PATH
         - name: configure
           env:
-            CC: clang
-            CXX: clang++
-            CC_LD: lld
-            CXX_LD: lld
+            CCACHE_DIR: /mnt/ccache
           run: cmake --preset release
         - name: build
+          env:
+            CCACHE_DIR: /mnt/ccache
+            CCACHE_COMPRESSLEVEL: 6
           run: ninja -C build/release
