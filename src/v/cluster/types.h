@@ -2342,6 +2342,10 @@ enum class reconfiguration_policy {
 using replicas_revision_map
   = absl::flat_hash_map<model::node_id, model::revision_id>;
 
+/// Type of controller backend operation
+/// TODO: remove legacy types and bring more in line with what
+/// controller_backend actually does.
+
 enum class partition_operation_type {
     add,
     remove,
@@ -2357,16 +2361,23 @@ enum class partition_operation_type {
 };
 std::ostream& operator<<(std::ostream&, const partition_operation_type&);
 
-using is_forced = ss::bool_class<struct forced_reconfiguration_tag>;
+/// Notification of topic table state change related to a single ntp
 
-// Notification of topic table state change
+enum class topic_table_delta_type {
+    added,
+    removed,
+    replicas_updated,
+    properties_updated,
+};
+std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
+
 struct topic_table_delta {
     model::ntp ntp;
     model::revision_id revision;
-    partition_operation_type type;
+    topic_table_delta_type type;
 
     topic_table_delta(
-      model::ntp ntp, model::revision_id rev, partition_operation_type type)
+      model::ntp ntp, model::revision_id rev, topic_table_delta_type type)
       : ntp(std::move(ntp))
       , revision(rev)
       , type(type) {}

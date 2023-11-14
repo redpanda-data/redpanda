@@ -447,6 +447,20 @@ std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
     __builtin_unreachable();
 }
 
+std::ostream& operator<<(std::ostream& o, const topic_table_delta_type& tp) {
+    switch (tp) {
+    case topic_table_delta_type::added:
+        return o << "added";
+    case topic_table_delta_type::removed:
+        return o << "removed";
+    case topic_table_delta_type::replicas_updated:
+        return o << "replicas_updated";
+    case topic_table_delta_type::properties_updated:
+        return o << "properties_updated";
+    }
+    __builtin_unreachable();
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
     fmt::print(
       o, "{{ntp: {}, type: {}, revision: {}}}", d.ntp, d.type, d.revision);

@@ -30,11 +30,11 @@ inline void validate_delta(
   int removed_partitions) {
     size_t additions = std::count_if(
       d.begin(), d.end(), [](const cluster::topic_table::delta& d) {
-          return d.type() == cluster::partition_operation_type::add;
+          return d.type == cluster::topic_table_delta_type::added;
       });
     size_t deletions = std::count_if(
       d.begin(), d.end(), [](const cluster::topic_table::delta& d) {
-          return d.type() == cluster::partition_operation_type::remove;
+          return d.type == cluster::topic_table_delta_type::removed;
       });
     BOOST_REQUIRE_EQUAL(additions, new_partitions);
     BOOST_REQUIRE_EQUAL(deletions, removed_partitions);

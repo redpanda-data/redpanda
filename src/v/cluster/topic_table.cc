@@ -86,7 +86,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         _pending_deltas.emplace_back(
           std::move(ntp),
           model::revision_id(offset),
-          partition_operation_type::add);
+          topic_table_delta_type::added);
     }
 
     _topics.insert({
@@ -124,7 +124,7 @@ topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
             _pending_deltas.emplace_back(
               std::move(ntp),
               model::revision_id(offset),
-              partition_operation_type::remove);
+              topic_table_delta_type::removed);
         }
 
         _topics.erase(tp);
@@ -228,7 +228,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
         _pending_deltas.emplace_back(
           std::move(ntp),
           model::revision_id(offset),
-          partition_operation_type::add);
+          topic_table_delta_type::added);
     }
     notify_waiters();
     co_return errc::success;
@@ -354,7 +354,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     _pending_deltas.emplace_back(
       std::move(cmd.key),
       model::revision_id(o),
-      partition_operation_type::finish_update);
+      topic_table_delta_type::replicas_updated);
 
     notify_waiters();
 
@@ -420,8 +420,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     _pending_deltas.emplace_back(
       std::move(cmd.key),
       model::revision_id(o),
-      cmd.value.force ? partition_operation_type::force_cancel_update
-                      : partition_operation_type::cancel_update);
+      topic_table_delta_type::replicas_updated);
     notify_waiters();
 
     co_return errc::success;
@@ -488,7 +487,7 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
 
     // notify backend about finished update
     _pending_deltas.emplace_back(
-      ntp, model::revision_id(o), partition_operation_type::finish_update);
+      ntp, model::revision_id(o), topic_table_delta_type::replicas_updated);
     notify_waiters();
 
     co_return errc::success;
@@ -796,7 +795,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
         _pending_deltas.emplace_back(
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
           model::revision_id(o),
-          partition_operation_type::update_properties);
+          topic_table_delta_type::properties_updated);
     }
     notify_waiters();
 
@@ -878,38 +877,37 @@ class topic_table::snapshot_applier {
     updates_t& _updates_in_progress;
     fragmented_vector<delta>& _pending_deltas;
     topic_table_probe& _probe;
+    model::revision_id _snap_revision;
 
 public:
-    explicit snapshot_applier(topic_table& parent)
+    snapshot_applier(topic_table& parent, model::revision_id snap_revision)
       : _updates_in_progress(parent._updates_in_progress)
       , _pending_deltas(parent._pending_deltas)
-      , _probe(parent._probe) {}
+      , _probe(parent._probe)
+      , _snap_revision(snap_revision) {}
 
     void delete_ntp(
-      const model::topic_namespace& ns_tp,
-      const partition_assignment& p_as,
-      model::revision_id cmd_rev) {
+      const model::topic_namespace& ns_tp, const partition_assignment& p_as) {
         auto ntp = model::ntp(ns_tp.ns, ns_tp.tp, p_as.id);
         vlog(
           clusterlog.trace, "deleting ntp {} not in controller snapshot", ntp);
         _updates_in_progress.erase(ntp);
 
         _pending_deltas.emplace_back(
-          std::move(ntp), cmd_rev, partition_operation_type::remove);
+          std::move(ntp), _snap_revision, topic_table_delta_type::removed);
         // partition_assignment object is supposed to be removed from the
         // assignments set by the caller
     }
 
     ss::future<> delete_topic(
       const model::topic_namespace& ns_tp,
-      const topic_metadata_item& old_md_item,
-      model::revision_id cmd_rev) {
+      const topic_metadata_item& old_md_item) {
         vlog(
           clusterlog.trace,
           "deleting topic {} not in controller snapshot",
           ns_tp);
         for (const auto& p_as : old_md_item.get_assignments()) {
-            delete_ntp(ns_tp, p_as, cmd_rev);
+            delete_ntp(ns_tp, p_as);
             co_await ss::coroutine::maybe_yield();
         }
         _probe.handle_topic_deletion(ns_tp);
@@ -973,56 +971,38 @@ public:
           = partition.last_update_finished_revision,
         };
 
-        // Determine if the previous state was in the same "update epoch" as
-        // the state in the snapshot. If not, we have to generate a "reset
-        // delta" that will cause controller_backend to perform needed
-        // partition add/delete operations to bring the replica set in sync
-        // with the snapshot.
         if (!prev_assignment) {
             // new partition
             _pending_deltas.emplace_back(
-              ntp,
-              partition.last_update_finished_revision,
-              partition_operation_type::add);
-        } else {
-            if (
-              prev_update_finished_revision
-              != partition.last_update_finished_revision) {
-                // the partition in the snapshot is the same as we have, but
-                // after some updates were initiated and finished.
-                _pending_deltas.emplace_back(
-                  ntp,
-                  partition.last_update_finished_revision,
-                  partition_operation_type::reset);
-            }
-
-            if (must_update_properties) {
-                _pending_deltas.emplace_back(
-                  ntp,
-                  partition.last_update_finished_revision,
-                  partition_operation_type::update_properties);
-            }
+              ntp, _snap_revision, topic_table_delta_type::added);
         }
 
-        // 2. reconcile the _updates_in_progress state and generate
-        // deltas related to the update
+        if (must_update_properties) {
+            _pending_deltas.emplace_back(
+              ntp, _snap_revision, topic_table_delta_type::properties_updated);
+        }
 
-        // If we are in the same "update epoch", use
-        // prev_update_last_cmd_revision to determine if we need to add
-        // additional controller deltas to finish the previous update. If we
-        // are not in the same epoch, don't bother finishing the previous
-        // update, it will be interrupted by the reset delta.
-        model::revision_id prev_update_last_cmd_revision;
+        // 2. reconcile the _updates_in_progress state and possibly generate
+        // delta related to the replicas update
+
+        // Determine if the snapshot contains the result of any new replica
+        // update commands by comparing last command revision.
+
+        model::revision_id prev_last_replica_update_revision
+          = prev_update_finished_revision;
         if (auto prev_update_it = _updates_in_progress.find(ntp);
             prev_update_it != _updates_in_progress.end()) {
-            prev_update_last_cmd_revision
+            prev_last_replica_update_revision
               = prev_update_it->second.get_last_cmd_revision();
             _updates_in_progress.erase(prev_update_it);
         }
 
+        model::revision_id last_replica_update_revision
+          = partition.last_update_finished_revision;
         if (auto update_it = topic.updates.find(p_id);
             update_it != topic.updates.end()) {
             const auto& update = update_it->second;
+            last_replica_update_revision = update.last_cmd_revision;
 
             if (!is_cancelled_state(update.state)) {
                 cur_assignment.replicas = update_it->second.target_assignment;
@@ -1043,53 +1023,22 @@ public:
             inp_update.set_state(update.state, update.last_cmd_revision);
             vlog(
               clusterlog.trace,
-              "{}: prev_update_last_cmd_revision: {}, new: state: {} "
+              "{}: prev_last_replica_update_revision: {}, new: state: {} "
               "update_rev: {} last_cmd_rev: {}",
               ntp,
-              prev_update_last_cmd_revision,
+              prev_last_replica_update_revision,
               inp_update.get_state(),
               inp_update.get_update_revision(),
               inp_update.get_last_cmd_revision());
             _updates_in_progress.emplace(ntp, std::move(inp_update));
+        }
 
-            if (prev_update_last_cmd_revision != update.last_cmd_revision) {
-                if (
-                  prev_update_finished_revision
-                    != partition.last_update_finished_revision
-                  || prev_update_last_cmd_revision == model::revision_id{}) {
-                    // This is the new update for us, add the initial update
-                    // delta. Do it even if the last op in the snapshot is
-                    // cancellation because if later the "cancel revert" event
-                    // happens, controller_backend has to execute the update
-                    // delta to make progress.
-                    _pending_deltas.emplace_back(
-                      ntp,
-                      update.revision,
-                      update.state == reconfiguration_state::force_update
-                        ? partition_operation_type::force_update
-                        : partition_operation_type::update);
-                }
-
-                auto add_cancel_delta = [&](is_forced forced) {
-                    _pending_deltas.emplace_back(
-                      ntp,
-                      update.last_cmd_revision,
-                      forced ? partition_operation_type::force_cancel_update
-                             : partition_operation_type::cancel_update);
-                };
-
-                switch (update.state) {
-                case reconfiguration_state::in_progress:
-                case reconfiguration_state::force_update:
-                    break;
-                case reconfiguration_state::cancelled:
-                    add_cancel_delta(is_forced::no);
-                    break;
-                case reconfiguration_state::force_cancelled:
-                    add_cancel_delta(is_forced::yes);
-                    break;
-                }
-            }
+        if (
+          prev_assignment
+          && last_replica_update_revision
+               != prev_last_replica_update_revision) {
+            _pending_deltas.emplace_back(
+              ntp, _snap_revision, topic_table_delta_type::replicas_updated);
         }
 
         for (size_t i = pending_deltas_start_idx; i < _pending_deltas.size();
@@ -1126,7 +1075,7 @@ ss::future<> topic_table::apply_snapshot(
     // corresponding deltas.
 
     const auto& snap = controller_snap.topics;
-    snapshot_applier applier(*this);
+    snapshot_applier applier(*this, snap_revision);
 
     // Go over the old topics set, delete those that are not present in
     // the snapshot and reconcile those that are.
@@ -1141,8 +1090,7 @@ ss::future<> topic_table::apply_snapshot(
               topic_snapshot.metadata.revision
               != md_item.metadata.get_revision()) {
                 // The topic was re-created, delete and add it anew.
-                co_await applier.delete_topic(
-                  ns_tp, md_item, topic_snapshot.metadata.revision);
+                co_await applier.delete_topic(ns_tp, md_item);
                 md_item = co_await applier.create_topic(ns_tp, topic_snapshot);
             } else {
                 // The topic was present in the previous set, now we need to
@@ -1177,7 +1125,7 @@ ss::future<> topic_table::apply_snapshot(
                      as_it != md_item.get_assignments().end();) {
                     auto as_it_copy = as_it++;
                     if (!topic_snapshot.partitions.contains(as_it_copy->id)) {
-                        applier.delete_ntp(ns_tp, *as_it_copy, snap_revision);
+                        applier.delete_ntp(ns_tp, *as_it_copy);
                         md_item.get_assignments().erase(as_it_copy);
                     }
                     co_await ss::coroutine::maybe_yield();
@@ -1188,7 +1136,7 @@ ss::future<> topic_table::apply_snapshot(
         } else {
             // For topics that are not present in the new set, simply
             // remove them and generate del deltas.
-            co_await applier.delete_topic(ns_tp, md_item, snap_revision);
+            co_await applier.delete_topic(ns_tp, md_item);
             auto to_delete = old_it++;
             _topics.erase(to_delete);
             _topics_map_revision++;
@@ -1546,8 +1494,7 @@ void topic_table::change_partition_replicas(
     _pending_deltas.emplace_back(
       std::move(ntp),
       model::revision_id(o),
-      is_forced ? partition_operation_type::force_update
-                : partition_operation_type::update);
+      topic_table_delta_type::replicas_updated);
 }
 
 size_t topic_table::get_node_partition_count(model::node_id id) const {

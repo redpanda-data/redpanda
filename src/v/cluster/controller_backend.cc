@@ -563,7 +563,7 @@ ss::future<> controller_backend::fetch_deltas() {
                 for (auto& d : deltas) {
                     auto& rs = _states[d.ntp];
                     rs.changed_at = d.revision;
-                    if (d.type == partition_operation_type::update_properties) {
+                    if (d.type == topic_table_delta_type::properties_updated) {
                         rs.properties_changed_at = d.revision;
                     }
                 }
