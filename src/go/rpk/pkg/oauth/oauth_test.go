@@ -242,7 +242,7 @@ func TestDeviceFlow(t *testing.T) {
 				mockDeviceToken: tt.mDevToken,
 				mockDevice:      tt.mDevice,
 			}
-			got, err := DeviceFlow(context.Background(), &cl, tt.auth)
+			got, err := DeviceFlow(context.Background(), &cl, tt.auth, false)
 			if tt.expErr {
 				require.Error(t, err)
 				return
