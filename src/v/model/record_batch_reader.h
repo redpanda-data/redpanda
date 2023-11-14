@@ -81,7 +81,7 @@ public:
               });
         }
 
-        virtual ss::future<> finally() noexcept { return ss::now(); }
+        virtual ss::future<> finally() noexcept { return _gate.close(); }
 
         /// Meant for non-owning iteration of the data. If you need to own the
         /// batches, please use consume() below
@@ -147,10 +147,12 @@ public:
           ConsumerType& consumer,
           timeout_clock::time_point timeout,
           ActionFn&& fn) {
+            auto h = _gate.hold();
             return ss::repeat([this,
                                timeout,
                                &consumer,
-                               fn = std::forward<ActionFn>(fn)] {
+                               fn = std::forward<ActionFn>(fn),
+                               h = std::move(h)] {
                        if (likely(!is_slice_empty())) {
                            return fn(consumer);
                        }
@@ -164,6 +166,7 @@ public:
               .then([&consumer] { return consumer.end_of_stream(); });
         }
         storage_t _slice;
+        ss::gate _gate;
     };
 
 public:

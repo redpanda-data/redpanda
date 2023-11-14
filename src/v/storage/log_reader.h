@@ -147,7 +147,10 @@ public:
 
     ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
 
-    ss::future<> finally() noexcept final { return _iterator.close(); }
+    ss::future<> finally() noexcept final {
+        co_await _iterator.close();
+        co_await impl::finally();
+    }
 
     void print(std::ostream& os) final {
         fmt::print(os, "storage::log_reader. config {}", _config);
