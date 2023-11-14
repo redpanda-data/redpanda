@@ -44,10 +44,10 @@ like so:
 
   rpk transform deploy transform.wasm --name myTransform
 
-Environment variables can be specified for the transform using the --env-var flag, these
-are separated by an equals for example: --env-var=KEY=VALUE
+Environment variables can be specified for the transform using the --var flag, these
+are separated by an equals for example: --var=KEY=VALUE
 
-The --env-var can be repeated to specify multiple variables.
+The --var flag can be repeated to specify multiple variables.
 		`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -113,7 +113,7 @@ The --env-var can be repeated to specify multiple variables.
 	cmd.Flags().StringVarP(&fc.inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
 	cmd.Flags().StringVarP(&fc.outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
 	cmd.Flags().StringVar(&fc.functionName, "name", "", "The name of the transform")
-	cmd.Flags().Var(&fc.env, "env-var", "Specify an environment variable in the form of KEY=VALUE")
+	cmd.Flags().Var(&fc.env, "var", "Specify an environment variable in the form of KEY=VALUE")
 	return cmd
 }
 
