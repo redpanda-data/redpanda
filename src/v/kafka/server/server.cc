@@ -49,6 +49,7 @@
 #include "kafka/server/response.h"
 #include "kafka/server/usage_manager.h"
 #include "net/connection.h"
+#include "security/acl.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
@@ -809,6 +810,13 @@ ss::future<response_ptr> end_txn_handler::handle(
         if (ctx.recovery_mode_enabled()) {
             end_txn_response response;
             response.data.error_code = error_code::policy_violation;
+            return ctx.respond(response);
+        } else if (!ctx.authorized(
+                     security::acl_operation::write,
+                     transactional_id{request.data.transactional_id})) {
+            end_txn_response response;
+            response.data.error_code
+              = error_code::transactional_id_authorization_failed;
             return ctx.respond(response);
         }
         cluster::end_tx_request tx_request{
