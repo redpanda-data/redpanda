@@ -12,6 +12,7 @@
 #include "wasm/schema_registry.h"
 
 #include "pandaproxy/schema_registry/seq_writer.h"
+#include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 
 #include <seastar/core/sharded.hh>
@@ -27,34 +28,41 @@ namespace ppsr = pandaproxy::schema_registry;
 
 class schema_registry_impl : public schema_registry {
 public:
-    schema_registry_impl(
-      ppsr::sharded_store* store, ss::sharded<ppsr::seq_writer>* writer)
-      : _store(store)
-      , _writer(writer) {}
+    explicit schema_registry_impl(ss::sharded<ppsr::service>* service)
+      : _service(service) {}
 
     bool is_enabled() const override { return true; };
 
     ss::future<ppsr::canonical_schema_definition>
     get_schema_definition(ppsr::schema_id id) const override {
-        return _store->get_schema_definition(id);
+        auto [reader, _] = co_await service();
+        co_return co_await reader->get_schema_definition(id);
     }
     ss::future<ppsr::subject_schema> get_subject_schema(
       ppsr::subject sub,
       std::optional<ppsr::schema_version> version) const override {
-        return _store->get_subject_schema(
+        auto [reader, _] = co_await service();
+        co_return co_await reader->get_subject_schema(
           sub, version, ppsr::include_deleted::no);
     }
     ss::future<ppsr::schema_id>
     create_schema(ppsr::unparsed_schema schema) override {
-        co_await _writer->local().read_sync();
-        auto parsed = co_await _store->make_canonical_schema(schema);
-        co_return co_await _writer->local().write_subject_version(
+        auto [reader, writer] = co_await service();
+        co_await writer->read_sync();
+        auto parsed = co_await reader->make_canonical_schema(schema);
+        co_return co_await writer->write_subject_version(
           {.schema = std::move(parsed)});
     }
 
 private:
-    ppsr::sharded_store* _store;
-    ss::sharded<ppsr::seq_writer>* _writer;
+    ss::future<std::pair<ppsr::sharded_store*, ppsr::seq_writer*>>
+    service() const {
+        auto& service = _service->local();
+        co_await service.ensure_started();
+        co_return std::make_pair(&service.schema_store(), &service.writer());
+    }
+
+    ss::sharded<ppsr::service>* _service;
 };
 
 class disabled_schema_registry : public schema_registry {
@@ -82,7 +90,6 @@ std::unique_ptr<schema_registry> schema_registry::make_default(ppsr::api* sr) {
     if (!sr) {
         return std::make_unique<disabled_schema_registry>();
     }
-    return std::make_unique<schema_registry_impl>(
-      sr->_store.get(), &sr->_sequencer);
+    return std::make_unique<schema_registry_impl>(&sr->_service);
 }
 } // namespace wasm

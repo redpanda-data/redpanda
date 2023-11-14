@@ -54,6 +54,7 @@ public:
     sharded_store& schema_store() { return _store; }
     request_authenticator& authenticator() { return _auth; }
     ss::future<> mitigate_error(std::exception_ptr);
+    ss::future<> ensure_started() { return _ensure_started().discard_result(); }
 
 private:
     ss::future<> do_start();
