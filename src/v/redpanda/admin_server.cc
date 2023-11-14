@@ -189,8 +189,10 @@ struct string_conversion_exception : public default_control_character_thrower {
           + get_sanitized_string());
     }
 };
+} // namespace
 
-model::ntp parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns) {
+model::ntp admin_server::parse_ntp_from_request(
+  ss::httpd::parameters& param, model::ns ns) {
     auto topic = model::topic(param["topic"]);
 
     model::partition_id partition;
@@ -209,10 +211,11 @@ model::ntp parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns) {
     return {std::move(ns), std::move(topic), partition};
 }
 
-model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
+model::ntp admin_server::parse_ntp_from_request(ss::httpd::parameters& param) {
     return parse_ntp_from_request(param, model::ns(param["namespace"]));
 }
 
+namespace {
 model::ntp
 parse_ntp_from_query_param(const std::unique_ptr<ss::http::request>& req) {
     auto ns = req->get_query_param("namespace");
@@ -395,6 +398,7 @@ json::validator make_set_replicas_validator() {
 )";
     return json::validator(schema);
 }
+} // namespace
 
 /**
  * A helper around rapidjson's Parse that checks for errors & raises
@@ -402,7 +406,8 @@ json::validator make_set_replicas_validator() {
  * as an empty request body causes a redpanda crash via a rapidjson
  * assertion when trying to GetObject on the resulting document.
  */
-ss::future<json::Document> parse_json_body(ss::http::request* req) {
+ss::future<json::Document>
+admin_server::parse_json_body(ss::http::request* req) {
     json::Document doc;
     auto content = co_await ss::util::read_entire_stream_contiguous(
       *req->content_stream);
@@ -415,6 +420,7 @@ ss::future<json::Document> parse_json_body(ss::http::request* req) {
     }
 }
 
+namespace {
 /**
  * A helper to apply a schema validator to a request and on error,
  * string-ize any schema errors in the 400 response to help
