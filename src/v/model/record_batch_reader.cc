@@ -269,6 +269,14 @@ record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
         ss::chunked_fifo<model::record_batch>>(std::move(batches)));
 }
 
+record_batch_reader make_fragmented_memory_record_batch_reader(
+  ss::chunked_fifo<model::record_batch> batches) {
+    return make_fragmented_memory_record_batch_reader(
+      make_fragmented_memory_storage_batches<
+        false,
+        ss::chunked_fifo<model::record_batch>>(std::move(batches)));
+}
+
 ss::future<record_batch_reader::data_t> consume_reader_to_memory(
   record_batch_reader reader, timeout_clock::time_point timeout) {
     class memory_batch_consumer {

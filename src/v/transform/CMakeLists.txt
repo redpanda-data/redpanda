@@ -15,6 +15,7 @@ v_cc_library(
     transform_processor.cc
     transform_manager.cc
     commit_batcher.cc
+    txn_reader.cc
   DEPS
     v::wasm
     v::model

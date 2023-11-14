@@ -47,7 +47,20 @@ public:
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;
 
+    /*
+     * Get the latest offset in the log to read from.
+     */
     virtual kafka::offset latest_offset() = 0;
+
+    /**
+     * Read from the log starting at a given offset, aborting when requested.
+     *
+     * NOTE: It's important in terms of lifetimes that the source **always**
+     * outlives any reader returned from this method.
+     *
+     * NOTE: It's not valid to have pending futures outstanding from this
+     * method before calling stop.
+     */
     virtual ss::future<model::record_batch_reader>
     read_batch(kafka::offset, ss::abort_source*) = 0;
 };
