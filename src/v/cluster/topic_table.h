@@ -576,7 +576,6 @@ private:
     void change_partition_replicas(
       model::ntp ntp,
       const replicas_t& new_assignment,
-      topic_metadata_item& metadata,
       partition_assignment& current_assignment,
       model::offset o,
       bool is_forced,

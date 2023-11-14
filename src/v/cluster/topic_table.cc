@@ -83,11 +83,10 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           partition_meta{
             .replicas_revisions = replica_revisions,
             .last_update_finished_revision = rev_id});
-        _pending_deltas.push_back(topic_table_delta::create_add_partition_delta(
+        _pending_deltas.emplace_back(
           std::move(ntp),
           model::revision_id(offset),
-          pas,
-          std::move(replica_revisions)));
+          partition_operation_type::add);
     }
 
     _topics.insert({
@@ -122,9 +121,10 @@ topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
             _partition_count--;
             auto ntp = model::ntp(nt.ns, nt.tp, p_as.id);
             _updates_in_progress.erase(ntp);
-            _pending_deltas.push_back(
-              topic_table_delta::create_remove_partition_delta(
-                std::move(ntp), model::revision_id(offset)));
+            _pending_deltas.emplace_back(
+              std::move(ntp),
+              model::revision_id(offset),
+              partition_operation_type::remove);
         }
 
         _topics.erase(tp);
@@ -225,11 +225,10 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
           .replicas_revisions = replicas_revisions,
           .last_update_finished_revision = rev_id};
         _topics_map_revision++;
-        _pending_deltas.push_back(topic_table_delta::create_add_partition_delta(
+        _pending_deltas.emplace_back(
           std::move(ntp),
           model::revision_id(offset),
-          std::move(p_as),
-          std::move(replicas_revisions)));
+          partition_operation_type::add);
     }
     notify_waiters();
     co_return errc::success;
@@ -274,7 +273,6 @@ ss::future<std::error_code> topic_table::do_apply(
     change_partition_replicas(
       std::move(cmd_data.ntp),
       cmd_data.replicas,
-      tp->second,
       *current_assignment_it,
       o,
       false,
@@ -352,15 +350,11 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
 
     _updates_in_progress.erase(it);
 
-    partition_assignment delta_assignment{
-      current_assignment_it->group,
-      current_assignment_it->id,
-      std::move(cmd.value),
-    };
-
     // notify backend about finished update
-    _pending_deltas.push_back(topic_table_delta::create_finish_update_delta(
-      std::move(cmd.key), model::revision_id(o), std::move(delta_assignment)));
+    _pending_deltas.emplace_back(
+      std::move(cmd.key),
+      model::revision_id(o),
+      partition_operation_type::finish_update);
 
     notify_waiters();
 
@@ -423,32 +417,11 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     current_assignment_it->replicas
       = in_progress_it->second.get_previous_replicas();
 
-    /**
-     * Cancel/force abort delta contains two assignments new_assignment is set
-     * to the one the partition is currently being moved from. Previous
-     * assignment is set to an assignment which is target assignment from
-     * current move.
-     */
-
-    auto partition_it = tp->second.partitions.find(cmd.key.tp.partition);
-    vassert(
-      partition_it != tp->second.partitions.end(),
-      "partition {} must exist in the partitions map",
-      cmd.key);
-
-    _pending_deltas.push_back(topic_table_delta::create_cancel_update_delta(
+    _pending_deltas.emplace_back(
       std::move(cmd.key),
       model::revision_id(o),
-      cmd.value.force ? is_forced::yes : is_forced::no,
-      partition_assignment{
-        current_assignment_it->group,
-        current_assignment_it->id,
-        in_progress_it->second.get_previous_replicas()},
-      std::move(replicas),
-      // this replica revisions map reflects the state right before the update
-      // (i.e. the state we are trying to return to by cancelling)
-      partition_it->second.replicas_revisions));
-
+      cmd.value.force ? partition_operation_type::force_cancel_update
+                      : partition_operation_type::cancel_update);
     notify_waiters();
 
     co_return errc::success;
@@ -514,9 +487,8 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
     _updates_in_progress.erase(in_progress_it);
 
     // notify backend about finished update
-    _pending_deltas.push_back(topic_table_delta::create_finish_update_delta(
-      ntp, model::revision_id(o), std::move(delta_assignment)));
-
+    _pending_deltas.emplace_back(
+      ntp, model::revision_id(o), partition_operation_type::finish_update);
     notify_waiters();
 
     co_return errc::success;
@@ -567,7 +539,6 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
         change_partition_replicas(
           model::ntp(cmd.key.ns, cmd.key.tp, partition_id),
           new_replicas,
-          tp->second,
           *assignment,
           o,
           false,
@@ -605,7 +576,6 @@ topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
     change_partition_replicas(
       cmd.key,
       cmd.value.replicas,
-      tp->second,
       *current_assignment_it,
       o,
       true,
@@ -823,12 +793,11 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     // generate deltas for controller backend
     const auto& assignments = tp->second.get_assignments();
     for (auto& p_as : assignments) {
-        _pending_deltas.push_back(
-          topic_table_delta::create_update_properties_delta(
-            model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
-            model::revision_id(o)));
+        _pending_deltas.emplace_back(
+          model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
+          model::revision_id(o),
+          partition_operation_type::update_properties);
     }
-
     notify_waiters();
 
     co_return make_error_code(errc::success);
@@ -925,9 +894,8 @@ public:
           clusterlog.trace, "deleting ntp {} not in controller snapshot", ntp);
         _updates_in_progress.erase(ntp);
 
-        _pending_deltas.push_back(
-          topic_table_delta::create_remove_partition_delta(
-            std::move(ntp), cmd_rev));
+        _pending_deltas.emplace_back(
+          std::move(ntp), cmd_rev, partition_operation_type::remove);
         // partition_assignment object is supposed to be removed from the
         // assignments set by the caller
     }
@@ -1012,31 +980,27 @@ public:
         // with the snapshot.
         if (!prev_assignment) {
             // new partition
-            _pending_deltas.push_back(
-              topic_table_delta::create_add_partition_delta(
-                ntp,
-                partition.last_update_finished_revision,
-                cur_assignment,
-                partition.replicas_revisions));
+            _pending_deltas.emplace_back(
+              ntp,
+              partition.last_update_finished_revision,
+              partition_operation_type::add);
         } else {
             if (
               prev_update_finished_revision
               != partition.last_update_finished_revision) {
                 // the partition in the snapshot is the same as we have, but
                 // after some updates were initiated and finished.
-                _pending_deltas.push_back(topic_table_delta::create_reset_delta(
+                _pending_deltas.emplace_back(
                   ntp,
                   partition.last_update_finished_revision,
-                  cur_assignment,
-
-                  prev_assignment->replicas,
-                  partition.replicas_revisions));
+                  partition_operation_type::reset);
             }
 
             if (must_update_properties) {
-                _pending_deltas.push_back(
-                  topic_table_delta::create_update_properties_delta(
-                    ntp, partition.last_update_finished_revision));
+                _pending_deltas.emplace_back(
+                  ntp,
+                  partition.last_update_finished_revision,
+                  partition_operation_type::update_properties);
             }
         }
 
@@ -1098,34 +1062,20 @@ public:
                     // cancellation because if later the "cancel revert" event
                     // happens, controller_backend has to execute the update
                     // delta to make progress.
-                    _pending_deltas.push_back(
-                      topic_table_delta::create_update_delta(
-                        ntp,
-                        update.revision,
-                        update.state == reconfiguration_state::force_update
-                          ? is_forced::yes
-                          : is_forced::no,
-                        partition_assignment(
-                          partition.group,
-                          p_id,
-                          update_it->second.target_assignment),
-                        partition.replicas,
-                        update_replicas_revisions(
-                          partition.replicas_revisions,
-                          update.target_assignment,
-                          update.revision),
-                        update.policy));
+                    _pending_deltas.emplace_back(
+                      ntp,
+                      update.revision,
+                      update.state == reconfiguration_state::force_update
+                        ? partition_operation_type::force_update
+                        : partition_operation_type::update);
                 }
 
                 auto add_cancel_delta = [&](is_forced forced) {
-                    _pending_deltas.push_back(
-                      topic_table_delta::create_cancel_update_delta(
-                        ntp,
-                        update.last_cmd_revision,
-                        forced,
-                        cur_assignment,
-                        update.target_assignment,
-                        partition.replicas_revisions));
+                    _pending_deltas.emplace_back(
+                      ntp,
+                      update.last_cmd_revision,
+                      forced ? partition_operation_type::force_cancel_update
+                             : partition_operation_type::cancel_update);
                 };
 
                 switch (update.state) {
@@ -1567,7 +1517,6 @@ std::vector<model::ntp> topic_table::all_updates_in_progress() const {
 void topic_table::change_partition_replicas(
   model::ntp ntp,
   const replicas_t& new_assignment,
-  topic_metadata_item& metadata,
   partition_assignment& current_assignment,
   model::offset o,
   bool is_forced,
@@ -1592,25 +1541,13 @@ void topic_table::change_partition_replicas(
     // replace partition replica set
     current_assignment.replicas = new_assignment;
 
-    // calculate deleta for backend
+    // calculate delta for backend
 
-    auto partition_it = metadata.partitions.find(ntp.tp.partition);
-    vassert(
-      partition_it != metadata.partitions.end(),
-      "partition {} must exist in the partition map",
-      ntp);
-
-    _pending_deltas.push_back(topic_table_delta::create_update_delta(
+    _pending_deltas.emplace_back(
       std::move(ntp),
       model::revision_id(o),
-      cluster::is_forced(is_forced),
-      current_assignment,
-      std::move(previous_assignment),
-      update_replicas_revisions(
-        partition_it->second.replicas_revisions,
-        new_assignment,
-        update_revision),
-      policy));
+      is_forced ? partition_operation_type::force_update
+                : partition_operation_type::update);
 }
 
 size_t topic_table::get_node_partition_count(model::node_id id) const {

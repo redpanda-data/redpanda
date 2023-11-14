@@ -561,10 +561,10 @@ ss::future<> controller_backend::fetch_deltas() {
           return ss::with_semaphore(
             _topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
                 for (auto& d : deltas) {
-                    auto& rs = _states[d.ntp()];
-                    rs.changed_at = d.revision();
-                    if (d.type() == partition_operation_type::update_properties) {
-                        rs.properties_changed_at = d.revision();
+                    auto& rs = _states[d.ntp];
+                    rs.changed_at = d.revision;
+                    if (d.type == partition_operation_type::update_properties) {
+                        rs.properties_changed_at = d.revision;
                     }
                 }
             });
