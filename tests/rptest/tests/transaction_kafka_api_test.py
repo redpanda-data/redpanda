@@ -167,7 +167,10 @@ class TxKafkaApiTest(RedpandaTest):
 
         txs_info = self.kafka_cli.list_transactions()
         assert len(txs_info) > 0
-        for tx in txs_info:
-            tx_info = self.kafka_cli.describe_transaction(
-                tx["TransactionalId"])
-            assert int(tx_info["ProducerId"]) == int(tx["ProducerId"])
+        for tx_from_list in txs_info:
+            tx_from_describe = self.kafka_cli.describe_transaction(
+                tx_from_list["TransactionalId"])
+
+            for f in ["TransactionalId", "TransactionState", "ProducerId"]:
+                assert tx_from_describe[f] == tx_from_list[f]
+            assert tx_from_list["TransactionState"] != "Unknown"
