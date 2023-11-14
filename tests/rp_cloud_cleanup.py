@@ -53,16 +53,11 @@ class FakeContext():
 
 
 class CloudCleanup():
-    _ns_pattern = f"{ns_name_prefix}"
     # At this point all is disabled except namespaces
     delete_clusters = True
     delete_peerings = False
     delete_networks = False
     delete_namespaces = True
-
-    ns_regex = re.compile("^(?P<prefix>" + f"{ns_name_prefix}" + ")"
-                          "(?P<date>\d{4}-\d{2}-\d{2}-\d{6}-)?"
-                          "(?P<id>[a-zA-Z0-9]{8})$")
 
     def __init__(self, log_level=logging.INFO):
         self.log = setupLogger(log_level)
@@ -260,7 +255,7 @@ class CloudCleanup():
                           f"{_failed} failed, {_unsure} other")
             return
 
-    def clean_namespaces(self):
+    def clean_namespaces(self, pattern, uuid_len):
         """
             Function lists non-deleted namespaces and hierachically deletes
             clusters, networks and network-peerings if any
@@ -271,23 +266,28 @@ class CloudCleanup():
         net_queue = []
         npr_queue = []
         ns_queue = []
+        # Prepare regex for matching namespaces
+        ns_regex = re.compile("^(?P<prefix>" + f"{pattern}" + ")"
+                              "(?P<date>\d{4}-\d{2}-\d{2}-\d{6}-)?"
+                              "(?P<id>[a-zA-Z0-9]{" + f"{uuid_len}" + "})$")
 
         # Get namespaces
         ns_list = self.cloudv2.list_namespaces()
         self.log.info(f"  {len(ns_list)} total namespaces found. "
-                      f"Filtering with '{self._ns_pattern}*'")
+                      f"Filtering with '{pattern}*'")
         # filter namespaces according to 'ns_name_prefix'
-        ns_list = [
-            n for n in ns_list if n['name'].startswith(self._ns_pattern)
-        ]
+        ns_list = [n for n in ns_list if n['name'].startswith(pattern)]
         # Processing namespaces
         self.log.info(
             f"# Searching for resources in {len(ns_list)} namespaces")
         for ns in ns_list:
             # Filter out according to dates in name
             # Detect date
-            ns_match = self.ns_regex.match(ns['name'])
-            date = ns_match['date']
+            ns_match = ns_regex.match(ns['name'])
+
+            if ns_match is None:
+                continue
+            date = ns_match['date'] if 'date' in ns_match.groups() else None
             _ns_36h_skip_flag = False
             if date is not None:
                 # Parse date into datetime object
@@ -317,7 +317,8 @@ class CloudCleanup():
                         # Add peerings delete handle to own list
                         npr_queue += [
                             self.cloudv2.network_peering_endpoint(
-                                id=peernet['net_id'], peering_id=peernet['id'])
+                                id=peernet['networkId'],
+                                peering_id=peernet['id'])
                         ]
                 # TODO: Prepare needed data for clusters
                 if counts[0]:
@@ -388,7 +389,10 @@ def cleanup_entrypoint():
     cleaner = CloudCleanup()
 
     # Namespaces
-    cleaner.clean_namespaces()
+    cleaner.clean_namespaces(ns_name_prefix, 8)
+    # cleaner.clean_namespaces("certification-test-", 7)
+
+    return
 
 
 if __name__ == "__main__":
