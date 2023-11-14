@@ -44,7 +44,7 @@ public:
 
     ss::future<server::reply_t>
     operator()(server::request_t rq, server::reply_t rp) const {
-        auto units = co_await _os();
+        co_await _os();
         auto guard = _g.hold();
         co_return co_await _h(std::move(rq), std::move(rp));
     }
