@@ -22,6 +22,7 @@ on:
 
 jobs:
   build:
+    if: github.event.pull_request.draft == false
     name: build redpanda
     runs-on: ubuntu-latest-64
     strategy:
