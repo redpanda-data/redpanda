@@ -195,6 +195,7 @@ TEST(TransformedDataTest, MakeBatch) {
     EXPECT_EQ(
       transformed_batch.header().type, model::record_batch_type::raft_data);
     EXPECT_EQ(transformed_batch.header().record_count, 4);
+    EXPECT_EQ(transformed_batch.header().last_offset_delta, 3);
     EXPECT_EQ(
       transformed_batch.header().crc,
       model::crc_record_batch(transformed_batch));
