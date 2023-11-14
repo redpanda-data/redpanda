@@ -27,6 +27,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
 #include "rpc/errc.h"
@@ -762,10 +763,13 @@ service::get_controller_committed_offset(
                     .result = errc::not_leader_controller});
             }
             return _controller->linearizable_barrier().then([](auto r) {
-                const auto errc = r.has_error() ? errc::not_leader_controller
-                                                : errc::success;
+                if (r.has_error()) {
+                    return controller_committed_offset_reply{
+                      .last_committed = model::offset{},
+                      .result = errc::not_leader_controller};
+                }
                 return controller_committed_offset_reply{
-                  .last_committed = r.value(), .result = errc};
+                  .last_committed = r.value(), .result = errc::success};
             });
         });
     });
