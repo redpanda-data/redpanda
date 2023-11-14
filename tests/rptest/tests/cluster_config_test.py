@@ -1064,7 +1064,16 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             Example("kafka_qdc_enable", "true", True),
             Example("append_chunk_size", "32768", 32768),
             Example("superusers", "['bob','alice']", ["bob", "alice"]),
-            Example("storage_min_free_bytes", "1234567890", 1234567890)
+            Example("storage_min_free_bytes", "1234567890", 1234567890),
+            Example(
+                "constraints",
+                "[{'name': 'default_topic_replications','type': 'restrict','min': 3, 'max': 9}]",
+                [{
+                    'name': 'default_topic_replications',
+                    'type': 'restrict',
+                    'min': 3,
+                    'max': 9
+                }])
         ]
 
         def yamlize(input) -> str:
@@ -1102,6 +1111,9 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             ("kafka_qdc_enable", "rhubarb"),
             ("append_chunk_size", "-123"),
             ("superusers", "43"),
+            ("constraints",
+             "[{'name': 'default_topic_replications','type': 'restrict','min': 9, 'max': 3}]"
+             ),
         ]
         for key, strval in invalid_examples:
             try:
@@ -1118,6 +1130,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             ("kafka_qdc_enable", False),
             ("append_chunk_size", 16384),
             ("superusers", []),
+            ("constraints", []),
         ]
         for key, expect_default in default_examples:
             self.rpk.cluster_config_set(key, "")
