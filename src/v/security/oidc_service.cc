@@ -24,64 +24,6 @@
 
 namespace security::oidc {
 
-namespace {
-ss::future<ss::sstring> make_request(std::string_view url_view) {
-    auto url_res = security::oidc::parse_url(url_view);
-    if (url_res.has_error()) {
-        throw std::runtime_error("Invalid url");
-    }
-    auto url = std::move(url_res).assume_value();
-    auto is_https = url.scheme == "https";
-    std::optional<ss::sstring> tls_host;
-    ss::shared_ptr<ss::tls::certificate_credentials> creds;
-    if (is_https) {
-        tls_host.emplace(url.host);
-        ss::tls::credentials_builder builder;
-        builder.set_client_auth(ss::tls::client_auth::NONE);
-        co_await builder.set_system_trust();
-        creds = builder.build_certificate_credentials();
-        creds->set_dn_verification_callback([](
-                                              ss::tls::session_type type,
-                                              ss::sstring subject,
-                                              ss::sstring issuer) {
-            vlog(
-              seclog.trace,
-              "type: ?, subject: {}, issuer: {}",
-              (uint8_t)type,
-              subject,
-              issuer);
-        });
-    }
-    http::client client{net::base_transport::configuration{
-      .server_addr = {url.host, url.port},
-      .credentials = creds,
-      .tls_sni_hostname = tls_host}};
-
-    http::client::request_header req_hdr;
-    req_hdr.method(boost::beast::http::verb::get);
-    req_hdr.target({url.target.data(), url.target.length()});
-    req_hdr.insert(
-      boost::beast::http::field::host, {url.host.data(), url.host.length()});
-    req_hdr.insert(boost::beast::http::field::accept, "*/*");
-
-    co_return co_await http::with_client(
-      std::move(client),
-      [req_hdr{std::move(req_hdr)}](http::client& client) mutable {
-          return client.request(std::move(req_hdr))
-            .then([](auto res) -> ss::future<ss::sstring> {
-                ss::sstring response_body;
-                while (!res->is_done()) {
-                    iobuf buf = co_await res->recv_some();
-                    for (auto& fragm : buf) {
-                        response_body.append(fragm.get(), fragm.size());
-                    }
-                }
-                co_return response_body;
-            });
-      });
-}
-} // namespace
-
 struct service::impl {
     ss::shard_id update_shard_id{0};
     impl(
@@ -216,6 +158,64 @@ struct service::impl {
             _rule = std::move(r).assume_value();
         }
     }
+
+    ss::future<ss::sstring> make_request(std::string_view url_view) {
+        auto url_res = security::oidc::parse_url(url_view);
+        if (url_res.has_error()) {
+            throw std::runtime_error("Invalid url");
+        }
+        auto url = std::move(url_res).assume_value();
+        auto is_https = url.scheme == "https";
+        std::optional<ss::sstring> tls_host;
+        ss::shared_ptr<ss::tls::certificate_credentials> creds;
+        if (is_https) {
+            tls_host.emplace(url.host);
+            ss::tls::credentials_builder builder;
+            builder.set_client_auth(ss::tls::client_auth::NONE);
+            co_await builder.set_system_trust();
+            creds = builder.build_certificate_credentials();
+            creds->set_dn_verification_callback([](
+                                                  ss::tls::session_type type,
+                                                  ss::sstring subject,
+                                                  ss::sstring issuer) {
+                vlog(
+                  seclog.trace,
+                  "type: ?, subject: {}, issuer: {}",
+                  (uint8_t)type,
+                  subject,
+                  issuer);
+            });
+        }
+        http::client client{net::base_transport::configuration{
+          .server_addr = {url.host, url.port},
+          .credentials = creds,
+          .tls_sni_hostname = tls_host}};
+
+        http::client::request_header req_hdr;
+        req_hdr.method(boost::beast::http::verb::get);
+        req_hdr.target({url.target.data(), url.target.length()});
+        req_hdr.insert(
+          boost::beast::http::field::host,
+          {url.host.data(), url.host.length()});
+        req_hdr.insert(boost::beast::http::field::accept, "*/*");
+
+        co_return co_await http::with_client(
+          std::move(client),
+          [req_hdr{std::move(req_hdr)}](http::client& client) mutable {
+              return client.request(std::move(req_hdr))
+                .then([](auto res) -> ss::future<ss::sstring> {
+                    ss::sstring response_body;
+                    while (!res->is_done()) {
+                        iobuf buf = co_await res->recv_some();
+                        for (auto& fragm : buf) {
+                            response_body.append(fragm.get(), fragm.size());
+                        }
+                    }
+                    co_return response_body;
+                });
+          });
+    }
+
     ss::gate _gate;
     verifier _verifier;
     config::binding<std::vector<ss::sstring>> _sasl_mechanisms;
