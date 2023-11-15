@@ -194,6 +194,8 @@ private:
 
     static ss::future<json::Document> parse_json_body(ss::http::request* req);
 
+    static model::node_id parse_broker_id(const ss::http::request& req);
+
     /**
      * Helper for binding handlers to routes, which also adds in
      * authentication step and common request logging.  Expects

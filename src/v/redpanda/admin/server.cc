@@ -911,8 +911,9 @@ bool need_redirect_to_leader(
 
     return leader_id_opt.value() != *config::node().node_id();
 }
+} // namespace
 
-model::node_id parse_broker_id(const ss::http::request& req) {
+model::node_id admin_server::parse_broker_id(const ss::http::request& req) {
     try {
         return model::node_id(
           boost::lexical_cast<model::node_id::type>(req.param["id"]));
@@ -922,6 +923,7 @@ model::node_id parse_broker_id(const ss::http::request& req) {
     }
 }
 
+namespace {
 ss::future<std::vector<ss::httpd::partition_json::partition_result>>
 map_partition_results(std::vector<cluster::move_cancellation_result> results) {
     std::vector<ss::httpd::partition_json::partition_result> ret;
