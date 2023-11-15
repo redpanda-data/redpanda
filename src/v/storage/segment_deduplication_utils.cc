@@ -103,10 +103,15 @@ ss::future<model::offset> build_offset_map(
             cfg.asrc->check();
         }
         const auto& seg = iter->get();
+        vlog(gclog.debug, "Adding segment to offset map: {}", seg->filename());
         auto read_lock = co_await seg->read_lock();
         if (seg->is_closed()) {
             // Stop early if the segment e.g. has been prefix truncated. We'll
             // make do with the offset map we have so far.
+            vlog(
+              gclog.debug,
+              "Stopping add to offset map, segment closed: {}",
+              seg->filename());
             break;
         }
         auto seg_fully_indexed = co_await build_offset_map_for_segment(
@@ -116,6 +121,7 @@ ss::future<model::offset> build_offset_map(
             // indexed a segment, but it's safe to use this index. If no new
             // segments come in, the next time we compact, we need to start
             // from this segment for completeness.
+            vlog(gclog.debug, "Segment not fully indexed: {}", seg->filename());
             break;
         }
         min_segment_fully_indexed = seg->offsets().base_offset;

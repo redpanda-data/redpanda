@@ -523,12 +523,19 @@ segment_set disk_log_impl::find_sliding_range(
 
 ss::future<bool> disk_log_impl::sliding_window_compact(
   const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
-    vlog(gclog.info, "[{}] running sliding window compaction", config().ntp());
+    vlog(gclog.debug, "[{}] running sliding window compaction", config().ntp());
     auto segs = find_sliding_range(cfg, new_start_offset);
     if (segs.empty()) {
-        vlog(gclog.info, "[{}] no more segments to compact", config().ntp());
+        vlog(gclog.debug, "[{}] no more segments to compact", config().ntp());
         co_return false;
     }
+    vlog(
+      gclog.debug,
+      "[{}] compacting {} segments in interval [{}, {}]",
+      config().ntp(),
+      segs.size(),
+      segs.front()->filename(),
+      segs.back()->filename());
     for (auto& seg : segs) {
         if (cfg.asrc) {
             cfg.asrc->check();
@@ -567,6 +574,12 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           std::current_exception());
         co_return false;
     }
+    vlog(
+      gclog.debug,
+      "[{}] built offset map with {} keys (max allowed {})",
+      config().ntp(),
+      map.size(),
+      map.capacity());
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
     for (auto& seg : segs) {
@@ -595,8 +608,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           cmp_idx_tmpname, cfg.iopc, true, resources(), cfg.sanitizer_config);
 
         vlog(
-          gclog.trace,
-          "Deduplicating data from segment {} to {}",
+          gclog.debug,
+          "[{}] Deduplicating data from segment {} to {}",
+          config().ntp(),
           seg->path(),
           tmpname);
         auto initial_generation_id = seg->get_generation_id();
@@ -624,9 +638,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         }
 
         vlog(
-          gclog.trace,
-          "Proceeding to replace segment {} with {}",
-          tmpname,
+          gclog.debug,
+          "[{}] Replacing segment {} with {}",
+          config().ntp(),
           seg->path(),
           tmpname);
 
@@ -661,6 +675,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         seg->mark_as_finished_windowed_compaction();
         _probe->segment_compacted();
         seg->advance_generation();
+        vlog(
+          gclog.debug, "[{}] Final compacted segment {}", config().ntp(), seg);
     }
     _last_compaction_window_start_offset = idx_start_offset;
     co_return true;
