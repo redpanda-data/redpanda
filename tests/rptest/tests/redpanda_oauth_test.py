@@ -102,10 +102,7 @@ class RedpandaOIDCTestBase(Test):
         self.redpanda.logger.info("Starting Redpanda")
         self.redpanda.start()
 
-
-class RedpandaOIDCTest(RedpandaOIDCTestBase):
-    @cluster(num_nodes=4)
-    def test_init(self):
+    def create_service_user(self, client_id=CLIENT_ID):
         kc_node = self.keycloak.nodes[0]
 
         self.keycloak.admin.create_user('norma',
@@ -113,23 +110,32 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
                                         realm_admin=True,
                                         email='10086@sunset.blvd')
         self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
-        self.keycloak.admin.create_client(CLIENT_ID)
+        self.keycloak.admin.create_client(client_id)
 
+        service_user = f'service-account-{client_id}'
         # add an email address to myapp client's service user. this should
         # appear alongside the access token.
-        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
+        self.keycloak.admin.update_user(service_user,
                                         email='myapp@customer.com')
+        return self.keycloak.admin_ll.get_user_id(service_user)
+
+
+class RedpandaOIDCTest(RedpandaOIDCTestBase):
+    @cluster(num_nodes=4)
+    def test_init(self):
+        kc_node = self.keycloak.nodes[0]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user()
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
-        service_user_id = self.keycloak.admin_ll.get_user_id(
-            f'service-account-{CLIENT_ID}')
         result = self.rpk.sasl_allow_principal(f'User:{service_user_id}',
                                                ['all'], 'topic', EXAMPLE_TOPIC,
                                                self.su_username,
                                                self.su_password,
                                                self.su_algorithm)
 
-        cfg = self.keycloak.generate_oauth_config(kc_node, CLIENT_ID)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
         assert cfg.client_secret is not None
         assert cfg.token_endpoint is not None
         k_client = PythonLibrdkafka(self.redpanda,
@@ -191,27 +197,15 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
     def test_java_client(self):
         kc_node = self.keycloak.nodes[0]
 
-        self.keycloak.admin.create_user('norma',
-                                        'desmond',
-                                        realm_admin=True,
-                                        email='10086@sunset.blvd')
-        self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
-        self.keycloak.admin.create_client(CLIENT_ID)
-
-        # add an email address to myapp client's service user. this should
-        # appear alongside the access token.
-        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
-                                        email='myapp@customer.com')
-
-        service_user_id = self.keycloak.admin_ll.get_user_id(
-            f'service-account-{CLIENT_ID}')
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
         expected_topics = set([EXAMPLE_TOPIC])
         wait_until(lambda: set(self.rpk.list_topics()) == expected_topics,
                    timeout_sec=5)
 
-        cfg = self.keycloak.generate_oauth_config(kc_node, CLIENT_ID)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
         cli = KafkaCliTools(self.redpanda, oauth_cfg=cfg)
 
         self.redpanda.logger.debug(
@@ -270,21 +264,10 @@ class OIDCReauthTest(RedpandaOIDCTestBase):
     def test_oidc_reauth(self):
         kc_node = self.keycloak.nodes[0]
 
-        self.keycloak.admin.create_user('norma',
-                                        'desmond',
-                                        realm_admin=True,
-                                        email='10086@sunset.blvd')
-        self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
-        self.keycloak.admin.create_client(CLIENT_ID)
-
-        # add an email address to myapp client's service user. this should
-        # appear alongside the access token.
-        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
-                                        email='myapp@customer.com')
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
-        service_user_id = self.keycloak.admin_ll.get_user_id(
-            f'service-account-{CLIENT_ID}')
         self.rpk.sasl_allow_principal(f'User:{service_user_id}', ['all'],
                                       'topic', EXAMPLE_TOPIC, self.su_username,
                                       self.su_password, self.su_algorithm)
