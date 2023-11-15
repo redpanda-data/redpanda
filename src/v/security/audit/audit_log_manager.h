@@ -208,10 +208,14 @@ public:
     /// Note does not include records already sent to client
     size_t pending_events() const { return _queue.size(); };
 
-    /// Returns true if the internal kafka client is allocated
+    /// Returns the number of bytes left until the semaphore is exhausted
     ///
-    /// NOTE: Only works on shard_id{0}, use in unit tests
-    bool is_client_enabled() const;
+    size_t avaiable_reservation() const {
+        return _queue_bytes_sem.available_units();
+    }
+
+    /// Returns true if the internal fibers are up
+    bool is_effectively_enabled() const { return _effectively_enabled; }
 
     bool report_redpanda_app_event(is_started);
 
@@ -262,6 +266,33 @@ private:
     }
 
 private:
+    class audit_msg {
+    public:
+        /// Wrapper around an ocsf event pointer
+        ///
+        /// Main benefit is to tie the lifetime of semaphore units with the
+        /// underlying ocsf event itself
+        audit_msg(
+          std::unique_ptr<ocsf_base_impl> msg, ssx::semaphore_units&& units)
+          : _msg(std::move(msg))
+          , _units(std::move(units)) {
+            vassert(_msg != nullptr, "Audit record cannot be null");
+        }
+
+        size_t key() const { return _msg->key(); }
+
+        void increment(timestamp_t t) const { _msg->increment(t); }
+
+        std::unique_ptr<ocsf_base_impl> release() && {
+            _units.return_all();
+            return std::move(_msg);
+        }
+
+    private:
+        std::unique_ptr<ocsf_base_impl> _msg;
+        ssx::semaphore_units _units;
+    };
+
     /// Multi index container is efficent in terms of time and space, underlying
     /// internal data structures are compact requiring only one node per
     /// element. More info here:
@@ -269,23 +300,21 @@ private:
     struct underlying_list {};
     struct underlying_unordered_map {};
     using underlying_t = boost::multi_index::multi_index_container<
-      std::unique_ptr<security::audit::ocsf_base_impl>,
+      audit_msg,
       boost::multi_index::indexed_by<
         /// Sequenced list of entries
         boost::multi_index::sequenced<boost::multi_index::tag<underlying_list>>,
         /// Set of audit_messages using hashed representations as comparator
         boost::multi_index::hashed_unique<
           boost::multi_index::tag<underlying_unordered_map>,
-          boost::multi_index::const_mem_fun<
-            security::audit::ocsf_base_impl,
-            size_t,
-            &security::audit::ocsf_base_impl::key>>>>;
+          boost::multi_index::
+            const_mem_fun<audit_msg, size_t, &audit_msg::key>>>>;
 
     /// configuration options
     config::binding<bool> _audit_enabled;
     config::binding<std::chrono::milliseconds> _queue_drain_interval_ms;
-    config::binding<size_t> _max_queue_elements_per_shard;
     config::binding<std::vector<ss::sstring>> _audit_event_types;
+    size_t _max_queue_size_bytes;
     static constexpr auto enabled_set_bitlength
       = std::underlying_type_t<event_type>(event_type::num_elements);
     std::bitset<enabled_set_bitlength> _enabled_event_types{0};
@@ -294,6 +323,8 @@ private:
     config::binding<std::vector<ss::sstring>>
       _audit_excluded_principals_binding;
     absl::flat_hash_set<security::acl_principal> _audit_excluded_principals;
+
+    ssx::semaphore _queue_bytes_sem;
 
     /// This will be true when the client detects that there is an issue with
     /// authorization configuration. Auth must be enabled so the client

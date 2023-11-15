@@ -148,9 +148,6 @@ public:
     /// Allocates and connects, or deallocates and shuts down the audit client
     void toggle(bool enabled);
 
-    /// Returns true if _client has a value
-    bool is_enabled() const { return _client != nullptr; }
-
 private:
     ss::future<>
       publish_app_lifecycle_event(application_lifecycle::activity_id);
@@ -673,14 +670,15 @@ audit_log_manager::audit_log_manager(
   : _audit_enabled(config::shard_local_cfg().audit_enabled.bind())
   , _queue_drain_interval_ms(
       config::shard_local_cfg().audit_queue_drain_interval_ms.bind())
-  , _max_queue_elements_per_shard(
-      config::shard_local_cfg().audit_max_queue_elements_per_shard.bind())
   , _audit_event_types(
       config::shard_local_cfg().audit_enabled_event_types.bind())
+  , _max_queue_size_bytes(
+      config::shard_local_cfg().audit_queue_max_buffer_size_per_shard())
   , _audit_excluded_topics_binding(
       config::shard_local_cfg().audit_excluded_topics.bind())
   , _audit_excluded_principals_binding(
       config::shard_local_cfg().audit_excluded_principals.bind())
+  , _queue_bytes_sem(_max_queue_size_bytes, "s/audit/buffer")
   , _controller(controller)
   , _config(client_config) {
     if (ss::this_shard_id() == client_shard_id) {
@@ -749,7 +747,7 @@ ss::future<> audit_log_manager::start() {
     _probe = std::make_unique<audit_probe>();
     _probe->setup_metrics([this] {
         return static_cast<double>(pending_events())
-               / static_cast<double>(_max_queue_elements_per_shard());
+               / static_cast<double>(_max_queue_size_bytes);
     });
     if (ss::this_shard_id() != client_shard_id) {
         co_return;
@@ -821,13 +819,6 @@ ss::future<> audit_log_manager::resume() {
     });
 }
 
-bool audit_log_manager::is_client_enabled() const {
-    vassert(
-      ss::this_shard_id() == client_shard_id,
-      "Must be called on audit client shard");
-    return _sink->is_enabled();
-}
-
 bool audit_log_manager::report_redpanda_app_event(is_started app_started) {
     return enqueue_app_lifecycle_event(
       app_started == is_started::yes
@@ -840,25 +831,31 @@ bool audit_log_manager::do_enqueue_audit_event(
     auto& map = _queue.get<underlying_unordered_map>();
     auto it = map.find(msg->key());
     if (it == map.end()) {
-        if (_queue.size() >= _max_queue_elements_per_shard()) {
+        const auto msg_size = msg->estimated_size();
+        auto units = ss::try_get_units(_queue_bytes_sem, msg_size);
+        if (!units) {
             vlog(
               adtlog.warn,
-              "Unable to enqueue audit message: {} >= {}",
-              _queue.size(),
-              _max_queue_elements_per_shard());
+              "Unable to enqueue audit message, msg size: {}, avail units: {}",
+              msg_size,
+              _queue_bytes_sem.available_units());
             probe().audit_error();
             return false;
         }
         auto& list = _queue.get<underlying_list>();
-        vlog(adtlog.trace, "Successfully enqueued audit event {}", *msg);
-        list.push_back(std::move(msg));
+        vlog(
+          adtlog.trace,
+          "Successfully enqueued audit event {}, semaphore contains {} units",
+          *msg,
+          _queue_bytes_sem.available_units());
+        list.push_back(audit_msg(std::move(msg), std::move(*units)));
     } else {
-        vlog(adtlog.trace, "incrementing count of event {}", *msg);
+        vlog(adtlog.trace, "Incrementing count of event {}", *msg);
         auto now = security::audit::timestamp_t{
           std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
             .count()};
-        (*it)->increment(now);
+        it->increment(now);
     }
     return true;
 }
@@ -878,9 +875,9 @@ ss::future<> audit_log_manager::drain() {
     auto records = std::exchange(_queue, underlying_t{});
     auto& records_seq = records.get<underlying_list>();
     while (!records_seq.empty()) {
-        const auto& front = records_seq.front();
-        auto as_json = front->to_json();
-        records_seq.pop_front();
+        auto first = records_seq.extract(records_seq.begin());
+        auto audit_msg = std::move(first.value()).release();
+        auto as_json = audit_msg->to_json();
         iobuf b;
         b.append(as_json.c_str(), as_json.size());
         essences.push_back(
