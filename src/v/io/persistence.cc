@@ -41,8 +41,7 @@ seastar::future<size_t> make_alignment_error(
 std::optional<seastar::future<size_t>> check_alignment(
   std::string_view name,
   uint64_t pos,
-  const char* buf,
-  size_t len, // NOLINT(bugprone-easily-swappable-parameters)
+  std::span<const char> data,
   uint64_t memory_alignment,
   uint64_t disk_alignment) {
     if (pos % disk_alignment) {
@@ -50,13 +49,13 @@ std::optional<seastar::future<size_t>> check_alignment(
     }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    if (auto ptr = reinterpret_cast<std::uintptr_t>(buf);
+    if (auto ptr = reinterpret_cast<std::uintptr_t>(data.data());
         ptr % memory_alignment) {
         return make_alignment_error(name, "buf", ptr, memory_alignment);
     }
 
-    if (len % disk_alignment) {
-        return make_alignment_error(name, "len", len, disk_alignment);
+    if (data.size() % disk_alignment) {
+        return make_alignment_error(name, "len", data.size(), disk_alignment);
     }
 
     return std::nullopt;
@@ -189,8 +188,7 @@ seastar::future<size_t> memory_persistence::memory_file::dma_read(
     if (auto err = check_alignment(
           "dma_read",
           pos,
-          buf,
-          len,
+          {buf, len},
           memory_dma_alignment(),
           disk_read_dma_alignment());
         err.has_value()) {
@@ -204,8 +202,7 @@ seastar::future<size_t> memory_persistence::memory_file::dma_write(
     if (auto err = check_alignment(
           "dma_write",
           pos,
-          buf,
-          len,
+          {buf, len},
           memory_dma_alignment(),
           disk_write_dma_alignment());
         err.has_value()) {
