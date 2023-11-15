@@ -119,6 +119,17 @@ class RedpandaOIDCTestBase(Test):
                                         email='myapp@customer.com')
         return self.keycloak.admin_ll.get_user_id(service_user)
 
+    def get_client_credentials_token(self, cfg):
+        token_endpoint_url = urlparse(cfg.token_endpoint)
+        openid = KeycloakOpenID(
+            server_url=
+            f'{token_endpoint_url.scheme}://{token_endpoint_url.netloc}',
+            client_id=cfg.client_id,
+            client_secret_key=cfg.client_secret,
+            realm_name=DEFAULT_REALM,
+            verify=True)
+        return openid.token(grant_type="client_credentials")
+
 
 class RedpandaOIDCTest(RedpandaOIDCTestBase):
     @cluster(num_nodes=4)
@@ -154,15 +165,7 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
                    == expected_topics,
                    timeout_sec=5)
 
-        token_endpoint_url = urlparse(cfg.token_endpoint)
-        openid = KeycloakOpenID(
-            server_url=
-            f'{token_endpoint_url.scheme}://{token_endpoint_url.netloc}',
-            client_id=cfg.client_id,
-            client_secret_key=cfg.client_secret,
-            realm_name=DEFAULT_REALM,
-            verify=True)
-        token = openid.token(grant_type="client_credentials")
+        token = self.get_client_credentials_token(cfg)
 
         def check_pp_topics():
             response = requests.get(
