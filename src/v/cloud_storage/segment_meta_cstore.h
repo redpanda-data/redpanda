@@ -436,13 +436,13 @@ private:
     }
 
     const value_t& dereference() const {
-        vassert(!is_end(), "Can't dereference iterator");
+        vassert(!is_end(), "Can't dereference end iterator");
         return *_inner_it;
     }
 
     void increment() {
 #ifndef NDEBUG
-        vassert(!is_end(), "can't increment iterator");
+        vassert(!is_end(), "Can't increment end iterator");
 #endif
         ++_ix_column;
         ++_inner_it;
