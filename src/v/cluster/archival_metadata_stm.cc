@@ -376,7 +376,7 @@ ss::future<std::error_code> command_batch_builder::replicate() {
         auto timeout = now < _deadline ? _deadline - now : 0ms;
         return _stm.get().sync(timeout).then([this](bool success) {
             if (!success) {
-                return ss::make_ready_future<std::error_code>(errc::timeout);
+                return ss::make_ready_future<std::error_code>(errc::not_leader);
             }
             auto batch = std::move(_builder).build();
             return _stm.get().do_replicate_commands(std::move(batch), _as);
