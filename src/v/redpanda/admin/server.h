@@ -62,6 +62,8 @@ namespace cloud_storage {
 struct topic_recovery_service;
 }
 
+extern ss::logger adminlog;
+
 class admin_server {
 public:
     explicit admin_server(
@@ -184,6 +186,15 @@ private:
             return ss::make_exception_future<R>(eptr);
         };
     };
+
+    static model::ntp
+    parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns);
+
+    static model::ntp parse_ntp_from_request(ss::httpd::parameters& param);
+
+    static ss::future<json::Document> parse_json_body(ss::http::request* req);
+
+    static model::node_id parse_broker_id(const ss::http::request& req);
 
     /**
      * Helper for binding handlers to routes, which also adds in

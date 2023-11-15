@@ -41,7 +41,8 @@ v_cc_library(
   SRCS
     ${swag_files}
     cluster_config_schema_util.cc
-    admin_server.cc
+    admin/server.cc
+    admin/debug.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc

@@ -83,7 +83,7 @@
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
 #include "raft/service.h"
-#include "redpanda/admin_server.h"
+#include "redpanda/admin/server.h"
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/rpc_utils.h"
