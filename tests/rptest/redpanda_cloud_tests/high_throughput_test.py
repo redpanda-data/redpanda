@@ -270,7 +270,7 @@ class HighThroughputTest(PreallocNodesTest):
         self._memory_per_broker = MachineTypeMemory[
             config_profile['machine_type']]
 
-        tier_product = self.redpanda._cloud_cluster.get_product()
+        tier_product = self.redpanda.get_product()
         """
         The _partitions_upper_limit represents a rough value for the estimated
         maximum number of partitions that can be made on a new cluster via 1st

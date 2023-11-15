@@ -1627,6 +1627,14 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
         return _config
 
+    def get_product(self):
+        """ Get product information.
+
+        Returns dict with info of product, including advertised limits.
+        Returns none if product info for the tier is not found.
+        """
+        return self._cloud_cluster.get_product()
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
