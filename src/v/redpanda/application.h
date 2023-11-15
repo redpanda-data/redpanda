@@ -39,7 +39,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
-#include "redpanda/admin_server.h"
+#include "redpanda/admin/server.h"
 #include "redpanda/monitor_unsafe_log_flag.h"
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/cpu_scheduling.h"

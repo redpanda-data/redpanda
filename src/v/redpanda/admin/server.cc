@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "redpanda/admin_server.h"
+#include "redpanda/admin/server.h"
 
 #include "archival/ntp_archiver_service.h"
 #include "bytes/streambuf.h"
@@ -48,7 +48,6 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_registry_frontend.h"
 #include "cluster/types.h"
-#include "cluster_config_schema_util.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "features/feature_table.h"
@@ -90,6 +89,7 @@
 #include "redpanda/admin/api-doc/transaction.json.hh"
 #include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/api-doc/usage.json.hh"
+#include "redpanda/cluster_config_schema_util.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
 #include "rpc/rpc_utils.h"

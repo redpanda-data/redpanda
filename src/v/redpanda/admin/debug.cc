@@ -12,7 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/shard_table.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
-#include "redpanda/admin_server.h"
+#include "redpanda/admin/server.h"
 
 ss::future<ss::json::json_return_type>
 admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
