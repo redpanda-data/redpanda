@@ -155,6 +155,14 @@ class LiveClusterParams:
         return f'/api/v1/networks/{self.network_id}/network-peerings'
 
 
+@dataclass
+class ProductInfo:
+    max_ingress: int
+    max_egress: int
+    max_client_count: int
+    max_partition_count: int
+
+
 class CloudCluster():
     """
     Operations on a Redpanda Cloud cluster via the swagger API.
@@ -1173,7 +1181,7 @@ class CloudCluster():
 
         return
 
-    def get_product(self):
+    def get_product(self) -> ProductInfo | None:
         """ Get product information.
 
         Returns dict with info of product, including advertised limits.
@@ -1195,5 +1203,11 @@ class CloudCluster():
         for product in products:
             if product[
                     'redpandaConfigProfileName'] == self.config.config_profile_name:
-                return product
+                return ProductInfo(
+                    max_ingress=int(product['advertisedMaxIngress']),
+                    max_egress=int(product['advertisedMaxEgress']),
+                    max_client_count=int(product['advertisedMaxClientCount']),
+                    max_partition_count=int(
+                        product['advertisedMaxPartitionCount']))
+
         return None

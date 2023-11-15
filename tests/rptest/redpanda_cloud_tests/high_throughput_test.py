@@ -276,13 +276,12 @@ class HighThroughputTest(PreallocNodesTest):
         fact that the partition allocator isn't guaranteed to perfectly distribute
         the partitions across all shards evenly.
         """
-        self._partitions_upper_limit = int(
-            tier_product['advertisedMaxPartitionCount'] * 0.8)
-        self._partitions_min = tier_product['advertisedMaxPartitionCount'] // 50
-        self._advertised_max_ingress = tier_product['advertisedMaxIngress']
-        self._advertised_max_egress = tier_product['advertisedMaxEgress']
-        self._advertised_max_client_count = tier_product[
-            'advertisedMaxClientCount']
+        self._partitions_upper_limit = int(tier_product.max_partition_count *
+                                           0.8)
+        self._partitions_min = tier_product.max_partition_count // 50
+        self._advertised_max_ingress = tier_product.max_ingress
+        self._advertised_max_egress = tier_product.max_egress
+        self._advertised_max_client_count = tier_product.max_client_count
 
         if self.config_profile_name == CloudTierName.DOCKER:
             si_settings = SISettings(
