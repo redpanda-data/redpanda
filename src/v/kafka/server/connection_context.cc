@@ -483,6 +483,7 @@ ss::future<> connection_context::handle_response(
     // rely on any future reader to check the abort source before considering
     // reading the connection.
     if (ssx::is_shutdown_exception(e)) {
+        vlog(klog.debug, "Shutdown error processing request: {}", e);
         co_return;
     }
 
