@@ -1618,6 +1618,15 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                     count += int(sample.value)
         return count
 
+    @staticmethod
+    def get_cloud_globals(globals):
+        _config = {}
+        if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
+            # Load needed config values from cloud section
+            # of globals prior to actual cluster creation
+            _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
+        return _config
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,

@@ -204,15 +204,6 @@ def omb_runner(context, redpanda, driver, workload, omb_config):
         bench.stop()
 
 
-def get_cloud_globals(globals):
-    _config = {}
-    if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
-        # Load needed config values from cloud section
-        # of globals prior to actual cluster creation
-        _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
-    return _config
-
-
 class HighThroughputTest(PreallocNodesTest):
     msg_size = 256 * KiB
     # Min segment size across all tiers
@@ -227,7 +218,7 @@ class HighThroughputTest(PreallocNodesTest):
         self._ctx = test_ctx
         # Get tier name
         self.config_profile_name = get_config_profile_name(
-            get_cloud_globals(self._ctx.globals))
+            RedpandaServiceCloud.get_cloud_globals(self._ctx.globals))
         extra_rp_conf = None
         num_brokers = None
 
