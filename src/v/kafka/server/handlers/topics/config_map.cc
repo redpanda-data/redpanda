@@ -1,4 +1,4 @@
-// Copyright 2020 Redpanda Data, Inc.
+// Copyright 2023 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/server/handlers/topics/types.h"
+#include "kafka/server/handlers/topics/config_map.h"
 
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -105,16 +105,7 @@ get_shadow_indexing_mode(const config_map_t& config) {
           = config::shard_local_cfg().cloud_storage_enable_remote_read();
     }
 
-    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
-    if (*arch_enabled) {
-        mode = model::shadow_indexing_mode::archival;
-    }
-    if (*si_enabled) {
-        mode = mode == model::shadow_indexing_mode::archival
-                 ? model::shadow_indexing_mode::full
-                 : model::shadow_indexing_mode::fetch;
-    }
-    return mode;
+    return model::get_shadow_indexing_mode_impl(*arch_enabled, *si_enabled);
 }
 
 // Special case for options where Kafka allows -1

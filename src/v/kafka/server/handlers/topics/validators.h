@@ -12,6 +12,7 @@
 #pragma once
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
+#include "kafka/server/handlers/topics/config_map.h"
 #include "kafka/server/handlers/topics/types.h"
 
 namespace kafka {

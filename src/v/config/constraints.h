@@ -86,6 +86,20 @@ struct constraint_t {
     friend std::ostream& operator<<(std::ostream& os, const constraint_t& args);
 };
 
+/**
+ * Returns true if the topic configuration satifies the constraint
+ * \param topic_cfg: the topic configuration
+ * \param constraint: the constraint
+ */
+bool topic_config_satisfies_constraint(
+  const cluster::topic_configuration&, const constraint_t&);
+
+/**
+ * Clamps topic properties based on the constraint
+ */
+void constraint_clamp_topic_config(
+  cluster::topic_configuration&, const constraint_t&);
+
 namespace detail {
 
 template<>

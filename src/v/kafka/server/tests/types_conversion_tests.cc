@@ -9,8 +9,8 @@
 
 #include "cluster/types.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
+#include "kafka/server/handlers/topics/config_map.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
-#include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 

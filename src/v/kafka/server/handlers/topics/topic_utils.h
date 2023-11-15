@@ -12,7 +12,8 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "cluster/types.h"
-#include "kafka/server/handlers/topics/types.h"
+#include "config/constraints.h"
+#include "kafka/server/handlers/topics/config_map.h"
 #include "kafka/server/handlers/topics/validators.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
