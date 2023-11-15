@@ -50,6 +50,7 @@ from rptest.clients.kubectl import KubectlTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import tls
 from rptest.services.admin import Admin
@@ -1634,6 +1635,16 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         Returns none if product info for the tier is not found.
         """
         return self._cloud_cluster.get_product()
+
+    def get_install_pack(self):
+        install_pack_client = InstallPackClient(
+            self._cloud_cluster.config.install_pack_url_template,
+            self._cloud_cluster.config.install_pack_auth_type,
+            self._cloud_cluster.config.install_pack_auth)
+        install_pack_version = self._cloud_cluster.config.install_pack_ver
+
+        # Load install pack and check profile
+        return install_pack_client.getInstallPack(install_pack_version)
 
 
 class RedpandaService(RedpandaServiceBase):

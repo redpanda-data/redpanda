@@ -242,14 +242,8 @@ class HighThroughputTest(PreallocNodesTest):
                              disable_cloud_storage_diagnostics=True,
                              **kwargs)
 
-        install_pack_client = InstallPackClient(
-            self.redpanda._cloud_cluster.config.install_pack_url_template,
-            self.redpanda._cloud_cluster.config.install_pack_auth_type,
-            self.redpanda._cloud_cluster.config.install_pack_auth)
-        install_pack_version = self.redpanda._cloud_cluster.config.install_pack_ver
-
         # Load install pack and check profile
-        install_pack = install_pack_client.getInstallPack(install_pack_version)
+        install_pack = self.redpanda.get_install_pack()
         self.logger.info(f"Loaded install pack '{install_pack['version']}': "
                          f"Redpanda v{install_pack['redpanda_version']}, "
                          f"created at '{install_pack['created_at']}'")
