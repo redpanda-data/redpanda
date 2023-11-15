@@ -167,7 +167,7 @@ func newPartitionMovementsStatusCommand(fs afero.Fs, p *config.Params) *cobra.Co
 
 	cmd.Flags().BoolVarP(&all, "print-all", "a", false, "Print internal states about movements for debugging")
 	cmd.Flags().BoolVarP(&human, "human-readable", "H", false, "Print the partition size in a human-readable form")
-	cmd.Flags().StringSliceVarP(&partitions, "partition", "p", nil, "Partitions to print the ongoing movements (repeatable)")
+	cmd.Flags().StringSliceVarP(&partitions, "partition", "p", nil, "Partitions to filter ongoing movements status (repeatable)")
 
 	return cmd
 }
@@ -185,7 +185,7 @@ func contains(pReq []string, pRes string) bool {
 
 const helpListMovement = `Show ongoing partition movements.
 
-By default this command lists all the ongoing partition movements in the cluster.
+By default this command lists all ongoing partition movements in the cluster.
 Topics can be specified to print the move status of specific topics. By default,
 this command assumes the "kafka" namespace, but you can use a "namespace/" to
 specify internal namespaces.
@@ -198,7 +198,7 @@ requested partitions:
 
     rpk cluster partitions move-status foo bar --partition 0,1,2
 
-The output contains the following columns, where PARTITION-SIZE is in bytes.
+The output contains the following columns with PARTITION-SIZE in bytes.
 Using -H, it prints the partition size in a human-readable format
 
     NAMESPACE-TOPIC
@@ -210,7 +210,7 @@ Using -H, it prints the partition size in a human-readable format
     BYTES-MOVED
     BYTES-REMAINING
 
-Using "--print-all / -a" the command additionally prints "RECONCILIATION STATUSES"
-which reveals internal states on how the ongoing reconciliations work for debugging
-purposes. That is, reported errors don't necessarily mean real problems.
+Using "--print-all / -a" the command additionally prints the column
+"RECONCILIATION STATUSES", which reveals the internal status of the ongoing
+reconciliations. Reported errors do not necessarily mean real problems.
 `
