@@ -8,12 +8,13 @@ class RpCloudApiClient(object):
         self._logger = log
         self.lasterror = None
 
-    def _handle_error(self, response):
+    def _handle_error(self, response, quite=False):
         try:
             response.raise_for_status()
         except requests.HTTPError as e:
             self.lasterror = f'{e} {response.text}'
-            self._logger.error(self.lasterror)
+            if not quite:
+                self._logger.error(self.lasterror)
             raise e
         return response
 
@@ -50,6 +51,7 @@ class RpCloudApiClient(object):
                   base_url=None,
                   override_headers=None,
                   text_response=False,
+                  quite=False,
                   **kwargs):
         headers = override_headers
         if headers is None:
@@ -60,7 +62,7 @@ class RpCloudApiClient(object):
             }
         _base = base_url if base_url else self._config.api_url
         resp = requests.get(f'{_base}{endpoint}', headers=headers, **kwargs)
-        _r = self._handle_error(resp)
+        _r = self._handle_error(resp, quite=quite)
         if text_response:
             return _r if _r is None else _r.text
         return _r if _r is None else _r.json()

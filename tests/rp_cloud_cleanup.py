@@ -4,6 +4,7 @@ import re
 import os
 import subprocess
 import sys
+import time
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -11,6 +12,7 @@ from urllib.parse import urlparse
 
 from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
+from rptest.services.provider_clients import make_provider_client
 from rptest.services.redpanda_cloud import CloudClusterConfig, ns_name_date_fmt, \
     ns_name_prefix
 
@@ -37,7 +39,7 @@ def shell(cmd):
     p.wait()
     # Format outout as String object
     _out = "\n".join(list(p.stdout)).strip()
-    _rcode = p.returncode
+    # _rcode = p.returncode
     p.kill()
     return _out
 
@@ -53,16 +55,11 @@ class FakeContext():
 
 
 class CloudCleanup():
-    _ns_pattern = f"{ns_name_prefix}"
     # At this point all is disabled except namespaces
     delete_clusters = True
     delete_peerings = False
     delete_networks = False
     delete_namespaces = True
-
-    ns_regex = re.compile("^(?P<prefix>" + f"{ns_name_prefix}" + ")"
-                          "(?P<date>\d{4}-\d{2}-\d{2}-\d{6}-)?"
-                          "(?P<id>[a-zA-Z0-9]{8})$")
 
     def __init__(self, log_level=logging.INFO):
         self.log = setupLogger(log_level)
@@ -86,20 +83,29 @@ class CloudCleanup():
         # Init Cloud Cluster Utils
         o = urlparse(self.config.oauth_url)
         oauth_url_origin = f'{o.scheme}://{o.hostname}'
-        if self.config.provider.lower() == "aws":
+        self.config.provider = self.config.provider.upper()
+        if self.config.provider == "AWS":
             _keyId = ducktape_globals['s3_access_key']
             _secret = ducktape_globals['s3_secret_key']
-        elif self.config.provider.lower() == "gcp":
+        elif self.config.provider == "GCP":
             _keyId = self.config.gcp_keyfile
             _secret = None
         else:
             self.log.error(f"# ERROR: Provider {self.config.provider} "
                            "not supported")
             sys.exit(1)
+        # Initialize clients
+        self.provider = make_provider_client(self.config.provider, self.log,
+                                             self.config.region, _keyId,
+                                             _secret)
         self.utils = CloudClusterUtils(_fake_context, self.log, _keyId,
                                        _secret, self.config.provider,
                                        self.config.api_url, oauth_url_origin,
                                        self.config.oauth_audience)
+
+        self.log.info(f"# Using CloudV2 API at '{self.config.api_url}'")
+        self.log.info(f"# Using provider {self.config.provider}")
+
         self.log.info("# Preparing rpk")
         self.utils.rpk_plugin_uninstall('byoc')
         # Fugure out which time was 36h back
@@ -125,7 +131,7 @@ class CloudCleanup():
 
         def _log_skip(_msg):
             _msg += f"| skipped '{_cluster['name']}', 36h delay not passed"
-            self.log.info(_message)
+            self.log.info(_msg)
 
         def _log_deleted(_msg):
             _msg += "| deleted"
@@ -260,7 +266,7 @@ class CloudCleanup():
                           f"{_failed} failed, {_unsure} other")
             return
 
-    def clean_namespaces(self):
+    def clean_namespaces(self, pattern, uuid_len):
         """
             Function lists non-deleted namespaces and hierachically deletes
             clusters, networks and network-peerings if any
@@ -271,23 +277,28 @@ class CloudCleanup():
         net_queue = []
         npr_queue = []
         ns_queue = []
+        # Prepare regex for matching namespaces
+        ns_regex = re.compile("^(?P<prefix>" + f"{pattern}" + ")"
+                              "(?P<date>\d{4}-\d{2}-\d{2}-\d{6}-)?"
+                              "(?P<id>[a-zA-Z0-9]{" + f"{uuid_len}" + "})$")
 
         # Get namespaces
         ns_list = self.cloudv2.list_namespaces()
         self.log.info(f"  {len(ns_list)} total namespaces found. "
-                      f"Filtering with '{self._ns_pattern}*'")
+                      f"Filtering with '{pattern}*'")
         # filter namespaces according to 'ns_name_prefix'
-        ns_list = [
-            n for n in ns_list if n['name'].startswith(self._ns_pattern)
-        ]
+        ns_list = [n for n in ns_list if n['name'].startswith(pattern)]
         # Processing namespaces
         self.log.info(
             f"# Searching for resources in {len(ns_list)} namespaces")
         for ns in ns_list:
             # Filter out according to dates in name
             # Detect date
-            ns_match = self.ns_regex.match(ns['name'])
-            date = ns_match['date']
+            ns_match = ns_regex.match(ns['name'])
+
+            if ns_match is None:
+                continue
+            date = ns_match['date'] if 'date' in ns_match.groups() else None
             _ns_36h_skip_flag = False
             if date is not None:
                 # Parse date into datetime object
@@ -317,7 +328,8 @@ class CloudCleanup():
                         # Add peerings delete handle to own list
                         npr_queue += [
                             self.cloudv2.network_peering_endpoint(
-                                id=peernet['net_id'], peering_id=peernet['id'])
+                                id=peernet['networkId'],
+                                peering_id=peernet['id'])
                         ]
                 # TODO: Prepare needed data for clusters
                 if counts[0]:
@@ -381,6 +393,112 @@ class CloudCleanup():
 
         return
 
+    def _delete_nat(self, nat):
+        """
+            Function releases EIP and deletes NAT
+        """
+
+        # Delete Nat
+        # self.log.info(f"-> deleting NAT: {nat['NatGatewayId']}")
+        _start = time.time()
+        r = self.provider.delete_nat(nat['NatGatewayId'])
+        _now = time.time()
+        # 180 sec timeout
+        while (_now - _start) < 180:
+            r = self.provider.get_nat_gateway(nat['NatGatewayId'])
+            if r['State'] == 'deleted':
+                break
+            time.sleep(10)
+        _elapsed = time.time() - _start
+        self.log.info(f"-> NAT {nat['NatGatewayId']} deleted, {_elapsed:.2f}s")
+
+        # Release EIP
+        for _address in nat['NatGatewayAddresses']:
+            # Dissassociation happens on NAT deletion
+            # This is just for history
+            # r = self.provider.disassociate_address(_address['AssociationId'])
+            # self.log.info(f"-> dissassociated IP '{_address['PublicIp']}' from '{_address['NetworkInterfaceId']}'")
+
+            # IP can be release only when NAT has status 'deleted'
+            try:
+                r = self.provider.release_address(_address['AllocationId'])
+                self.log.info(f"-> released IP '{_address['PublicIp']}'")
+            except Exception as e:
+                self.log.error("ERROR: Failed to release "
+                               f"'{_address['PublicIp']}': {e}")
+
+        return r
+
+    def clean_aws_nat(self):
+        """
+            Function matched networks in CloudV2 
+            for clusters that has been deleted and cleans them up
+
+            Steps:
+            - List NATs
+            - filter them according to current CloudV2 API (uuid used)
+            - Extract network id and check if it is exists in CloudV2
+            - If not query NAT for cleaning
+            - Delete NAT and wait for 'deleted' status
+            - Release PublicIP
+        """
+        def get_net_id_from_nat(nat):
+            for tag in nat['Tags']:
+                if tag['Key'] == 'Name' and tag['Value'].startswith(
+                        'network-'):
+                    return tag['Value'].split('-')[1]
+
+        # list AWS networks with specific tag
+        _uuids = {
+            "https://cloud-api.ppd.cloud.redpanda.com":
+            "0a9923e1-8b0f-4110-9fc0-6d3c714cc270",
+            "https://cloud-api.ign.cloud.redpanda.com":
+            "a845616f-0484-4506-9638-45fe28f34865"
+        }
+        # List NAT gateways
+        _nats = self.provider.list_nat_gateways(tag_key="redpanda-org")
+        self.log.info(f"# Found {len(_nats)} NAT Gateways")
+
+        # Filter by CloudV2 API origin
+        _uuid = _uuids[self.config.api_url]
+        _nat_filtered = []
+        for _nat in _nats:
+            if _nat['State'] == 'deleted':
+                _ips = ", ".join([
+                    a['PublicIp'] + " / " + a['AllocationId']
+                    for a in _nat['NatGatewayAddresses']
+                ])
+                self.log.info(f"# Nat {_nat['NatGatewayId']} deleted, "
+                              f"IPs: {_ips}'")
+                continue
+            _date = datetime.strftime(_nat['CreateTime'], "%Y-%m-%d %H:%M:%S")
+            for _tag in _nat['Tags']:
+                if _tag['Key'] == 'redpanda-org' and _tag['Value'] == _uuid:
+                    # This is NAT created by this CloudV2 API
+                    _net_id = get_net_id_from_nat(_nat)
+                    # Check if network exists in CloudV2
+                    try:
+                        r = self.cloudv2.get_network(_net_id, quite=True)
+                        self.log.warning(f"# {_nat['NatGatewayId']} ({_date}) "
+                                         f"skipped: network '{r['id']}' "
+                                         "exists")
+                    except Exception:
+                        # If there is no network, it will generate HTTPError
+                        # That means that it should be deleted
+                        _nat_filtered.append(_nat)
+
+        self.log.info(f"# {len(_nat_filtered)} orphaned NATs "
+                      f"for {self.config.api_url}")
+
+        # Fancy threading
+        # Due to RPS limiter on AWS side, please, do not use >5
+        pool = ThreadPoolExecutor(max_workers=5)
+        self.log.info("\n\n# Cleaning up")
+        self._pooled_delete(pool, "NAT Gateways", self._delete_nat,
+                            _nat_filtered)
+
+        return
+
 
 # Main script
 def cleanup_entrypoint():
@@ -388,7 +506,13 @@ def cleanup_entrypoint():
     cleaner = CloudCleanup()
 
     # Namespaces
-    cleaner.clean_namespaces()
+    cleaner.clean_namespaces(ns_name_prefix, 8)
+
+    # NAT Gateways cleaning routine
+    # Enable manually to cleanup redundancies
+    # cleaner.clean_aws_nat()
+
+    return
 
 
 if __name__ == "__main__":

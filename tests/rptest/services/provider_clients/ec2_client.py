@@ -109,6 +109,35 @@ class EC2Client:
                               f"'network-{network_id}'")
         return _vpcs[0]
 
+    def list_network_interfaces(self, tag_key=None):
+        _filters = []
+        if tag_key is not None:
+            _filters.append({"Name": "tag-key", "Values": [tag_key]})
+        # List IFs
+        _resp = self._cli.describe_network_interfaces(Filters=_filters)
+        return _resp['NetworkInterfaces']
+
+    def list_nat_gateways(self, tag_key=None):
+        _filters = []
+        if tag_key is not None:
+            _filters.append({"Name": "tag-key", "Values": [tag_key]})
+        # List NATs
+        _resp = self._cli.describe_nat_gateways(Filters=_filters)
+        return _resp['NatGateways']
+
+    def get_nat_gateway(self, id):
+        r = self._cli.describe_nat_gateways(NatGatewayIds=[id])
+        # "There can be only one"
+        return r['NatGateways'][0]
+
+    def list_vpcs(self, tag_key=None):
+        _filters = []
+        if tag_key is not None:
+            _filters.append({"Name": "tag-key", "Values": [tag_key]})
+        # List VPCs
+        _resp = self._cli.describe_vpcs(Filters=_filters)
+        return _resp['Vpcs']
+
     def get_vpc_peering_connection(self, _id):
         _filters = [{"Name": "vpc-peering-connection-id", "Values": [_id]}]
         _resp = self._cli.describe_vpc_peering_connections(Filters=_filters)
@@ -308,3 +337,15 @@ class EC2Client:
 
     def unblock_bucket_from_vpc(self, bucket_name):
         self._s3cli.delete_bucket_policy(Bucket=bucket_name)
+
+    def release_address(self, allocationId):
+        r = self._cli.release_address(AllocationId=allocationId)
+        return r
+
+    def disassociate_address(self, associationId):
+        r = self._cli.disassociate_address(AssociationId=associationId)
+        return r
+
+    def delete_nat(self, natId):
+        r = self._cli.delete_nat_gateway(NatGatewayId=natId)
+        return r
