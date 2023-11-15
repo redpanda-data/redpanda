@@ -100,6 +100,7 @@
 #include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
 #include "security/credential_store.h"
+#include "security/oidc_authenticator.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
@@ -113,6 +114,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/map_reduce.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/reactor.hh>
@@ -2106,6 +2108,31 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
     co_return ss::json::json_return_type(ss::json::json_void());
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::oidc_whoami_handler(std::unique_ptr<ss::http::request> req) {
+    auto auth_hdr = req->get_header("authorization");
+    if (!auth_hdr.starts_with(authz_bearer_prefix)) {
+        throw ss::httpd::base_exception{
+          "Invalid Authorization header",
+          ss::http::reply::status_type::unauthorized};
+    }
+
+    security::oidc::authenticator auth{_controller->get_oidc_service().local()};
+    auto res = auth.authenticate(auth_hdr.substr(authz_bearer_prefix.length()));
+
+    if (res.has_error()) {
+        throw ss::httpd::base_exception{
+          "Invalid Authorization header",
+          ss::http::reply::status_type::unauthorized};
+    }
+
+    ss::httpd::security_json::oidc_whoami_response j_res{};
+    j_res.id = res.assume_value().principal.name();
+    j_res.expire = res.assume_value().expiry.time_since_epoch() / 1s;
+
+    co_return ss::json::json_return_type(j_res);
+}
+
 void admin_server::register_security_routes() {
     register_route<superuser>(
       ss::httpd::security_json::create_user,
@@ -2123,6 +2150,12 @@ void admin_server::register_security_routes() {
       ss::httpd::security_json::update_user,
       [this](std::unique_ptr<ss::http::request> req) {
           return update_user_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::security_json::oidc_whoami,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return oidc_whoami_handler(std::move(req));
       });
 
     register_route<superuser>(

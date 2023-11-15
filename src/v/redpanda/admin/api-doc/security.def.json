@@ -1,0 +1,15 @@
+"oidc_whoami_response": {
+    "description": "Details of the provided bearer token.",
+    "type": "object",
+    "properties": {
+        "id": {
+            "description": "Mapped principal for autherization.",
+            "type": "string"
+        },
+        "expire": {
+            "description": "Unix timestamp of the expiry of the token.",
+            "format": "uint64",
+            "type": "int"
+        }
+    }
+}

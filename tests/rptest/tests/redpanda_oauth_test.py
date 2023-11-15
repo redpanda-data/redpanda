@@ -248,6 +248,49 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
             records
         ), f"Expected {len(records)} unique records, got {len(values)}"
 
+    @cluster(num_nodes=4)
+    def test_admin_whoami(self):
+        kc_node = self.keycloak.nodes[0]
+        rp_node = self.redpanda.nodes[0]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        token = self.get_client_credentials_token(cfg)
+
+        whoami_url = f'http://{self.redpanda.admin_endpoint(rp_node)}/v1/security/oidc/whoami'
+        auth_header = {'Authorization': f'Bearer {token["access_token"]}'}
+
+        def request_whoami(with_auth: bool):
+            response = requests.get(url=whoami_url,
+                                    headers=auth_header if with_auth else None,
+                                    timeout=5)
+            self.redpanda.logger.info(
+                f'response.status_code: {response.status_code}, response.content: {response.content}'
+            )
+            return response
+
+        # At this point, admin API does not require auth and service_user_id is not a superuser
+
+        response = request_whoami(with_auth=False)
+        assert response.status_code == requests.codes.unauthorized
+
+        response = request_whoami(with_auth=True)
+        assert response.status_code == requests.codes.ok
+        assert response.json()['id'] == service_user_id
+        assert response.json()['expire'] > time.time()
+
+        # Require Auth for Admin
+        self.redpanda.set_cluster_config({'admin_api_require_auth': True})
+
+        response = request_whoami(with_auth=False)
+        assert response.status_code == requests.codes.unauthorized
+
+        response = request_whoami(with_auth=True)
+        assert response.status_code == requests.codes.ok
+        assert response.json()['id'] == service_user_id
+        assert response.json()['expire'] > time.time()
+
 
 class OIDCReauthTest(RedpandaOIDCTestBase):
     MAX_REAUTH_MS = 8000
