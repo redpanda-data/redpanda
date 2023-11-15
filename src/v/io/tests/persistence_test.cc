@@ -24,7 +24,7 @@ class PersistenceTest : public ::testing::Test {
 public:
     void SetUp() override {
         dir = seastar::make_tmp_dir(".").get();
-        fn = make_filename();
+        path = make_filename();
     }
 
     void TearDown() override {
@@ -54,7 +54,7 @@ public:
 
     T fs;
     seastar::tmp_dir dir;
-    std::filesystem::path fn;
+    std::filesystem::path path;
     int count{0};
     std::vector<seastar::shared_ptr<io::persistence::file>> open_files;
 };
@@ -93,26 +93,26 @@ TYPED_TEST_SUITE(PersistenceTest, PersistenceTypes);
          "`tmpfs` or another file system that doesn't enforce direct I/O "     \
          "alignemnt?";
 
-TYPED_TEST(PersistenceTest, Create) { EXPECT_TRUE(this->create(this->fn)); }
+TYPED_TEST(PersistenceTest, Create) { EXPECT_TRUE(this->create(this->path)); }
 
 TYPED_TEST(PersistenceTest, CreateAlreadyExists) {
-    this->create(this->fn);
+    this->create(this->path);
     EXPECT_THROW(
-      this->fs.create(this->fn).get(), std::filesystem::filesystem_error);
+      this->fs.create(this->path).get(), std::filesystem::filesystem_error);
 }
 
 TYPED_TEST(PersistenceTest, Open) {
-    this->create(this->fn);
-    EXPECT_TRUE(this->open(this->fn));
+    this->create(this->path);
+    EXPECT_TRUE(this->open(this->path));
 }
 
 TYPED_TEST(PersistenceTest, OpenDoesNotExist) {
     EXPECT_THROW(
-      this->fs.open(this->fn).get(), std::filesystem::filesystem_error);
+      this->fs.open(this->path).get(), std::filesystem::filesystem_error);
 }
 
 TYPED_TEST(PersistenceTest, WriteOffsetAlignment) {
-    auto f = this->create(this->fn);
+    auto f = this->create(this->path);
 
     // normal alignment and size
     const auto buf = this->fs.allocate(
@@ -126,7 +126,7 @@ TYPED_TEST(PersistenceTest, WriteOffsetAlignment) {
 }
 
 TYPED_TEST(PersistenceTest, WriteMemoryAlignment) {
-    auto f = this->create(this->fn);
+    auto f = this->create(this->path);
 
     // correct memory alignment, extra space allocated for adjustments
     const auto buf = this->fs.allocate(
@@ -141,7 +141,7 @@ TYPED_TEST(PersistenceTest, WriteMemoryAlignment) {
 }
 
 TYPED_TEST(PersistenceTest, WriteSizeAlignment) {
-    auto f = this->create(this->fn);
+    auto f = this->create(this->path);
 
     // normal alignment and size
     const auto buf = this->fs.allocate(
@@ -155,7 +155,7 @@ TYPED_TEST(PersistenceTest, WriteSizeAlignment) {
 }
 
 TYPED_TEST(PersistenceTest, ReadOffsetAlignment) {
-    auto f = this->create(this->fn);
+    auto f = this->create(this->path);
 
     {
         // need data to make it to alignment checks in read path. need at least
@@ -178,7 +178,7 @@ TYPED_TEST(PersistenceTest, ReadOffsetAlignment) {
 }
 
 TYPED_TEST(PersistenceTest, ReadMemoryAlignment) {
-    auto f = this->create(this->fn);
+    auto f = this->create(this->path);
 
     {
         // need data to make it to alignment checks in read path. need at least
@@ -201,7 +201,7 @@ TYPED_TEST(PersistenceTest, ReadMemoryAlignment) {
 }
 
 TYPED_TEST(PersistenceTest, ReadSizeAlignment) {
-    auto f = this->create(this->fn);
+    auto f = this->create(this->path);
 
     {
         // need data to make it to alignment checks in read path. need at least
@@ -223,14 +223,14 @@ TYPED_TEST(PersistenceTest, ReadSizeAlignment) {
 }
 
 TYPED_TEST(PersistenceTest, Close) {
-    auto f = this->fs.create(this->fn).get();
+    auto f = this->fs.create(this->path).get();
     f->close().get();
 }
 
 TYPED_TEST(PersistenceTest, ReadWrite) {
     constexpr auto test_size = 64_KiB;
 
-    auto f = this->create(this->fn);
+    auto f = this->create(this->path);
 
     for (auto write_len = f->disk_write_dma_alignment(); write_len <= test_size;
          write_len += f->disk_write_dma_alignment()) {
