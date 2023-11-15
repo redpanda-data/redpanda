@@ -19,8 +19,8 @@ const partitionsBaseURL = "/v1/cluster/partitions"
 
 // Replica contains the information of a partition replica.
 type Replica struct {
-	NodeID int `json:"node_id"`
-	Core   int `json:"core"`
+	NodeID int `json:"node_id"  yaml:"node_id"`
+	Core   int `json:"core" yaml:"core"`
 }
 
 // Partition is the information returned from the Redpanda admin partitions endpoints.
@@ -60,18 +60,13 @@ type ReconfigurationsResponse struct {
 	ReconciliationStatuses []Status  `json:"reconciliation_statuses"`
 }
 
-type ReplicaAssignment struct {
-	NodeID int `json:"node_id" yaml:"node_id"`
-	Core   int `json:"core" yaml:"core"`
-}
-
 type ClusterPartition struct {
-	Ns          string              `json:"ns" yaml:"ns"`
-	Topic       string              `json:"topic" yaml:"topic"`
-	PartitionID int                 `json:"partition_id" yaml:"partition_id"`
-	LeaderID    *int                `json:"leader_id,omitempty" yaml:"leader_id,omitempty"` // LeaderID may be missing in the response.
-	Replicas    []ReplicaAssignment `json:"replicas" yaml:"replicas"`
-	Disabled    bool                `json:"disabled" yaml:"disabled"`
+	Ns          string    `json:"ns" yaml:"ns"`
+	Topic       string    `json:"topic" yaml:"topic"`
+	PartitionID int       `json:"partition_id" yaml:"partition_id"`
+	LeaderID    *int      `json:"leader_id,omitempty" yaml:"leader_id,omitempty"` // LeaderID may be missing in the response.
+	Replicas    []Replica `json:"replicas" yaml:"replicas"`
+	Disabled    *bool     `json:"disabled,omitempty" yaml:"disabled,omitempty"` // Disabled may be discarded if not present.
 }
 
 // GetPartition returns detailed partition information.
@@ -79,12 +74,13 @@ func (a *AdminAPI) GetPartition(
 	ctx context.Context, namespace, topic string, partition int,
 ) (Partition, error) {
 	var pa Partition
-	return pa, a.sendAny(
-		ctx,
-		http.MethodGet,
-		fmt.Sprintf("/v1/partitions/%s/%s/%d", namespace, topic, partition),
-		nil,
-		&pa)
+	return pa, a.sendAny(ctx, http.MethodGet, fmt.Sprintf("/v1/partitions/%s/%s/%d", namespace, topic, partition), nil, &pa)
+}
+
+// GetTopic returns detailed information of all partitions for a given topic.
+func (a *AdminAPI) GetTopic(ctx context.Context, namespace, topic string) ([]Partition, error) {
+	var pa []Partition
+	return pa, a.sendAny(ctx, http.MethodGet, fmt.Sprintf("/v1/partitions/%s/%s", namespace, topic), nil, &pa)
 }
 
 // Reconfigurations returns the list of ongoing partition reconfigurations.
