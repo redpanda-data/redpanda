@@ -10,9 +10,369 @@
  */
 #include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/shard_table.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/server.h"
+
+void admin_server::register_debug_routes() {
+    register_route<user>(
+      ss::httpd::debug_json::stress_fiber_stop,
+      [this](std::unique_ptr<ss::http::request>) {
+          vlog(adminlog.info, "Stopping stress fiber");
+          return _stress_fiber_manager
+            .invoke_on_all([](auto& stress_mgr) { return stress_mgr.stop(); })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::stress_fiber_start,
+      [this](std::unique_ptr<ss::http::request> req) {
+          vlog(adminlog.info, "Requested stress fiber");
+          stress_config cfg;
+          const auto parse_int =
+            [&](const ss::sstring& param, std::optional<int>& val) {
+                if (auto e = req->get_query_param(param); !e.empty()) {
+                    try {
+                        val = boost::lexical_cast<int>(e);
+                    } catch (const boost::bad_lexical_cast&) {
+                        throw ss::httpd::bad_param_exception(fmt::format(
+                          "Invalid parameter '{}' value {{{}}}", param, e));
+                    }
+                } else {
+                    val = std::nullopt;
+                }
+            };
+          parse_int(
+            "min_spins_per_scheduling_point",
+            cfg.min_spins_per_scheduling_point);
+          parse_int(
+            "max_spins_per_scheduling_point",
+            cfg.max_spins_per_scheduling_point);
+          parse_int(
+            "min_ms_per_scheduling_point", cfg.min_ms_per_scheduling_point);
+          parse_int(
+            "max_ms_per_scheduling_point", cfg.max_ms_per_scheduling_point);
+          if (
+            cfg.max_spins_per_scheduling_point.has_value()
+            != cfg.min_spins_per_scheduling_point.has_value()) {
+              throw ss::httpd::bad_param_exception(
+                "Expected 'max_spins_per_scheduling_point' set with "
+                "'min_spins_per_scheduling_point'");
+          }
+          if (
+            cfg.max_ms_per_scheduling_point.has_value()
+            != cfg.min_ms_per_scheduling_point.has_value()) {
+              throw ss::httpd::bad_param_exception(
+                "Expected 'max_ms_per_scheduling_point' set with "
+                "'min_ms_per_scheduling_point'");
+          }
+          // Check that either delay or a spin count is defined.
+          if (
+            cfg.max_spins_per_scheduling_point.has_value()
+            == cfg.max_ms_per_scheduling_point.has_value()) {
+              throw ss::httpd::bad_param_exception(
+                "Expected either spins or delay to be defined");
+          }
+          if (
+            cfg.max_spins_per_scheduling_point.has_value()
+            && cfg.max_spins_per_scheduling_point.value()
+                 < cfg.min_spins_per_scheduling_point.value()) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'max_spins_per_scheduling_point' value "
+                "is too low: {} < {}",
+                cfg.max_spins_per_scheduling_point.value(),
+                cfg.min_spins_per_scheduling_point.value()));
+          }
+          if (
+            cfg.max_ms_per_scheduling_point.has_value()
+            && cfg.max_ms_per_scheduling_point.value()
+                 < cfg.min_ms_per_scheduling_point.value()) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'max_ms_per_scheduling_point' value "
+                "is too low: {} < {}",
+                cfg.max_ms_per_scheduling_point.value(),
+                cfg.min_ms_per_scheduling_point.value()));
+          }
+          cfg.num_fibers = 1;
+          if (auto e = req->get_query_param("num_fibers"); !e.empty()) {
+              try {
+                  cfg.num_fibers = boost::lexical_cast<int>(e);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid parameter 'num_fibers' value {{{}}}", e));
+              }
+          }
+          return _stress_fiber_manager
+            .invoke_on_all([cfg](auto& stress_mgr) {
+                auto ran = stress_mgr.start(cfg);
+                if (ran) {
+                    vlog(adminlog.info, "Started stress fiber...");
+                } else {
+                    vlog(adminlog.info, "Stress fiber already running...");
+                }
+            })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::reset_leaders_info,
+      [this](std::unique_ptr<ss::http::request>) {
+          vlog(adminlog.info, "Request to reset leaders info");
+          return _metadata_cache
+            .invoke_on_all([](auto& mc) { mc.reset_leaders(); })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::refresh_disk_health_info,
+      [this](std::unique_ptr<ss::http::request>) {
+          vlog(adminlog.info, "Request to refresh disk health info");
+          return _metadata_cache.local().refresh_health_monitor().then_wrapped(
+            [](ss::future<> f) {
+                if (f.failed()) {
+                    auto eptr = f.get_exception();
+                    vlog(
+                      adminlog.error,
+                      "failed to refresh disk health info: {}",
+                      eptr);
+                    return ss::make_exception_future<
+                      ss::json::json_return_type>(
+                      ss::httpd::server_error_exception(
+                        "Could not refresh disk health info"));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::get_leaders_info,
+      [this](std::unique_ptr<ss::http::request>) {
+          vlog(adminlog.info, "Request to get leaders info");
+          using result_t = ss::httpd::debug_json::leader_info;
+          std::vector<result_t> ans;
+
+          auto leaders_info = _metadata_cache.local().get_leaders();
+          ans.reserve(leaders_info.size());
+          for (const auto& leader_info : leaders_info) {
+              result_t info;
+              info.ns = leader_info.tp_ns.ns;
+              info.topic = leader_info.tp_ns.tp;
+              info.partition_id = leader_info.pid;
+              info.leader = leader_info.current_leader.has_value()
+                              ? leader_info.current_leader.value()
+                              : -1;
+              info.previous_leader = leader_info.previous_leader.has_value()
+                                       ? leader_info.previous_leader.value()
+                                       : -1;
+              info.last_stable_leader_term
+                = leader_info.last_stable_leader_term;
+              info.update_term = leader_info.update_term;
+              info.partition_revision = leader_info.partition_revision;
+              ans.push_back(std::move(info));
+          }
+
+          return ss::make_ready_future<ss::json::json_return_type>(ans);
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_peer_status,
+      [this](std::unique_ptr<ss::http::request> req) {
+          model::node_id id = parse_broker_id(*req);
+          auto node_status = _node_status_table.local().get_node_status(id);
+
+          if (!node_status) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Unknown node with id {}", id));
+          }
+
+          auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
+            rpc::clock_type::now() - node_status->last_seen);
+
+          seastar::httpd::debug_json::peer_status ret;
+          ret.since_last_status = delta.count();
+
+          return ss::make_ready_future<ss::json::json_return_type>(ret);
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::is_node_isolated,
+      [this](std::unique_ptr<ss::http::request>) {
+          return ss::make_ready_future<ss::json::json_return_type>(
+            _metadata_cache.local().is_node_isolated());
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_controller_status,
+      [this](std::unique_ptr<ss::http::request>)
+        -> ss::future<ss::json::json_return_type> {
+          return ss::smp::submit_to(cluster::controller_stm_shard, [this] {
+              return _controller->get_last_applied_offset().then(
+                [this](auto offset) {
+                    using result_t = ss::httpd::debug_json::controller_status;
+                    result_t ans;
+                    ans.last_applied_offset = offset;
+                    ans.start_offset = _controller->get_start_offset();
+                    ans.committed_index = _controller->get_commited_index();
+                    ans.dirty_offset = _controller->get_dirty_offset();
+                    return ss::make_ready_future<ss::json::json_return_type>(
+                      ss::json::json_return_type(ans));
+                });
+          });
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_cloud_storage_usage,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return cloud_storage_usage_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::blocked_reactor_notify_ms,
+      [this](std::unique_ptr<ss::http::request> req) {
+          std::chrono::milliseconds timeout;
+          if (auto e = req->get_query_param("timeout"); !e.empty()) {
+              try {
+                  timeout = std::clamp(
+                    std::chrono::milliseconds(
+                      boost::lexical_cast<long long>(e)),
+                    1ms,
+                    _default_blocked_reactor_notify);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid parameter 'timeout' value {{{}}}", e));
+              }
+          }
+
+          std::optional<std::chrono::seconds> expires;
+          static constexpr std::chrono::seconds max_expire_time_sec
+            = std::chrono::minutes(30);
+          if (auto e = req->get_query_param("expires"); !e.empty()) {
+              try {
+                  expires = std::clamp(
+                    std::chrono::seconds(boost::lexical_cast<long long>(e)),
+                    1s,
+                    max_expire_time_sec);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid parameter 'expires' value {{{}}}", e));
+              }
+          }
+
+          // This value is used when the expiration time is not set explicitly
+          static constexpr std::chrono::seconds default_expiration_time
+            = std::chrono::minutes(5);
+          auto curr = ss::engine().get_blocked_reactor_notify_ms();
+
+          vlog(
+            adminlog.info,
+            "Setting blocked_reactor_notify_ms from {} to {} for {} "
+            "(default={})",
+            curr,
+            timeout.count(),
+            expires.value_or(default_expiration_time),
+            _default_blocked_reactor_notify);
+
+          return ss::smp::invoke_on_all([timeout] {
+                     ss::engine().update_blocked_reactor_notify_ms(timeout);
+                 })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            })
+            .finally([this, expires] {
+                _blocked_reactor_notify_reset_timer.rearm(
+                  ss::steady_clock_type::now()
+                  + expires.value_or(default_expiration_time));
+            });
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::sampled_memory_profile,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return sampled_memory_profile_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::restart_service,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return restart_service_handler(std::move(req));
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_partition_state,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_partition_state_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::cpu_profile,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return cpu_profile_handler(std::move(req));
+      });
+    register_route<superuser>(
+      ss::httpd::debug_json::set_storage_failure_injection_enabled,
+      [](std::unique_ptr<ss::http::request> req) {
+          auto value = req->get_query_param("value");
+          if (value != "true" && value != "false") {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'value' {{{}}}. Should be 'true' or "
+                "'false'",
+                value));
+          }
+
+          return ss::smp::invoke_on_all([value] {
+                     config::node().storage_failure_injection_enabled.set_value(
+                       value == "true");
+                 })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_local_storage_usage,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_local_storage_usage_handler(std::move(req));
+      });
+
+    request_handler_fn unsafe_reset_metadata_handler = [this](
+                                                         auto req, auto reply) {
+        return unsafe_reset_metadata(std::move(req), std::move(reply));
+    };
+
+    register_route<superuser>(
+      ss::httpd::debug_json::unsafe_reset_metadata,
+      std::move(unsafe_reset_metadata_handler));
+
+    register_route<superuser>(
+      ss::httpd::debug_json::get_disk_stat,
+      [this](std::unique_ptr<ss::http::request> request) {
+          return get_disk_stat_handler(std::move(request));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::get_local_offsets_translated,
+      [this](std::unique_ptr<ss::http::request> request) {
+          return get_local_offsets_translated_handler(std::move(request));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::put_disk_stat,
+      [this](std::unique_ptr<ss::http::request> request) {
+          return put_disk_stat_handler(std::move(request));
+      });
+}
 
 ss::future<ss::json::json_return_type>
 admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
