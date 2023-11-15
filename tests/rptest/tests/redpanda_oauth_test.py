@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.kafka_cli_tools import KafkaCliTools, AuthorizationError
-from rptest.services.redpanda import LoggingConfig, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
+from rptest.services.redpanda import LoggingConfig, MetricsEndpoint, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
 from rptest.services.keycloak import DEFAULT_REALM, DEFAULT_AT_LIFESPAN_S, KeycloakService
 from rptest.services.cluster import cluster
 from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
@@ -290,6 +290,66 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
         assert response.status_code == requests.codes.ok
         assert response.json()['id'] == service_user_id
         assert response.json()['expire'] > time.time()
+
+    @cluster(num_nodes=4)
+    def test_admin_invalidate_keys(self):
+        kc_node = self.keycloak.nodes[0]
+        rp_node = self.redpanda.nodes[0]
+
+        def get_idp_request_count():
+            metrics = [
+                "security_idp_latency_seconds_count",
+            ]
+            samples = self.redpanda.metrics_samples(metrics, [rp_node],
+                                                    MetricsEndpoint.METRICS)
+
+            result = {}
+            for k in samples.keys():
+                result[k] = result.get(k, 0) + sum(
+                    [int(s.value) for s in samples[k].samples])
+            return result["security_idp_latency_seconds_count"]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        token = self.get_client_credentials_token(cfg)
+
+        invalidate_keys_url = f'http://{self.redpanda.admin_endpoint(rp_node)}/v1/security/oidc/keys/cache_invalidate'
+        auth_header = {'Authorization': f'Bearer {token["access_token"]}'}
+
+        def request_cache_invalidate(with_auth: bool):
+            response = requests.post(
+                url=invalidate_keys_url,
+                headers=auth_header if with_auth else None,
+                timeout=5)
+            self.redpanda.logger.info(
+                f'response.status_code: {response.status_code}')
+            return response.status_code
+
+        # At this point, admin API does not require auth and service_user_id is not a superuser
+
+        assert request_cache_invalidate(with_auth=False) == requests.codes.ok
+        assert request_cache_invalidate(with_auth=True) == requests.codes.ok
+
+        # Require Auth for Admin
+        self.redpanda.set_cluster_config({'admin_api_require_auth': True})
+
+        assert request_cache_invalidate(
+            with_auth=False) == requests.codes.forbidden
+        assert request_cache_invalidate(
+            with_auth=True) == requests.codes.forbidden
+
+        # Add service_user_id as a superuser
+        self.redpanda.set_cluster_config({
+            'superusers':
+            [self.redpanda.SUPERUSER_CREDENTIALS.username, service_user_id]
+        })
+
+        id_requests = get_idp_request_count()
+
+        assert request_cache_invalidate(with_auth=True) == requests.codes.ok
+
+        assert id_requests < get_idp_request_count()
 
 
 class OIDCReauthTest(RedpandaOIDCTestBase):

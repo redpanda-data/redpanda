@@ -12,4 +12,13 @@
             "type": "int"
         }
     }
+},
+"oidc_keys_cache_invalidate_error_response": {
+    "type": "object",
+    "properties": {
+        "error_message": {
+            "description": "The error message.",
+            "type": "string"
+        }
+    }
 }

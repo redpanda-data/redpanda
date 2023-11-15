@@ -443,4 +443,6 @@ principal_mapping_rule const& service::get_principal_mapping_rule() const {
     return _impl->_rule;
 }
 
+ss::future<> service::refresh_keys() { return _impl->update_jwks(); }
+
 } // namespace security::oidc

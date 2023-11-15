@@ -46,6 +46,8 @@ public:
     result<std::string_view> issuer() const;
     std::chrono::seconds clock_skew_tolerance() const;
 
+    ss::future<> refresh_keys();
+
 private:
     struct impl;
     std::unique_ptr<impl> _impl;

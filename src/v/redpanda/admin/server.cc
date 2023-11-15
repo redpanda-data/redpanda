@@ -101,6 +101,7 @@
 #include "security/audit/types.h"
 #include "security/credential_store.h"
 #include "security/oidc_authenticator.h"
+#include "security/oidc_service.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
@@ -124,6 +125,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
@@ -2133,6 +2135,20 @@ admin_server::oidc_whoami_handler(std::unique_ptr<ss::http::request> req) {
     co_return ss::json::json_return_type(j_res);
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::oidc_keys_cache_invalidate_handler(
+  std::unique_ptr<ss::http::request> req) {
+    auto f = co_await ss::coroutine::as_future(
+      _controller->get_oidc_service().invoke_on_all(
+        [](auto& s) { return s.refresh_keys(); }));
+    if (f.failed()) {
+        ss::httpd::security_json::oidc_keys_cache_invalidate_error_response res;
+        res.error_message = ssx::sformat("", f.get_exception());
+        co_return ss::json::json_return_type(res);
+    }
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
 void admin_server::register_security_routes() {
     register_route<superuser>(
       ss::httpd::security_json::create_user,
@@ -2156,6 +2172,12 @@ void admin_server::register_security_routes() {
       ss::httpd::security_json::oidc_whoami,
       [this](std::unique_ptr<ss::http::request> req) {
           return oidc_whoami_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::oidc_keys_cache_invalidate,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return oidc_keys_cache_invalidate_handler(std::move(req));
       });
 
     register_route<superuser>(
