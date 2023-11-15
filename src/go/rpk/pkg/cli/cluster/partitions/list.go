@@ -10,7 +10,11 @@
 package partitions
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -20,17 +24,19 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/types"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		all          bool
-		disabledOnly bool
-		partitions   []int
+		all             bool
+		disabledOnly    bool
+		partitions      []int
+		logFallbackOnce sync.Once
 	)
 	cmd := &cobra.Command{
-		Use:     "list [TOPICS]",
+		Use:     "list [TOPICS...]",
 		Aliases: []string{"ls", "describe"},
 		Short:   "List partitions in the cluster",
 		Long: `List partitions in the cluster
@@ -43,6 +49,9 @@ internal namespace using the "{namespace}/" prefix.
 The REPLICA-CORE column displayed in the output table contains a list of
 replicas assignments in the form of: <Node-ID>-<Core>.
 
+If the DISABLED column contains a '-' value, then it means you are running this
+command against a cluster that does not support the underlying API.
+
 EXAMPLES
 
 List all partitions in the cluster.
@@ -52,7 +61,7 @@ List all partitions in the cluster, filtering for topic foo and bar.
   rpk cluster partitions list foo bar
 
 List only the disabled partitions.
-  rpk cluster partitions list -a --only-disabled
+  rpk cluster partitions list -a --disabled-only
 
 List all in json format.
   rpk cluster partition list -a --format json
@@ -80,6 +89,13 @@ List all in json format.
 			var mu sync.Mutex
 			if len(topics) == 0 && all {
 				clusterPartitions, err = cl.AllClusterPartitions(cmd.Context(), true, disabledOnly)
+				// If the admin API returns a 404, most likely rpk is talking
+				// with an old cluster.
+				if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+					if he.Response.StatusCode == http.StatusNotFound {
+						out.Die("unable to query all partitions in the cluster: %vYou may need to upgrade the cluster to access this feature or try listing per-topic with: 'rpk cluster partition list [TOPICS...]'", err)
+					}
+				}
 				out.MaybeDie(err, "unable to query all partitions in the cluster: %v", err)
 			} else {
 				g, egCtx := errgroup.WithContext(cmd.Context())
@@ -87,19 +103,28 @@ List all in json format.
 					if topic == "" {
 						out.Die("invalid empty topic\n%v", cmd.UsageString())
 					}
-					nsTopic := strings.SplitN(topic, "/", 2)
-					var ns, topicName string
-					if len(nsTopic) == 1 {
-						ns = "kafka"
-						topicName = nsTopic[0]
-					} else {
-						ns = nsTopic[0]
-						topicName = nsTopic[1]
-					}
+					ns, topicName := nsTopic(topic)
 					g.Go(func() error {
 						cPartition, err := cl.TopicClusterPartitions(egCtx, ns, topicName, disabledOnly)
 						if err != nil {
-							return fmt.Errorf("unable to query cluster partition metadata of topic %q: %v", topicName, err)
+							// If the admin API returns a 404, most likely rpk
+							// is talking with an old cluster.
+							var he *adminapi.HTTPResponseError
+							isNotFoundErr := errors.As(err, &he) && he.Response.StatusCode == http.StatusNotFound
+							if !isNotFoundErr {
+								return fmt.Errorf("unable to query cluster partition metadata of topic %q: %v", topicName, err)
+							}
+							logFallbackOnce.Do(func() {
+								if disabledOnly {
+									zap.L().Sugar().Warn("Admin API 'GET /v1/cluster/partitions' returned 404, trying now with 'GET /v1/partitions'; --disabled-only flag is not supported in this API version")
+								} else {
+									zap.L().Sugar().Warn("Admin API 'GET /v1/cluster/partitions' returned 404, trying now with 'GET /v1/partitions'")
+								}
+							})
+							cPartition, err = topicPartitions(egCtx, cl, ns, topicName)
+							if err != nil {
+								return err
+							}
 						}
 						mu.Lock()
 						clusterPartitions = append(clusterPartitions, cPartition...)
@@ -113,40 +138,88 @@ List all in json format.
 			if partitions != nil {
 				clusterPartitions = filterPartition(clusterPartitions, partitions)
 			}
-			types.Sort(clusterPartitions)
-			if isText, _, formatted, err := f.Format(clusterPartitions); !isText {
-				out.MaybeDie(err, "unable to print partitions in the required format %q: %v", f.Kind, err)
-				fmt.Println(formatted)
-				return
-			}
-			tw := out.NewTable("NAMESPACE", "TOPIC", "PARTITION", "LEADER-ID", "REPLICA-CORE", "DISABLED")
-			defer tw.Flush()
-			for _, p := range clusterPartitions {
-				var leader string
-				var replicas []string
-				if p.LeaderID == nil {
-					leader = "-"
-				}
-				for _, r := range p.Replicas {
-					replicas = append(replicas, fmt.Sprintf("%v-%v", r.NodeID, r.Core))
-				}
-				tw.PrintStructFields(struct {
-					Namespace string
-					Topic     string
-					Partition int
-					LeaderID  string
-					Replicas  []string
-					Disabled  bool
-				}{p.Ns, p.Topic, p.PartitionID, leader, replicas, p.Disabled})
-			}
+			printClusterPartitions(f, clusterPartitions)
 		},
 	}
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, list all partitions in the cluster")
-	cmd.Flags().BoolVar(&disabledOnly, "only-disabled", false, "If true, list disabled partitions only")
-	cmd.Flags().IntSliceVarP(&partitions, "partition", "p", nil, "Partitions to show current assignments (repeatable)")
+	cmd.Flags().BoolVar(&disabledOnly, "disabled-only", false, "If true, list disabled partitions only")
+	cmd.Flags().IntSliceVarP(&partitions, "partition", "p", nil, "List of comma-separated partitions IDs that you wish to filter the results with")
 
 	p.InstallFormatFlag(cmd)
 	return cmd
+}
+
+func printClusterPartitions(f config.OutFormatter, clusterPartitions []adminapi.ClusterPartition) {
+	types.Sort(clusterPartitions)
+	if isText, _, formatted, err := f.Format(clusterPartitions); !isText {
+		out.MaybeDie(err, "unable to print partitions in the required format %q: %v", f.Kind, err)
+		fmt.Println(formatted)
+		return
+	}
+	tw := out.NewTable("NAMESPACE", "TOPIC", "PARTITION", "LEADER-ID", "REPLICA-CORE", "DISABLED")
+	defer tw.Flush()
+	for _, p := range clusterPartitions {
+		var leader, disabled string
+		var replicas []string
+		if p.LeaderID == nil {
+			leader = "-"
+		} else {
+			leader = strconv.Itoa(*p.LeaderID)
+		}
+		if p.Disabled == nil {
+			disabled = "-"
+		} else {
+			disabled = strconv.FormatBool(*p.Disabled)
+		}
+
+		for _, r := range p.Replicas {
+			replicas = append(replicas, fmt.Sprintf("%v-%v", r.NodeID, r.Core))
+		}
+		tw.PrintStructFields(struct {
+			Namespace string
+			Topic     string
+			Partition int
+			LeaderID  string
+			Replicas  []string
+			Disabled  string
+		}{p.Ns, p.Topic, p.PartitionID, leader, replicas, disabled})
+	}
+}
+
+// nsTopic splits a topic string consisting of <namespace>/<topicName> and
+// returns each component, if the namespace is not specified, returns 'kafka'.
+func nsTopic(nst string) (namespace string, topic string) {
+	nsTopic := strings.SplitN(nst, "/", 2)
+	if len(nsTopic) == 1 {
+		namespace = "kafka"
+		topic = nsTopic[0]
+	} else {
+		namespace = nsTopic[0]
+		topic = nsTopic[1]
+	}
+	return namespace, topic
+}
+
+// topicPartitions query the old v1/partitions/ endpoint and parse the result to
+// the newer /v1/cluster/partitions format.
+func topicPartitions(ctx context.Context, cl *adminapi.AdminAPI, ns, topicName string) ([]adminapi.ClusterPartition, error) {
+	var ret []adminapi.ClusterPartition
+	tPartitions, err := cl.GetTopic(ctx, ns, topicName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query partition metadata of topic %q: %v", topicName, err)
+	}
+	for _, tp := range tPartitions {
+		tp := tp
+		ret = append(ret, adminapi.ClusterPartition{
+			Ns:          tp.Namespace,
+			Topic:       tp.Topic,
+			PartitionID: tp.PartitionID,
+			LeaderID:    &tp.LeaderID,
+			Replicas:    tp.Replicas,
+			Disabled:    nil, // Just to be explicit, old /v1/partitions did not contain any info on disabled.
+		})
+	}
+	return ret, nil
 }
 
 // filterPartition filters cPartitions and returns a slice with only the
