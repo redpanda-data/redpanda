@@ -188,6 +188,7 @@ model::record_batch transformed_data::make_batch(
     // transforms.
     header.producer_id = -1;
 
+    header.last_offset_delta = i - 1;
     header.record_count = i;
     header.size_bytes = int32_t(
       model::packed_record_batch_header_size + serialized_records.size_bytes());
