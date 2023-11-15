@@ -2366,6 +2366,7 @@ ss::future<install_snapshot_reply> consensus::finish_snapshot(
 }
 
 ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
+    auto holder = _bg.hold();
     model::offset last_included_index = cfg.last_included_index;
     bool updated = co_await _snapshot_lock
                      .with([this, cfg = std::move(cfg)]() mutable {
