@@ -15,6 +15,8 @@ from ducktape.utils.util import wait_until
 from typing import Optional
 import os
 
+from rptest.services.keycloak import OAuthConfig
+
 
 class AuthenticationError(Exception):
     def __init__(self, message):
@@ -24,9 +26,22 @@ class AuthenticationError(Exception):
         return repr(self.message)
 
 
-class ClusterAuthorizationError(Exception):
+class AuthorizationError(Exception):
     def __init__(self, message):
         self.message = message
+
+
+class ClusterAuthorizationError(AuthorizationError):
+    def __init__(self, message):
+        super().__init__(message)
+
+    def __str__(self):
+        return repr(self.message)
+
+
+class TopicAuthorizationError(AuthorizationError):
+    def __init__(self, message):
+        super().__init__(message)
 
     def __str__(self):
         return repr(self.message)
@@ -45,18 +60,33 @@ class KafkaCliTools:
                  version=None,
                  user=None,
                  passwd=None,
-                 protocol='SASL_PLAINTEXT'):
+                 protocol='SASL_PLAINTEXT',
+                 oauth_cfg: Optional[OAuthConfig] = None):
         self._redpanda = redpanda
         self._version = version
         assert self._version is None or \
                 self._version in KafkaCliTools.VERSIONS
         self._command_config = None
+        self._oauth_cfg = oauth_cfg
         if user and passwd:
             self._command_config = tempfile.NamedTemporaryFile(mode="w")
             config = f"""
 sasl.mechanism=SCRAM-SHA-256
 security.protocol={protocol}
 sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{user}" password="{passwd}";
+"""
+            self._command_config.write(config)
+            self._command_config.flush()
+        elif self._oauth_cfg is not None:
+            self._command_config = tempfile.NamedTemporaryFile(mode="w")
+            config = f"""
+sasl.mechanism=OAUTHBEARER
+security.protocol={protocol}
+sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
+  oauth.client.id="{self._oauth_cfg.client_id}" \
+  oauth.client.secret="{self._oauth_cfg.client_secret}" \
+  oauth.token.endpoint.uri="{self._oauth_cfg.token_endpoint}";
+sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler                                  
 """
             self._command_config.write(config)
             self._command_config.flush()
@@ -426,8 +456,29 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
                 raise AuthenticationError(e.output)
             if "ClusterAuthorizationException: Cluster authorization failed" in e.output:
                 raise ClusterAuthorizationError(e.output)
+            if "TopicAuthorizationException: Not authorized to access topic" in e.output:
+                raise TopicAuthorizationError(e.output)
             raise
 
     def _script(self, script):
         version = self._version or KafkaCliTools.VERSIONS[0]
         return "/opt/kafka-{}/bin/{}".format(version, script)
+
+    def oauth_produce(self, topic: str, num_records: int, acks=-1):
+        path = "/opt/strimzi-kafka-oauth/examples/producer"
+        assert self._oauth_cfg is not None, "Must provide an OAuthConfig at construction"
+        cmd = [
+            "java",
+            "-Dsecurity.protocol=sasl_plaintext",
+            f"-Dacks={acks}",
+            f"-Dbootstrap.servers={self._redpanda.brokers()}",
+            f"-Doauth.token.endpoint.uri={self._oauth_cfg.token_endpoint}",
+            f"-Doauth.client.id={self._oauth_cfg.client_id}",
+            f"-Doauth.client.secret={self._oauth_cfg.client_secret}",
+            "-cp",
+            f"{path}/target/*:{path}/target/lib/*",
+            "io.strimzi.examples.producer.ExampleProducer",
+            topic,
+            str(num_records),
+        ]
+        self._execute(cmd)
