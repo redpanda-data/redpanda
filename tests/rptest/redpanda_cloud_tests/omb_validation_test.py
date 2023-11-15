@@ -381,8 +381,9 @@ class OMBValidationTest(RedpandaTest):
         # This will have 1/2 the test run with segment deletion occuring.
         test_duration_seconds = max(
             (2 * retention_bytes * partitions) // producer_rate, 5 * 60)
-        total_producers = 10
-        total_consumers = 10
+
+        total_producers = self._producer_count(producer_rate)
+        total_consumers = self._consumer_count(producer_rate * subscriptions)
 
         workload = self.WORKLOAD_DEFAULTS | {
             "name": "RetentionTestWorkload",
