@@ -401,7 +401,13 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                 maybe_update_probe(res);
             } catch (...) {
                 auto eptr = std::current_exception();
-                if (!ssx::is_shutdown_exception(eptr)) {
+                if (ssx::is_shutdown_exception(eptr)) {
+                    vlog(
+                      archival_log.debug,
+                      "upload housekeeping job {} ignoring shutdown error: {}",
+                      job_name,
+                      eptr);
+                } else {
                     vlog(
                       archival_log.error,
                       "upload housekeeping job {} error: {}",

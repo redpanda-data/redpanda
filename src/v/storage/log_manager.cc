@@ -277,13 +277,15 @@ ss::future<> log_manager::housekeeping() {
              * a partition shutting down. we only stop running housekeeping when
              * the log manager stops.
              */
-            if (ssx::is_shutdown_exception(std::current_exception())) {
+            auto e = std::current_exception();
+            if (ssx::is_shutdown_exception(e)) {
+                vlog(
+                  stlog.debug,
+                  "Shutdown error caught in housekeeping(): {}",
+                  e);
                 continue;
             }
-            vlog(
-              stlog.info,
-              "Error processing housekeeping(): {}",
-              std::current_exception());
+            vlog(stlog.info, "Error processing housekeeping(): {}", e);
         }
     }
 }
