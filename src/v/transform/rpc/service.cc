@@ -229,7 +229,7 @@ ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
         kafka::partition_proxy* partition) mutable {
           storage::log_reader_config reader_config(
             /*start_offset=*/offset,
-            /*max_offset=*/model::next_offset(offset),
+            /*max_offset=*/offset,
             /*min_bytes=*/0,
             /*max_bytes=*/1,
             /*prio=*/wasm_read_priority(),
