@@ -191,7 +191,7 @@ ss::future<kafka::offset> processor::load_start_offset() {
 
 ss::future<> processor::run_consumer_loop() {
     auto offset = co_await load_start_offset();
-    vlog(_logger.trace, "starting at offset {}", offset);
+    vlog(_logger.debug, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);
         auto last_offset = co_await std::move(reader).consume(
