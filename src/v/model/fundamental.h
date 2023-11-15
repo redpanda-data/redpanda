@@ -424,6 +424,20 @@ std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
 using client_address_t = named_type<ss::sstring, struct client_address_tag>;
 
+inline shadow_indexing_mode
+get_shadow_indexing_mode_impl(bool arch_enabled, bool si_enabled) {
+    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
+    if (arch_enabled) {
+        mode = model::shadow_indexing_mode::archival;
+    }
+    if (si_enabled) {
+        mode = mode == model::shadow_indexing_mode::archival
+                 ? model::shadow_indexing_mode::full
+                 : model::shadow_indexing_mode::fetch;
+    }
+
+    return mode;
+}
 } // namespace model
 
 namespace kafka {

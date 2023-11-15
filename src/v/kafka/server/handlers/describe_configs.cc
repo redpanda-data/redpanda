@@ -502,7 +502,7 @@ static void report_broker_config(
     add_broker_config_if_requested(
       resource,
       result,
-      "num.partitions",
+      topic_property_partition_count,
       config::shard_local_cfg().default_topic_partitions,
       include_synonyms,
       maybe_make_documentation(

@@ -84,6 +84,13 @@ struct constraint_t {
     friend std::ostream& operator<<(std::ostream& os, const constraint_t& args);
 };
 
+/**
+ * Apply a constraint to the topic configuration. Returns true
+ * if application is successful, false otherwise. Clamp constraints will change
+ * configuration values.
+ */
+bool apply_constraint(cluster::topic_configuration&, const constraint_t&);
+
 namespace detail {
 
 template<>

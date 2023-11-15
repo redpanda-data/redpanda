@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Redpanda Data, Inc.
+ * Copyright 2023 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -10,17 +10,12 @@
  */
 
 #pragma once
-#include "cluster/types.h"
-#include "kafka/protocol/schemata/create_topics_request.h"
-#include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/server/errors.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "utils/absl_sstring_hash.h"
 
 #include <absl/container/flat_hash_map.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
 
 #include <array>
 
@@ -63,6 +58,8 @@ static constexpr std::string_view topic_property_retention_local_target_ms
   = "retention.local.target.ms";
 static constexpr std::string_view topic_property_replication_factor
   = "replication.factor";
+static constexpr std::string_view topic_property_partition_count
+  = "num.partitions";
 static constexpr std::string_view topic_property_remote_delete
   = "redpanda.remote.delete";
 static constexpr std::string_view topic_property_segment_ms = "segment.ms";
@@ -134,17 +131,4 @@ struct topic_op_result {
     error_code ec;
     std::optional<ss::sstring> err_msg;
 };
-
-inline creatable_topic_result
-from_cluster_topic_result(const cluster::topic_result& err) {
-    return {.name = err.tp_ns.tp, .error_code = map_topic_error_code(err.ec)};
-}
-
-config_map_t config_map(const std::vector<createable_topic_config>& config);
-config_map_t config_map(const std::vector<creatable_topic_configs>& config);
-
-cluster::custom_assignable_topic_configuration
-to_cluster_type(const creatable_topic& t);
-
-config_map_t from_cluster_type(const cluster::topic_properties&);
 } // namespace kafka

@@ -15,6 +15,7 @@
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/timeout.h"
+#include "kafka/server/handlers/topics/config_map.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/quota_manager.h"

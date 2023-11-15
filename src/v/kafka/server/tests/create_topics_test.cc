@@ -9,6 +9,7 @@
 
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
+#include "kafka/server/handlers/topics/config_map.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
