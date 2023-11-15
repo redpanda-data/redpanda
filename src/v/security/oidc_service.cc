@@ -10,7 +10,9 @@
 #include "security/oidc_service.h"
 
 #include "http/client.h"
+#include "metrics/metrics.h"
 #include "net/tls_certificate_probe.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "security/exceptions.h"
 #include "security/jwt.h"
 #include "security/logger.h"
@@ -24,6 +26,7 @@
 #include <seastar/coroutine/exception.hh>
 
 #include <absl/algorithm/container.h>
+#include <absl/container/flat_hash_map.h>
 #include <boost/outcome/success_failure.hpp>
 
 namespace security::oidc {
@@ -40,6 +43,90 @@ template<typename... Args>
 }
 
 using seastar::operator co_await;
+
+class probe {
+public:
+    using hist_t = log_hist_public;
+
+    class auto_measure {
+    public:
+        explicit auto_measure(probe* p)
+          : _p{p}
+          , _m{p->_request_latency} {}
+
+    public:
+        void success() noexcept {
+            if (std::exchange(_p, nullptr) != nullptr) {
+                auto report_and_destroy = std::move(_m);
+            }
+        }
+        void failed() noexcept {
+            if (auto p = std::exchange(_p, nullptr); p != nullptr) {
+                ++p->_request_errors;
+                _m.cancel();
+            }
+        }
+
+    private:
+        probe* _p;
+        hist_t::measurement _m;
+    };
+
+    void setup_metrics(std::string_view domain, std::string_view mechanism) {
+        namespace sm = ss::metrics;
+
+        auto domain_l = metrics::make_namespaced_label("domain");
+        auto mechanism_l = metrics::make_namespaced_label("mechanism");
+        const std::vector<sm::label_instance> labels = {
+          domain_l(domain), mechanism_l(mechanism)};
+
+        _metrics.clear();
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("security_idp"),
+          {sm::make_histogram(
+             "latency_seconds",
+             [this] { return _request_latency.public_histogram_logform(); },
+             sm::description("Latency of requests to the Identity Provider"),
+             labels),
+           sm::make_counter(
+             "errors_total",
+             [this] { return _request_errors; },
+             sm::description("Number of requests that returned with an error."),
+             labels)});
+    }
+    void
+    setup_public_metrics(std::string_view domain, std::string_view mechanism) {
+        namespace sm = ss::metrics;
+
+        auto domain_l = metrics::make_namespaced_label("domain");
+        auto mechanism_l = metrics::make_namespaced_label("mechanism");
+        const std::vector<sm::label_instance> labels = {
+          domain_l(domain), mechanism_l(mechanism)};
+
+        _public_metrics.clear();
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("security_idp"),
+          {sm::make_histogram(
+             "latency_seconds",
+             [this] { return _request_latency.public_histogram_logform(); },
+             sm::description("Latency of requests to the Identity Provider"),
+             labels),
+           sm::make_counter(
+             "errors_total",
+             [this] { return _request_errors; },
+             sm::description("Number of requests that returned with an error."),
+             labels)});
+    }
+
+    auto_measure measure_request() { return auto_measure(this); }
+
+private:
+    hist_t _request_latency;
+    int64_t _request_errors{};
+
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
+};
 
 } // namespace
 
@@ -79,13 +166,28 @@ struct service::impl {
     }
     ss::future<> stop() { return _gate.close(); }
 
+    probe& get_probe_for(parsed_url const& url) {
+        auto& p = _probes[url.host];
+        if (!p) {
+            p = std::make_unique<probe>();
+        }
+        return *p;
+    }
+
     result<void> update_url(
       std::optional<parsed_url>& existing, std::string_view update_sv) {
         auto url_res = security::oidc::parse_url(update_sv);
         if (url_res.has_error()) {
             return errc::metadata_invalid;
         }
-        existing = std::move(url_res).assume_value();
+        auto update = std::move(url_res).assume_value();
+
+        auto& p = get_probe_for(update);
+        if (!existing.has_value() || existing->host != update.host) {
+            p.setup_metrics(update.host, "oidc");
+            p.setup_public_metrics(update.host, "oidc");
+        }
+        existing = std::move(update);
         return outcome::success();
     }
 
@@ -119,9 +221,11 @@ struct service::impl {
               _discovery_url());
         }
 
+        auto measure = get_probe_for(*_parsed_discovery_url).measure_request();
         auto response_body = co_await ss::coroutine::as_future(
           make_request(*_parsed_discovery_url));
         if (response_body.failed()) {
+            measure.failed();
             co_await return_exception(
               errc::metadata_invalid,
               "Failed to retrieve metadata: {}, error: {}",
@@ -130,6 +234,7 @@ struct service::impl {
         }
         auto metadata = oidc::metadata::make(response_body.get());
         if (metadata.has_error()) {
+            measure.failed();
             co_await return_exception(
               metadata.assume_error(),
               "invalid response from discovery_url: {}, err: {}",
@@ -140,11 +245,13 @@ struct service::impl {
         url_res = update_url(
           _parsed_jwks_url, metadata.assume_value().jwks_uri());
         if (url_res.has_error()) {
+            measure.failed();
             co_await return_exception(
               url_res.assume_error(),
               "Failed to parse jwkk_uri: {}",
               metadata.assume_value().jwks_uri());
         }
+        measure.success();
 
         _issuer.emplace(metadata.assume_value().issuer());
     }
@@ -155,9 +262,11 @@ struct service::impl {
               errc::metadata_invalid, "jwks_uri is not set");
         }
 
+        auto measure = get_probe_for(*_parsed_jwks_url).measure_request();
         auto response_body = co_await ss::coroutine::as_future(
           make_request(*_parsed_jwks_url));
         if (response_body.failed()) {
+            measure.failed();
             co_await return_exception(
               errc::metadata_invalid,
               "Failed to retrieve jwks: {}, error: {}",
@@ -167,11 +276,13 @@ struct service::impl {
 
         auto jwks = oidc::jwks::make(response_body.get());
         if (jwks.has_error()) {
+            measure.failed();
             co_await return_exception(
               jwks.assume_error(),
               "Invalid response from jwks_uri: {}",
               *_parsed_jwks_url);
         }
+        measure.success();
 
         auto res = _verifier.update_keys(std::move(jwks).assume_value());
         if (res.has_error()) {
@@ -257,6 +368,7 @@ struct service::impl {
     std::optional<parsed_url> _parsed_jwks_url;
     std::optional<ss::sstring> _issuer;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
+    absl::flat_hash_map<ss::sstring, std::unique_ptr<probe>> _probes;
 };
 
 service::service(
