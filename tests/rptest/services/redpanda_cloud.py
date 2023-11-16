@@ -691,8 +691,6 @@ class CloudCluster():
                 # Login without saving creds
                 self.utils.rpk_cloud_login(self.config.oauth_client_id,
                                            self.config.oauth_client_secret)
-                # Install proper plugin
-                self.utils.rpk_cloud_byoc_install(_cluster_id)
                 # save cluster id so we can delete it in case of failure
                 self.config.id = _cluster_id
                 # Kick off cluster creation
