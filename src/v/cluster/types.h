@@ -4142,6 +4142,19 @@ enum class reconfiguration_state {
     force_cancelled = 3
 };
 
+inline bool is_cancelled_state(reconfiguration_state rs) {
+    switch (rs) {
+    case reconfiguration_state::in_progress:
+    case reconfiguration_state::force_update:
+        return false;
+    case reconfiguration_state::cancelled:
+    case reconfiguration_state::force_cancelled:
+        return true;
+    default:
+        __builtin_unreachable();
+    }
+}
+
 std::ostream& operator<<(std::ostream&, reconfiguration_state);
 
 struct replica_bytes {
