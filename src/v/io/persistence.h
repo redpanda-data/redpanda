@@ -173,12 +173,21 @@ public:
     memory_persistence();
 
     /**
+     * Memory persistence parameters.
+     */
+    struct config {
+        /// Required alignment for DMA read operations.
+        uint64_t disk_read_dma_alignment;
+        /// Required alignment for DMA write operations.
+        uint64_t disk_write_dma_alignment;
+        /// Required memory alignment for DMA operations.
+        uint64_t memory_dma_alignment;
+    };
+
+    /**
      * Create a memory_persistence with specific alignment requirements.
      */
-    memory_persistence(
-      uint64_t disk_read_dma_alignment,
-      uint64_t disk_write_dma_alignment,
-      uint64_t memory_dma_alignment);
+    explicit memory_persistence(config config);
 
     /**
      * An implementation of \ref persistence::file that stores all data in

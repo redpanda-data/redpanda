@@ -116,16 +116,12 @@ disk_persistence::open(std::filesystem::path path) noexcept {
 
 memory_persistence::memory_persistence()
   : memory_persistence(
-    default_alignment, default_alignment, default_alignment) {}
+    {default_alignment, default_alignment, default_alignment}) {}
 
-memory_persistence::memory_persistence(
-  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-  uint64_t disk_read_dma_alignment,
-  uint64_t disk_write_dma_alignment,
-  uint64_t memory_dma_alignment)
-  : disk_read_dma_alignment_(disk_read_dma_alignment)
-  , disk_write_dma_alignment_(disk_write_dma_alignment)
-  , memory_dma_alignment_(memory_dma_alignment) {}
+memory_persistence::memory_persistence(config config)
+  : disk_read_dma_alignment_(config.disk_read_dma_alignment)
+  , disk_write_dma_alignment_(config.disk_write_dma_alignment)
+  , memory_dma_alignment_(config.memory_dma_alignment) {}
 
 /*
  * The temporary buffer alignment helper used here is based on posix_memalign,

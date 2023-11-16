@@ -67,7 +67,7 @@ template<uint64_t read, uint64_t write, uint64_t memory>
 class memfs_align : public io::memory_persistence {
 public:
     memfs_align()
-      : memory_persistence(read, write, memory) {}
+      : memory_persistence({read, write, memory}) {}
 };
 
 using PersistenceTypes = ::testing::Types<
@@ -288,7 +288,7 @@ TEST(MemoryPersistenceTest, CustomAlignment) {
     open_files.push_back(df);
 
     // custom alignments
-    io::memory_persistence cfs(1, 2, 3);
+    io::memory_persistence cfs({1, 2, 3});
     auto cf = cfs.create("file").get();
     open_files.push_back(cf);
 
