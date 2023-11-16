@@ -41,6 +41,15 @@ ss::future<compaction_result> self_compact_segment(
   storage::storage_resources&,
   offset_delta_time apply_offset);
 
+/// \brief, rebuilds a given segment's compacted index. This method acquires
+/// locks on the segment.
+ss::future<> rebuild_compaction_index(
+  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  compaction_config cfg,
+  storage::probe& pb,
+  storage_resources& resources);
+
 /*
  * Concatentate segments into a minimal new segment.
  *
