@@ -340,7 +340,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
     }
-    if (it->second.get_state() == reconfiguration_state::in_progress) {
+    if (!is_cancelled_state(it->second.get_state())) {
         // update went through and the cancellation didn't happen, we must
         // update replicas_revisions.
         p_meta_it->second.replicas_revisions = update_replicas_revisions(
@@ -483,9 +483,7 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
     if (in_progress_it == _updates_in_progress.end()) {
         co_return errc::no_update_in_progress;
     }
-    if (
-      in_progress_it->second.get_state()
-      == reconfiguration_state::in_progress) {
+    if (!is_cancelled_state(in_progress_it->second.get_state())) {
         co_return errc::no_update_in_progress;
     }
 
@@ -1062,9 +1060,7 @@ public:
             update_it != topic.updates.end()) {
             const auto& update = update_it->second;
 
-            if (
-              update.state == reconfiguration_state::in_progress
-              || update.state == reconfiguration_state::force_update) {
+            if (!is_cancelled_state(update.state)) {
                 cur_assignment.replicas = update_it->second.target_assignment;
             }
 

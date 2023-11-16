@@ -490,15 +490,10 @@ topic_updates_dispatcher::collect_in_progress(
             continue;
         }
         const auto state = it->second.get_state();
-        if (state == reconfiguration_state::in_progress) {
-            in_progress[p.id] = it->second.get_previous_replicas();
-        } else {
-            vassert(
-              state == reconfiguration_state::cancelled
-                || state == reconfiguration_state::force_cancelled,
-              "Invalid reconfiguration state: {}",
-              state);
+        if (is_cancelled_state(state)) {
             in_progress[p.id] = it->second.get_target_replicas();
+        } else {
+            in_progress[p.id] = it->second.get_previous_replicas();
         }
     }
     return in_progress;
