@@ -169,9 +169,32 @@ class HasRedpandaAndAdmin(Protocol):
 
 class ClusterConfigHelpersMixin:
     def _check_value_everywhere(self: HasRedpandaAndAdmin, key, expect_value):
-        for node in self.redpanda.nodes:
-            actual_value = self.admin.get_cluster_config(node)[key]
-            assert actual_value == expect_value, f"Wrong value on node {node.account.hostname}: {key}={actual_value} (!={expect_value})"
+        config_versions: dict[str, int] = {}
+
+        def _check_version():
+            nonlocal config_versions
+            config_versions = {
+                status["node_id"]: status["config_version"]
+                for status in self.admin.get_cluster_config_status()
+            }
+            self.logger.debug(f"config statuses: {config_versions}")
+            # all the node have the same version iff the set contains only one element
+            return len(set(config_versions.values())) == 1
+
+        def _assert_version_msg():
+            return f"Not all the nodes are at the same config_version: {config_versions}"
+
+        # wait for config_version to be the same on all the nodes
+        wait_until(_check_version, timeout_sec=5, err_msg=_assert_version_msg)
+
+        # we expect that key is at expect_value by now
+        values = {
+            node.account.hostname: self.admin.get_cluster_config(node)[key]
+            for node in self.redpanda.nodes
+        }
+        assert all(
+            actual_value == expect_value for actual_value in values.values()
+        ), f"Wrong value on some nodes: {key}!={expect_value} in {values}"
 
     def _check_propagated_and_persistent(self: HasRedpandaAndAdmin, key,
                                          expect_value):
