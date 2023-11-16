@@ -43,6 +43,7 @@ v_cc_library(
     cluster_config_schema_util.cc
     admin/server.cc
     admin/debug.cc
+    admin/transform.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc
