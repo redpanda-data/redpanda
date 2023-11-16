@@ -262,6 +262,10 @@ public:
         return _raft->config().revision_id();
     }
 
+    model::revision_id get_log_revision_id() const {
+        return _raft->log_config().get_revision();
+    }
+
     std::optional<model::node_id> get_leader_id() const {
         return _raft->get_leader_id();
     }
