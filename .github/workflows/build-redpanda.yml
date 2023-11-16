@@ -19,6 +19,7 @@ on:
       - 'CMakeLists.txt'
       - 'CMakePresets.json'
       - 'install-dependencies.sh'
+      - '.github/workflows/build-redpanda.yml'
 
 jobs:
   build:
@@ -38,11 +39,17 @@ jobs:
           run: ./install-dependencies.sh
         - name: cache directory
           run: mkdir /mnt/ccache
+        - name: get timestamp
+          run: |
+            echo "TIMESTAMP=$(date --utc --iso-8601=seconds)" >> $GITHUB_OUTPUT
+          id: timestamp
         - name: ccache
           uses: actions/cache@v3
           with:
             path: /mnt/ccache
-            key: ${{ github.job }}-${{ matrix.os }}
+            key: ${{ github.job }}-${{ matrix.os }}-${{ steps.timestamp.outputs.TIMESTAMP }}
+            restore-keys: |
+              ${{ github.job }}-${{ matrix.os }}-
         - name: update path
           run: |
             echo "/usr/lib/ccache" >> $GITHUB_PATH
