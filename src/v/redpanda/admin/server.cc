@@ -4326,55 +4326,6 @@ admin_server::put_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::get_local_storage_usage_handler(
-  std::unique_ptr<ss::http::request>) {
-    /*
-     * In order to get an accurate view of disk usage we need to account for
-     * three things:
-     *
-     * 1. partition-based log usage (controller, kafka topics, etc...)
-     * 2. non-partition-based logs (kvstore, ...)
-     * 3. everything else (stm snapshots, etc...)
-     *
-     * The storage API disk usage interface gives is 1 and 2. But we need to
-     * access the partition abstraction to reason about the usage that state
-     * machines and raft account for.
-     *
-     * TODO: this accumulation across sub-systems will be moved up a level in
-     * short order and wont' remain here in the admin interface for long.
-     */
-    const auto other
-      = co_await _partition_manager.local().non_log_disk_size_bytes();
-
-    const auto disk = co_await _controller->get_storage().local().disk_usage();
-
-    seastar::httpd::debug_json::local_storage_usage ret;
-    ret.data = disk.usage.data + other;
-    ret.index = disk.usage.index;
-    ret.compaction = disk.usage.compaction;
-    ret.reclaimable_by_retention = disk.reclaim.retention;
-    ret.target_min_capacity = disk.target.min_capacity;
-    ret.target_min_capacity_wanted = disk.target.min_capacity_wanted;
-
-    if (_cloud_storage_cache.local_is_initialized()) {
-        auto [cache_bytes, cache_objects]
-          = co_await _cloud_storage_cache.invoke_on(
-            ss::shard_id{0},
-            [](cloud_storage::cache& cache) -> std::pair<uint64_t, size_t> {
-                return {cache.get_usage_bytes(), cache.get_usage_objects()};
-            });
-
-        ret.cloud_storage_cache_bytes = cache_bytes;
-        ret.cloud_storage_cache_objects = cache_objects;
-    } else {
-        ret.cloud_storage_cache_bytes = 0;
-        ret.cloud_storage_cache_objects = 0;
-    }
-
-    co_return ret;
-}
-
-ss::future<ss::json::json_return_type>
 admin_server::get_partition_balancer_status_handler(
   std::unique_ptr<ss::http::request> req) {
     vlog(adminlog.debug, "Requested partition balancer status");
