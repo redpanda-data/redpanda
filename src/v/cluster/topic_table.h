@@ -166,6 +166,14 @@ public:
             return _target_replicas;
         }
 
+        const replicas_t& get_resulting_replicas() const {
+            if (is_cancelled_state(_state)) {
+                return _previous_replicas;
+            } else {
+                return _target_replicas;
+            }
+        }
+
         const model::revision_id& get_update_revision() const {
             return _update_revision;
         }
