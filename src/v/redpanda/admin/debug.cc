@@ -8,12 +8,87 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "cloud_storage/cache_service.h"
 #include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/shard_table.h"
+#include "cluster/topics_frontend.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/server.h"
+
+namespace {
+ss::future<result<std::vector<cluster::partition_state>>>
+get_partition_state(model::ntp ntp, cluster::controller& controller) {
+    if (ntp == model::controller_ntp) {
+        return controller.get_controller_partition_state();
+    }
+    return controller.get_topics_frontend().local().get_partition_state(
+      std::move(ntp));
+}
+
+void fill_raft_state(
+  ss::httpd::debug_json::partition_replica_state& replica,
+  cluster::partition_state state) {
+    ss::httpd::debug_json::raft_replica_state raft_state;
+    auto& src = state.raft_state;
+    raft_state.node_id = src.node();
+    raft_state.term = src.term();
+    raft_state.offset_translator_state = std::move(src.offset_translator_state);
+    raft_state.group_configuration = std::move(src.group_configuration);
+    raft_state.confirmed_term = src.confirmed_term();
+    raft_state.flushed_offset = src.flushed_offset();
+    raft_state.commit_index = src.commit_index();
+    raft_state.majority_replicated_index = src.majority_replicated_index();
+    raft_state.visibility_upper_bound_index
+      = src.visibility_upper_bound_index();
+    raft_state.last_quorum_replicated_index
+      = src.last_quorum_replicated_index();
+    raft_state.last_snapshot_term = src.last_snapshot_term();
+    raft_state.received_snapshot_bytes = src.received_snapshot_bytes;
+    raft_state.last_snapshot_index = src.last_snapshot_index();
+    raft_state.received_snapshot_index = src.received_snapshot_index();
+    raft_state.has_pending_flushes = src.has_pending_flushes;
+    raft_state.is_leader = src.is_leader;
+    raft_state.is_elected_leader = src.is_elected_leader;
+    if (src.followers) {
+        for (const auto& f : *src.followers) {
+            ss::httpd::debug_json::raft_follower_state follower_state;
+            follower_state.id = f.node();
+            follower_state.last_flushed_log_index = f.last_flushed_log_index();
+            follower_state.last_dirty_log_index = f.last_dirty_log_index();
+            follower_state.match_index = f.match_index();
+            follower_state.next_index = f.next_index();
+            follower_state.expected_log_end_offset
+              = f.expected_log_end_offset();
+            follower_state.heartbeats_failed = f.heartbeats_failed;
+            follower_state.is_learner = f.is_learner;
+            follower_state.ms_since_last_heartbeat = f.ms_since_last_heartbeat;
+            follower_state.last_sent_seq = f.last_sent_seq;
+            follower_state.last_received_seq = f.last_received_seq;
+            follower_state.last_successful_received_seq
+              = f.last_successful_received_seq;
+            follower_state.suppress_heartbeats = f.suppress_heartbeats;
+            follower_state.is_recovering = f.is_recovering;
+            raft_state.followers.push(std::move(follower_state));
+        }
+    }
+    for (const auto& stm : state.raft_state.stms) {
+        ss::httpd::debug_json::stm_state state;
+        state.name = stm.name;
+        state.last_applied_offset = stm.last_applied_offset;
+        state.max_collectible_offset = stm.last_applied_offset;
+        raft_state.stms.push(std::move(state));
+    }
+    if (src.recovery_state) {
+        ss::httpd::debug_json::follower_recovery_state frs;
+        frs.is_active = src.recovery_state->is_active;
+        frs.pending_offset_count = src.recovery_state->pending_offset_count;
+        raft_state.follower_recovery_state = std::move(frs);
+    }
+    replica.raft_state = std::move(raft_state);
+}
+} // namespace
 
 void admin_server::register_debug_routes() {
     register_route<user>(
@@ -532,4 +607,135 @@ admin_server::cloud_storage_usage_handler(
                       "Please retry."),
           ss::http::reply::status_type::service_unavailable);
     }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::sampled_memory_profile_handler(
+  std::unique_ptr<ss::http::request> req) {
+    vlog(adminlog.info, "Request to sampled memory profile");
+
+    std::optional<size_t> shard_id;
+    if (auto e = req->get_query_param("shard"); !e.empty()) {
+        try {
+            shard_id = boost::lexical_cast<size_t>(e);
+        } catch (const boost::bad_lexical_cast&) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Invalid parameter 'shard_id' value {{{}}}", e));
+        }
+    }
+
+    if (shard_id.has_value()) {
+        auto max_shard_id = ss::smp::count;
+        if (*shard_id > max_shard_id) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "Shard id too high, max shard id is {}", max_shard_id));
+        }
+    }
+
+    auto profiles = co_await _memory_sampling_service.local()
+                      .get_sampled_memory_profiles(shard_id);
+
+    std::vector<ss::httpd::debug_json::memory_profile> resp(profiles.size());
+    for (size_t i = 0; i < resp.size(); ++i) {
+        resp[i].shard = profiles[i].shard_id;
+
+        for (auto& allocation_sites : profiles[i].allocation_sites) {
+            ss::httpd::debug_json::allocation_site allocation_site;
+            allocation_site.size = allocation_sites.size;
+            allocation_site.count = allocation_sites.count;
+            allocation_site.backtrace = std::move(allocation_sites.backtrace);
+            resp[i].allocation_sites.push(allocation_site);
+        }
+    }
+
+    co_return co_await ss::make_ready_future<ss::json::json_return_type>(
+      std::move(resp));
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_local_storage_usage_handler(
+  std::unique_ptr<ss::http::request>) {
+    /*
+     * In order to get an accurate view of disk usage we need to account for
+     * three things:
+     *
+     * 1. partition-based log usage (controller, kafka topics, etc...)
+     * 2. non-partition-based logs (kvstore, ...)
+     * 3. everything else (stm snapshots, etc...)
+     *
+     * The storage API disk usage interface gives is 1 and 2. But we need to
+     * access the partition abstraction to reason about the usage that state
+     * machines and raft account for.
+     *
+     * TODO: this accumulation across sub-systems will be moved up a level in
+     * short order and wont' remain here in the admin interface for long.
+     */
+    const auto other
+      = co_await _partition_manager.local().non_log_disk_size_bytes();
+
+    const auto disk = co_await _controller->get_storage().local().disk_usage();
+
+    seastar::httpd::debug_json::local_storage_usage ret;
+    ret.data = disk.usage.data + other;
+    ret.index = disk.usage.index;
+    ret.compaction = disk.usage.compaction;
+    ret.reclaimable_by_retention = disk.reclaim.retention;
+    ret.target_min_capacity = disk.target.min_capacity;
+    ret.target_min_capacity_wanted = disk.target.min_capacity_wanted;
+
+    if (_cloud_storage_cache.local_is_initialized()) {
+        auto [cache_bytes, cache_objects]
+          = co_await _cloud_storage_cache.invoke_on(
+            ss::shard_id{0},
+            [](cloud_storage::cache& cache) -> std::pair<uint64_t, size_t> {
+                return {cache.get_usage_bytes(), cache.get_usage_objects()};
+            });
+
+        ret.cloud_storage_cache_bytes = cache_bytes;
+        ret.cloud_storage_cache_objects = cache_objects;
+    } else {
+        ret.cloud_storage_cache_bytes = 0;
+        ret.cloud_storage_cache_objects = 0;
+    }
+
+    co_return ret;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_partition_state_handler(
+  std::unique_ptr<ss::http::request> req) {
+    const model::ntp ntp = parse_ntp_from_request(req->param);
+    auto result = co_await get_partition_state(ntp, *_controller);
+    if (result.has_error()) {
+        throw ss::httpd::server_error_exception(fmt::format(
+          "Error {} processing partition state for ntp: {}",
+          result.error(),
+          ntp));
+    }
+
+    ss::httpd::debug_json::partition_state response;
+    response.ntp = fmt::format("{}", ntp);
+    const auto& states = result.value();
+    for (const auto& state : states) {
+        ss::httpd::debug_json::partition_replica_state replica;
+        replica.start_offset = state.start_offset;
+        replica.committed_offset = state.committed_offset;
+        replica.last_stable_offset = state.last_stable_offset;
+        replica.high_watermark = state.high_water_mark;
+        replica.dirty_offset = state.dirty_offset;
+        replica.latest_configuration_offset = state.latest_configuration_offset;
+        replica.revision_id = state.revision_id;
+        replica.log_size_bytes = state.log_size_bytes;
+        replica.non_log_disk_size_bytes = state.non_log_disk_size_bytes;
+        replica.is_read_replica_mode_enabled
+          = state.is_read_replica_mode_enabled;
+        replica.read_replica_bucket = state.read_replica_bucket;
+        replica.is_remote_fetch_enabled = state.is_remote_fetch_enabled;
+        replica.is_cloud_data_available = state.is_cloud_data_available;
+        replica.start_cloud_offset = state.start_cloud_offset;
+        replica.next_cloud_offset = state.next_cloud_offset;
+        fill_raft_state(replica, std::move(state));
+        response.replicas.push(std::move(replica));
+    }
+    co_return ss::json::json_return_type(std::move(response));
 }
