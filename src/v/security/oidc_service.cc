@@ -10,6 +10,7 @@
 #include "security/oidc_service.h"
 
 #include "http/client.h"
+#include "net/tls_certificate_probe.h"
 #include "security/jwt.h"
 #include "security/logger.h"
 #include "security/oidc_principal_mapping.h"
@@ -167,28 +168,32 @@ struct service::impl {
         auto url = std::move(url_res).assume_value();
         auto is_https = url.scheme == "https";
         std::optional<ss::sstring> tls_host;
-        ss::shared_ptr<ss::tls::certificate_credentials> creds;
         if (is_https) {
             tls_host.emplace(url.host);
-            ss::tls::credentials_builder builder;
-            builder.set_client_auth(ss::tls::client_auth::NONE);
-            co_await builder.set_system_trust();
-            creds = builder.build_certificate_credentials();
-            creds->set_dn_verification_callback([](
-                                                  ss::tls::session_type type,
-                                                  ss::sstring subject,
-                                                  ss::sstring issuer) {
-                vlog(
-                  seclog.trace,
-                  "type: ?, subject: {}, issuer: {}",
-                  (uint8_t)type,
-                  subject,
-                  issuer);
-            });
+            if (!_creds) {
+                ss::tls::credentials_builder builder;
+                builder.set_client_auth(ss::tls::client_auth::NONE);
+                co_await builder.set_system_trust();
+                _creds = co_await net::build_reloadable_credentials_with_probe<
+                  ss::tls::certificate_credentials>(
+                  std::move(builder), "oidc_provider", "httpclient");
+                _creds->set_dn_verification_callback(
+                  [](
+                    ss::tls::session_type type,
+                    ss::sstring subject,
+                    ss::sstring issuer) {
+                      vlog(
+                        seclog.trace,
+                        "type: ?, subject: {}, issuer: {}",
+                        (uint8_t)type,
+                        subject,
+                        issuer);
+                  });
+            }
         }
         http::client client{net::base_transport::configuration{
           .server_addr = {url.host, url.port},
-          .credentials = creds,
+          .credentials = is_https ? _creds : nullptr,
           .tls_sni_hostname = tls_host}};
 
         http::client::request_header req_hdr;
@@ -228,6 +233,7 @@ struct service::impl {
     std::optional<ss::sstring> _issuer;
     std::optional<ss::sstring> _jwks_url;
     std::optional<oidc::jwks> _jwks;
+    ss::shared_ptr<ss::tls::certificate_credentials> _creds;
 };
 
 service::service(
