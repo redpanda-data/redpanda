@@ -23,6 +23,7 @@ import json
 import random
 import time
 
+from dataclasses import dataclass
 from requests.exceptions import HTTPError
 
 SCRUBBER_LOG_ALLOW_LIST = [
@@ -43,6 +44,41 @@ SCRUBBER_LOG_ALLOW_LIST = [
     r"cloud_storage - .* New replacement segment does not line up with previous segment",
     r"cluster - .* Can't add segment:"
 ]
+
+
+@dataclass(frozen=True)
+class SegmentMeta:
+    base_offset: int
+    committed_offset: int
+    delta_offset: int
+    delta_offset_end: int
+    base_timestamp: int
+    max_timestamp: int
+    size_bytes: int
+    is_compacted: bool
+    archiver_term: int
+    segment_term: int
+    ntp_revision: int
+
+    @staticmethod
+    def from_dict(json: dict):
+        return SegmentMeta(**json)
+
+
+@dataclass(frozen=True)
+class SegmentMetaAnomaly:
+    anomaly_type: str
+    explanation: str
+    at_segment: SegmentMeta
+    previous_segment: SegmentMeta
+
+    @staticmethod
+    def from_dict(json: dict):
+        return SegmentMetaAnomaly(
+            anomaly_type=json["type"],
+            explanation=json["explanation"],
+            at_segment=SegmentMeta.from_dict(json["at_segment"]),
+            previous_segment=SegmentMeta.from_dict(json["previous_segment"]))
 
 
 class CloudStorageScrubberTest(RedpandaTest):
@@ -150,6 +186,22 @@ class CloudStorageScrubberTest(RedpandaTest):
                     and "missing_segments" not in anomalies
                     and "segment_metadata_anomalies" not in anomalies):
                 anomalies = None
+
+            if anomalies is not None:
+                # Ordering of anomalies is not guaranteed, so we turn
+                # the lists into sets to reflect that.
+                if "missing_spillover_manifests" in anomalies:
+                    anomalies["missing_spillover_manifests"] = set(
+                        anomalies["missing_spillover_manifests"])
+                if "missing_segments" in anomalies:
+                    anomalies["missing_segments"] = set(
+                        anomalies["missing_segments"])
+                if "segment_metadata_anomalies" in anomalies:
+                    anomalies["segment_metadata_anomalies"] = set(
+                        map(
+                            lambda anomaly: SegmentMetaAnomaly.from_dict(
+                                anomaly),
+                            anomalies["segment_metadata_anomalies"]))
 
             anomalies_per_ntpr[ntpr] = anomalies
 
@@ -359,8 +411,8 @@ class CloudStorageScrubberTest(RedpandaTest):
                 "segment_metadata_anomalies"]
 
             for meta in seg_meta_anomalies:
-                if (meta["type"] == "offset_gap"
-                        and meta["at_segment"]["base_offset"]
+                if (meta.anomaly_type == "offset_gap"
+                        and meta.at_segment.base_offset
                         == detect_at_seg_meta["base_offset"]):
                     return True
 
