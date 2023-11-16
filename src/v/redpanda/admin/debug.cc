@@ -533,3 +533,46 @@ admin_server::cloud_storage_usage_handler(
           ss::http::reply::status_type::service_unavailable);
     }
 }
+
+ss::future<ss::json::json_return_type>
+admin_server::sampled_memory_profile_handler(
+  std::unique_ptr<ss::http::request> req) {
+    vlog(adminlog.info, "Request to sampled memory profile");
+
+    std::optional<size_t> shard_id;
+    if (auto e = req->get_query_param("shard"); !e.empty()) {
+        try {
+            shard_id = boost::lexical_cast<size_t>(e);
+        } catch (const boost::bad_lexical_cast&) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Invalid parameter 'shard_id' value {{{}}}", e));
+        }
+    }
+
+    if (shard_id.has_value()) {
+        auto max_shard_id = ss::smp::count;
+        if (*shard_id > max_shard_id) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "Shard id too high, max shard id is {}", max_shard_id));
+        }
+    }
+
+    auto profiles = co_await _memory_sampling_service.local()
+                      .get_sampled_memory_profiles(shard_id);
+
+    std::vector<ss::httpd::debug_json::memory_profile> resp(profiles.size());
+    for (size_t i = 0; i < resp.size(); ++i) {
+        resp[i].shard = profiles[i].shard_id;
+
+        for (auto& allocation_sites : profiles[i].allocation_sites) {
+            ss::httpd::debug_json::allocation_site allocation_site;
+            allocation_site.size = allocation_sites.size;
+            allocation_site.count = allocation_sites.count;
+            allocation_site.backtrace = std::move(allocation_sites.backtrace);
+            resp[i].allocation_sites.push(allocation_site);
+        }
+    }
+
+    co_return co_await ss::make_ready_future<ss::json::json_return_type>(
+      std::move(resp));
+}
