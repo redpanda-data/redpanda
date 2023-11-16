@@ -11,6 +11,7 @@
 
 #include "http/client.h"
 #include "net/tls_certificate_probe.h"
+#include "security/exceptions.h"
 #include "security/jwt.h"
 #include "security/logger.h"
 #include "security/oidc_principal_mapping.h"
@@ -20,10 +21,27 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 
 #include <absl/algorithm/container.h>
+#include <boost/outcome/success_failure.hpp>
 
 namespace security::oidc {
+
+namespace {
+
+template<typename... Args>
+[[nodiscard]] auto return_exception(
+  std::error_code ec,
+  fmt::format_string<Args...> fmt,
+  Args&&... args) noexcept {
+    return ss::coroutine::return_exception(
+      exception(ec, fmt::format(fmt, std::forward<Args>(args)...)));
+}
+
+using seastar::operator co_await;
+
+} // namespace
 
 struct service::impl {
     ss::shard_id update_shard_id{0};
@@ -61,6 +79,16 @@ struct service::impl {
     }
     ss::future<> stop() { return _gate.close(); }
 
+    result<void> update_url(
+      std::optional<parsed_url>& existing, std::string_view update_sv) {
+        auto url_res = security::oidc::parse_url(update_sv);
+        if (url_res.has_error()) {
+            return errc::metadata_invalid;
+        }
+        existing = std::move(url_res).assume_value();
+        return outcome::success();
+    }
+
     ss::future<> update() {
         auto enabled = absl::c_any_of(
                          _sasl_mechanisms(),
@@ -72,84 +100,84 @@ struct service::impl {
             co_return;
         }
 
-        namespace coro = ss::coroutine;
+        constexpr auto log_exception = [](std::string_view msg) {
+            return [msg](std::exception_ptr e) {
+                vlog(seclog.error, "Error updating {}: {}", msg, e);
+            };
+        };
 
-        if (auto f = co_await coro::as_future(update_metadata()); f.failed()) {
-            vlog(
-              seclog.error,
-              "Failed to retrieve metadata: {}, error: {}",
-              _discovery_url(),
-              f.get_exception());
-            co_return;
-        }
-
-        if (!_issuer.has_value()) {
-            vlog(seclog.error, "Failed to retrieve issuer from metadata");
-            co_return;
-        }
-        if (!_jwks_url.has_value()) {
-            vlog(seclog.error, "Failed to retrieve jwks_url from metadata");
-            co_return;
-        }
-
-        if (auto f = co_await coro::as_future(update_jwks()); f.failed()) {
-            vlog(
-              seclog.error,
-              "Failed to retrieve jwks: {}, error: {}",
-              _jwks_url.value(),
-              f.get_exception());
-            co_return;
-        }
-
-        if (!_jwks) {
-            vlog(seclog.error, "Error updating keys: Keys not found");
-            co_return;
-        }
-
-        auto res = _verifier.update_keys(*_jwks);
-        if (res.has_error()) {
-            vlog(
-              seclog.error,
-              "Error updating keys: {}",
-              res.assume_error().message());
-            co_return;
-        }
+        co_await update_metadata().handle_exception(log_exception("metadata"));
+        co_await update_jwks().handle_exception(log_exception("jwks"));
     }
 
     ss::future<> update_metadata() {
-        ss::sstring response_body = co_await make_request(_discovery_url());
-        auto metadata = oidc::metadata::make(response_body);
+        auto url_res = update_url(_parsed_discovery_url, _discovery_url());
+        if (url_res.has_error()) {
+            co_await return_exception(
+              url_res.assume_error(),
+              "Failed to parse discovery_uri: {}",
+              _discovery_url());
+        }
+
+        auto response_body = co_await ss::coroutine::as_future(
+          make_request(*_parsed_discovery_url));
+        if (response_body.failed()) {
+            co_await return_exception(
+              errc::metadata_invalid,
+              "Failed to retrieve metadata: {}, error: {}",
+              _discovery_url(),
+              response_body.get_exception());
+        }
+        auto metadata = oidc::metadata::make(response_body.get());
         if (metadata.has_error()) {
-            vlog(
-              seclog.warn,
+            co_await return_exception(
+              metadata.assume_error(),
               "invalid response from discovery_url: {}, err: {}",
               _discovery_url(),
               metadata.assume_error().message());
-            co_return;
+        }
+
+        url_res = update_url(
+          _parsed_jwks_url, metadata.assume_value().jwks_uri());
+        if (url_res.has_error()) {
+            co_await return_exception(
+              url_res.assume_error(),
+              "Failed to parse jwkk_uri: {}",
+              metadata.assume_value().jwks_uri());
         }
 
         _issuer.emplace(metadata.assume_value().issuer());
-        _jwks_url.emplace(metadata.assume_value().jwks_uri());
     }
 
     ss::future<> update_jwks() {
-        if (!_jwks_url.has_value()) {
-            vlog(seclog.warn, "jwks_uri is not set");
-            co_return;
+        if (!_parsed_jwks_url.has_value()) {
+            co_await return_exception(
+              errc::metadata_invalid, "jwks_uri is not set");
         }
 
-        auto response_body = co_await make_request(*_jwks_url);
-        auto jwks = oidc::jwks::make(response_body);
+        auto response_body = co_await ss::coroutine::as_future(
+          make_request(*_parsed_jwks_url));
+        if (response_body.failed()) {
+            co_await return_exception(
+              errc::metadata_invalid,
+              "Failed to retrieve jwks: {}, error: {}",
+              *_parsed_jwks_url,
+              response_body.get_exception());
+        }
+
+        auto jwks = oidc::jwks::make(response_body.get());
         if (jwks.has_error()) {
-            vlog(
-              seclog.warn,
-              "invalid response from jwks_uri: {}, errc: {}",
-              *_jwks_url,
-              jwks.assume_error().message());
-            co_return;
+            co_await return_exception(
+              jwks.assume_error(),
+              "Invalid response from jwks_uri: {}",
+              *_parsed_jwks_url);
         }
 
-        _jwks.emplace(std::move(jwks).assume_value());
+        auto res = _verifier.update_keys(std::move(jwks).assume_value());
+        if (res.has_error()) {
+            co_await return_exception(
+              res.assume_error(), "Error updating keys");
+        }
     }
 
     void update_rule() {
@@ -160,12 +188,7 @@ struct service::impl {
         }
     }
 
-    ss::future<ss::sstring> make_request(std::string_view url_view) {
-        auto url_res = security::oidc::parse_url(url_view);
-        if (url_res.has_error()) {
-            throw std::runtime_error("Invalid url");
-        }
-        auto url = std::move(url_res).assume_value();
+    ss::future<ss::sstring> make_request(parsed_url url) {
         auto is_https = url.scheme == "https";
         std::optional<ss::sstring> tls_host;
         if (is_https) {
@@ -230,9 +253,9 @@ struct service::impl {
     config::binding<std::chrono::seconds> _clock_skew_tolerance;
     config::binding<ss::sstring> _mapping;
     principal_mapping_rule _rule;
+    std::optional<parsed_url> _parsed_discovery_url;
+    std::optional<parsed_url> _parsed_jwks_url;
     std::optional<ss::sstring> _issuer;
-    std::optional<ss::sstring> _jwks_url;
-    std::optional<oidc::jwks> _jwks;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
 };
 
