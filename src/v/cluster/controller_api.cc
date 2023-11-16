@@ -149,12 +149,23 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     co_return co_await get_reconciliation_state(std::move(ntps));
 }
 
-ss::future<ss::chunked_fifo<controller_backend::delta_metadata>>
-controller_api::get_remote_core_deltas(model::ntp ntp, ss::shard_id shard) {
-    return _backend.invoke_on(
+ss::future<std::optional<backend_operation>>
+controller_api::get_current_op(model::ntp ntp, ss::shard_id shard) {
+    auto cur_op = co_await _backend.invoke_on(
       shard, [ntp = std::move(ntp)](controller_backend& backend) {
-          return backend.list_ntp_deltas(ntp);
+          return backend.get_current_op(ntp);
       });
+    if (cur_op) {
+        co_return backend_operation{
+          .source_shard = shard,
+          .p_as = std::move(cur_op->assignment),
+          .type = cur_op->type,
+          .current_retry = cur_op->retries,
+          .last_operation_result = cur_op->last_error,
+          .revision_of_operation = cur_op->revision,
+        };
+    }
+    co_return std::nullopt;
 }
 
 ss::future<ntp_reconciliation_state>
@@ -174,26 +185,9 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
     ss::chunked_fifo<backend_operation> ops;
     const auto shards = boost::irange<ss::shard_id>(0, ss::smp::count);
     for (auto shard : shards) {
-        auto local_deltas = co_await get_remote_core_deltas(ntp, shard);
-        for (auto& m : local_deltas) {
-            auto assignment = ss::visit(
-              m.delta.get_data(),
-              [](delta_reconfiguration_data& data) {
-                  return std::move(data.target_assignment);
-              },
-              [](delta_finish_update_data& data) {
-                  return std::move(data.target_assignment);
-              },
-              [](auto&) { return partition_assignment{}; });
-
-            ops.push_back(backend_operation{
-              .source_shard = shard,
-              .p_as = std::move(assignment),
-              .type = m.delta.type(),
-              .current_retry = m.retries,
-              .last_operation_result = m.last_error,
-              .revision_of_operation = m.delta.revision(),
-            });
+        auto shard_op = co_await get_current_op(ntp, shard);
+        if (shard_op) {
+            ops.push_back(std::move(*shard_op));
         }
     }
 
