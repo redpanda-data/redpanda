@@ -1,207 +1,238 @@
+// Copyright 2023 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package partitions
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
-	"github.com/docker/go-units"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/types"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
-func newListPartitionMovementsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		completion       int
-		all              bool
-		human            bool
-		partitions       []string
-		response         []adminapi.ReconfigurationsResponse
-		filteredResponse []adminapi.ReconfigurationsResponse
+		all             bool
+		disabledOnly    bool
+		partitions      []int
+		logFallbackOnce sync.Once
 	)
 	cmd := &cobra.Command{
-		Use:   "move-status",
-		Short: "Show ongoing partition movements",
-		Long:  helpListMovement,
+		Use:     "list [TOPICS...]",
+		Aliases: []string{"ls", "describe"},
+		Short:   "List partitions in the cluster",
+		Long: `List partitions in the cluster
+
+This commands lists the cluster-level metadata of all partitions in the cluster.
+It shows the current replica assignments on both brokers and CPU cores for given
+topics. By default, it assumes the "kafka" namespace, but you can specify an
+internal namespace using the "{namespace}/" prefix.
+
+The REPLICA-CORE column displayed in the output table contains a list of
+replicas assignments in the form of: <Node-ID>-<Core>.
+
+If the DISABLED column contains a '-' value, then it means you are running this
+command against a cluster that does not support the underlying API.
+
+EXAMPLES
+
+List all partitions in the cluster.
+  rpk cluster partitions list --all
+
+List all partitions in the cluster, filtering for topic foo and bar.
+  rpk cluster partitions list foo bar
+
+List only the disabled partitions.
+  rpk cluster partitions list -a --disabled-only
+
+List all in json format.
+  rpk cluster partition list -a --format json
+`,
 		Run: func(cmd *cobra.Command, topics []string) {
+			f := p.Formatter
+			if h, ok := f.Help([]adminapi.ClusterPartition{}); ok {
+				out.Exit(h)
+			}
+			if len(topics) == 0 && !all {
+				cmd.Help()
+				return
+			}
+			if len(topics) > 0 && all {
+				out.Die("flag '--all' cannot be used with topic filters.\n%v", cmd.UsageString())
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			out.CheckExitCloudAdmin(p)
 
-			// If partition(s) is specified but no topic(s) is specified, exit.
-			if len(topics) <= 0 && len(partitions) > 0 {
-				out.Die("specify at least one topic when --partition is used, exiting.")
-			}
-
 			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			response, err = cl.Reconfigurations(cmd.Context())
-			out.MaybeDie(err, "unable to list partition movements: %v\n", err)
-
-			if len(response) == 0 {
-				out.Exit("There are no ongoing partition movements.")
-			}
-
-			for _, t := range topics {
-				nt := strings.Split(t, "/")
-				if len(nt) > 2 {
-					fmt.Printf("invalid format for topic %s, skipping.\n", t)
-					continue
+			var clusterPartitions []adminapi.ClusterPartition
+			var mu sync.Mutex
+			if len(topics) == 0 && all {
+				clusterPartitions, err = cl.AllClusterPartitions(cmd.Context(), true, disabledOnly)
+				// If the admin API returns a 404, most likely rpk is talking
+				// with an old cluster.
+				if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+					if he.Response.StatusCode == http.StatusNotFound {
+						out.Die("unable to query all partitions in the cluster: %vYou may need to upgrade the cluster to access this feature or try listing per-topic with: 'rpk cluster partition list [TOPICS...]'", err)
+					}
 				}
-				for _, r := range response {
-					isKafkaNs := len(nt) == 1 && r.Ns == "kafka" && r.Topic == t
-					isInternalNs := len(nt) == 2 && r.Ns == nt[0] && r.Topic == nt[1]
-
-					if isKafkaNs || isInternalNs {
-						if len(partitions) == 0 || contains(partitions, strconv.Itoa(r.PartitionID)) {
-							filteredResponse = append(filteredResponse, r)
+				out.MaybeDie(err, "unable to query all partitions in the cluster: %v", err)
+			} else {
+				g, egCtx := errgroup.WithContext(cmd.Context())
+				for _, topic := range topics {
+					if topic == "" {
+						out.Die("invalid empty topic\n%v", cmd.UsageString())
+					}
+					ns, topicName := nsTopic(topic)
+					g.Go(func() error {
+						cPartition, err := cl.TopicClusterPartitions(egCtx, ns, topicName, disabledOnly)
+						if err != nil {
+							// If the admin API returns a 404, most likely rpk
+							// is talking with an old cluster.
+							var he *adminapi.HTTPResponseError
+							isNotFoundErr := errors.As(err, &he) && he.Response.StatusCode == http.StatusNotFound
+							if !isNotFoundErr {
+								return fmt.Errorf("unable to query cluster partition metadata of topic %q: %v", topicName, err)
+							}
+							logFallbackOnce.Do(func() {
+								if disabledOnly {
+									zap.L().Sugar().Warn("Admin API 'GET /v1/cluster/partitions' returned 404, trying now with 'GET /v1/partitions'; --disabled-only flag is not supported in this API version")
+								} else {
+									zap.L().Sugar().Warn("Admin API 'GET /v1/cluster/partitions' returned 404, trying now with 'GET /v1/partitions'")
+								}
+							})
+							cPartition, err = topicPartitions(egCtx, cl, ns, topicName)
+							if err != nil {
+								return err
+							}
 						}
-					}
+						mu.Lock()
+						clusterPartitions = append(clusterPartitions, cPartition...)
+						mu.Unlock()
+						return nil
+					})
 				}
+				err := g.Wait()
+				out.MaybeDieErr(err)
 			}
-			if len(filteredResponse) > 0 {
-				response = filteredResponse
+			if partitions != nil {
+				clusterPartitions = filterPartition(clusterPartitions, partitions)
 			}
-
-			sizeFn := func(size int) string {
-				if human {
-					return units.HumanSize(float64(size))
-				}
-				return strconv.Itoa(size)
-			}
-
-			f := func(rr *adminapi.ReconfigurationsResponse) interface{} {
-				var (
-					newReplica []int
-					oldReplica []int
-				)
-				nt := rr.Ns + "/" + rr.Topic
-				if rr.PartitionSize > 0 {
-					completion = rr.BytesMoved * 100 / rr.PartitionSize
-				}
-				for _, r := range rr.NewReplicas {
-					newReplica = append(newReplica, r.NodeID)
-				}
-				for _, r := range rr.PreviousReplicas {
-					oldReplica = append(oldReplica, r.NodeID)
-				}
-				return struct {
-					NT             string
-					PartitionID    int
-					MovingFrom     []int
-					MovingTo       []int
-					Completion     int
-					PartitionSize  string
-					BytesMoved     string
-					BytesRemaining string
-				}{
-					nt,
-					rr.PartitionID,
-					oldReplica,
-					newReplica,
-					completion,
-					sizeFn(rr.PartitionSize),
-					sizeFn(rr.BytesMoved),
-					sizeFn(rr.BytesLeft),
-				}
-			}
-
-			types.Sort(response)
-
-			const (
-				secMove      = "Partition movements"
-				secReconcile = "Reconciliation statuses"
-			)
-			sections := out.NewSections(
-				out.ConditionalSectionHeaders(map[string]bool{
-					secMove:      true, // we always print this section
-					secReconcile: all,  // we only print this section if -a is passed
-				})...,
-			)
-			sections.Add(secMove, func() {
-				headers := []string{"Namespace-Topic", "Partition", "Moving-from", "Moving-to", "Completion-%", "Partition-size", "Bytes-moved", "Bytes-remaining"}
-				tw := out.NewTable(headers...)
-				defer tw.Flush()
-				for _, tps := range response {
-					tw.PrintStructFields(f(&tps))
-				}
-			})
-
-			sections.Add(secReconcile, func() {
-				var j int
-				for _, p := range response {
-					fmt.Printf("%s\n", p.Ns+"/"+p.Topic+"/"+strconv.Itoa(p.PartitionID))
-					headers := []string{"Node-id", "Core", "Type", "Retry-number", "Revision", "Status"}
-					tw := out.NewTable(headers...)
-					for _, rs := range p.ReconciliationStatuses {
-						var row []interface{}
-						row = append(row, rs.NodeID)
-						for _, s := range rs.Operations {
-							row = append(row, s.Core, s.Type, s.RetryNumber, s.Revision, s.Status)
-						}
-						tw.Print(row...)
-					}
-					tw.Flush()
-					j++
-					if j < len(response) {
-						fmt.Println()
-					}
-				}
-			})
+			printClusterPartitions(f, clusterPartitions)
 		},
 	}
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, list all partitions in the cluster")
+	cmd.Flags().BoolVar(&disabledOnly, "disabled-only", false, "If true, list disabled partitions only")
+	cmd.Flags().IntSliceVarP(&partitions, "partition", "p", nil, "List of comma-separated partitions IDs that you wish to filter the results with")
 
-	cmd.Flags().BoolVarP(&all, "print-all", "a", false, "Print internal states about movements for debugging")
-	cmd.Flags().BoolVarP(&human, "human-readable", "H", false, "Print the partition size in a human-readable form")
-	cmd.Flags().StringSliceVarP(&partitions, "partition", "p", nil, "Partitions to print the ongoing movements (repeatable)")
-
+	p.InstallFormatFlag(cmd)
 	return cmd
 }
 
-// This function returns true when a partition that movement is
-// ongoing is a requested partition by the --partition option.
-func contains(pReq []string, pRes string) bool {
-	for _, p := range pReq {
-		if p == pRes {
-			return true
-		}
+func printClusterPartitions(f config.OutFormatter, clusterPartitions []adminapi.ClusterPartition) {
+	types.Sort(clusterPartitions)
+	if isText, _, formatted, err := f.Format(clusterPartitions); !isText {
+		out.MaybeDie(err, "unable to print partitions in the required format %q: %v", f.Kind, err)
+		fmt.Println(formatted)
+		return
 	}
-	return false
+	tw := out.NewTable("NAMESPACE", "TOPIC", "PARTITION", "LEADER-ID", "REPLICA-CORE", "DISABLED")
+	defer tw.Flush()
+	for _, p := range clusterPartitions {
+		var leader, disabled string
+		var replicas []string
+		if p.LeaderID == nil {
+			leader = "-"
+		} else {
+			leader = strconv.Itoa(*p.LeaderID)
+		}
+		if p.Disabled == nil {
+			disabled = "-"
+		} else {
+			disabled = strconv.FormatBool(*p.Disabled)
+		}
+
+		for _, r := range p.Replicas {
+			replicas = append(replicas, fmt.Sprintf("%v-%v", r.NodeID, r.Core))
+		}
+		tw.PrintStructFields(struct {
+			Namespace string
+			Topic     string
+			Partition int
+			LeaderID  string
+			Replicas  []string
+			Disabled  string
+		}{p.Ns, p.Topic, p.PartitionID, leader, replicas, disabled})
+	}
 }
 
-const helpListMovement = `Show ongoing partition movements.
+// nsTopic splits a topic string consisting of <namespace>/<topicName> and
+// returns each component, if the namespace is not specified, returns 'kafka'.
+func nsTopic(nst string) (namespace string, topic string) {
+	nsTopic := strings.SplitN(nst, "/", 2)
+	if len(nsTopic) == 1 {
+		namespace = "kafka"
+		topic = nsTopic[0]
+	} else {
+		namespace = nsTopic[0]
+		topic = nsTopic[1]
+	}
+	return namespace, topic
+}
 
-By default this command lists all the ongoing partition movements in the cluster.
-Topics can be specified to print the move status of specific topics. By default,
-this command assumes the "kafka" namespace, but you can use a "namespace/" to
-specify internal namespaces.
+// topicPartitions query the old v1/partitions/ endpoint and parse the result to
+// the newer /v1/cluster/partitions format.
+func topicPartitions(ctx context.Context, cl *adminapi.AdminAPI, ns, topicName string) ([]adminapi.ClusterPartition, error) {
+	var ret []adminapi.ClusterPartition
+	tPartitions, err := cl.GetTopic(ctx, ns, topicName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query partition metadata of topic %q: %v", topicName, err)
+	}
+	for _, tp := range tPartitions {
+		tp := tp
+		ret = append(ret, adminapi.ClusterPartition{
+			Ns:          tp.Namespace,
+			Topic:       tp.Topic,
+			PartitionID: tp.PartitionID,
+			LeaderID:    &tp.LeaderID,
+			Replicas:    tp.Replicas,
+			Disabled:    nil, // Just to be explicit, old /v1/partitions did not contain any info on disabled.
+		})
+	}
+	return ret, nil
+}
 
-    rpk cluster partitions move-status
-    rpk cluster partitions move-status foo bar kafka_internal/tx
-
-The "--partition / -p" flag can be used with topics to additional filter
-requested partitions:
-
-    rpk cluster partitions move-status foo bar --partition 0,1,2
-
-The output contains the following columns, where PARTITION-SIZE is in bytes.
-Using -H, it prints the partition size in a human-readable format
-
-    NAMESPACE-TOPIC
-    PARTITION
-    MOVING-FROM
-    MOVING-TO
-    COMPLETION-%
-    PARTITION-SIZE
-    BYTES-MOVED
-    BYTES-REMAINING
-
-Using "--print-all / -a" the command additionally prints "RECONCILIATION STATUSES"
-which reveals internal states on how the ongoing reconciliations work for debugging
-purposes. That is, reported errors don't necessarily mean real problems.
-`
+// filterPartition filters cPartitions and returns a slice with only the
+// clusterPartitions with ID present in the partitions slice.
+func filterPartition(cPartitions []adminapi.ClusterPartition, partitions []int) (ret []adminapi.ClusterPartition) {
+	pm := make(map[int]bool, 0)
+	for _, p := range partitions {
+		pm[p] = true
+	}
+	for _, c := range cPartitions {
+		if pm[c.PartitionID] {
+			ret = append(ret, c)
+		}
+	}
+	return
+}
