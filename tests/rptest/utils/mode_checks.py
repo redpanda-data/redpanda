@@ -1,6 +1,7 @@
-import functools
+import os
 
 from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.mark import ignore
 
 
 def allocate_and_free(cluster, logger):
@@ -33,33 +34,35 @@ def cleanup_on_early_exit(caller):
         allocate_and_free(test_context.cluster, caller.logger)
 
 
-def skip_debug_mode(func):
+def is_debug_mode():
+    return os.environ.get('BUILD_TYPE', None) == 'debug'
+
+
+def skip_debug_mode(*args, **kwargs):
     """
-    Decorator applied to a test class method. The property `debug_mode` should be present
-    on the object.
+    Test method decorator which signals to the test runner to ignore a given test.
 
-    If set to true, the wrapped function call is skipped, and a cleanup action
-    is performed instead.
+    Example::
 
-    If set to false, the wrapped function (usually a test case) is called.
+        When no parameters are provided to the @ignore decorator, ignore all parametrizations of the test function
+
+        @skip_debug_mode  # Ignore all parametrizations
+        @parametrize(x=1, y=0)
+        @parametrize(x=2, y=3)
+        def the_test(...):
+            ...
+
+    Example::
+
+        If parameters are supplied to the @skip_debug_mode decorator, only skip the parametrization with matching parameter(s)
+
+        @skip_debug_mode(x=2, y=3)
+        @parametrize(x=1, y=0)  # This test will run as usual
+        @parametrize(x=2, y=3)  # This test will be ignored
+        def the_test(...):
+            ...
     """
-    @functools.wraps(func)
-    def f(*args, **kwargs):
-        assert args, 'skip_debug_mode must be placed on a test method in a class'
-
-        caller = args[0]
-
-        assert hasattr(
-            caller, 'debug_mode'
-        ), 'skip_debug_mode called on object which does not have debug_mode attribute'
-        assert hasattr(
-            caller,
-            'logger'), 'skip_debug_mode called on object which has no logger'
-        if caller.debug_mode:
-            caller.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            cleanup_on_early_exit(caller)
-            return None
-        return func(*args, **kwargs)
-
-    return f
+    if is_debug_mode():
+        return ignore(args, kwargs)
+    else:
+        return args[0]
