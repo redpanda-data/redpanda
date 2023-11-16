@@ -85,8 +85,14 @@ struct reconfiguration_test
     auto make_random_batches() {
         return make_batches(
           random_generators::get_int(100, 500), [](size_t b_idx) {
+              /**
+               * Use archival metadata batches to populate offset translator
+               */
+              auto const batch_type = random_generators::random_choice(
+                {model::record_batch_type::raft_data,
+                 model::record_batch_type::archival_metadata});
               storage::record_batch_builder builder(
-                model::record_batch_type::raft_data, model::offset(0));
+                batch_type, model::offset(0));
 
               for (int i = 0; i < random_generators::get_int(1, 10); ++i) {
                   auto r_size = random_generators::get_int<size_t>(32, 1_KiB);
@@ -122,6 +128,35 @@ wait_for_offset(model::offset expected, raft_fixture::raft_nodes_t& nodes) {
         co_await ss::sleep(1s);
     }
     co_return result<model::offset>(raft::errc::timeout);
+}
+
+void assert_offset_translator_state_is_consistent(
+  raft_fixture::raft_nodes_t& nodes) {
+    if (nodes.size() == 1) {
+        return;
+    }
+    model::offset start_offset{};
+    auto first_raft = nodes.begin()->second->raft();
+    model::offset dirty_offset = first_raft->dirty_offset();
+    // get the max start offset
+    for (auto& [id, n] : nodes) {
+        start_offset = std::max(n->raft()->start_offset(), start_offset);
+    }
+    std::vector<int64_t> deltas;
+    for (model::offset o :
+         boost::irange<model::offset>(start_offset, dirty_offset)) {
+        deltas.push_back(first_raft->get_offset_translator_state()->delta(o));
+    }
+
+    for (auto it = std::next(nodes.begin()); it != nodes.end(); ++it) {
+        auto idx = 0;
+        for (model::offset o :
+             boost::irange<model::offset>(start_offset, dirty_offset)) {
+            ASSERT_EQ(
+              it->second->raft()->get_offset_translator_state()->delta(o),
+              deltas[idx++]);
+        }
+    }
 }
 
 TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
@@ -276,6 +311,7 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
             ASSERT_EQ_CORO(n->raft()->start_offset(), learner_start_offset);
         }
     }
+    assert_offset_translator_state_is_consistent(nodes());
 }
 
 INSTANTIATE_TEST_SUITE_P(

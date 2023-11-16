@@ -49,6 +49,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timed_out_error.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/file.hh>
 #include <seastar/util/log.hh>
@@ -497,12 +498,26 @@ ss::future<ss::circular_buffer<model::record_batch>>
 raft_node_instance::read_batches_in_range(
   model::offset min, model::offset max) {
     storage::log_reader_config cfg(min, max, ss::default_priority_class());
-    cfg.type_filter = model::record_batch_type::raft_data;
 
     auto rdr = co_await _raft->make_reader(cfg);
 
-    co_return co_await model::consume_reader_to_memory(
+    auto batches = co_await model::consume_reader_to_memory(
       std::move(rdr), model::no_timeout);
+
+    ss::circular_buffer<model::record_batch> data_batches;
+    data_batches.reserve(batches.size());
+    /**
+     * Filter out raft configurations as when reconfiguring nodes the one
+     * leaving cluster may not have all configuration updates
+     */
+    for (auto& b : batches) {
+        if (b.header().type != model::record_batch_type::raft_configuration) {
+            data_batches.push_back(std::move(b));
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    co_return data_batches;
 }
 
 ss::future<model::offset>
