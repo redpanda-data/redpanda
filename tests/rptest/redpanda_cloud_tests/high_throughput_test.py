@@ -14,6 +14,8 @@ import re
 import time
 import json
 
+from threading import Thread
+
 from ducktape.errors import TimeoutError as TimeoutException
 from ducktape.mark import ignore, ok_to_fail, parametrize
 from ducktape.tests.test import TestContext
@@ -484,6 +486,14 @@ class HighThroughputTest(PreallocNodesTest):
                     _bAlive.append(True if snode.is_alive(node) else False)
             return sum(_bAlive)
 
+        def swarm_start(node):
+            # Simple delay in seconds before start
+            # if delay_sec > 0:
+            #     time.sleep(delay_sec)
+            node.start()
+            self.logger.warn("...started swarm node")
+            return
+
         # Huge timeout for safety, 10 min
         # Most of the tiers will end in <5 min
         # Except for the 5-7 that will take >5 min up to 15 min
@@ -548,14 +558,26 @@ class HighThroughputTest(PreallocNodesTest):
         _total = 0
         connectMax = 0
         _start = time.time()
-        # Current swarm node started
-        idx = 1
-        while idx <= len(swarm):
-            # Start first node
-            self.logger.warn(f"Starting swarm node {idx}")
-            swarm[idx - 1].start()
+        # Swarm nodes will start in reverse order
+        # Original thought was that index will serve as a delay
+        # But that proves unnesessary as threading makes them
+        # all start within a less than a second from each other
+        idx = len(swarm)
+        self.logger.warn(f"Starting {idx} swarm nodes")
+        threads = []
+        while idx > 0:
+            # Create a thread with function that starts a swarm.
+            # Threading here will not block other nodes from starting
+            # No delay or anything needed
+            t = Thread(target=swarm_start, args=(swarm[idx - 1], ))
+            t.start()
+            threads.append(t)
             # Next swarm node
-            idx += 1
+            idx -= 1
+
+        # Sync point for all threads
+        for t in threads:
+            t.join()
 
         # Track Connections
         _now = time.time()
@@ -604,11 +626,11 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.warn(f"Done swarming after {_elapsed}")
 
         # If timeout happen, just kill it
-        self.logger.warn(f"Stopping swarm")
+        self.logger.warn("Stopping swarm")
         for snode in swarm:
             for node in snode.nodes:
                 if snode.is_alive(node):
-                    node.stop()
+                    snode.stop()
 
         # Assert that target connection count is reached
         self.logger.warn(f"Reached {connectMax} of {_target_total} needed")
