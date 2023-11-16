@@ -927,6 +927,59 @@ topics_frontend::partitions_with_lost_majority(
     co_return errc::concurrent_modification_error;
 }
 
+ss::future<std::error_code>
+topics_frontend::force_recover_partitions_from_nodes(
+  std::vector<model::node_id> nodes,
+  fragmented_vector<ntp_with_majority_loss>
+    user_approved_force_recovery_partitions,
+  model::timeout_clock::time_point timeout) {
+    auto result = co_await stm_linearizable_barrier(timeout);
+    if (!result) {
+        co_return result.error();
+    }
+    auto validation_error = _members_table.local().validate_defunct_nodes(
+      nodes, false);
+    if (validation_error) {
+        co_return validation_error;
+    }
+    // check if the state of partitions to recover tallies with their
+    // current state.
+    const auto& topics = _topics.local();
+    auto reject = false;
+    for (const auto& entry : user_approved_force_recovery_partitions) {
+        // check if there is an in progress movemement, reject if so.
+        // this is a conservative check and can be relaxed.
+        auto in_progress_move = topics.is_update_in_progress(entry.ntp);
+        auto current_assignment = topics.get_partition_assignment(entry.ntp);
+        auto assignment_match = current_assignment
+                                && are_replica_sets_equal(
+                                  current_assignment->replicas,
+                                  entry.assignment);
+        if (in_progress_move || !assignment_match) {
+            vlog(
+              clusterlog.info,
+              "rejecting force recovery of partitions from brokers {}, ntp: "
+              "{}, move in progress: {}, expected replica set: {}, current "
+              "assignment: {}, the state may have changed since the original "
+              "request was made, try again.",
+              nodes,
+              entry.ntp,
+              entry.assignment,
+              current_assignment);
+            reject = true;
+        }
+    }
+    if (reject) {
+        co_return errc::invalid_request;
+    }
+    defunct_node_cmd_data data;
+    data.defunct_nodes = std::move(nodes);
+    data.user_approved_force_recovery_partitions = std::move(
+      user_approved_force_recovery_partitions);
+    defunct_nodes_cmd cmd(0, defunct_node_cmd_data(std::move(data)));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+}
+
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
   model::ntp ntp,
   model::timeout_clock::time_point timeout,

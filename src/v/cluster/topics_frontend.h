@@ -98,6 +98,12 @@ public:
     ss::future<result<fragmented_vector<ntp_with_majority_loss>>>
     partitions_with_lost_majority(std::vector<model::node_id> defunct_nodes);
 
+    ss::future<std::error_code> force_recover_partitions_from_nodes(
+      std::vector<model::node_id> nodes,
+      fragmented_vector<ntp_with_majority_loss>
+        user_approved_force_recovery_partitions,
+      model::timeout_clock::time_point timeout);
+
     /**
      * This overload of move_partition_replicas will use the partition
      * allocator to generate a new replica set (i.e., a

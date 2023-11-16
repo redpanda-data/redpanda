@@ -473,7 +473,8 @@ namespace {
  * string-ize any schema errors in the 400 response to help
  * caller see what went wrong.
  */
-void apply_validator(json::validator& validator, json::Document const& doc) {
+void apply_validator(
+  json::validator& validator, json::Document::ValueType const& doc) {
     try {
         json::validate(validator, doc);
     } catch (json::json_validation_error& err) {
@@ -3496,6 +3497,12 @@ void admin_server::register_partition_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           return get_majority_lost_partitions(std::move(req));
       });
+
+    register_route<user>(
+      ss::httpd::partition_json::force_recover_from_nodes,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return force_recover_partitions_from_nodes(std::move(req));
+      });
 }
 namespace {
 ss::httpd::partition_json::partition
@@ -3741,6 +3748,232 @@ admin_server::get_majority_lost_partitions(
           }
           return result;
       }));
+}
+
+namespace {
+
+json::validator make_node_id_array_validator() {
+    const std::string schema = R"(
+    {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    }
+  )";
+    return json::validator(schema);
+}
+
+std::vector<model::node_id>
+parse_node_ids_from_json(const json::Document::ValueType& val) {
+    static thread_local json::validator validator(
+      make_node_id_array_validator());
+    apply_validator(validator, val);
+    std::vector<model::node_id> nodes;
+    for (auto& r : val.GetArray()) {
+        nodes.emplace_back(r.GetInt());
+    }
+    return nodes;
+}
+
+json::validator make_force_recover_partitions_validator() {
+    const std::string schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "defunct_nodes": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "partitions_to_force_recover": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ntp": {
+            "type": "object",
+            "properties": {
+              "ns": {
+                "type": "string"
+              },
+              "topic": {
+                "type": "string"
+              },
+              "partition": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "ns",
+              "topic",
+              "partition"
+            ]
+          },
+          "topic_revision": {
+            "type": "number"
+          },
+          "replicas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "node_id": {
+                  "type": "number"
+                },
+                "core": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "node_id",
+                "core"
+              ]
+            }
+          },
+          "defunct_nodes": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "ntp",
+          "topic_revision",
+          "replicas",
+          "defunct_nodes"
+        ]
+      }
+    }
+  },
+  "required": [
+    "defunct_nodes",
+    "partitions_to_force_recover"
+  ]
+}
+)";
+    return json::validator(schema);
+}
+
+json::validator make_ntp_validator() {
+    const std::string schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "ns": {
+      "type": "string"
+    },
+    "topic": {
+      "type": "string"
+    },
+    "partition": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "ns",
+    "topic",
+    "partition"
+  ]
+}
+)";
+    return json::validator(schema);
+}
+
+model::ntp parse_ntp_from_json(const json::Document::ValueType& value) {
+    static thread_local json::validator validator(make_ntp_validator());
+    apply_validator(validator, value);
+    return {
+      model::ns{value["ns"].GetString()},
+      model::topic(value["topic"].GetString()),
+      model::partition_id(value["partition"].GetInt())};
+}
+
+json::validator make_replicas_validator() {
+    const std::string schema = R"(
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "node_id": {
+        "type": "number"
+      },
+      "core": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "node_id",
+      "core"
+    ]
+  }
+}
+  )";
+    return json::validator(schema);
+}
+
+std::vector<model::broker_shard>
+parse_replicas_from_json(const json::Document::ValueType& value) {
+    static thread_local json::validator validator(make_replicas_validator());
+    apply_validator(validator, value);
+    std::vector<model::broker_shard> replicas;
+    replicas.reserve(value.GetArray().Size());
+    for (auto& r : value.GetArray()) {
+        model::broker_shard bs;
+        bs.node_id = model::node_id(r["node_id"].GetInt());
+        bs.shard = r["core"].GetInt();
+        replicas.push_back(bs);
+    }
+    return replicas;
+}
+
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::force_recover_partitions_from_nodes(
+  std::unique_ptr<ss::http::request> request) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*request, model::controller_ntp);
+    }
+
+    static thread_local json::validator validator(
+      make_force_recover_partitions_validator());
+
+    auto doc = co_await parse_json_body(request.get());
+    apply_validator(validator, doc);
+
+    // parse the json body into a controller command.
+    std::vector<model::node_id> dead_nodes = parse_node_ids_from_json(
+      doc["defunct_nodes"]);
+    fragmented_vector<cluster::ntp_with_majority_loss>
+      partitions_to_force_recover;
+    for (auto& r : doc["partitions_to_force_recover"].GetArray()) {
+        auto ntp = parse_ntp_from_json(r["ntp"]);
+        auto replicas = parse_replicas_from_json(r["replicas"]);
+        auto topic_revision = model::revision_id(
+          r["topic_revision"].GetInt64());
+        auto dead_replicas = parse_node_ids_from_json(r["defunct_nodes"]);
+
+        cluster::ntp_with_majority_loss ntp_entry;
+        ntp_entry.ntp = std::move(ntp);
+        ntp_entry.assignment = std::move(replicas);
+        ntp_entry.topic_revision = topic_revision;
+        ntp_entry.defunct_nodes = std::move(dead_replicas);
+        partitions_to_force_recover.push_back(std::move(ntp_entry));
+    }
+
+    auto ec = co_await _controller->get_topics_frontend()
+                .local()
+                .force_recover_partitions_from_nodes(
+                  std::move(dead_nodes),
+                  std::move(partitions_to_force_recover),
+                  model::timeout_clock::now() + 5s);
+
+    co_await throw_on_error(*request, ec, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
 }
 
 ss::future<ss::json::json_return_type>

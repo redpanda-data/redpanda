@@ -378,6 +378,21 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/partitions/force_recover_from_nodes",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Force recovers partitions from input list of nodes, the nodes are marked defunct and all partitions are moved away from them.",
+                    "type": "void",
+                    "nickname": "force_recover_from_nodes",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
