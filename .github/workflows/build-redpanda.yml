@@ -19,6 +19,7 @@ on:
       - 'CMakeLists.txt'
       - 'CMakePresets.json'
       - 'install-dependencies.sh'
+      - '.github/workflows/build-redpanda.yml'
 
 jobs:
   build:
