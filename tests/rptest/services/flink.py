@@ -2,6 +2,11 @@ import json
 import logging
 import sys
 
+
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.service import Service
+from rptest.util import wait_until_result
+
 from pyflink.common import SimpleStringSchema, WatermarkStrategy
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors import DeliveryGuarantee
@@ -15,6 +20,12 @@ from pyflink.common import Row
 # Get the absolute path to the JAR file
 # jar_path = "file://" + os.path.abspath("../integration-tests/flink-connector-kafka-3.0.1-1.18.jar")
 
+
+class FlinkError(Exception):
+    """Exception used by Flink services
+    """
+    def __init__(self, error):
+        super(FlinkError, self).__init__(error)
 
 # change the output type as specified
 class SumNumbers(FlatMapFunction):
@@ -40,6 +51,22 @@ class SumNumbers(FlatMapFunction):
                   num_b=str(num2),
                   sink_sum=str(sum))
 
+class FlinkServer(Service):
+    """
+        Service used to start and interact with the Flink
+    """
+    def __init__(self, context):
+        super(FlinkServer, self).__init__(context, num_nodes=1)
+
+    def start_flink(self, node):
+        cmd = self._start_cmd()
+        self.logger.debug(f'Starting Flink Server with cmd "{cmd}"')
+        node.account.ssh(cmd, allow_fail=False)
+
+    def stop_flink(self, node):
+        cmd = self._stop_cmd()
+        self.logger.debug(f'Stopping Flink server with cmd "{cmd}"')
+        node.account.ssh(cmd, allow_fail=True)
 
 def flink_job(env):
     # create a RedPanda Source to read data from the input topic

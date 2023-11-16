@@ -6,6 +6,9 @@ from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import ResourceSettings
+from rptest.clients.types import TopicSpec
+from rptest.services.kafka_cli_consumer import KafkaCliConsumer
+from rptest.services.rpk_producer import RpkProducer
 
 # from pyflink.common.serialization import SimpleStringSchema
 # from pyflink.datastream import StreamExecutionEnvironment
@@ -13,28 +16,68 @@ from rptest.services.redpanda import ResourceSettings
 # from pyflink.datastream.connectors.python import StreamingFileSink
 
 # Import the Workload classes
-from lib.workload import Workload, \
+from workload import Workload, \
     NumberIncrementalWorkload  # RealtimeWordCountWorkload, StreamAggregationWorkload, GeospatialDataProcessingWorkload
 
-# class FlinkTest(RedpandaTest):
-#     def __init__(self, test_context):
-#         super(FlinkTest,
-#               self).__init__(test_context=test_context,
-#                              num_brokers=3,
-#                              resource_settings=ResourceSettings(num_cpus=1),
-#                              )
-#
-#     def test_flink_integration(self):
-#         rpk = RpkTool(self.redpanda)
-#         rpk.create_topic("test_topic")
+class FlinkTest(RedpandaTest):
+    def __init__(self, test_ctx,  *args, **kwargs):
+        self._ctx = test_ctx
+        self.producer = None
+        super(FlinkTest, self).__init__(
+            test_ctx,
+            num_brokers=3,
+            *args,
+            **kwargs)
 
-# def test_flink_integration():
-#     redpanda = RedpandaTest()
-#     rpk = RpkTool(redpanda)
-#     rpk.create_topic("test_topic")
-#
-# if __name__ == "__main__":
-#     t=FlinkTest()
+    def create_consumer(self,
+                        topic,
+                        group,
+                        instance_name,
+                        instance_id=None,
+                        consumer_properties={}):
+        return KafkaCliConsumer(
+            self.test_context,
+            self.redpanda,
+            topic=topic,
+            group=group,
+            from_beginning=True,
+            instance_name=instance_name,
+            formatter_properties={
+                'print.value': 'false',
+                'print.key': 'false',
+                'print.partition': 'true',
+                'print.offset': 'true',
+            },
+            consumer_properties=FlinkTest.make_consumer_properties(
+                consumer_properties, instance_id))
+    
+    def create_topic(self, p_cnt):
+        # create topic
+        self.topic_spec = TopicSpec(partition_count=p_cnt,
+                                    replication_factor=3)
+
+        self.client().create_topic(specs=self.topic_spec)
+
+    def start_producer(self, msg_cnt=5000):
+
+        # produce some messages to the topic
+        self.producer = RpkProducer(self._ctx, self.redpanda,
+                                    self.topic_spec.name, 128, msg_cnt, -1)
+        self.producer.start()
+
+    @cluster(num_nodes=3)
+    def test_flink_integration(self):
+        """
+        Test validating that end to end flow of redpanda and flink together
+        """
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic("test_topic")
+
+        redpanda = RedpandaTest()
+        redpanda.si_settings()
+
+        # below code will be uncommented gradually after debugging
+
 '''
 workload = NumberIncrementalWorkload()  # Replace with the desired workload class
 data = workload.generate_data(1000)  # Generate 1000 records by default
