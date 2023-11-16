@@ -64,6 +64,8 @@ constexpr auto request_header_size = sizeof(int16_t) + sizeof(int16_t)
                                      + sizeof(correlation_id::type)
                                      + sizeof(int16_t);
 
+using audit_on_success = ss::bool_class<struct audit_on_success_tag>;
+
 struct request_header {
     api_key key;
     api_version version;
@@ -325,6 +327,32 @@ public:
         return true;
     }
 
+    /**
+     * This function will perform authorization as normal however if
+     * @p audit is false, then successful authz calls will not
+     * be sent to the audit log
+     */
+    template<typename T>
+    bool authorized(
+      security::acl_operation operation,
+      const T& name,
+      audit_on_success audit,
+      authz_quiet quiet = authz_quiet{false}) {
+        auto result = do_authorized(operation, name, quiet);
+
+        auto resp = bool(result);
+        auto key = _header.key;
+        auto client_id = _header.client_id;
+
+        if (audit == audit_on_success::no && resp) {
+            return resp;
+        }
+
+        do_audit(std::move(result), key, client_id);
+
+        return resp;
+    }
+
     template<typename T>
     bool authorized(
       security::acl_operation operation,
@@ -334,31 +362,9 @@ public:
         auto resp = bool(result);
 
         auto key = _header.key;
+        auto client_id = _header.client_id;
 
-        // Not auditing produce authz attempts from audit principal
-        if (skip_auditing(key, result.principal)) [[unlikely]] {
-            return resp;
-        }
-
-        // If we have reached this point, handler_for_key should already be
-        // returning a value.  The only situations where it won't would be
-        // in unit tests, so this is a "smoke test" to ensure that unit tests
-        // correctly set up the `_header` member of `request_context`
-        auto operation_name = handler_for_key(key).value()->name();
-
-        if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
-              key,
-              operation_name,
-              std::move(result),
-              _conn->local_address(),
-              _conn->server().name(),
-              _conn->client_host(),
-              _conn->client_port(),
-              _header.client_id)) {
-            _audit_successful = false;
-            vlog(klog.error, "Failed to append authz event to audit log");
-        }
-
+        do_audit(std::move(result), key, client_id);
         return resp;
     }
 
@@ -428,6 +434,33 @@ private:
             }
         }
         return _conn->authorized(operation, name, quiet);
+    }
+    void do_audit(
+      security::auth_result&& auth_result,
+      api_key key,
+      std::optional<std::string_view> client_id) {
+        if (skip_auditing(key, auth_result.principal)) [[unlikely]] {
+            return;
+        }
+
+        // If we have reached this point, handler_for_key should already be
+        // returning a value.  The only situations where it won't would be
+        // in unit tests, so this is a "smoke test" to ensure that unit tests
+        // correctly set up the `_header` member of `request_context`
+        auto operation_name = handler_for_key(key).value()->name();
+
+        if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
+              key,
+              operation_name,
+              std::move(auth_result),
+              _conn->local_address(),
+              _conn->server().name(),
+              _conn->client_host(),
+              _conn->client_port(),
+              client_id)) {
+            _audit_successful = false;
+            vlog(klog.error, "Failed to append authz event to audit log");
+        }
     }
     template<typename ResponseType>
     void update_usage_stats(const ResponseType& r, size_t response_size) {
