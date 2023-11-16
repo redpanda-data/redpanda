@@ -632,27 +632,8 @@ ss::future<compaction_result> self_compact_segment(
 
     vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
 
-    switch (state) {
-    case compacted_index::recovery_state::already_compacted: {
-        vlog(gclog.debug, "detected {} is already compacted", idx_path);
-        s->mark_as_finished_self_compaction();
-        co_return compaction_result{s->size_bytes()};
-    }
-    case compacted_index::recovery_state::index_recovered: {
-        auto sz_before = s->size_bytes();
-        auto sz_after = co_await do_self_compact_segment(
-          s, cfg, pb, readers_cache, resources, apply_offset);
-        // compaction wasn't executed, return
-        if (!sz_after) {
-            co_return compaction_result(sz_before);
-        }
-        pb.segment_compacted();
-        s->mark_as_finished_self_compaction();
-        co_return compaction_result(sz_before, *sz_after);
-    }
-    case compacted_index::recovery_state::index_missing:
-        [[fallthrough]];
-    case compacted_index::recovery_state::index_needs_rebuild: {
+    while (state == compacted_index::recovery_state::index_needs_rebuild
+           || state == compacted_index::recovery_state::index_missing) {
         vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
         pb.corrupted_compaction_index();
         auto h = co_await s->read_lock();
@@ -671,11 +652,27 @@ ss::future<compaction_result> self_compact_segment(
           gclog.info,
           "rebuilt index: {}, attempting compaction again",
           idx_path);
-        co_return co_await self_compact_segment(
-          s, stm_manager, cfg, pb, readers_cache, resources, apply_offset);
+        state = co_await detect_compaction_index_state(idx_path, cfg);
     }
+    if (state == compacted_index::recovery_state::already_compacted) {
+        vlog(gclog.debug, "detected {} is already compacted", idx_path);
+        s->mark_as_finished_self_compaction();
+        co_return compaction_result{s->size_bytes()};
     }
-    __builtin_unreachable();
+    vassert(
+      state == compacted_index::recovery_state::index_recovered,
+      "Unexpected state {}",
+      int(state));
+    auto sz_before = s->size_bytes();
+    auto sz_after = co_await do_self_compact_segment(
+      s, cfg, pb, readers_cache, resources, apply_offset);
+    // compaction wasn't executed, return
+    if (!sz_after) {
+        co_return compaction_result(sz_before);
+    }
+    pb.segment_compacted();
+    s->mark_as_finished_self_compaction();
+    co_return compaction_result(sz_before, *sz_after);
 }
 
 ss::future<
