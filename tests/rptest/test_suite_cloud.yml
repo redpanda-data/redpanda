@@ -14,3 +14,5 @@ cloud:
     - tests/rpk_topic_test.py::RpkToolTest.test_consume_from_partition
     - tests/services_self_test.py::SimpleSelfTest
     - tests/services_self_test.py::OpenBenchmarkSelfTest
+  excluded:
+    - redpanda_cloud_tests/omb_validation_test.py
