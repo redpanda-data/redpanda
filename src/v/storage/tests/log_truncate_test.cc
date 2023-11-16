@@ -16,14 +16,18 @@
 #include "storage/segment.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/types.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
 #include <boost/range/iterator_range_core.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
+#include <exception>
 #include <iostream>
 #include <iterator>
 #include <numeric>
@@ -552,6 +556,98 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(
       (*log->segments().begin())->offsets().base_offset,
       log->offsets().start_offset);
+}
+
+FIXTURE_TEST(test_concurrent_truncate_and_compaction, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    auto overrides = std::make_unique<storage::ntp_config::default_overrides>();
+    overrides->cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp, mgr.config().base_dir, std::move(overrides)))
+                 .get();
+    for (int seg = 0; seg < 2; seg++) {
+        for (int i = 0; i < 5; i++) {
+            append_random_batches(log, 1, model::term_id(0));
+        }
+        log->flush().get();
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    auto all_batches = read_and_validate_all_batches(log);
+    auto truncate_idx = random_generators::get_int(
+      0, int(all_batches.size() - 1));
+    auto truncate_offset = all_batches[truncate_idx].base_offset();
+
+    // Truncation deletes the compacted index of already compacted segments.
+    // so start out by compacting our segments. We'll use adjacent merge
+    // compaction, which initially self compacts one segment at a time, while
+    // leaving room for further windowed compaction.
+    ss::abort_source as;
+    compaction_config compaction_cfg(
+      model::offset::max(), ss::default_priority_class(), as);
+    auto& disk_log = *dynamic_cast<disk_log_impl*>(log.get());
+    disk_log.adjacent_merge_compact(compaction_cfg).get();
+    disk_log.adjacent_merge_compact(compaction_cfg).get();
+    for (const auto& s : log->segments()) {
+        if (s->has_appender()) {
+            continue;
+        }
+        BOOST_REQUIRE(!s->finished_windowed_compaction());
+        BOOST_REQUIRE(s->finished_self_compaction());
+        BOOST_REQUIRE(s->is_compacted_segment());
+    }
+
+    // Now race windowed compaction and truncation.
+    auto ts = now();
+    auto sleep_ms1 = random_generators::get_int(0, 100);
+    housekeeping_config housekeeping_cfg(
+      ts, std::nullopt, model::offset::max(), ss::default_priority_class(), as);
+    auto f1 = ss::sleep(sleep_ms1 * 1ms).then([&] {
+        return log->housekeeping(housekeeping_cfg);
+    });
+    auto sleep_ms2 = random_generators::get_int(0, 100);
+    auto f2 = ss::sleep(sleep_ms2 * 1ms).then([&] {
+        return log->truncate(truncate_config{
+          model::offset{truncate_offset}, ss::default_priority_class()});
+    });
+
+    std::exception_ptr housekeeping_eptr;
+    std::exception_ptr truncation_eptr;
+    try {
+        f1.get();
+    } catch (...) {
+        housekeeping_eptr = std::current_exception();
+        info("Housekeeping error: {}", housekeeping_eptr);
+    }
+    try {
+        f2.get();
+    } catch (...) {
+        truncation_eptr = std::current_exception();
+        info("Truncation error: {}", truncation_eptr);
+    }
+    if (housekeeping_eptr) {
+        BOOST_REQUIRE_THROW(
+          std::rethrow_exception(housekeeping_eptr),
+          storage::segment_closed_exception);
+    }
+    BOOST_REQUIRE(!truncation_eptr);
+
+    // Previously, the above race could result in subsequent windowed
+    // compactions not completing.
+    log->housekeeping(housekeeping_cfg).get();
+    for (const auto& s : log->segments()) {
+        info("Resulting segment: {}", s);
+        if (s->has_appender()) {
+            continue;
+        }
+        BOOST_REQUIRE(s->finished_windowed_compaction());
+    }
 }
 
 FIXTURE_TEST(
