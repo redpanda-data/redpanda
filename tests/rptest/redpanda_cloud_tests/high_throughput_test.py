@@ -626,11 +626,11 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.warn(f"Done swarming after {_elapsed}")
 
         # If timeout happen, just kill it
-        self.logger.warn(f"Stopping swarm")
+        self.logger.warn("Stopping swarm")
         for snode in swarm:
             for node in snode.nodes:
                 if snode.is_alive(node):
-                    node.stop()
+                    snode.stop()
 
         # Assert that target connection count is reached
         self.logger.warn(f"Reached {connectMax} of {_target_total} needed")
