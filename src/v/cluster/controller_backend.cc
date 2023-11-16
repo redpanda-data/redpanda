@@ -633,9 +633,8 @@ controller_backend::calculate_learner_initial_offset(
         return std::nullopt;
     }
 
-    const auto last_uploaded_to_cloud
-      = p->archival_meta_stm()->manifest().get_last_offset();
-
+    auto const cloud_storage_safe_offset
+      = p->archival_meta_stm()->max_collectible_offset();
     /**
      * Last offset uploaded to the cloud is target learner retention upper
      * bound. We can not start retention recover from the point which is not yet
@@ -643,13 +642,16 @@ controller_backend::calculate_learner_initial_offset(
      */
     vlog(
       clusterlog.trace,
-      "[{}] calculated retention offset: {}, last uploaded to cloud: {}",
+      "[{}] calculated retention offset: {}, last uploaded to cloud: {}, "
+      "manifest clean offset: {}, max_collectible_offset: {}",
       p->ntp(),
       *retention_offset,
-      last_uploaded_to_cloud);
+      p->archival_meta_stm()->manifest().get_last_offset(),
+      p->archival_meta_stm()->get_last_clean_at(),
+      cloud_storage_safe_offset);
 
     return model::next_offset(
-      std::min(last_uploaded_to_cloud, *retention_offset));
+      std::min(cloud_storage_safe_offset, *retention_offset));
 }
 
 ss::future<> controller_backend::do_bootstrap() {
