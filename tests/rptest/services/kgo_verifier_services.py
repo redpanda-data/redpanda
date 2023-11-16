@@ -549,12 +549,14 @@ class KgoVerifierProducer(KgoVerifierService):
         if not self._status_thread:
             return True
 
-        self.logger.debug(f"{self.who_am_i()} wait: awaiting message count")
+        what = f"{self.who_am_i()} wait: awaiting message count"
+        self.logger.debug(what)
         try:
             self._redpanda.wait_until(lambda: self._status_thread.errored or
                                       self._status.acked >= self._msg_count,
                                       timeout_sec=timeout_sec,
-                                      backoff_sec=self._status_thread.INTERVAL)
+                                      backoff_sec=self._status_thread.INTERVAL,
+                                      err_msg=what)
         except:
             self.stop_node(node)
             raise

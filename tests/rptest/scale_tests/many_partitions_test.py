@@ -1064,7 +1064,10 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"Waiting for {repeater_await_msgs} messages in {t} seconds"
                 )
                 t1 = time.time()
-                repeater.await_progress(repeater_await_msgs, t)
+                repeater.await_progress(
+                    repeater_await_msgs,
+                    t,
+                    err_msg=f"Waiting for repeater messages")
                 t2 = time.time()
 
                 # This is approximate, because await_progress isn't returning the very
@@ -1099,7 +1102,9 @@ class ManyPartitionsTest(PreallocNodesTest):
             t1 = time.time()
             initial_p, _ = repeater.total_messages()
             try:
-                repeater.await_progress(soak_await_msgs, soak_timeout)
+                repeater.await_progress(soak_await_msgs,
+                                        soak_timeout,
+                                        err_msg="Waiting for traffic soak")
             except TimeoutError:
                 t2 = time.time()
                 final_p, _ = repeater.total_messages()
