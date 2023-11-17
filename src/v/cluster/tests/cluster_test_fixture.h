@@ -264,6 +264,10 @@ public:
     }
 
 protected:
+    redpanda_thread_fixture* instance(model::node_id id) {
+        return _instances[id].get();
+    }
+
     scheduling_groups _sgroups;
 
 private:
