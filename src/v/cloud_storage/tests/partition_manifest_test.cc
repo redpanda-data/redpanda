@@ -1404,14 +1404,14 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_kafka_offset_advance) {
 
     BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(80)));
     BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset_override(), kafka::offset(80));
-    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), model::offset(0));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(0));
     BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(0));
 
     // Moving the start offset ahead of the kafka override removes the
     // override.
     BOOST_REQUIRE(m.advance_start_offset(model::offset(100)));
     BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset_override(), kafka::offset{});
-    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), model::offset(90));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(90));
     BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
 
     BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(180)));

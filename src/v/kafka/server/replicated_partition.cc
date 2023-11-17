@@ -180,7 +180,7 @@ replicated_partition::aborted_transactions_remote(
 bool replicated_partition::may_read_from_cloud(kafka::offset start_offset) {
     return _partition->is_remote_fetch_enabled()
            && _partition->cloud_data_available()
-           && (start_offset < _translator->from_log_offset(_partition->raft_start_offset()));
+           && (start_offset < model::offset_cast(_translator->from_log_offset(_partition->raft_start_offset())));
 }
 
 ss::future<std::vector<cluster::rm_stm::tx_range>>

@@ -929,19 +929,22 @@ FIXTURE_TEST(
     BOOST_REQUIRE(first_term_query.has_value());
     BOOST_REQUIRE(first_term_query.value().has_value());
     BOOST_REQUIRE_EQUAL(
-      first_term_query.value().value(), first_term_last_offset);
+      kafka::offset_cast(first_term_query.value().value()),
+      first_term_last_offset);
 
     auto second_term_query = view.get_term_last_offset(model::term_id{2}).get();
     BOOST_REQUIRE(second_term_query.has_value());
     BOOST_REQUIRE(second_term_query.value().has_value());
     BOOST_REQUIRE_EQUAL(
-      second_term_query.value().value(), second_term_last_offset);
+      kafka::offset_cast(second_term_query.value().value()),
+      second_term_last_offset);
 
     auto third_term_query = view.get_term_last_offset(model::term_id{3}).get();
     BOOST_REQUIRE(third_term_query.has_value());
     BOOST_REQUIRE(third_term_query.value().has_value());
     BOOST_REQUIRE_EQUAL(
-      third_term_query.value().value(), third_term_last_offset);
+      kafka::offset_cast(third_term_query.value().value()),
+      third_term_last_offset);
 
     auto future_term_query
       = view.get_term_last_offset(model::term_id{100}).get();
