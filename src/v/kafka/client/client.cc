@@ -243,7 +243,7 @@ ss::future<produce_response> client::produce_records(
         if (!p_id) {
             p_id = co_await gated_retry_with_mitigation([&, this]() {
                        return _topic_cache.partition_for(topic, record);
-                   }).handle_exception_type([](const topic_error&) {
+                   }).handle_exception([](std::exception_ptr) {
                 // Assume auto topic creation is on and assign to first
                 // partition
                 return model::partition_id{0};

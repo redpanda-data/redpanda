@@ -79,6 +79,13 @@ configuration::configuration()
           }
           return std::nullopt;
       })
+  , produce_shutdown_delay(
+      *this,
+      "produce_shutdown_delay_ms",
+      "Delay (in milliseconds) to allow for final flush of buffers before "
+      "shutting down",
+      {},
+      0ms)
   , produce_ack_level(
       *this,
       "produce_ack_level",
