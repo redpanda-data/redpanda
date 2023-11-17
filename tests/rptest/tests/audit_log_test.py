@@ -450,7 +450,7 @@ class AuditLogTestBase(RedpandaTest):
         finally:
             pass
 
-    def get_rpk_consumer(self, topic, offset) -> RpkConsumer:
+    def get_rpk_consumer(self, topic, offset='oldest') -> RpkConsumer:
 
         username = None
         password = None
@@ -1051,6 +1051,49 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
 
         if exc is not None:
             raise exc
+
+    @cluster(num_nodes=5)
+    def test_consume(self):
+        """
+        Validates audit messages on consume
+        """
+
+        topic_name = 'test_consume_audit'
+
+        def test_fetch_and_produce():
+            consumer = self.get_rpk_consumer(topic_name)
+            consumer.start()
+            # Allow consumer to poll
+            time.sleep(1)
+            self.super_rpk.produce(topic_name, "key", "val")
+            wait_until(lambda: consumer.message_count >= 1,
+                       timeout_sec=10,
+                       backoff_sec=1,
+                       err_msg="Should have received at least one message")
+            # Allow consumer to poll one more time
+            consumer.stop()
+            assert consumer.message_count == 1, f'Expected one message but got {consumer.message_count}'
+            consumer.free()
+
+        self.super_rpk.create_topic(topic=topic_name, partitions=1)
+
+        self.modify_audit_event_types(['consume'])
+
+        test_fetch_and_produce()
+
+        records = self.find_matching_record(
+            lambda record: self.api_resource_match("fetch", {
+                "name": topic_name,
+                "type": "topic"
+            }, self.kafka_rpc_service_name, record),
+            lambda record_count: record_count >= 1, "fetch request")
+
+        self.logger.debug(f'Records received: {records}')
+
+        # We expect at least one, but no more than two fetch authz events
+        assert 1 <= len(
+            records
+        ) <= 2, f'Expected 1 or 2 fetch records, received {len(records)}'
 
 
 class AuditLogTestKafkaAuthnApi(AuditLogTestBase):

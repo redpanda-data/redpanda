@@ -747,12 +747,16 @@ class simple_fetch_planner final : public fetch_planner::impl {
                 }
             }
 
+            // We audit successful messages only on the initial fetch
+            audit_on_success audit{octx.initial_fetch};
+
             /**
              * if not authorized do not include into a plan
              */
             if (!octx.rctx.authorized(
                   security::acl_operation::read,
-                  fp.topic_partition.get_topic())) {
+                  fp.topic_partition.get_topic(),
+                  audit)) {
                 resp_it->set(make_partition_response_error(
                   fp.topic_partition.get_partition(),
                   error_code::topic_authorization_failed));
