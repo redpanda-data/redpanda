@@ -55,6 +55,12 @@ func Test_parsePartition(t *testing.T) {
 			expTopic:      "",
 			expPartitions: []int{13},
 		}, {
+			name:          "topic with dot",
+			input:         "my.topic.foo/1",
+			expNs:         "kafka",
+			expTopic:      "my.topic.foo",
+			expPartitions: []int{1},
+		}, {
 			name:   "wrong format 1",
 			input:  "thirteen",
 			expErr: true,

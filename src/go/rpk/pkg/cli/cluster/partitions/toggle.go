@@ -59,12 +59,12 @@ Enable partition 1, and 2 of topic 'foo', and partition 5 of topic 'bar' in the
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, topicArg []string) {
 			if !all && partitions == nil {
-				fmt.Println("Please select either specific partitions to enable (--partitions) or select all (--all)")
+				fmt.Println("Please select either specific partitions to enable (--partitions) or select all (--all).")
 				cmd.Help()
 				os.Exit(1)
 			}
 			if all && len(topicArg) == 0 {
-				fmt.Println("You must select a topic")
+				fmt.Println("You must select a topic.")
 				cmd.Help()
 				os.Exit(1)
 			}
@@ -85,7 +85,7 @@ Enable partition 1, and 2 of topic 'foo', and partition 5 of topic 'bar' in the
 		},
 	}
 	cmd.Flags().StringArrayVarP(&partitions, "partitions", "p", nil, "Comma-separated list of partitions you want to enable. Check help for extended usage")
-	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, enable all partitions")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, enable all partitions for the specified topic")
 
 	cmd.MarkFlagsMutuallyExclusive("partitions", "all")
 	return cmd
@@ -109,6 +109,16 @@ where namespace and topic are optional parameters. If the namespace is not
 provided, rpk will assume 'kafka'. If the topic is not provided in the flag, rpk
 will use the topic provided as an argument to this command.
 
+DISABLED PARTITIONS
+
+Disabling a partition in Redpanda involves prohibiting any data consumption or
+production to and from it. All internal processes associated with the partition
+are stopped, and it remains unloaded during system startup. This measure aims to
+maintain cluster health by preventing issues caused by specific corrupted
+partitions that may lead to Redpanda crashes. Although the data remains stored
+on disk, Redpanda ceases interaction with the disabled partitions to ensure
+system stability.
+
 EXAMPLES
 
 Disable all partitions in topic 'foo'
@@ -124,12 +134,12 @@ Disable partition 1, and 2 of topic 'foo', and partition 5 of topic 'bar' in the
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, topicArg []string) {
 			if !all && partitions == nil {
-				fmt.Println("Please select either specific partitions to disable (--partitions) or select all (--all)")
+				fmt.Println("Please select either specific partitions to disable (--partitions) or select all (--all).")
 				cmd.Help()
 				os.Exit(1)
 			}
 			if all && len(topicArg) == 0 {
-				fmt.Println("You must select a topic")
+				fmt.Println("You must select a topic.")
 				cmd.Help()
 				os.Exit(1)
 			}
@@ -150,7 +160,7 @@ Disable partition 1, and 2 of topic 'foo', and partition 5 of topic 'bar' in the
 		},
 	}
 	cmd.Flags().StringArrayVarP(&partitions, "partitions", "p", nil, "Comma-separated list of partitions you want to disable. Use --help for additional information")
-	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, disable all partitions")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, disable all partitions for the specified topic")
 
 	cmd.MarkFlagsMutuallyExclusive("partitions", "all")
 	return cmd
@@ -211,7 +221,7 @@ func parsePartition(ntp string) (ns, topic string, partitions []int, rerr error)
 		// - Index 1: Namespace, if present.
 		// - Index 2: Topic, if present.
 		// - Index 3: Comma-separated partitions.
-		partitionRe = regexp.MustCompile(`^(?:(?:([\w-]+)/)?([\w-]+)/)?(\d+(?:,\d+)*)$`)
+		partitionRe = regexp.MustCompile(`^(?:(?:([^/]+)/)?([^/]+)/)?(\d+(?:,\d+)*)$`)
 	})
 	match := partitionRe.FindStringSubmatch(ntp)
 	if len(match) == 0 {
