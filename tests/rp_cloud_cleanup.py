@@ -196,11 +196,10 @@ class CloudCleanup():
                     return False
                 # Uninstall/Install plugin
                 try:
-                    _message += "| update plugin "
+                    _message += "| clean plugin "
                     self.utils.rpk_plugin_uninstall('byoc')
-                    self.utils.rpk_cloud_byoc_install(_id)
                 except Exception as e:
-                    _message += "| ERROR: failed to update byoc plugin " \
+                    _message += "| ERROR: failed to clean byoc plugin " \
                                 f"for '{_id}': {e}"
                     self.log.error(_message)
                     return False
