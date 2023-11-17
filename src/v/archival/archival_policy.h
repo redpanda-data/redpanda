@@ -24,6 +24,19 @@
 namespace archival {
 
 struct upload_candidate {
+    enum class creation_status {
+        success,
+        err_size_unchanged,
+        err_offset_inside_batch,
+        err_no_segments,
+        err_head_seek,
+        err_tail_seek,
+        err_file_range,
+        err_no_segment,
+        err_no_ntp_config,
+        err_no_content,
+    };
+
     segment_name exposed_name;
     model::offset starting_offset;
     size_t file_offset;
@@ -35,7 +48,9 @@ struct upload_candidate {
     model::term_id term;
     std::vector<ss::lw_shared_ptr<storage::segment>> sources;
     std::vector<cloud_storage::remote_segment_path> remote_sources;
+    creation_status status{upload_candidate::creation_status::success};
 
+    friend std::ostream& operator<<(std::ostream& s, creation_status cs);
     friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
 };
 

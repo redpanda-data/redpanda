@@ -425,7 +425,10 @@ segment_collector::make_upload_candidate(
           archival_log.debug,
           "No segments to reupload for {}",
           _manifest.get_ntp());
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .status = upload_candidate::creation_status::err_no_segments},
+          {}};
     } else {
         if (archival_log.is_enabled(ss::log_level::debug)) {
             std::stringstream seg;
@@ -465,14 +468,20 @@ segment_collector::make_upload_candidate(
       io_priority_class);
 
     if (head_seek_result.has_error()) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .status = upload_candidate::creation_status::err_head_seek},
+          {}};
     }
 
     auto tail_seek_result = co_await storage::convert_end_offset_to_file_pos(
       _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
 
     if (tail_seek_result.has_error()) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .status = upload_candidate::creation_status::err_tail_seek},
+          {}};
     }
 
     auto head_seek = head_seek_result.value();
@@ -503,6 +512,8 @@ segment_collector::make_upload_candidate(
             .max_timestamp = {},
             .term = {},
             .sources = {},
+            .status
+            = upload_candidate::creation_status::err_offset_inside_batch,
           },
           {}};
     }
@@ -568,6 +579,7 @@ segment_collector::make_upload_candidate(
                 .max_timestamp = {},
                 .term = {},
                 .sources = {},
+                .status = upload_candidate::creation_status::err_size_unchanged,
               },
               {}};
         }
@@ -585,6 +597,7 @@ segment_collector::make_upload_candidate(
         .max_timestamp = tail_seek.ts,
         .term = first->offsets().term,
         .sources = _segments,
+        .status = upload_candidate::creation_status::success,
       },
       std::move(locks_resolved)};
 }

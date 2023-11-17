@@ -45,6 +45,32 @@ bool archival_policy::eligible_for_compacted_reupload(
     return s.finished_self_compaction();
 }
 
+std::ostream&
+operator<<(std::ostream& os, upload_candidate::creation_status cs) {
+    switch (cs) {
+    case upload_candidate::creation_status::success:
+        return os << "success";
+    case upload_candidate::creation_status::err_size_unchanged:
+        return os << "upload candidate size unchanged for compacted reupload";
+    case upload_candidate::creation_status::err_offset_inside_batch:
+        return os << "candidate begin/end offset inside batch boundary";
+    case upload_candidate::creation_status::err_no_segments:
+        return os << "no segments found for compacted reupload";
+    case upload_candidate::creation_status::err_head_seek:
+        return os << "seek for upload candidate begin offset in segment failed";
+    case upload_candidate::creation_status::err_tail_seek:
+        return os << "seek for upload candidate end offset in segment failed";
+    case upload_candidate::creation_status::err_file_range:
+        return os << "offset computation for upload from segment file failed";
+    case upload_candidate::creation_status::err_no_segment:
+        return os << "no segment for non compacted upload ";
+    case upload_candidate::creation_status::err_no_ntp_config:
+        return os << "no NTP config for non compacted upload ";
+    case upload_candidate::creation_status::err_no_content:
+        return os << "non-compacted upload candidate has no data";
+    }
+}
+
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
     vassert(
       c.sources.empty() || c.remote_sources.empty(),
@@ -353,7 +379,10 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
           archival_log.error,
           "Upload candidate not created, failed to get file range: {}",
           file_range_result.value().message());
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .status = upload_candidate::creation_status::err_file_range},
+          {}};
     }
     if (result->starting_offset != segment->offsets().base_offset) {
         // We need to generate new name for the segment
@@ -387,8 +416,17 @@ ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
     auto adjusted_lso = end_exclusive - model::offset(1);
     auto [segment, ntp_conf, forced] = find_segment(
       begin_inclusive, adjusted_lso, std::move(log), ot_state);
-    if (segment.get() == nullptr || ntp_conf == nullptr) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    if (segment.get() == nullptr) {
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .status = upload_candidate::creation_status::err_no_segment},
+          {}};
+    }
+    if (ntp_conf == nullptr) {
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .status = upload_candidate::creation_status::err_no_ntp_config},
+          {}};
     }
     // We need to adjust LSO since it points to the first
     // recordbatch with uncommitted transactions data
@@ -409,7 +447,10 @@ ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
       _io_priority,
       segment_lock_duration);
     if (upload.candidate.content_length == 0) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .status = upload_candidate::creation_status::err_no_content},
+          {}};
     }
     co_return upload;
 }
