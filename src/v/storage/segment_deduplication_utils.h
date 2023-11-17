@@ -16,6 +16,7 @@
 
 namespace storage {
 using segment_list_t = fragmented_vector<segment_set::type>;
+class stm_manager;
 
 // Adds the keys from the given compacted index reader to the map. Returns
 // true if the entire reader was successfully indexed, false if the index was
@@ -32,10 +33,19 @@ ss::future<bool> build_offset_map_for_segment(
 // deduplicate the log, subsequent compactions should start below this
 // offset.
 //
-// Returns nullopt if there was a problem building the map or if the map
+// In the event a compacted index is missing or corrupted (e.g. if the segment
+// was partially truncated), attempts to rebuild it and proceeds with building
+// the map building.
+//
+// Throws an exception if there was a problem building the map or if the map
 // couldn't build a single segment.
 ss::future<model::offset> build_offset_map(
-  const compaction_config& cfg, const segment_set& segs, key_offset_map& m);
+  const compaction_config& cfg,
+  const segment_set& segs,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  storage::storage_resources&,
+  storage::probe&,
+  key_offset_map&);
 
 // Rewrites 'seg' according to the parameters in 'cfg' to 'appender' and
 // 'cmp_idx_writer', deduplicating with latest offsets per key from 'map'.

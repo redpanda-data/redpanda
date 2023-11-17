@@ -164,6 +164,11 @@ ss::future<compacted_offset_list>
 ss::future<bool>
   detect_if_segment_already_compacted(std::filesystem::path, compaction_config);
 
+bool compacted_index_needs_rebuild(compacted_index::recovery_state state);
+
+ss::future<compacted_index::recovery_state>
+detect_compaction_index_state(segment_full_path p, compaction_config cfg);
+
 /// \brief creates a model::record_batch_reader from segment meta
 ///
 model::record_batch_reader create_segment_full_reader(
