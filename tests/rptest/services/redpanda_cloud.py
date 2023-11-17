@@ -681,7 +681,7 @@ class CloudCluster():
                 c = self._get_cluster(_cluster_id)
                 self.current.last_status = c['state']
             except Exception as e:
-                raise RuntimeError("Failed to get initial cluster spec")
+                raise RuntimeError("Failed to get initial cluster spec") from e
 
             # In case of BYOC cluster, do some additional stuff to create it
             if self.config.type == CLOUD_TYPE_BYOC:
