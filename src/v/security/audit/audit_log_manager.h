@@ -88,22 +88,40 @@ public:
     }
 
     template<
+      typename T,
       security::audit::returns_auditable_resource_vector Func,
       typename... Args>
-    bool
-    enqueue_authz_audit_event(kafka::api_key api, Func func, Args&&... args) {
-        if (auto val = should_enqueue_audit_event(api); val.has_value()) {
-            return (bool)*val;
+    bool enqueue_authz_audit_event(
+      kafka::api_key api, const T& resource_name, Func func, Args&&... args) {
+        if constexpr (std::is_same_v<T, model::topic>) {
+            if (auto val = should_enqueue_audit_event(api, resource_name);
+                val.has_value()) {
+                return (bool)*val;
+            }
+        } else {
+            if (auto val = should_enqueue_audit_event(api); val.has_value()) {
+                return (bool)*val;
+            }
         }
+
         return do_enqueue_audit_event(
           std::make_unique<api_activity>(make_api_activity_event(
-            std::forward<Args>(args)..., create_resource_details(func()))));
+            std::forward<Args>(args)...,
+            create_resource_details(restrict_topics(std::move(func))))));
     }
 
-    template<typename... Args>
-    bool enqueue_authz_audit_event(kafka::api_key api, Args&&... args) {
-        if (auto val = should_enqueue_audit_event(api); val.has_value()) {
-            return (bool)*val;
+    template<typename T, typename... Args>
+    bool enqueue_authz_audit_event(
+      kafka::api_key api, const T& resource_name, Args&&... args) {
+        if constexpr (std::is_same_v<T, model::topic>) {
+            if (auto val = should_enqueue_audit_event(api, resource_name);
+                val.has_value()) {
+                return (bool)*val;
+            }
+        } else {
+            if (auto val = should_enqueue_audit_event(api); val.has_value()) {
+                return (bool)*val;
+            }
         }
         return do_enqueue_audit_event(std::make_unique<api_activity>(
           make_api_activity_event(std::forward<Args>(args)..., {})));
@@ -157,6 +175,8 @@ private:
       should_enqueue_audit_event(kafka::api_key) const;
     std::optional<audit_event_passthrough>
       should_enqueue_audit_event(event_type) const;
+    std::optional<audit_event_passthrough>
+    should_enqueue_audit_event(kafka::api_key, const model::topic&) const;
 
     ss::future<> drain();
     ss::future<> pause();
@@ -168,6 +188,20 @@ private:
     void set_enabled_events();
 
     audit_probe& probe() { return *_probe; }
+
+    template<security::audit::returns_auditable_resource_vector Func>
+    auto restrict_topics(Func&& func) const noexcept {
+        auto result = func();
+        if constexpr (std::is_same_v<
+                        std::vector<model::topic>,
+                        decltype(result)>) {
+            std::erase_if(result, [this](const model::topic& t) {
+                return _audit_excluded_topics.contains(t);
+            });
+        }
+
+        return result;
+    }
 
 private:
     /// Multi index container is efficent in terms of time and space, underlying
@@ -197,6 +231,8 @@ private:
     static constexpr auto enabled_set_bitlength
       = std::underlying_type_t<event_type>(event_type::num_elements);
     std::bitset<enabled_set_bitlength> _enabled_event_types{0};
+    config::binding<std::vector<ss::sstring>> _audit_excluded_topics_binding;
+    absl::flat_hash_set<model::topic> _audit_excluded_topics;
 
     /// This will be true when the client detects that there is an issue with
     /// authorization configuration. Auth must be enabled so the client

@@ -577,6 +577,8 @@ audit_log_manager::audit_log_manager(
       config::shard_local_cfg().audit_max_queue_elements_per_shard.bind())
   , _audit_event_types(
       config::shard_local_cfg().audit_enabled_event_types.bind())
+  , _audit_excluded_topics_binding(
+      config::shard_local_cfg().audit_excluded_topics.bind())
   , _controller(controller)
   , _config(client_config) {
     if (ss::this_shard_id() == client_shard_id) {
@@ -603,6 +605,16 @@ audit_log_manager::audit_log_manager(
     });
     set_enabled_events();
     _audit_event_types.watch([this] { set_enabled_events(); });
+    _audit_excluded_topics_binding.watch([this] {
+        _audit_excluded_topics.clear();
+        const auto& excluded_topics = _audit_excluded_topics_binding();
+        std::for_each(
+          excluded_topics.cbegin(),
+          excluded_topics.cend(),
+          [this](const ss::sstring& topic) {
+              _audit_excluded_topics.emplace(topic);
+          });
+    });
 }
 
 audit_log_manager::~audit_log_manager() = default;
@@ -827,6 +839,16 @@ audit_log_manager::should_enqueue_audit_event(event_type type) const {
         return std::make_optional(audit_event_passthrough::yes);
     }
     return std::nullopt;
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(
+  kafka::api_key key, const model::topic& t) const {
+    if (_audit_excluded_topics.contains(t)) {
+            return std::make_optional(audit_event_passthrough::yes);
+    }
+
+    return should_enqueue_audit_event(key);
 }
 
 } // namespace security::audit

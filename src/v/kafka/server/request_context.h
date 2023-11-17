@@ -348,7 +348,7 @@ public:
             return resp;
         }
 
-        do_audit(std::move(result), key, client_id);
+        do_audit(std::move(result), name, key, client_id);
 
         return resp;
     }
@@ -364,7 +364,7 @@ public:
         auto key = _header.key;
         auto client_id = _header.client_id;
 
-        do_audit(std::move(result), key, client_id);
+        do_audit(std::move(result), name, key, client_id);
         return resp;
     }
 
@@ -389,6 +389,7 @@ public:
         auto operation_name = handler_for_key(key).value()->name();
         if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
               key,
+              name,
               std::forward<Func>(f),
               operation_name,
               std::move(result),
@@ -435,8 +436,10 @@ private:
         }
         return _conn->authorized(operation, name, quiet);
     }
+    template<typename T>
     void do_audit(
       security::auth_result&& auth_result,
+      const T& name,
       api_key key,
       std::optional<std::string_view> client_id) {
         if (skip_auditing(key, auth_result.principal)) [[unlikely]] {
@@ -451,6 +454,7 @@ private:
 
         if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
               key,
+              name,
               operation_name,
               std::move(auth_result),
               _conn->local_address(),
