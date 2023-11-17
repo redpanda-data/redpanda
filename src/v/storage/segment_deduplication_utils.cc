@@ -148,6 +148,9 @@ ss::future<index_state> deduplicate_segment(
   probe& probe,
   offset_delta_time should_offset_delta_times) {
     auto read_holder = co_await seg->read_lock();
+    if (seg->is_closed()) {
+        throw segment_closed_exception();
+    }
     auto rdr = internal::create_segment_full_reader(
       seg, cfg, probe, std::move(read_holder));
     auto copy_reducer = internal::copy_data_segment_reducer(
