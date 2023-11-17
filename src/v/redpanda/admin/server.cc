@@ -3935,6 +3935,13 @@ parse_replicas_from_json(const json::Document::ValueType& value) {
 ss::future<ss::json::json_return_type>
 admin_server::force_recover_partitions_from_nodes(
   std::unique_ptr<ss::http::request> request) {
+    if (!_controller->get_feature_table().local().is_active(
+          features::feature::enhanced_force_reconfiguration)) {
+        throw ss::httpd::bad_request_exception(
+          "Required feature is not active yet which indicates the cluster has "
+          "not fully upgraded yet, retry after a successful upgrade.");
+    }
+
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*request, model::controller_ntp);
     }
