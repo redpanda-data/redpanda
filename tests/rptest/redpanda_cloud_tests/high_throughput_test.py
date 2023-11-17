@@ -364,6 +364,21 @@ class HighThroughputTest(PreallocNodesTest):
         small segments to bootstrap a test enviornment that would stress
         the tiered storage subsytem.
         """
+        def _check_cloud_segments(target_segments):
+            # variation of si_utils function 'nodes_report_cloud_segments'
+            # but this one throws error when Public metrics not available
+            # Original function not modified not to deal damage on other tests
+            try:
+                num_segments = self.redpanda.metric_sum(
+                    "redpanda_cloud_storage_segments",
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+                self.redpanda.logger.info(
+                    f"Cluster metrics report {num_segments} / {target_segments} cloud segments"
+                )
+            except Exception as e:
+                raise RuntimeError("Public metrics not available") from e
+            return num_segments >= target_segments
+
         cloud_segment_size = self.min_segment_size
         # Original value is 1000
         # which results in 1016 hours of data preload at tier1 ingress speed
@@ -401,8 +416,7 @@ class HighThroughputTest(PreallocNodesTest):
         target_cloud_segments = self._advertised_max_ingress // cloud_segment_size * 600 // 4
         try:
             producer.start()
-            wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, target_cloud_segments),
+            wait_until(lambda: _check_cloud_segments(target_cloud_segments),
                        timeout_sec=estimated_produce_time_secs,
                        backoff_sec=5)
         finally:
@@ -569,13 +583,18 @@ class HighThroughputTest(PreallocNodesTest):
             _now = time.time()
             _connections = self._get_swarm_connections_count(swarm)
             _total = sum(_connections)
-            _elapsed = "{:>5,.1f}s".format(_now - _start)
-            self.logger.warn(f"{_elapsed}: {_total:>6} connections "
+            _elapsed = _now - _start
+            _elapsed_str = "{:>5,.1f}s".format(_elapsed)
+            self.logger.warn(f"{_elapsed_str}: {_total:>6} connections "
                              f"({'/'.join(map(str, _connections))}) ")
             # Save maximum
             connectMax = _total if connectMax < _total else connectMax
-            # if at least half of the nodes finished, exit
-            if len(swarm) / 2 >= calc_alive_swarm_nodes(swarm):
+            # if at least two nodes finished, exit
+            if (len(swarm) - calc_alive_swarm_nodes(swarm)) > 1:
+                break
+            elif _elapsed > FINISH_TIMEOUT_SEC and \
+                _connections < (self._advertised_max_client_count * 0.01):
+                # Number of connections after timeout is less than 1%
                 break
             # sleep before next measurement
             time.sleep(30)
@@ -587,21 +606,40 @@ class HighThroughputTest(PreallocNodesTest):
         # Message count should be < expected * 0.99
         # or _target_total connections number * per producer
         reasonably_expected = records_per_producer * _target_total
-
+        # Get current message count and sleep for 1 min
+        # To get messages produced
+        _hwm = self._get_hwm_for_default_topic()
+        time.sleep(60)
+        # Start tracking message flow
         self.logger.warn("Waiting for messages")
         # Try and wait for all messages to be sent
         while (_now - _start) < FINISH_TIMEOUT_SEC:
+            _now = time.time()
             _alive = calc_alive_swarm_nodes(swarm)
             _total = len(swarm)
             _elapsed = "{:>5,.1f}s".format(_now - _start)
+            _last_hwm = _hwm
             _hwm = self._get_hwm_for_default_topic()
             _percent = _hwm / expected_msg_count * 100 if _hwm > 0 else 0
             self.logger.warn(f"{_elapsed}: Swarm nodes active: {_alive}, "
                              f"total: {_total}, msg produced: {_hwm} "
                              f"({_percent:.2f}%), "
                              f"expected: {expected_msg_count}")
+            # Fail safe checks
             if _hwm > reasonably_expected:
+                # Success
+                self.logger.warning("Required messages produced")
                 break
+            elif _alive < 2:
+                # We exit if only 1 or less nodes alive
+                self.logger.warning("Most nodes finished")
+                break
+            elif _last_hwm == _hwm:
+                # If no messages produced during 1 min
+                # consider them stuck
+                self.logger.warning("No messages produced for 60 sec")
+                break
+
             # Wait for 1 min
             time.sleep(60)
 
