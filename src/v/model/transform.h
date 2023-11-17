@@ -115,8 +115,8 @@ struct transform_offsets_value
     auto serde_fields() { return std::tie(offset); }
 };
 
-static const model::topic transform_offsets_topic("transform_offsets");
-static const model::topic_namespace transform_offsets_nt(
+inline const model::topic transform_offsets_topic("transform_offsets");
+inline const model::topic_namespace transform_offsets_nt(
   model::kafka_internal_namespace, transform_offsets_topic);
 
 /**

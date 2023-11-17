@@ -38,6 +38,7 @@
 #include "wasm/api.h"
 #include "wasm/cache.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -128,7 +129,6 @@ public:
           _partition.sync_effective_start().finally([holder = std::move(_)] {}),
           model::no_timeout,
           *as);
-
         if (result.has_error()) {
             throw std::runtime_error(
               kafka::make_error_code(result.error()).message());
@@ -138,14 +138,21 @@ public:
         // of the log.
         model::offset start_offset = std::max(
           result.value(), kafka::offset_cast(offset));
-        model::offset max_offset = model::offset::max();
         // Clamp reads to only committed transactions.
         auto maybe_lso = _partition.last_stable_offset();
         if (!maybe_lso) {
             throw std::runtime_error(
               kafka::make_error_code(maybe_lso.error()).message());
         }
-        max_offset = model::prev_offset(maybe_lso.value());
+        // It's possible for LSO to be 0, which in this case the previous offset
+        // is model::offset::min(), this is the same as the kafka fetch path.
+        model::offset max_offset = model::prev_offset(maybe_lso.value());
+        // If the max offset is less than the start, it's always going to be an
+        // empty read, short circuit here.
+        if (max_offset < start_offset) {
+            co_return model::make_memory_record_batch_reader(
+              model::record_batch_reader::data_t{});
+        }
         // TODO(rockwood): This is currently an arbitrary value, but we should
         // dynamically update this based on how much memory is available in the
         // transform subsystem.
