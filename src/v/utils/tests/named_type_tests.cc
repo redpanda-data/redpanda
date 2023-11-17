@@ -79,3 +79,16 @@ BOOST_AUTO_TEST_CASE(named_type_rvalue_overload) {
 
     BOOST_REQUIRE_EQUAL(str, r);
 }
+
+BOOST_AUTO_TEST_CASE(cstr_literal_to_sstring) {
+    // this is a compile only test
+    using test_cstr = named_type<cstr_literal, struct test_tag>;
+    using test_sstr = named_type<ss::sstring, struct test_tag>;
+    // ensure that we can create a constexpr named_type from  only a string
+    // literal
+    constexpr auto header_data = test_cstr("header_data");
+
+    // and that i can decay automatically to a named_type ss::sstring using the
+    // same tag
+    test_sstr from_header = header_data;
+}
