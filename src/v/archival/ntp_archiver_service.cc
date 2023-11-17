@@ -1478,12 +1478,40 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
       upload.sources.empty()
       && upload_ctx.upload_kind == segment_upload_kind::compacted
       && model::offset{} != upload.final_offset) {
-        vlog(
-          _rtclog.warn,
-          "Upload skipped for range: {}-{} because these offsets lie inside "
-          "batches or the reupload is not smaller than the current segment",
+        const auto log_msg = fmt::format(
+          "Upload skipped for range: {}-{}, reason: {}",
           upload.starting_offset,
-          upload.final_offset);
+          upload.final_offset,
+          upload.status);
+
+        switch (upload.status) {
+        case upload_candidate::creation_status::success:
+            vassert(
+              false,
+              "unexpected successful collection with no data collected: {}",
+              upload);
+            break;
+        case upload_candidate::creation_status::err_offset_inside_batch:
+            vlog(_rtclog.warn, "{}", log_msg);
+            break;
+        case upload_candidate::creation_status::err_size_unchanged:
+            [[fallthrough]];
+        case upload_candidate::creation_status::err_no_segments:
+            [[fallthrough]];
+        case upload_candidate::creation_status::err_head_seek:
+            [[fallthrough]];
+        case upload_candidate::creation_status::err_tail_seek:
+            [[fallthrough]];
+        case upload_candidate::creation_status::err_file_range:
+            [[fallthrough]];
+        case upload_candidate::creation_status::err_no_segment:
+            [[fallthrough]];
+        case upload_candidate::creation_status::err_no_ntp_config:
+            [[fallthrough]];
+        case upload_candidate::creation_status::err_no_content:
+            vlog(_rtclog.debug, "{}", log_msg);
+            break;
+        }
         co_return scheduled_upload{
           .result = std::nullopt,
           .inclusive_last_offset = upload.final_offset,
@@ -1499,9 +1527,10 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         vlog(
           _rtclog.debug,
           "upload candidate not found, start_upload_offset: {}, "
-          "last_stable_offset: {}",
+          "last_stable_offset: {}, status: {}",
           start_upload_offset,
-          last_stable_offset);
+          last_stable_offset,
+          upload.status);
         // Indicate that the upload is not started
         co_return scheduled_upload{
           .result = std::nullopt,
