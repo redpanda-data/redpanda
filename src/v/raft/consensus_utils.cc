@@ -300,7 +300,7 @@ ss::future<> persist_snapshot(
 }
 group_configuration deserialize_configuration(iobuf_parser& parser) {
     const auto version = serde::peek_version(parser);
-    if (likely(version >= group_configuration::v_6)) {
+    if (likely(version >= group_configuration::v_6())) {
         return serde::read<group_configuration>(parser);
     }
 
@@ -308,7 +308,7 @@ group_configuration deserialize_configuration(iobuf_parser& parser) {
 }
 group_configuration deserialize_nested_configuration(iobuf_parser& parser) {
     const auto version = serde::peek_version(parser);
-    if (likely(version >= group_configuration::v_6)) {
+    if (likely(version >= group_configuration::v_6())) {
         return serde::read_nested<group_configuration>(parser, 0UL);
     }
 
