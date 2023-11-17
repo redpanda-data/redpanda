@@ -208,8 +208,10 @@ std::error_code partition_allocator::check_cluster_limits(
     if (proposed_total_partitions > core_limit) {
         vlog(
           clusterlog.warn,
-          "Refusing to create {} partitions, exceeds core limit {}",
+          "Refusing to create {} partitions as total partition count {} would "
+          "exceed core limit {}",
           create_count,
+          proposed_total_partitions,
           effective_cpu_count * _partitions_per_shard());
         return errc::topic_invalid_partitions;
     }
@@ -226,8 +228,11 @@ std::error_code partition_allocator::check_cluster_limits(
         if (memory_limit > 0 && proposed_total_partitions > memory_limit) {
             vlog(
               clusterlog.warn,
-              "Refusing to create {} partitions, exceeds memory limit {}",
+              "Refusing to create {} new partitions as total partition count "
+              "{} "
+              "would exceed memory limit {}",
               create_count,
+              proposed_total_partitions,
               memory_limit);
             return errc::topic_invalid_partitions;
         }
@@ -246,8 +251,10 @@ std::error_code partition_allocator::check_cluster_limits(
                 if (proposed_total_partitions > fds_limit) {
                     vlog(
                       clusterlog.warn,
-                      "Refusing to create {} partitions, exceeds FD limit {}",
+                      "Refusing to create {} partitions as total partition "
+                      "count {} would exceed FD limit {}",
                       create_count,
+                      proposed_total_partitions,
                       fds_limit);
                     return errc::topic_invalid_partitions;
                 }
