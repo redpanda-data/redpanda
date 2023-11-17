@@ -4703,6 +4703,13 @@ admin_server::get_partition_balancer_status_handler(
     ret.current_reassignments_count
       = _controller->get_topics_state().local().updates_in_progress().size();
 
+    ret.partitions_pending_force_recovery_count
+      = overview.partitions_pending_force_recovery_count;
+    for (const auto& ntp : overview.partitions_pending_force_recovery_sample) {
+        ret.partitions_pending_force_recovery_sample.push(fmt::format(
+          "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition()));
+    }
+
     co_return ss::json::json_return_type(ret);
 }
 

@@ -514,9 +514,7 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
 
     partition_balancer_overview_reply ret;
 
-    if (
-      _mode() != model::partition_autobalancing_mode::continuous
-      || config::node().recovery_mode_enabled()) {
+    if (config::node().recovery_mode_enabled()) {
         ret.status = partition_balancer_status::off;
         ret.error = errc::feature_disabled;
         return ret;
@@ -538,6 +536,23 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
     ret.violations = _cur_term->last_violations;
     ret.decommission_realloc_failures
       = _cur_term->last_tick_decommission_realloc_failures;
+    ret.partitions_pending_force_recovery_count
+      = _state.partitions_to_force_reconfigure().size();
+    if (ret.partitions_pending_force_recovery_count > 0) {
+        constexpr size_t max_partitions_to_include = 10;
+        auto sample_size = std::min(
+          ret.partitions_pending_force_recovery_count,
+          max_partitions_to_include);
+        ret.partitions_pending_force_recovery_sample.reserve(sample_size);
+        for (const auto& [ntp, _] : _state.partitions_to_force_reconfigure()) {
+            if (
+              ret.partitions_pending_force_recovery_sample.size()
+              > max_partitions_to_include) {
+                break;
+            }
+            ret.partitions_pending_force_recovery_sample.push_back(ntp);
+        }
+    }
 
     auto now = clock_t::now();
     auto time_since_last_tick = now - _cur_term->last_tick_time;

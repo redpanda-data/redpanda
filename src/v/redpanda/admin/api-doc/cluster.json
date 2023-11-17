@@ -280,6 +280,17 @@
                 "current_reassignments_count": {
                     "type": "int",
                     "description": "current number of partition reassignments in progress"
+                },
+                "partitions_pending_force_recovery_count": {
+                    "type": "int",
+                    "description": "number of partitions pending force recovery"
+                },
+                "partitions_pending_force_recovery_sample": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "sample list of partitions pending force recovery"
                 }
             }
         },

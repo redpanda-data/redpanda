@@ -22,6 +22,8 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
 
+#include <absl/container/btree_set.h>
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 #include <bits/stdint-uintn.h>
@@ -127,30 +129,54 @@ inline std::chrono::milliseconds random_duration_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(rand_ns);
 }
 
-template<typename Key, typename Value, typename Fn>
-inline absl::node_hash_map<Key, Value>
-random_node_hash_map(Fn&& gen, size_t size = 20) {
-    absl::node_hash_map<Key, Value> hm{};
-
+template<
+  template<typename...>
+  typename MapType,
+  typename Key,
+  typename Value,
+  typename Fn>
+inline MapType<Key, Value> random_map(Fn&& gen, size_t size = 20) {
+    MapType<Key, Value> hm{};
     for (size_t i = 0; i < size; i++) {
         auto [k, v] = gen();
         hm[k] = v;
     }
-
     return hm;
+}
+
+template<typename Key, typename Value, typename Fn>
+inline absl::node_hash_map<Key, Value>
+random_node_hash_map(Fn&& gen, size_t size = 20) {
+    return random_map<absl::node_hash_map, Key, Value, Fn>(
+      std::forward<Fn>(gen), size);
+}
+
+template<typename Key, typename Value, typename Fn>
+inline absl::flat_hash_map<Key, Value>
+random_flat_hash_map(Fn&& gen, size_t size = 20) {
+    return random_map<absl::flat_hash_map, Key, Value, Fn>(
+      std::forward<Fn>(gen), size);
+}
+
+template<template<typename...> typename SetType, typename Value, typename Fn>
+inline SetType<Value> random_set(Fn&& gen, size_t size = 20) {
+    SetType<Value> hs{};
+    for (size_t i = 0; i < size; i++) {
+        auto v = gen();
+        hs.insert(v);
+    }
+    return hs;
 }
 
 template<typename Value, typename Fn>
 inline absl::node_hash_set<Value>
 random_node_hash_set(Fn&& gen, size_t size = 20) {
-    absl::node_hash_set<Value> hs{};
+    return random_set<absl::node_hash_set, Value>(std::forward<Fn>(gen), size);
+}
 
-    for (size_t i = 0; i < size; i++) {
-        auto v = gen();
-        hs.insert(v);
-    }
-
-    return hs;
+template<typename Value, typename Fn>
+inline absl::btree_set<Value> random_btree_set(Fn&& gen, size_t size = 20) {
+    return random_set<absl::btree_set, Value>(std::forward<Fn>(gen), size);
 }
 
 inline cluster::producer_ptr
