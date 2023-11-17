@@ -633,8 +633,7 @@ group_manager::snapshot_groups(const model::ntp& ntp) {
     auto units = co_await ss::get_units(
       attached_partition->second->sem, 1, attached_partition->second->as);
     auto& catchup = attached_partition->second->catchup_lock;
-    co_await catchup->read_lock();
-    auto unlock = ss::defer([&catchup] { catchup->read_unlock(); });
+    auto read_lock = co_await catchup->hold_read_lock();
     if (!attached_partition->second->partition->is_leader()) {
         co_return cluster::cloud_metadata::error_outcome::not_ready;
     }
