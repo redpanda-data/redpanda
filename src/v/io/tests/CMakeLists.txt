@@ -8,6 +8,7 @@ rp_test(
     cache_test.cc
     interval_map_test.cc
     persistence_test.cc
+    page_test.cc
   LIBRARIES
     v::gtest_main
     v::io
