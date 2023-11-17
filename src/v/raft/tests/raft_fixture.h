@@ -17,6 +17,7 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -196,7 +197,7 @@ public:
 
     model::ntp ntp() {
         return {
-          model::ns("test_ns"),
+          model::kafka_namespace,
           model::topic_partition(
             model::topic(fmt::format("node_{}", _id)), model::partition_id(0))};
     }
