@@ -603,21 +603,40 @@ class HighThroughputTest(PreallocNodesTest):
         # Message count should be < expected * 0.99
         # or _target_total connections number * per producer
         reasonably_expected = records_per_producer * _target_total
-
+        # Get current message count and sleep for 1 min
+        # To get messages produced
+        _hwm = self._get_hwm_for_default_topic()
+        time.sleep(60)
+        # Start tracking message flow
         self.logger.warn("Waiting for messages")
         # Try and wait for all messages to be sent
         while (_now - _start) < FINISH_TIMEOUT_SEC:
+            _now = time.time()
             _alive = calc_alive_swarm_nodes(swarm)
             _total = len(swarm)
             _elapsed = "{:>5,.1f}s".format(_now - _start)
+            _last_hwm = _hwm
             _hwm = self._get_hwm_for_default_topic()
             _percent = _hwm / expected_msg_count * 100 if _hwm > 0 else 0
             self.logger.warn(f"{_elapsed}: Swarm nodes active: {_alive}, "
                              f"total: {_total}, msg produced: {_hwm} "
                              f"({_percent:.2f}%), "
                              f"expected: {expected_msg_count}")
+            # Fail safe checks
             if _hwm > reasonably_expected:
+                # Success
+                self.logger.warning("Required messages produced")
                 break
+            elif _alive < 2:
+                # We exit if only 1 or less nodes alive
+                self.logger.warning("Most nodes finished")
+                break
+            elif _last_hwm == _hwm:
+                # If no messages produced during 1 min
+                # consider them stuck
+                self.logger.warning("No messages produced for 60 sec")
+                break
+
             # Wait for 1 min
             time.sleep(60)
 
