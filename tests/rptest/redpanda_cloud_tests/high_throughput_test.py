@@ -1088,7 +1088,7 @@ class HighThroughputTest(PreallocNodesTest):
     # The testcase occasionally fails on various parts:
     # - toing on `_consume_from_offset(self.topic, 1, p_id, "newest", 30)`
     # - failing to ensure all manifests are in the cloud in `stop_and_scrub_object_storage`
-    @ok_to_fail
+    @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume_miss_cache(self):
         # create default topics
