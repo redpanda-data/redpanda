@@ -36,7 +36,7 @@ partition_balancer_state::partition_balancer_state(
   , _node_status(nst.local())
   , _probe(*this) {}
 
-void partition_balancer_state::handle_ntp_update(
+void partition_balancer_state::handle_ntp_move_begin_or_cancel(
   const model::ns& ns,
   const model::topic& tp,
   model::partition_id p_id,

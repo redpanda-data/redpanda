@@ -65,7 +65,7 @@ public:
     /// Called when the replica set of an ntp changes. Note that this doesn't
     /// account for in-progress moves - the function is called only once when
     /// the move is started.
-    void handle_ntp_update(
+    void handle_ntp_move_begin_or_cancel(
       const model::ns&,
       const model::topic&,
       model::partition_id,
