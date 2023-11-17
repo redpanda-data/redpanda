@@ -25,6 +25,7 @@ import random
 import time
 
 from dataclasses import dataclass
+from typing import Optional
 from requests.exceptions import HTTPError
 
 SCRUBBER_LOG_ALLOW_LIST = [
@@ -62,8 +63,8 @@ class SegmentMeta:
     ntp_revision: int
 
     @staticmethod
-    def from_dict(json: dict):
-        return SegmentMeta(**json)
+    def from_dict(json_dict: dict):
+        return SegmentMeta(**json_dict)
 
 
 @dataclass(frozen=True)
@@ -74,12 +75,70 @@ class SegmentMetaAnomaly:
     previous_segment: SegmentMeta
 
     @staticmethod
-    def from_dict(json: dict):
-        return SegmentMetaAnomaly(
-            anomaly_type=json["type"],
-            explanation=json["explanation"],
-            at_segment=SegmentMeta.from_dict(json["at_segment"]),
-            previous_segment=SegmentMeta.from_dict(json["previous_segment"]))
+    def from_dict(json_dict: dict):
+        return SegmentMetaAnomaly(anomaly_type=json_dict["type"],
+                                  explanation=json_dict["explanation"],
+                                  at_segment=SegmentMeta.from_dict(
+                                      json_dict["at_segment"]),
+                                  previous_segment=SegmentMeta.from_dict(
+                                      json_dict["previous_segment"]))
+
+
+@dataclass
+class Anomalies:
+    ntpr: NTPR
+    missing_partition_manifest: bool
+    missing_spillover_manifests: set[str]
+    missing_segments: set[str]
+    segment_metadata_anomalies: set[SegmentMetaAnomaly]
+    last_complete_scrub_at: Optional[int]
+
+    @staticmethod
+    def make_empty(ntpr: NTPR):
+        return Anomalies(ntpr=ntpr,
+                         missing_partition_manifest=False,
+                         missing_spillover_manifests=set(),
+                         missing_segments=set(),
+                         segment_metadata_anomalies=set(),
+                         last_complete_scrub_at=None)
+
+    @staticmethod
+    def from_dict(json_dict: dict):
+        ntpr = NTPR(ns=json_dict["ns"],
+                    topic=json_dict["topic"],
+                    partition=json_dict["partition"],
+                    revision=json_dict["revision_id"])
+
+        missing_spills = set(json_dict.get("missing_spillover_manifests", []))
+        missing_segs = set(json_dict.get("missing_segments", []))
+        meta_anomalies = set(
+            map(lambda a: SegmentMetaAnomaly.from_dict(a),
+                json_dict.get("segment_metadata_anomalies", [])))
+
+        return Anomalies(ntpr=ntpr,
+                         missing_partition_manifest=json_dict.get(
+                             "missing_partition_manifest", False),
+                         missing_spillover_manifests=missing_spills,
+                         missing_segments=missing_segs,
+                         segment_metadata_anomalies=meta_anomalies,
+                         last_complete_scrub_at=json_dict.get(
+                             "last_complete_scrub_at", None))
+
+    def is_empty(self) -> bool:
+        return (self.missing_partition_manifest == False
+                and len(self.missing_spillover_manifests) == 0
+                and len(self.missing_segments) == 0
+                and len(self.segment_metadata_anomalies) == 0)
+
+    def is_subset_of(self, other: "Anomalies") -> bool:
+        if other.missing_partition_manifest and not self.missing_partition_manifest:
+            return False
+
+        return (self.missing_segments.issubset(other.missing_segments)
+                and self.missing_spillover_manifests.issubset(
+                    other.missing_spillover_manifests)
+                and self.segment_metadata_anomalies.issubset(
+                    other.segment_metadata_anomalies))
 
 
 class CloudStorageScrubberTest(RedpandaTest):
@@ -165,81 +224,40 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         return wait_until_result(query, timeout_sec=5, backoff_sec=1)
 
-    def _collect_anomalies(self):
+    def _collect_anomalies(self) -> dict[NTPR, Anomalies]:
         anomalies_per_ntpr = {}
 
         admin = Admin(self.redpanda)
         for pid in range(self.partition_count):
-            anomalies = self._query_anomalies(admin,
-                                              namespace="kafka",
-                                              topic=self.topic,
-                                              partition=pid)
+            json_anomalies = self._query_anomalies(admin,
+                                                   namespace="kafka",
+                                                   topic=self.topic,
+                                                   partition=pid)
 
-            anomalies.pop("last_complete_scrub_at", None)
-
-            ntpr = NTPR(ns=anomalies["ns"],
-                        topic=anomalies["topic"],
-                        partition=anomalies["partition"],
-                        revision=anomalies["revision_id"])
-
-            if ("missing_partition_manifest" not in anomalies
-                    and "missing_spillover_manifests" not in anomalies
-                    and "missing_segments" not in anomalies
-                    and "segment_metadata_anomalies" not in anomalies):
-                anomalies = None
-
-            if anomalies is not None:
-                # Ordering of anomalies is not guaranteed, so we turn
-                # the lists into sets to reflect that.
-                if "missing_spillover_manifests" in anomalies:
-                    anomalies["missing_spillover_manifests"] = set(
-                        anomalies["missing_spillover_manifests"])
-                if "missing_segments" in anomalies:
-                    anomalies["missing_segments"] = set(
-                        anomalies["missing_segments"])
-                if "segment_metadata_anomalies" in anomalies:
-                    anomalies["segment_metadata_anomalies"] = set(
-                        map(
-                            lambda anomaly: SegmentMetaAnomaly.from_dict(
-                                anomaly),
-                            anomalies["segment_metadata_anomalies"]))
-
-            anomalies_per_ntpr[ntpr] = anomalies
+            anomalies = Anomalies.from_dict(json_anomalies)
+            anomalies_per_ntpr[anomalies.ntpr] = anomalies
 
         return anomalies_per_ntpr
 
-    def _match_with_expected_anomalies(self, to_match: dict[NTPR, dict],
-                                       expected_anomalies: dict[NTPR, dict]):
-        self.logger.debug(
-            f"Matching {to_match=} against {expected_anomalies=}")
+    def _is_subset_for_all(self, superset: dict[NTPR, Anomalies],
+                           subset: dict[NTPR, Anomalies]):
+        self.logger.debug(f"Checking {subset=} is in {superset=}")
 
-        for ntpr, anomalies in expected_anomalies.items():
-            if ntpr not in to_match:
-                self.logger.debug(f"Expected anomalies for {ntpr}")
+        for ntpr, ntpr_subset in subset.items():
+            if not ntpr_subset.is_subset_of(superset[ntpr]):
                 return False
-
-            for anomaly_type, anomaly_set in to_match[ntpr].items():
-                if anomaly_type not in expected_anomalies[ntpr]:
-                    continue
-
-                expected = expected_anomalies[ntpr][anomaly_type]
-                is_subset = expected.issubset(anomaly_set)
-                if not is_subset:
-                    self.logger.debug(
-                        f"Expected anomalies of type {anomaly_type} ({expected}) are not subset of {anomaly_set}"
-                    )
-                    return False
 
         return True
 
     def _assert_no_anomalies(self):
         anomalies_per_ntpr = self._collect_anomalies()
         for ntpr, anomalies in anomalies_per_ntpr.items():
-            assert anomalies is None, f"{ntpr} reported unexpected anomalies: {anomalies}"
+            assert anomalies.is_empty(
+            ), f"{ntpr} reported unexpected anomalies: {anomalies}"
 
     def _delete_segment_and_await_anomaly(self,
                                           expected_anomalies: dict[NTPR,
-                                                                   dict]):
+                                                                   Anomalies]):
         segment_metas = [
             meta for meta in self.cloud_storage_client.list_objects(
                 self.bucket_name) if "log" in meta.key
@@ -272,19 +290,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             if ntpr not in anomalies_per_ntpr:
                 return False
 
-            if anomalies_per_ntpr[ntpr] is None:
-                return False
-
-            if "missing_segments" not in anomalies_per_ntpr[ntpr]:
-                return False
-
-            found = to_delete.key in anomalies_per_ntpr[ntpr][
-                "missing_segments"]
-
-            if found:
-                return True, to_delete.key
-            else:
-                return False
+            found = to_delete.key in anomalies_per_ntpr[ntpr].missing_segments
+            return found, to_delete.key
 
         missing_seg = wait_until_result(
             ntpr_missing_segment,
@@ -293,12 +300,12 @@ class CloudStorageScrubberTest(RedpandaTest):
             err_msg="Missing segment anomaly not reported")
 
         if ntpr not in expected_anomalies:
-            expected_anomalies[ntpr] = dict()
+            expected_anomalies[ntpr] = Anomalies.make_empty(ntpr)
 
-        expected_anomalies[ntpr]["missing_segments"] = set([missing_seg])
+        expected_anomalies[ntpr].missing_segments.add(missing_seg)
 
     def _delete_spillover_manifest_and_await_anomaly(
-            self, expected_anomalies: dict[NTPR, dict]):
+            self, expected_anomalies: dict[NTPR, Anomalies]):
         pid = random.randint(0, 2)
         view = BucketView(self.redpanda)
         spillover_metas = view.get_spillover_metadata(
@@ -322,19 +329,9 @@ class CloudStorageScrubberTest(RedpandaTest):
             if ntpr not in anomalies_per_ntpr:
                 return False
 
-            if anomalies_per_ntpr[ntpr] is None:
-                return False
-
-            if "missing_spillover_manifests" not in anomalies_per_ntpr[ntpr]:
-                return False
-
-            found = to_delete.path in anomalies_per_ntpr[ntpr][
-                "missing_spillover_manifests"]
-
-            if found:
-                return True, to_delete.path
-            else:
-                return False
+            found = to_delete.path in anomalies_per_ntpr[
+                ntpr].missing_spillover_manifests
+            return found, to_delete.path
 
         missing_spill = wait_until_result(
             ntpr_missing_spill_manifest,
@@ -343,16 +340,15 @@ class CloudStorageScrubberTest(RedpandaTest):
             err_msg="Missing spillover manifest anomaly not reported")
 
         if ntpr not in expected_anomalies:
-            expected_anomalies[ntpr] = dict()
+            expected_anomalies[ntpr] = Anomalies.make_empty(ntpr)
 
-        expected_anomalies[ntpr]["missing_spillover_manifests"] = set(
-            [missing_spill])
+        expected_anomalies[ntpr].missing_spillover_manifests.add(missing_spill)
 
     def _assert_anomalies_stable_after_leader_shuffle(
-            self, expected_anomalies: dict[NTPR, dict]):
+            self, expected_anomalies: dict[NTPR, Anomalies]):
         self.logger.info(
-            "Checking anomalies stay stable after leader shuffle. Expected subset: {expected_anomalies}"
-        )
+            f"Checking anomalies stay stable after leader shuffle. "
+            f"Expected subset: {expected_anomalies}")
 
         old_anomalies = self._collect_anomalies()
         assert any([
@@ -372,8 +368,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             anomalies = self._collect_anomalies()
             self.logger.debug(f"Reported anomalies {anomalies}")
 
-            return self._match_with_expected_anomalies(anomalies,
-                                                       expected_anomalies)
+            return self._is_subset_for_all(superset=anomalies,
+                                           subset=expected_anomalies)
 
         wait_until(
             anomalies_stable,
@@ -381,9 +377,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             backoff_sec=2,
             err_msg="Reported anomalies changed after leadership shuffle")
 
-    def _assert_anomalies_stable_after_restart(self,
-                                               expected_anomalies: dict[NTPR,
-                                                                        dict]):
+    def _assert_anomalies_stable_after_restart(
+            self, expected_anomalies: dict[NTPR, Anomalies]):
         self.logger.info(
             "Checking anomalies stay stable after full cluster restart")
 
@@ -402,17 +397,16 @@ class CloudStorageScrubberTest(RedpandaTest):
             anomalies = self._collect_anomalies()
             self.logger.debug(f"Reported anomalies {anomalies}")
 
-            return self._match_with_expected_anomalies(anomalies,
-                                                       expected_anomalies)
+            return self._is_subset_for_all(superset=anomalies,
+                                           subset=expected_anomalies)
 
         wait_until(anomalies_stable,
                    timeout_sec=self.scrub_timeout,
                    backoff_sec=2,
                    err_msg="Reported anomalies changed after full restart")
 
-    def _assert_segment_metadata_anomalies(self,
-                                           expected_anomalies: dict[NTPR,
-                                                                    dict]):
+    def _assert_segment_metadata_anomalies(
+            self, expected_anomalies: dict[NTPR, Anomalies]):
         self.logger.info(
             "Fudging manifest and waiting on segment metadata anomalies")
 
@@ -461,14 +455,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             if ntpr not in anomalies_per_ntpr:
                 return False
 
-            if anomalies_per_ntpr[ntpr] is None:
-                return False
-
-            if "segment_metadata_anomalies" not in anomalies_per_ntpr[ntpr]:
-                return False
-
-            seg_meta_anomalies = anomalies_per_ntpr[ntpr][
-                "segment_metadata_anomalies"]
+            seg_meta_anomalies = anomalies_per_ntpr[
+                ntpr].segment_metadata_anomalies
 
             for meta in seg_meta_anomalies:
                 if (meta.anomaly_type == "offset_gap"
@@ -484,15 +472,14 @@ class CloudStorageScrubberTest(RedpandaTest):
             err_msg="Gap not reported")
 
         if ntpr not in expected_anomalies:
-            expected_anomalies[ntpr] = dict()
+            expected_anomalies[ntpr] = Anomalies.make_empty(ntpr)
 
-        expected_anomalies[ntpr]["segment_metadata_anomalies"] = set(
-            [meta_anomaly])
+        expected_anomalies[ntpr].segment_metadata_anomalies.add(meta_anomaly)
 
     @cluster(num_nodes=4, log_allow_list=SCRUBBER_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_scrubber(self, cloud_storage_type):
-        expected_anomalies: dict[NTPR, dict] = dict()
+        expected_anomalies: dict[NTPR, Anomalies] = dict()
 
         self._produce()
         self._assert_no_anomalies()
