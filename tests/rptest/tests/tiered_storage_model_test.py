@@ -79,7 +79,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                                     redpanda=self.redpanda,
                                     topic=self.topic,
                                     msg_size=1024,
-                                    msg_count=10000,
+                                    msg_count=20000,
                                     use_transactions=False,
                                     msgs_per_transaction=10,
                                     debug_logs=True,
