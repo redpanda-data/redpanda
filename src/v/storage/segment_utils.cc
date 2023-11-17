@@ -510,9 +510,9 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   storage::probe& pb,
   storage::readers_cache& readers_cache,
   storage_resources& resources,
-  offset_delta_time apply_offset) {
+  offset_delta_time apply_offset,
+  ss::rwlock::holder read_holder) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().path());
-    auto read_holder = co_await s->read_lock();
     auto segment_generation = s->get_generation_id();
 
     if (s->is_closed()) {
@@ -666,13 +666,26 @@ ss::future<compaction_result> self_compact_segment(
 
     segment_full_path idx_path = s->path().to_compacted_index();
 
+    auto read_holder = co_await s->read_lock();
     compacted_index::recovery_state state;
     while (true) {
+        if (s->is_closed()) {
+            throw segment_closed_exception();
+        }
+        // Check the index state while the read lock is held, preventing e.g.
+        // concurrent truncations, which removes the index.
         state = co_await detect_compaction_index_state(idx_path, cfg);
         if (!compacted_index_needs_rebuild(state)) {
             break;
         }
+        // Rebuilding the compaction index will take the read lock again,
+        // so release here.
+        read_holder.return_all();
         co_await rebuild_compaction_index(s, stm_manager, cfg, pb, resources);
+
+        // Take the lock again before proceeding so we're guaranteed the index
+        // will survive until it's used in self compaction below.
+        read_holder = co_await s->read_lock();
     }
     if (state == compacted_index::recovery_state::already_compacted) {
         vlog(gclog.debug, "detected {} is already compacted", idx_path);
@@ -685,7 +698,13 @@ ss::future<compaction_result> self_compact_segment(
       int(state));
     auto sz_before = s->size_bytes();
     auto sz_after = co_await do_self_compact_segment(
-      s, cfg, pb, readers_cache, resources, apply_offset);
+      s,
+      cfg,
+      pb,
+      readers_cache,
+      resources,
+      apply_offset,
+      std::move(read_holder));
     // compaction wasn't executed, return
     if (!sz_after) {
         co_return compaction_result(sz_before);
