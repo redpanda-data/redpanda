@@ -50,6 +50,7 @@ from rptest.clients.kubectl import KubectlTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import tls
 from rptest.services.admin import Admin
@@ -1617,6 +1618,33 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 if sample.name == metric_name:
                     count += int(sample.value)
         return count
+
+    @staticmethod
+    def get_cloud_globals(globals):
+        _config = {}
+        if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
+            # Load needed config values from cloud section
+            # of globals prior to actual cluster creation
+            _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
+        return _config
+
+    def get_product(self):
+        """ Get product information.
+
+        Returns dict with info of product, including advertised limits.
+        Returns none if product info for the tier is not found.
+        """
+        return self._cloud_cluster.get_product()
+
+    def get_install_pack(self):
+        install_pack_client = InstallPackClient(
+            self._cloud_cluster.config.install_pack_url_template,
+            self._cloud_cluster.config.install_pack_auth_type,
+            self._cloud_cluster.config.install_pack_auth)
+        install_pack_version = self._cloud_cluster.config.install_pack_ver
+
+        # Load install pack and check profile
+        return install_pack_client.getInstallPack(install_pack_version)
 
 
 class RedpandaService(RedpandaServiceBase):

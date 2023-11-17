@@ -206,15 +206,6 @@ def omb_runner(context, redpanda, driver, workload, omb_config):
         bench.stop()
 
 
-def get_cloud_globals(globals):
-    _config = {}
-    if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
-        # Load needed config values from cloud section
-        # of globals prior to actual cluster creation
-        _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
-    return _config
-
-
 class HighThroughputTest(PreallocNodesTest):
     msg_size = 256 * KiB
     # Min segment size across all tiers
@@ -229,7 +220,7 @@ class HighThroughputTest(PreallocNodesTest):
         self._ctx = test_ctx
         # Get tier name
         self.config_profile_name = get_config_profile_name(
-            get_cloud_globals(self._ctx.globals))
+            RedpandaServiceCloud.get_cloud_globals(self._ctx.globals))
         extra_rp_conf = None
         num_brokers = None
 
@@ -253,14 +244,8 @@ class HighThroughputTest(PreallocNodesTest):
                              disable_cloud_storage_diagnostics=True,
                              **kwargs)
 
-        install_pack_client = InstallPackClient(
-            self.redpanda._cloud_cluster.config.install_pack_url_template,
-            self.redpanda._cloud_cluster.config.install_pack_auth_type,
-            self.redpanda._cloud_cluster.config.install_pack_auth)
-        install_pack_version = self.redpanda._cloud_cluster.config.install_pack_ver
-
         # Load install pack and check profile
-        install_pack = install_pack_client.getInstallPack(install_pack_version)
+        install_pack = self.redpanda.get_install_pack()
         self.logger.info(f"Loaded install pack '{install_pack['version']}': "
                          f"Redpanda v{install_pack['redpanda_version']}, "
                          f"created at '{install_pack['created_at']}'")
@@ -281,7 +266,7 @@ class HighThroughputTest(PreallocNodesTest):
         self._memory_per_broker = MachineTypeMemory[
             config_profile['machine_type']]
 
-        tier_product = self.redpanda._cloud_cluster.get_product()
+        tier_product = self.redpanda.get_product()
         """
         The _partitions_upper_limit represents a rough value for the estimated
         maximum number of partitions that can be made on a new cluster via 1st
@@ -293,13 +278,12 @@ class HighThroughputTest(PreallocNodesTest):
         fact that the partition allocator isn't guaranteed to perfectly distribute
         the partitions across all shards evenly.
         """
-        self._partitions_upper_limit = int(
-            tier_product['advertisedMaxPartitionCount'] * 0.8)
-        self._partitions_min = tier_product['advertisedMaxPartitionCount'] // 50
-        self._advertised_max_ingress = tier_product['advertisedMaxIngress']
-        self._advertised_max_egress = tier_product['advertisedMaxEgress']
-        self._advertised_max_client_count = tier_product[
-            'advertisedMaxClientCount']
+        self._partitions_upper_limit = int(tier_product.max_partition_count *
+                                           0.8)
+        self._partitions_min = tier_product.max_partition_count // 50
+        self._advertised_max_ingress = tier_product.max_ingress
+        self._advertised_max_egress = tier_product.max_egress
+        self._advertised_max_client_count = tier_product.max_client_count
 
         if self.config_profile_name == CloudTierName.DOCKER:
             si_settings = SISettings(

@@ -10,7 +10,7 @@
 import os
 import json
 import collections
-from typing import Optional
+from typing import Optional, Any
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -156,10 +156,12 @@ class OpenMessagingBenchmark(Service):
     def __init__(self,
                  ctx,
                  redpanda,
-                 driver="SIMPLE_DRIVER",
+                 driver: str | dict[str, Any] = "SIMPLE_DRIVER",
                  workload="SIMPLE_WORKLOAD",
                  node=None,
-                 worker_nodes=None):
+                 worker_nodes=None,
+                 topology="swarm",
+                 num_workers=NUM_WORKERS):
         """
         Creates a utility that can run OpenMessagingBenchmark (OMB) tests in ducktape. See OMB
         documentation for definitions of driver/workload files.
@@ -176,16 +178,25 @@ class OpenMessagingBenchmark(Service):
             self.nodes = [node]
 
         self._ctx = ctx
+        self.topology = topology
         self.redpanda = redpanda
         self.worker_nodes = worker_nodes
+        self.num_workers = num_workers
         self.workers = None
-        self.driver = OMBSampleConfigurations.DRIVERS[driver]
+        if isinstance(driver, str):
+            self.driver = OMBSampleConfigurations.DRIVERS[driver]
+        else:
+            self.driver = driver
         if isinstance(workload, str):
             self.workload = OMBSampleConfigurations.WORKLOADS[workload][0]
             self.validator = OMBSampleConfigurations.WORKLOADS[workload][1]
         else:
             self.workload = workload[0]
             self.validator = workload[1]
+
+        assert int(
+            self.workload.get("warmup_duration_minutes", '0')
+        ) >= 1, "must use non-zero warmup time as we rely on warm-up message to detect test start"
 
         self.logger.info("Using driver: %s, workload: %s", self.driver["name"],
                          self.workload["name"])
@@ -214,12 +225,10 @@ class OpenMessagingBenchmark(Service):
 
     def _create_workers(self):
         self.workers = OpenMessagingBenchmarkWorkers(
-            self._ctx,
-            num_workers=OpenMessagingBenchmark.NUM_WORKERS,
-            nodes=self.worker_nodes)
+            self._ctx, num_workers=self.num_workers, nodes=self.worker_nodes)
         self.workers.start()
 
-    def start_node(self, node, timeout_sec=60, **kwargs):
+    def start_node(self, node, timeout_sec=5 * 60, **kwargs):
         idx = self.idx(node)
         self.logger.info("Open Messaging Benchmark: benchmark node - %d on %s",
                          idx, node.account.hostname)
@@ -252,7 +261,7 @@ class OpenMessagingBenchmark(Service):
                     --workers {worker_nodes} \
                     --output {OpenMessagingBenchmark.RESULT_FILE} \
                     --service-version {rp_version} \
-                    -t swarm \
+                    -t {self.topology} \
                     {OpenMessagingBenchmark.WORKLOAD_FILE} >> {OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE} 2>&1 \
                     & disown"
 
