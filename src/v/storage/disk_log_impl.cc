@@ -576,10 +576,12 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     }
     vlog(
       gclog.debug,
-      "[{}] built offset map with {} keys (max allowed {})",
+      "[{}] built offset map with {} keys (max allowed {}), max indexed "
+      "key offset: {}",
       config().ntp(),
       map.size(),
-      map.capacity());
+      map.capacity(),
+      map.max_offset());
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
     for (auto& seg : segs) {
@@ -587,7 +589,20 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
             cfg.asrc->check();
         }
         if (seg->offsets().base_offset > map.max_offset()) {
-            break;
+            // The map was built from newest to oldest segments within this
+            // sliding range. If we see a new segment whose offsets are all
+            // higher than those indexed, it may be because the segment is
+            // entirely comprised of non-data batches. Mark it as compacted so
+            // we can progress through compactions.
+            seg->mark_as_finished_windowed_compaction();
+            vlog(
+              gclog.debug,
+              "[{}] treating segment as compacted, offsets fall above highest "
+              "indexed key {}, likely because they are non-data batches: {}",
+              config().ntp(),
+              map.max_offset(),
+              seg->filename());
+            continue;
         }
         // TODO: implement a segment replacement strategy such that each term
         // tries to write only one segment (or more if the term had a large

@@ -90,6 +90,7 @@ class CompactionFixtureTest
   , public seastar_test {
 public:
     ss::future<> SetUpAsync() override {
+        test_local_cfg.get("election_timeout_ms").set_value(100ms);
         cluster::topic_properties props;
         props.cleanup_policy_bitflags
           = model::cleanup_policy_bitflags::compaction;
@@ -151,6 +152,7 @@ protected:
     const model::ntp ntp{model::kafka_namespace, topic_name, 0};
     cluster::partition* partition;
     ss::shared_ptr<storage::log> log;
+    scoped_config test_local_cfg;
 };
 
 class CompactionFixtureParamTest
@@ -296,4 +298,46 @@ TEST_F(CompactionFixtureTest, TestRecompactWithNewData) {
     disk_log.sliding_window_compact(new_cfg).get();
     auto segments_compacted_3 = disk_log.get_probe().get_segments_compacted();
     ASSERT_LT(segments_compacted, segments_compacted_3);
+}
+
+// Regression test for a bug when compacting when the last segment is all
+// non-data batches. Previously such segments would appear uncompacted, and
+// subsequent compactions would needlessly attempt to recompact.
+TEST_F(CompactionFixtureTest, TestCompactWithNonDataBatches) {
+    ss::abort_source never_abort;
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+    auto raft = partition->raft();
+    generate_data(10, 10, 10).get();
+    auto orig_term = raft->term();
+
+    // Create some segments with only non-data batches.
+    while (raft->term()() < orig_term() + 5) {
+        raft->step_down("test").get();
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&] { return raft->is_leader(); });
+    }
+
+    auto before_compaction_count
+      = disk_log.get_probe().get_segments_compacted();
+    storage::compaction_config new_cfg(
+      disk_log.segments().back()->offsets().base_offset,
+      ss::default_priority_class(),
+      never_abort,
+      std::nullopt);
+    disk_log.sliding_window_compact(new_cfg).get();
+
+    // The first time around, we should actually compact.
+    auto after_compaction_count = disk_log.get_probe().get_segments_compacted();
+    ASSERT_GT(after_compaction_count, before_compaction_count);
+    for (const auto& seg : disk_log.segments()) {
+        if (seg->has_appender()) {
+            continue;
+        }
+        ASSERT_TRUE(seg->finished_windowed_compaction());
+    }
+
+    // But a subsequent attempt at compaction should do nothing.
+    disk_log.sliding_window_compact(new_cfg).get();
+    auto after_second_compaction_count
+      = disk_log.get_probe().get_segments_compacted();
+    ASSERT_EQ(after_second_compaction_count, after_compaction_count);
 }
