@@ -18,6 +18,7 @@ from rptest.util import wait_until_result
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 
 import json
 import random
@@ -207,12 +208,38 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         return anomalies_per_ntpr
 
+    def _match_with_expected_anomalies(self, to_match: dict[NTPR, dict],
+                                       expected_anomalies: dict[NTPR, dict]):
+        self.logger.debug(
+            f"Matching {to_match=} against {expected_anomalies=}")
+
+        for ntpr, anomalies in expected_anomalies.items():
+            if ntpr not in to_match:
+                self.logger.debug(f"Expected anomalies for {ntpr}")
+                return False
+
+            for anomaly_type, anomaly_set in to_match[ntpr].items():
+                if anomaly_type not in expected_anomalies[ntpr]:
+                    continue
+
+                expected = expected_anomalies[ntpr][anomaly_type]
+                is_subset = expected.issubset(anomaly_set)
+                if not is_subset:
+                    self.logger.debug(
+                        f"Expected anomalies of type {anomaly_type} ({expected}) are not subset of {anomaly_set}"
+                    )
+                    return False
+
+        return True
+
     def _assert_no_anomalies(self):
         anomalies_per_ntpr = self._collect_anomalies()
         for ntpr, anomalies in anomalies_per_ntpr.items():
             assert anomalies is None, f"{ntpr} reported unexpected anomalies: {anomalies}"
 
-    def _delete_segment_and_await_anomaly(self):
+    def _delete_segment_and_await_anomaly(self,
+                                          expected_anomalies: dict[NTPR,
+                                                                   dict]):
         segment_metas = [
             meta for meta in self.cloud_storage_client.list_objects(
                 self.bucket_name) if "log" in meta.key
@@ -251,15 +278,27 @@ class CloudStorageScrubberTest(RedpandaTest):
             if "missing_segments" not in anomalies_per_ntpr[ntpr]:
                 return False
 
-            return to_delete.key in anomalies_per_ntpr[ntpr][
+            found = to_delete.key in anomalies_per_ntpr[ntpr][
                 "missing_segments"]
 
-        wait_until(ntpr_missing_segment,
-                   timeout_sec=self.scrub_timeout,
-                   backoff_sec=2,
-                   err_msg="Missing segment anomaly not reported")
+            if found:
+                return True, to_delete.key
+            else:
+                return False
 
-    def _delete_spillover_manifest_and_await_anomaly(self):
+        missing_seg = wait_until_result(
+            ntpr_missing_segment,
+            timeout_sec=self.scrub_timeout,
+            backoff_sec=2,
+            err_msg="Missing segment anomaly not reported")
+
+        if ntpr not in expected_anomalies:
+            expected_anomalies[ntpr] = dict()
+
+        expected_anomalies[ntpr]["missing_segments"] = set([missing_seg])
+
+    def _delete_spillover_manifest_and_await_anomaly(
+            self, expected_anomalies: dict[NTPR, dict]):
         pid = random.randint(0, 2)
         view = BucketView(self.redpanda)
         spillover_metas = view.get_spillover_metadata(
@@ -289,16 +328,31 @@ class CloudStorageScrubberTest(RedpandaTest):
             if "missing_spillover_manifests" not in anomalies_per_ntpr[ntpr]:
                 return False
 
-            return to_delete.path in anomalies_per_ntpr[ntpr][
+            found = to_delete.path in anomalies_per_ntpr[ntpr][
                 "missing_spillover_manifests"]
 
-        wait_until(ntpr_missing_spill_manifest,
-                   timeout_sec=self.scrub_timeout,
-                   backoff_sec=2,
-                   err_msg="Missing spillover manifest anomaly not reported")
+            if found:
+                return True, to_delete.path
+            else:
+                return False
 
-    def _assert_anomalies_stable_after_leader_shuffle(self):
-        self.logger.info("Checking anomalies stay stable after leader shuffle")
+        missing_spill = wait_until_result(
+            ntpr_missing_spill_manifest,
+            timeout_sec=self.scrub_timeout,
+            backoff_sec=2,
+            err_msg="Missing spillover manifest anomaly not reported")
+
+        if ntpr not in expected_anomalies:
+            expected_anomalies[ntpr] = dict()
+
+        expected_anomalies[ntpr]["missing_spillover_manifests"] = set(
+            [missing_spill])
+
+    def _assert_anomalies_stable_after_leader_shuffle(
+            self, expected_anomalies: dict[NTPR, dict]):
+        self.logger.info(
+            "Checking anomalies stay stable after leader shuffle. Expected subset: {expected_anomalies}"
+        )
 
         old_anomalies = self._collect_anomalies()
         assert any([
@@ -318,7 +372,8 @@ class CloudStorageScrubberTest(RedpandaTest):
             anomalies = self._collect_anomalies()
             self.logger.debug(f"Reported anomalies {anomalies}")
 
-            return anomalies == old_anomalies
+            return self._match_with_expected_anomalies(anomalies,
+                                                       expected_anomalies)
 
         wait_until(
             anomalies_stable,
@@ -326,7 +381,9 @@ class CloudStorageScrubberTest(RedpandaTest):
             backoff_sec=2,
             err_msg="Reported anomalies changed after leadership shuffle")
 
-    def _assert_anomalies_stable_after_restart(self):
+    def _assert_anomalies_stable_after_restart(self,
+                                               expected_anomalies: dict[NTPR,
+                                                                        dict]):
         self.logger.info(
             "Checking anomalies stay stable after full cluster restart")
 
@@ -345,14 +402,17 @@ class CloudStorageScrubberTest(RedpandaTest):
             anomalies = self._collect_anomalies()
             self.logger.debug(f"Reported anomalies {anomalies}")
 
-            return anomalies == old_anomalies
+            return self._match_with_expected_anomalies(anomalies,
+                                                       expected_anomalies)
 
         wait_until(anomalies_stable,
                    timeout_sec=self.scrub_timeout,
                    backoff_sec=2,
                    err_msg="Reported anomalies changed after full restart")
 
-    def _assert_segment_metadata_anomalies(self):
+    def _assert_segment_metadata_anomalies(self,
+                                           expected_anomalies: dict[NTPR,
+                                                                    dict]):
         self.logger.info(
             "Fudging manifest and waiting on segment metadata anomalies")
 
@@ -414,27 +474,35 @@ class CloudStorageScrubberTest(RedpandaTest):
                 if (meta.anomaly_type == "offset_gap"
                         and meta.at_segment.base_offset
                         == detect_at_seg_meta["base_offset"]):
-                    return True
+                    return True, meta
 
-        wait_until(
+        meta_anomaly = wait_until_result(
             gap_reported,
             # A new manifest needs to be uploaded, so the timeout is more generous
             timeout_sec=self.scrub_timeout + 10,
             backoff_sec=2,
             err_msg="Gap not reported")
 
+        if ntpr not in expected_anomalies:
+            expected_anomalies[ntpr] = dict()
+
+        expected_anomalies[ntpr]["segment_metadata_anomalies"] = set(
+            [meta_anomaly])
+
     @cluster(num_nodes=4, log_allow_list=SCRUBBER_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_scrubber(self, cloud_storage_type):
+        expected_anomalies: dict[NTPR, dict] = dict()
+
         self._produce()
         self._assert_no_anomalies()
-        self._delete_spillover_manifest_and_await_anomaly()
-        self._delete_segment_and_await_anomaly()
+        self._delete_spillover_manifest_and_await_anomaly(expected_anomalies)
+        self._delete_segment_and_await_anomaly(expected_anomalies)
 
-        self._assert_segment_metadata_anomalies()
+        self._assert_segment_metadata_anomalies(expected_anomalies)
 
-        self._assert_anomalies_stable_after_leader_shuffle()
-        self._assert_anomalies_stable_after_restart()
+        self._assert_anomalies_stable_after_leader_shuffle(expected_anomalies)
+        self._assert_anomalies_stable_after_restart(expected_anomalies)
 
         # This test deletes segments, spillover manifests
         # and fudges the manifest. rp-storage-tool also picks
