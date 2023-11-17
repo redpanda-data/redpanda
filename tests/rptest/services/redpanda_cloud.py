@@ -350,23 +350,24 @@ class CloudCluster():
         return r['id']
 
     def _cluster_ready(self):
-        self._logger.debug('checking readiness of '
-                           f'cluster {self.current.name}')
-        params = {'namespaceUuid': self.current.namespace_uuid}
-        clusters = self.cloudv2._http_get(endpoint='/api/v1/clusters',
-                                          params=params)
-        for c in clusters:
-            if c['name'] == self.current.name:
-                self._logger.debug(f"Cluster status: {c['state']}")
-                self.current.last_status = c['state']
-                if c['state'] == 'ready':
-                    return True
-                elif c['state'] == 'unknown':
-                    raise RuntimeError("Creation failed (state 'unknown') "
-                                       f"for '{self.config.provider}'")
-                elif c['state'] == 'deleting':
-                    raise RuntimeError("Creation failed (state 'deleting') "
-                                       f"for '{self.config.provider}'")
+        # Get cluster info
+        try:
+            c = self._get_cluster(self.current.id)
+        except Exception as e:
+            # Consider it non critical and try again later
+            self._logger.warn(f"Failed to get cluster info: {e}")
+            return False
+        # Check state and raise error if anything critical happens
+        self._logger.debug(f"Cluster status: {c['state']}")
+        self.current.last_status = c['state']
+        if c['state'] == 'ready':
+            return True
+        elif c['state'] == 'unknown':
+            raise RuntimeError("Creation failed (state 'unknown') "
+                               f"for '{self.config.provider}'")
+        elif c['state'] == 'deleting':
+            raise RuntimeError("Creation failed (state 'deleting') "
+                               f"for '{self.config.provider}'")
 
         return False
 
@@ -381,23 +382,14 @@ class CloudCluster():
         return cluster['status']['listeners']['redpandaConsole']['default'][
             'urls'][0]
 
-    def _get_cluster_id_and_network_id(self):
+    def _get_network_id(self):
         """
-        Get clusterId.
-        Uses self.current data as a source of needed params:
-        self.current.namespace_uuid: namespaceUuid the cluster is contained in
-        self.current.name: name of the cluster
-
-        :return: clusterId, networkId as a string or None if not found
+        Get network id.
+        :return: networkId as a string or None if not found
         """
-
-        params = {'namespaceUuid': self.current.namespace_uuid}
-        clusters = self.cloudv2._http_get(endpoint='/api/v1/clusters',
-                                          params=params)
-        for c in clusters:
-            if c['name'] == self.current.name:
-                return (c['id'], c['spec']['networkId'])
-        return None, None
+        _cluster = self.cloudv2._http_get(
+            endpoint=f'/api/v1/clusters/{self.config.id}')
+        return _cluster['spec']['networkId']
 
     def _get_network(self):
         return self.cloudv2._http_get(
@@ -631,10 +623,10 @@ class CloudCluster():
             self.config.config_profile_name)
         if self.current.product_name is None:
             raise RuntimeError("ProductID failed to be determined for "
-                                f"'{self.config.provider}', "
-                                f"'{self.config.type}', "
-                                f"'{self.config.install_pack_ver}', "
-                                f"'{self.config.region}'")
+                               f"'{self.config.provider}', "
+                               f"'{self.config.type}', "
+                               f"'{self.config.install_pack_ver}', "
+                               f"'{self.config.region}'")
 
         # Call Api to create cluster
         self._logger.info(f'creating cluster name {self.current.name}')
@@ -661,6 +653,8 @@ class CloudCluster():
             _cluster_id = self._wait_for_cluster_id(r['id'])
             c = self._get_cluster(_cluster_id)
             self.current.last_status = c['state']
+            self._logger.info("Cluster status when id was available: "
+                              f"'{self.current.last_status}'")
         except Exception as e:
             raise RuntimeError("Failed to get initial cluster spec") from e
 
@@ -670,7 +664,7 @@ class CloudCluster():
             # Login without saving creds
             self.utils.rpk_cloud_login(self.config.oauth_client_id,
                                        self.config.oauth_client_secret)
-           # save cluster id so we can delete it in case of failure
+            # save cluster id so we can delete it in case of failure
             self.config.id = _cluster_id
             # Kick off cluster creation
             # Timeout for this is half an hour as this is only agent
@@ -680,15 +674,16 @@ class CloudCluster():
             pass
         else:
             raise RuntimeError("Cloud type not supported: "
-                                f"'{self.config.type}'")
+                               f"'{self.config.type}'")
 
+        self.current.id = _cluster_id
         # In case of FMC, just poll the cluster and wait when ready
         # Poll API and wait for the cluster creation
         # Announce wait
         self._logger.info(
             f'waiting for creation of cluster {self.current.name} '
-            f'namespaceUuid {r["namespaceUuid"]}, checking every '
-            f'{self.CHECK_BACKOFF_SEC} seconds')
+            f'({self.current.id}), namespaceUuid {r["namespaceUuid"]}, '
+            f'checking every {self.CHECK_BACKOFF_SEC} seconds')
         wait_until(lambda: self._cluster_ready(),
                    timeout_sec=self.CHECK_TIMEOUT_SEC,
                    backoff_sec=self.CHECK_BACKOFF_SEC,
@@ -696,8 +691,7 @@ class CloudCluster():
                    f'of cloud cluster {self.current.name}; '
                    f'last state {self.current.last_status}')
 
-        self.config.id, self.current.network_id = \
-            self._get_cluster_id_and_network_id()
+        self.current.network_id = self._get_network_id()
 
         # at this point cluster is ready
         # just save the id to reuse it in next test
@@ -722,37 +716,42 @@ class CloudCluster():
             headers = {'Authorization': f'Basic {token}'}
             proxy_url = cluster['status']['listeners']['pandaProxy'][
                 'panda-proxy']['urls'][0]
-            return self.cloudv2._http_get(path, base_url=proxy_url,
+            return self.cloudv2._http_get(path,
+                                          base_url=proxy_url,
                                           override_headers=headers)
 
         # Get cluster details
         cluster = {}
         try:
+            self._logger.info("Getting cluster specs")
             cluster = self._get_cluster(self.config.id)
         except Exception as e:
-            self._logger.warning("# Failed to get info for cluster with Id: "
-                             f"'{self.config.id}'")
+            self._logger.warn("# Failed to get info for cluster with Id: "
+                              f"'{self.config.id}'")
             return False
 
         # Check that cluster is operational
         # Check brokers count
+        self._logger.info("Checking cluster brokers")
         _brokers = _get(cluster, "/brokers", superuser)
         if len(_brokers['brokers']) < 3:
-            self._logger.warning("WARNING: Less than 3 brokers operational")
+            self._logger.warn("Less than 3 brokers operational")
             return False
         # Check topic count
+        self._logger.info("Checking cluster topics")
         _topics = _get(cluster, "/topics", superuser)
-        _critical = ["_schemas","__redpanda.connectors_logs",
-                     "_internal_connectors_status",
-                     "_internal_connectors_configs",
-                     "_redpanda_e2e_probe",
-                     "_internal_connectors_offsets"]
+        _critical = [
+            "_schemas", "__redpanda.connectors_logs",
+            "_internal_connectors_status", "_internal_connectors_configs",
+            "_redpanda_e2e_probe", "_internal_connectors_offsets"
+        ]
         _intersect = list(set(_topics) & set(_critical))
         if len(_intersect) < 6:
-            self._logger.warning("WARNING: Cluster missing critical topics")
+            self._logger.warn("Cluster missing critical topics")
             return False
 
         # Check brokers metric
+        self._logger.info("Checking cluster public_metrics")
         _metrics = self.get_public_metrics()
         _metrics = text_string_to_metric_families(_metrics)
         _brokers_metric = None
@@ -760,14 +759,13 @@ class CloudCluster():
             if _metric.name == "redpanda_cluster_brokers":
                 _brokers_metric = _metric
         if _brokers_metric is None:
-            self._logger.warning("WARNING: Failed to get brokers metric")
+            self._logger.warn("Failed to get brokers metric")
             return False
 
         # Get Samples
         _instances = [s.value for s in _brokers_metric.samples]
         if max(_instances) < 3:
-            self._logger.warning("WARNING: Prometheus reports "
-                                 "less than 3 instances")
+            self._logger.warn("Prometheus reports less than 3 instances")
             return False
 
         # All checks passed
@@ -797,9 +795,14 @@ class CloudCluster():
         if self.config.id != '':
             # Cluster already exist
             # Check if cluster is healthy
-            if not self._ensure_cluster_health(superuser):
-                self.log.warning(f"WARNING: Cluster with id '{self.config.id}'"
-                                 " not healthy, creating new")
+            try:
+                _isHealthy = self._ensure_cluster_health(superuser)
+            except Exception as e:
+                self._logger.warning(f"Failed to ensure cluster health: {e}")
+                _isHealthy = False
+            if not _isHealthy:
+                self._logger.warn(f"Cluster with id '{self.config.id}' "
+                                  "not healthy, creating new")
                 # Health check fail, remove cluster id
                 self.config.id = ""
                 # Clean out cluster id file
