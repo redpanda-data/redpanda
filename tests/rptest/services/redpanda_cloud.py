@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+from prometheus_client.parser import text_string_to_metric_families
+
 from ducktape.utils.util import wait_until
 from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients import make_provider_client
@@ -356,23 +358,24 @@ class CloudCluster():
         return r['id']
 
     def _cluster_ready(self):
-        self._logger.debug('checking readiness of '
-                           f'cluster {self.current.name}')
-        params = {'namespaceUuid': self.current.namespace_uuid}
-        clusters = self.cloudv2._http_get(endpoint='/api/v1/clusters',
-                                          params=params)
-        for c in clusters:
-            if c['name'] == self.current.name:
-                self._logger.debug(f"Cluster status: {c['state']}")
-                self.current.last_status = c['state']
-                if c['state'] == 'ready':
-                    return True
-                elif c['state'] == 'unknown':
-                    raise RuntimeError("Creation failed (state 'unknown') "
-                                       f"for '{self.config.provider}'")
-                elif c['state'] == 'deleting':
-                    raise RuntimeError("Creation failed (state 'deleting') "
-                                       f"for '{self.config.provider}'")
+        # Get cluster info
+        try:
+            c = self._get_cluster(self.current.id)
+        except Exception as e:
+            # Consider it non critical and try again later
+            self._logger.warn(f"Failed to get cluster info: {e}")
+            return False
+        # Check state and raise error if anything critical happens
+        self._logger.debug(f"Cluster status: {c['state']}")
+        self.current.last_status = c['state']
+        if c['state'] == 'ready':
+            return True
+        elif c['state'] == 'unknown':
+            raise RuntimeError("Creation failed (state 'unknown') "
+                               f"for '{self.config.provider}'")
+        elif c['state'] == 'deleting':
+            raise RuntimeError("Creation failed (state 'deleting') "
+                               f"for '{self.config.provider}'")
 
         return False
 
@@ -387,23 +390,14 @@ class CloudCluster():
         return cluster['status']['listeners']['redpandaConsole']['default'][
             'urls'][0]
 
-    def _get_cluster_id_and_network_id(self):
+    def _get_network_id(self):
         """
-        Get clusterId.
-        Uses self.current data as a source of needed params:
-        self.current.namespace_uuid: namespaceUuid the cluster is contained in
-        self.current.name: name of the cluster
-
-        :return: clusterId, networkId as a string or None if not found
+        Get network id.
+        :return: networkId as a string or None if not found
         """
-
-        params = {'namespaceUuid': self.current.namespace_uuid}
-        clusters = self.cloudv2._http_get(endpoint='/api/v1/clusters',
-                                          params=params)
-        for c in clusters:
-            if c['name'] == self.current.name:
-                return (c['id'], c['spec']['networkId'])
-        return None, None
+        _cluster = self.cloudv2._http_get(
+            endpoint=f'/api/v1/clusters/{self.config.id}')
+        return _cluster['spec']['networkId']
 
     def _get_network(self):
         return self.cloudv2._http_get(
@@ -575,6 +569,14 @@ class CloudCluster():
         _cluster = self.cloudv2._http_get(endpoint=f'/api/v1/clusters/{uuid}')
         return _cluster['id'] != uuid
 
+    def rm_cluster_id_file(self):
+        """
+            Remove cluster id file in case of failure
+        """
+        if os.path.exists(self._cid_file):
+            os.remove(self._cid_file)
+        return
+
     def save_cluster_id(self, cluster_id):
         """
         Save cluster id to results folder for next test to use
@@ -606,6 +608,177 @@ class CloudCluster():
         self._logger.info(f"Cluster ID is '{_id}'")
         return _id
 
+    def _create_new_cluster(self):
+        # In order not to have long list of arguments in each internal
+        # functions, use self.current as a data store
+        # Each of the _*_payload functions and _get_* will use it as a source
+        # of data to create proper body for REST request
+        self.current.namespace_uuid = self._create_namespace()
+        # name rp-ducktape-cluster-3b36f516
+        self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
+        # Install pack handling
+        if self.config.install_pack_ver == 'latest':
+            self.config.install_pack_ver = \
+                self._get_latest_install_pack_ver()
+        self.current.install_pack_ver = self.config.install_pack_ver
+        # Multi-zone not supported, so get a single one from the list
+        self.current.region = self.config.region
+        self.current.region_id = self._get_region_id()
+        self.current.zones = self.provider_cli.get_single_zone(
+            self.current.region)
+        # Call CloudV2 API to determine Product ID
+        self.current.product_name = self._get_product_name(
+            self.config.config_profile_name)
+        if self.current.product_name is None:
+            raise RuntimeError("ProductID failed to be determined for "
+                               f"'{self.config.provider}', "
+                               f"'{self.config.type}', "
+                               f"'{self.config.install_pack_ver}', "
+                               f"'{self.config.region}'")
+
+        # Call Api to create cluster
+        self._logger.info(f'creating cluster name {self.current.name}')
+        # Prepare cluster payload block
+        _body = self._create_cluster_payload()
+        self._logger.debug(f'body: {json.dumps(_body)}')
+        # Send API request to create cluster
+        r = self.cloudv2._http_post(
+            endpoint='/api/v1/workflows/network-cluster', json=_body)
+
+        # handle error on CloudV2 side
+        if r is None:
+            raise RuntimeError(self.cloudv2.lasterror)
+
+        try:
+            # At this point cluster has UUID instead of normal one
+
+            # For BYOC creation a non-uuid is needed
+            # It gets updated when spec makes it through
+            # the workslow, so just wait
+
+            # For FMC, we just make sure that cluster is created
+            # in API and its status is updated
+            _cluster_id = self._wait_for_cluster_id(r['id'])
+            c = self._get_cluster(_cluster_id)
+            self.current.last_status = c['state']
+            self._logger.info("Cluster status when id was available: "
+                              f"'{self.current.last_status}'")
+        except Exception as e:
+            raise RuntimeError("Failed to get initial cluster spec") from e
+
+        # In case of BYOC cluster, do some additional stuff to create it
+        if self.config.type == CLOUD_TYPE_BYOC:
+            # Handle byoc creation
+            # Login without saving creds
+            self.utils.rpk_cloud_login(self.config.oauth_client_id,
+                                       self.config.oauth_client_secret)
+            # save cluster id so we can delete it in case of failure
+            self.config.id = _cluster_id
+            # Kick off cluster creation
+            # Timeout for this is half an hour as this is only agent
+            self.utils.rpk_cloud_apply(_cluster_id)
+        elif self.config.type == CLOUD_TYPE_FMC:
+            # Nothing to do here
+            pass
+        else:
+            raise RuntimeError("Cloud type not supported: "
+                               f"'{self.config.type}'")
+
+        self.current.id = _cluster_id
+        # In case of FMC, just poll the cluster and wait when ready
+        # Poll API and wait for the cluster creation
+        # Announce wait
+        self._logger.info(
+            f'waiting for creation of cluster {self.current.name} '
+            f'({self.current.id}), namespaceUuid {r["namespaceUuid"]}, '
+            f'checking every {self.CHECK_BACKOFF_SEC} seconds')
+        wait_until(lambda: self._cluster_ready(),
+                   timeout_sec=self.CHECK_TIMEOUT_SEC,
+                   backoff_sec=self.CHECK_BACKOFF_SEC,
+                   err_msg='Unable to deterimine readiness '
+                   f'of cloud cluster {self.current.name}; '
+                   f'last state {self.current.last_status}')
+
+        self.current.network_id = self._get_network_id()
+
+        # at this point cluster is ready
+        # just save the id to reuse it in next test
+        if self.config.use_same_cluster:
+            self.save_cluster_id(self.config.id)
+
+        return
+
+    def _ensure_cluster_health(self, superuser):
+        """
+            Check if current cluster is healthy
+              - check connectivity
+              - query health data
+              - list topics
+        """
+        def _get(cluster, path, user):
+            # Prepare credentials
+            _u = user.username
+            _p = user.password
+            b64 = base64.b64encode(bytes(f'{_u}:{_p}', 'utf-8'))
+            token = b64.decode('utf-8')
+            headers = {'Authorization': f'Basic {token}'}
+            proxy_url = cluster['status']['listeners']['pandaProxy'][
+                'panda-proxy']['urls'][0]
+            return self.cloudv2._http_get(path,
+                                          base_url=proxy_url,
+                                          override_headers=headers)
+
+        # Get cluster details
+        cluster = {}
+        try:
+            self._logger.info("Getting cluster specs")
+            cluster = self._get_cluster(self.config.id)
+        except Exception as e:
+            self._logger.warn("# Failed to get info for cluster with Id: "
+                              f"'{self.config.id}'")
+            return False
+
+        # Check that cluster is operational
+        # Check brokers count
+        self._logger.info("Checking cluster brokers")
+        _brokers = _get(cluster, "/brokers", superuser)
+        if len(_brokers['brokers']) < 3:
+            self._logger.warn("Less than 3 brokers operational")
+            return False
+        # Check topic count
+        self._logger.info("Checking cluster topics")
+        _topics = _get(cluster, "/topics", superuser)
+        _critical = [
+            "_schemas", "__redpanda.connectors_logs",
+            "_internal_connectors_status", "_internal_connectors_configs",
+            "_redpanda_e2e_probe", "_internal_connectors_offsets"
+        ]
+        _intersect = list(set(_topics) & set(_critical))
+        if len(_intersect) < 6:
+            self._logger.warn("Cluster missing critical topics")
+            return False
+
+        # Check brokers metric
+        self._logger.info("Checking cluster public_metrics")
+        _metrics = self.get_public_metrics()
+        _metrics = text_string_to_metric_families(_metrics)
+        _brokers_metric = None
+        for _metric in _metrics:
+            if _metric.name == "redpanda_cluster_brokers":
+                _brokers_metric = _metric
+        if _brokers_metric is None:
+            self._logger.warn("Failed to get brokers metric")
+            return False
+
+        # Get Samples
+        _instances = [s.value for s in _brokers_metric.samples]
+        if max(_instances) < 3:
+            self._logger.warn("Prometheus reports less than 3 instances")
+            return False
+
+        # All checks passed
+        return True
+
     def create(self, superuser: Optional[SaslCredentials] = None) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
@@ -621,115 +794,41 @@ class CloudCluster():
         if _id and self.config.use_same_cluster:
             # update config with new id
             self.config.id = _id
+
         # set network flag
         if not self.isPublicNetwork:
             self.current.connection_type = 'private'
+
         # Prepare the cluster
         if self.config.id != '':
             # Cluster already exist
-            # Just load needed info to create peering
-            self._logger.warn('will not create cluster; already have '
-                              f'cluster_id {self.config.id}')
-            # Populate self.current from cluster info
-            self._update_live_cluster_info()
-            # Fill in additional info based on collected from cluster
-            self.current.product_name = self._get_product_name(
-                self.config.config_profile_name)
-        else:
-            # In order not to have long list of arguments in each internal
-            # functions, use self.current as a data store
-            # Each of the _*_payload functions and _get_* will use it as a source
-            # of data to create proper body for REST request
-            self.current.namespace_uuid = self._create_namespace()
-            # name rp-ducktape-cluster-3b36f516
-            self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
-            # Install pack handling
-            if self.config.install_pack_ver == 'latest':
-                self.config.install_pack_ver = \
-                    self._get_latest_install_pack_ver()
-            self.current.install_pack_ver = self.config.install_pack_ver
-            # Multi-zone not supported, so get a single one from the list
-            self.current.region = self.config.region
-            self.current.region_id = self._get_region_id()
-            self.current.zones = self.provider_cli.get_single_zone(
-                self.current.region)
-            # Call CloudV2 API to determine Product ID
-            self.current.product_name = self._get_product_name(
-                self.config.config_profile_name)
-            if self.current.product_name is None:
-                raise RuntimeError("ProductID failed to be determined for "
-                                   f"'{self.config.provider}', "
-                                   f"'{self.config.type}', "
-                                   f"'{self.config.install_pack_ver}', "
-                                   f"'{self.config.region}'")
-
-            # Call Api to create cluster
-            self._logger.info(f'creating cluster name {self.current.name}')
-            # Prepare cluster payload block
-            _body = self._create_cluster_payload()
-            self._logger.debug(f'body: {json.dumps(_body)}')
-            # Send API request to create cluster
-            r = self.cloudv2._http_post(
-                endpoint='/api/v1/workflows/network-cluster', json=_body)
-
-            # handle error on CloudV2 side
-            if r is None:
-                raise RuntimeError(self.cloudv2.lasterror)
-
+            # Check if cluster is healthy
             try:
-                # At this point cluster has UUID instead of normal one
-
-                # For BYOC creation a non-uuid is needed
-                # It gets updated when spec makes it through
-                # the workslow, so just wait
-
-                # For FMC, we just make sure that cluster is created
-                # in API and its status is updated
-                _cluster_id = self._wait_for_cluster_id(r['id'])
-                c = self._get_cluster(_cluster_id)
-                self.current.last_status = c['state']
+                _isHealthy = self._ensure_cluster_health(superuser)
             except Exception as e:
-                raise RuntimeError("Failed to get initial cluster spec") from e
-
-            # In case of BYOC cluster, do some additional stuff to create it
-            if self.config.type == CLOUD_TYPE_BYOC:
-                # Handle byoc creation
-                # Login without saving creds
-                self.utils.rpk_cloud_login(self.config.oauth_client_id,
-                                           self.config.oauth_client_secret)
-                # save cluster id so we can delete it in case of failure
-                self.config.id = _cluster_id
-                # Kick off cluster creation
-                # Timeout for this is half an hour as this is only agent
-                self.utils.rpk_cloud_apply(_cluster_id)
-            elif self.config.type == CLOUD_TYPE_FMC:
-                # Nothing to do here
-                pass
+                self._logger.warning(f"Failed to ensure cluster health: {e}")
+                _isHealthy = False
+            if not _isHealthy:
+                self._logger.warn(f"Cluster with id '{self.config.id}' "
+                                  "not healthy, creating new")
+                # Health check fail, remove cluster id
+                self.config.id = ""
+                # Clean out cluster id file
+                self.rm_cluster_id_file()
+                # Create new cluster
+                self._create_new_cluster()
             else:
-                raise RuntimeError("Cloud type not supported: "
-                                   f"'{self.config.type}'")
-
-            # In case of FMC, just poll the cluster and wait when ready
-            # Poll API and wait for the cluster creation
-            # Announce wait
-            self._logger.info(
-                f'waiting for creation of cluster {self.current.name} '
-                f'namespaceUuid {r["namespaceUuid"]}, checking every '
-                f'{self.CHECK_BACKOFF_SEC} seconds')
-            wait_until(lambda: self._cluster_ready(),
-                       timeout_sec=self.CHECK_TIMEOUT_SEC,
-                       backoff_sec=self.CHECK_BACKOFF_SEC,
-                       err_msg='Unable to deterimine readiness '
-                       f'of cloud cluster {self.current.name}; '
-                       f'last state {self.current.last_status}')
-
-            self.config.id, self.current.network_id = \
-                self._get_cluster_id_and_network_id()
-
-            # at this point cluster is ready
-            # just save the id to reuse it in next test
-            if self.config.use_same_cluster:
-                self.save_cluster_id(self.config.id)
+                # Just load needed info to create peering
+                self._logger.warn('will not create cluster; already have '
+                                  f'cluster_id {self.config.id}')
+                # Populate self.current from cluster info
+                self._update_live_cluster_info()
+                # Fill in additional info based on collected from cluster
+                self.current.product_name = self._get_product_name(
+                    self.config.config_profile_name)
+        else:
+            # Just create new cluster
+            self._create_new_cluster()
 
         # Update Cluster console Url
         self.current.consoleUrl = self._get_cluster_console_url()
