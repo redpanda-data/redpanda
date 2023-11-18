@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+import tempfile
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -11,8 +12,10 @@ KC_INSTALL_DIR = os.path.join('/', 'opt', 'keycloak')
 KC_DATA_DIR = os.path.join(KC_INSTALL_DIR, 'data')
 KC_VAULT_DIR = os.path.join(KC_DATA_DIR, 'vault')
 KC_BIN_DIR = os.path.join(KC_INSTALL_DIR, 'bin')
+KC_CONF_DIR = os.path.join(KC_INSTALL_DIR, 'conf')
 KC = os.path.join(KC_BIN_DIR, 'kc.sh')
 KCADM = os.path.join(KC_BIN_DIR, 'kcadm.sh')
+KC_CFG = 'keycloak.conf'
 KC_ADMIN = 'admin'
 KC_ADMIN_PASSWORD = 'admin'
 KC_ROOT_LOG_LEVEL = 'INFO'
@@ -28,13 +31,50 @@ START_CMD_TMPL = """
 LAUNCH_JBOSS_IN_BACKGROUND=1 \
 KEYCLOAK_ADMIN={admin} \
 KEYCLOAK_ADMIN_PASSWORD={pw} \
-{kc} start-dev --http-port={port} --hostname={host} --hostname-port={port} --http-enabled=true --proxy=passthrough \
---log="{log_handler}" --log-file="{logfile}" --log-level="{log_level}" &
+{kc} start-dev &
 """
 
 OIDC_CONFIG_TMPL = """\
 http://{host}:{port}/realms/{realm}/.well-known/openid-configuration\
 """
+
+DEFAULT_CONFIG = {
+    'http-port': KC_PORT,
+    'hostname': None,
+    'hostname-port': KC_PORT,
+    'http-enabled': True,
+    'proxy': 'passthrough',
+    'log': KC_LOG_HANDLER,
+    'log-file': KC_LOG_FILE,
+    'log-level': KC_ROOT_LOG_LEVEL,
+}
+
+
+class KeycloakConfigWriter:
+    _cfg = DEFAULT_CONFIG.copy()
+
+    def __init__(self, dest_dir: str = KC_CONF_DIR, extra_cfg: dict = {}):
+        self._cfg.update(extra_cfg)
+        self._dest_dir = dest_dir
+
+    @property
+    def rep(self):
+        return json.dumps(self._cfg)
+
+    def write(self, node):
+        try:
+            node.account.mkdirs(self._dest_dir)
+        except:
+            pass
+        dest_f = os.path.join(self._dest_dir, KC_CFG)
+        with tempfile.NamedTemporaryFile(mode='w') as f:
+            for k, v in self._cfg.items():
+                if v is None:
+                    continue
+                f.write(f"{k}={str(v).lower() if type(v) is bool else v}\n")
+            f.flush()
+            node.account.copy_to(f.name, dest_f)
+        return dest_f
 
 
 class OAuthConfig:
@@ -153,6 +193,7 @@ class KeycloakService(Service):
         self.http_port = port
         self.log_level = log_level
         self._admin = None
+        self._remote_config_file = None
 
     @property
     def admin(self):
@@ -163,15 +204,10 @@ class KeycloakService(Service):
     def admin_ll(self):
         return self.admin.kc_admin
 
-    def _start_cmd(self, node):
+    def _start_cmd(self):
         cmd = START_CMD_TMPL.format(admin=KC_ADMIN,
                                     pw=KC_ADMIN_PASSWORD,
-                                    kc=KC,
-                                    port=self.http_port,
-                                    log_handler=KC_LOG_HANDLER,
-                                    logfile=KC_LOG_FILE,
-                                    log_level=self.log_level,
-                                    host=self.host(node))
+                                    kc=KC)
         self.logger.debug(f"KC START CMD: {cmd}")
         return cmd
 
@@ -209,12 +245,22 @@ class KeycloakService(Service):
                    node,
                    access_token_lifespan_s=DEFAULT_AT_LIFESPAN_S,
                    **kwargs):
-        self.logger.debug("Starting Keycloak service")
+
+        extra_cfg = {
+            'hostname': self.host(node),
+            'hostname-port': self.hostname_port,
+            'http-port': self.http_port,
+            'log-level': self.log_level,
+        }
+        cfg_writer = KeycloakConfigWriter(extra_cfg=extra_cfg)
+        self._remote_config_file = cfg_writer.write(node)
 
         node.account.ssh(f"touch {KC_LOG_FILE}", allow_fail=False)
 
+        self.logger.debug(f"Starting Keycloak service {cfg_writer.rep}")
+
         with node.account.monitor_log(KC_LOG_FILE) as monitor:
-            node.account.ssh_capture(self._start_cmd(node), allow_fail=False)
+            node.account.ssh_capture(self._start_cmd(), allow_fail=False)
             monitor.wait_until("Running the server in", timeout_sec=120)
 
         self.logger.debug(f"Keycloak PIDs: {self.pids(node)}")
@@ -248,3 +294,5 @@ class KeycloakService(Service):
         # TODO: this might be overly aggressive
         node.account.ssh(f"rm -rf {KC_LOG_FILE}")
         node.account.ssh(f"rm -rf /opt/keycloak/data/*", allow_fail=False)
+        if self._remote_config_file is not None:
+            node.account.ssh(f"rm {self._remote_config_file}")
