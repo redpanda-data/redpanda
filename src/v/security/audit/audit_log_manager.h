@@ -14,8 +14,10 @@
 #include "kafka/client/fwd.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/types.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "net/types.h"
+#include "security/acl.h"
 #include "security/audit/probe.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
@@ -92,39 +94,70 @@ public:
       security::audit::returns_auditable_resource_vector Func,
       typename... Args>
     bool enqueue_authz_audit_event(
-      kafka::api_key api, const T& resource_name, Func func, Args&&... args) {
+      kafka::api_key api,
+      const T& resource_name,
+      Func func,
+      const char* operation_name,
+      security::auth_result result,
+      Args&&... args) {
         if constexpr (std::is_same_v<T, model::topic>) {
-            if (auto val = should_enqueue_audit_event(api, resource_name);
-                val.has_value()) {
+            if (auto val = should_enqueue_audit_event(
+                  api, result.principal, resource_name);
+                val.has_value()
+                && resource_name != model::kafka_audit_logging_topic) {
                 return (bool)*val;
             }
         } else {
-            if (auto val = should_enqueue_audit_event(api); val.has_value()) {
+            if (auto val = should_enqueue_audit_event(api, result.principal);
+                val.has_value()) {
                 return (bool)*val;
             }
         }
 
         return do_enqueue_audit_event(
           std::make_unique<api_activity>(make_api_activity_event(
+            operation_name,
+            std::move(result),
             std::forward<Args>(args)...,
             create_resource_details(restrict_topics(std::move(func))))));
     }
 
     template<typename T, typename... Args>
     bool enqueue_authz_audit_event(
-      kafka::api_key api, const T& resource_name, Args&&... args) {
+      kafka::api_key api,
+      const T& resource_name,
+      const char* operation_name,
+      security::auth_result result,
+      Args&&... args) {
         if constexpr (std::is_same_v<T, model::topic>) {
-            if (auto val = should_enqueue_audit_event(api, resource_name);
-                val.has_value()) {
+            if (auto val = should_enqueue_audit_event(
+                  api, result.principal, resource_name);
+                val.has_value()
+                && resource_name != model::kafka_audit_logging_topic) {
                 return (bool)*val;
             }
         } else {
-            if (auto val = should_enqueue_audit_event(api); val.has_value()) {
+            if (auto val = should_enqueue_audit_event(api, result.principal);
+                val.has_value()) {
                 return (bool)*val;
             }
         }
-        return do_enqueue_audit_event(std::make_unique<api_activity>(
-          make_api_activity_event(std::forward<Args>(args)..., {})));
+        return do_enqueue_audit_event(
+          std::make_unique<api_activity>(make_api_activity_event(
+            operation_name,
+            std::move(result),
+            std::forward<Args>(args)...,
+            {})));
+    }
+
+    bool enqueue_authn_event(authentication_event_options options) {
+        if (auto val = should_enqueue_audit_event(
+              event_type::authenticate, options.user);
+            val.has_value()) {
+            return (bool)*val;
+        }
+        return do_enqueue_audit_event(std::make_unique<authentication>(
+          make_authentication_event(std::move(options))));
     }
 
     template<typename... Args>
@@ -171,12 +204,16 @@ private:
     /// whether it could not be enqueued due to error or due to the event
     /// not having attributes of desired trackable events
     std::optional<audit_event_passthrough> should_enqueue_audit_event() const;
+    std::optional<audit_event_passthrough> should_enqueue_audit_event(
+      kafka::api_key, const security::acl_principal&) const;
     std::optional<audit_event_passthrough>
-      should_enqueue_audit_event(kafka::api_key) const;
+    should_enqueue_audit_event(event_type, const security::audit::user&) const;
     std::optional<audit_event_passthrough>
       should_enqueue_audit_event(event_type) const;
-    std::optional<audit_event_passthrough>
-    should_enqueue_audit_event(kafka::api_key, const model::topic&) const;
+    std::optional<audit_event_passthrough> should_enqueue_audit_event(
+      kafka::api_key,
+      const security::acl_principal&,
+      const model::topic&) const;
 
     ss::future<> drain();
     ss::future<> pause();
@@ -233,6 +270,9 @@ private:
     std::bitset<enabled_set_bitlength> _enabled_event_types{0};
     config::binding<std::vector<ss::sstring>> _audit_excluded_topics_binding;
     absl::flat_hash_set<model::topic> _audit_excluded_topics;
+    config::binding<std::vector<ss::sstring>>
+      _audit_excluded_principals_binding;
+    absl::flat_hash_set<security::acl_principal> _audit_excluded_principals;
 
     /// This will be true when the client detects that there is an issue with
     /// authorization configuration. Auth must be enabled so the client

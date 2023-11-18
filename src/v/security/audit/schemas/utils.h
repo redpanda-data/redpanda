@@ -159,40 +159,19 @@ authentication make_authentication_event(
   const request_auth_result& r,
   const ss::sstring& svc_name);
 
-authentication make_authentication_event(
-  const ss::sstring& auth_protocol,
-  const ss::socket_address& local_address,
-  std::string_view service_name,
-  ss::net::inet_address client_addr,
-  uint16_t client_port,
-  std::optional<std::string_view> client_id,
-  authentication::used_cleartext is_cleartext,
-  security::audit::user user);
+struct authentication_event_options {
+    std::string_view auth_protocol;
 
-authentication make_authentication_event(
-  const security::tls::mtls_state& mtls_state,
-  const ss::socket_address& local_address,
-  std::string_view service_name,
-  ss::net::inet_address client_addr,
-  uint16_t client_port,
-  std::optional<std::string_view> client_id);
+    net::unresolved_address server_addr;
+    std::optional<std::string_view> svc_name;
+    net::unresolved_address client_addr;
+    std::optional<std::string_view> client_id;
+    authentication::used_cleartext is_cleartext;
+    security::audit::user user;
+    std::optional<ss::sstring> error_reason;
+};
 
-authentication make_authentication_failure_event(
-  ss::httpd::const_req req,
-  const security::credential_user& r,
-  const ss::sstring& svc_name,
-  const ss::sstring& reason);
-
-authentication make_authentication_failure_event(
-  const ss::sstring& auth_protocol,
-  const ss::socket_address& local_address,
-  std::string_view service_name,
-  ss::net::inet_address client_addr,
-  uint16_t client_port,
-  std::optional<std::string_view> client_id,
-  authentication::used_cleartext is_cleartext,
-  const ss::sstring& reason,
-  security::audit::user user);
+authentication make_authentication_event(authentication_event_options options);
 
 /// Creates a security::audit::api_activity event from an authorization result
 ///

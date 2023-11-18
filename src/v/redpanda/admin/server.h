@@ -25,6 +25,7 @@
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "security/audit/schemas/iam.h"
+#include "security/audit/schemas/utils.h"
 #include "security/fwd.h"
 #include "security/request_auth.h"
 #include "security/types.h"
@@ -127,7 +128,7 @@ private:
 
     void do_audit_authn(
       ss::httpd::const_req req,
-      security::audit::authentication authentication_event);
+      security::audit::authentication_event_options options);
 
     /**
      * Authenticate, and raise if `required_auth` is not met by
