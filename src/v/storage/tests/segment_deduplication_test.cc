@@ -18,6 +18,7 @@
 #include "test_utils/test.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/util/defer.hh>
 
 #include <stdexcept>
@@ -125,34 +126,73 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
     // segment.
     simple_key_offset_map too_small_map(5);
     ASSERT_THAT(
-      [&] { build_offset_map(cfg, segs, too_small_map).get(); },
+      [&] {
+          build_offset_map(
+            cfg,
+            segs,
+            disk_log.stm_manager(),
+            disk_log.resources(),
+            disk_log.get_probe(),
+            too_small_map)
+            .get();
+      },
       testing::ThrowsMessage<std::runtime_error>(
         testing::HasSubstr("Couldn't index")));
 
     // Now configure a map to index some segments.
     simple_key_offset_map partial_map(15);
-    auto partial_o = build_offset_map(cfg, segs, partial_map).get();
+    auto partial_o = build_offset_map(
+                       cfg,
+                       segs,
+                       disk_log.stm_manager(),
+                       disk_log.resources(),
+                       disk_log.get_probe(),
+                       partial_map)
+                       .get();
     ASSERT_GT(partial_o(), 0);
 
     // Now make it large enough to index all segments.
     simple_key_offset_map all_segs_map(100);
-    auto all_segs_o = build_offset_map(cfg, segs, all_segs_map).get();
+    auto all_segs_o = build_offset_map(
+                        cfg,
+                        segs,
+                        disk_log.stm_manager(),
+                        disk_log.resources(),
+                        disk_log.get_probe(),
+                        all_segs_map)
+                        .get();
     ASSERT_EQ(all_segs_o(), 0);
 }
 
-TEST(BuildOffsetMap, TestBuildMapWithError) {
+TEST(BuildOffsetMap, TestBuildMapWithMissingCompactedIndex) {
     storage::disk_log_builder b;
     build_segments(b, 3);
     auto cleanup = ss::defer([&] { b.stop().get(); });
-    auto& segs = b.get_disk_log_impl().segments();
+    auto& disk_log = b.get_disk_log_impl();
+    auto& segs = disk_log.segments();
     compaction_config cfg(
       model::offset{30}, ss::default_priority_class(), never_abort);
+    for (const auto& s : segs) {
+        auto idx_path = s->path().to_compacted_index();
+        ASSERT_FALSE(ss::file_exists(idx_path.string()).get());
+    }
 
     // Proceed to window compaction without building any compacted indexes.
-    // This should indicate a failure to build the map.
+    // When building the map, we should attempt to rebuild the index if it
+    // doesn't exist.
     simple_key_offset_map missing_index_map(100);
-    ASSERT_THAT(
-      [&] { build_offset_map(cfg, segs, missing_index_map).get(); },
-      testing::ThrowsMessage<std::runtime_error>(
-        testing::HasSubstr("compaction_index size is too small")));
+    auto o = build_offset_map(
+               cfg,
+               segs,
+               disk_log.stm_manager(),
+               disk_log.resources(),
+               disk_log.get_probe(),
+               missing_index_map)
+               .get();
+    ASSERT_EQ(o(), 0);
+    ASSERT_EQ(missing_index_map.size(), 30);
+    for (const auto& s : segs) {
+        auto idx_path = s->path().to_compacted_index();
+        ASSERT_TRUE(ss::file_exists(idx_path.string()).get());
+    }
 }

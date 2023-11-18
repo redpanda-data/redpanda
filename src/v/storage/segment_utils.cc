@@ -46,6 +46,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/rwlock.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 
@@ -509,9 +510,9 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   storage::probe& pb,
   storage::readers_cache& readers_cache,
   storage_resources& resources,
-  offset_delta_time apply_offset) {
+  offset_delta_time apply_offset,
+  ss::rwlock::holder read_holder) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().path());
-    auto read_holder = co_await s->read_lock();
     auto segment_generation = s->get_generation_id();
 
     if (s->is_closed()) {
@@ -560,7 +561,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     co_return s->size_bytes();
 }
 
-ss::future<> rebuild_compaction_index(
+ss::future<> build_compaction_index(
   model::record_batch_reader rdr,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   fragmented_vector<model::tx_range>&& aborted_txs,
@@ -610,6 +611,42 @@ ss::future<> rebuild_compaction_index(
       });
 }
 
+bool compacted_index_needs_rebuild(compacted_index::recovery_state state) {
+    switch (state) {
+    case compacted_index::recovery_state::index_missing:
+    case compacted_index::recovery_state::index_needs_rebuild:
+        return true;
+    case compacted_index::recovery_state::index_recovered:
+    case compacted_index::recovery_state::already_compacted:
+        return false;
+    }
+    __builtin_unreachable();
+}
+
+ss::future<> rebuild_compaction_index(
+  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  compaction_config cfg,
+  storage::probe& pb,
+  storage_resources& resources) {
+    segment_full_path idx_path = s->path().to_compacted_index();
+    vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
+    pb.corrupted_compaction_index();
+    auto h = co_await s->read_lock();
+    // TODO: Improve memory management here, eg: ton of aborted txs?
+    auto aborted_txs = co_await stm_manager->aborted_tx_ranges(
+      s->offsets().base_offset, s->offsets().stable_offset);
+    co_await build_compaction_index(
+      create_segment_full_reader(s, cfg, pb, std::move(h)),
+      stm_manager,
+      std::move(aborted_txs),
+      idx_path,
+      cfg,
+      resources);
+    vlog(
+      gclog.info, "rebuilt index: {}, attempting compaction again", idx_path);
+}
+
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
@@ -628,54 +665,53 @@ ss::future<compaction_result> self_compact_segment(
     }
 
     segment_full_path idx_path = s->path().to_compacted_index();
-    auto state = co_await detect_compaction_index_state(idx_path, cfg);
 
-    vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
+    auto read_holder = co_await s->read_lock();
+    compacted_index::recovery_state state;
+    while (true) {
+        if (s->is_closed()) {
+            throw segment_closed_exception();
+        }
+        // Check the index state while the read lock is held, preventing e.g.
+        // concurrent truncations, which removes the index.
+        state = co_await detect_compaction_index_state(idx_path, cfg);
+        if (!compacted_index_needs_rebuild(state)) {
+            break;
+        }
+        // Rebuilding the compaction index will take the read lock again,
+        // so release here.
+        read_holder.return_all();
+        co_await rebuild_compaction_index(s, stm_manager, cfg, pb, resources);
 
-    switch (state) {
-    case compacted_index::recovery_state::already_compacted: {
+        // Take the lock again before proceeding so we're guaranteed the index
+        // will survive until it's used in self compaction below.
+        read_holder = co_await s->read_lock();
+    }
+    if (state == compacted_index::recovery_state::already_compacted) {
         vlog(gclog.debug, "detected {} is already compacted", idx_path);
         s->mark_as_finished_self_compaction();
         co_return compaction_result{s->size_bytes()};
     }
-    case compacted_index::recovery_state::index_recovered: {
-        auto sz_before = s->size_bytes();
-        auto sz_after = co_await do_self_compact_segment(
-          s, cfg, pb, readers_cache, resources, apply_offset);
-        // compaction wasn't executed, return
-        if (!sz_after) {
-            co_return compaction_result(sz_before);
-        }
-        pb.segment_compacted();
-        s->mark_as_finished_self_compaction();
-        co_return compaction_result(sz_before, *sz_after);
+    vassert(
+      state == compacted_index::recovery_state::index_recovered,
+      "Unexpected state {}",
+      int(state));
+    auto sz_before = s->size_bytes();
+    auto sz_after = co_await do_self_compact_segment(
+      s,
+      cfg,
+      pb,
+      readers_cache,
+      resources,
+      apply_offset,
+      std::move(read_holder));
+    // compaction wasn't executed, return
+    if (!sz_after) {
+        co_return compaction_result(sz_before);
     }
-    case compacted_index::recovery_state::index_missing:
-        [[fallthrough]];
-    case compacted_index::recovery_state::index_needs_rebuild: {
-        vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
-        pb.corrupted_compaction_index();
-        auto h = co_await s->read_lock();
-        // TODO: Improve memory management here, eg: ton of aborted txs?
-        auto aborted_txs = co_await stm_manager->aborted_tx_ranges(
-          s->offsets().base_offset, s->offsets().stable_offset);
-        co_await rebuild_compaction_index(
-          create_segment_full_reader(s, cfg, pb, std::move(h)),
-          stm_manager,
-          std::move(aborted_txs),
-          idx_path,
-          cfg,
-          resources);
-
-        vlog(
-          gclog.info,
-          "rebuilt index: {}, attempting compaction again",
-          idx_path);
-        co_return co_await self_compact_segment(
-          s, stm_manager, cfg, pb, readers_cache, resources, apply_offset);
-    }
-    }
-    __builtin_unreachable();
+    pb.segment_compacted();
+    s->mark_as_finished_self_compaction();
+    co_return compaction_result(sz_before, *sz_after);
 }
 
 ss::future<

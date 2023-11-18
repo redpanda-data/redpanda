@@ -90,7 +90,12 @@ ss::future<bool> build_offset_map_for_segment(
 }
 
 ss::future<model::offset> build_offset_map(
-  const compaction_config& cfg, const segment_set& segs, key_offset_map& m) {
+  const compaction_config& cfg,
+  const segment_set& segs,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  storage_resources& resources,
+  storage::probe& probe,
+  key_offset_map& m) {
     if (segs.empty()) {
         throw std::runtime_error("No segments to build offset map");
     }
@@ -113,6 +118,23 @@ ss::future<model::offset> build_offset_map(
               "Stopping add to offset map, segment closed: {}",
               seg->filename());
             break;
+        }
+        segment_full_path idx_path = seg->path().to_compacted_index();
+        while (true) {
+            auto state = co_await internal::detect_compaction_index_state(
+              idx_path, cfg);
+            if (!internal::compacted_index_needs_rebuild(state)) {
+                break;
+            }
+            // Rebuilding the compaction index will take the read lock again,
+            // so release here.
+            read_lock.return_all();
+            co_await internal::rebuild_compaction_index(
+              *iter, stm_manager, cfg, probe, resources);
+
+            // Take the lock again before checking the compaction index state
+            // to avoid races with truncations while building the offset map.
+            read_lock = co_await seg->read_lock();
         }
         auto seg_fully_indexed = co_await build_offset_map_for_segment(
           cfg, *seg, m);
@@ -148,6 +170,9 @@ ss::future<index_state> deduplicate_segment(
   probe& probe,
   offset_delta_time should_offset_delta_times) {
     auto read_holder = co_await seg->read_lock();
+    if (seg->is_closed()) {
+        throw segment_closed_exception();
+    }
     auto rdr = internal::create_segment_full_reader(
       seg, cfg, probe, std::move(read_holder));
     auto copy_reducer = internal::copy_data_segment_reducer(

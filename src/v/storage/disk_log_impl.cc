@@ -560,7 +560,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     simple_key_offset_map map(cfg.key_offset_map_max_keys);
     model::offset idx_start_offset;
     try {
-        idx_start_offset = co_await build_offset_map(cfg, segs, map);
+        idx_start_offset = co_await build_offset_map(
+          cfg, segs, _stm_manager, _manager.resources(), *_probe, map);
     } catch (...) {
         auto eptr = std::current_exception();
         if (ssx::is_shutdown_exception(eptr)) {
