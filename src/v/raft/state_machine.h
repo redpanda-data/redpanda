@@ -135,6 +135,7 @@ private:
     friend batch_applicator;
 
     ss::future<> apply();
+    ss::future<> maybe_apply_raft_snapshot();
     bool stop_batch_applicator();
 
     ss::io_priority_class _io_prio;
