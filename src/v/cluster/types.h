@@ -3846,6 +3846,36 @@ struct cloud_storage_usage_reply
     }
 };
 
+struct producer_id_lookup_request
+  : serde::envelope<
+      producer_id_lookup_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    producer_id_lookup_request() noexcept = default;
+    auto serde_fields() { return std::tie(); }
+};
+
+struct producer_id_lookup_reply
+  : serde::envelope<
+      producer_id_lookup_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    cluster::errc ec{};
+    model::producer_id highest_producer_id{};
+
+    producer_id_lookup_reply() noexcept = default;
+    explicit producer_id_lookup_reply(cluster::errc e)
+      : ec(e) {}
+    explicit producer_id_lookup_reply(model::producer_id pid)
+      : highest_producer_id(pid) {}
+
+    auto serde_fields() { return std::tie(ec, highest_producer_id); }
+};
+
 struct partition_state_request
   : serde::envelope<
       partition_state_request,

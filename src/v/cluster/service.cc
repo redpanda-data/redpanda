@@ -679,6 +679,27 @@ ss::future<transfer_leadership_reply> service::transfer_leadership(
     }
 }
 
+ss::future<producer_id_lookup_reply> service::highest_producer_id(
+  producer_id_lookup_request&&, rpc::streaming_context&) {
+    producer_id_lookup_reply reply;
+    auto highest_pid = co_await _partition_manager.map_reduce0(
+      [](const partition_manager& pm) {
+          model::producer_id pid{};
+          for (const auto& [_, p] : pm.partitions()) {
+              pid = std::max(pid, p->highest_producer_id());
+          }
+          vlog(clusterlog.debug, "Found producer id {}", pid);
+          return pid;
+      },
+      model::producer_id{},
+      [](model::producer_id acc, model::producer_id pid) {
+          return std::max(acc, pid);
+      });
+    vlog(clusterlog.debug, "Returning highest producer id {}", highest_pid);
+    reply.highest_producer_id = highest_pid;
+    co_return reply;
+}
+
 ss::future<cloud_storage_usage_reply> service::cloud_storage_usage(
   cloud_storage_usage_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
