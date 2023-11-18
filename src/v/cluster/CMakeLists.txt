@@ -195,6 +195,7 @@ v_cc_library(
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc
     cloud_metadata/manifest_downloads.cc
+    cloud_metadata/producer_id_recovery_manager.cc
     cloud_metadata/uploader.cc
   DEPS
     Seastar::seastar
