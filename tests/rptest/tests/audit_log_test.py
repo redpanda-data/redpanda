@@ -397,6 +397,12 @@ class AuditLogTestBase(RedpandaTest):
         """
         self._modify_cluster_config({'audit_excluded_topics': topics})
 
+    def modify_audit_excluded_principals(self, principals: [str]):
+        """
+        Modifies list of excluded principals
+        """
+        self._modify_cluster_config({'audit_excluded_principals': principals})
+
     def modify_node_config(self, node, update_fn, skip_readiness_check=True):
         """Modifies the current node configuration, restarts the node for
         changes to take effect
@@ -1236,6 +1242,70 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         return record['class_uid'] == 6003 and record['api']['service'][
             'name'] == service_name and record['actor']['user'][
                 'name'] == username
+
+    @cluster(num_nodes=5)
+    def test_excluded_principal(self):
+        """
+        Verifies that principals excluded will not generate audit messages
+        """
+        self.setup_cluster()
+        user2 = "ignored_user"
+        user2_pw = "ignored_user"
+        user2_alg = "SCRAM-SHA-256"
+
+        self.modify_audit_excluded_principals([user2])
+
+        self.admin.create_user(user2, user2_pw, user2_alg)
+        self.super_rpk.sasl_allow_principal(
+            principal=user2,
+            operations=['all'],
+            resource='topic',
+            resource_name='*',
+            username=self.redpanda.SUPERUSER_CREDENTIALS[0],
+            password=self.redpanda.SUPERUSER_CREDENTIALS[1],
+            mechanism=self.redpanda.SUPERUSER_CREDENTIALS[2])
+
+        user2_rpk = self.get_rpk_credentials(username=user2,
+                                             password=user2_pw,
+                                             mechanism=user2_alg)
+
+        _ = self.rpk.list_topics()
+        _ = user2_rpk.list_topics()
+
+        def contains_principal(principal: str, record):
+            if record['class_uid'] == 3002:
+                return record['user']['name'] == principal
+            elif record['class_uid'] == 6003:
+                return record['actor']['user']['name'] == principal
+            return False
+
+        records = self.find_matching_record(
+            lambda record: contains_principal(self.username, record),
+            lambda record_count: record_count > 0,
+            f'Should contain {self.username}')
+
+        assert len(
+            records
+        ) > 0, f'Did not receive any audit messages for principal {self.username}'
+
+        try:
+            records = self.find_matching_record(
+                lambda record: contains_principal(user2, record),
+                lambda record_count: record_count > 0,
+                f'Should not contain {user2}')
+
+            # We may find the user _only if_ the user principal is used during an authz check
+            # against the audit log.  (e.g. metadata request)
+            for r in records:
+                assert r[
+                    'class_uid'] == 6003, f'Should not see any ignored users in class {r["class_uid"]}'
+                assert {
+                    "name": "__audit_log",
+                    "type": "topic"
+                } in r[
+                    'resources'], 'Did not find __audit_log topic in resources'
+        except TimeoutError:
+            pass
 
     @cluster(num_nodes=5)
     def test_authn_messages(self):
