@@ -382,7 +382,7 @@ class RpkTool:
             ",".join(operations), resource, resource_name, "--brokers",
             self._redpanda.brokers(), "--user", username, "--password",
             password, "--sasl-mechanism", mechanism
-        ]
+        ] + self._tls_settings()
         return self._run(cmd)
 
     def allow_principal(self, principal, operations, resource, resource_name):
@@ -1153,6 +1153,24 @@ class RpkTool:
         output = self._execute(cmd)
         return list(filter(None, map(parse, output.splitlines())))
 
+    def _tls_settings(self):
+        flags = []
+        if self._tls_cert is not None:
+            flags += [
+                "-X",
+                "tls.key=" + self._tls_cert.key,
+                "-X",
+                "tls.cert=" + self._tls_cert.crt,
+                "-X",
+                "tls.ca=" + self._tls_cert.ca.crt,
+            ]
+        if self._tls_enabled:
+            flags += [
+                "-X",
+                "tls.enabled=" + str(self._tls_enabled),
+            ]
+        return flags
+
     def _kafka_conn_settings(self):
         flags = [
             "-X",
@@ -1167,20 +1185,7 @@ class RpkTool:
                 "-X",
                 "sasl.mechanism=" + self._sasl_mechanism,
             ]
-        if self._tls_cert:
-            flags += [
-                "-X",
-                "tls.key=" + self._tls_cert.key,
-                "-X",
-                "tls.cert=" + self._tls_cert.crt,
-                "-X",
-                "tls.ca=" + self._tls_cert.ca.crt,
-            ]
-        if self._tls_enabled:
-            flags += [
-                "-X",
-                "tls.enabled=" + str(self._tls_enabled),
-            ]
+        flags += self._tls_settings()
         return flags
 
     def acl_list(self, request_timeout_overhead=None):
