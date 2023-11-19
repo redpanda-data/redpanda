@@ -147,7 +147,8 @@ class PythonLibrdkafka:
                 conf.token_endpoint,
                 headers={'content-type': 'application/x-www-form-urlencoded'},
                 auth=(conf.client_id, conf.client_secret),
-                data=payload)
+                data=payload,
+                verify=conf.ca_cert if conf.ca_cert is not None else True)
             self._redpanda.logger.info(
                 f"response status: {resp.status_code}, body: {resp.content}")
             token = resp.json()
