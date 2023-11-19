@@ -118,6 +118,13 @@ ss::future<> cluster_recovery_backend::stop_and_wait() {
     co_await _gate.close();
 }
 
+ss::future<bool> cluster_recovery_backend::sync_in_term(
+  ss::abort_source& term_as, model::term_id synced_term) {
+    const auto cur_term_opt = co_await _recovery_manager.sync_leader(term_as);
+    co_return _recovery_table.local().is_recovery_active()
+      && synced_term == cur_term_opt;
+}
+
 ss::future<cluster::errc>
 cluster_recovery_backend::apply_controller_actions_in_term(
   model::term_id term,
@@ -416,12 +423,8 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
     ss::abort_source term_as;
     _term_as = term_as;
     auto reset_term_as = ss::defer([this] { _term_as.reset(); });
-    auto synced_term_opt = co_await _recovery_manager.sync_leader(term_as);
-    if (!synced_term_opt.has_value()) {
-        co_return;
-    }
-    auto synced_term = synced_term_opt.value();
-    if (!_recovery_table.local().is_recovery_active()) {
+    auto synced_term = _raft0->term();
+    if (!co_await sync_in_term(term_as, synced_term)) {
         co_return;
     }
     auto recovery_state
@@ -467,12 +470,7 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
             co_return;
         }
     }
-    synced_term_opt = co_await _recovery_manager.sync_leader(term_as);
-    if (
-      !synced_term_opt.has_value() || synced_term_opt.value() != synced_term) {
-        co_return;
-    }
-    if (!_recovery_table.local().is_recovery_active()) {
+    if (!co_await sync_in_term(term_as, synced_term)) {
         co_return;
     }
     // All done! Record success.

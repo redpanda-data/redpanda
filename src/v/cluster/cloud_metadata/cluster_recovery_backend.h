@@ -63,6 +63,10 @@ public:
     ss::future<> recover_until_term_change();
 
 private:
+    // Syncs the leader in the given term, ensuring it is still leader.
+    // Returns false if not, or if no recovery is active.
+    ss::future<bool> sync_in_term(ss::abort_source& term_as, model::term_id);
+
     ss::future<cluster::errc> apply_controller_actions_in_term(
       model::term_id,
       cloud_metadata::controller_snapshot_reconciler::controller_actions);
