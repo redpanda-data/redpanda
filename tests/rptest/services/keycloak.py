@@ -2,6 +2,7 @@ import json
 import os
 import requests
 import tempfile
+from typing import Optional
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -16,12 +17,20 @@ KC_CONF_DIR = os.path.join(KC_INSTALL_DIR, 'conf')
 KC = os.path.join(KC_BIN_DIR, 'kc.sh')
 KCADM = os.path.join(KC_BIN_DIR, 'kcadm.sh')
 KC_CFG = 'keycloak.conf'
+KC_TLS_KEY_FILE = os.path.join(KC_CONF_DIR, 'key.pem')
+KC_TLS_CRT_FILE = os.path.join(KC_CONF_DIR, 'crt.pem')
+KC_TLS_CA_CRT_FILE = os.path.join(KC_CONF_DIR, 'ca.crt')
+KC_TLS_TRUST_STORE = os.path.join(KC_CONF_DIR, 'kcTrustStore')
 KC_ADMIN = 'admin'
 KC_ADMIN_PASSWORD = 'admin'
 KC_ROOT_LOG_LEVEL = 'INFO'
 KC_LOG_HANDLER = 'console,file'
 KC_LOG_FILE = '/var/log/kc.log'
 KC_PORT = 8080
+
+# Sort of arbitrary. Just make sure it's in [8000, 8100] or update
+# ingress rules in vtools/qa/deploy/terraform
+KC_HTTPS_PORT = 8093
 
 DEFAULT_REALM = 'demorealm'
 
@@ -35,7 +44,7 @@ KEYCLOAK_ADMIN_PASSWORD={pw} \
 """
 
 OIDC_CONFIG_TMPL = """\
-http://{host}:{port}/realms/{realm}/.well-known/openid-configuration\
+{scheme}://{host}:{port}/realms/{realm}/.well-known/openid-configuration\
 """
 
 DEFAULT_CONFIG = {
@@ -82,10 +91,12 @@ class OAuthConfig:
                  client_id,
                  client_secret,
                  token_endpoint,
+                 ca_cert=None,
                  scopes=['openid']):
         self.client_id = client_id
         self.client_secret = client_secret
         self.token_endpoint = token_endpoint
+        self.ca_cert = ca_cert
         self.scopes = scopes
 
 
@@ -185,15 +196,22 @@ class KeycloakService(Service):
 
     def __init__(self,
                  context,
-                 port=KC_PORT,
-                 realm=DEFAULT_REALM,
-                 log_level=KC_ROOT_LOG_LEVEL):
+                 port: int = KC_PORT,
+                 https_port: int = KC_HTTPS_PORT,
+                 realm: str = DEFAULT_REALM,
+                 log_level: str = KC_ROOT_LOG_LEVEL,
+                 tls=None):
         super(KeycloakService, self).__init__(context, num_nodes=1)
         self.realm = realm
         self.http_port = port
         self.log_level = log_level
         self._admin = None
         self._remote_config_file = None
+
+        self.tls_provider = tls
+        self.https_port = None
+        if self.tls_provider is not None:
+            self.https_port = https_port
 
     @property
     def admin(self):
@@ -214,13 +232,18 @@ class KeycloakService(Service):
     def host(self, node):
         return node.account.hostname
 
-    def get_discovery_url(self, node):
-        return OIDC_CONFIG_TMPL.format(host=self.host(node),
-                                       port=self.http_port,
-                                       realm=self.realm)
+    def get_discovery_url(self, node, use_ssl=False):
+        return OIDC_CONFIG_TMPL.format(
+            scheme='https' if use_ssl else 'http',
+            host=self.host(node),
+            port=self.https_port if use_ssl else self.http_port,
+            realm=self.realm)
 
-    def get_token_endpoint(self, node):
-        oidc_config = requests.get(self.get_discovery_url(node=node)).json()
+    def get_token_endpoint(self, node, use_ssl=False):
+        ca_cert = self.tls_provider.ca.crt if self.tls_provider is not None else True
+        oidc_config = requests.get(self.get_discovery_url(node=node,
+                                                          use_ssl=use_ssl),
+                                   verify=ca_cert).json()
         return oidc_config['token_endpoint']
 
     def login_admin_user(self, node, username, password):
@@ -232,14 +255,49 @@ class KeycloakService(Service):
 
     def generate_oauth_config(self, node, client_id):
         secret = self.admin.get_client_secret(client_id)
-        token_endpoint = self.get_token_endpoint(node)
-        return OAuthConfig(client_id, secret, token_endpoint)
+        use_ssl = self.tls_provider is not None
+        ca_cert = self.tls_provider.ca.crt if self.tls_provider is not None else None
+        token_endpoint = self.get_token_endpoint(node, use_ssl=use_ssl)
+        return OAuthConfig(client_id, secret, token_endpoint, ca_cert=ca_cert)
 
     def pids(self, node):
         return node.account.java_pids('quarkus')
 
     def alive(self, node):
         return len(self.pids(node)) > 0
+
+    @property
+    def using_tls(self):
+        return self.tls_provider is not None
+
+    @property
+    def hostname_port(self):
+        assert not self.using_tls or self.https_port is not None
+        return self.https_port if self.using_tls else self.http_port
+
+    def setup_tls(self, node) -> dict:
+        if not self.using_tls:
+            return {}
+        assert self.https_port is not None and self.tls_provider is not None
+        cert = self.tls_provider.create_broker_cert(self, node)
+        node.account.copy_to(cert.crt, KC_TLS_CRT_FILE)
+        node.account.copy_to(cert.key, KC_TLS_KEY_FILE)
+        node.account.copy_to(cert.ca.crt, KC_TLS_CA_CRT_FILE)
+        for f in [KC_TLS_CRT_FILE, KC_TLS_KEY_FILE, KC_TLS_CA_CRT_FILE]:
+            node.account.ssh(f"chmod 755 {f}", allow_fail=False)
+
+        storepass = 'passwd'
+        node.account.ssh(
+            f"keytool -import -file {KC_TLS_CA_CRT_FILE} -alias rpCA -keystore {KC_TLS_TRUST_STORE} -storepass {storepass} -noprompt",
+            allow_fail=False)
+        # extra parameters for the config file writer
+        return {
+            'https-certificate-file': KC_TLS_CRT_FILE,
+            'https-certificate-key-file': KC_TLS_KEY_FILE,
+            'https-trust-store-file': KC_TLS_TRUST_STORE,
+            'https-trust-store-password': storepass,
+            'https-port': self.https_port,
+        }
 
     def start_node(self,
                    node,
@@ -252,6 +310,7 @@ class KeycloakService(Service):
             'http-port': self.http_port,
             'log-level': self.log_level,
         }
+        extra_cfg.update(self.setup_tls(node))
         cfg_writer = KeycloakConfigWriter(extra_cfg=extra_cfg)
         self._remote_config_file = cfg_writer.write(node)
 
@@ -260,6 +319,7 @@ class KeycloakService(Service):
         self.logger.debug(f"Starting Keycloak service {cfg_writer.rep}")
 
         with node.account.monitor_log(KC_LOG_FILE) as monitor:
+            node.account.ssh(f"{KC} build", allow_fail=False)
             node.account.ssh_capture(self._start_cmd(), allow_fail=False)
             monitor.wait_until("Running the server in", timeout_sec=120)
 
@@ -291,8 +351,11 @@ class KeycloakService(Service):
         if self.alive(node):
             self.stop_node(node)
 
-        # TODO: this might be overly aggressive
         node.account.ssh(f"rm -rf {KC_LOG_FILE}")
         node.account.ssh(f"rm -rf /opt/keycloak/data/*", allow_fail=False)
         if self._remote_config_file is not None:
             node.account.ssh(f"rm {self._remote_config_file}")
+
+        node.account.ssh(
+            f"rm -f {KC_TLS_CRT_FILE} {KC_TLS_KEY_FILE}  {KC_TLS_CA_CRT_FILE} {KC_TLS_TRUST_STORE}"
+        )
