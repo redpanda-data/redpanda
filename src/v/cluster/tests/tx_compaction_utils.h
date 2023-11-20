@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "cluster/logger.h"
 #include "cluster/rm_stm.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -16,8 +17,6 @@
 #include "test_utils/randoms.h"
 
 namespace cluster {
-
-static ss::logger logger{"random_tx_generator"};
 
 class random_tx_generator {
 public:
@@ -33,15 +32,18 @@ public:
         tx_types _types = mixed;
         // Interleave tx_ops if set to true.
         bool _interleave = false;
+        bool _compact = true;
 
         friend std::ostream& operator<<(std::ostream& os, const spec& s) {
             fmt::print(
               os,
-              "{{ num_txes: {}, num_rolls: {}, type: {}, interleave: {} }}",
+              "{{ num_txes: {}, num_rolls: {}, type: {}, interleave: {}, "
+              "compact: {} }}",
               s._num_txes,
               s._num_rolls,
               s._types,
-              s._interleave);
+              s._interleave,
+              s._compact);
             return os;
         }
     };
@@ -107,26 +109,28 @@ public:
         while (!ops.empty()) {
             auto op = ops.top();
             op->execute();
-            vlog(logger.info, "Executed op: {}", op->debug());
+            vlog(clusterlog.info, "Executed op: {}", op->debug());
             ops.pop();
         }
 
         //---- Step 3: Force a roll and compact the log.
         log->flush().get0();
         log->force_roll(ss::default_priority_class()).get0();
-        ss::abort_source as{};
-        storage::housekeeping_config ccfg(
-          model::timestamp::min(),
-          std::nullopt,
-          model::offset::max(),
-          ss::default_priority_class(),
-          as);
-        // Compacts until a single sealed segment remains, other than the
-        // currently active one.
-        tests::cooperative_spin_wait_with_timeout(30s, [log, ccfg]() {
-            return log->housekeeping(ccfg).then(
-              [log]() { return log->segment_count() == 2; });
-        }).get();
+        if (s._compact) {
+            ss::abort_source as{};
+            storage::housekeeping_config ccfg(
+              model::timestamp::min(),
+              std::nullopt,
+              model::offset::max(),
+              ss::default_priority_class(),
+              as);
+            // Compacts until a single sealed segment remains, other than the
+            // currently active one.
+            tests::cooperative_spin_wait_with_timeout(30s, [log, ccfg]() {
+                return log->housekeeping(ccfg).then(
+                  [log]() { return log->segment_count() == 2; });
+            }).get();
+        }
 
         //--- Step 4: Read the log and validate the batches.
 
@@ -285,7 +289,7 @@ private:
                                 raft::consistency_level::quorum_ack))
                             .get0();
             if (!result.has_value()) {
-                vlog(logger.error, "Error {}", result.error());
+                vlog(clusterlog.error, "Error {}", result.error());
             }
             BOOST_REQUIRE((bool)result);
         }
