@@ -11,7 +11,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings, get_cloud_storage_type
+from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, BucketView, NTP, NTPR
 from rptest.util import wait_until_result
@@ -476,9 +476,68 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         expected_anomalies[ntpr].segment_metadata_anomalies.add(meta_anomaly)
 
+    def _assert_metrics_updated(self):
+        metrics = [
+            self.redpanda.metrics(n, MetricsEndpoint.PUBLIC_METRICS)
+            for n in self.redpanda.nodes
+        ]
+
+        missing_segments = 0
+        missing_spills = 0
+        offset_gaps = 0
+
+        def validate_labels(labels):
+            label_validators = {
+                "redpanda_namespace": [lambda val: val == "kafka"],
+                "redpanda_topic": [],
+                "redpanda_type": [],
+                "redpanda_severity":
+                [lambda val: val == "high" or val == "low"]
+            }
+
+            for name, validators in label_validators.items():
+                assert name in labels, f"Label {name} not found in {labels}"
+                for v in validators:
+                    assert v(labels[name]
+                             ), f"Validator for {name}={labels[name]} failed"
+
+            expected_labels = set(label_validators.keys())
+            found_labels = set(labels.keys())
+            assert expected_labels == found_labels, f"Label keys do not match: {expected_labels=} != {found_labels=}"
+
+        for node_metrics in metrics:
+            for family in node_metrics:
+                for sample in family.samples:
+                    if "redpanda_type" in sample.labels and "redpanda_severity" in sample.labels:
+                        self.logger.debug(f"anomaly_metric_sample: {sample}")
+                        validate_labels(sample.labels)
+
+                        anomaly_type = sample.labels["redpanda_type"]
+                        if anomaly_type == "missing_segments":
+                            missing_segments += int(sample.value)
+                        elif anomaly_type == "missing_spillover_manifests":
+                            missing_spills += int(sample.value)
+                        elif anomaly_type == "offset_gaps":
+                            offset_gaps += int(sample.value)
+
+        self.logger.info(
+            f"Metrics reported: {missing_segments=}, {missing_spills=} {offset_gaps=}"
+        )
+
+        assert missing_segments == 1, "No missing segments repoted via metrics"
+        assert missing_spills == 1, "No missing spillovers repoted via metrics"
+        assert offset_gaps >= 1, "No offset gaps reported via metrics"
+
     @cluster(num_nodes=4, log_allow_list=SCRUBBER_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_scrubber(self, cloud_storage_type):
+        """
+        Test the internal cloud storage scrubber. Various anomalies are introduced
+        by removing files from cloud storage and erroneously force updating the partition
+        manifest. We then verify that the scrubber detects the issues and that the set of
+        issues remains stable.
+        """
+
         expected_anomalies: dict[NTPR, Anomalies] = dict()
 
         self._produce()
@@ -490,6 +549,8 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         self._assert_anomalies_stable_after_leader_shuffle(expected_anomalies)
         self._assert_anomalies_stable_after_restart(expected_anomalies)
+
+        self._assert_metrics_updated()
 
         # This test deletes segments, spillover manifests
         # and fudges the manifest. rp-storage-tool also picks

@@ -87,6 +87,8 @@ private:
     void setup_public_metrics(const model::ntp&);
     void setup_internal_metrics(const model::ntp&);
 
+    void setup_public_scrubber_metric(const model::ntp&);
+
 private:
     const partition& _partition;
     uint64_t _records_produced{0};
