@@ -27,8 +27,19 @@ import (
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var detailed bool
 	cmd := &cobra.Command{
-		Use:     "list",
-		Short:   "List data transforms",
+		Use:   "list",
+		Short: "List data transforms",
+		Long: `List data transforms.
+
+This command lists all data transforms in a cluster, as well as showing the
+state of a individual transform processor, such as if it's errored or how many
+records are pending to be processed (lag).
+
+There is a processor assigned to each partition on the input topic, and each
+processor is a separate entity that can make progress or fail independently.
+
+The --detailed flag (-d) opts in to printing extra per-processor information.
+`,
 		Aliases: []string{"ls"},
 		Args:    cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
