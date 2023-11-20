@@ -49,7 +49,9 @@ To deploy Wasm files directly without a transform.yaml file:
 Environment variables can be specified for the transform using the --var flag, these
 are separated by an equals for example: --var=KEY=VALUE
 
-The --var flag can be repeated to specify multiple variables.
+The --var flag can be repeated to specify multiple variables like so:
+
+  rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ
 `,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
