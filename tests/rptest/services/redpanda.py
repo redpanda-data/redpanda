@@ -3299,7 +3299,7 @@ class RedpandaService(RedpandaServiceBase):
         """
         :return: the ClusterNode that is currently controller leader, or None if no leader exists
         """
-        for node in self.nodes:
+        for node in self.started_nodes():
             try:
                 r = requests.request(
                     "get",
@@ -3313,7 +3313,7 @@ class RedpandaService(RedpandaServiceBase):
             else:
                 resp_leader_id = r.json()['leader_id']
                 if resp_leader_id != -1:
-                    return self.get_node(resp_leader_id)
+                    return self.get_node_by_id(resp_leader_id)
 
         return None
 
@@ -4023,7 +4023,7 @@ class RedpandaService(RedpandaServiceBase):
                     namespace="kafka",
                     topic=p.topic,
                     partition=p.index,
-                    node=self.get_node(leader_id))
+                    node=self.get_node_by_id(leader_id))
             except HTTPError as he:
                 if he.response.status_code == 404:
                     # Old redpanda, doesn't have this endpoint.  We can't

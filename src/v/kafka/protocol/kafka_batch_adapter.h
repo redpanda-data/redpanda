@@ -100,7 +100,8 @@ struct produce_request_record_data {
         // NOTE: this stream is intentially devoid of user data.
         fmt::print(
           os,
-          "batch {} v2_format {} valid_crc {}",
+          "batch {{records: {}, size: {}}} v2_format {} valid_crc {}",
+          data.adapter.batch ? data.adapter.batch->header().record_count : -1,
           data.adapter.batch ? data.adapter.batch->size_bytes() : -1,
           data.adapter.v2_format,
           data.adapter.valid_crc);
