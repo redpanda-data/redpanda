@@ -119,7 +119,7 @@ partition_balancer_state::apply_snapshot(const controller_snapshot& snap) {
 
             if (auto it = topic.updates.find(p_id); it != topic.updates.end()) {
                 const auto& update = it->second;
-                if (update.state == reconfiguration_state::in_progress) {
+                if (!is_cancelled_state(update.state)) {
                     replicas = &update.target_assignment;
                 }
             }

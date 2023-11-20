@@ -134,9 +134,7 @@ public:
 
         ~in_progress_update() {
             _probe.handle_update_finish(_previous_replicas, _target_replicas);
-            if (
-              _state == reconfiguration_state::cancelled
-              || _state == reconfiguration_state::force_cancelled) {
+            if (is_cancelled_state(_state)) {
                 _probe.handle_update_cancel_finish(
                   _previous_replicas, _target_replicas);
                 ;
@@ -151,9 +149,7 @@ public:
         const reconfiguration_state& get_state() const { return _state; }
 
         void set_state(reconfiguration_state state, model::revision_id rev) {
-            if (
-              _state == reconfiguration_state::in_progress
-              && (state == reconfiguration_state::cancelled || state == reconfiguration_state::force_cancelled)) {
+            if (!is_cancelled_state(_state) && is_cancelled_state(state)) {
                 _probe.handle_update_cancel(
                   _previous_replicas, _target_replicas);
             }
@@ -166,6 +162,14 @@ public:
         }
         const replicas_t& get_target_replicas() const {
             return _target_replicas;
+        }
+
+        const replicas_t& get_resulting_replicas() const {
+            if (is_cancelled_state(_state)) {
+                return _previous_replicas;
+            } else {
+                return _target_replicas;
+            }
         }
 
         const model::revision_id& get_update_revision() const {

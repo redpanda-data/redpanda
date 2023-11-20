@@ -498,15 +498,10 @@ partition_allocator::apply_snapshot(const controller_snapshot& snap) {
                 }
 
                 // final counts depend on the update state
-                switch (update.state) {
-                case reconfiguration_state::in_progress:
-                case reconfiguration_state::force_update:
-                    final_replicas = &update.target_assignment;
-                    break;
-                case reconfiguration_state::cancelled:
-                case reconfiguration_state::force_cancelled:
+                if (is_cancelled_state(update.state)) {
                     final_replicas = &partition.replicas;
-                    break;
+                } else {
+                    final_replicas = &update.target_assignment;
                 }
             } else {
                 final_replicas = &partition.replicas;
