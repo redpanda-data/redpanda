@@ -29,9 +29,11 @@ from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOp
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 
 TS_LOG_ALLOW_LIST = [
-    re.compile("archival_stm.*Replication wait for archival STM timed out"),
+    re.compile(
+        ".*archival_metadata_stm.*Replication wait for archival STM timed out"
+    ),
     # topic deletion may happen before data were uploaded
-    re.compile("cloud_storage.*Failed to fetch manifest during finalize().*")
+    re.compile(".*cloud_storage.*Failed to fetch manifest during finalize().*")
 ]
 
 
