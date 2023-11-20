@@ -1431,9 +1431,9 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_kafka_offset_advance) {
       m.get_start_kafka_offset_override(), kafka::offset(370));
     BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
     BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(90));
-
+    // Allow update with the same value
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(370)));
     // If trying to move back, it should no-op.
-    BOOST_REQUIRE(!m.advance_start_kafka_offset(kafka::offset(370)));
     BOOST_REQUIRE(!m.advance_start_kafka_offset(kafka::offset(369)));
     BOOST_REQUIRE_EQUAL(
       m.get_start_kafka_offset_override(), kafka::offset(370));
