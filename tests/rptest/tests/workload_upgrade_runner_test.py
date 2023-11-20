@@ -21,7 +21,7 @@ from rptest.tests.workload_producer_consumer import ProducerConsumerWorkload
 from rptest.tests.workload_dummy import DummyWorkload, MinimalWorkload
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.workload_license import LicenseWorkload
-from rptest.tests.workload_upgrade_config_defaults import SetLogSegmentMsMinConfig
+from rptest.tests.workload_upgrade_config_defaults import SetLogSegmentMsMinConfig, DefaultConfigConstraints
 from rptest.utils.mode_checks import skip_debug_mode
 from ducktape.mark import matrix, ok_to_fail
 
@@ -167,6 +167,7 @@ class RedpandaUpgradeTest(PreallocNodesTest):
             MinimalWorkload(self),
             ProducerConsumerWorkload(self),
             SetLogSegmentMsMinConfig(self),
+            DefaultConfigConstraints(self),
             # NOTE: due to issue/13180 the next workload is temporarily disabled
             # LicenseWorkload(self),
         ]

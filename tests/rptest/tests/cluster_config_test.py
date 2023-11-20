@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from collections import namedtuple
-from enum import Enum
 import json
 import logging
 import os
@@ -23,6 +22,7 @@ import yaml
 from ducktape.mark import parametrize, matrix
 from ducktape.utils.util import wait_until
 
+from rptest.clients.constraints import ConstraintType, DEFAULT_CONSTRAINTS
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.rpk_remote import RpkRemoteTool
@@ -1936,12 +1936,14 @@ class ConfigConstraintsTest(RedpandaTest):
         'enabled': True
     }
 
+    CONSTRAINTS_LIST = [LOG_RETENTION_CONSTRAINT, LOG_CLEANUP_CONSTRAINT]
+
     def __init__(self, *args, **kwargs):
         super(ConfigConstraintsTest, self).__init__(extra_rp_conf={
             'log_compression_type':
             TopicSpec.COMPRESSION_PRODUCER,
             "constraints":
-            [self.LOG_RETENTION_CONSTRAINT, self.LOG_CLEANUP_CONSTRAINT]
+            self.CONSTRAINTS_LIST
         },
                                                     *args,
                                                     **kwargs)
@@ -1952,13 +1954,13 @@ class ConfigConstraintsTest(RedpandaTest):
         target_broker = self.redpanda.nodes[0]
 
         res = admin.get_cluster_config(node=target_broker)
-        assert 'constraints' in res
-        assert type(res['constraints']) == list
-        assert len(res['constraints']) == 2
+        assert 'constraints' in res, 'expected constraints in list'
+        assert type(res['constraints']) == list, 'expected list type'
         constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        expected_constraints = sorted(self.CONSTRAINTS_LIST,
+                                      key=lambda con: con['name'])
         self.logger.debug(json.dumps(constraints, indent=2))
-        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
-        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
+        assert constraints == expected_constraints, f'expected {expected_constraints=}'
 
         # Unset cleanup constraint and max for retention constraint
         self.LOG_RETENTION_CONSTRAINT['max'] = None
@@ -1975,9 +1977,9 @@ class ConfigConstraintsTest(RedpandaTest):
         # and max is missing for retention ms
         del self.LOG_RETENTION_CONSTRAINT['max']
         res = admin.get_cluster_config(node=target_broker)
-        assert 'constraints' in res
-        assert type(res['constraints']) == list
-        assert len(res['constraints']) == 2
+        assert 'constraints' in res, 'expected constraints in response'
+        assert type(res['constraints']) == list, 'expected list type'
+        assert len(res['constraints']) == 2, 'expected two constraints'
         constraints = sorted(res['constraints'], key=lambda con: con['name'])
         self.logger.debug(json.dumps(constraints, indent=2))
         assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
@@ -1995,9 +1997,9 @@ class ConfigConstraintsTest(RedpandaTest):
                               patch_result['config_version'])
 
         res = admin.get_cluster_config(node=target_broker)
-        assert 'constraints' in res
-        assert type(res['constraints']) == list
-        assert len(res['constraints']) == 3
+        assert 'constraints' in res, 'expected constraints in response'
+        assert type(res['constraints']) == list, 'expected list type'
+        assert len(res['constraints']) == 3, 'expected three constraints'
         constraints = sorted(res['constraints'], key=lambda con: con['name'])
         self.logger.debug(json.dumps(constraints, indent=2))
         assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
@@ -2012,9 +2014,9 @@ class ConfigConstraintsTest(RedpandaTest):
 
         # Expect empty constraints list from the broker
         res = admin.get_cluster_config(node=target_broker)
-        assert 'constraints' in res
-        assert type(res['constraints']) == list
-        assert len(res['constraints']) == 0
+        assert 'constraints' in res, 'expected constraints in response'
+        assert type(res['constraints']) == list, 'expected list type'
+        assert len(res['constraints']) == 0, 'expected zero constraints'
 
     @cluster(
         num_nodes=3,
@@ -2062,10 +2064,6 @@ class ConfigConstraintsTest(RedpandaTest):
                     'constraints'] == 'Constraints failure[min > max]: name default_topic_replications', 'Expected min > max'
             else:
                 raise
-
-        class ConstraintType(Enum):
-            RESTRIKT = 0
-            CLAMP = 1
 
         def check_invalid_topics(constraint_type: ConstraintType):
             try:
@@ -2116,13 +2114,13 @@ class ConfigConstraintsTest(RedpandaTest):
 
         # Constraints should still be the pre-set ones from broker startup
         res = admin.get_cluster_config(node=target_broker)
-        assert 'constraints' in res
-        assert type(res['constraints']) == list
-        assert len(res['constraints']) == 2
+        assert 'constraints' in res, 'expected constraints in list'
+        assert type(res['constraints']) == list, 'expected list type'
         constraints = sorted(res['constraints'], key=lambda con: con['name'])
+        expected_constraints = sorted(self.CONSTRAINTS_LIST,
+                                      key=lambda con: con['name'])
         self.logger.debug(json.dumps(constraints, indent=2))
-        assert constraints[0] == self.LOG_CLEANUP_CONSTRAINT
-        assert constraints[1] == self.LOG_RETENTION_CONSTRAINT
+        assert constraints == expected_constraints, f'expected {expected_constraints=}'
 
     @cluster(num_nodes=3)
     def test_constraint_configs_persist(self):

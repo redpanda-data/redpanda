@@ -137,12 +137,22 @@ class AlterTopicConfiguration(RedpandaTest):
         # topic spec shouldn't change
         assert new_spec == spec
 
-    @cluster(num_nodes=3)
+    @cluster(
+        num_nodes=3,
+        log_allow_list=[
+            r"Constraints failure\[value out\-of\-range\]: topic property \.segment\.bytes, value {\d+}"
+        ])
     def test_segment_size_validation(self):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
         initial_spec = kafka_tools.describe_topic(topic)
-        self.redpanda.set_cluster_config({"log_segment_size_min": 1024})
+        self.redpanda.set_cluster_config({
+            'constraints': [{
+                'name': 'log_segment_size',
+                'type': 'clamp',
+                'min': 1024
+            }]
+        })
         try:
             self.client().alter_topic_configs(
                 topic, {TopicSpec.PROPERTY_SEGMENT_SIZE: 16})
@@ -154,7 +164,13 @@ class AlterTopicConfiguration(RedpandaTest):
         ).segment_bytes, "segment.bytes shouldn't be changed to invalid value"
 
         # change min segment bytes redpanda property
-        self.redpanda.set_cluster_config({"log_segment_size_min": 1024 * 1024})
+        self.redpanda.set_cluster_config({
+            'constraints': [{
+                'name': 'log_segment_size',
+                'type': 'clamp',
+                'min': 1024 * 1024
+            }]
+        })
         # try setting value that is smaller than requested min
         try:
             self.client().alter_topic_configs(
@@ -171,8 +187,13 @@ class AlterTopicConfiguration(RedpandaTest):
         assert kafka_tools.describe_topic(
             topic).segment_bytes == valid_segment_size
 
-        self.redpanda.set_cluster_config(
-            {"log_segment_size_max": 10 * 1024 * 1024})
+        self.redpanda.set_cluster_config({
+            'constraints': [{
+                'name': 'log_segment_size',
+                'type': 'clamp',
+                'max': 10 * 1024 * 1024
+            }]
+        })
         # try to set value greater than max allowed segment size
         try:
             self.client().alter_topic_configs(

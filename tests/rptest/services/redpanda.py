@@ -1094,6 +1094,7 @@ class RedpandaServiceBase(Service):
                            values: dict,
                            expect_restart: bool = False,
                            admin_client: Optional[Admin] = None,
+                           report_clamp_constraints: bool = False,
                            timeout: int = 10):
         pass
 
@@ -1404,7 +1405,10 @@ class RedpandaServiceK8s(RedpandaServiceBase):
     def node_id(self, node, force_refresh=False, timeout_sec=30):
         pass
 
-    def set_cluster_config(self, values: dict, timeout: int = 300):
+    def set_cluster_config(self,
+                           values: dict,
+                           report_clamp_constraints: bool = False,
+                           timeout: int = 300):
         """
         Updates the values of the helm release
         """
@@ -1579,7 +1583,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     def get_version(self, node):
         return self._cloud_cluster.get_install_pack_version()
 
-    def set_cluster_config(self, values: dict, timeout: int = 300):
+    def set_cluster_config(self,
+                           values: dict,
+                           report_clamp_constraints: bool = False,
+                           timeout: int = 300):
         pass
 
     def sockets_clear(self, node):
@@ -2432,11 +2439,14 @@ class RedpandaService(RedpandaServiceBase):
                                    name: str,
                                    expect_restart: bool = False,
                                    admin_client: Optional[Admin] = None,
+                                   report_clamp_constraints: bool = False,
                                    timeout: int = 10):
         if admin_client is None:
             admin_client = self._admin
 
-        patch_result = admin_client.patch_cluster_config(upsert={name: None})
+        patch_result = admin_client.patch_cluster_config(
+            upsert={name: None},
+            report_clamp_constraints=report_clamp_constraints)
         new_version = patch_result['config_version']
 
         self._wait_for_config_version(new_version, expect_restart, timeout)
@@ -2445,6 +2455,7 @@ class RedpandaService(RedpandaServiceBase):
                            values: dict,
                            expect_restart: bool = False,
                            admin_client: Optional[Admin] = None,
+                           report_clamp_constraints: bool = False,
                            timeout: int = 10):
         """
         Update cluster configuration and wait for all nodes to report that they
@@ -2462,7 +2473,8 @@ class RedpandaService(RedpandaServiceBase):
                 k: v
                 for k, v in values.items() if v is not None
             },
-            remove=[k for k, v in values.items() if v is None])
+            remove=[k for k, v in values.items() if v is None],
+            report_clamp_constraints=report_clamp_constraints)
         new_version = patch_result['config_version']
 
         self._wait_for_config_version(new_version,

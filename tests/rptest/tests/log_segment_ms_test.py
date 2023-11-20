@@ -13,10 +13,6 @@ from rptest.services.verifiable_producer import VerifiableProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import segments_count
 
-# NOTE this value could be read from redpanda
-# for example this should be a reasonable way
-# int(Admin(self.redpanda).get_cluster_config_schema()
-#                       ['properties']['log_segment_ms_min']['example'])
 SERVER_SEGMENT_MS = 60000
 SERVER_HOUSEKEEPING_LOOP = 10
 
@@ -124,7 +120,13 @@ class SegmentMsTest(RedpandaTest):
             topic_cfg,
             use_alter_cfg,
             num_messages,
-            extra_cluster_cfg={'log_segment_ms_min': '60000'})
+            extra_cluster_cfg={
+                'constraints': [{
+                    'name': 'log_segment_ms',
+                    'type': 'clamp',
+                    'min': 60000
+                }]
+            })
         assert start_count == stop_count, f"{start_count=} != {stop_count=}"
 
     @cluster(num_nodes=3)
@@ -146,7 +148,7 @@ class SegmentMsTest(RedpandaTest):
         The topic is created with the configuration or an alter config is issued to configure it
         """
 
-        # rolling is clamped by redpanda in the [log_segment_ms_min, log_segment_ms_max] range, so it's replicated here
+        # rolling is clamped by redpanda in the constraint range log_segment_ms, so it's replicated here
         rolling_period = sorted(
             (TEST_LOG_SEGMENT_MIN, topic_cfg if topic_cfg else server_cfg,
              TEST_LOG_SEGMENT_MAX))[1]
@@ -158,8 +160,12 @@ class SegmentMsTest(RedpandaTest):
             use_alter_cfg,
             num_messages,
             extra_cluster_cfg={
-                'log_segment_ms_min': TEST_LOG_SEGMENT_MIN,
-                'log_segment_ms_max': TEST_LOG_SEGMENT_MAX
+                'constraints': [{
+                    'name': 'log_segment_ms',
+                    'type': 'clamp',
+                    'min': TEST_LOG_SEGMENT_MIN,
+                    'max': TEST_LOG_SEGMENT_MAX
+                }]
             })
         assert abs((stop_count - start_count) - TEST_NUM_SEGMENTS) <= ERROR_MARGIN, \
                                        f"{stop_count=}-{start_count=} != {TEST_NUM_SEGMENTS=} +-{ERROR_MARGIN=}"
@@ -172,8 +178,13 @@ class SegmentMsTest(RedpandaTest):
         """
         # ensure that the cluster do not have a fallback value, and that the clamp range of segment.ms is low enough
         self.redpanda.set_cluster_config({
-            "log_segment_ms": None,
-            "log_segment_ms_min": "60000"
+            "log_segment_ms":
+            None,
+            'constraints': [{
+                'name': 'log_segment_ms',
+                'type': 'clamp',
+                'min': 60000
+            }]
         })
         topic = TopicSpec()
         rpk = RpkTool(self.redpanda)
@@ -211,8 +222,13 @@ class SegmentMsTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_segment_rolling_with_retention(self):
         self.redpanda.set_cluster_config({
-            "log_segment_ms": None,
-            "log_segment_ms_min": 10000
+            "log_segment_ms":
+            None,
+            'constraints': [{
+                'name': 'log_segment_ms',
+                'type': 'clamp',
+                'min': 10000
+            }]
         })
         topic = TopicSpec(segment_bytes=(1024 * 1024),
                           replication_factor=1,
@@ -282,8 +298,13 @@ class SegmentMsTest(RedpandaTest):
     @cluster(num_nodes=4)
     def test_segment_rolling_with_retention_consumer(self):
         self.redpanda.set_cluster_config({
-            "log_segment_ms": None,
-            "log_segment_ms_min": 10000
+            "log_segment_ms":
+            None,
+            'constraints': [{
+                'name': 'log_segment_ms',
+                'type': 'clamp',
+                'min': 10000
+            }]
         })
         topic = TopicSpec(segment_bytes=(1024 * 1024),
                           replication_factor=1,

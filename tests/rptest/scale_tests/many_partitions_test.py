@@ -16,6 +16,7 @@ from ducktape.utils.util import wait_until, TimeoutError
 import numpy
 
 from rptest.services.cluster import cluster
+from rptest.clients.constraints import DEFAULT_SEGMENT_MS_CONSTRAINT
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import nodes_report_cloud_segments
@@ -258,6 +259,13 @@ class ManyPartitionsTest(PreallocNodesTest):
 
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
+        constraints = [
+            DEFAULT_SEGMENT_MS_CONSTRAINT, {
+                'name': 'log_segment_size',
+                'type': 'clamp',
+                'min': 1024
+            }
+        ]
         super(ManyPartitionsTest, self).__init__(
             test_ctx,
             *args,
@@ -301,7 +309,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # cloud segments as possible. To that end, bounding the segment
                 # size isn't productive.
                 'cloud_storage_segment_size_min': 1,
-                'log_segment_size_min': 1024,
+                'constraints': constraints,
 
                 # Disable segment merging: when we create many small segments
                 # to pad out tiered storage metadata, we don't want them to
