@@ -17,7 +17,10 @@
 #include "cluster/config_frontend.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/feature_manager.h"
+#include "cluster/id_allocator_frontend.h"
+#include "cluster/partition.h"
 #include "cluster/tests/topic_properties_generator.h"
+#include "cluster/tests/tx_compaction_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -144,6 +147,21 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     model::topic_namespace tp_ns{model::kafka_namespace, model::topic{"foo"}};
     add_topic(tp_ns, 1, non_remote_topic_properties()).get();
 
+    // Write some transactional data to the remote partition so we use up some
+    // producer_ids.
+    auto num_txns = 10;
+    auto* remote_p = app.partition_manager.local()
+                       .get(model::ntp{remote_tp_ns.ns, remote_tp_ns.tp, 0})
+                       .get();
+    cluster::random_tx_generator::spec spec{
+      ._num_txes = num_txns,
+      ._num_rolls = 3,
+      ._types = cluster::random_tx_generator::mixed,
+      ._interleave = true,
+      ._compact = false};
+    cluster::random_tx_generator{}.run_workload(
+      spec, remote_p->raft()->term(), remote_p->rm_stm(), remote_p->log());
+
     for (const auto& [ntp, p] : app.partition_manager.local().partitions()) {
         if (ntp == model::controller_ntp) {
             continue;
@@ -153,6 +171,8 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
         }
         auto& archiver = p->archiver().value().get();
         archiver.sync_for_tests().get();
+        auto res = archiver.upload_next_candidates().get();
+        ASSERT_GT(res.non_compacted_upload_result.num_succeeded, 0);
         archiver.upload_topic_manifest().get();
         archiver.upload_manifest("test").get();
     }
@@ -231,11 +251,13 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
         ASSERT_EQ(
           1,
           app.controller->get_authorizer().local().all_bindings().get().size());
-        ASSERT_EQ(
-          2, app.controller->get_topics_state().local().all_topics_count());
+        // NOTE: internal topics may be created.
+        auto topic_count
+          = app.controller->get_topics_state().local().all_topics_count();
+        ASSERT_LE(2, topic_count);
         for (const auto& [ntp, p] :
              app.partition_manager.local().partitions()) {
-            if (ntp == model::controller_ntp) {
+            if (!model::is_user_topic(ntp)) {
                 continue;
             }
             auto& tp = p->ntp().tp.topic();
@@ -247,6 +269,9 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
                 ASSERT_FALSE(p->archiver().has_value());
             }
         }
+        auto id_reply
+          = app.id_allocator_frontend.local().allocate_id(10s).get();
+        ASSERT_GE(id_reply.id, num_txns);
     };
     validate_post_recovery();
     stop_leadership_switches = true;
