@@ -961,8 +961,10 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
         } else if (!ctx.authorized(
                      security::acl_operation::write,
                      transactional_id{request.data.transactional_id})) {
-            add_partitions_to_txn_response response{
-              request, error_code::transactional_id_authorization_failed};
+            auto ec = !ctx.audit()
+                        ? error_code::broker_not_available
+                        : error_code::transactional_id_authorization_failed;
+            add_partitions_to_txn_response response{request, ec};
             return ctx.respond(std::move(response));
         }
 
@@ -971,6 +973,11 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
             if (!ctx.authorized(security::acl_operation::write, topic.name)) {
                 unauthorized_topics.emplace(topic.name);
             }
+        }
+
+        if (!ctx.audit()) {
+            return ctx.respond(add_partitions_to_txn_response{
+              request, error_code::broker_not_available});
         }
 
         if (!unauthorized_topics.empty()) {
