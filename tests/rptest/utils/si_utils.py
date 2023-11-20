@@ -849,6 +849,23 @@ class BucketView:
         return self._state.cluster_metadata
 
     @property
+    def latest_cluster_metadata_manifest(self) -> dict:
+        self._ensure_listing()
+        latest_cluster_metadata = ClusterMetadata(dict(), dict())
+        highest_meta_id = -1
+        for _, meta in self.cluster_metadata.items():
+            for meta_id, _ in meta.cluster_metadata_manifests.items():
+                if meta_id > highest_meta_id:
+                    latest_cluster_metadata = meta
+                    highest_meta_id = meta_id
+        if highest_meta_id == -1:
+            return dict()
+
+        highest_manifest = latest_cluster_metadata.cluster_metadata_manifests[
+            highest_meta_id]
+        return highest_manifest
+
+    @property
     def partition_manifests(self) -> dict[NTP, dict]:
         self._ensure_listing()
         return self._state.partition_manifests
