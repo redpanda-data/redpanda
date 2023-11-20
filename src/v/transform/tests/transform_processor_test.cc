@@ -43,10 +43,11 @@ public:
           testing::my_ntp,
           testing::my_metadata,
           std::move(engine),
-          [this](
-            model::transform_id,
-            const model::ntp&,
-            const model::transform_metadata&) { ++_error_count; },
+          [this](auto, auto, processor::state state) {
+              if (state == processor::state::errored) {
+                  ++_error_count;
+              }
+          },
           std::move(src),
           std::move(sinks),
           std::move(offset_tracker),

@@ -102,7 +102,7 @@ processor::processor(
   model::ntp ntp,
   model::transform_metadata meta,
   ss::shared_ptr<wasm::engine> engine,
-  error_callback cb,
+  state_callback cb,
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,
   std::unique_ptr<offset_tracker> offset_tracker,
@@ -114,7 +114,7 @@ processor::processor(
   , _source(std::move(source))
   , _sinks(std::move(sinks))
   , _offset_tracker(std::move(offset_tracker))
-  , _error_callback(std::move(cb))
+  , _state_callback(std::move(cb))
   , _probe(p)
   , _consumer_transform_pipe(1)
   , _transform_producer_pipe(1)
@@ -138,12 +138,13 @@ ss::future<> processor::start() {
         co_await _offset_tracker->start();
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error starting processor engine: {}", ex);
-        _error_callback(_id, _ntp, _meta);
+        _state_callback(_id, _ntp, state::errored);
     }
     _consumer_transform_pipe = ss::queue<model::record_batch>(1);
     _transform_producer_pipe = ss::queue<transformed_batch>(1);
     _task = when_all_shutdown(
       run_consumer_loop(), run_transform_loop(), run_producer_loop());
+    _state_callback(_id, _ntp, state::running);
 }
 
 ss::future<> processor::stop() {
@@ -242,7 +243,7 @@ ss::future<> processor::handle_run_loop(ss::future<> fut) {
         // Do nothing, this is an expected error on shutdown
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error running transform: {}", ex);
-        _error_callback(_id, _ntp, _meta);
+        _state_callback(_id, _ntp, state::errored);
     }
 }
 

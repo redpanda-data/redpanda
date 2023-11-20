@@ -227,7 +227,7 @@ public:
       model::transform_id id,
       model::ntp ntp,
       model::transform_metadata meta,
-      processor::error_callback,
+      processor::state_callback,
       probe* probe) override {
         EXPECT_NE(probe, nullptr);
         co_return std::make_unique<tracked_processor>(
@@ -326,7 +326,8 @@ public:
             throw std::runtime_error(ss::format(
               "unknown transform to report an error for: {}", meta.name()));
         }
-        _manager->on_transform_error(entry->first, ntp, meta);
+        _manager->on_transform_state_change(
+          entry->first, ntp, processor::state::errored);
     }
     void drain_queue() {
         // Drain the seastar task queue to ensure manual clock tasks have

@@ -292,7 +292,7 @@ public:
       model::transform_id id,
       model::ntp ntp,
       model::transform_metadata meta,
-      processor::error_callback cb,
+      processor::state_callback cb,
       probe* p) final {
         auto engine = co_await _wasm_engine_factory(meta);
         if (!engine) {

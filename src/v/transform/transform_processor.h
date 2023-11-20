@@ -45,15 +45,16 @@ struct transformed_batch {
  */
 class processor {
 public:
-    using error_callback = ss::noncopyable_function<void(
-      model::transform_id, model::ntp, model::transform_metadata)>;
+    using state = model::transform_report::processor::state;
+    using state_callback
+      = ss::noncopyable_function<void(model::transform_id, model::ntp, state)>;
 
     processor(
       model::transform_id,
       model::ntp,
       model::transform_metadata,
       ss::shared_ptr<wasm::engine>,
-      error_callback,
+      state_callback,
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
       std::unique_ptr<offset_tracker>,
@@ -91,7 +92,7 @@ private:
     std::unique_ptr<source> _source;
     std::vector<std::unique_ptr<sink>> _sinks;
     std::unique_ptr<offset_tracker> _offset_tracker;
-    error_callback _error_callback;
+    state_callback _state_callback;
     probe* _probe;
 
     ss::queue<model::record_batch> _consumer_transform_pipe;

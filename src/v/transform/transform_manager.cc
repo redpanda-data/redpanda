@@ -292,12 +292,22 @@ void manager<ClockType>::on_plugin_change(model::transform_id id) {
 }
 
 template<typename ClockType>
-void manager<ClockType>::on_transform_error(
-  model::transform_id id, model::ntp ntp, model::transform_metadata meta) {
-    _queue.submit(
-      [this, id, ntp = std::move(ntp), meta = std::move(meta)]() mutable {
-          return handle_transform_error(id, std::move(ntp), std::move(meta));
-      });
+void manager<ClockType>::on_transform_state_change(
+  model::transform_id id, model::ntp ntp, processor::state state) {
+    _queue.submit([this, id, ntp = std::move(ntp), state]() mutable {
+        switch (state) {
+        case processor::state::running:
+            return handle_transform_running(id, ntp);
+        case processor::state::errored:
+            return handle_transform_error(id, ntp);
+        case processor::state::inactive:
+            // We don't expect inactive changes, as processors should never
+            // become inactive on their own, but only as apart of the startup
+            // sequence.
+        case processor::state::unknown:
+            vassert(false, "unexpected transform state change: {}", state);
+        }
+    });
 }
 
 template<typename ClockType>
@@ -348,7 +358,7 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
 
 template<typename ClockType>
 ss::future<> manager<ClockType>::handle_transform_error(
-  model::transform_id id, model::ntp ntp, model::transform_metadata meta) {
+  model::transform_id id, model::ntp ntp) {
     auto* entry = _processors->get_or_null(id, ntp);
     if (!entry) {
         co_return;
@@ -359,12 +369,22 @@ ss::future<> manager<ClockType>::handle_transform_error(
     vlog(
       tlog.info,
       "transform {} errored on partition {}, delaying for {} then restarting",
-      meta.name,
+      entry->processor()->meta().name,
       ntp.tp.partition,
       human::latency(delay));
     _queue.submit_delayed<ClockType>(delay, [this, id, ntp]() mutable {
         return start_processor(std::move(ntp), id);
     });
+}
+
+template<typename ClockType>
+ss::future<> manager<ClockType>::handle_transform_running(
+  model::transform_id id, model::ntp ntp) {
+    auto* entry = _processors->get_or_null(id, ntp);
+    if (!entry) {
+        co_return;
+    }
+    entry->mark_running();
 }
 
 template<typename ClockType>
@@ -402,12 +422,10 @@ template<typename ClockType>
 ss::future<> manager<ClockType>::create_processor(
   model::ntp ntp, model::transform_id id, model::transform_metadata meta) {
     auto p = _processors->get_or_create_probe(id, meta);
-    processor::error_callback cb = [this](
-                                     model::transform_id id,
-                                     model::ntp ntp,
-                                     model::transform_metadata meta) {
-        on_transform_error(id, std::move(ntp), std::move(meta));
-    };
+    processor::state_callback cb =
+      [this](model::transform_id id, model::ntp ntp, processor::state state) {
+          on_transform_state_change(id, ntp, state);
+      };
     auto fut = co_await ss::coroutine::as_future(
       _processor_factory->create_processor(
         id, ntp, meta, std::move(cb), p.get()));
@@ -432,7 +450,6 @@ ss::future<> manager<ClockType>::create_processor(
         vlog(tlog.info, "starting transform {} on {}", meta.name, ntp);
         entry.mark_start_attempt();
         co_await entry.processor()->start();
-        entry.mark_running();
     }
 }
 
