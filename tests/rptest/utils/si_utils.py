@@ -717,12 +717,12 @@ class SpillMeta:
     def make(ntpr: NTPR, path: str):
         base, last, base_kafka, last_kafka, base_ts, last_ts = SpillMeta._parse_path(
             ntpr, path)
-        return SpillMeta(base=base,
-                         last=last,
-                         base_kafka=base_kafka,
-                         last_kafka=last_kafka,
-                         base_ts=base_ts,
-                         last_ts=last_ts,
+        return SpillMeta(base=int(base),
+                         last=int(last),
+                         base_kafka=int(base_kafka),
+                         last_kafka=int(last_kafka),
+                         base_ts=int(base_ts),
+                         last_ts=int(last_ts),
                          ntpr=ntpr,
                          path=path)
 
