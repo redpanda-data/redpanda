@@ -997,15 +997,18 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           = (updated_shard_on_cur_node == ss::this_shard_id());
     }
 
+    const bool is_disabled = _topics.local().is_disabled(ntp);
+
     vlog(
       clusterlog.trace,
       "[{}] orig_shard_on_cur_node: {}, updated_shard_on_cur_node: {}, "
-      "expected_log_rev: {}, expected_on_cur_shard: {}",
+      "expected_log_rev: {}, expected_on_cur_shard: {}, is_disabled: {}",
       ntp,
       orig_shard_on_cur_node,
       updated_shard_on_cur_node,
       expected_log_rev,
-      expected_on_cur_shard);
+      expected_on_cur_shard,
+      is_disabled);
 
     auto partition = _partition_manager.local().get(ntp);
     auto claim_it = _ntp_claims.find(ntp);
@@ -1084,9 +1087,10 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
 
     // After this point the partition is expected to exist on this node.
 
-    if (!expected_on_cur_shard) {
-        // Partition is expected to exist on some other shard. If we still own
-        // it, shut it down and make it available for cross-shard move.
+    if (!expected_on_cur_shard || is_disabled) {
+        // Partition is disabled or expected to exist on some other shard. If we
+        // still own it, shut it down and make it available for a possible
+        // cross-shard move.
 
         if (partition) {
             rs.set_cur_operation(
