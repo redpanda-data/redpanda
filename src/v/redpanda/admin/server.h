@@ -422,6 +422,10 @@ private:
       delete_user_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       update_user_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      oidc_whoami_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+    oidc_keys_cache_invalidate_handler(std::unique_ptr<ss::http::request> req);
 
     /// Kafka routes
     ss::future<ss::json::json_return_type>

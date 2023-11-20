@@ -1,0 +1,24 @@
+"oidc_whoami_response": {
+    "description": "Details of the provided bearer token.",
+    "type": "object",
+    "properties": {
+        "id": {
+            "description": "Mapped principal for autherization.",
+            "type": "string"
+        },
+        "expire": {
+            "description": "Unix timestamp of the expiry of the token.",
+            "format": "uint64",
+            "type": "int"
+        }
+    }
+},
+"oidc_keys_cache_invalidate_error_response": {
+    "type": "object",
+    "properties": {
+        "error_message": {
+            "description": "The error message.",
+            "type": "string"
+        }
+    }
+}

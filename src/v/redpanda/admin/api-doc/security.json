@@ -61,4 +61,38 @@
             }
         }
     }
+},
+"/v1/security/oidc/whoami": {
+    "get": {
+        "summary": "Obtain the principal and details of the JWT passed in the bearer token",
+        "operationId": "oidc_whoami",
+        "responses": {
+            "200": {
+                "description": "Successful response",
+                "schema": {
+                    "$ref": "#/definitions/oidc_whoami_response"
+                }
+            },
+            "401": {
+                "description": "Unauthorized"
+            }
+        }
+    }
+},
+"/v1/security/oidc/keys/cache_invalidate": {
+    "post": {
+        "summary": "Reload the keys from the Identity Provider",
+        "operationId": "oidc_keys_cache_invalidate",
+        "responses": {
+            "200": {
+                "description": "Successful response"
+            },
+            "500": {
+                "description": "Keys failed to reload",
+                "schema": {
+                    "$ref": "#/definitions/oidc_keys_cache_invalidate_error_response"
+                }
+            }
+        }
+    }
 }

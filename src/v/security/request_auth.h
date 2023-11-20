@@ -134,3 +134,6 @@ private:
     config::binding<bool> _require_auth;
     config::binding<std::vector<ss::sstring>> _superusers;
 };
+
+inline constexpr std::string_view authz_basic_prefix = "Basic ";
+inline constexpr std::string_view authz_bearer_prefix = "Bearer ";

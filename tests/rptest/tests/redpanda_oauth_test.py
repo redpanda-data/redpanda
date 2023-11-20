@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.kafka_cli_tools import KafkaCliTools, AuthorizationError
-from rptest.services.redpanda import LoggingConfig, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
+from rptest.services.redpanda import LoggingConfig, MetricsEndpoint, PandaproxyConfig, SchemaRegistryConfig, SecurityConfig, make_redpanda_service
 from rptest.services.keycloak import DEFAULT_REALM, DEFAULT_AT_LIFESPAN_S, KeycloakService
 from rptest.services.cluster import cluster
 from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
@@ -102,10 +102,7 @@ class RedpandaOIDCTestBase(Test):
         self.redpanda.logger.info("Starting Redpanda")
         self.redpanda.start()
 
-
-class RedpandaOIDCTest(RedpandaOIDCTestBase):
-    @cluster(num_nodes=4)
-    def test_init(self):
+    def create_service_user(self, client_id=CLIENT_ID):
         kc_node = self.keycloak.nodes[0]
 
         self.keycloak.admin.create_user('norma',
@@ -113,23 +110,43 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
                                         realm_admin=True,
                                         email='10086@sunset.blvd')
         self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
-        self.keycloak.admin.create_client(CLIENT_ID)
+        self.keycloak.admin.create_client(client_id)
 
+        service_user = f'service-account-{client_id}'
         # add an email address to myapp client's service user. this should
         # appear alongside the access token.
-        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
+        self.keycloak.admin.update_user(service_user,
                                         email='myapp@customer.com')
+        return self.keycloak.admin_ll.get_user_id(service_user)
+
+    def get_client_credentials_token(self, cfg):
+        token_endpoint_url = urlparse(cfg.token_endpoint)
+        openid = KeycloakOpenID(
+            server_url=
+            f'{token_endpoint_url.scheme}://{token_endpoint_url.netloc}',
+            client_id=cfg.client_id,
+            client_secret_key=cfg.client_secret,
+            realm_name=DEFAULT_REALM,
+            verify=True)
+        return openid.token(grant_type="client_credentials")
+
+
+class RedpandaOIDCTest(RedpandaOIDCTestBase):
+    @cluster(num_nodes=4)
+    def test_init(self):
+        kc_node = self.keycloak.nodes[0]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user()
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
-        service_user_id = self.keycloak.admin_ll.get_user_id(
-            f'service-account-{CLIENT_ID}')
         result = self.rpk.sasl_allow_principal(f'User:{service_user_id}',
                                                ['all'], 'topic', EXAMPLE_TOPIC,
                                                self.su_username,
                                                self.su_password,
                                                self.su_algorithm)
 
-        cfg = self.keycloak.generate_oauth_config(kc_node, CLIENT_ID)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
         assert cfg.client_secret is not None
         assert cfg.token_endpoint is not None
         k_client = PythonLibrdkafka(self.redpanda,
@@ -148,15 +165,7 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
                    == expected_topics,
                    timeout_sec=5)
 
-        token_endpoint_url = urlparse(cfg.token_endpoint)
-        openid = KeycloakOpenID(
-            server_url=
-            f'{token_endpoint_url.scheme}://{token_endpoint_url.netloc}',
-            client_id=cfg.client_id,
-            client_secret_key=cfg.client_secret,
-            realm_name=DEFAULT_REALM,
-            verify=True)
-        token = openid.token(grant_type="client_credentials")
+        token = self.get_client_credentials_token(cfg)
 
         def check_pp_topics():
             response = requests.get(
@@ -191,27 +200,15 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
     def test_java_client(self):
         kc_node = self.keycloak.nodes[0]
 
-        self.keycloak.admin.create_user('norma',
-                                        'desmond',
-                                        realm_admin=True,
-                                        email='10086@sunset.blvd')
-        self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
-        self.keycloak.admin.create_client(CLIENT_ID)
-
-        # add an email address to myapp client's service user. this should
-        # appear alongside the access token.
-        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
-                                        email='myapp@customer.com')
-
-        service_user_id = self.keycloak.admin_ll.get_user_id(
-            f'service-account-{CLIENT_ID}')
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
         expected_topics = set([EXAMPLE_TOPIC])
         wait_until(lambda: set(self.rpk.list_topics()) == expected_topics,
                    timeout_sec=5)
 
-        cfg = self.keycloak.generate_oauth_config(kc_node, CLIENT_ID)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
         cli = KafkaCliTools(self.redpanda, oauth_cfg=cfg)
 
         self.redpanda.logger.debug(
@@ -251,6 +248,109 @@ class RedpandaOIDCTest(RedpandaOIDCTestBase):
             records
         ), f"Expected {len(records)} unique records, got {len(values)}"
 
+    @cluster(num_nodes=4)
+    def test_admin_whoami(self):
+        kc_node = self.keycloak.nodes[0]
+        rp_node = self.redpanda.nodes[0]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        token = self.get_client_credentials_token(cfg)
+
+        whoami_url = f'http://{self.redpanda.admin_endpoint(rp_node)}/v1/security/oidc/whoami'
+        auth_header = {'Authorization': f'Bearer {token["access_token"]}'}
+
+        def request_whoami(with_auth: bool):
+            response = requests.get(url=whoami_url,
+                                    headers=auth_header if with_auth else None,
+                                    timeout=5)
+            self.redpanda.logger.info(
+                f'response.status_code: {response.status_code}, response.content: {response.content}'
+            )
+            return response
+
+        # At this point, admin API does not require auth and service_user_id is not a superuser
+
+        response = request_whoami(with_auth=False)
+        assert response.status_code == requests.codes.unauthorized
+
+        response = request_whoami(with_auth=True)
+        assert response.status_code == requests.codes.ok
+        assert response.json()['id'] == service_user_id
+        assert response.json()['expire'] > time.time()
+
+        # Require Auth for Admin
+        self.redpanda.set_cluster_config({'admin_api_require_auth': True})
+
+        response = request_whoami(with_auth=False)
+        assert response.status_code == requests.codes.unauthorized
+
+        response = request_whoami(with_auth=True)
+        assert response.status_code == requests.codes.ok
+        assert response.json()['id'] == service_user_id
+        assert response.json()['expire'] > time.time()
+
+    @cluster(num_nodes=4)
+    def test_admin_invalidate_keys(self):
+        kc_node = self.keycloak.nodes[0]
+        rp_node = self.redpanda.nodes[0]
+
+        def get_idp_request_count():
+            metrics = [
+                "security_idp_latency_seconds_count",
+            ]
+            samples = self.redpanda.metrics_samples(metrics, [rp_node],
+                                                    MetricsEndpoint.METRICS)
+
+            result = {}
+            for k in samples.keys():
+                result[k] = result.get(k, 0) + sum(
+                    [int(s.value) for s in samples[k].samples])
+            return result["security_idp_latency_seconds_count"]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        token = self.get_client_credentials_token(cfg)
+
+        invalidate_keys_url = f'http://{self.redpanda.admin_endpoint(rp_node)}/v1/security/oidc/keys/cache_invalidate'
+        auth_header = {'Authorization': f'Bearer {token["access_token"]}'}
+
+        def request_cache_invalidate(with_auth: bool):
+            response = requests.post(
+                url=invalidate_keys_url,
+                headers=auth_header if with_auth else None,
+                timeout=5)
+            self.redpanda.logger.info(
+                f'response.status_code: {response.status_code}')
+            return response.status_code
+
+        # At this point, admin API does not require auth and service_user_id is not a superuser
+
+        assert request_cache_invalidate(with_auth=False) == requests.codes.ok
+        assert request_cache_invalidate(with_auth=True) == requests.codes.ok
+
+        # Require Auth for Admin
+        self.redpanda.set_cluster_config({'admin_api_require_auth': True})
+
+        assert request_cache_invalidate(
+            with_auth=False) == requests.codes.forbidden
+        assert request_cache_invalidate(
+            with_auth=True) == requests.codes.forbidden
+
+        # Add service_user_id as a superuser
+        self.redpanda.set_cluster_config({
+            'superusers':
+            [self.redpanda.SUPERUSER_CREDENTIALS.username, service_user_id]
+        })
+
+        id_requests = get_idp_request_count()
+
+        assert request_cache_invalidate(with_auth=True) == requests.codes.ok
+
+        assert id_requests < get_idp_request_count()
+
 
 class OIDCReauthTest(RedpandaOIDCTestBase):
     MAX_REAUTH_MS = 8000
@@ -270,21 +370,10 @@ class OIDCReauthTest(RedpandaOIDCTestBase):
     def test_oidc_reauth(self):
         kc_node = self.keycloak.nodes[0]
 
-        self.keycloak.admin.create_user('norma',
-                                        'desmond',
-                                        realm_admin=True,
-                                        email='10086@sunset.blvd')
-        self.keycloak.login_admin_user(kc_node, 'norma', 'desmond')
-        self.keycloak.admin.create_client(CLIENT_ID)
-
-        # add an email address to myapp client's service user. this should
-        # appear alongside the access token.
-        self.keycloak.admin.update_user(f'service-account-{CLIENT_ID}',
-                                        email='myapp@customer.com')
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
-        service_user_id = self.keycloak.admin_ll.get_user_id(
-            f'service-account-{CLIENT_ID}')
         self.rpk.sasl_allow_principal(f'User:{service_user_id}', ['all'],
                                       'topic', EXAMPLE_TOPIC, self.su_username,
                                       self.su_password, self.su_algorithm)

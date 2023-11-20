@@ -86,15 +86,15 @@ request_auth_result request_authenticator::do_authenticate(
     };
 
     auto auth_hdr = req.get_header("authorization");
-    if (supports("BASIC") && auth_hdr.substr(0, 5) == "Basic") {
+    if (supports("BASIC") && auth_hdr.starts_with(authz_basic_prefix)) {
         security::credential_user username;
+        auto base64 = auth_hdr.substr(authz_basic_prefix.length());
         // Minimal length: Basic, a space, 1 or more bytes
-        if (auth_hdr.size() < 7) {
+        if (base64.empty()) {
             throw ss::httpd::bad_request_exception(
               "Malformed Authorization header");
         }
 
-        auto base64 = auth_hdr.substr(6);
         ss::sstring decoded_bytes;
         try {
             decoded_bytes = base64_to_string(base64);
@@ -163,15 +163,16 @@ request_auth_result request_authenticator::do_authenticate(
                   request_auth_result::superuser(superuser));
             }
         }
-    } else if (supports("OIDC") && auth_hdr.substr(0, 6) == "Bearer") {
+    } else if (supports("OIDC") && auth_hdr.starts_with(authz_bearer_prefix)) {
         // Minimal length: Bearer, a space, 1 or more bytes
-        if (auth_hdr.size() < 8) {
+        auto token = auth_hdr.substr(authz_bearer_prefix.length());
+        if (token.empty()) {
             throw ss::httpd::bad_request_exception(
               "Malformed Authorization header");
         }
         auto auth = security::oidc::authenticator{
           _controller->get_oidc_service().local()};
-        auto res = auth.authenticate(auth_hdr.substr(7));
+        auto res = auth.authenticate(token);
         if (res.has_error()) {
             throw ss::httpd::base_exception(
               "Unauthorized", ss::http::reply::status_type::unauthorized);

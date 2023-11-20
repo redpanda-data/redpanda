@@ -29,7 +29,8 @@ public:
       config::binding<ss::sstring> discovery_url,
       config::binding<ss::sstring> token_audience,
       config::binding<std::chrono::seconds> clock_skew_tolerance,
-      config::binding<ss::sstring> mapping);
+      config::binding<ss::sstring> mapping,
+      config::binding<std::chrono::seconds> jwks_refresh_interval);
     service(service&&) = delete;
     service& operator=(service&&) = delete;
     service(service const&) = delete;
@@ -44,6 +45,8 @@ public:
     std::string_view audience() const;
     result<std::string_view> issuer() const;
     std::chrono::seconds clock_skew_tolerance() const;
+
+    ss::future<> refresh_keys();
 
 private:
     struct impl;
