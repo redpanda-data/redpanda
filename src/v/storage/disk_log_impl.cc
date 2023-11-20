@@ -1,4 +1,4 @@
-// Copyright 2020 Redpanda Data, Inc.
+// Copyright 2023 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -10,6 +10,7 @@
 #include "storage/disk_log_impl.h"
 
 #include "config/configuration.h"
+#include "config/constraints.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -1436,6 +1437,25 @@ ss::future<> disk_log_impl::flush() {
     return _segs.back()->flush();
 }
 
+namespace {
+template<typename T>
+std::optional<config::range_values<T>>
+get_min_max(const config::constraint_t& constraint) {
+    auto cluster_min_max = config::get_min_max<T>(constraint);
+    auto min_max = config::get_min_max<T>(
+      constraint.name, config::shard_local_cfg().constraints());
+    // Use min/max from constraints map if it is there. Otherwise, use the
+    // provided ones.
+    if (min_max) {
+        min_max->min = min_max->min.value_or(cluster_min_max->min.value());
+        min_max->max = min_max->max.value_or(cluster_min_max->max.value());
+        return min_max;
+    } else {
+        return cluster_min_max;
+    }
+}
+} // namespace
+
 size_t disk_log_impl::max_segment_size() const {
     // override for segment size
     size_t result;
@@ -1453,9 +1473,11 @@ size_t disk_log_impl::max_segment_size() const {
     // an older version or before limits were set)
     auto min_limit = config::shard_local_cfg().log_segment_size_min();
     auto max_limit = config::shard_local_cfg().log_segment_size_max();
+    config::get_constraint_min_max("log_segment_size", min_limit, max_limit);
     if (min_limit) {
         result = std::max(*min_limit, result);
     }
+
     if (max_limit) {
         result = std::min(*max_limit, result);
     }
@@ -1566,14 +1588,18 @@ ss::future<> disk_log_impl::apply_segment_ms() {
     }
 
     auto& local_config = config::shard_local_cfg();
+    std::optional<int64_t> min_opt = local_config.log_segment_ms_min().count(),
+                           max_opt = local_config.log_segment_ms_max().count();
+    config::get_constraint_min_max("log_segment_ms", min_opt, max_opt);
     // clamp user provided value with (hopefully sane) server min and max
-    // values, this should protect against overflow UB
+    // values, this should protect against overflow UB. Min and max are given
+    // values earlier, so it is OK to dereference the optionals here.
     if (
       first_write_ts.value()
         + std::clamp(
           seg_ms.value(),
-          local_config.log_segment_ms_min(),
-          local_config.log_segment_ms_max())
+          static_cast<std::chrono::milliseconds>(*min_opt),
+          static_cast<std::chrono::milliseconds>(*max_opt))
       > ss::lowres_clock::now()) {
         // skip, time hasn't expired
         co_return;

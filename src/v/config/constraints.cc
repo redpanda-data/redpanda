@@ -14,6 +14,7 @@
 #include "config/configuration.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
+#include "units.h"
 #include "vlog.h"
 
 #include <seastar/util/log.hh>
@@ -578,6 +579,15 @@ std::vector<std::string_view> constraint_supported_properties() {
 
     return names;
 }
+
+std::optional<constraint_t> get_constraint(const constraint_t::key_type name) {
+    const auto& constraints = config::shard_local_cfg().constraints();
+    if (auto found = constraints.find(name); found != constraints.end()) {
+        return std::make_optional(found->second);
+    }
+
+    return std::nullopt;
+}
 } // namespace config
 
 namespace YAML {
@@ -680,7 +690,6 @@ bool convert<config::constraint_t>::decode(const Node& node, type& rhs) {
           return false;
       });
 }
-
 } // namespace YAML
 
 namespace json {

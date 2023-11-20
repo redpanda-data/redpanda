@@ -1,6 +1,6 @@
 
 /*
- * Copyright 2021 Redpanda Data, Inc.
+ * Copyright 2023 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -14,6 +14,7 @@
 
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/constraints.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/handlers/topics/types.h"
@@ -286,15 +287,35 @@ struct noop_validator {
     }
 };
 
+namespace {
+template<typename T>
+std::optional<config::range_values<T>>
+get_min_max(const config::constraint_t& constraint) {
+    auto cluster_min_max = config::get_min_max<T>(constraint);
+    auto min_max = config::get_min_max<T>(
+      constraint.name, config::shard_local_cfg().constraints());
+    // Use min/max from constraints map if it is there. Otherwise, use the
+    // provided ones.
+    if (min_max) {
+        min_max->min = min_max->min.value_or(cluster_min_max->min.value());
+        min_max->max = min_max->max.value_or(cluster_min_max->max.value());
+        return min_max;
+    } else {
+        return cluster_min_max;
+    }
+}
+} // namespace
+
 struct segment_size_validator {
     std::optional<ss::sstring>
     operator()(const ss::sstring&, const size_t& value) {
+        std::optional<uint64_t> min_opt
+          = config::shard_local_cfg().log_segment_size_min(),
+          max_opt = config::shard_local_cfg().log_segment_size_max();
+        config::get_constraint_min_max("log_segment_size", min_opt, max_opt);
         // use reasonable defaults even if they are not set in configuration
-        size_t min
-          = config::shard_local_cfg().log_segment_size_min.value().value_or(1);
-        size_t max
-          = config::shard_local_cfg().log_segment_size_max.value().value_or(
-            std::numeric_limits<size_t>::max());
+        size_t min = min_opt.value_or(1);
+        size_t max = max_opt.value_or(std::numeric_limits<size_t>::max());
 
         if (value < min || value > max) {
             return fmt::format(

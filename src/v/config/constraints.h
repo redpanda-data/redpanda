@@ -42,7 +42,6 @@ from_string_view<constraint_type>(std::string_view sv);
 
 using constraint_enabled_t = ss::bool_class<struct constraint_enabled_tag>;
 
-namespace {
 template<typename T>
 struct range_values {
     std::optional<T> min;
@@ -62,7 +61,6 @@ struct range_values {
     friend bool operator==(const range_values&, const range_values&) = default;
     friend bool operator!=(const range_values&, const range_values&) = default;
 };
-} // namespace
 
 // Captures the flags that constraints could hold
 struct constraint_t {
@@ -86,6 +84,9 @@ struct constraint_t {
     friend std::ostream& operator<<(std::ostream& os, const constraint_t& args);
 };
 
+using constraint_map_t
+  = std::unordered_map<constraint_t::key_type, constraint_t>;
+
 /**
  * Returns true if the topic configuration satifies the constraint
  * \param topic_cfg: the topic configuration
@@ -104,6 +105,48 @@ void constraint_clamp_topic_config(
  * List properties that support constraints
  */
 std::vector<std::string_view> constraint_supported_properties();
+
+/**
+ * Get a constraint by name from the constraint map config. Returns null if
+ * nothing is found.
+ */
+std::optional<constraint_t> get_constraint(const constraint_t::key_type name);
+
+/**
+ * Returns the min/max range from a constraint. If no range exists, then both
+ * the min and max are null.
+ */
+template<typename T>
+range_values<T> get_min_max(const constraint_t& constraint) {
+    try {
+        return std::get<range_values<T>>(constraint.flags);
+    } catch (const std::bad_variant_access&) {
+        // YAML parsing fails if an integral constraint has a null min and null
+        // max. So this path is taken when the argument is a non-integral
+        // constraint.
+        return range_values<T>{std::nullopt, std::nullopt};
+    }
+}
+
+/**
+ * Searches for a constraint by name and sets the min/max if they are defined.
+ * Do nothing if the constraint does not exist or if it is non-clamp type
+ */
+template<typename T>
+void get_constraint_min_max(
+  constraint_t::key_type name, std::optional<T>& min, std::optional<T>& max) {
+    auto constraint = config::get_constraint(name);
+    if (constraint && constraint->type == constraint_type::clamp) {
+        auto range = config::get_min_max<T>(*constraint);
+        if (range.min) {
+            min = *range.min;
+        }
+
+        if (range.max) {
+            max = *range.max;
+        }
+    }
+}
 
 namespace detail {
 
