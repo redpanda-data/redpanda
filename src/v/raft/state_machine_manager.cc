@@ -215,7 +215,10 @@ ss::future<> state_machine_manager::apply_raft_snapshot() {
     co_await snapshot->reader.close();
     if (fut.failed()) {
         const auto e = fut.get_exception();
-        vlog(_log.error, "error applying raft snapshot - {}", e);
+        // do not log known shutdown exceptions as errors
+        if (!ssx::is_shutdown_exception(e)) {
+            vlog(_log.error, "error applying raft snapshot - {}", e);
+        }
         std::rethrow_exception(e);
     }
 }
