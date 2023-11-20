@@ -49,6 +49,7 @@
 #include "kafka/server/response.h"
 #include "kafka/server/usage_manager.h"
 #include "net/connection.h"
+#include "security/acl.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
@@ -810,6 +811,13 @@ ss::future<response_ptr> end_txn_handler::handle(
             end_txn_response response;
             response.data.error_code = error_code::policy_violation;
             return ctx.respond(response);
+        } else if (!ctx.authorized(
+                     security::acl_operation::write,
+                     transactional_id{request.data.transactional_id})) {
+            end_txn_response response;
+            response.data.error_code
+              = error_code::transactional_id_authorization_failed;
+            return ctx.respond(response);
         }
         cluster::end_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
@@ -866,6 +874,19 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
             add_offsets_to_txn_response response;
             response.data.error_code = error_code::policy_violation;
             return ctx.respond(response);
+        } else if (!ctx.authorized(
+                     security::acl_operation::write,
+                     transactional_id{request.data.transactional_id})) {
+            add_offsets_to_txn_response response;
+            response.data.error_code
+              = error_code::transactional_id_authorization_failed;
+            return ctx.respond(response);
+        } else if (!ctx.authorized(
+                     security::acl_operation::read,
+                     group_id{request.data.group_id})) {
+            add_offsets_to_txn_response response;
+            response.data.error_code = error_code::group_authorization_failed;
+            return ctx.respond(response);
         }
 
         cluster::add_offsets_tx_request tx_request{
@@ -921,20 +942,32 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
         log_request(ctx.header(), request);
 
         if (ctx.recovery_mode_enabled()) {
-            add_partitions_to_txn_response response;
-            response.data.results.reserve(request.data.topics.size());
-            for (const auto& topic : request.data.topics) {
-                add_partitions_to_txn_topic_result t_result{.name = topic.name};
-                t_result.results.reserve(topic.partitions.size());
-                for (const auto& partition : topic.partitions) {
-                    t_result.results.push_back(
-                      add_partitions_to_txn_partition_result{
-                        .partition_index = partition,
-                        .error_code = error_code::policy_violation});
-                }
-                response.data.results.push_back(std::move(t_result));
-            }
+            add_partitions_to_txn_response response{
+              request, error_code::policy_violation};
             return ctx.respond(std::move(response));
+        } else if (!ctx.authorized(
+                     security::acl_operation::write,
+                     transactional_id{request.data.transactional_id})) {
+            add_partitions_to_txn_response response{
+              request, error_code::transactional_id_authorization_failed};
+            return ctx.respond(std::move(response));
+        }
+
+        absl::flat_hash_set<model::topic> unauthorized_topics;
+        for (const auto& topic : request.data.topics) {
+            if (!ctx.authorized(security::acl_operation::write, topic.name)) {
+                unauthorized_topics.emplace(topic.name);
+            }
+        }
+
+        if (!unauthorized_topics.empty()) {
+            add_partitions_to_txn_response response{
+              request, [&unauthorized_topics](const auto& tp) {
+                  return unauthorized_topics.contains(tp)
+                           ? error_code::topic_authorization_failed
+                           : error_code::operation_not_attempted;
+              }};
+            return ctx.respond(response);
         }
 
         cluster::add_paritions_tx_request tx_request{
@@ -942,6 +975,7 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
           .producer_id = request.data.producer_id,
           .producer_epoch = request.data.producer_epoch};
         tx_request.topics.reserve(request.data.topics.size());
+
         for (auto& topic : request.data.topics) {
             cluster::add_paritions_tx_request::topic tx_topic{
               .name = std::move(topic.name),

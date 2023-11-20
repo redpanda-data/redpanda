@@ -243,6 +243,49 @@ def parse_rpk_table_lines(lines):
     return RpkTable(columns, rows)
 
 
+AccessControlList = namedtuple(
+    'AccessControlList',
+    [
+        'principal',
+        'host',
+        'resource',
+        'resource_name',
+        'resource_pattern_type',
+        'operation',
+        'permission',
+        'error',
+    ],
+)
+
+
+class AclList:
+    def __init__(self, table: RpkTable):
+        self._acls = {
+            u[u.find(':') + 1:]:
+            [AccessControlList(*r) for r in table.rows if r[0] == u]
+            for u in set([r[0] for r in table.rows])
+        }
+
+    @classmethod
+    def parse_raw(cls, raw: str):
+        table = parse_rpk_table(raw)
+        return AclList(table)
+
+    def has_permission(self,
+                       principal: str,
+                       operation: str,
+                       resource: str,
+                       resource_name: str,
+                       permission: str = 'ALLOW'):
+        return any([
+            l.operation == operation.upper()
+            and l.resource == resource.upper()
+            and l.resource_name == resource_name
+            and l.permission == permission.upper()
+            for l in self._acls.get(principal, [])
+        ])
+
+
 class RpkTool:
     """
     Wrapper around rpk.
@@ -312,14 +355,25 @@ class RpkTool:
         if not status_line.endswith("OK"):
             raise RpkException(f"Bad status: '{status_line}'")
 
-    def sasl_allow_principal(self, principal, operations, resource,
-                             resource_name, username, password, mechanism):
-        # TODO: This should use the credentials passed via the constructor
-        # instead of accepting them as parameters
-        if resource == "topic":
-            resource = "--topic"
-        elif resource == "transactional-id":
-            resource = "--transactional-id"
+    def sasl_allow_principal(self,
+                             principal,
+                             operations,
+                             resource,
+                             resource_name,
+                             username: Optional[str] = None,
+                             password: Optional[str] = None,
+                             mechanism: Optional[str] = None):
+
+        username = username if username is not None else self._username
+        password = password if password is not None else self._password
+        mechanism = mechanism if mechanism is not None else self._sasl_mechanism
+        RESOURCES = set([
+            'topic',
+            'transactional-id',
+            'group',
+        ])
+        if resource in RESOURCES:
+            resource = "--" + resource
         else:
             raise Exception(f"unknown resource: {resource}")
 
