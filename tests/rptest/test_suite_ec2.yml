@@ -10,3 +10,6 @@ ec2:
     - tests/e2e_iam_role_test.py # use static credentials
     - tests/consumer_group_recovery_tool_test.py # use script available in dockerfile
     - scale_tests/many_partitions_test.py::ManyPartitionsTest.test_many_partitions_tiered_storage # time consuming in main suite
+    # metrics are very slightly different on CDT and we this test to fail on the actual PR that adds new metrics anyway
+    - tests/metrics_test.py::MetricsTest.test_new_metrics
+    - tests/metrics_test.py::MetricsTest.test_regen_golden_metrics
