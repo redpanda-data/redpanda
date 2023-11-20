@@ -45,6 +45,7 @@ public:
       security::credential_store&,
       security::acl_store&,
       cluster::topic_table&,
+      cluster::controller_api&,
       cluster::feature_manager&,
       cluster::config_frontend&,
       cluster::security_frontend&,
@@ -99,6 +100,7 @@ private:
     security::credential_store& _creds;
     security::acl_store& _acls;
     cluster::topic_table& _topics;
+    cluster::controller_api& _controller_api;
 
     // Abstractions that drive replicated changes to controller state.
     cluster::feature_manager& _feature_manager;

@@ -20,14 +20,17 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/config_frontend.h"
+#include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/feature_manager.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/security_frontend.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
+#include "model/metadata.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 
@@ -53,6 +56,7 @@ cluster_recovery_backend::cluster_recovery_backend(
   security::credential_store& creds,
   security::acl_store& acls,
   cluster::topic_table& topics,
+  cluster::controller_api& api,
   cluster::feature_manager& feature_manager,
   cluster::config_frontend& config_frontend,
   cluster::security_frontend& security_frontend,
@@ -68,6 +72,7 @@ cluster_recovery_backend::cluster_recovery_backend(
   , _creds(creds)
   , _acls(acls)
   , _topics(topics)
+  , _controller_api(api)
   , _feature_manager(feature_manager)
   , _config_frontend(config_frontend)
   , _security_frontend(security_frontend)
@@ -248,7 +253,50 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
         break;
     }
     case recovery_stage::recovered_controller_snapshot:
-        break;
+        // Wait for leadership of all partitions.
+        auto synced_term = _raft0->term();
+        absl::btree_set<model::topic_namespace> topics_to_wait;
+        for (auto& t : _topics.all_topics()) {
+            topics_to_wait.emplace(std::move(t));
+        }
+        while (true) {
+            if (_raft0->term() != synced_term) {
+                co_return cluster::errc::not_leader;
+            }
+            if (topics_to_wait.empty()) {
+                break;
+            }
+            retry_chain_node leadership_retry(60s, 1s, &parent_retry);
+            auto permit = leadership_retry.retry();
+            if (!permit.is_allowed) {
+                co_return cluster::errc::timeout;
+            }
+            std::vector<model::topic_namespace> done;
+            done.reserve(topics_to_wait.size());
+            co_await ss::max_concurrent_for_each(
+              topics_to_wait,
+              10,
+              [this, &done, &permit](model::topic_namespace tp_ns) {
+                  return _controller_api
+                    .wait_for_topic(
+                      tp_ns, ss::lowres_clock::now() + permit.delay)
+                    .then([&done, tp_ns](std::error_code ec) {
+                        if (!ec) {
+                            done.emplace_back(std::move(tp_ns));
+                        } else {
+                            vlog(
+                              clusterlog.debug,
+                              "Failed to wait for {}: {}",
+                              tp_ns,
+                              ec);
+                            // Fall through to retry the wait.
+                        }
+                    });
+              });
+            for (const auto& tp_ns : done) {
+                topics_to_wait.erase(tp_ns);
+            }
+        }
     };
     co_return cluster::errc::success;
 }

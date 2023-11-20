@@ -639,6 +639,7 @@ ss::future<> controller::start(
               _credentials.local(),
               _authorizer.local().store(),
               _tp_state.local(),
+              _api.local(),
               _feature_manager.local(),
               _config_frontend.local(),
               _security_frontend.local(),
