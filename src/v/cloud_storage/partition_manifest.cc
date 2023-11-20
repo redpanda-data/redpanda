@@ -39,6 +39,7 @@
 #include <seastar/util/later.hh>
 
 #include <fmt/ostream.h>
+#include <fmt/ranges.h>
 #include <rapidjson/error/en.h>
 
 #include <algorithm>
@@ -48,6 +49,7 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -497,9 +499,6 @@ partition_manifest::const_iterator partition_manifest::end() const {
 }
 
 std::optional<segment_meta> partition_manifest::last_segment() const {
-    if (_segments.empty()) {
-        return std::nullopt;
-    }
     return _segments.last_segment();
 }
 
@@ -946,6 +945,9 @@ bool partition_manifest::add(
 
 size_t partition_manifest::safe_segment_meta_to_add(
   std::vector<segment_meta> meta_list) const {
+    // TODO should meta_list be sorted?
+    // vassert(std::ranges::is_sorted(meta_list....));
+
     struct manifest_substitute {
         model::offset last_offset;
         std::optional<segment_meta> last_segment;
@@ -982,21 +984,18 @@ size_t partition_manifest::safe_segment_meta_to_add(
             subst.num_accepted++;
         } else {
             // We have segments to check
-            auto format_seg_meta_anomalies =
+            constexpr static auto format_seg_meta_anomalies =
               [](const segment_meta_anomalies& smas) {
                   if (smas.empty()) {
                       return ss::sstring{};
                   }
 
-                  std::vector<anomaly_type> types;
-                  for (const auto& a : smas) {
-                      types.push_back(a.type);
-                  }
-
                   return ssx::sformat(
-                    "{{anomaly_types: {}, new_segment: {:s}, previous_segment: "
+                    "{{anomaly_types: ({}), new_segment: {:s}, "
+                    "previous_segment: "
                     "{:s}}}",
-                    types,
+                    fmt::join(
+                      smas | std::views::transform(&anomaly_meta::type), ", "),
                     smas.begin()->at,
                     smas.begin()->previous);
               };
