@@ -17,7 +17,7 @@ package sr
 import (
 	"encoding/binary"
 
-	"github.com/redpanda-data/redpanda/src/go/transform-sdk/internal/rwbuf"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/internal/rwbuf"
 )
 
 func decodeSchema(subject string, buf *rwbuf.RWBuf) (s SubjectSchema, err error) {

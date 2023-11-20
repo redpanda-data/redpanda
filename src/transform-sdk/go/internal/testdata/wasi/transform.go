@@ -20,7 +20,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/transform-sdk"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
 )
 
 func main() {

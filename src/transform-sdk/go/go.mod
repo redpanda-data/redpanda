@@ -1,3 +1,3 @@
-module github.com/redpanda-data/redpanda/src/go/transform-sdk
+module github.com/redpanda-data/redpanda/src/transform-sdk/go
 
 go 1.20

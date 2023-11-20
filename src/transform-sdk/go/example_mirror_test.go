@@ -15,7 +15,7 @@
 package redpanda_test
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/transform-sdk"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
 )
 
 // This example shows the basic usage of the package:
