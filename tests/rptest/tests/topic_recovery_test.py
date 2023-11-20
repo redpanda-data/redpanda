@@ -634,7 +634,7 @@ class FastCheck(BaseCase):
         s3_snapshot = BucketView(self.redpanda, topics=expected_topics)
         segments = [
             item for item in self._s3.list_objects(self._bucket)
-            if s3_snapshot.is_segment_part_of_a_manifest(item)
+            if s3_snapshot.find_segment_in_manifests(item)
         ]
         for seg in segments:
             components = parse_s3_segment_path(seg.key)

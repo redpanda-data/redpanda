@@ -13,7 +13,8 @@ from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, BucketView, NTP, NTPR
+from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, BucketView, NTP, NTPR, SpillMeta
+from rptest.archival.s3_client import ObjectMetadata
 from rptest.util import wait_until_result
 
 from ducktape.mark import matrix
@@ -21,9 +22,12 @@ from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 
 import collections
+from dataclasses import dataclass
+
 import json
 import random
 import time
+import itertools
 
 from dataclasses import dataclass
 from typing import DefaultDict, Optional, Tuple
@@ -86,6 +90,20 @@ class SegmentMetaAnomaly:
 
 
 @dataclass
+class OffsetRange:
+    first_inclusive: int
+    last_inclusive: int
+
+    def overlaps(self, other: 'OffsetRange') -> bool:
+        return (self.first_inclusive <= other.last_inclusive
+                and self.last_inclusive >= other.first_inclusive)
+
+
+def overlaps_with_any(r: OffsetRange, others: list[OffsetRange]):
+    return any((r.overlaps(o) for o in others))
+
+
+@dataclass
 class Anomalies:
     missing_partition_manifest: bool
     missing_spillover_manifests: set[str]
@@ -137,6 +155,33 @@ class Anomalies:
                     other.missing_spillover_manifests)
                 and self.segment_metadata_anomalies.issubset(
                     other.segment_metadata_anomalies))
+
+    def get_impacted_offset_ranges(self, ntpr: NTPR,
+                                   view: BucketView) -> list[OffsetRange]:
+        impacted_ranges: list[OffsetRange] = []
+        for spill in self.missing_spillover_manifests:
+            meta = SpillMeta.make(ntpr=ntpr, path=spill)
+            impacted_ranges.append(
+                OffsetRange(first_inclusive=meta.base,
+                            last_inclusive=meta.last))
+
+        for seg in self.missing_segments:
+            obj_meta = ObjectMetadata(key=seg,
+                                      bucket="",
+                                      etag="",
+                                      content_length=0)
+            if seg_meta := view.find_segment_in_manifests(obj_meta):
+                impacted_ranges.append(
+                    OffsetRange(first_inclusive=seg_meta["base_offset"],
+                                last_inclusive=seg_meta["committed_offset"]))
+
+        for anomaly_meta in self.segment_metadata_anomalies:
+            impacted_ranges.append(
+                OffsetRange(
+                    first_inclusive=anomaly_meta.at_segment.base_offset,
+                    last_inclusive=anomaly_meta.at_segment.committed_offset))
+
+        return impacted_ranges
 
 
 class CloudStorageScrubberTest(RedpandaTest):
@@ -261,12 +306,22 @@ class CloudStorageScrubberTest(RedpandaTest):
         ]
 
         view = BucketView(self.redpanda)
-        to_delete = random.choice(segment_metas)
         attempts = 1
-        while view.is_segment_part_of_a_manifest(to_delete) == False:
+        while True:
             to_delete = random.choice(segment_metas)
-            attempts += 1
 
+            if seg_meta := view.find_segment_in_manifests(to_delete):
+                ntpr = parse_s3_segment_path(to_delete.key).ntpr
+                selected_range = OffsetRange(
+                    first_inclusive=seg_meta["base_offset"],
+                    last_inclusive=seg_meta["committed_offset"])
+
+                impacted_ranges = expected_anomalies[
+                    ntpr].get_impacted_offset_ranges(ntpr, view)
+                if not overlaps_with_any(selected_range, impacted_ranges):
+                    break
+
+            attempts += 1
             assert attempts < 100, "Too many attempts to find a segment to delete"
 
         self.logger.info(f"Deleting segment at {to_delete.key}")
@@ -300,12 +355,29 @@ class CloudStorageScrubberTest(RedpandaTest):
 
     def _delete_spillover_manifest_and_await_anomaly(
             self, expected_anomalies: DefaultDict[NTPR, Anomalies]):
-        pid = random.randint(0, 2)
-        view = BucketView(self.redpanda)
-        spillover_metas = view.get_spillover_metadata(
-            NTP(ns="kafka", topic=self.topic, partition=pid))
-        to_delete = random.choice(spillover_metas)
-        ntpr = to_delete.ntpr
+        attempts = 1
+        to_delete = None
+
+        while to_delete is None:
+            pid = random.randint(0, 2)
+            view = BucketView(self.redpanda)
+            spillover_metas = view.get_spillover_metadata(
+                NTP(ns="kafka", topic=self.topic, partition=pid))
+
+            to_delete = random.choice(spillover_metas)
+            ntpr = to_delete.ntpr
+
+            selected_range = OffsetRange(first_inclusive=to_delete.base,
+                                         last_inclusive=to_delete.last)
+            impacted_ranges = expected_anomalies[
+                ntpr].get_impacted_offset_ranges(ntpr, view)
+            if overlaps_with_any(selected_range, impacted_ranges):
+                to_delete = None
+            else:
+                break
+
+            attempts += 1
+            assert attempts < 100, "Too many attempts to find a spillover manifest to delete"
 
         self.logger.info(f"Deleting spillover manifest at {to_delete.path}")
         self.cloud_storage_client.delete_object(self.bucket_name,
@@ -412,12 +484,32 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         # Remove the metadata for the penultimate segment, thus creating an offset gap
         # for the scrubber to detect
-        seg_to_remove_name, seg_to_remove_meta = sorted_segments[-2]
-        manifest['segments'].pop(seg_to_remove_name)
-        self.logger.info(f"Removing segment with meta {seg_to_remove_meta}")
+        found = False
+        for crnt_seg, next_seg in itertools.pairwise(sorted_segments):
+            name, meta = crnt_seg
 
-        detect_at_seg_meta = sorted_segments[-1][1]
+            ntpr = NTPR(ns="kafka",
+                        topic=self.topic,
+                        partition=0,
+                        revision=meta["ntp_revision"])
+            seg_to_remove_name = name
+            seg_to_remove_meta = meta
+            detect_at_seg_meta = next_seg[1]
+
+            offset_range = OffsetRange(first_inclusive=meta["base_offset"],
+                                       last_inclusive=meta["committed_offset"])
+            impacted_ranges = expected_anomalies[
+                ntpr].get_impacted_offset_ranges(ntpr, view)
+
+            if not overlaps_with_any(offset_range, impacted_ranges):
+                found = True
+                break
+
+        assert found, f"Could not find a segment to remove from the STM manifest: {removed_ranges=}"
+
+        self.logger.info(f"Removing segment with meta {seg_to_remove_meta}")
         self.logger.info(f"Anomaly should be detected at {detect_at_seg_meta}")
+        manifest['segments'].pop(seg_to_remove_name)
 
         # Forcefully reset the manifest. Remote writes are disabled first
         # to make this operation safe.
@@ -433,11 +525,6 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
                                     'true')
-
-        ntpr = NTPR(ns="kafka",
-                    topic=self.topic,
-                    partition=0,
-                    revision=seg_to_remove_meta["ntp_revision"])
 
         def gap_reported():
             anomalies_per_ntpr = self._collect_anomalies()
@@ -526,6 +613,7 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         self._produce()
         self._assert_no_anomalies()
+
         self._delete_spillover_manifest_and_await_anomaly(expected_anomalies)
         self._delete_segment_and_await_anomaly(expected_anomalies)
 

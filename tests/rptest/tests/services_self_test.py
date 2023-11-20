@@ -206,7 +206,7 @@ class BucketScrubSelfTest(RedpandaTest):
         segment_key = None
         for o in self.redpanda.cloud_storage_client.list_objects(
                 self.si_settings.cloud_storage_bucket):
-            if ".log" in o.key and view.is_segment_part_of_a_manifest(o):
+            if ".log" in o.key and view.find_segment_in_manifests(o):
                 segment_key = o.key
                 break
 
