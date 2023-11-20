@@ -74,7 +74,7 @@ public:
     int64_t current_lag() const;
 
 private:
-    ss::future<> run_consumer_loop();
+    ss::future<> run_consumer_loop(kafka::offset);
     ss::future<> run_transform_loop();
     ss::future<> run_producer_loop();
     ss::future<> poll_sleep();
@@ -83,7 +83,7 @@ private:
 
     template<typename... Future>
     ss::future<> when_all_shutdown(Future&&...);
-    ss::future<> handle_run_loop(ss::future<>);
+    ss::future<> handle_processor_task(ss::future<>);
 
     model::transform_id _id;
     model::ntp _ntp;
