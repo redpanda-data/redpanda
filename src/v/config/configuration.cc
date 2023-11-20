@@ -1618,7 +1618,19 @@ configuration::configuration()
       "cloud_storage_cluster_metadata_upload_interval_ms",
       "Time interval to wait between cluster metadata uploads.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1h)
+  , cloud_storage_cluster_metadata_upload_timeout_ms(
+      *this,
+      "cloud_storage_cluster_metadata_upload_timeout_ms",
+      "Timeout for cluster metadata uploads.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       60s)
+  , cloud_storage_cluster_metadata_retries(
+      *this,
+      "cloud_storage_cluster_metadata_retries",
+      "Number of attempts metadata operations may be retried.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      5)
   , cloud_storage_idle_threshold_rps(
       *this,
       "cloud_storage_idle_threshold_rps",

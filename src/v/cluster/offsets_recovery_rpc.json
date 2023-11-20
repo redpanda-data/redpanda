@@ -1,0 +1,16 @@
+{
+    "namespace": "cluster::cloud_metadata",
+    "service_name": "offsets_recovery",
+    "includes": [
+        "cluster/cloud_metadata/offsets_upload_rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "offsets_upload",
+            "input_type": "offsets_upload_request",
+            "output_type": "offsets_upload_reply"
+        }
+    ]
+}
+
+

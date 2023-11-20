@@ -19,6 +19,7 @@ rp_test(
   SOURCES
     controller_snapshot_reconciliation_test.cc
     manifest_downloads_test.cc
+    offsets_recovery_test.cc
     uploader_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
