@@ -37,7 +37,8 @@ For example to add debug symbols and use the asyncify scheduler for tinygo:
 Language-specific details:
 
 Tinygo - By default tinygo uses release builds (-opt=2) and goroutines are 
-disabled, for maximum performance.
+disabled, for maximum performance. To enable goroutines, pass 
+-scheduler=asyncify to the underlying build command.
 `,
 		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, extraArgs []string) {
