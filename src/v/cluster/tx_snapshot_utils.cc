@@ -212,6 +212,7 @@ ss::future<> async_adl<tx_snapshot>::to(iobuf& out, tx_snapshot snap) {
       out, std::move(snap.tx_data));
     co_await detail::async_adl_list<fvec<cluster::expiration_snapshot>>{}.to(
       out, std::move(snap.expiration));
+    reflection::serialize(out, snap.highest_producer_id);
 }
 
 ss::future<tx_snapshot> async_adl<tx_snapshot>::from(iobuf_parser& in) {
@@ -235,6 +236,7 @@ ss::future<tx_snapshot> async_adl<tx_snapshot>::from(iobuf_parser& in) {
     result.expiration
       = co_await detail::async_adl_list<fvec<cluster::expiration_snapshot>>{}
           .from(in);
+    result.highest_producer_id = reflection::adl<model::producer_id>{}.from(in);
     co_return result;
 }
 
