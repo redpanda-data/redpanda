@@ -204,22 +204,22 @@ id_allocator_frontend::id_allocator_frontend(
 
 ss::future<allocate_id_reply>
 id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
-    auto nt = model::topic_namespace(
-      model::kafka_internal_namespace, model::id_allocator_topic);
-
-    auto has_topic = true;
-
-    if (!_metadata_cache.local().contains(nt, model::partition_id(0))) {
-        has_topic = co_await try_create_id_allocator_topic();
-    }
-
-    if (!has_topic) {
-        vlog(clusterlog.warn, "can't find {} in the metadata cache", nt);
+    if (!co_await ensure_id_allocator_topic_exists()) {
         co_return allocate_id_reply{0, errc::topic_not_exists};
     }
-
     co_return co_await _allocator_router.allocate_router::process_or_dispatch(
       allocate_id_request{timeout}, model::id_allocator_ntp, timeout);
+}
+
+ss::future<reset_id_allocator_reply> id_allocator_frontend::reset_next_id(
+  model::producer_id pid, model::timeout_clock::duration timeout) {
+    if (!co_await ensure_id_allocator_topic_exists()) {
+        co_return reset_id_allocator_reply{errc::topic_not_exists};
+    }
+    co_return co_await _id_reset_router.reset_id_router::process_or_dispatch(
+      reset_id_allocator_request{timeout, pid},
+      model::id_allocator_ntp,
+      timeout);
 }
 
 ss::future<bool> id_allocator_frontend::try_create_id_allocator_topic() {
@@ -258,6 +258,19 @@ ss::future<bool> id_allocator_frontend::try_create_id_allocator_topic() {
             e);
           return false;
       });
+}
+
+ss::future<bool> id_allocator_frontend::ensure_id_allocator_topic_exists() {
+    auto nt = model::topic_namespace(
+      model::kafka_internal_namespace, model::id_allocator_topic);
+
+    auto has_topic = true;
+
+    if (!_metadata_cache.local().contains(nt, model::partition_id(0))) {
+        vlog(clusterlog.warn, "can't find {} in the metadata cache", nt);
+        has_topic = co_await try_create_id_allocator_topic();
+    }
+    co_return has_topic;
 }
 
 } // namespace cluster

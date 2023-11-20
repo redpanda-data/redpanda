@@ -148,6 +148,9 @@ public:
     ss::future<allocate_id_reply>
     allocate_id(model::timeout_clock::duration timeout);
 
+    ss::future<reset_id_allocator_reply>
+    reset_next_id(model::producer_id, model::timeout_clock::duration timeout);
+
     ss::future<> stop() { return _allocator_router.shutdown(); }
 
     allocate_id_router& allocator_router() { return _allocator_router; }
@@ -168,6 +171,7 @@ private:
       do_reset_next_id(int64_t, model::timeout_clock::duration);
 
     ss::future<bool> try_create_id_allocator_topic();
+    ss::future<bool> ensure_id_allocator_topic_exists();
 
     friend id_allocator;
 };
