@@ -460,6 +460,8 @@ std::ostream& operator<<(std::ostream& o, const topic_table_delta_type& tp) {
         return o << "replicas_updated";
     case topic_table_delta_type::properties_updated:
         return o << "properties_updated";
+    case topic_table_delta_type::disabled_flag_updated:
+        return o << "disabled_flag_updated";
     }
     __builtin_unreachable();
 }

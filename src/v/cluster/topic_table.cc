@@ -623,9 +623,9 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
     if (topic_it == _topics.end()) {
         co_return errc::topic_not_exists;
     }
+    const auto& assignments = topic_it->second.get_assignments();
 
     if (cmd.value.partition_id) {
-        const auto& assignments = topic_it->second.get_assignments();
         if (!assignments.contains(*cmd.value.partition_id)) {
             co_return errc::partition_not_exists;
         }
@@ -643,13 +643,40 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
         if (disabled_set.is_fully_enabled()) {
             _disabled_partitions.erase(disabled_it);
         }
+
+        _pending_deltas.emplace_back(
+          model::ntp{
+            cmd.value.ns_tp.ns, cmd.value.ns_tp.tp, *cmd.value.partition_id},
+          model::revision_id{o},
+          topic_table_delta_type::disabled_flag_updated);
     } else {
+        topic_disabled_partitions_set old_disabled_set;
         if (cmd.value.disabled) {
-            _disabled_partitions[cmd.value.ns_tp].set_fully_disabled();
+            auto& disabled_set = _disabled_partitions[cmd.value.ns_tp];
+            old_disabled_set = std::exchange(
+              disabled_set, topic_disabled_partitions_set{});
+            disabled_set.set_fully_disabled();
         } else {
-            _disabled_partitions.erase(cmd.value.ns_tp);
+            auto it = _disabled_partitions.find(cmd.value.ns_tp);
+            if (it != _disabled_partitions.end()) {
+                old_disabled_set = std::move(it->second);
+                _disabled_partitions.erase(it);
+            }
+        }
+
+        for (const auto& p_as : assignments) {
+            if (old_disabled_set.is_disabled(p_as.id) == cmd.value.disabled) {
+                continue;
+            }
+
+            _pending_deltas.emplace_back(
+              model::ntp{cmd.value.ns_tp.ns, cmd.value.ns_tp.tp, p_as.id},
+              model::revision_id{o},
+              topic_table_delta_type::disabled_flag_updated);
         }
     }
+
+    notify_waiters();
 
     co_return errc::success;
 }
@@ -879,22 +906,24 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
             co_await ss::coroutine::maybe_yield();
         }
 
+        std::optional<topic_disabled_partitions_set> disabled_set;
+        if (auto it = _disabled_partitions.find(ns_tp);
+            it != _disabled_partitions.end()) {
+            disabled_set = it->second;
+        }
+
         snap.topics.emplace(
           ns_tp,
           controller_snapshot_parts::topics_t::topic_t{
             .metadata = md_item.metadata.get_fields(),
             .partitions = std::move(partitions),
             .updates = std::move(updates),
+            .disabled_set = std::move(disabled_set),
           });
     }
 
     for (const auto& [ntr, lm] : _lifecycle_markers) {
         snap.lifecycle_markers.emplace(ntr, lm);
-    }
-
-    for (const auto& [ns_tp, dps] : _disabled_partitions) {
-        snap.disabled_partitions.emplace(ns_tp, dps);
-        co_await ss::coroutine::maybe_yield();
     }
 }
 
@@ -902,6 +931,7 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
 // controller snapshot
 class topic_table::snapshot_applier {
     updates_t& _updates_in_progress;
+    disabled_partitions_t& _disabled_partitions;
     fragmented_vector<delta>& _pending_deltas;
     topic_table_probe& _probe;
     model::revision_id _snap_revision;
@@ -909,6 +939,7 @@ class topic_table::snapshot_applier {
 public:
     snapshot_applier(topic_table& parent, model::revision_id snap_revision)
       : _updates_in_progress(parent._updates_in_progress)
+      , _disabled_partitions(parent._disabled_partitions)
       , _pending_deltas(parent._pending_deltas)
       , _probe(parent._probe)
       , _snap_revision(snap_revision) {}
@@ -937,6 +968,7 @@ public:
             delete_ntp(ns_tp, p_as);
             co_await ss::coroutine::maybe_yield();
         }
+        _disabled_partitions.erase(ns_tp);
         _probe.handle_topic_deletion(ns_tp);
         // topic_metadata_item object is supposed to be removed from _topics by
         // the caller
@@ -1081,6 +1113,9 @@ public:
       const model::topic_namespace& ns_tp,
       const controller_snapshot_parts::topics_t::topic_t& topic) {
         topic_metadata_item ret{topic_metadata{topic.metadata, {}}};
+        if (topic.disabled_set) {
+            _disabled_partitions[ns_tp] = *topic.disabled_set;
+        }
         for (const auto& [p_id, partition] : topic.partitions) {
             auto ntp = model::ntp(ns_tp.ns, ns_tp.tp, p_id);
             add_ntp(ntp, topic, partition, ret, false);
@@ -1131,6 +1166,17 @@ ss::future<> topic_table::apply_snapshot(
 
                 md_item.metadata.get_fields() = topic_snapshot.metadata;
 
+                topic_disabled_partitions_set old_disabled_set;
+                if (topic_snapshot.disabled_set) {
+                    old_disabled_set = std::exchange(
+                      _disabled_partitions[ns_tp],
+                      *topic_snapshot.disabled_set);
+                } else if (auto it = _disabled_partitions.find(ns_tp);
+                           it != _disabled_partitions.end()) {
+                    old_disabled_set = std::move(it->second);
+                    _disabled_partitions.erase(it);
+                }
+
                 // 2. For each partition in the new set, reconcile assignments
                 // and add corresponding deltas
                 for (const auto& [p_id, partition] :
@@ -1142,6 +1188,17 @@ ss::future<> topic_table::apply_snapshot(
                       partition,
                       md_item,
                       must_update_properties);
+
+                    const bool new_is_disabled
+                      = topic_snapshot.disabled_set
+                        && topic_snapshot.disabled_set->is_disabled(p_id);
+                    if (old_disabled_set.is_disabled(p_id) != new_is_disabled) {
+                        _pending_deltas.emplace_back(
+                          ntp,
+                          snap_revision,
+                          topic_table_delta_type::disabled_flag_updated);
+                    }
+
                     co_await ss::coroutine::maybe_yield();
                 }
 
@@ -1181,9 +1238,6 @@ ss::future<> topic_table::apply_snapshot(
     // Lifecycle markers is a simple static collection without notifications
     // etc, so we can just copy directly into place.
     _lifecycle_markers = controller_snap.topics.lifecycle_markers;
-
-    // Same for disabled partitions.
-    _disabled_partitions = controller_snap.topics.disabled_partitions;
 
     // 2. re-calculate derived state
 

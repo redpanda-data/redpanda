@@ -2426,6 +2426,7 @@ enum class topic_table_delta_type {
     removed,
     replicas_updated,
     properties_updated,
+    disabled_flag_updated,
 };
 std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
 

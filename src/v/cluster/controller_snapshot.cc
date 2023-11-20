@@ -106,6 +106,7 @@ ss::future<> topics_t::topic_t::serde_async_write(iobuf& out) {
     serde::write(out, metadata);
     co_await write_map_async(out, std::move(partitions));
     co_await write_map_async(out, std::move(updates));
+    serde::write(out, disabled_set);
 }
 
 ss::future<>
@@ -115,6 +116,10 @@ topics_t::topic_t::serde_async_read(iobuf_parser& in, serde::header const h) {
       in, h._bytes_left_limit);
     updates = co_await read_map_async_nested<decltype(updates)>(
       in, h._bytes_left_limit);
+    if (h._version >= 1) {
+        disabled_set = serde::read_nested<decltype(disabled_set)>(
+          in, h._bytes_left_limit);
+    }
 
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);
@@ -125,7 +130,6 @@ ss::future<> topics_t::serde_async_write(iobuf& out) {
     co_await write_map_async(out, std::move(topics));
     serde::write(out, highest_group_id);
     co_await write_map_async(out, std::move(lifecycle_markers));
-    co_await write_map_async(out, std::move(disabled_partitions));
 }
 
 ss::future<>
@@ -137,11 +141,6 @@ topics_t::serde_async_read(iobuf_parser& in, serde::header const h) {
     lifecycle_markers
       = co_await read_map_async_nested<decltype(lifecycle_markers)>(
         in, h._bytes_left_limit);
-    if (h._version >= 1) {
-        disabled_partitions
-          = co_await read_map_async_nested<decltype(disabled_partitions)>(
-            in, h._bytes_left_limit);
-    }
 
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);
