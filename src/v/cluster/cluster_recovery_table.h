@@ -39,6 +39,21 @@ may_require_controller_recovery(std::optional<recovery_stage> cur_status) {
     }
 };
 
+inline bool
+may_require_producer_id_recovery(std::optional<recovery_stage> cur_stage) {
+    if (!cur_stage.has_value()) {
+        return true;
+    }
+    switch (cur_stage.value()) {
+    case recovery_stage::recovered_tx_coordinator:
+    case recovery_stage::complete:
+    case recovery_stage::failed:
+        return false;
+    default:
+        return true;
+    }
+}
+
 // Tracks the state of recovery attempts performed on the cluster.
 //
 // It is expected this will live on every shard on every node, making it easy

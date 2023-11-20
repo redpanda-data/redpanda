@@ -476,6 +476,24 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
     if (!co_await sync_in_term(term_as, synced_term)) {
         co_return;
     }
+
+    if (may_require_producer_id_recovery(recovery_state.stage)) {
+        auto err = co_await _producer_id_recovery->recover();
+        if (err != error_outcome::success) {
+            co_await _recovery_manager.replicate_update(
+              synced_term,
+              recovery_stage::failed,
+              ssx::sformat(
+                "Failed to apply action for producer_id recovery: {}", err));
+            co_return;
+        }
+        auto errc = co_await _recovery_manager.replicate_update(
+          synced_term, recovery_stage::recovered_tx_coordinator);
+        if (errc != cluster::errc::success) {
+            co_return;
+        }
+    }
+
     // All done! Record success.
     co_await _recovery_manager.replicate_update(
       synced_term, recovery_stage::complete);
