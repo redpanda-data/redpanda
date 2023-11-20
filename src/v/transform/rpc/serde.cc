@@ -70,9 +70,9 @@ std::ostream&
 operator<<(std::ostream& os, const find_coordinator_response& resp) {
     fmt::print(
       os,
-      "{{ coordinators: {}, errc: {} }}",
+      "{{ coordinators: {}, errors: {} }}",
       resp.coordinators.size(),
-      resp.ec);
+      resp.errors.size());
     return os;
 }
 
@@ -88,12 +88,19 @@ std::ostream& operator<<(std::ostream& os, const generate_report_reply& reply) {
 
 std::ostream& operator<<(std::ostream& os, const offset_fetch_request& resp) {
     fmt::print(
-      os, "{{ key: {}, coordinator: {} }}", resp.key, resp.coordinator);
+      os,
+      "{{ keys: {}, coordinator: {} }}",
+      resp.keys.size(),
+      resp.coordinator);
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const offset_fetch_response& resp) {
-    fmt::print(os, "{{ errc: {}, result: {} }}", resp.errc, resp.result);
+    fmt::print(
+      os,
+      "{{ errc: {}, results: {} }}",
+      resp.errors.size(),
+      resp.results.size());
     return os;
 }
 

@@ -11,16 +11,20 @@
 #pragma once
 
 #include "cluster/errc.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
+#include "outcome.h"
 #include "serde/envelope.h"
 #include "utils/fragmented_vector.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
+#include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 
 namespace transform::rpc {
 
@@ -259,9 +263,9 @@ struct find_coordinator_request
 
     find_coordinator_request() = default;
 
-    void add(model::transform_offsets_key key) { keys.push_back(key); }
+    void add(model::transform_offsets_key key) { keys.insert(key); }
 
-    fragmented_vector<model::transform_offsets_key> keys;
+    absl::flat_hash_set<model::transform_offsets_key> keys;
 
     friend std::ostream&
     operator<<(std::ostream&, const find_coordinator_request&);
@@ -278,14 +282,14 @@ struct find_coordinator_response
 
     find_coordinator_response() = default;
 
-    cluster::errc ec{cluster::errc::success};
     absl::flat_hash_map<model::transform_offsets_key, model::partition_id>
       coordinators;
+    absl::flat_hash_map<model::transform_offsets_key, cluster::errc> errors;
 
     friend std::ostream&
     operator<<(std::ostream&, const find_coordinator_response&);
 
-    auto serde_fields() { return std::tie(ec, coordinators); }
+    auto serde_fields() { return std::tie(coordinators, errors); }
 };
 
 struct offset_commit_request
@@ -342,15 +346,19 @@ struct offset_fetch_request
     using rpc_adl_exempt = std::true_type;
 
     offset_fetch_request() = default;
-    explicit offset_fetch_request(
-      model::transform_offsets_key k, model::partition_id c)
-      : key(k)
-      , coordinator(c) {}
+    offset_fetch_request(model::transform_offsets_key k, model::partition_id c)
+      : coordinator(c)
+      , keys({k}) {}
+    offset_fetch_request(
+      absl::flat_hash_set<model::transform_offsets_key> k,
+      model::partition_id c)
+      : coordinator(c)
+      , keys(std::move(k)) {}
 
-    model::transform_offsets_key key;
     model::partition_id coordinator;
+    absl::flat_hash_set<model::transform_offsets_key> keys;
 
-    auto serde_fields() { return std::tie(key, coordinator); }
+    auto serde_fields() { return std::tie(keys, coordinator); }
 
     friend std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
 };
@@ -363,16 +371,14 @@ struct offset_fetch_response
     using rpc_adl_exempt = std::true_type;
 
     offset_fetch_response() = default;
-    explicit offset_fetch_response(
-      cluster::errc e, std::optional<model::transform_offsets_value> res)
-      : errc(e)
-      , result(res) {}
 
-    cluster::errc errc{cluster::errc::success};
-    // result set on errc == success.
-    std::optional<model::transform_offsets_value> result;
+    absl::flat_hash_map<
+      model::transform_offsets_key,
+      model::transform_offsets_value>
+      results;
+    absl::flat_hash_map<model::transform_offsets_key, cluster::errc> errors;
 
-    auto serde_fields() { return std::tie(errc, result); }
+    auto serde_fields() { return std::tie(errors, results); }
 
     friend std::ostream&
     operator<<(std::ostream&, const offset_fetch_response&);
