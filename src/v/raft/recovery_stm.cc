@@ -557,6 +557,18 @@ ss::future<> recovery_stm::replicate(
         _stop_requested = true;
         return ss::now();
     }
+    if (meta.value()->expected_log_end_offset >= _last_batch_offset) {
+        vlog(
+          _ctxlog.trace,
+          "follower expected log end offset is already updated, stopping "
+          "recovery. Expected log end offset: {}, recovery range last offset: "
+          "{}",
+          meta.value()->expected_log_end_offset,
+          _last_batch_offset);
+
+        _stop_requested = true;
+        return ss::now();
+    }
     /**
      * Update follower expected log end. It is equal to the last batch in a set
      * of batches read for this recovery round.
