@@ -1115,11 +1115,17 @@ consensus::remove_member(vnode node, model::revision_id new_revision) {
 
 ss::future<std::error_code> consensus::replace_configuration(
   std::vector<vnode> nodes, model::revision_id new_revision) {
-    return change_configuration([nodes = std::move(nodes), new_revision](
+    return change_configuration([this, nodes = std::move(nodes), new_revision](
                                   group_configuration current) mutable {
+        auto old = current;
+
         current.set_version(raft::group_configuration::v_5);
         current.replace(nodes, new_revision);
-
+        vlog(
+          _ctxlog.debug,
+          "Replacing current configuration: {} with new configuration: {}",
+          old,
+          current);
         return result<group_configuration>{std::move(current)};
     });
 }
