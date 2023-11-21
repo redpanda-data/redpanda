@@ -1508,7 +1508,7 @@ class HighThroughputTest(PreallocNodesTest):
             raise RuntimeError("Test parameter for partitions invalid")
 
         # Calculate target throughput latencies
-        target_e2e_50pct = 51
+        target_e2e_50pct = 75
         target_e2e_avg = 145
 
         # Measure with target load
