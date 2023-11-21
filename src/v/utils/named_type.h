@@ -61,18 +61,34 @@ public:
         --_value;
         return cp;
     }
-    constexpr base_named_type operator+(const base_named_type& val) const {
+    template<typename X, typename Y, typename Z>
+    constexpr base_named_type operator+(const base_named_type<X, Y, Z>&) const
+      = delete;
+    constexpr base_named_type
+    operator+(const base_named_type& val) const noexcept {
         return base_named_type(_value + val()); // not mutable
     }
-    constexpr base_named_type operator+(const type& val) const {
+
+    constexpr base_named_type operator+(const type& val) const noexcept {
         return base_named_type(_value + val); // not mutable
     }
 
-    constexpr base_named_type operator-(const base_named_type& val) const {
+    template<typename X, typename Y, typename Z>
+    constexpr base_named_type operator-(const base_named_type<X, Y, Z>&) const
+      = delete;
+    constexpr base_named_type
+    operator-(const base_named_type& val) const noexcept {
         return base_named_type(_value - val()); // not mutable
     }
 
-    base_named_type& operator+=(const type& val) {
+    template<typename X, typename Y, typename Z>
+    constexpr base_named_type& operator+=(const base_named_type<X, Y, Z>&)
+      = delete;
+    constexpr base_named_type& operator+=(const base_named_type& val) noexcept {
+        _value += val();
+        return *this;
+    }
+    constexpr base_named_type& operator+=(const type& val) noexcept {
         _value += val;
         return *this;
     }

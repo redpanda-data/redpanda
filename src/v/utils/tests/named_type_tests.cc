@@ -117,3 +117,15 @@ static_assert(std::equality_comparable_with<
               std::reference_wrapper<named_int>>);
 static_assert(
   std::equality_comparable_with<named_int, std::reference_wrapper<named_int>>);
+
+template<typename Lhs, typename Rhs>
+concept arithmetic_ready = requires(Lhs l, Rhs r) {
+    l + r;
+    l - r;
+    l += r;
+};
+
+static_assert(arithmetic_ready<named_int, named_int>);
+static_assert(arithmetic_ready<named_int, int>);
+static_assert(
+  !arithmetic_ready<named_int, named_type<int, struct another_tag_t>>);
