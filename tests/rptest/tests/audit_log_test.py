@@ -64,11 +64,11 @@ class MTLSProvider(TLSProvider):
 
 class BaseTestItem:
     """Base test item
-    
+
     """
     def __init__(self, name: str, generate_function, filter_function):
         """Creates BaseTestItem
-        
+
         Parameters
         ----------
         name : str
@@ -87,7 +87,7 @@ class BaseTestItem:
 
     def valid_count(self, count: int) -> bool:
         """Checks to see if the count is valid
-        
+
         Parameters
         ----------
         count: int
@@ -102,7 +102,7 @@ class BaseTestItem:
 
     def desc(self) -> str:
         """Returns description of test
-        
+
         Returns
         -------
         str
@@ -128,7 +128,7 @@ class AbsoluteTestItem(BaseTestItem):
         filter_function: function pointer
             The function used to generate received audit messages.  Last argument
             of function must be for the records to parse
-        
+
         count: int
             The expected count
         """
@@ -162,7 +162,7 @@ class RangeTestItem(BaseTestItem):
         filter_function: function pointer
             The function used to generate received audit messages.  Last argument
             of function must be for the records to parse
-        
+
         min: int
             The minimum expected count of messages
 
@@ -188,9 +188,9 @@ class AuditLogConfig:
     def __init__(self,
                  enabled: bool = True,
                  num_partitions: int = 8,
-                 event_types=['management']):
+                 event_types=['management', 'admin']):
         """Initializes the config
-        
+
         Parameters
         ----------
         enabled: bool, default=True
@@ -208,7 +208,7 @@ class AuditLogConfig:
 
     def to_conf(self) -> {str, str}:
         """Converts conf to dict
-        
+
         Returns
         -------
         {str, str}
@@ -512,23 +512,23 @@ class AuditLogTestBase(RedpandaTest):
                                 timeout_sec: int = 60,
                                 backoff_sec: int = 1):
         """Reads all messages from the audit log
-        
+
         Parameters
         ----------
         filter_fn:
             The function used to filter messages.  Last argument must accept
             a list of records
-            
+
         stop_cond:
             The function to use to check to stop.  Last argument must accept
             a list of records
-        
+
         timeout_sec: int, default=30,
             How long to wait
-            
+
         backoff_sec: int, default=1
             Backoff
-            
+
         Returns
         -------
         [str]
@@ -581,7 +581,7 @@ class AuditLogTestBase(RedpandaTest):
 
     def find_matching_record(self, filter_fn, valid_check_fn, desc):
         """Finds matching records and validate the count
-        
+
         Parameters
         ----------
         filter_fn:
@@ -1079,6 +1079,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         enqueued, thus blocking all requests for which auditing is enabled for
         """
         stop_thread = False
+        self.modify_audit_event_types(['admin'])
 
         def generate_async_audit_events():
             while stop_thread is not True:
@@ -1095,21 +1096,22 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                                             args=())
         gen_event_thread.start()
 
-        def modify_auth_method(method, node_cfg):
+        def modify_auth_method(method, listeners: [str], node_cfg):
             node_kafka_cfg = node_cfg['redpanda']['kafka_api']
-            dnslistener = [
-                e for e in node_kafka_cfg if e['name'] == 'dnslistener'
-            ]
-            assert len(dnslistener) == 1
-            dnslistener = dnslistener[0]
-            assert 'authentication_method' in dnslistener, 'Expected auth enabled on interface'
-            dnslistener['authentication_method'] = method
+            for l in listeners:
+                listener = [e for e in node_kafka_cfg if e['name'] == l]
+                assert len(listener) == 1, f'Expected listener {l}'
+                listener = listener[0]
+                assert 'authentication_method' in listener, f'Expected authentication_method in {l}'
+                listener['authentication_method'] = method
+
             return node_cfg['redpanda']
 
         # Modify the node config to remove authentication on the listener of 9092
         node = self.redpanda.nodes[0]
         self.modify_node_config(node,
-                                partial(modify_auth_method, 'none'),
+                                partial(modify_auth_method, 'none',
+                                        ['dnslistener', 'iplistener']),
                                 skip_readiness_check=True)
 
         # Observe that auditing is issuing warnings about misconfiguration
@@ -1130,7 +1132,8 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             self.modify_node_config(node,
                                     partial(
                                         modify_auth_method,
-                                        self.security.endpoint_authn_method),
+                                        self.security.endpoint_authn_method,
+                                        ['dnslistener', 'iplistener']),
                                     skip_readiness_check=False)
 
         if exc is not None:

@@ -22,6 +22,7 @@
 #include "security/audit/logger.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/types.h"
+#include "security/audit/schemas/utils.h"
 #include "security/ephemeral_credential_store.h"
 #include "storage/parser_utils.h"
 #include "utils/retry.h"
@@ -845,49 +846,41 @@ audit_log_manager::should_enqueue_audit_event() const {
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(event_type type) const {
+    if (!is_audit_event_enabled(type)) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    return should_enqueue_audit_event();
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
-  kafka::api_key api, const security::acl_principal& principal) const {
+  event_type type, const security::acl_principal& principal) const {
     if (_audit_excluded_principals.contains(principal)) {
         return std::make_optional(audit_event_passthrough::yes);
     }
 
-    if (auto val = should_enqueue_audit_event(); val.has_value()) {
-        return val;
-    }
-    if (!is_audit_event_enabled(kafka_api_to_event_type(api))) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
+    return should_enqueue_audit_event(type);
+}
 
-    return std::nullopt;
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(
+  kafka::api_key key, const security::acl_principal& principal) const {
+    return should_enqueue_audit_event(kafka_api_to_event_type(key), principal);
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(
+  event_type type, const ss::sstring& username) const {
+    return should_enqueue_audit_event(
+      type, security::acl_principal{security::principal_type::user, username});
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
   event_type type, const security::audit::user& user) const {
-    if (auto val = should_enqueue_audit_event(); val.has_value()) {
-        return val;
-    }
-    if (!is_audit_event_enabled(type)) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
-
-    if (_audit_excluded_principals.contains(
-          security::acl_principal{security::principal_type::user, user.name})) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
-
-    return std::nullopt;
-}
-
-std::optional<audit_log_manager::audit_event_passthrough>
-audit_log_manager::should_enqueue_audit_event(event_type type) const {
-    if (auto val = should_enqueue_audit_event(); val.has_value()) {
-        return val;
-    }
-    if (!is_audit_event_enabled(type)) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
-    return std::nullopt;
+    return should_enqueue_audit_event(
+      type, security::acl_principal{security::principal_type::user, user.name});
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
