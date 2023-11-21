@@ -32,7 +32,9 @@
 #include "pandaproxy/util.h"
 #include "security/acl.h"
 #include "security/audit/audit_log_manager.h"
+#include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/utils.h"
+#include "security/audit/types.h"
 #include "security/ephemeral_credential_store.h"
 #include "security/request_auth.h"
 #include "ssx/semaphore.h"
@@ -80,6 +82,7 @@ public:
 
         auto units = co_await _os();
         auto guard = _g.hold();
+        audit_authz(rq);
         try {
             co_return co_await _h(std::move(rq), std::move(rp));
         } catch (kafka::client::partition_error const& ex) {
@@ -146,6 +149,8 @@ private:
         do_audit_authn(rq, make_authn_event_options(rq));
     }
 
+    void audit_authz(const server::request_t& rq) const { do_audit_authz(rq); }
+
     void do_audit_authn(
       const server::request_t& rq,
       security::audit::authentication_event_options options) const {
@@ -160,6 +165,26 @@ private:
               rq.req->format_url());
             throw ss::httpd::base_exception(
               "Failed to audit authentication request",
+              ss::http::reply::status_type::service_unavailable);
+        }
+    }
+
+    void do_audit_authz(const server::request_t& rq) const {
+        vlog(
+          plog.trace, "Attempting to audit authz for {}", rq.req->format_url());
+        auto success = rq.service().audit_mgr().enqueue_api_activity_event(
+          security::audit::event_type::schema_registry,
+          *rq.req,
+          rq.user.name,
+          audit_svc_name);
+
+        if (!success) {
+            vlog(
+              plog.error,
+              "Failed to audit authorization request for endpoint: {}",
+              rq.req->format_url());
+            throw ss::httpd::base_exception(
+              "Failed to audit authorization request",
               ss::http::reply::status_type::service_unavailable);
         }
     }
