@@ -119,7 +119,7 @@ private:
 
     ss::future<std::optional<model::node_id>> compute_wasm_binary_ntp_leader();
     ss::future<bool> try_create_wasm_binary_ntp();
-    ss::future<> try_create_transform_offsets_topic();
+    ss::future<bool> try_create_transform_offsets_topic();
 
     ss::future<result<model::partition_id, cluster::errc>>
       find_coordinator_once(model::transform_offsets_key);
