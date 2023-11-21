@@ -47,6 +47,10 @@ struct add_offsets_to_txn_response final {
     using api_type = add_offsets_to_txn_api;
 
     add_offsets_to_txn_response_data data;
+    add_offsets_to_txn_response() = default;
+    explicit add_offsets_to_txn_response(error_code error) {
+        data.error_code = error;
+    }
 
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);

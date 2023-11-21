@@ -101,13 +101,16 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
     } else if (!ctx.authorized(
                  security::acl_operation::write,
                  transactional_id{request.data.transactional_id})) {
-        return ctx.respond(txn_offset_commit_response{
-          request, error_code::transactional_id_authorization_failed});
+        auto ec = !ctx.audit()
+                    ? error_code::broker_not_available
+                    : error_code::transactional_id_authorization_failed;
+        return ctx.respond(txn_offset_commit_response{request, ec});
     } else if (!ctx.authorized(
                  security::acl_operation::read,
                  group_id{request.data.group_id})) {
-        return ctx.respond(txn_offset_commit_response{
-          request, error_code::group_authorization_failed});
+        auto ec = !ctx.audit() ? error_code::broker_not_available
+                               : error_code::group_authorization_failed;
+        return ctx.respond(txn_offset_commit_response{request, ec});
     }
 
     txn_offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
@@ -182,6 +185,11 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
             }
             it = octx.request.data.topics.erase(it);
         }
+    }
+
+    if (!octx.rctx.audit()) {
+        return octx.rctx.respond(txn_offset_commit_response{
+          octx.request, error_code::broker_not_available});
     }
 
     return ss::do_with(std::move(octx), txn_offset_commit);

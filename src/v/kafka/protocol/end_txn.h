@@ -48,6 +48,9 @@ struct end_txn_response final {
 
     end_txn_response_data data;
 
+    end_txn_response() = default;
+    explicit end_txn_response(error_code error) { data.error_code = error; }
+
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
