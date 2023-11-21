@@ -143,7 +143,8 @@ private:
 // Stack memory must be page-aligned and a multiple of page size.
 // Some architectures require this alignment for stacks. Additionally, we
 // always allocate a guard page at the bottom, which is unprotected when memory
-// is "deallocated".
+// is "deallocated". Lastly, memory returned from this allocator is always
+// zero-filled as assumed by the Wasm VM.
 //
 // The allocator also supports the ability to query if the current stack being
 // used has been allocated from this allocator and returns the bounds. This is

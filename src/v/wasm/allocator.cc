@@ -97,6 +97,7 @@ stack_memory stack_allocator::allocate(size_t size) {
     if (_tracking_enabled) {
         _live_stacks.emplace(mem.bounds());
     }
+    std::memset(mem.bounds().bottom, 0, mem.size());
     return mem;
 }
 
