@@ -188,12 +188,12 @@ COMMON FILES
 
  - Data directory structure: A file describing the data directory's contents.
 
- - redpanda configuration: The redpanda configuration file (redpanda.yaml;
+ - Redpanda configuration: The redpanda configuration file (redpanda.yaml;
    SASL credentials are stripped).
 
- - /proc/cpuinfo: CPU information like make, core count, cache, frequency.
-
- - /proc/interrupts: IRQ distribution across CPU cores.
+ - Runtime system information (/proc): Process information, by reading /proc 
+  files like core count, cache, frequency, interrupts, mounted file systems, 
+  memory usage, kernel command line.
 
  - Resource usage data: CPU usage percentage, free memory available for the
    redpanda process.
@@ -209,7 +209,7 @@ COMMON FILES
 
 BARE-METAL
 
- - Kernel logs: The kernel logs ring buffer (syslog).
+ - Kernel: The kernel logs ring buffer (syslog) and parameters (sysctl).
 
  - DNS: The DNS info as reported by 'dig', using the hosts in
    /etc/resolv.conf.

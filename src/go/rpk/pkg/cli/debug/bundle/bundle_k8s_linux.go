@@ -62,6 +62,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 
 	steps := []step{
 		saveCPUInfo(ps),
+		saveCmdLine(ps),
 		saveConfig(ps, bp.yActual),
 		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 		saveDataDirStructure(ps, bp.y),
@@ -70,8 +71,11 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes),
 		saveK8SResources(ctx, ps, bp.namespace),
 		saveKafkaMetadata(ctx, ps, bp.cl),
+		saveMdstat(ps),
+		saveMountedFilesystems(ps),
 		saveNTPDrift(ps),
 		saveResourceUsageData(ps, bp.y),
+		saveSlabInfo(ps),
 	}
 
 	adminAddresses, err := adminAddressesFromK8S(ctx, bp.namespace)

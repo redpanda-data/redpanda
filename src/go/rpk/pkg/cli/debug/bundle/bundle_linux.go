@@ -127,21 +127,27 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 	steps := []step{
 		saveCPUInfo(ps),
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs),
+		saveCmdLine(ps),
 		saveConfig(ps, bp.y),
 		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 		saveDNSData(ctx, ps),
 		saveDataDirStructure(ps, bp.y),
 		saveDiskUsage(ctx, ps, bp.y),
 		saveDmidecode(ctx, ps),
+		saveFree(ctx, ps),
 		saveIP(ctx, ps),
 		saveInterrupts(ps),
 		saveKafkaMetadata(ctx, ps, bp.cl),
 		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
 		saveLspci(ctx, ps),
+		saveMdstat(ps),
+		saveMountedFilesystems(ps),
 		saveNTPDrift(ps),
 		saveResourceUsageData(ps, bp.y),
 		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval),
+		saveSlabInfo(ps),
 		saveSocketData(ctx, ps),
+		saveSysctl(ctx, ps),
 		saveSyslog(ps),
 		saveTopOutput(ctx, ps),
 		saveVmstat(ctx, ps),
@@ -533,6 +539,50 @@ func saveInterrupts(ps *stepParams) step {
 	}
 }
 
+// Saves the contents of '/proc/mounts'.
+func saveMountedFilesystems(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/mounts")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/mounts", bs)
+	}
+}
+
+// Saves the contents of '/proc/slabinfo'. Requires Sudo.
+func saveSlabInfo(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/slabinfo")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/slabinfo", bs)
+	}
+}
+
+// Saves the contents of '/proc/cmdline'.
+func saveCmdLine(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/cmdline")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/cmdline", bs)
+	}
+}
+
+// Saves the contents of '/proc/mdstat'.
+func saveMdstat(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/mdstat")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/mdstat", bs)
+	}
+}
+
 // Writes a file containing memory, disk & CPU usage metrics for a local
 // redpanda process.
 func saveResourceUsageData(ps *stepParams, y *config.RedpandaYaml) step {
@@ -730,6 +780,30 @@ func saveDmidecode(ctx context.Context, ps *stepParams) step {
 			ps,
 			filepath.Join(linuxUtilsRoot, "dmidecode.txt"),
 			"dmidecode",
+		)
+	}
+}
+
+// Saves the output of `sysctl -a`.
+func saveSysctl(ctx context.Context, ps *stepParams) step {
+	return func() error {
+		return writeCommandOutputToZip(
+			ctx,
+			ps,
+			filepath.Join(linuxUtilsRoot, "sysctl.txt"),
+			"sysctl", "-a",
+		)
+	}
+}
+
+// Saves the output of `free`.
+func saveFree(ctx context.Context, ps *stepParams) step {
+	return func() error {
+		return writeCommandOutputToZip(
+			ctx,
+			ps,
+			filepath.Join(linuxUtilsRoot, "free.txt"),
+			"free",
 		)
 	}
 }
