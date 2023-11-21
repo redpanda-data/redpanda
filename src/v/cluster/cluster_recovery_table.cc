@@ -11,6 +11,7 @@
 #include "cluster/cluster_recovery_table.h"
 
 #include "cluster/cloud_metadata/cluster_manifest.h"
+#include "cluster/cluster_recovery_state.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 
@@ -64,10 +65,12 @@ std::error_code cluster_recovery_table::apply(
       "Initializing cluster recovery at offset {} with manifest {} from bucket "
       "{}",
       offset,
-      cmd.value.manifest,
-      cmd.value.bucket);
+      cmd.value.state.manifest,
+      cmd.value.state.bucket);
     _states.emplace_back(
-      std::move(cmd.value.manifest), std::move(cmd.value.bucket));
+      std::move(cmd.value.state.manifest),
+      std::move(cmd.value.state.bucket),
+      wait_for_nodes::no);
     _has_active_recovery.signal();
     return errc::success;
 }

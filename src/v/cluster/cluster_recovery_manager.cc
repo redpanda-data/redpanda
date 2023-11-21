@@ -111,8 +111,8 @@ cluster_recovery_manager::initialize_recovery(
     // Replicate an update to start recovery. Once applied, this will update
     // the recovery table.
     cluster_recovery_init_cmd_data data;
-    data.manifest = std::move(manifest);
-    data.bucket = std::move(bucket);
+    data.state.manifest = std::move(manifest);
+    data.state.bucket = std::move(bucket);
     auto errc = co_await replicate_and_wait(
       _controller_stm,
       _sharded_as,
