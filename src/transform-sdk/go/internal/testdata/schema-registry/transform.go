@@ -17,8 +17,8 @@ package main
 import (
 	"bytes"
 
-	"github.com/redpanda-data/redpanda/src/go/transform-sdk"
-	"github.com/redpanda-data/redpanda/src/go/transform-sdk/sr"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/sr"
 	"github.com/redpanda-data/wasm-transform-testdata/schema-registry/avro"
 )
 
