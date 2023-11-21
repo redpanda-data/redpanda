@@ -242,7 +242,7 @@ class DisablingPartitionsTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         admin = Admin(self.redpanda)
 
-        topics = ["mytopic1", "mytopic2", "mytopic3"]
+        topics = ["mytopic1", "mytopic2", "mytopic3", "mytopic4"]
         for topic in topics:
             rpk.create_topic(topic, partitions=3, replicas=3)
 
@@ -263,6 +263,13 @@ class DisablingPartitionsTest(RedpandaTest):
                                       partition=1,
                                       value=False)
 
+        admin.set_partitions_disabled(ns="kafka",
+                                      topic="mytopic4",
+                                      partition=0)
+        admin.set_partitions_disabled(ns="kafka",
+                                      topic="mytopic4",
+                                      value=False)
+
         self.sync()
 
         def pi(topic_partition, disabled=False):
@@ -279,6 +286,9 @@ class DisablingPartitionsTest(RedpandaTest):
             pi('mytopic3/0', True),
             pi('mytopic3/1', False),
             pi('mytopic3/2', True),
+            pi('mytopic4/0', False),
+            pi('mytopic4/1', False),
+            pi('mytopic4/2', False),
         ]
 
         def filtered(topic, partition, disabled):
