@@ -18,10 +18,8 @@ import socket
 import time
 from typing import Any, Optional
 
-from rptest.utils.rpk_config import read_redpanda_cfg
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import ok_to_fail
 from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
@@ -38,6 +36,7 @@ from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until, wait_until_result
+from rptest.utils.rpk_config import read_redpanda_cfg
 from urllib.parse import urlparse
 
 
