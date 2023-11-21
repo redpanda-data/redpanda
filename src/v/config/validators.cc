@@ -12,6 +12,8 @@
 #include "config/validators.h"
 
 #include "config/client_group_byte_rate_quota.h"
+#include "model/namespace.h"
+#include "model/validation.h"
 #include "net/inet_address_wrapper.h"
 #include "ssx/sformat.h"
 
@@ -181,6 +183,36 @@ validate_audit_event_types(const std::vector<ss::sstring>& vs) {
             return ss::format("Unsupported audit event type passed: {}", e);
         }
     }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
+validate_audit_excluded_topics(const std::vector<ss::sstring>& vs) {
+    bool is_kafka_audit_topic = false;
+    std::optional<ss::sstring> is_invalid_topic_name = std::nullopt;
+    if (std::any_of(
+          vs.begin(),
+          vs.end(),
+          [&is_kafka_audit_topic,
+           &is_invalid_topic_name](const ss::sstring& topic_name) {
+              auto t = model::topic{topic_name};
+              if (t == model::kafka_audit_logging_topic) {
+                  is_kafka_audit_topic = true;
+              } else if (model::validate_kafka_topic_name(t)) {
+                  is_invalid_topic_name = topic_name;
+              }
+              return is_kafka_audit_topic || is_invalid_topic_name.has_value();
+          })) {
+        if (is_kafka_audit_topic) {
+            return ss::format(
+              "Unable to exclude audit log '{}' from auditing",
+              model::kafka_audit_logging_topic);
+        } else if (is_invalid_topic_name.has_value()) {
+            return ss::format(
+              "{} is an invalid topic name", *is_invalid_topic_name);
+        }
+    }
+
     return std::nullopt;
 }
 }; // namespace config

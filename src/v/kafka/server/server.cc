@@ -86,6 +86,25 @@
 
 namespace kafka {
 
+namespace {
+security::audit::authentication_event_options make_auth_event_options(
+  const security::tls::mtls_state& mtls_state,
+  const ss::lw_shared_ptr<connection_context>& ctx) {
+    return {
+    .auth_protocol = "mtls",
+    .server_addr = {fmt::format("{}", ctx->local_address().addr()), ctx->local_address().port(), ctx->local_address().addr().in_family()},
+    .svc_name = ctx->server().name(),
+    .client_addr = {fmt::format("{}", ctx->client_host()), ctx->client_port()},
+    .is_cleartext = security::audit::authentication::used_cleartext::no,
+    .user = {
+      .name = mtls_state.principal().name(),
+      .type_id = security::audit::user::type::user,
+      .uid = mtls_state.subject().value_or("")
+    }
+  };
+}
+} // namespace
+
 server::server(
   ss::sharded<net::server_configuration>* cfg,
   ss::smp_service_group smp,
@@ -317,15 +336,8 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
     std::exception_ptr eptr;
     try {
         if (authn_method == config::broker_authn_method::mtls_identity) {
-            auto authn_event = security::audit::make_authentication_event(
-              mtls_state.value(),
-              ctx->local_address(),
-              ctx->server().name(),
-              ctx->client_host(),
-              ctx->client_port(),
-              std::nullopt);
-            if (!ctx->server().audit_mgr().enqueue_audit_event(
-                  security::audit::event_type::authenticate,
+            auto authn_event = make_auth_event_options(mtls_state.value(), ctx);
+            if (!ctx->server().audit_mgr().enqueue_authn_event(
                   std::move(authn_event))) {
                 throw std::runtime_error(
                   "Failed to enqueue mTLS authentication event - audit log "
@@ -692,7 +704,7 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
 
     if (!ctx.sasl()->has_mechanism()) {
         if (!ctx.audit_authn_failure(
-              "Unsupported SASL mechanism", request.data.mechanism)) {
+              "Unsupported SASL mechanism", request.data.mechanism.c_str())) {
             error = error_code::broker_not_available;
         } else {
             error = error_code::unsupported_sasl_mechanism;

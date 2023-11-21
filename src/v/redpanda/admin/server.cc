@@ -68,6 +68,7 @@
 #include "model/transform.h"
 #include "net/dns.h"
 #include "net/tls_certificate_probe.h"
+#include "net/unresolved_address.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -95,6 +96,7 @@
 #include "security/audit/audit_log_manager.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
+#include "security/audit/schemas/types.h"
 #include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
 #include "security/credential_store.h"
@@ -133,6 +135,7 @@
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
 #include <seastar/json/json_elements.hh>
+#include <seastar/net/socket_defs.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
@@ -140,6 +143,7 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/lexical_cast.hpp>
@@ -191,6 +195,50 @@ struct string_conversion_exception : public default_control_character_thrower {
           + get_sanitized_string());
     }
 };
+
+inline net::unresolved_address from_ss_sa(const ss::socket_address& sa) {
+    return {fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family()};
+}
+
+security::audit::authentication::used_cleartext
+is_cleartext(const ss::sstring& protocol) {
+    return boost::iequals(protocol, "https")
+             ? security::audit::authentication::used_cleartext::no
+             : security::audit::authentication::used_cleartext::yes;
+}
+
+security::audit::authentication_event_options make_authn_event_options(
+  ss::httpd::const_req req, const request_auth_result& auth_result) {
+    return {
+      .auth_protocol = auth_result.get_sasl_mechanism(),
+      .server_addr = from_ss_sa(req.get_server_address()),
+      .svc_name = audit_svc_name,
+      .client_addr = from_ss_sa(req.get_client_address()),
+      .is_cleartext = is_cleartext(req.get_protocol_name()),
+      .user = {
+        .name = auth_result.get_username().empty() ? "{{anonymous}}"
+                                                   : auth_result.get_username(),
+        .type_id = auth_result.is_authenticated()
+                     ? (
+                       auth_result.is_superuser()
+                         ? security::audit::user::type::admin
+                         : security::audit::user::type::user)
+                     : security::audit::user::type::unknown}};
+}
+
+security::audit::authentication_event_options make_authn_event_options(
+  ss::httpd::const_req req,
+  const security::credential_user& username,
+  const ss::sstring& reason) {
+    return {
+      .server_addr = from_ss_sa(req.get_server_address()),
+      .svc_name = audit_svc_name,
+      .client_addr = from_ss_sa(req.get_client_address()),
+      .is_cleartext = is_cleartext(req.get_protocol_name()),
+      .user
+      = {.name = username, .type_id = security::audit::user::type::unknown},
+      .error_reason = reason};
+}
 } // namespace
 
 model::ntp admin_server::parse_ntp_from_request(
@@ -655,30 +703,21 @@ void admin_server::audit_authz(
 
 void admin_server::audit_authn(
   ss::httpd::const_req req, const request_auth_result& auth_result) {
-    auto authentication_event = security::audit::make_authentication_event(
-      req, auth_result, audit_svc_name);
-
-    do_audit_authn(req, std::move(authentication_event));
+    do_audit_authn(req, make_authn_event_options(req, auth_result));
 }
 
 void admin_server::audit_authn_failure(
   ss::httpd::const_req req,
   const security::credential_user& username,
   const ss::sstring& reason) {
-    auto authentication_event
-      = security::audit::make_authentication_failure_event(
-        req, username, audit_svc_name, reason);
-
-    do_audit_authn(req, std::move(authentication_event));
+    do_audit_authn(req, make_authn_event_options(req, username, reason));
 }
 
 void admin_server::do_audit_authn(
   ss::httpd::const_req req,
-  security::audit::authentication authentication_event) {
+  security::audit::authentication_event_options options) {
     vlog(adminlog.trace, "Attempting to audit authn for {}", req.format_url());
-    auto success = _audit_mgr.local().enqueue_audit_event(
-      security::audit::event_type::authenticate,
-      std::move(authentication_event));
+    auto success = _audit_mgr.local().enqueue_authn_event(std::move(options));
 
     if (!success) {
         vlog(

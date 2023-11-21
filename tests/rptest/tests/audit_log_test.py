@@ -391,6 +391,18 @@ class AuditLogTestBase(RedpandaTest):
         """
         self._modify_cluster_config({'audit_enabled_event_types': events})
 
+    def modify_audit_excluded_topics(self, topics: [str]):
+        """
+        Modifies list of excluded topics
+        """
+        self._modify_cluster_config({'audit_excluded_topics': topics})
+
+    def modify_audit_excluded_principals(self, principals: [str]):
+        """
+        Modifies list of excluded principals
+        """
+        self._modify_cluster_config({'audit_excluded_principals': principals})
+
     def modify_node_config(self, node, update_fn, skip_readiness_check=True):
         """Modifies the current node configuration, restarts the node for
         changes to take effect
@@ -641,6 +653,26 @@ class AuditLogTestAdminApi(AuditLogTestBase):
                                                           'trace'
                                                       }))
 
+    @cluster(num_nodes=4)
+    def test_config_rejected(self):
+        """
+        Ensures that attempting to add __audit_log to excluded topics will be
+        rejected
+        """
+        # Should pass
+        self.modify_audit_excluded_topics(['good'])
+        try:
+            self.modify_audit_excluded_topics(['good', self.audit_log])
+            assert "This should have failed"
+        except requests.HTTPError:
+            pass
+
+        try:
+            self.modify_audit_excluded_topics(['this*is*a*bad*name'])
+            assert "This should have failed"
+        except requests.HTTPError:
+            pass
+
     @cluster(num_nodes=5)
     def test_audit_log_functioning(self):
         """
@@ -785,6 +817,58 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         except RpkException as e:
             if 'TOPIC_AUTHORIZATION_FAILED' not in e.stderr:
                 raise
+
+    @cluster(num_nodes=5)
+    def test_excluded_topic(self):
+        """
+        Validates that no audit messages are created for topics that
+        are in the excluded topic list
+        """
+
+        excluded_topic = 'excluded_topic'
+        included_topic = 'included_topic'
+
+        self.modify_audit_event_types(
+            ['management', 'produce', 'consume', 'heartbeat', 'describe'])
+        self.modify_audit_excluded_topics([excluded_topic])
+
+        self.super_rpk.create_topic(topic=excluded_topic)
+        self.super_rpk.create_topic(topic=included_topic)
+
+        self.super_rpk.produce(topic=excluded_topic, key="test", msg="msg")
+        self.super_rpk.produce(topic=included_topic, key="test", msg="msg")
+
+        _ = self.super_rpk.consume(topic=excluded_topic, n=1)
+        _ = self.super_rpk.consume(topic=included_topic, n=1)
+
+        def records_containing_topic(topic: str, record):
+            return record['class_uid'] == 6003 and record['api']['service'][
+                'name'] == self.kafka_rpc_service_name and {
+                    'name': topic,
+                    'type': 'topic'
+                } in record['resources']
+
+        records = self.find_matching_record(
+            lambda record: records_containing_topic(included_topic, record),
+            lambda record_count: record_count >= 1,
+            "Should contain the included topic")
+
+        assert len(
+            records
+        ) > 0, f'Did not receive any audit records for topic {included_topic}'
+
+        try:
+            records = self.find_matching_record(
+                lambda record: records_containing_topic(
+                    excluded_topic, record),
+                lambda record_count: record_count > 0,
+                "Should not contain any of these records")
+            assert len(
+                records
+            ) == 0, f'Found {len(records)} records containing {excluded_topic}'
+            assert "find_matching_record did not fail as expected"
+        except TimeoutError:
+            pass
 
     @cluster(num_nodes=5)
     def test_management(self):
@@ -1158,6 +1242,70 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         return record['class_uid'] == 6003 and record['api']['service'][
             'name'] == service_name and record['actor']['user'][
                 'name'] == username
+
+    @cluster(num_nodes=5)
+    def test_excluded_principal(self):
+        """
+        Verifies that principals excluded will not generate audit messages
+        """
+        self.setup_cluster()
+        user2 = "ignored_user"
+        user2_pw = "ignored_user"
+        user2_alg = "SCRAM-SHA-256"
+
+        self.modify_audit_excluded_principals([user2])
+
+        self.admin.create_user(user2, user2_pw, user2_alg)
+        self.super_rpk.sasl_allow_principal(
+            principal=user2,
+            operations=['all'],
+            resource='topic',
+            resource_name='*',
+            username=self.redpanda.SUPERUSER_CREDENTIALS[0],
+            password=self.redpanda.SUPERUSER_CREDENTIALS[1],
+            mechanism=self.redpanda.SUPERUSER_CREDENTIALS[2])
+
+        user2_rpk = self.get_rpk_credentials(username=user2,
+                                             password=user2_pw,
+                                             mechanism=user2_alg)
+
+        _ = self.rpk.list_topics()
+        _ = user2_rpk.list_topics()
+
+        def contains_principal(principal: str, record):
+            if record['class_uid'] == 3002:
+                return record['user']['name'] == principal
+            elif record['class_uid'] == 6003:
+                return record['actor']['user']['name'] == principal
+            return False
+
+        records = self.find_matching_record(
+            lambda record: contains_principal(self.username, record),
+            lambda record_count: record_count > 0,
+            f'Should contain {self.username}')
+
+        assert len(
+            records
+        ) > 0, f'Did not receive any audit messages for principal {self.username}'
+
+        try:
+            records = self.find_matching_record(
+                lambda record: contains_principal(user2, record),
+                lambda record_count: record_count > 0,
+                f'Should not contain {user2}')
+
+            # We may find the user _only if_ the user principal is used during an authz check
+            # against the audit log.  (e.g. metadata request)
+            for r in records:
+                assert r[
+                    'class_uid'] == 6003, f'Should not see any ignored users in class {r["class_uid"]}'
+                assert {
+                    "name": "__audit_log",
+                    "type": "topic"
+                } in r[
+                    'resources'], 'Did not find __audit_log topic in resources'
+        except TimeoutError:
+            pass
 
     @cluster(num_nodes=5)
     def test_authn_messages(self):

@@ -31,6 +31,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <memory>
+#include <optional>
 
 namespace security::audit {
 
@@ -577,6 +578,10 @@ audit_log_manager::audit_log_manager(
       config::shard_local_cfg().audit_max_queue_elements_per_shard.bind())
   , _audit_event_types(
       config::shard_local_cfg().audit_enabled_event_types.bind())
+  , _audit_excluded_topics_binding(
+      config::shard_local_cfg().audit_excluded_topics.bind())
+  , _audit_excluded_principals_binding(
+      config::shard_local_cfg().audit_excluded_principals.bind())
   , _controller(controller)
   , _config(client_config) {
     if (ss::this_shard_id() == client_shard_id) {
@@ -603,6 +608,34 @@ audit_log_manager::audit_log_manager(
     });
     set_enabled_events();
     _audit_event_types.watch([this] { set_enabled_events(); });
+    _audit_excluded_topics_binding.watch([this] {
+        _audit_excluded_topics.clear();
+        const auto& excluded_topics = _audit_excluded_topics_binding();
+        std::for_each(
+          excluded_topics.cbegin(),
+          excluded_topics.cend(),
+          [this](const ss::sstring& topic) {
+              _audit_excluded_topics.emplace(topic);
+          });
+    });
+    _audit_excluded_principals_binding.watch([this] {
+        _audit_excluded_principals.clear();
+        const auto& excluded_principals = _audit_excluded_principals_binding();
+        std::for_each(
+          excluded_principals.cbegin(),
+          excluded_principals.cend(),
+          [this](const ss::sstring& principal) {
+              if (principal.starts_with("User:")) {
+                  _audit_excluded_principals.emplace(
+                    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+                    security::principal_type::user,
+                    principal.substr(5));
+              } else {
+                  _audit_excluded_principals.emplace(
+                    security::principal_type::user, principal);
+              }
+          });
+    });
 }
 
 audit_log_manager::~audit_log_manager() = default;
@@ -808,13 +841,37 @@ audit_log_manager::should_enqueue_audit_event() const {
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
-audit_log_manager::should_enqueue_audit_event(kafka::api_key api) const {
+audit_log_manager::should_enqueue_audit_event(
+  kafka::api_key api, const security::acl_principal& principal) const {
+    if (_audit_excluded_principals.contains(principal)) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+
     if (auto val = should_enqueue_audit_event(); val.has_value()) {
         return val;
     }
     if (!is_audit_event_enabled(kafka_api_to_event_type(api))) {
         return std::make_optional(audit_event_passthrough::yes);
     }
+
+    return std::nullopt;
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(
+  event_type type, const security::audit::user& user) const {
+    if (auto val = should_enqueue_audit_event(); val.has_value()) {
+        return val;
+    }
+    if (!is_audit_event_enabled(type)) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+
+    if (_audit_excluded_principals.contains(
+          security::acl_principal{security::principal_type::user, user.name})) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+
     return std::nullopt;
 }
 
@@ -827,6 +884,18 @@ audit_log_manager::should_enqueue_audit_event(event_type type) const {
         return std::make_optional(audit_event_passthrough::yes);
     }
     return std::nullopt;
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(
+  kafka::api_key key,
+  const security::acl_principal& principal,
+  const model::topic& t) const {
+    if (_audit_excluded_topics.contains(t)) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+
+    return should_enqueue_audit_event(key, principal);
 }
 
 } // namespace security::audit

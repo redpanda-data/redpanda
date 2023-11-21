@@ -1426,6 +1426,27 @@ configuration::configuration()
       },
       {"management"},
       validate_audit_event_types)
+  , audit_excluded_topics(
+      *this,
+      "audit_excluded_topics",
+      "List of topics to exclude from auditing",
+      {
+        .needs_restart = needs_restart::no,
+        .example = R"(["topic1","topic2"])",
+        .visibility = visibility::user,
+      },
+      {},
+      validate_audit_excluded_topics)
+  , audit_excluded_principals(
+      *this,
+      "audit_excluded_principals",
+      "List of user principals to exclude from auditing",
+      {
+        .needs_restart = needs_restart::no,
+        .example = R"(["User:principal1","User:principal2"])",
+        .visibility = visibility::user,
+      },
+      {})
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

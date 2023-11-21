@@ -271,55 +271,34 @@ public:
 
     bool audit() { return _audit_successful; }
 
-    bool audit_authn_failure(const ss::sstring& reason) {
-        return audit_authn_failure(reason, "");
+    bool audit_authn_failure(ss::sstring reason) {
+        return audit_authn_failure(std::move(reason), "");
     }
 
-    bool audit_authn_failure(
-      const ss::sstring& reason, const ss::sstring& auth_protocol) {
+    bool audit_authn_failure(ss::sstring reason, const char* auth_protocol) {
         return audit_authn_failure(
-          reason,
+          std::move(reason),
           auth_protocol,
           {.type_id = security::audit::user::type::unknown});
     }
 
     bool audit_authn_failure(
-      const ss::sstring& reason,
-      const ss::sstring& auth_protocol,
+      ss::sstring reason,
+      const char* auth_protocol,
       security::audit::user user) {
-        return audit(security::audit::make_authentication_failure_event(
-          auth_protocol,
-          connection()->local_address(),
-          connection()->server().name(),
-          connection()->client_host(),
-          connection()->client_port(),
-          header().client_id,
-          connection()->tls_enabled()
-            ? security::audit::authentication::used_cleartext::no
-            : security::audit::authentication::used_cleartext::yes,
-          reason,
-          std::move(user)));
+        return audit(
+          make_authn_event(std::move(reason), auth_protocol, std::move(user)));
     }
 
-    bool audit_authn_success(
-      const ss::sstring& auth_protocol, security::audit::user user) {
-        return audit(security::audit::make_authentication_event(
-          auth_protocol,
-          connection()->local_address(),
-          connection()->server().name(),
-          connection()->client_host(),
-          connection()->client_port(),
-          header().client_id,
-          connection()->tls_enabled()
-            ? security::audit::authentication::used_cleartext::no
-            : security::audit::authentication::used_cleartext::yes,
-          std::move(user)));
+    bool
+    audit_authn_success(const char* auth_protocol, security::audit::user user) {
+        return audit(
+          make_authn_event(std::nullopt, auth_protocol, std::move(user)));
     }
 
-    bool audit(security::audit::authentication authn_event) {
-        if (!_conn->server().audit_mgr().enqueue_audit_event(
-              security::audit::event_type::authenticate,
-              std::move(authn_event))) {
+    bool audit(security::audit::authentication_event_options options) {
+        if (!_conn->server().audit_mgr().enqueue_authn_event(
+              std::move(options))) {
             vlog(
               klog.error, "Failed to append authentication event to audit log");
             return false;
@@ -348,7 +327,7 @@ public:
             return resp;
         }
 
-        do_audit(std::move(result), key, client_id);
+        do_audit(std::move(result), name, key, client_id);
 
         return resp;
     }
@@ -364,7 +343,7 @@ public:
         auto key = _header.key;
         auto client_id = _header.client_id;
 
-        do_audit(std::move(result), key, client_id);
+        do_audit(std::move(result), name, key, client_id);
         return resp;
     }
 
@@ -389,6 +368,7 @@ public:
         auto operation_name = handler_for_key(key).value()->name();
         if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
               key,
+              name,
               std::forward<Func>(f),
               operation_name,
               std::move(result),
@@ -435,8 +415,10 @@ private:
         }
         return _conn->authorized(operation, name, quiet);
     }
+    template<typename T>
     void do_audit(
       security::auth_result&& auth_result,
+      const T& name,
       api_key key,
       std::optional<std::string_view> client_id) {
         if (skip_auditing(key, auth_result.principal)) [[unlikely]] {
@@ -451,6 +433,7 @@ private:
 
         if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
               key,
+              name,
               operation_name,
               std::move(auth_result),
               _conn->local_address(),
@@ -461,6 +444,21 @@ private:
             _audit_successful = false;
             vlog(klog.error, "Failed to append authz event to audit log");
         }
+    }
+    security::audit::authentication_event_options make_authn_event(
+      std::optional<ss::sstring> reason,
+      const char* auth_protocol,
+      security::audit::user user) {
+        return {
+            .auth_protocol = auth_protocol,
+            .server_addr = {fmt::format("{}", connection()->local_address().addr()), connection()->local_address().port(), connection()->local_address().addr().in_family()},
+            .svc_name = connection()->server().name(),
+            .client_addr = {fmt::format("{}", connection()->client_host()), connection()->client_port()},
+            .client_id = _header.client_id,
+            .is_cleartext = connection()->tls_enabled() ? security::audit::authentication::used_cleartext::no : security::audit::authentication::used_cleartext::yes,
+            .user = std::move(user),
+            .error_reason = std::move(reason)
+        };
     }
     template<typename ResponseType>
     void update_usage_stats(const ResponseType& r, size_t response_size) {

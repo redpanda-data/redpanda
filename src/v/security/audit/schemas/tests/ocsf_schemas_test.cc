@@ -840,7 +840,18 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
       "sasl",
       request_auth_result::superuser::no};
 
-    auto authn = sa::make_authentication_event(req, auth_result, service_name);
+    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+      .auth_protocol = "sasl",
+      .server_addr = {fmt::format("{}", req.get_server_address().addr()), req.get_server_address().port(), req.get_server_address().addr().in_family()},
+      .svc_name = service_name,
+      .client_addr = {fmt::format("{}", req.get_client_address().addr()), req.get_client_address().port(), req.get_client_address().addr().in_family()},
+      .is_cleartext = sa::authentication::used_cleartext::no,
+      .user = {
+        .name = username,
+        .type_id = sa::user::type::user,
+      },
+    });
+
     auth_result.pass();
 
     const auto expected = fmt::format(
@@ -1022,8 +1033,17 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
     req._headers["Authorization"] = "You shouldn't see this at all";
     req.protocol_name = protocol_name;
 
-    auto authn = sa::make_authentication_failure_event(
-      req, security::credential_user{username}, service_name, "FAILURE");
+    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+      .server_addr = {fmt::format("{}", req.get_server_address().addr()), req.get_server_address().port(), req.get_server_address().addr().in_family()},
+      .svc_name = service_name,
+      .client_addr = {fmt::format("{}", req.get_client_address().addr()), req.get_client_address().port(), req.get_client_address().addr().in_family()},
+      .is_cleartext = sa::authentication::used_cleartext::no,
+      .user = {
+        .name = username,
+        .type_id = sa::user::type::unknown,
+      },
+      .error_reason = "FAILURE"
+    });
 
     const auto expected = fmt::format(
       R"(
