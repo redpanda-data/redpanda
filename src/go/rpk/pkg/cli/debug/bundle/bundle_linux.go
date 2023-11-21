@@ -49,6 +49,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const linuxUtilsRoot = "utils"
+
 // determineFilepath will process the given path and sets:
 //   - File Name: If the path is empty, the filename will be <timestamp>-bundle.zip
 //   - File Extension: if no extension is provided we default to .zip
@@ -609,7 +611,7 @@ func saveNTPDrift(ps *stepParams) step {
 
 		return writeFileToZip(
 			ps,
-			"ntp.txt",
+			filepath.Join(linuxUtilsRoot, "ntp.txt"),
 			marshalled,
 		)
 	}
@@ -621,14 +623,14 @@ func saveSyslog(ps *stepParams) step {
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "syslog.txt", entries)
+		return writeFileToZip(ps, filepath.Join(linuxUtilsRoot, "syslog.txt"), entries)
 	}
 }
 
 // Saves the output of `dig`.
 func saveDNSData(ctx context.Context, ps *stepParams) step {
 	return func() error {
-		return writeCommandOutputToZip(ctx, ps, "dig.txt", "dig")
+		return writeCommandOutputToZip(ctx, ps, filepath.Join(linuxUtilsRoot, "dig.txt"), "dig")
 	}
 }
 
@@ -638,7 +640,7 @@ func saveDiskUsage(ctx context.Context, ps *stepParams, y *config.RedpandaYaml) 
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"du.txt",
+			filepath.Join(linuxUtilsRoot, "du.txt"),
 			"du", "-h", y.Redpanda.Directory,
 		)
 	}
@@ -668,7 +670,7 @@ func saveLogs(ctx context.Context, ps *stepParams, since, until string, logsLimi
 // Saves the output of `ss`.
 func saveSocketData(ctx context.Context, ps *stepParams) step {
 	return func() error {
-		return writeCommandOutputToZip(ctx, ps, "ss.txt", "ss")
+		return writeCommandOutputToZip(ctx, ps, filepath.Join(linuxUtilsRoot, "ss.txt"), "ss")
 	}
 }
 
@@ -678,7 +680,7 @@ func saveTopOutput(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"top.txt",
+			filepath.Join(linuxUtilsRoot, "top.txt"),
 			"top", "-b", "-n", "10", "-H", "-d", "1",
 		)
 	}
@@ -690,7 +692,7 @@ func saveVmstat(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"vmstat.txt",
+			filepath.Join(linuxUtilsRoot, "vmstat.txt"),
 			"vmstat", "-w", "1", "10",
 		)
 	}
@@ -702,7 +704,7 @@ func saveIP(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"ip.txt",
+			filepath.Join(linuxUtilsRoot, "ip.txt"),
 			"ip", "addr",
 		)
 	}
@@ -714,7 +716,7 @@ func saveLspci(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"lspci.txt",
+			filepath.Join(linuxUtilsRoot, "lspci.txt"),
 			"lspci",
 		)
 	}
@@ -726,7 +728,7 @@ func saveDmidecode(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"dmidecode.txt",
+			filepath.Join(linuxUtilsRoot, "dmidecode.txt"),
 			"dmidecode",
 		)
 	}
