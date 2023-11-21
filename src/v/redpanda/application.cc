@@ -830,7 +830,10 @@ void application::check_for_crash_loop() {
     }
     auto file_path = config::node().crash_loop_tracker_path();
     std::optional<crash_tracker_metadata> maybe_crash_md;
-    if (ss::file_exists(file_path.string()).get()) {
+    if (
+      // Tracking is reset every time the broker boots in recovery mode.
+      !config::node().recovery_mode_enabled()
+      && ss::file_exists(file_path.string()).get()) {
         // Ok to read the entire file, it contains a serialized uint32_t.
         auto buf = read_fully(file_path).get();
         try {
