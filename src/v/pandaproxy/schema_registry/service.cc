@@ -31,6 +31,7 @@
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/util.h"
 #include "security/acl.h"
+#include "security/audit/audit_log_manager.h"
 #include "security/ephemeral_credential_store.h"
 #include "ssx/semaphore.h"
 
@@ -388,7 +389,8 @@ service::service(
   ss::sharded<kafka::client::client>& client,
   sharded_store& store,
   ss::sharded<seq_writer>& sequencer,
-  std::unique_ptr<cluster::controller>& controller)
+  std::unique_ptr<cluster::controller>& controller,
+  ss::sharded<security::audit::audit_log_manager>& audit_mgr)
   : _config(config)
   , _mem_sem(max_memory, "pproxy/schema-svc")
   , _client(client)
@@ -404,6 +406,7 @@ service::service(
   , _store(store)
   , _writer(sequencer)
   , _controller(controller)
+  , _audit_mgr(audit_mgr)
   , _ensure_started{[this]() { return do_start(); }}
   , _auth{
       config::always_true(),
