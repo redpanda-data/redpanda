@@ -52,10 +52,6 @@ pub struct WriteEvent<'a> {
     pub record: BorrowedRecord<'a>,
 }
 
-/// A callback to process write events and respond with a number of records to write back to the
-/// output topic.
-pub type OnRecordWritten<E> = fn(WriteEvent) -> Result<Vec<Record>, E>;
-
 /// Register a callback to be fired when a record is written to the input topic.
 ///
 /// This callback is triggered after the record has been written and fsynced to disk and the
@@ -85,28 +81,31 @@ pub type OnRecordWritten<E> = fn(WriteEvent) -> Result<Vec<Record>, E>;
 ///   ])
 /// }
 /// ```
-pub fn on_record_written<E>(cb: OnRecordWritten<E>)
+pub fn on_record_written<E, F>(cb: F)
 where
     E: Debug,
+    F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
 {
     process(cb)
 }
 
-fn process<E>(cb: OnRecordWritten<E>)
+fn process<E, F>(cb: F)
 where
     E: Debug,
+    F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
 {
     unsafe {
         abi::check_abi();
     }
     loop {
-        process_batch(cb);
+        process_batch(&cb);
     }
 }
 
-fn process_batch<E>(cb: OnRecordWritten<E>)
+fn process_batch<E, F>(cb: &F)
 where
     E: Debug,
+    F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
 {
     let mut header = record::BatchHeader {
         base_offset: 0,

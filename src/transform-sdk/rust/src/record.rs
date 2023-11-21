@@ -120,7 +120,10 @@ impl<'a> BorrowedRecord<'a> {
         }
     }
 
-    pub(crate) fn read_from_payload(payload: &'a [u8], timestamp: SystemTime) -> Result<Self, VarintDecodeError> {
+    pub(crate) fn read_from_payload(
+        payload: &'a [u8],
+        timestamp: SystemTime,
+    ) -> Result<Self, VarintDecodeError> {
         let kv = read_kv(payload)?;
         let mut payload = &payload[kv.read..];
         let header_count_result = varint::read(payload)?;
