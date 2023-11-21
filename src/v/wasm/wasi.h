@@ -287,7 +287,7 @@ public:
     ~preview1_module() = default;
 
     // Set the current timestamp that clocks will return.
-    void set_timestamp(model::timestamp);
+    void set_walltime(model::timestamp);
 
     static constexpr std::string_view name = "wasi_snapshot_preview1";
 
@@ -349,7 +349,10 @@ public:
     errno_t sock_shutdown(fd_t, uint8_t);
 
 private:
-    timestamp_t _now{0};
+    using unix_millis = std::chrono::milliseconds;
+
+    unix_millis _wall_time{0};
+    unix_millis _monotonic_time{0};
     std::vector<ss::sstring> _args;
     std::vector<ss::sstring> _environ;
     log_writer _stdout_log_writer;

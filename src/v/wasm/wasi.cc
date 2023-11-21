@@ -45,6 +45,23 @@
 
 namespace wasm::wasi {
 
+using unix_millis = std::chrono::milliseconds;
+
+namespace {
+// Return our clock resolution (1ms) in nanoseconds.
+constexpr std::chrono::milliseconds clock_resolution() {
+    // We only have millisecond resolution because we're using record
+    // timestamps as the clock value, and they only have millisecond
+    // resolution themselves.
+    return std::chrono::milliseconds(1);
+}
+
+constexpr timestamp_t to_timestamp(unix_millis ts) {
+    using namespace std::chrono_literals;
+    return timestamp_t(ts / 1ns);
+}
+} // namespace
+
 exit_exception::exit_exception(int32_t exit_code)
   : _code(exit_code)
   , _msg(ss::format("exited with code: {}", exit_code)) {}
@@ -118,11 +135,8 @@ preview1_module::preview1_module(
     }
 }
 
-void preview1_module::set_timestamp(model::timestamp ts) {
-    using namespace std::chrono;
-    milliseconds ms(ts.value());
-    nanoseconds ns = duration_cast<nanoseconds>(ms);
-    _now = timestamp_t(ns.count());
+void preview1_module::set_walltime(model::timestamp ts) {
+    _wall_time = unix_millis(ts.value());
 }
 
 // We don't have control over this API, so there will be some redundant
@@ -134,13 +148,7 @@ errno_t preview1_module::clock_res_get(clock_id_t id, timestamp_t* out) {
     case MONOTONIC_CLOCK_ID:
     case PROCESS_CPUTIME_CLOCK_ID:
     case THREAD_CPUTIME_CLOCK_ID: {
-        using namespace std::chrono;
-        // We only have millisecond resolution because we're using record
-        // timestamps as the clock value, and they only have millisecond
-        // resolution themselves.
-        milliseconds ms(1);
-        nanoseconds ns = duration_cast<nanoseconds>(ms);
-        *out = timestamp_t(ns.count());
+        *out = to_timestamp(clock_resolution());
         return ERRNO_SUCCESS;
     }
     default:
@@ -151,12 +159,19 @@ errno_t preview1_module::clock_res_get(clock_id_t id, timestamp_t* out) {
 errno_t
 preview1_module::clock_time_get(clock_id_t id, timestamp_t, timestamp_t* out) {
     switch (id) {
-    case REALTIME_CLOCK_ID:
+    case REALTIME_CLOCK_ID: {
+        *out = to_timestamp(_wall_time);
+        return ERRNO_SUCCESS;
+    }
     case MONOTONIC_CLOCK_ID:
     case PROCESS_CPUTIME_CLOCK_ID:
-    case THREAD_CPUTIME_CLOCK_ID:
-        *out = _now;
+    case THREAD_CPUTIME_CLOCK_ID: {
+        *out = to_timestamp(_monotonic_time);
+        // Increment by our minimal resolution here so that busy sleep loops
+        // used by languages by reading from the monotonic clock don't hang.
+        _monotonic_time += clock_resolution();
         return ERRNO_SUCCESS;
+    }
     default:
         return ERRNO_INVAL;
     }
