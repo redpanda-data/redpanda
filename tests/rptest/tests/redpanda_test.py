@@ -15,6 +15,7 @@ from rptest.services.redpanda import CloudTierName, make_redpanda_service, Cloud
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
+from rptest.utils import mode_checks
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionLine, RedpandaVersionTriple
 from rptest.clients.rpk import RpkTool
@@ -88,7 +89,7 @@ class RedpandaTest(Test):
         the much slower debug builds of redpanda, which generally cannot
         keep up with significant quantities of data or partition counts.
         """
-        return os.environ.get('BUILD_TYPE', None) == 'debug'
+        return mode_checks.is_debug_mode()
 
     @property
     def ci_mode(self):
