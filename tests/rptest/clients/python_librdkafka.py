@@ -10,7 +10,7 @@ import requests
 import time
 import functools
 
-from confluent_kafka import Producer
+from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from typing import Optional
 from rptest.services import tls
@@ -73,6 +73,12 @@ class PythonLibrdkafka:
         producer_conf = self._get_config()
         self._redpanda.logger.debug(f"{producer_conf}")
         return Producer(producer_conf)
+
+    def get_consumer(self, extra_config: Optional[dict] = None):
+        conf = self._get_config()
+        conf.update(extra_config)
+        self._redpanda.logger.debug(f"{conf}")
+        return Consumer(conf)
 
     def _get_config(self):
         conf = {

@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import threading
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 
@@ -95,6 +96,8 @@ class RedpandaOIDCTestBase(Test):
                 TOKEN_AUDIENCE,
                 "kafka_sasl_max_reauth_ms":
                 sasl_max_reauth_ms,
+                "group_initial_rebalance_delay":
+                0,
             },
             security=security,
             pandaproxy_config=pandaproxy_config,
@@ -342,6 +345,124 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         assert request_cache_invalidate(with_auth=True) == requests.codes.ok
 
         assert id_requests < get_idp_request_count()
+
+    @cluster(num_nodes=4)
+    def test_admin_revoke(self):
+        FETCH_TIMEOUT_SEC = 10
+        GROUP_ID = "test_admin_revoke"
+
+        kc_node = self.keycloak.nodes[0]
+
+        def get_sasl_session_revoked_total():
+            metrics = [
+                "kafka_rpc_sasl_session_revoked_total",
+            ]
+            samples = self.redpanda.metrics_samples(metrics,
+                                                    self.redpanda.nodes,
+                                                    MetricsEndpoint.METRICS)
+            result = {}
+            for k in samples.keys():
+                result[k] = result.get(k, 0) + sum(
+                    [int(s.value) for s in samples[k].samples])
+            return result["kafka_rpc_sasl_session_revoked_total"]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        token = self.get_client_credentials_token(cfg)
+        auth_header = {'Authorization': f'Bearer {token["access_token"]}'}
+
+        def request_revoke(with_auth: bool, expected):
+            for node in self.redpanda.nodes:
+                revoke_url = f'http://{self.redpanda.admin_endpoint(node)}/v1/security/oidc/revoke'
+
+                response = requests.post(
+                    url=revoke_url,
+                    headers=auth_header if with_auth else None,
+                    timeout=5)
+                self.redpanda.logger.info(
+                    f'response.status_code: {response.status_code}')
+                assert response.status_code == expected
+
+        # At this point, admin API does not require auth and service_user_id is not a superuser
+
+        request_revoke(with_auth=False, expected=requests.codes.ok)
+        request_revoke(with_auth=True, expected=requests.codes.ok)
+
+        # Require Auth for Admin
+        self.redpanda.set_cluster_config({'admin_api_require_auth': True})
+
+        request_revoke(with_auth=False, expected=requests.codes.forbidden)
+        request_revoke(with_auth=True, expected=requests.codes.forbidden)
+
+        # Add service_user_id as a superuser
+        self.redpanda.set_cluster_config({
+            'superusers':
+            [self.redpanda.SUPERUSER_CREDENTIALS.username, service_user_id]
+        })
+
+        self.rpk.create_topic(EXAMPLE_TOPIC)
+        expected_topics = set([EXAMPLE_TOPIC])
+        wait_until(lambda: set(self.rpk.list_topics()) == expected_topics,
+                   timeout_sec=10)
+
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        k_client = PythonLibrdkafka(self.redpanda,
+                                    algorithm='OAUTHBEARER',
+                                    oauth_config=cfg,
+                                    tls_cert=self.client_cert)
+
+        consumer = k_client.get_consumer(extra_config={"group.id": GROUP_ID})
+        producer = k_client.get_producer()
+
+        self.redpanda.logger.debug('starting producer')
+        producer.poll(1.0)
+        wait_until(lambda: set(producer.list_topics(timeout=10).topics.keys())
+                   == expected_topics,
+                   timeout_sec=5)
+
+        def consume_one():
+            self.redpanda.logger.debug('starting consumer')
+            rec = consumer.poll(FETCH_TIMEOUT_SEC)
+            self.redpanda.logger.debug(f'consumed: {rec}')
+            return rec
+
+        def has_group():
+            groups = self.rpk.group_describe(group=GROUP_ID, summary=True)
+            return groups.members == 1 and groups.state == "Stable"
+
+        self.redpanda.logger.debug('starting consumer.subscribe')
+        consumer.subscribe([EXAMPLE_TOPIC])
+        self.redpanda.logger.debug('consumer.subscribed')
+        rec = consumer.poll(1.0)
+        assert rec == None
+
+        wait_until(has_group, timeout_sec=30, backoff_sec=1)
+
+        t1 = threading.Thread(target=consume_one)
+        t1.start()
+
+        revoked_total = get_sasl_session_revoked_total()
+
+        time.sleep(5)
+
+        self.redpanda.logger.debug('starting final revoke')
+        request_revoke(with_auth=True, expected=requests.codes.ok)
+
+        self.redpanda.logger.debug('starting producer')
+        producer.produce(topic=EXAMPLE_TOPIC, key='bar', value='23')
+        producer.flush(timeout=5)
+        self.redpanda.logger.debug('produced 1')
+
+        self.redpanda.logger.debug('joining consumer thread')
+        t1.join()
+        self.redpanda.logger.debug('joined consumer thread')
+
+        wait_until(lambda: revoked_total < get_sasl_session_revoked_total(),
+                   timeout_sec=10,
+                   backoff_sec=1)
+
+        consumer.close()
 
 
 class RedpandaOIDCTest(RedpandaOIDCTestMethods):

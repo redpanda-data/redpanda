@@ -10,6 +10,7 @@
  */
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
+#include "kafka/server/server.h"
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/server.h"
 #include "security/credential_store.h"
@@ -130,6 +131,12 @@ void admin_server::register_security_routes() {
       ss::httpd::security_json::oidc_keys_cache_invalidate,
       [this](std::unique_ptr<ss::http::request> req) {
           return oidc_keys_cache_invalidate_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::oidc_revoke,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return oidc_revoke_handler(std::move(req));
       });
 
     register_route<superuser>(
@@ -314,5 +321,21 @@ admin_server::oidc_keys_cache_invalidate_handler(
         res.error_message = ssx::sformat("", f.get_exception());
         co_return ss::json::json_return_type(res);
     }
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::oidc_revoke_handler(std::unique_ptr<ss::http::request> req) {
+    auto f = co_await ss::coroutine::as_future(
+      _controller->get_oidc_service().invoke_on_all(
+        [](auto& s) { return s.refresh_keys(); }));
+    if (f.failed()) {
+        ss::httpd::security_json::oidc_keys_cache_invalidate_error_response res;
+        res.error_message = ssx::sformat("", f.get_exception());
+        co_return ss::json::json_return_type(res);
+    }
+    co_await _kafka_server.invoke_on_all([](kafka::server& ks) {
+        return ks.revoke_credentials(security::oidc::sasl_authenticator::name);
+    });
     co_return ss::json::json_return_type(ss::json::json_void());
 }
