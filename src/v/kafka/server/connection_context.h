@@ -34,6 +34,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <functional>
 #include <memory>
 #include <system_error>
 #include <vector>
@@ -120,9 +121,12 @@ struct session_resources {
 };
 
 class connection_context final
-  : public ss::enable_lw_shared_from_this<connection_context> {
+  : public ss::enable_lw_shared_from_this<connection_context>
+  , public boost::intrusive::list_base_hook<> {
 public:
     connection_context(
+      std::optional<std::reference_wrapper<
+        boost::intrusive::list<connection_context>>> hook,
       server& s,
       ss::lw_shared_ptr<net::connection> conn,
       std::optional<security::sasl_server> sasl,
@@ -147,6 +151,7 @@ public:
     bool abort_requested() const { return _as.abort_requested(); }
     const ss::sstring& listener() const { return conn->name(); }
     std::optional<security::sasl_server>& sasl() { return _sasl; }
+    ss::future<> revoke_credentials(std::string_view name);
 
     template<typename T>
     security::auth_result authorized(
@@ -315,6 +320,9 @@ private:
         uint16_t _client_port;
     };
 
+    std::optional<
+      std::reference_wrapper<boost::intrusive::list<connection_context>>>
+      _hook;
     class server& _server;
     ss::lw_shared_ptr<net::connection> conn;
     sequence_id _next_response;

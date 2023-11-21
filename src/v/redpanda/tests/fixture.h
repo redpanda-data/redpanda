@@ -769,6 +769,7 @@ public:
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
         sasl.set_mechanism(std::make_unique<fake_sasl_mech>());
         return ss::make_lw_shared<kafka::connection_context>(
+          std::nullopt,
           proto.local(),
           nullptr,
           std::move(sasl),

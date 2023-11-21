@@ -15,6 +15,7 @@
 #include "bytes/scattered_message.h"
 #include "config/configuration.h"
 #include "kafka/protocol/sasl_authenticate.h"
+#include "kafka/sasl_probe.h"
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/handlers/produce.h"
@@ -46,6 +47,8 @@ using namespace std::chrono_literals;
 namespace kafka {
 
 connection_context::connection_context(
+  std::optional<
+    std::reference_wrapper<boost::intrusive::list<connection_context>>> hook,
   class server& s,
   ss::lw_shared_ptr<net::connection> conn,
   std::optional<security::sasl_server> sasl,
@@ -54,7 +57,8 @@ connection_context::connection_context(
   config::binding<uint32_t> max_request_size,
   config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
     kafka_throughput_controlled_api_keys) noexcept
-  : _server(s)
+  : _hook(hook)
+  , _server(s)
   , conn(conn)
   , _as()
   , _sasl(std::move(sasl))
@@ -86,9 +90,15 @@ ss::future<> connection_context::start() {
     } else {
         _wait_input_shutdown.set_value();
     }
+    if (_hook) {
+        _hook.value().get().push_back(*this);
+    }
 }
 
 ss::future<> connection_context::stop() {
+    if (_hook) {
+        _hook.value().get().erase(_hook.value().get().iterator_to(*this));
+    }
     if (conn) {
         vlog(klog.trace, "stopping connection context for {}", conn->addr);
         conn->shutdown_input();
@@ -219,6 +229,22 @@ connection_context::authorized_user<security::acl_cluster_name>(
   security::acl_operation operation,
   const security::acl_cluster_name& name,
   authz_quiet quiet);
+
+ss::future<> connection_context::revoke_credentials(std::string_view name) {
+    if (
+      !_sasl.has_value() || !_sasl->has_mechanism()
+      || _sasl->mechanism().mechanism_name() != name) {
+        return ss::now();
+    }
+    auto msg = _sasl->mechanism().complete()
+                 ? fmt::format(
+                   "Session for principal '{}' revoked", _sasl->principal())
+                 : "Session for unknown client revoked";
+    vlog(klog.info, "{}", msg);
+    _server.sasl_probe().session_revoked();
+    conn->shutdown_input();
+    return ss::now();
+}
 
 ss::future<> connection_context::process() {
     while (true) {
