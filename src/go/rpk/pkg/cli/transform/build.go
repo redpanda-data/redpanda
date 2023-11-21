@@ -34,7 +34,7 @@ For example to add debug symbols and use the asyncify scheduler for tinygo:
 
   rpk transform build -- -scheduler=asyncify -no-debug=false
 
-Language-specific details:
+LANGUAGES
 
 Tinygo - By default tinygo uses release builds (-opt=2) and goroutines are 
 disabled, for maximum performance. To enable goroutines, pass 
