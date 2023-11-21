@@ -623,6 +623,7 @@ ss::future<> controller::start(
             bucket,
             _cloud_storage_api.local(),
             _raft0,
+            _tp_state.local(),
             offsets_uploader);
           if (config::shard_local_cfg().enable_cluster_metadata_upload_loop()) {
               _metadata_uploader->start();

@@ -51,6 +51,7 @@ public:
       cloud_storage_clients::bucket_name bucket,
       cloud_storage::remote& remote,
       consensus_ptr raft0,
+      cluster::topic_table& topics,
       ss::shared_ptr<offsets_upload_requestor> offsets_uploader);
 
     // Begins the upload loop and listens for leadership changes.
@@ -121,6 +122,7 @@ private:
     model::cluster_uuid _cluster_uuid;
     cloud_storage::remote& _remote;
     consensus_ptr _raft0;
+    cluster::topic_table& _topic_table;
     ss::shared_ptr<offsets_upload_requestor> _offsets_uploader;
     const cloud_storage_clients::bucket_name _bucket;
 
