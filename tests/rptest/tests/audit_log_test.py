@@ -312,7 +312,9 @@ class AuditLogTestBase(RedpandaTest):
 
         self.rpk = self.get_rpk()
         self.super_rpk = self.get_super_rpk()
-        self.admin = Admin(self.redpanda)
+        self.admin = Admin(self.redpanda,
+                           auth=(self.redpanda.SUPERUSER_CREDENTIALS[0],
+                                 self.redpanda.SUPERUSER_CREDENTIALS[1]))
         self.ocsf_server = OcsfServer(test_context)
 
     def get_rpk_credentials(self, username: str, password: str,
@@ -782,6 +784,86 @@ class AuditLogTestAdminApi(AuditLogTestBase):
             upsert={'audit_enabled_event_types': ['heartbeat']})
         wait_for_version_sync(self.admin, self.redpanda,
                               patch_result['config_version'])
+
+
+class AuditLogTestAdminAuthApi(AuditLogTestBase):
+    """
+    Validates auditing when auth is enabled on the
+    Admin API
+    """
+    username = 'test'
+    password = 'test12345'
+    algorithm = 'SCRAM-SHA-256'
+
+    ignored_user = 'ignored-test'
+    ignored_pass = 'ignored-test'
+
+    def __init__(self, test_context):
+        super(AuditLogTestAdminAuthApi, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                num_partitions=1, event_types=['admin', 'authenticate']),
+            log_config=LoggingConfig('info',
+                                     logger_levels={
+                                         'auditing': 'trace',
+                                         'admin_api_server': 'trace'
+                                     }),
+            security=AuditLogTestSecurityConfig(user_creds=(self.username,
+                                                            self.password,
+                                                            self.algorithm)))
+
+    def setup_cluster(self):
+        self._modify_cluster_config({'admin_api_require_auth': True})
+        self.admin.create_user(self.username, self.password, self.algorithm)
+        self.admin.create_user(self.ignored_user, self.ignored_pass,
+                               self.algorithm)
+
+    @cluster(num_nodes=5)
+    def test_excluded_principal(self):
+        self.setup_cluster()
+        self.modify_audit_excluded_principals([self.ignored_user])
+
+        Admin(self.redpanda,
+              auth=(self.username, self.password)).get_raft_recovery_status(
+                  node=self.redpanda.nodes[0])
+        Admin(self.redpanda,
+              auth=(self.ignored_user,
+                    self.ignored_pass)).get_raft_recovery_status(
+                        node=self.redpanda.nodes[0])
+
+        def match_api_user(endpoint, user, svc_name, record):
+            if record['class_uid'] == 6003 and record['dst_endpoint'][
+                    'svc_name'] == svc_name:
+                regex = re.compile(
+                    "http:\/\/(?P<address>.*):(?P<port>\d+)\/v1\/(?P<handler>.*)"
+                )
+                url_string = record['http_request']['url']['url_string']
+                match = regex.match(url_string)
+                if match and match.group('handler') == endpoint and record[
+                        'actor']['user']['name'] == user:
+                    return True
+            return False
+
+        records = self.find_matching_record(
+            lambda record:
+            match_api_user("raft/recovery/status", self.username, self.
+                           admin_audit_svc_name, record),
+            lambda record_count: record_count >= 1, 'raft recory normal user')
+        assert len(records) == 1, f'Expected one record found {len(records)}'
+
+        try:
+            records = self.find_matching_record(
+                lambda record:
+                match_api_user("raft/recovery/status", self.ignored_user, self.
+                               admin_audit_svc_name, record),
+                lambda record_count: record_count >= 1,
+                'raft recovery ignored user',
+            )
+            assert len(
+                records
+            ) == 0, f'Expected to find zero records but found {len(records)}: {records}'
+        except TimeoutError:
+            pass
 
 
 class AuditLogTestKafkaApi(AuditLogTestBase):
