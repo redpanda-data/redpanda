@@ -14,9 +14,12 @@
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
+#include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/cloud_metadata/offsets_uploader.h"
+#include "cluster/cloud_metadata/uploader.h"
+#include "cluster/controller.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
@@ -469,4 +472,84 @@ FIXTURE_TEST(test_upload_dispatch_to_leaders, offsets_recovery_fixture) {
         }
         validate_downloaded_offsets(*fx, committed_offsets, remote_paths).get();
     }
+}
+
+FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    scoped_config test_local_cfg;
+    test_local_cfg.get("cloud_storage_cluster_metadata_upload_interval_ms")
+      .set_value(5000ms);
+
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+
+    // Set up some metadata: a controller snapshot and some offsets.
+    auto& controller_stm = app.controller->get_controller_stm().local();
+    RPTEST_REQUIRE_EVENTUALLY(
+      5s, [&] { return controller_stm.maybe_write_snapshot(); });
+    auto committed_offsets = commit_random_offsets(client, members).get();
+    client.stop().get();
+    stop_client.cancel();
+
+    // Now begin uploading metadata.
+    auto& uploader = app.controller->metadata_uploader();
+    cluster::consensus_ptr raft0
+      = app.partition_manager.local().get(model::controller_ntp)->raft();
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&] { return raft0->is_leader(); });
+
+    auto upload_in_term = uploader.upload_until_term_change();
+    cluster_metadata_manifest manifest;
+    RPTEST_REQUIRE_EVENTUALLY(30s, [&] {
+        auto manifest_opt = uploader.manifest();
+        if (!manifest_opt.has_value()) {
+            return false;
+        }
+        const auto& m = manifest_opt.value().get();
+        if (m.offsets_snapshots_by_partition.empty()) {
+            return false;
+        }
+        if (m.metadata_id() < 3) {
+            return false;
+        }
+        manifest = m;
+        return true;
+    });
+    BOOST_REQUIRE_EQUAL(
+      manifest.offsets_snapshots_by_partition.size(), offset_ntps.size());
+    for (const auto& snap : manifest.offsets_snapshots_by_partition) {
+        BOOST_REQUIRE_EQUAL(1, snap.size());
+    }
+    raft0->step_down("test").get();
+    upload_in_term.get();
+    std::vector<cloud_storage::remote_segment_path> paths_in_manifest;
+    paths_in_manifest.reserve(manifest.offsets_snapshots_by_partition.size());
+    for (const auto& remote_paths : manifest.offsets_snapshots_by_partition) {
+        paths_in_manifest.emplace_back(
+          cloud_storage::remote_segment_path{remote_paths[0]});
+    }
+    // We should still be able to access the remote files in the manifest.
+    validate_downloaded_offsets(*this, committed_offsets, paths_in_manifest)
+      .get();
+
+    auto reqs = get_requests();
+    int num_deleted_offsets_snapshots = 0;
+    for (const auto& req : reqs) {
+        if (req.method != "DELETE") {
+            continue;
+        }
+        // None of the paths in the manifest should be deleted.
+        for (const auto& p : paths_in_manifest) {
+            BOOST_REQUIRE_NE(p(), req.url);
+        }
+        // On the other hand, the uploader should have been deleting stale
+        // offsets snapshots.
+        if (req.url.contains("/offsets/")) {
+            num_deleted_offsets_snapshots++;
+        }
+    }
+    BOOST_REQUIRE_GT(num_deleted_offsets_snapshots, 0);
 }
