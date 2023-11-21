@@ -12,7 +12,9 @@ package adminapi
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
 
 const partitionsBaseURL = "/v1/cluster/partitions"
@@ -21,6 +23,21 @@ const partitionsBaseURL = "/v1/cluster/partitions"
 type Replica struct {
 	NodeID int `json:"node_id"  yaml:"node_id"`
 	Core   int `json:"core" yaml:"core"`
+}
+
+type Replicas []Replica
+
+func (rs Replicas) String() string {
+	var sb strings.Builder
+	sb.WriteByte('[')
+	for i, r := range rs {
+		if i > 0 {
+			io.WriteString(&sb, ", ")
+		}
+		fmt.Fprintf(&sb, "%d-%d", r.NodeID, r.Core)
+	}
+	sb.WriteByte(']')
+	return sb.String()
 }
 
 // Partition is the information returned from the Redpanda admin partitions endpoints.
@@ -104,4 +121,13 @@ func (a *AdminAPI) TopicClusterPartitions(ctx context.Context, namespace, topic 
 	var clusterPartition []ClusterPartition
 	partitionURL := fmt.Sprintf("%v/%v/%v?disabled=%v", partitionsBaseURL, namespace, topic, disabled)
 	return clusterPartition, a.sendAny(ctx, http.MethodGet, partitionURL, nil, &clusterPartition)
+}
+
+// MoveReplicas changes replica and core (aka shard) assignments for a given partition.
+func (a *AdminAPI) MoveReplicas(ctx context.Context, ns string, topic string, part int, r []Replica) error {
+	return a.sendToLeader(ctx,
+		http.MethodPost,
+		fmt.Sprintf("/v1/partitions/%s/%s/%d/replicas", ns, topic, part),
+		r,
+		nil)
 }
