@@ -4530,13 +4530,13 @@ fragmented_vector<cluster_partition_info> topic2cluster_partitions(
         // fast exits
         if (
           disabled_filter.value()
-          && (!disabled_set || disabled_set->is_empty())) {
+          && (!disabled_set || disabled_set->is_fully_enabled())) {
             return ret;
         }
 
         if (
           !disabled_filter.value() && disabled_set
-          && disabled_set->is_topic_disabled()) {
+          && disabled_set->is_fully_disabled()) {
             return ret;
         }
     }

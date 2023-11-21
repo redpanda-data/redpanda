@@ -4418,12 +4418,12 @@ struct topic_disabled_partitions_set
     bool is_disabled(model::partition_id id) const {
         return !partitions || partitions->contains(id);
     }
-    bool is_topic_disabled() const { return !partitions.has_value(); }
-    bool is_empty() const { return partitions && partitions->empty(); }
+    bool is_fully_disabled() const { return !partitions.has_value(); }
+    bool is_fully_enabled() const { return partitions && partitions->empty(); }
 
     void add(model::partition_id id);
     void remove(model::partition_id id, const assignments_set& all_partitions);
-    void set_topic_disabled() { partitions = std::nullopt; }
+    void set_fully_disabled() { partitions = std::nullopt; }
 };
 
 } // namespace cluster

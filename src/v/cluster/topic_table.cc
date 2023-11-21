@@ -644,12 +644,12 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
             disabled_set.remove(*cmd.value.partition_id, assignments);
         }
 
-        if (disabled_set.is_empty()) {
+        if (disabled_set.is_fully_enabled()) {
             _disabled_partitions.erase(disabled_it);
         }
     } else {
         if (cmd.value.disabled) {
-            _disabled_partitions[cmd.value.ns_tp].set_topic_disabled();
+            _disabled_partitions[cmd.value.ns_tp].set_fully_disabled();
         } else {
             _disabled_partitions.erase(cmd.value.ns_tp);
         }
