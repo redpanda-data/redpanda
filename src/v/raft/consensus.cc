@@ -1158,10 +1158,16 @@ ss::future<std::error_code> consensus::replace_configuration(
   model::revision_id new_revision,
   std::optional<model::offset> learner_start_offset) {
     return change_configuration(
-      [nodes = std::move(nodes), new_revision, learner_start_offset](
+      [this, nodes = std::move(nodes), new_revision, learner_start_offset](
         group_configuration current) mutable {
+          auto old = current;
           current.set_version(raft::group_configuration::v_5);
           current.replace(nodes, new_revision, learner_start_offset);
+          vlog(
+            _ctxlog.debug,
+            "Replacing current configuration: {} with new configuration: {}",
+            old,
+            current);
 
           return result<group_configuration>{std::move(current)};
       });
