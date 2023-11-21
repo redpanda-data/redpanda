@@ -106,6 +106,8 @@ public:
       cloud_storage::lazy_abort_source& lazy_as,
       retry_chain_node& retry_node);
 
+    auto manifest() const { return _term_manifest; }
+
 private:
     // Returns true if we're no longer the leader or the term has changed since
     // the input term.
@@ -127,6 +129,8 @@ private:
 
     // Abort source to stop sleeping if there is a term change.
     std::optional<std::reference_wrapper<ss::abort_source>> _term_as;
+    std::optional<std::reference_wrapper<cluster_metadata_manifest>>
+      _term_manifest;
 
     // Used to wait for leadership. It will be triggered by notify_leadership.
     ss::condition_variable _leader_cond;

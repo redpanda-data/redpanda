@@ -328,6 +328,9 @@ ss::future<> uploader::upload_until_term_change() {
         co_return;
     }
     auto manifest = std::move(manifest_res.value());
+    _term_manifest = manifest;
+    auto reset_term_manifest = ss::defer(
+      [this] { _term_manifest = std::nullopt; });
     vlog(
       clusterlog.info,
       "Starting cluster metadata upload loop in term {}",
