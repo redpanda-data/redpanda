@@ -217,6 +217,20 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/reset_crash_tracking",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Reset the crash tracking of queried broker.",
+                    "type": "void",
+                    "nickname": "reset_crash_tracking",
+                    "produces": [
+                        "application/json"
+                    ]
+                }
+            ]
         }
     ],
     "models": {
