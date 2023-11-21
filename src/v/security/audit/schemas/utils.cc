@@ -194,6 +194,7 @@ user user_from_request_auth_result(const request_auth_result& r) {
 actor actor_from_request_auth_result(
   const request_auth_result& r,
   bool authorized,
+  const ss::sstring& svc_name,
   const std::optional<std::string_view>& reason) {
     auto u = user_from_request_auth_result(r);
     std::vector<authorization_result> auths{
@@ -201,7 +202,21 @@ actor actor_from_request_auth_result(
        .policy = policy{
          .desc = ss::sstring{reason.value_or(
            r.is_auth_required() ? "" : "Auth Disabled")},
-         .name = "Admin httpd authorizer"}}};
+         .name = svc_name}}};
+
+    return {.authorizations = std::move(auths), .user = std::move(u)};
+}
+
+actor actor_from_user_string(
+  const ss::sstring& user, const ss::sstring& svc_name) {
+    struct user u = {
+      .name = user.empty() ? "{{anonymous}}" : user,
+      .type_id = user.empty() ? user::type::unknown : user::type::user,
+    };
+    std::vector<authorization_result> auths{
+      {.decision = "authorized",
+       .policy = policy{
+         .desc = user.empty() ? "Auth Disabled" : "", .name = svc_name}}};
 
     return {.authorizations = std::move(auths), .user = std::move(u)};
 }
@@ -506,7 +521,8 @@ api_activity make_api_activity_event(
   const ss::sstring& svc_name,
   bool authorized,
   const std::optional<std::string_view>& reason) {
-    auto act = actor_from_request_auth_result(auth_result, authorized, reason);
+    auto act = actor_from_request_auth_result(
+      auth_result, authorized, svc_name, reason);
     return {
       http_method_to_activity_id(req._method),
       std::move(act),
@@ -518,6 +534,25 @@ api_activity make_api_activity_event(
       from_ss_endpoint(req.get_client_address()),
       authorized ? api_activity::status_id::success
                  : api_activity::status_id::failure,
+      create_timestamp_t(),
+      unmapped_data()};
+}
+
+api_activity make_api_activity_event(
+  ss::httpd::const_req req,
+  const ss::sstring& user,
+  const ss::sstring& svc_name) {
+    auto act = actor_from_user_string(user, svc_name);
+    return {
+      http_method_to_activity_id(req._method),
+      std::move(act),
+      api{.operation = req._method, .service = {.name = svc_name}},
+      from_ss_endpoint(req.get_server_address(), svc_name),
+      from_ss_http_request(req),
+      {},
+      severity_id::informational,
+      from_ss_endpoint(req.get_client_address()),
+      api_activity::status_id::success,
       create_timestamp_t(),
       unmapped_data()};
 }

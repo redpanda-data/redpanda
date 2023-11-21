@@ -189,6 +189,20 @@ public:
             req, auth_result, svc_name, authorized, reason)));
     }
 
+    bool enqueue_api_activity_event(
+      event_type type,
+      ss::httpd::const_req req,
+      const ss::sstring& user,
+      const ss::sstring& svc_name) {
+        if (auto val = should_enqueue_audit_event(type, user);
+            val.has_value()) {
+            return (bool)*val;
+        }
+
+        return do_enqueue_audit_event(std::make_unique<api_activity>(
+          make_api_activity_event(req, user, svc_name)));
+    }
+
     /// Enqueue an event to be produced onto an audit log partition.  This will
     /// always enqueue the event (if auditing is enabled).  This is used for
     /// items like authentication events or application events.

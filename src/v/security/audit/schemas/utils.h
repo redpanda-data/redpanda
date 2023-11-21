@@ -154,6 +154,11 @@ api_activity make_api_activity_event(
   bool authorized,
   const std::optional<std::string_view>& reason);
 
+api_activity make_api_activity_event(
+  ss::httpd::const_req req,
+  const ss::sstring& user,
+  const ss::sstring& svc_name);
+
 authentication make_authentication_event(
   ss::httpd::const_req req,
   const request_auth_result& r,
