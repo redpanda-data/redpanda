@@ -322,7 +322,16 @@ public:
     aborted_transactions_cloud(const cloud_storage::offset_range& offsets);
 
     model::producer_id highest_producer_id() {
-        return _rm_stm->highest_producer_id();
+        auto pid = _rm_stm ? _rm_stm->highest_producer_id()
+                           : model::producer_id{};
+        if (_archival_meta_stm) {
+            // It's possible this partition is a recovery partition, in which
+            // case the archival metadata may be higher than what's in the
+            // rm_stm.
+            return std::max(
+              pid, _archival_meta_stm->manifest().highest_producer_id());
+        }
+        return pid;
     }
 
     const ss::shared_ptr<cluster::archival_metadata_stm>&

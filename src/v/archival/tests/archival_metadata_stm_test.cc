@@ -168,6 +168,7 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       ->add_segments(
         m,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 10s,
         never_abort,
         cluster::segment_validated::yes)
@@ -212,6 +213,7 @@ FIXTURE_TEST(
       ->add_segments(
         m,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 10s,
         never_abort,
         cluster::segment_validated::yes)
@@ -242,6 +244,7 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       ->add_segments(
         m1,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 10s,
         never_abort,
         cluster::segment_validated::yes)
@@ -263,6 +266,7 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       ->add_segments(
         m2,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 10s,
         never_abort,
         cluster::segment_validated::yes)
@@ -328,6 +332,8 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
       });
     m.advance_insync_offset(model::offset{42});
 
+    BOOST_REQUIRE(m.advance_highest_producer_id(model::producer_id{1000}));
+    BOOST_REQUIRE_EQUAL(m.highest_producer_id(), model::producer_id{1000});
     BOOST_REQUIRE(m.advance_start_offset(model::offset{100}));
     BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(100));
     BOOST_REQUIRE_EQUAL(m.get_insync_offset(), model::offset(42));
@@ -487,6 +493,7 @@ FIXTURE_TEST(
       ->add_segments(
         m,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 10s,
         never_abort,
         cluster::segment_validated::yes)
@@ -875,6 +882,7 @@ FIXTURE_TEST(test_reset_metadata, archival_metadata_stm_fixture) {
       ->add_segments(
         m,
         std::nullopt,
+        model::producer_id{},
         ss::lowres_clock::now() + 10s,
         never_abort,
         cluster::segment_validated::yes)
@@ -898,4 +906,42 @@ FIXTURE_TEST(test_reset_metadata, archival_metadata_stm_fixture) {
     BOOST_REQUIRE(archival_stm->manifest().replaced_segments().size() == 0);
     BOOST_REQUIRE(
       archival_stm->manifest().begin()->archiver_term == model::term_id(2));
+}
+
+FIXTURE_TEST(test_highest_producer_id, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+    auto add_segment =
+      [&](int64_t base, int64_t committed, model::producer_id pid) {
+          std::vector<cloud_storage::segment_meta> m;
+          m.push_back(segment_meta{
+            .base_offset = model::offset(base),
+            .committed_offset = model::offset(committed),
+            .archiver_term = model::term_id(1),
+            .segment_term = model::term_id(1)});
+          archival_stm
+            ->add_segments(
+              std::move(m),
+              std::nullopt,
+              pid,
+              ss::lowres_clock::now() + 10s,
+              never_abort,
+              cluster::segment_validated::yes)
+            .get();
+      };
+    add_segment(0, 9, model::producer_id{});
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().highest_producer_id(), model::producer_id{});
+
+    // Bump the producer id.
+    add_segment(10, 19, model::producer_id{100});
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().highest_producer_id(), model::producer_id{100});
+
+    // We shouldn't be able to move the producer id backwards.
+    add_segment(20, 29, model::producer_id{90});
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().highest_producer_id(), model::producer_id{100});
+    add_segment(30, 39, model::producer_id{});
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().highest_producer_id(), model::producer_id{100});
 }

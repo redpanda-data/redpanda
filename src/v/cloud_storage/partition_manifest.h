@@ -14,6 +14,7 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "model/timestamp.h"
 #include "segment_meta_cstore.h"
 #include "serde/envelope.h"
@@ -155,7 +156,8 @@ public:
       const fragmented_vector<segment_t>& spillover,
       model::timestamp last_partition_scrub,
       std::optional<model::offset> last_scrubbed_offset,
-      anomalies detected_anomalies)
+      anomalies detected_anomalies,
+      model::producer_id highest_producer_id)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -171,7 +173,8 @@ public:
       , _archive_size_bytes(archive_size_bytes)
       , _last_partition_scrub(last_partition_scrub)
       , _last_scrubbed_offset(last_scrubbed_offset)
-      , _detected_anomalies(std::move(detected_anomalies)) {
+      , _detected_anomalies(std::move(detected_anomalies))
+      , _highest_producer_id(highest_producer_id) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -405,6 +408,15 @@ public:
     /// thought.
     void unsafe_reset();
 
+    /// \brief Use the given producer ID to track the highest used so far by
+    /// this partition.
+    ///
+    /// \returns true if the highest producer ID was moved
+    bool advance_highest_producer_id(model::producer_id);
+    model::producer_id highest_producer_id() const {
+        return _highest_producer_id;
+    }
+
     /// Get segment if available or nullopt
     std::optional<segment_meta> get(const key& key) const;
     std::optional<segment_meta> get(const segment_name& name) const;
@@ -520,7 +532,8 @@ public:
           _archive_size_bytes,
           _spillover_manifests,
           _last_partition_scrub,
-          _last_scrubbed_offset);
+          _last_scrubbed_offset,
+          _highest_producer_id);
     }
     auto serde_fields() const {
         // this list excludes _mem_tracker, which is not serialized
@@ -541,7 +554,8 @@ public:
           _archive_size_bytes,
           _spillover_manifests,
           _last_partition_scrub,
-          _last_scrubbed_offset);
+          _last_scrubbed_offset,
+          _highest_producer_id);
     }
 
     /// Compare two manifests for equality. Don't compare the mem_tracker.
@@ -655,6 +669,11 @@ private:
     mutable std::optional<kafka::offset> _cached_start_kafka_offset_local;
 
     anomalies _detected_anomalies;
+
+    // Highest producer ID used by this partition. This gets aggregated across
+    // all partitions during cluster recovery time to determine a new starting
+    // id_allocator ID that is higher than any used so far.
+    model::producer_id _highest_producer_id;
 };
 
 } // namespace cloud_storage

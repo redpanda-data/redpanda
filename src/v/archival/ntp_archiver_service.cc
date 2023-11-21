@@ -30,6 +30,7 @@
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -1887,10 +1888,16 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
             // inline with our segment-adding batch.
             manifest_clean_offset = _projected_manifest_clean_at;
         }
+        auto highest_producer_id
+          = _feature_table.local().is_active(
+              features::feature::cloud_metadata_cluster_recovery)
+              ? _parent.highest_producer_id()
+              : model::producer_id{};
 
         auto error = co_await _parent.archival_meta_stm()->add_segments(
           mdiff,
           manifest_clean_offset,
+          highest_producer_id,
           deadline,
           _as,
           checks_disabled ? cluster::segment_validated::no
@@ -2941,10 +2948,16 @@ ss::future<bool> ntp_archiver::do_upload_local(
         }
     }
 
+    auto highest_producer_id
+      = _feature_table.local().is_active(
+          features::feature::cloud_metadata_cluster_recovery)
+          ? _parent.highest_producer_id()
+          : model::producer_id{};
     auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout;
     auto error = co_await _parent.archival_meta_stm()->add_segments(
       {meta},
       std::nullopt,
+      highest_producer_id,
       deadline,
       _as,
       checks_disabled ? cluster::segment_validated::no

@@ -136,6 +136,10 @@ public:
      * partition. Note that the corresponding transactions may or may not have
      * been committed or aborted; the only certainty of this ID is that it has
      * been used.
+     *
+     * Callers should be wary to either ensure that the stm is synced before
+     * calling, or ensure that the producer_id doesn't need to reflect batches
+     * later than the max_collectible_offset.
      */
     model::producer_id highest_producer_id() const;
 
