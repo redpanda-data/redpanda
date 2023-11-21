@@ -241,6 +241,7 @@ ss::future<> audit_client::configure() {
         co_await set_client_credentials();
         co_await set_auditing_permissions();
         co_await create_internal_topic();
+        co_await _client.connect();
 
         /// Retries should be "infinite", to avoid dropping data, there is a
         /// known issue within the client setting this value to size_t::max
@@ -326,10 +327,6 @@ ss::future<> audit_client::update_status(kafka::produce_response response) {
 }
 
 ss::future<> audit_client::mitigate_error(std::exception_ptr eptr) {
-    if (_gate.is_closed() || _as.abort_requested()) {
-        /// TODO: Investigate looping behavior on shutdown
-        co_return;
-    }
     vlog(adtlog.trace, "mitigate_error: {}", eptr);
     auto f = ss::now();
     try {
