@@ -20,6 +20,8 @@
 #include "seastarx.h"
 #include "utils/mutex.h"
 
+#include <absl/container/flat_hash_set.h>
+
 #include <variant>
 
 #pragma once
@@ -126,7 +128,8 @@ public:
      */
     class validator {
     public:
-        validator(topic_table*, plugin_table*);
+        validator(
+          topic_table*, plugin_table*, absl::flat_hash_set<model::topic>);
 
         // Ensures that the mutation is valid.
         //
@@ -143,6 +146,7 @@ public:
 
         topic_table* _topics;
         plugin_table* _table;
+        absl::flat_hash_set<model::topic> _no_sink_topics;
     };
 
 private:

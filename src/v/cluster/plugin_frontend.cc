@@ -13,11 +13,17 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/logger.h"
+#include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "utils/utf8.h"
 
+#include <absl/container/flat_hash_set.h>
 #include <absl/strings/escaping.h>
 #include <absl/strings/str_join.h>
+
+#include <utility>
 
 namespace cluster {
 
@@ -223,14 +229,26 @@ ss::future<mutation_result> plugin_frontend::do_local_mutation(
 }
 
 errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
-    validator v(_topics, _table);
+    absl::flat_hash_set<model::topic> no_sink_topics;
+    no_sink_topics.insert(model::kafka_audit_logging_topic);
+    no_sink_topics.insert(model::kafka_consumer_offsets_topic);
+    no_sink_topics.insert(model::schema_registry_internal_tp.topic);
+    const auto& noproduce
+      = config::shard_local_cfg().kafka_noproduce_topics.value();
+    for (const auto& topic : noproduce) {
+        no_sink_topics.emplace(topic);
+    }
+    validator v(_topics, _table, std::move(no_sink_topics));
     return v.validate_mutation(cmd);
 }
 
 plugin_frontend::validator::validator(
-  topic_table* topic_table, plugin_table* plugin_table)
+  topic_table* topic_table,
+  plugin_table* plugin_table,
+  absl::flat_hash_set<model::topic> no_sink_topics)
   : _topics(topic_table)
-  , _table(plugin_table) {}
+  , _table(plugin_table)
+  , _no_sink_topics(std::move(no_sink_topics)) {}
 
 errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
     return ss::visit(
@@ -424,7 +442,8 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
           if (input_config.is_internal()) {
               vlog(
                 clusterlog.info,
-                "attempted to deploy transform {} to an internal topic {}",
+                "attempted to deploy transform {} to write to a protected "
+                "topic {}",
                 cmd.value.name,
                 loggable_string(cmd.value.input_topic.tp()));
               return errc::transform_invalid_create;
@@ -474,6 +493,16 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                     "attempted to deploy transform {} to a non-kafka topic {}",
                     cmd.value.name,
                     loggable_string(out_name.ns()));
+                  return errc::transform_invalid_create;
+              }
+              if (_no_sink_topics.contains(out_name.tp)) {
+                  vlog(
+                    clusterlog.info,
+                    "attempted to deploy transform {} to write to an internal "
+                    "kafka topic "
+                    "{}",
+                    cmd.value.name,
+                    loggable_string(out_name.tp()));
                   return errc::transform_invalid_create;
               }
               auto output_topic = _topics->get_topic_metadata(out_name);
