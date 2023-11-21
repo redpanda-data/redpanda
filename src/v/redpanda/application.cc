@@ -130,9 +130,6 @@
 #include <memory>
 #include <vector>
 
-// This file in the data directory tracks the metadata
-// needed to detect crash loops.
-static constexpr std::string_view crash_loop_tracker_file = "startup_log";
 // Crash tracking resets every 1h.
 static constexpr model::timestamp_clock::duration crash_reset_duration{1h};
 
@@ -831,8 +828,7 @@ void application::check_for_crash_loop() {
         // that can potentially accumulate state across restarts.
         return;
     }
-    auto file_path = config::node().data_directory().path
-                     / crash_loop_tracker_file;
+    auto file_path = config::node().crash_loop_tracker_path();
     std::optional<crash_tracker_metadata> maybe_crash_md;
     if (ss::file_exists(file_path.string()).get()) {
         // Ok to read the entire file, it contains a serialized uint32_t.
@@ -919,9 +915,7 @@ void application::schedule_crash_tracker_file_cleanup() {
     // next run.
     // We emplace it in the front to make it the last task to run.
     _deferred.emplace_front([&] {
-        auto file = (config::node().data_directory().path
-                     / crash_loop_tracker_file)
-                      .string();
+        auto file = config::node().crash_loop_tracker_path().string();
         if (ss::file_exists(file).get()) {
             ss::remove_file(file).get();
             ss::sync_directory(config::node().data_directory().as_sstring())
