@@ -19,6 +19,7 @@
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
+#include "units.h"
 
 namespace model {
 inline model::topic_namespace random_topic_namespace() {
@@ -98,16 +99,22 @@ inline model::broker_properties random_broker_properties() {
           random_generators::gen_alphanum_string(
             random_generators::get_int(1, 100)));
     }
+    uint64_t memory_bytes = random_generators::get_int<uint64_t>(
+      1, 100 * 1_GiB);
+
     return {
       .cores = random_generators::get_int<uint32_t>(1, 100),
-      .available_memory_gb = random_generators::get_int<uint32_t>(1, 100),
+      .available_memory_gb = static_cast<uint32_t>(memory_bytes >> 30),
       .available_disk_gb = random_generators::get_int<uint32_t>(1, 100),
       .mount_paths = std::move(mount_paths),
       .etc_props = std::move(etc_props),
+      .available_memory_bytes = memory_bytes,
     };
 }
 
-inline model::broker random_broker(model::node_id node_id) {
+inline model::broker random_broker(
+  model::node_id node_id,
+  model::broker_properties broker_properties = random_broker_properties()) {
     std::vector<model::broker_endpoint> kafka_advertised_listeners;
     for (int i = 0; i < random_generators::get_int(10); i++) {
         kafka_advertised_listeners.push_back(random_broker_endpoint());
@@ -123,7 +130,7 @@ inline model::broker random_broker(model::node_id node_id) {
       std::move(kafka_advertised_listeners),
       tests::random_net_address(),
       rack,
-      random_broker_properties(),
+      broker_properties,
     };
 }
 
@@ -131,6 +138,15 @@ inline model::broker
 random_broker(int32_t id_low_bound, int32_t id_upper_bound) {
     return random_broker(
       model::node_id(random_generators::get_int(id_low_bound, id_upper_bound)));
+}
+
+inline model::broker random_broker(
+  int32_t id_low_bound,
+  int32_t id_upper_bound,
+  model::broker_properties broker_properties) {
+    return random_broker(
+      model::node_id(random_generators::get_int(id_low_bound, id_upper_bound)),
+      broker_properties);
 }
 
 inline model::broker random_broker() {

@@ -191,7 +191,7 @@ std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
       o,
       "{{cores {}, mem_available {}, disk_available {}}}",
       b.cores,
-      b.available_memory_gb,
+      b.available_memory_bytes,
       b.available_disk_gb,
       b.mount_paths,
       b.etc_props);

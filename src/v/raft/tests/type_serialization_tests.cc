@@ -504,9 +504,21 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
-    auto n1 = model::random_broker(0, 100);
-    auto n2 = model::random_broker(0, 100);
-    auto n3 = model::random_broker(0, 100);
+    auto bp1 = model::random_broker_properties();
+    // Zero out the available_memory_bytes field which isn't supported
+    // by adl since the field was added after serde serialization became
+    // the default.
+    bp1.available_memory_bytes = 0;
+    auto n1 = model::random_broker(0, 100, bp1);
+
+    auto bp2 = model::random_broker_properties();
+    bp2.available_memory_bytes = 0;
+    auto n2 = model::random_broker(0, 100, bp2);
+
+    auto bp3 = model::random_broker_properties();
+    bp3.available_memory_bytes = 0;
+    auto n3 = model::random_broker(0, 100, bp3);
+
     std::vector<model::broker> nodes{n1, n2, n3};
     raft::group_nodes current{
       .voters

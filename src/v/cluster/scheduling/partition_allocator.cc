@@ -170,13 +170,11 @@ std::error_code partition_allocator::check_cluster_limits(
             min_core_count = std::min(min_core_count, b_properties.cores);
         }
 
-        // In redpanda <= 21.11.x, available_memory_gb and available_disk_gb
-        // are not populated.  If they're zero we skip the check later.
         if (min_memory_bytes == 0) {
-            min_memory_bytes = b_properties.available_memory_gb * 1_GiB;
-        } else if (b_properties.available_memory_gb > 0) {
+            min_memory_bytes = b.broker.memory_bytes();
+        } else {
             min_memory_bytes = std::min(
-              min_memory_bytes, b_properties.available_memory_gb * 1_GiB);
+              min_memory_bytes, b.broker.memory_bytes());
         }
 
         if (min_disk_bytes == 0) {
@@ -225,7 +223,7 @@ std::error_code partition_allocator::check_cluster_limits(
         const uint64_t memory_limit = effective_cluster_memory
                                       / memory_per_partition_replica.value();
 
-        if (memory_limit > 0 && proposed_total_partitions > memory_limit) {
+        if (proposed_total_partitions > memory_limit) {
             vlog(
               clusterlog.warn,
               "Refusing to create {} new partitions as total partition count "
