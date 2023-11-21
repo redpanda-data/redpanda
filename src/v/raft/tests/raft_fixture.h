@@ -91,13 +91,6 @@ struct raft_node_map {
       node_for(model::node_id) = 0;
 };
 
-struct response_delay {
-    std::chrono::milliseconds length;
-    std::optional<ss::promise<>> on_applied;
-};
-
-using failure_t = std::variant<response_delay>;
-
 class in_memory_test_protocol : public consensus_client_protocol::impl {
 public:
     explicit in_memory_test_protocol(raft_node_map&, prefix_logger&);
@@ -136,8 +129,6 @@ public:
     channel& get_channel(model::node_id id);
 
     void on_dispatch(ss::noncopyable_function<ss::future<>(msg_type)> f);
-    void inject_failure(msg_type type, failure_t failure);
-    void remove_failure(msg_type type);
 
     ss::future<> stop();
 
@@ -146,7 +137,6 @@ private:
     ss::future<result<RespT>> dispatch(model::node_id, ReqT req);
     ss::gate _gate;
     absl::flat_hash_map<model::node_id, std::unique_ptr<channel>> _channels;
-    absl::flat_hash_map<msg_type, failure_t> _failures;
     std::vector<ss::noncopyable_function<ss::future<>(msg_type)>>
       _on_dispatch_handlers;
     raft_node_map& _nodes;
@@ -225,8 +215,6 @@ public:
     //// \param f The callback function to be invoked when a message is
     /// dispatched.
     void on_dispatch(ss::noncopyable_function<ss::future<>(msg_type)> f);
-    void inject_failure(msg_type type, failure_t failure);
-    void remove_failure(msg_type type);
 
 private:
     model::node_id _id;
