@@ -89,7 +89,7 @@ TEST(HeapAllocatorTest, CanReturnMemoryToThePool) {
     EXPECT_FALSE(mem.has_value());
     mem = std::move(allocated.back());
     allocated.pop_back();
-    allocator.deallocate(std::move(*mem));
+    allocator.deallocate(std::move(*mem), /*used_amount=*/0);
     mem = allocator.allocate(req);
     EXPECT_TRUE(mem.has_value());
     mem = allocator.allocate(req);
