@@ -114,34 +114,35 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:      bp.fs,
-		w:       w,
-		timeout: bp.timeout,
+		fs:       bp.fs,
+		w:        w,
+		timeout:  bp.timeout,
+		fileRoot: strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
 	}
 
 	addrs := bp.y.Rpk.AdminAPI.Addresses
 
 	steps := []step{
-		saveKafkaMetadata(ctx, ps, bp.cl),
-		saveDataDirStructure(ps, bp.y),
-		saveConfig(ps, bp.y),
 		saveCPUInfo(ps),
-		saveInterrupts(ps),
-		saveResourceUsageData(ps, bp.y),
-		saveNTPDrift(ps),
-		saveSyslog(ps),
-		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval),
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs),
+		saveConfig(ps, bp.y),
+		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 		saveDNSData(ctx, ps),
+		saveDataDirStructure(ps, bp.y),
 		saveDiskUsage(ctx, ps, bp.y),
+		saveDmidecode(ctx, ps),
+		saveIP(ctx, ps),
+		saveInterrupts(ps),
+		saveKafkaMetadata(ctx, ps, bp.cl),
 		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
+		saveLspci(ctx, ps),
+		saveNTPDrift(ps),
+		saveResourceUsageData(ps, bp.y),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval),
 		saveSocketData(ctx, ps),
+		saveSyslog(ps),
 		saveTopOutput(ctx, ps),
 		saveVmstat(ctx, ps),
-		saveIP(ctx, ps),
-		saveLspci(ctx, ps),
-		saveDmidecode(ctx, ps),
-		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 	}
 
 	for _, s := range steps {
@@ -164,10 +165,11 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 type step func() error
 
 type stepParams struct {
-	fs      afero.Fs
-	m       sync.Mutex
-	w       *zip.Writer
-	timeout time.Duration
+	fs       afero.Fs
+	m        sync.Mutex
+	w        *zip.Writer
+	timeout  time.Duration
+	fileRoot string
 }
 
 type fileInfo struct {
@@ -212,7 +214,7 @@ func writeFileToZip(ps *stepParams, filename string, contents []byte) error {
 	defer ps.m.Unlock()
 
 	wr, err := ps.w.CreateHeader(&zip.FileHeader{
-		Name:     filename,
+		Name:     filepath.Join(ps.fileRoot, filename),
 		Method:   zip.Deflate,
 		Modified: time.Now(),
 	})
@@ -272,7 +274,7 @@ func writeCommandOutputToZipLimit(
 	cmd.Env = osutil.SystemLdPathEnv()
 
 	wr, err := ps.w.CreateHeader(&zip.FileHeader{
-		Name:     filename,
+		Name:     filepath.Join(ps.fileRoot, filename),
 		Method:   zip.Deflate,
 		Modified: time.Now(),
 	})
