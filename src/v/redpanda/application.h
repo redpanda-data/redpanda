@@ -29,7 +29,6 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
-#include "kafka/server/server.h"
 #include "metrics/aggregate_metrics_watcher.h"
 #include "metrics/metrics.h"
 #include "net/conn_quota.h"

@@ -10,9 +10,9 @@
  */
 #pragma once
 #include "config/property.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/handlers/handler_probe.h"
-#include "kafka/server/response.h"
-#include "kafka/server/server.h"
+#include "kafka/server/logger.h"
 #include "kafka/types.h"
 #include "net/server.h"
 #include "seastarx.h"
@@ -39,6 +39,8 @@
 #include <vector>
 
 namespace kafka {
+
+using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 
 class kafka_api_version_not_supported_exception : public std::runtime_error {
 public:
@@ -111,7 +113,7 @@ struct session_resources {
     ss::lowres_clock::duration backpressure_delay;
     ssx::semaphore_units memlocks;
     ssx::semaphore_units queue_units;
-    std::unique_ptr<server::hist_t::measurement> method_latency;
+    std::unique_ptr<log_hist_internal::measurement> method_latency;
     std::unique_ptr<handler_probe::hist_t::measurement> handler_latency;
     std::unique_ptr<request_tracker> tracker;
     request_data request_data;
@@ -136,38 +138,8 @@ public:
     connection_context& operator=(const connection_context&) = delete;
     connection_context& operator=(connection_context&&) = delete;
 
-    ss::future<> start() {
-        co_await _as.start(_server.abort_source());
-        if (conn) {
-            ssx::background
-              = conn->wait_for_input_shutdown()
-                  .finally([this]() {
-                      vlog(
-                        klog.debug,
-                        "Connection input_shutdown; aborting operations for {}",
-                        conn->addr);
-                      return _as.request_abort_ex(std::system_error(
-                        std::make_error_code(std::errc::connection_aborted)));
-                  })
-                  .finally([this]() { _wait_input_shutdown.set_value(); });
-        } else {
-            _wait_input_shutdown.set_value();
-        }
-    }
-
-    ss::future<> stop() {
-        if (conn) {
-            vlog(klog.trace, "stopping connection context for {}", conn->addr);
-            conn->shutdown_input();
-        }
-        co_await _wait_input_shutdown.get_future();
-        co_await _as.request_abort_ex(ssx::connection_aborted_exception{});
-        co_await _as.stop();
-
-        if (conn) {
-            vlog(klog.trace, "stopped connection context for {}", conn->addr);
-        }
-    }
+    ss::future<> start();
+    ss::future<> stop();
 
     /// The instance of \ref kafka::server on the shard serving the connection
     server& server() { return _server; }
@@ -178,77 +150,10 @@ public:
 
     template<typename T>
     security::auth_result authorized(
-      security::acl_operation operation, const T& name, authz_quiet quiet) {
-        // authorization disabled?
-        if (!_enable_authorizer) {
-            return security::auth_result::authz_disabled(
-              get_principal(),
-              security::acl_host(_client_addr),
-              operation,
-              name);
-        }
-
-        return authorized_user(get_principal(), operation, name, quiet);
-    }
+      security::acl_operation operation, const T& name, authz_quiet quiet);
 
     bool authorized_auditor() const {
         return get_principal() == security::audit_principal;
-    }
-
-    template<typename T>
-    security::auth_result authorized_user(
-      security::acl_principal principal,
-      security::acl_operation operation,
-      const T& name,
-      authz_quiet quiet) {
-        auto authorized = _server.authorizer().authorized(
-          name, operation, principal, security::acl_host(_client_addr));
-
-        if (!authorized) {
-            if (_sasl) {
-                if (quiet) {
-                    vlog(
-                      _authlog.debug,
-                      "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
-                      "resource: {}",
-                      _server.name(),
-                      security::sasl_state_to_str(_sasl->state()),
-                      operation,
-                      principal,
-                      name);
-                } else {
-                    vlog(
-                      _authlog.info,
-                      "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
-                      "resource: {}",
-                      _server.name(),
-                      security::sasl_state_to_str(_sasl->state()),
-                      operation,
-                      principal,
-                      name);
-                }
-            } else {
-                if (quiet) {
-                    vlog(
-                      _authlog.debug,
-                      "proto: {}, acl op: {}, principal: {}, resource: {}",
-                      _server.name(),
-                      operation,
-                      principal,
-                      name);
-                } else {
-                    vlog(
-                      _authlog.info,
-                      "proto: {}, acl op: {}, principal: {}, resource: {}",
-                      _server.name(),
-                      operation,
-                      principal,
-                      name);
-                }
-            }
-        }
-
-        return authorized;
     }
 
     ss::future<> process();
@@ -262,6 +167,13 @@ public:
     bool tls_enabled() const { return conn->tls_enabled(); }
 
 private:
+    template<typename T>
+    security::auth_result authorized_user(
+      security::acl_principal principal,
+      security::acl_operation operation,
+      const T& name,
+      authz_quiet quiet);
+
     security::acl_principal get_principal() const {
         if (_mtls_state) {
             return _mtls_state->principal();
