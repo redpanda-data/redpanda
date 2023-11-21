@@ -14,8 +14,8 @@
 
 extern crate redpanda_transform_sdk as redpanda;
 
-use redpanda::*;
 use anyhow::Result;
+use redpanda::*;
 
 fn main() {
     on_record_written(my_transform);
