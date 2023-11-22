@@ -72,7 +72,8 @@ public:
 
     plugin_table _plugin_table;
     topic_table _topic_table;
-    plugin_frontend::validator _validator{&_topic_table, &_plugin_table};
+    plugin_frontend::validator _validator{
+      &_topic_table, &_plugin_table, {model::topic("__internal_topic")}};
 
     std::error_code
     create_topic(std::string_view name, topic_config config = {}) {
@@ -347,6 +348,26 @@ TEST_F(PluginValidationTest, UpdateCannotChangeTopicConfig) {
       upsert_transform({
         .name = "foo2bar",
         .src = "foo",
+        .sinks = {"bar"},
+      }),
+      errc::success);
+}
+
+TEST_F(PluginValidationTest, InternalTopicsCannotBeDeployedToAsOutput) {
+    EXPECT_EQ(create_topic("foo"), errc::success);
+    EXPECT_EQ(create_topic("bar"), errc::success);
+    EXPECT_EQ(create_topic("__internal_topic"), errc::success);
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "not_so_fast",
+        .src = "foo",
+        .sinks = {"__internal_topic"},
+      }),
+      errc::transform_invalid_create);
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "pass_go_and_collect_200_dollars",
+        .src = "__internal_topic",
         .sinks = {"bar"},
       }),
       errc::success);
