@@ -14,7 +14,9 @@
 
 #include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/chunked_fifo.hh>
-#include <seastar/util/optimized_optional.hh>
+#include <seastar/core/condition-variable.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 
 #include <absl/container/btree_set.h>
 
@@ -58,9 +60,17 @@ public:
         size_t heap_memory_size;
         // The total number of heaps allocated per core.
         size_t num_heaps;
+        // The amount of memory we zero out at once.
+        size_t memset_chunk_size;
     };
 
     explicit heap_allocator(config);
+
+    /**
+     * Stop this allocator, waiting for any asynchronous zero'ing of bytes to
+     * finish.
+     */
+    ss::future<> stop();
 
     /**
      * A request of heap memory based on the following bounds.
@@ -71,18 +81,22 @@ public:
     };
 
     /**
-     * Allocate heap memory by taking a memory instance from the pool.
+     * Allocate heap memory by taking a memory instance from the pool, returns
+     * std::nullopt if the memory request cannot be fulfilled either because the
+     * request does not fix within our bounds or because all memory is currently
+     * allocated.
      *
      * Memory returned from this method will be zero-filled.
      */
-    std::optional<heap_memory> allocate(request);
+    ss::future<std::optional<heap_memory>> allocate(request);
 
     /**
      * Deallocate heap memory by returing a memory instance to the pool.
      *
      * used_amount is to zero out the used memory from the heap, this is
      * required so that if only a portion of a large memory space was used we
-     * don't have to touch all the bytes.
+     * don't have to touch all the bytes. If the used_amount is over some
+     * threshold then we make zero'ing out the bytes an asynchronous task.
      */
     void deallocate(heap_memory, size_t used_amount);
 
@@ -92,10 +106,13 @@ public:
     size_t max_size() const;
 
 private:
-    size_t _max_size;
+    ss::future<heap_memory> async_zero_memory(heap_memory, size_t used_amount);
+
+    size_t _memset_chunk_size;
+    size_t _size;
     // We expect this list to be small, so override the chunk to be smaller too.
     static constexpr size_t items_per_chunk = 16;
-    ss::chunked_fifo<heap_memory, items_per_chunk> _memory_pool;
+    ss::chunked_fifo<ss::future<heap_memory>, items_per_chunk> _memory_pool;
 };
 
 /**

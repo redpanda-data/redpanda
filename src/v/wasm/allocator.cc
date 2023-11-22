@@ -10,13 +10,20 @@
  */
 #include "wasm/allocator.h"
 
+#include "ssx/future-util.h"
 #include "vassert.h"
 #include "vlog.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/aligned_buffer.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/print.hh>
+#include <seastar/core/when_all.hh>
+#include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/later.hh>
 
 #include <sys/mman.h>
 
@@ -26,36 +33,56 @@
 
 namespace wasm {
 
-heap_allocator::heap_allocator(config c) {
+heap_allocator::heap_allocator(config c)
+  : _memset_chunk_size(c.memset_chunk_size) {
     size_t page_size = ::getpagesize();
-    _max_size = ss::align_up(c.heap_memory_size, page_size);
+    _size = ss::align_up(c.heap_memory_size, page_size);
     for (size_t i = 0; i < c.num_heaps; ++i) {
-        auto buffer = ss::allocate_aligned_buffer<uint8_t>(
-          _max_size, page_size);
-        std::memset(buffer.get(), 0, _max_size);
-        _memory_pool.emplace_back(std::move(buffer), _max_size);
+        auto buffer = ss::allocate_aligned_buffer<uint8_t>(_size, page_size);
+        _memory_pool.push_back(
+          async_zero_memory({std::move(buffer), _size}, _size));
     }
 }
 
-std::optional<heap_memory> heap_allocator::allocate(request req) {
+ss::future<> heap_allocator::stop() {
+    auto pool = std::exchange(_memory_pool, {});
+    co_await ss::when_all_succeed(pool.begin(), pool.end());
+}
+
+ss::future<std::optional<heap_memory>> heap_allocator::allocate(request req) {
     if (_memory_pool.empty()) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
-    size_t size = _memory_pool.front().size;
-    if (size < req.minimum || size > req.maximum) {
-        return std::nullopt;
+    if (_size < req.minimum || _size > req.maximum) {
+        co_return std::nullopt;
     }
-    heap_memory front = std::move(_memory_pool.front());
+    ss::future<heap_memory> front = std::move(_memory_pool.front());
     _memory_pool.pop_front();
-    return front;
+    co_return co_await std::move(front);
 }
 
 void heap_allocator::deallocate(heap_memory m, size_t used_amount) {
-    std::memset(m.data.get(), 0, used_amount);
-    _memory_pool.push_back(std::move(m));
+    _memory_pool.push_back(async_zero_memory(std::move(m), used_amount));
 }
 
-size_t heap_allocator::max_size() const { return _max_size; }
+ss::future<heap_memory>
+heap_allocator::async_zero_memory(heap_memory m, size_t used_amount) {
+    uint8_t* data = m.data.get();
+    size_t remaining = used_amount;
+    while (true) {
+        if (remaining <= _memset_chunk_size) {
+            std::memset(data, 0, remaining);
+            co_return m;
+        }
+        std::memset(data, 0, _memset_chunk_size);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        data += _memset_chunk_size;
+        remaining -= _memset_chunk_size;
+        co_await ss::coroutine::maybe_yield();
+    }
+}
+
+size_t heap_allocator::max_size() const { return _size; }
 
 stack_memory::stack_memory(stack_bounds bounds, allocated_memory data)
   : _bounds(bounds)
