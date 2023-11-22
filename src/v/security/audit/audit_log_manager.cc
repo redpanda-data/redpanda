@@ -92,6 +92,8 @@ public:
     bool is_initialized() const { return _is_initialized; }
 
 private:
+    ss::future<> do_produce(
+      std::vector<kafka::client::record_essence> records, audit_probe& probe);
     ss::future<> update_status(kafka::error_code);
     ss::future<> update_status(kafka::produce_response);
     ss::future<> configure();
@@ -452,40 +454,7 @@ ss::future<> audit_client::produce(
            &probe,
            units = std::move(units),
            records = std::move(records)]() mutable {
-              const auto n_records = records.size();
-              return _client
-                .produce_records(
-                  model::kafka_audit_logging_topic, std::move(records))
-                .then([this, n_records, &probe](kafka::produce_response r) {
-                    bool errored = std::any_of(
-                      r.data.responses.cbegin(),
-                      r.data.responses.cend(),
-                      [](const kafka::topic_produce_response& tp) {
-                          return std::any_of(
-                            tp.partitions.cbegin(),
-                            tp.partitions.cend(),
-                            [](const kafka::partition_produce_response& p) {
-                                return p.error_code != kafka::error_code::none;
-                            });
-                      });
-                    if (errored) {
-                        if (_as.abort_requested()) {
-                            vlog(
-                              adtlog.warn,
-                              "{} audit records dropped, shutting down",
-                              n_records);
-                        } else {
-                            vlog(
-                              adtlog.error,
-                              "{} audit records dropped",
-                              n_records);
-                        }
-                        probe.audit_error();
-                    } else {
-                        probe.audit_event();
-                    }
-                    return update_status(std::move(r));
-                })
+              return do_produce(std::move(records), probe)
                 .finally([units = std::move(units)] {});
           });
     } catch (const ss::broken_semaphore&) {
@@ -494,6 +463,38 @@ ss::future<> audit_client::produce(
           "Shutting down the auditor kafka::client, semaphore broken");
     }
     co_return;
+}
+
+ss::future<> audit_client::do_produce(
+  std::vector<kafka::client::record_essence> records, audit_probe& probe) {
+    const auto n_records = records.size();
+    kafka::produce_response r = co_await _client.produce_records(
+      model::kafka_audit_logging_topic, std::move(records));
+    bool errored = std::any_of(
+      r.data.responses.cbegin(),
+      r.data.responses.cend(),
+      [](const kafka::topic_produce_response& tp) {
+          return std::any_of(
+            tp.partitions.cbegin(),
+            tp.partitions.cend(),
+            [](const kafka::partition_produce_response& p) {
+                return p.error_code != kafka::error_code::none;
+            });
+      });
+    if (errored) {
+        if (_as.abort_requested()) {
+            vlog(
+              adtlog.warn,
+              "{} audit records dropped, shutting down",
+              n_records);
+        } else {
+            vlog(adtlog.error, "{} audit records dropped", n_records);
+        }
+        probe.audit_error();
+    } else {
+        probe.audit_event();
+    }
+    co_return co_await update_status(std::move(r));
 }
 
 /// audit_sink
