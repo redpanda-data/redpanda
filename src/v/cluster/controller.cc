@@ -12,6 +12,7 @@
 #include "cluster/bootstrap_backend.h"
 #include "cluster/cloud_metadata/cluster_recovery_backend.h"
 #include "cluster/cloud_metadata/offsets_upload_rpc_types.h"
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_recovery_table.h"
@@ -169,7 +170,9 @@ ss::future<> controller::start(
   cluster_discovery& discovery,
   ss::abort_source& shard0_as,
   ss::shared_ptr<cluster::cloud_metadata::offsets_upload_requestor>
-    offsets_uploader) {
+    offsets_uploader,
+  ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>
+    producer_id_recovery) {
     auto initial_raft0_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
     seed_nodes.reserve(initial_raft0_brokers.size());
@@ -608,7 +611,7 @@ ss::future<> controller::start(
             partition_balancer_backend::shard,
             &partition_balancer_backend::start);
       })
-      .then([this, offsets_uploader] {
+      .then([this, offsets_uploader, producer_id_recovery] {
           auto& bucket_property
             = cloud_storage::configuration::get_bucket_config();
           if (
@@ -644,6 +647,7 @@ ss::future<> controller::start(
               _config_frontend.local(),
               _security_frontend.local(),
               _tp_frontend.local(),
+              producer_id_recovery,
               std::ref(_recovery_table),
               _raft0);
           if (!config::shard_local_cfg()

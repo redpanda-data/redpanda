@@ -20,6 +20,7 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/bootstrap_service.h"
 #include "cluster/cloud_metadata/offsets_recovery_service.h"
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/cluster_uuid.h"
@@ -1666,6 +1667,12 @@ void application::wire_up_redpanda_services(
       std::ref(controller))
       .get();
 
+    producer_id_recovery_manager
+      = ss::make_shared<cluster::cloud_metadata::producer_id_recovery_manager>(
+        std::ref(controller->get_members_table()),
+        std::ref(_connection_cache),
+        std::ref(id_allocator_frontend));
+
     syschecks::systemd_message("Creating tx registry frontend").get();
     construct_service(
       tx_registry_frontend,
@@ -2414,7 +2421,10 @@ void application::start_runtime_services(
     }
     controller
       ->start(
-        cd, app_signal.abort_source(), std::move(offsets_upload_requestor))
+        cd,
+        app_signal.abort_source(),
+        std::move(offsets_upload_requestor),
+        producer_id_recovery_manager)
       .get0();
 
     // FIXME: in first patch explain why this is started after the

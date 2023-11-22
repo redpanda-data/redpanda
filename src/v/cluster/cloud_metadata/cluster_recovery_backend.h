@@ -12,6 +12,7 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/remote.h"
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cluster_recovery_manager.h"
 #include "cluster/cluster_recovery_reconciler.h"
 #include "cluster/cluster_recovery_table.h"
@@ -50,6 +51,7 @@ public:
       cluster::config_frontend&,
       cluster::security_frontend&,
       cluster::topics_frontend&,
+      ss::shared_ptr<producer_id_recovery_manager> producer_id_recovery,
       ss::sharded<cluster_recovery_table>&,
       consensus_ptr raft0);
 
@@ -111,6 +113,8 @@ private:
     cluster::config_frontend& _config_frontend;
     cluster::security_frontend& _security_frontend;
     cluster::topics_frontend& _topics_frontend;
+
+    ss::shared_ptr<producer_id_recovery_manager> _producer_id_recovery;
 
     // State that backs the recoveries managed by this manager. Sharded so that
     // the status of the controller recovery is propagated across cores.
