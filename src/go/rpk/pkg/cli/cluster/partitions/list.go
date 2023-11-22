@@ -52,6 +52,18 @@ replicas assignments in the form of: <Node-ID>-<Core>.
 If the DISABLED column contains a '-' value, then it means you are running this
 command against a cluster that does not support the underlying API.
 
+ENABLED/DISABLED
+
+Disabling a partition in Redpanda involves prohibiting any data consumption or
+production to and from it. All internal processes associated with the partition
+are stopped, and it remains unloaded during system startup. This measure aims to
+maintain cluster health by preventing issues caused by specific corrupted
+partitions that may lead to Redpanda crashes. Although the data remains stored
+on disk, Redpanda ceases interaction with the disabled partitions to ensure
+system stability.
+
+You may disable/enable partition using 'rpk cluster partitions enable/disable'.	
+
 EXAMPLES
 
 List all partitions in the cluster.
