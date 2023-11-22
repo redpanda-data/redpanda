@@ -132,6 +132,14 @@ ss::future<> offsets_lookup_batcher::run_lookups(
         for (auto& r : per_node_replies) {
             vassert(r.available(), "waited for future but not available");
             auto node_id = nodes[node_idx++];
+            if (r.failed()) {
+                vlog(
+                  clusterlog.error,
+                  "Error while looking up offsets on node {}: {}",
+                  node_id,
+                  r.get_exception());
+                continue;
+            }
             auto reply = r.get();
             vlog(
               clusterlog.debug,
