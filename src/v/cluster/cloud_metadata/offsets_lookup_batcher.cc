@@ -91,6 +91,7 @@ ss::future<> offsets_lookup_batcher::run_lookups(
           ntps_to_lookup.begin(), ntps_to_lookup.end());
 
         // Batch up all our lookup requests per node.
+        std::vector<model::node_id> nodes;
         for (auto& ntp : ntps) {
             if (_offset_by_ntp.contains(ntp)) {
                 ntps_to_lookup.erase(ntp);
@@ -108,24 +109,34 @@ ss::future<> offsets_lookup_batcher::run_lookups(
 
             // Once we hit the target per node, send out the request.
             if (node_req.ntps.size() == _batch_size) {
+                nodes.emplace_back(leader_id);
                 pending_replies.emplace_back(send_request(std::move(node_req)));
                 pending_requests_per_node.erase(leader_id);
             }
         }
         // Send all remaining batched requests, regardless of size.
         for (auto& [node_id, node_req] : pending_requests_per_node) {
+            nodes.emplace_back(node_id);
             pending_replies.emplace_back(send_request(std::move(node_req)));
         }
 
         // Materialize the replies from the futures.
         auto per_node_replies = co_await ss::when_all(
           pending_replies.begin(), pending_replies.end());
+        vassert(
+          per_node_replies.size() == nodes.size(),
+          "{} vs {}",
+          per_node_replies.size(),
+          nodes.size());
+        size_t node_idx = 0;
         for (auto& r : per_node_replies) {
             vassert(r.available(), "waited for future but not available");
+            auto node_id = nodes[node_idx++];
             auto reply = r.get();
             vlog(
               clusterlog.debug,
-              "Node {} responded with offsets for {} NTPs",
+              "Node {} (replied node_id {}) responded with offsets for {} NTPs",
+              node_id,
               reply.node_id,
               reply.ntp_and_offset.size());
             for (auto& [ntp, offset] : reply.ntp_and_offset) {
