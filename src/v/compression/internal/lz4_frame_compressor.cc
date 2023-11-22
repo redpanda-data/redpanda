@@ -117,6 +117,17 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
 
         size_t input_chunk_size = std::min(
           input_sz - input_cursor, max_input_chunk_size);
+        size_t next_output_size = LZ4F_compressBound(input_chunk_size, &prefs);
+
+        if (output_sz - output_cursor < next_output_size) {
+            obuf.trim(output_cursor);
+            ret.append(std::move(obuf));
+            output_chunk_size = std::min(max_chunk_size, output_chunk_size * 2);
+            obuf = ss::temporary_buffer<char>(output_chunk_size);
+            output = obuf.get_write();
+            output_sz = obuf.size();
+            output_cursor = 0;
+        }
 
         code = LZ4F_compressUpdate(
           ctx,
@@ -132,20 +143,6 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
 
         // Advance by how many bytes we consumed
         output_cursor += code;
-
-        input_chunk_size = std::min(
-          input_sz - input_cursor, max_input_chunk_size);
-        size_t next_output_size = LZ4F_compressBound(input_chunk_size, &prefs);
-
-        if (output_sz - output_cursor < next_output_size) {
-            obuf.trim(output_cursor);
-            ret.append(std::move(obuf));
-            output_chunk_size = std::min(max_chunk_size, output_chunk_size * 2);
-            obuf = ss::temporary_buffer<char>(output_chunk_size);
-            output = obuf.get_write();
-            output_sz = obuf.size();
-            output_cursor = 0;
-        }
     }
 
     code = LZ4F_compressEnd(
