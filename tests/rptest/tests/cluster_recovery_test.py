@@ -109,7 +109,7 @@ class ClusterRecoveryTest(RedpandaTest):
         self.redpanda._admin.initialize_cluster_recovery()
 
         def cluster_recovery_complete():
-            return "recovery_stage::complete" in self.redpanda._admin.get_cluster_recovery_status(
+            return "inactive" in self.redpanda._admin.get_cluster_recovery_status(
             ).json()["state"]
 
         wait_until(cluster_recovery_complete, timeout_sec=30, backoff_sec=1)
@@ -173,8 +173,10 @@ class ClusterRecoveryTest(RedpandaTest):
                                                  backoff_s=2)
 
         def cluster_recovery_complete():
-            return "recovery_stage::complete" in self.redpanda._admin.get_cluster_recovery_status(
+            return "inactive" in self.redpanda._admin.get_cluster_recovery_status(
             ).json()["state"]
 
         wait_until(cluster_recovery_complete, timeout_sec=60, backoff_sec=1)
         self.redpanda.restart_nodes(self.redpanda.nodes)
+        assert len(set(rpk.list_topics())) == len(
+            self.topics), "Incorrect number of topics restored"
