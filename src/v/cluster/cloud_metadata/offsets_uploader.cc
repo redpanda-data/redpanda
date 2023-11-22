@@ -48,6 +48,7 @@ ss::future<offsets_upload_result> offsets_uploader::upload(
   const model::ntp& ntp,
   const cluster_metadata_id& meta_id,
   retry_chain_node& retry_node) {
+    vlog(clusterlog.debug, "Requested to upload offsets from {}", ntp);
     auto holder = _gate.hold();
     _as.check();
     auto snap_res = co_await _group_manager.local().snapshot_groups(ntp);

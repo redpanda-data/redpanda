@@ -40,7 +40,8 @@ struct cluster_metadata_manifest
           cluster_uuid,
           metadata_id,
           controller_snapshot_offset,
-          controller_snapshot_path);
+          controller_snapshot_path,
+          offsets_snapshots_by_partition);
     }
 
     // Upload time in milliseconds since the epoch. Informational only.
@@ -68,6 +69,8 @@ struct cluster_metadata_manifest
     // changed since the last snapshot.
     ss::sstring controller_snapshot_path;
 
+    std::vector<std::vector<ss::sstring>> offsets_snapshots_by_partition;
+
     ss::future<> update(ss::input_stream<char> is) override;
     ss::future<cloud_storage::serialized_data_stream>
     serialize() const override;
@@ -82,13 +85,15 @@ struct cluster_metadata_manifest
                  cluster_uuid,
                  metadata_id,
                  controller_snapshot_offset,
-                 controller_snapshot_path)
+                 controller_snapshot_path,
+                 offsets_snapshots_by_partition)
                == std::tie(
                  other.upload_time_since_epoch,
                  other.cluster_uuid,
                  other.metadata_id,
                  other.controller_snapshot_offset,
-                 other.controller_snapshot_path);
+                 other.controller_snapshot_path,
+                 other.offsets_snapshots_by_partition);
     }
 
 private:

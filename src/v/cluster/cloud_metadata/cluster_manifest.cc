@@ -85,6 +85,21 @@ void cluster_metadata_manifest::load_from_json(const rapidjson::Document& doc) {
     if (doc.HasMember("controller_snapshot_path")) {
         controller_snapshot_path = doc["controller_snapshot_path"].GetString();
     }
+    if (doc.HasMember("offsets_snapshots_by_partition")) {
+        auto snapshot_paths_json
+          = doc["offsets_snapshots_by_partition"].GetArray();
+        offsets_snapshots_by_partition.reserve(snapshot_paths_json.Size());
+        for (const auto& partition_snap_paths_json : snapshot_paths_json) {
+            auto partition_array_json = partition_snap_paths_json.GetArray();
+            std::vector<ss::sstring> paths_for_partition;
+            paths_for_partition.reserve(partition_snap_paths_json.Size());
+            for (const auto& path_json : partition_array_json) {
+                paths_for_partition.emplace_back(path_json.GetString());
+            }
+            offsets_snapshots_by_partition.emplace_back(
+              std::move(paths_for_partition));
+        }
+    }
 }
 
 ss::future<cloud_storage::serialized_data_stream>
@@ -125,6 +140,17 @@ void cluster_metadata_manifest::to_json(std::ostream& out) const {
     w.Int64(controller_snapshot_offset());
     w.Key("controller_snapshot_path");
     w.String(controller_snapshot_path);
+
+    w.Key("offsets_snapshots_by_partition");
+    w.StartArray();
+    for (const auto& paths : offsets_snapshots_by_partition) {
+        w.StartArray();
+        for (const auto& p : paths) {
+            w.String(p);
+        }
+        w.EndArray();
+    }
+    w.EndArray();
     w.EndObject();
 }
 
@@ -136,12 +162,14 @@ cluster_metadata_manifest::get_manifest_path() const {
 std::ostream& operator<<(std::ostream& os, const cluster_metadata_manifest& m) {
     os << fmt::format(
       "{{upload_time_since_epoch: {}, cluster_uuid: {}, metadata_id: {}, "
-      "controller_snapshot_offset: {}, controller_snapshot_path: '{}'}}",
+      "controller_snapshot_offset: {}, controller_snapshot_path: '{}', "
+      "offsets_snapshots_by_partition: '{}'}}",
       m.upload_time_since_epoch,
       m.cluster_uuid,
       m.metadata_id,
       m.controller_snapshot_offset,
-      m.controller_snapshot_path);
+      m.controller_snapshot_path,
+      m.offsets_snapshots_by_partition);
     return os;
 }
 

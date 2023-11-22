@@ -30,6 +30,8 @@ class group_manager;
 
 namespace cluster::cloud_metadata {
 
+class offsets_upload_requestor;
+
 // Periodically uploads cluster metadata within a given term.
 //
 // It is expected that this is instantiated on all controller replicas. Unlike
@@ -48,7 +50,9 @@ public:
       storage::api& storage,
       cloud_storage_clients::bucket_name bucket,
       cloud_storage::remote& remote,
-      consensus_ptr raft0);
+      consensus_ptr raft0,
+      cluster::topic_table& topics,
+      ss::shared_ptr<offsets_upload_requestor> offsets_uploader);
 
     // Begins the upload loop and listens for leadership changes.
     void start();
@@ -106,6 +110,8 @@ public:
       cloud_storage::lazy_abort_source& lazy_as,
       retry_chain_node& retry_node);
 
+    auto manifest() const { return _term_manifest; }
+
 private:
     // Returns true if we're no longer the leader or the term has changed since
     // the input term.
@@ -116,6 +122,8 @@ private:
     model::cluster_uuid _cluster_uuid;
     cloud_storage::remote& _remote;
     consensus_ptr _raft0;
+    cluster::topic_table& _topic_table;
+    ss::shared_ptr<offsets_upload_requestor> _offsets_uploader;
     const cloud_storage_clients::bucket_name _bucket;
 
     config::binding<std::chrono::milliseconds> _upload_interval_ms;
@@ -127,6 +135,8 @@ private:
 
     // Abort source to stop sleeping if there is a term change.
     std::optional<std::reference_wrapper<ss::abort_source>> _term_as;
+    std::optional<std::reference_wrapper<cluster_metadata_manifest>>
+      _term_manifest;
 
     // Used to wait for leadership. It will be triggered by notify_leadership.
     ss::condition_variable _leader_cond;

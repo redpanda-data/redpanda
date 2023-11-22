@@ -54,7 +54,8 @@ class offsets_upload_router
   : public leader_router<
       offsets_upload_request,
       offsets_upload_reply,
-      offsets_upload_handler> {
+      offsets_upload_handler>
+  , public offsets_upload_requestor {
 public:
     offsets_upload_router(
       ss::sharded<offsets_uploader>& uploader,
@@ -81,6 +82,14 @@ public:
 
     ss::future<> start() { co_return; }
     ss::future<> stop() { return shutdown(); }
+
+    ss::future<offsets_upload_reply> request_upload(
+      offsets_upload_request req,
+      model::timeout_clock::duration timeout) override {
+        auto ntp = req.offsets_ntp;
+        co_return co_await process_or_dispatch(
+          std::move(req), std::move(ntp), timeout);
+    }
 
 private:
     offsets_upload_handler _handler;

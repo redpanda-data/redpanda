@@ -13,6 +13,7 @@
 #include "cluster/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
 #include "serde/envelope.h"
 #include "utils/fragmented_vector.h"
 
@@ -58,6 +59,13 @@ struct offsets_upload_reply
     friend bool
     operator==(const offsets_upload_reply&, const offsets_upload_reply&)
       = default;
+};
+
+class offsets_upload_requestor {
+public:
+    virtual ss::future<offsets_upload_reply>
+      request_upload(offsets_upload_request, model::timeout_clock::duration)
+      = 0;
 };
 
 } // namespace cluster::cloud_metadata
