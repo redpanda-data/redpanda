@@ -16,6 +16,8 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -44,10 +46,10 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		tombstone              bool
 		allowAutoTopicCreation bool
 
-		schemaID    int
-		keySchemaID int
-		protoFQN    string
-		protoKeyFQN string
+		schemaIDFlag    string
+		keySchemaIDFLag string
+		protoFQN        string
+		protoKeyFQN     string
 
 		timeout time.Duration
 	)
@@ -116,7 +118,12 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("invalid empty format")
 			}
 
-			isSchemaRegistry := schemaID >= 0 || keySchemaID >= 0
+			keySchemaID, isKeyTopicName, err := parseSchemaIDFlag(keySchemaIDFLag)
+			out.MaybeDie(err, "unable to parse '--schema-key-id' flag: %v", err)
+			schemaID, isValTopicName, err := parseSchemaIDFlag(schemaIDFlag)
+			out.MaybeDie(err, "unable to parse '--schema-id' flag: %v", err)
+
+			isSchemaRegistry := isKeyTopicName || isValTopicName || keySchemaID >= 0 || schemaID >= 0
 			// If the user is using schema registry, we want to use the json
 			// format: %v{json} and %k{json}.
 			if isSchemaRegistry {
@@ -151,7 +158,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			defer cl.Close()
 			defer cl.Flush(context.Background())
 
-			var keySerde, valSerde *serde.Serde
+			var defaultKeySerde, defaultValSerde *serde.Serde
 			var srCl *sr.Client
 			if isSchemaRegistry {
 				srCl, err = schemaregistry.NewClient(fs, p)
@@ -161,14 +168,18 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.MaybeDie(err, "unable to query schemas from the registry: %v", err)
 
 				if keySchema != nil {
-					keySerde, err = serde.NewSerde(cmd.Context(), srCl, keySchema, keySchemaID, protoKeyFQN)
+					defaultKeySerde, err = serde.NewSerde(cmd.Context(), srCl, keySchema, keySchemaID, protoKeyFQN)
 					out.MaybeDie(err, "unable to build serializer for the key schema: %v", err)
 				}
 				if valSchema != nil {
-					valSerde, err = serde.NewSerde(cmd.Context(), srCl, valSchema, schemaID, protoFQN)
+					defaultValSerde, err = serde.NewSerde(cmd.Context(), srCl, valSchema, schemaID, protoFQN)
 					out.MaybeDie(err, "unable to build serializer for the value schema: %v", err)
 				}
 			}
+
+			// This is just the cache for TopicName strategy
+			// [topicName-key|value]:serde.
+			serdeCache := make(map[string]*serde.Serde)
 			for {
 				r := &kgo.Record{
 					Partition: partition,
@@ -186,15 +197,35 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if r.Topic == "" && defaultTopic == "" {
 					out.Die("topic to produce to is missing, check --help for produce syntax")
 				}
+				topicName := defaultTopic
+				if topicName == "" {
+					topicName = r.Topic
+				}
 				if tombstone && len(r.Value) == 0 {
 					r.Value = nil
 				}
-				if keySerde != nil {
+				if defaultKeySerde != nil || isKeyTopicName {
+					keySerde := defaultKeySerde
+					if isKeyTopicName && keySerde == nil {
+						keySerde, err = serdeFromTopicName(cmd.Context(), srCl, topicName, "key", protoKeyFQN, serdeCache)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "unable to build key serializer using TopicNameStrategy for topic %q: %v\n", topicName, err)
+							return
+						}
+					}
 					record, err := keySerde.EncodeRecord(r.Key)
 					out.MaybeDie(err, "unable to encode key: %v", err)
 					r.Key = record
 				}
-				if valSerde != nil {
+				if defaultValSerde != nil || isValTopicName {
+					valSerde := defaultValSerde
+					if isValTopicName && valSerde == nil {
+						valSerde, err = serdeFromTopicName(cmd.Context(), srCl, topicName, "value", protoFQN, serdeCache)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "unable to build value serializer using TopicNameStrategy for topic %q: %v\n", topicName, err)
+							return
+						}
+					}
 					record, err := valSerde.EncodeRecord(r.Value)
 					out.MaybeDie(err, "unable to encode value: %v", err)
 					r.Value = record
@@ -223,10 +254,10 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().StringVarP(&key, "key", "k", "", "A fixed key to use for each record (parsed input keys take precedence)")
 	cmd.Flags().BoolVarP(&tombstone, "tombstone", "Z", false, "Produce empty values as tombstones")
 	cmd.Flags().BoolVar(&allowAutoTopicCreation, "allow-auto-topic-creation", false, "Auto-create non-existent topics; requires auto_create_topics_enabled on the broker")
-	cmd.Flags().IntVar(&schemaID, "schema-id", -1, "Schema ID to encode the record value with")
-	cmd.Flags().IntVar(&keySchemaID, "schema-key-id", -1, "Schema ID to encode the record key with")
-	cmd.Flags().StringVar(&protoFQN, "proto-msg-type", "", "Name of the protobuf message type to be used to encode the record value using schema registry")
-	cmd.Flags().StringVar(&protoKeyFQN, "proto-key-msg-type", "", "Name of the protobuf message type to be used to encode the record key using schema registry")
+	cmd.Flags().StringVar(&schemaIDFlag, "schema-id", "", "Schema ID to encode the record value with, use 'topic' for TopicName strategy")
+	cmd.Flags().StringVar(&keySchemaIDFLag, "schema-key-id", "", "Schema ID to encode the record key with, use 'topic' for TopicName strategy")
+	cmd.Flags().StringVar(&protoFQN, "schema-type", "", "Name of the protobuf message type to be used to encode the record value using schema registry")
+	cmd.Flags().StringVar(&protoKeyFQN, "schema-key-type", "", "Name of the protobuf message type to be used to encode the record key using schema registry")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
@@ -255,6 +286,42 @@ func querySchemas(ctx context.Context, cl *sr.Client, keySchemaID, valSchemaID i
 		valSchema = &vSch
 	}
 	return
+}
+
+func parseSchemaIDFlag(flag string) (int, bool, error) {
+	if flag == "" {
+		return -1, false, nil
+	}
+	if strings.ToLower(flag) == "topic" {
+		return -1, true, nil
+	}
+	parsed, err := strconv.Atoi(flag)
+	if err != nil {
+		return -1, false, fmt.Errorf("unable to parse %q: %v; use either a number or 'topic'", flag, err)
+	}
+	return parsed, false, nil
+}
+
+// serdeFromTopicName returns a new serde.Serde based on the topicName strategy.
+// First, it searches if the serde is cached, if not, it will query the latest
+// schema with subject name: <topic>-<suffix> and cache the result.
+func serdeFromTopicName(ctx context.Context, cl *sr.Client, topic, suffix, protoFQN string, serdeCache map[string]*serde.Serde) (*serde.Serde, error) {
+	var newSerde *serde.Serde
+	schSubjectName := topic + "-" + suffix
+	if s, ok := serdeCache[schSubjectName]; ok {
+		newSerde = s
+	} else {
+		schema, err := cl.SchemaByVersion(ctx, schSubjectName, -1)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get schema with name %q using TopicName strategy: %v", schSubjectName, err)
+		}
+		newSerde, err = serde.NewSerde(ctx, cl, &schema.Schema, schema.ID, protoFQN)
+		if err != nil {
+			return nil, fmt.Errorf("unable to build serializer for the schema: %v", err)
+		}
+		serdeCache[schSubjectName] = newSerde
+	}
+	return newSerde, nil
 }
 
 const helpProduce = `Produce records to a topic.
@@ -349,6 +416,27 @@ the following will read three headers that begin and end with a space and are
 separated by an equal:
 
     %H{3}%h{ %k=%v }
+
+SCHEMA-REGISTRY
+
+Records can be encoded using a specified schema from our schema registry. Use
+the '--schema-id' or '--schema-key-id' flags to define the schema ID, rpk will
+retrieve the schemas and encode the record accordingly.
+
+Additionally, utilizing 'topic' in the mentioned flags allows for the use of the
+Topic Name Strategy. This strategy identifies a schema subject name based on the
+topic itself. For example:
+
+Produce to 'foo', encode using the latest schema in the subject 'foo-value':
+    rpk topic produce foo --schema-id=topic
+
+For protobuf schemas, you can specify the fully qualified name of the message
+you want the record to be encoded with. Use the 'schema-type' flag or
+'schema-key-type'. If the schema contains only one message, specifying the
+message name is unnecessary. For example:
+
+Produce to 'foo', using schema ID 1, message FQN Person.Name
+    rpk topic produce foo --schema-id 1 --schema-type Person.Name
 
 EXAMPLES
 

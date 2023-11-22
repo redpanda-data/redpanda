@@ -527,10 +527,10 @@ class RpkTool:
             cmd += ["--schema-key-id", f'{schema_key_id}']
             use_schema_registry = True
         if proto_msg is not None:
-            cmd += ["--proto-msg-type", proto_msg]
+            cmd += ["--schema-type", proto_msg]
             use_schema_registry = True
         if proto_key_msg is not None:
-            cmd += ["--proto-key-msg-type", proto_key_msg]
+            cmd += ["--schema-key-type", proto_key_msg]
             use_schema_registry = True
 
         # Run remote process with a slightly higher timeout than the
