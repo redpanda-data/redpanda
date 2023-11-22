@@ -12,6 +12,7 @@ from functools import partial, reduce
 import time
 import threading
 import json
+import random
 import re
 import requests
 import socket
@@ -274,6 +275,7 @@ class AuditLogTestBase(RedpandaTest):
     audit_log = "__audit_log"
     kafka_rpc_service_name = "kafka rpc protocol"
     admin_audit_svc_name = "Redpanda Admin HTTP Server"
+    sr_audit_svc_name = "Redpanda Schema Registry Service"
 
     def __init__(
             self,
@@ -1703,3 +1705,168 @@ class AuditLogTestOauth(AuditLogTestBase):
             lambda records: self.aggregate_count(records) >= 1)
 
         assert len(records) == 1, f"Expected one record got {len(records)}"
+
+
+class AuditLogTestSchemaRegistry(AuditLogTestBase):
+    """
+    Validates schema registry auditing
+    """
+
+    HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
+
+    username = 'test'
+    password = 'test'
+    algorithm = 'SCRAM-SHA-256'
+
+    def __init__(self, test_context):
+        sr_config = SchemaRegistryConfig()
+        sr_config.authn_method = 'http_basic'
+        super(AuditLogTestSchemaRegistry, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                num_partitions=1,
+                event_types=['schema_registry', 'authenticate']),
+            log_config=LoggingConfig('info',
+                                     logger_levels={
+                                         'auditing': 'trace',
+                                         'pandaproxy': 'trace'
+                                     }),
+            schema_registry_config=sr_config)
+
+    def _request(self, verb, path, hostname=None, **kwargs):
+        if hostname is None:
+            nodes = [n for n in self.redpanda.nodes]
+            random.shuffle(nodes)
+            node = nodes[0]
+            hostname = node.account.hostname
+
+        scheme = 'http'
+        uri = f'{scheme}://{hostname}:8081/{path}'
+
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 60
+
+        # Error codes that may appear during normal API operation, do not
+        # indicate an issue with the service
+        acceptable_errors = {409, 422, 404}
+
+        def accept_response(resp):
+            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+
+        self.logger.debug(f"{verb} hostname={hostname} {path} {kwargs}")
+
+        r = requests.request(verb, uri, **kwargs)
+        if not accept_response(r):
+            self.logger.info(
+                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
+            )
+            time.sleep(10)
+            r = requests.request(verb, uri, **kwargs)
+            if accept_response(r):
+                self.logger.info(
+                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+            else:
+                self.logger.info(
+                    f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+
+        self.logger.info(
+            f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
+
+        return r
+
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET",
+                             f"subjects{'?deleted=true' if deleted else ''}",
+                             headers=headers,
+                             **kwargs)
+
+    def setup_cluster(self):
+        self.admin.create_user(self.username, self.password, self.algorithm)
+
+    @cluster(num_nodes=5)
+    def test_sr_audit(self):
+        self.setup_cluster()
+
+        r = self._get_subjects(auth=(self.username, self.password))
+        assert r.status_code == requests.codes.ok
+
+        def match_api_user(endpoint, user, svc_name, record):
+            if record['class_uid'] == 6003 and record['dst_endpoint'][
+                    'svc_name'] == svc_name:
+                regex = re.compile(
+                    "http:\/\/(?P<address>.*):(?P<port>\d+)\/(?P<handler>.*)")
+                url_string = record['http_request']['url']['url_string']
+                match = regex.match(url_string)
+                if match and match.group('handler') == endpoint and record[
+                        'actor']['user']['name'] == user:
+                    return True
+
+            return False
+
+        records = self.find_matching_record(
+            lambda record: match_api_user("subjects", self.username, self.
+                                          sr_audit_svc_name, record),
+            lambda record_count: record_count >= 1, 'sr get api call')
+
+        assert self.aggregate_count(
+            records
+        ) == 1, f'Expected one record found {self.aggregate_count(records)}: {records}'
+
+        def match_authn_user(user, svc_name, result, record):
+            return record['class_uid'] == 3002 and record['dst_endpoint'][
+                'svc_name'] == svc_name and record['user'][
+                    'name'] == user and record['status_id'] == result
+
+        _ = self.find_matching_record(
+            lambda record: match_authn_user(self.username, self.
+                                            sr_audit_svc_name, 1, record),
+            lambda record_count: record_count > 1, 'authn attempt in sr')
+
+    @cluster(num_nodes=5)
+    def test_sr_audit_bad_authn(self):
+        r = self._get_subjects(auth=(self.username, self.password))
+        assert r.json()['error_code'] == 40101
+
+        def match_authn_user(user, svc_name, result, record):
+            return record['class_uid'] == 3002 and record['dst_endpoint'][
+                'svc_name'] == svc_name and record['user'][
+                    'name'] == user and record['status_id'] == result
+
+        _ = self.find_matching_record(
+            lambda record: match_authn_user(self.username, self.
+                                            sr_audit_svc_name, 2, record),
+            lambda record_count: record_count > 1, 'authn fail attempt in sr')
+
+        try:
+            records = self.find_matching_record(
+                lambda record: match_authn_user(self.username, self.
+                                                sr_audit_svc_name, 1, record),
+                lambda record_count: record_count > 1,
+                'authn fail attempt in sr')
+            assert f"Should not have found any records but found {self.aggregate_count(records)}: {records}"
+        except TimeoutError:
+            pass
+
+        def match_api_user(endpoint, user, svc_name, record):
+            if record['class_uid'] == 6003 and record['dst_endpoint'][
+                    'svc_name'] == svc_name:
+                regex = re.compile(
+                    "http:\/\/(?P<address>.*):(?P<port>\d+)\/(?P<handler>.*)")
+                url_string = record['http_request']['url']['url_string']
+                match = regex.match(url_string)
+                if match and match.group('handler') == endpoint and record[
+                        'actor']['user']['name'] == user:
+                    return True
+
+            return False
+
+        try:
+            records = self.find_matching_record(
+                lambda record: match_api_user("subjects", self.username, self.
+                                              sr_audit_svc_name, record),
+                lambda aggregate_count: aggregate_count > 1, 'API call')
+            assert f'Should not have found any records but found {self.aggregate_count(records)}: {records}'
+        except TimeoutError:
+            pass
