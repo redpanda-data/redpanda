@@ -53,7 +53,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 "raft_io_timeout_ms": 20000,
             },
             # 2 nodes for kgo producer/consumer workloads
-            node_prealloc_count=2,
+            node_prealloc_count=3,
             *args,
             **kwargs)
 
@@ -260,7 +260,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self.topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
+    @cluster(num_nodes=8,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
@@ -268,6 +268,13 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             with_tiered_storage=[True, False])
     def test_node_operations(self, enable_failures, num_to_upgrade,
                              with_tiered_storage):
+        # In order to reduce the number of parameters and at the same time cover
+        # as many use cases as possible this test uses 3 topics which 3 separate
+        # producer/consumer pairs:
+        #
+        # tp-workload-deletion   - topic with delete cleanup policy
+        # tp-workload-compaction - topic with compaction
+        # tp-workload-fast       - topic with fast partition movements enabled
 
         lock = threading.Lock()
         default_segment_size = 1024 * 1024
@@ -287,7 +294,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         # create some initial topics
         self._create_topics(10)
-        regular_topic = TopicSpec(partition_count=self.max_partitions,
+        regular_topic = TopicSpec(name='tp-workload-deletion',
+                                  partition_count=self.max_partitions,
                                   replication_factor=3,
                                   cleanup_policy=TopicSpec.CLEANUP_DELETE,
                                   segment_bytes=default_segment_size,
@@ -312,7 +320,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             consumers_count=self.consumers_count,
             compaction_enabled=False)
 
-        compacted_topic = TopicSpec(partition_count=self.max_partitions,
+        compacted_topic = TopicSpec(name='tp-workload-compaction',
+                                    partition_count=self.max_partitions,
                                     cleanup_policy=TopicSpec.CLEANUP_COMPACT,
                                     segment_bytes=default_segment_size,
                                     redpanda_remote_read=with_tiered_storage,
@@ -334,6 +343,38 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         regular_producer_consumer.start()
         compacted_producer_consumer.start()
+
+        if with_tiered_storage:
+            # if running with tiered storage create a topic with fast partition
+            # moves enabled
+            fast_topic = TopicSpec(name='tp-workload-fast',
+                                   partition_count=self.max_partitions,
+                                   cleanup_policy=TopicSpec.CLEANUP_DELETE,
+                                   segment_bytes=default_segment_size,
+                                   redpanda_remote_read=with_tiered_storage,
+                                   redpanda_remote_write=with_tiered_storage)
+
+            client = DefaultClient(self.redpanda)
+            client.create_topic(fast_topic)
+
+            client.alter_topic_config(fast_topic.name,
+                                      'initial.retention.local.target.bytes',
+                                      default_segment_size)
+            self._alter_local_topic_retention_bytes(fast_topic.name,
+                                                    8 * default_segment_size)
+
+            fast_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+                test_context=self.test_context,
+                logger=self.logger,
+                topic_name=fast_topic.name,
+                redpanda=self.redpanda,
+                nodes=[self.preallocated_nodes[2]],
+                msg_size=self.msg_size,
+                rate_limit_bps=self.rate_limit,
+                msg_count=self.msg_count,
+                consumers_count=self.consumers_count,
+                compaction_enabled=False)
+            fast_producer_consumer.start()
 
         # start admin operations fuzzer, it will provide a stream of
         # admin day 2 operations executed during the test
@@ -372,6 +413,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         regular_producer_consumer.verify()
         compacted_producer_consumer.verify()
         if with_tiered_storage:
+            fast_producer_consumer.verify()
             self.redpanda.stop_and_scrub_object_storage()
 
         # Validate that the controller log written during the test is readable by offline log viewer
