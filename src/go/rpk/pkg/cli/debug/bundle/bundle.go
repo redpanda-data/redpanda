@@ -105,9 +105,9 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				metricsInterval:         metricsInterval,
 			}
 
-			// to execute the appropriate bundle we look for
-			// kubernetes_service_* env variables as an indicator that we are
-			// in a k8s environment
+			// To execute the appropriate bundle we look for
+			// kubernetes_service_* env variables to identify if we are in a
+			// k8s environment.
 			host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
 			if len(host) == 0 || len(port) == 0 {
 				err = executeBundle(cmd.Context(), bp)
@@ -188,12 +188,12 @@ COMMON FILES
 
  - Data directory structure: A file describing the data directory's contents.
 
- - redpanda configuration: The redpanda configuration file (redpanda.yaml;
+ - Redpanda configuration: The redpanda configuration file (redpanda.yaml;
    SASL credentials are stripped).
 
- - /proc/cpuinfo: CPU information like make, core count, cache, frequency.
-
- - /proc/interrupts: IRQ distribution across CPU cores.
+ - Runtime system information (/proc): Process information, by reading /proc 
+  files like core count, cache, frequency, interrupts, mounted file systems, 
+  memory usage, kernel command line.
 
  - Resource usage data: CPU usage percentage, free memory available for the
    redpanda process.
@@ -209,7 +209,7 @@ COMMON FILES
 
 BARE-METAL
 
- - Kernel logs: The kernel logs ring buffer (syslog).
+ - Kernel: The kernel logs ring buffer (syslog) and parameters (sysctl).
 
  - DNS: The DNS info as reported by 'dig', using the hosts in
    /etc/resolv.conf.

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -52,24 +53,29 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:      bp.fs,
-		w:       w,
-		timeout: bp.timeout,
+		fs:       bp.fs,
+		w:        w,
+		timeout:  bp.timeout,
+		fileRoot: strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
 	}
 	var errs *multierror.Error
 
 	steps := []step{
-		saveKafkaMetadata(ctx, ps, bp.cl),
-		saveDataDirStructure(ps, bp.y),
-		saveConfig(ps, bp.yActual),
 		saveCPUInfo(ps),
-		saveInterrupts(ps),
-		saveResourceUsageData(ps, bp.y),
-		saveNTPDrift(ps),
-		saveDiskUsage(ctx, ps, bp.y),
+		saveCmdLine(ps),
+		saveConfig(ps, bp.yActual),
 		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
-		saveK8SResources(ctx, ps, bp.namespace),
+		saveDataDirStructure(ps, bp.y),
+		saveDiskUsage(ctx, ps, bp.y),
+		saveInterrupts(ps),
 		saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes),
+		saveK8SResources(ctx, ps, bp.namespace),
+		saveKafkaMetadata(ctx, ps, bp.cl),
+		saveMdstat(ps),
+		saveMountedFilesystems(ps),
+		saveNTPDrift(ps),
+		saveResourceUsageData(ps, bp.y),
+		saveSlabInfo(ps),
 	}
 
 	adminAddresses, err := adminAddressesFromK8S(ctx, bp.namespace)

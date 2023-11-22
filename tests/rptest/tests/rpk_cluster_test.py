@@ -57,9 +57,10 @@ class RpkClusterTest(RedpandaTest):
     def test_debug_bundle(self):
         # The main RpkTool helper runs rpk on the test runner machine -- debug
         # commands are run on redpanda nodes.
-
+        root_name = "bundle"
+        bundle_name = "bundle" + ".zip"
         working_dir = "/tmp"
-        file_path = os.path.join(working_dir, "bundle.zip")
+        file_path = os.path.join(working_dir, bundle_name)
         node = self.redpanda.nodes[0]
 
         rpk_remote = RpkRemoteTool(self.redpanda, node)
@@ -105,27 +106,27 @@ class RpkClusterTest(RedpandaTest):
 
         zf = zipfile.ZipFile(output_file)
         files = zf.namelist()
-        assert 'redpanda.yaml' in files
-        assert 'redpanda.log' in files
+        assert f'{root_name}/redpanda.yaml' in files
+        assert f'{root_name}/redpanda.log' in files
 
         # At least the first controller log is being saved:
-        assert 'controller/0-1-v1.log' in files
+        assert f'{root_name}/controller/0-1-v1.log' in files
 
         # Cluster admin API calls:
-        assert 'admin/brokers.json' in files
-        assert 'admin/cluster_config.json' in files
-        assert 'admin/health_overview.json' in files
+        assert f'{root_name}/admin/brokers.json' in files
+        assert f'{root_name}/admin/cluster_config.json' in files
+        assert f'{root_name}/admin/health_overview.json' in files
 
         # Per-node admin API calls:
         for n in self.redpanda.started_nodes():
             # rpk will save 2 snapsots per metrics endpoint:
-            assert f'metrics/{n.account.hostname}-9644/t0_metrics.txt' in files
-            assert f'metrics/{n.account.hostname}-9644/t1_metrics.txt' in files
-            assert f'metrics/{n.account.hostname}-9644/t0_public_metrics.txt' in files
-            assert f'metrics/{n.account.hostname}-9644/t1_public_metrics.txt' in files
+            assert f'{root_name}/metrics/{n.account.hostname}-9644/t0_metrics.txt' in files
+            assert f'{root_name}/metrics/{n.account.hostname}-9644/t1_metrics.txt' in files
+            assert f'{root_name}/metrics/{n.account.hostname}-9644/t0_public_metrics.txt' in files
+            assert f'{root_name}/metrics/{n.account.hostname}-9644/t1_public_metrics.txt' in files
             # and 1 cluster_view and node_config per node:
-            assert f'admin/cluster_view_{n.account.hostname}-9644.json' in files
-            assert f'admin/node_config_{n.account.hostname}-9644.json' in files
+            assert f'{root_name}/admin/cluster_view_{n.account.hostname}-9644.json' in files
+            assert f'{root_name}/admin/node_config_{n.account.hostname}-9644.json' in files
 
     @cluster(num_nodes=3)
     def test_get_config(self):

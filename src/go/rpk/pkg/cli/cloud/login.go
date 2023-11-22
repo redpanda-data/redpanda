@@ -114,7 +114,7 @@ and then re-specify the client credentials next time you log in.`)
 				fmt.Printf("    rpk profile create {name} --from-cloud {cluster_id}\n")
 				return
 			}
-			fmt.Print(msg)
+			fmt.Println(msg)
 		},
 	}
 

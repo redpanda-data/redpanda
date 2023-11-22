@@ -49,6 +49,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const linuxUtilsRoot = "utils"
+
 // determineFilepath will process the given path and sets:
 //   - File Name: If the path is empty, the filename will be <timestamp>-bundle.zip
 //   - File Extension: if no extension is provided we default to .zip
@@ -114,34 +116,41 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:      bp.fs,
-		w:       w,
-		timeout: bp.timeout,
+		fs:       bp.fs,
+		w:        w,
+		timeout:  bp.timeout,
+		fileRoot: strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
 	}
 
 	addrs := bp.y.Rpk.AdminAPI.Addresses
 
 	steps := []step{
-		saveKafkaMetadata(ctx, ps, bp.cl),
-		saveDataDirStructure(ps, bp.y),
-		saveConfig(ps, bp.y),
 		saveCPUInfo(ps),
-		saveInterrupts(ps),
-		saveResourceUsageData(ps, bp.y),
-		saveNTPDrift(ps),
-		saveSyslog(ps),
-		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval),
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs),
+		saveCmdLine(ps),
+		saveConfig(ps, bp.y),
+		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 		saveDNSData(ctx, ps),
+		saveDataDirStructure(ps, bp.y),
 		saveDiskUsage(ctx, ps, bp.y),
+		saveDmidecode(ctx, ps),
+		saveFree(ctx, ps),
+		saveIP(ctx, ps),
+		saveInterrupts(ps),
+		saveKafkaMetadata(ctx, ps, bp.cl),
 		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
+		saveLspci(ctx, ps),
+		saveMdstat(ps),
+		saveMountedFilesystems(ps),
+		saveNTPDrift(ps),
+		saveResourceUsageData(ps, bp.y),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval),
+		saveSlabInfo(ps),
 		saveSocketData(ctx, ps),
+		saveSysctl(ctx, ps),
+		saveSyslog(ps),
 		saveTopOutput(ctx, ps),
 		saveVmstat(ctx, ps),
-		saveIP(ctx, ps),
-		saveLspci(ctx, ps),
-		saveDmidecode(ctx, ps),
-		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 	}
 
 	for _, s := range steps {
@@ -164,10 +173,11 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 type step func() error
 
 type stepParams struct {
-	fs      afero.Fs
-	m       sync.Mutex
-	w       *zip.Writer
-	timeout time.Duration
+	fs       afero.Fs
+	m        sync.Mutex
+	w        *zip.Writer
+	timeout  time.Duration
+	fileRoot string
 }
 
 type fileInfo struct {
@@ -212,7 +222,7 @@ func writeFileToZip(ps *stepParams, filename string, contents []byte) error {
 	defer ps.m.Unlock()
 
 	wr, err := ps.w.CreateHeader(&zip.FileHeader{
-		Name:     filename,
+		Name:     filepath.Join(ps.fileRoot, filename),
 		Method:   zip.Deflate,
 		Modified: time.Now(),
 	})
@@ -272,7 +282,7 @@ func writeCommandOutputToZipLimit(
 	cmd.Env = osutil.SystemLdPathEnv()
 
 	wr, err := ps.w.CreateHeader(&zip.FileHeader{
-		Name:     filename,
+		Name:     filepath.Join(ps.fileRoot, filename),
 		Method:   zip.Deflate,
 		Modified: time.Now(),
 	})
@@ -529,6 +539,50 @@ func saveInterrupts(ps *stepParams) step {
 	}
 }
 
+// Saves the contents of '/proc/mounts'.
+func saveMountedFilesystems(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/mounts")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/mounts", bs)
+	}
+}
+
+// Saves the contents of '/proc/slabinfo'. Requires Sudo.
+func saveSlabInfo(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/slabinfo")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/slabinfo", bs)
+	}
+}
+
+// Saves the contents of '/proc/cmdline'.
+func saveCmdLine(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/cmdline")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/cmdline", bs)
+	}
+}
+
+// Saves the contents of '/proc/mdstat'.
+func saveMdstat(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/mdstat")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/mdstat", bs)
+	}
+}
+
 // Writes a file containing memory, disk & CPU usage metrics for a local
 // redpanda process.
 func saveResourceUsageData(ps *stepParams, y *config.RedpandaYaml) step {
@@ -607,7 +661,7 @@ func saveNTPDrift(ps *stepParams) step {
 
 		return writeFileToZip(
 			ps,
-			"ntp.txt",
+			filepath.Join(linuxUtilsRoot, "ntp.txt"),
 			marshalled,
 		)
 	}
@@ -619,14 +673,14 @@ func saveSyslog(ps *stepParams) step {
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "syslog.txt", entries)
+		return writeFileToZip(ps, filepath.Join(linuxUtilsRoot, "syslog.txt"), entries)
 	}
 }
 
 // Saves the output of `dig`.
 func saveDNSData(ctx context.Context, ps *stepParams) step {
 	return func() error {
-		return writeCommandOutputToZip(ctx, ps, "dig.txt", "dig")
+		return writeCommandOutputToZip(ctx, ps, filepath.Join(linuxUtilsRoot, "dig.txt"), "dig")
 	}
 }
 
@@ -636,7 +690,7 @@ func saveDiskUsage(ctx context.Context, ps *stepParams, y *config.RedpandaYaml) 
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"du.txt",
+			filepath.Join(linuxUtilsRoot, "du.txt"),
 			"du", "-h", y.Redpanda.Directory,
 		)
 	}
@@ -666,7 +720,7 @@ func saveLogs(ctx context.Context, ps *stepParams, since, until string, logsLimi
 // Saves the output of `ss`.
 func saveSocketData(ctx context.Context, ps *stepParams) step {
 	return func() error {
-		return writeCommandOutputToZip(ctx, ps, "ss.txt", "ss")
+		return writeCommandOutputToZip(ctx, ps, filepath.Join(linuxUtilsRoot, "ss.txt"), "ss")
 	}
 }
 
@@ -676,7 +730,7 @@ func saveTopOutput(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"top.txt",
+			filepath.Join(linuxUtilsRoot, "top.txt"),
 			"top", "-b", "-n", "10", "-H", "-d", "1",
 		)
 	}
@@ -688,7 +742,7 @@ func saveVmstat(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"vmstat.txt",
+			filepath.Join(linuxUtilsRoot, "vmstat.txt"),
 			"vmstat", "-w", "1", "10",
 		)
 	}
@@ -700,7 +754,7 @@ func saveIP(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"ip.txt",
+			filepath.Join(linuxUtilsRoot, "ip.txt"),
 			"ip", "addr",
 		)
 	}
@@ -712,7 +766,7 @@ func saveLspci(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"lspci.txt",
+			filepath.Join(linuxUtilsRoot, "lspci.txt"),
 			"lspci",
 		)
 	}
@@ -724,8 +778,32 @@ func saveDmidecode(ctx context.Context, ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ctx,
 			ps,
-			"dmidecode.txt",
+			filepath.Join(linuxUtilsRoot, "dmidecode.txt"),
 			"dmidecode",
+		)
+	}
+}
+
+// Saves the output of `sysctl -a`.
+func saveSysctl(ctx context.Context, ps *stepParams) step {
+	return func() error {
+		return writeCommandOutputToZip(
+			ctx,
+			ps,
+			filepath.Join(linuxUtilsRoot, "sysctl.txt"),
+			"sysctl", "-a",
+		)
+	}
+}
+
+// Saves the output of `free`.
+func saveFree(ctx context.Context, ps *stepParams) step {
+	return func() error {
+		return writeCommandOutputToZip(
+			ctx,
+			ps,
+			filepath.Join(linuxUtilsRoot, "free.txt"),
+			"free",
 		)
 	}
 }
