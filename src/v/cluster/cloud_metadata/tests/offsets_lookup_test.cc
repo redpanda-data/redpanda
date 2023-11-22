@@ -125,6 +125,6 @@ FIXTURE_TEST(test_list_offsets_bad_node_id, offsets_lookup_fixture) {
     }
 
     auto reply = _offsets_server->lookup(std::move(req)).get();
-    BOOST_REQUIRE_EQUAL(reply.node_id, bad_node_id);
+    BOOST_REQUIRE_EQUAL(reply.node_id, _node_id());
     BOOST_REQUIRE_EQUAL(0, reply.ntp_and_offset.size());
 }

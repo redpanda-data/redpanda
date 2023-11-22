@@ -35,9 +35,14 @@ ss::future<offsets_lookup_reply>
 offsets_lookup::lookup(offsets_lookup_request req) {
     auto reply = offsets_lookup_reply{};
     if (req.node_id != _node_id) {
+        vlog(
+          clusterlog.error,
+          "Node {} received offsets lookup request for wrong node_id {}",
+          _node_id,
+          req.node_id);
         // If for some reason we were sent the wrong request, suggest retrying
         // all NTPs. Perhaps there's a transient metadata issue.
-        reply.node_id = req.node_id;
+        reply.node_id = _node_id;
         co_return reply;
     }
     reply.node_id = _node_id;
