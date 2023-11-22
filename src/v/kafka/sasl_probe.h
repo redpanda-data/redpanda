@@ -30,8 +30,9 @@ public:
     void setup_metrics(std::string_view name) {
         namespace sm = ss::metrics;
 
-        auto setup = [this](const std::vector<sm::label>& aggregate_labels) {
-            std::vector<sm::metric_definition> defs;
+        auto setup = [this]<typename MetricDef>(
+                       const std::vector<sm::label>& aggregate_labels) {
+            std::vector<MetricDef> defs;
             defs.emplace_back(
               sm::make_counter(
                 "session_expiration_total",
@@ -48,19 +49,23 @@ public:
             return defs;
         };
 
+        auto group_name = prometheus_sanitize::metrics_name(
+          ssx::sformat("{}:sasl", name));
+
         if (!config::shard_local_cfg().disable_metrics()) {
             _metrics.add_group(
-              prometheus_sanitize::metrics_name(ssx::sformat("{}:sasl", name)),
-              setup(
-                config::shard_local_cfg().aggregate_metrics()
-                  ? std::vector<sm::label>{sm::shard_label}
-                  : std::vector<sm::label>{}));
+              group_name,
+              setup.template
+              operator()<ss::metrics::impl::metric_definition_impl>({}),
+              std::vector<sm::label>{},
+              std::vector<sm::label>{sm::shard_label});
         }
 
         if (!config::shard_local_cfg().disable_public_metrics()) {
             _public_metrics.add_group(
-              prometheus_sanitize::metrics_name(ssx::sformat("{}:sasl", name)),
-              setup(std::vector<sm::label>{sm::shard_label}));
+              group_name,
+              setup.template operator()<ss::metrics::metric_definition>(
+                std::vector<sm::label>{sm::shard_label}));
         }
     }
 
