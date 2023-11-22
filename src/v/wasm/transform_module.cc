@@ -128,7 +128,7 @@ ss::future<int32_t> transform_module::read_batch_header(
     *producer_epoch = header.producer_epoch;
     *base_sequence = header.base_sequence;
 
-    _wasi_module->set_timestamp(
+    _wasi_module->set_walltime(
       header.attrs.timestamp_type() == model::timestamp_type::create_time
         ? header.first_timestamp
         : header.max_timestamp);
@@ -158,7 +158,7 @@ ss::future<int32_t> transform_module::read_next_record(
     }
     _call_ctx->records.pop_front();
 
-    _wasi_module->set_timestamp(record.timestamp);
+    _wasi_module->set_walltime(record.timestamp);
 
     // Pass back the record's metadata
     *attributes = record.attributes.value();

@@ -522,7 +522,7 @@ private:
 
         reset_fuel(context);
 
-        _wasi_module.set_timestamp(model::timestamp::min());
+        _wasi_module.set_walltime(model::timestamp::min());
 
         // The wasm spec has a feature that a module can specify a startup
         // function that is run on start.
