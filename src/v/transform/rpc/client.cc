@@ -54,6 +54,7 @@
 #include <exception>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -481,14 +482,16 @@ ss::future<bool> client::try_create_wasm_binary_ntp() {
         co_return false;
     }
     cluster::errc ec = fut.get();
-    if (ec != cluster::errc::success) {
-        vlog(log.warn, "unable to create internal wasm binary topic: {}", ec);
-        co_return false;
+    if (
+      ec == cluster::errc::success
+      || ec == cluster::errc::topic_already_exists) {
+        co_return true;
     }
-    co_return true;
+    vlog(log.warn, "unable to create internal wasm binary topic: {}", ec);
+    co_return false;
 }
 
-ss::future<> client::try_create_transform_offsets_topic() {
+ss::future<bool> client::try_create_transform_offsets_topic() {
     cluster::topic_properties properties;
     properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
@@ -503,16 +506,29 @@ ss::future<> client::try_create_transform_offsets_topic() {
     if (fut.failed()) {
         vlog(
           log.warn,
-          "unable to create topic {}: {}",
+          "unable to create internal offset tracking topic {}: {}",
           model::transform_offsets_nt,
           std::move(fut).get_exception());
+        co_return false;
     }
+    cluster::errc ec = fut.get();
+    if (
+      ec == cluster::errc::success
+      || ec == cluster::errc::topic_already_exists) {
+        co_return true;
+    }
+    vlog(log.warn, "unable to create internal offset tracking topic: {}", ec);
+    co_return false;
 }
 
 ss::future<std::optional<model::node_id>>
 client::compute_wasm_binary_ntp_leader() {
     auto leader = _leaders->get_leader_node(model::wasm_binaries_internal_ntp);
     if (!leader.has_value()) {
+        if (_topic_metadata->find_topic_cfg(
+              model::topic_namespace_view(model::wasm_binaries_internal_ntp))) {
+            co_return std::nullopt;
+        }
         bool success = co_await try_create_wasm_binary_ntp();
         if (!success) {
             co_return std::nullopt;
@@ -533,11 +549,19 @@ client::find_coordinator_once(model::transform_offsets_key key) {
     auto ntp = offsets_ntp(coordinator_partition);
     auto leader = _leaders->get_leader_node(ntp);
     if (!leader) {
-        if (!_topic_metadata->find_topic_cfg(model::transform_offsets_nt)) {
-            // topic creation is best effort, we ignore any errors here
-            co_await try_create_transform_offsets_topic().discard_result();
+        // See if we know if this topic exists at all
+        if (_topic_metadata->find_topic_cfg(model::transform_offsets_nt)) {
+            co_return cluster::errc::not_leader;
         }
-        co_return cluster::errc::not_leader;
+        // If not try to create it.
+        bool success = co_await try_create_transform_offsets_topic();
+        if (!success) {
+            co_return cluster::errc::not_leader;
+        }
+        leader = _leaders->get_leader_node(ntp);
+        if (!leader) {
+            co_return cluster::errc::not_leader;
+        }
     }
     find_coordinator_request request;
     request.add(key);
