@@ -44,6 +44,7 @@
 #include "kafka/server/response.h"
 #include "kafka/server/usage_manager.h"
 #include "net/connection.h"
+#include "security/acl.h"
 #include "security/errc.h"
 #include "security/exceptions.h"
 #include "security/gssapi_authenticator.h"
@@ -383,7 +384,8 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
     } catch (security::scram_exception& e) {
         vlog(
           klog.warn,
-          "[{}:{}]  Error processing SASL authentication request for {}: {}",
+          "[{}:{}]  Error processing SASL authentication request for {}: "
+          "{}",
           ctx.connection()->client_host(),
           ctx.connection()->client_port(),
           ctx.header().client_id.value_or(std::string_view("unset-client-id")),
@@ -612,6 +614,16 @@ ss::future<response_ptr> end_txn_handler::handle(
         end_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
+
+        if (!ctx.authorized(
+              security::acl_operation::write,
+              transactional_id{request.data.transactional_id})) {
+            end_txn_response response;
+            response.data.error_code
+              = error_code::transactional_id_authorization_failed;
+            return ctx.respond(response);
+        }
+
         cluster::end_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,
@@ -662,6 +674,21 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
         add_offsets_to_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
+
+        if (!ctx.authorized(
+              security::acl_operation::write,
+              transactional_id{request.data.transactional_id})) {
+            add_offsets_to_txn_response response;
+            response.data.error_code
+              = error_code::transactional_id_authorization_failed;
+            return ctx.respond(response);
+        } else if (!ctx.authorized(
+                     security::acl_operation::read,
+                     group_id{request.data.group_id})) {
+            add_offsets_to_txn_response response;
+            response.data.error_code = error_code::group_authorization_failed;
+            return ctx.respond(response);
+        }
 
         cluster::add_offsets_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
@@ -715,11 +742,37 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
         request.decode(ctx.reader(), ctx.header().version);
         log_request(ctx.header(), request);
 
+        if (!ctx.authorized(
+              security::acl_operation::write,
+              transactional_id{request.data.transactional_id})) {
+            add_partitions_to_txn_response response{
+              request, error_code::transactional_id_authorization_failed};
+            return ctx.respond(std::move(response));
+        }
+
+        absl::flat_hash_set<model::topic> unauthorized_topics;
+        for (const auto& topic : request.data.topics) {
+            if (!ctx.authorized(security::acl_operation::write, topic.name)) {
+                unauthorized_topics.emplace(topic.name);
+            }
+        }
+
+        if (!unauthorized_topics.empty()) {
+            add_partitions_to_txn_response response{
+              request, [&unauthorized_topics](const auto& tp) {
+                  return unauthorized_topics.contains(tp)
+                           ? error_code::topic_authorization_failed
+                           : error_code::operation_not_attempted;
+              }};
+            return ctx.respond(response);
+        }
+
         cluster::add_paritions_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,
           .producer_epoch = request.data.producer_epoch};
         tx_request.topics.reserve(request.data.topics.size());
+
         for (auto& topic : request.data.topics) {
             cluster::add_paritions_tx_request::topic tx_topic{
               .name = std::move(topic.name),
@@ -809,8 +862,8 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
           resp.data.topics.end(),
           [&ctx](const offset_fetch_response_topic& topic) {
               /*
-               * quiet authz failures. this is checking for visibility across
-               * all topics not specifically requested topics.
+               * quiet authz failures. this is checking for visibility
+               * across all topics not specifically requested topics.
                */
               return ctx.authorized(
                 security::acl_operation::describe,
@@ -1079,8 +1132,8 @@ ss::future<response_ptr> init_producer_id_handler::handle(
             model::producer_identity expected_pid = model::producer_identity{
               request.data.producer_id, request.data.producer_epoch};
 
-            // Provided pid in init_producer_id request can not be {x >= 0, -1}
-            // or {-1, x >= 0}.
+            // Provided pid in init_producer_id request can not be {x >= 0,
+            // -1} or {-1, x >= 0}.
             const bool is_invalid_pid =
               [](model::producer_identity expected_pid) {
                   if (expected_pid == model::unknown_pid) {
@@ -1283,8 +1336,9 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         offset_commit_request request;
         ss::smp_service_group ssg;
 
-        // topic partitions found not to existent prior to processing. responses
-        // for these are patched back into the final response after processing.
+        // topic partitions found not to existent prior to processing.
+        // responses for these are patched back into the final response
+        // after processing.
         absl::flat_hash_map<
           model::topic,
           std::vector<offset_commit_response_partition>>
@@ -1308,18 +1362,19 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 
     /*
-     * offset commit will operate normally on topic-partitions in the request
-     * that exist, while returning partial errors for those that do not exist.
-     * in order to deal with this we filter out nonexistent topic-partitions,
-     * and pass those that exist on to the group membership layer.
+     * offset commit will operate normally on topic-partitions in the
+     * request that exist, while returning partial errors for those that do
+     * not exist. in order to deal with this we filter out nonexistent
+     * topic-partitions, and pass those that exist on to the group
+     * membership layer.
      *
-     * TODO: the filtering is expensive for large requests. there are two things
-     * that can be done to speed this up. first, the metadata cache should
-     * provide an interface for efficiently searching for topic-partitions.
-     * second, the code generator should be extended to allow the generated
-     * structures to contain extra fields. in this case, we could introduce a
-     * flag to mark topic-partitions to be ignored by the group membership
-     * subsystem.
+     * TODO: the filtering is expensive for large requests. there are two
+     * things that can be done to speed this up. first, the metadata cache
+     * should provide an interface for efficiently searching for
+     * topic-partitions. second, the code generator should be extended to
+     * allow the generated structures to contain extra fields. in this case,
+     * we could introduce a flag to mark topic-partitions to be ignored by
+     * the group membership subsystem.
      */
     for (auto it = octx.request.data.topics.begin();
          it != octx.request.data.topics.end();) {
@@ -1431,8 +1486,8 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           return stages.result.then([&octx](offset_commit_response resp) {
               if (unlikely(!octx.nonexistent_tps.empty())) {
                   /*
-                   * copy over partitions for topics that had some partitions
-                   * that were processed normally.
+                   * copy over partitions for topics that had some
+                   * partitions that were processed normally.
                    */
                   for (auto& topic : resp.data.topics) {
                       auto it = octx.nonexistent_tps.find(topic.name);
