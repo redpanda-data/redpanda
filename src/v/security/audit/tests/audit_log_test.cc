@@ -80,6 +80,7 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
     auto& audit_mgr = app.audit_mgr;
 
     /// with auditing disabled, calls to enqueue should be no-ops
+    const auto n_events = pending_audit_events(audit_mgr.local()).get0();
     audit_mgr
       .invoke_on_all([](sa::audit_log_manager& m) {
           for (auto i = 0; i < 20; ++i) {
@@ -89,8 +90,7 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
       })
       .get0();
 
-    BOOST_CHECK_EQUAL(
-      pending_audit_events(audit_mgr.local()).get0(), size_t(0));
+    BOOST_CHECK_EQUAL(pending_audit_events(audit_mgr.local()).get0(), n_events);
 
     /// with auditing enabled, the system should block when the threshold of
     /// 5 records has been surpassed

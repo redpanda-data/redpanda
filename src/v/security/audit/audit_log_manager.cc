@@ -148,6 +148,9 @@ public:
     bool is_enabled() const { return _client != nullptr; }
 
 private:
+    ss::future<>
+      publish_app_lifecycle_event(application_lifecycle::activity_id);
+
     ss::future<> update_auth_status(auth_misconfigured_t);
 
     ss::future<> do_toggle(bool enabled);
@@ -536,6 +539,21 @@ audit_sink::produce(std::vector<kafka::client::record_essence> records) {
     co_await _client->produce(std::move(records), _audit_mgr->probe());
 }
 
+ss::future<> audit_sink::publish_app_lifecycle_event(
+  application_lifecycle::activity_id event) {
+    /// Directly publish the event instead of enqueuing it like all other
+    /// events. This ensures that the event won't get discarded in the case
+    /// audit is disabled.
+    auto lifecycle_event = std::make_unique<application_lifecycle>(
+      make_application_lifecycle(event, ss::sstring{subsystem_name}));
+    auto as_json = lifecycle_event->to_json();
+    iobuf b;
+    b.append(as_json.c_str(), as_json.size());
+    std::vector<kafka::client::record_essence> rs;
+    rs.push_back(kafka::client::record_essence{.value = std::move(b)});
+    co_await produce(std::move(rs));
+}
+
 void audit_sink::toggle(bool enabled) {
     ssx::spawn_with_gate(
       _gate, [this, enabled]() { return do_toggle(enabled); });
@@ -553,6 +571,8 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
                 /// Only if shutdown succeeded before initializtion could
                 /// complete would this case evaluate to false
                 co_await _audit_mgr->resume();
+                co_await publish_app_lifecycle_event(
+                  application_lifecycle::activity_id::start);
             }
         } else if (!enabled && _client) {
             /// Call to shutdown does not exist within the lock so that
@@ -560,6 +580,8 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
             /// case initialize() doesn't complete. This is common if for
             /// example the audit topic is improperly configured
             /// intitialization will forever hang.
+            co_await publish_app_lifecycle_event(
+              application_lifecycle::activity_id::stop);
             co_await _client->shutdown();
             lock = co_await _mutex.get_units();
             co_await _audit_mgr->pause();
@@ -677,17 +699,6 @@ ss::future<> audit_log_manager::start() {
     }
     _audit_enabled.watch([this] {
         try {
-            if (!enqueue_app_lifecycle_event(
-                  _audit_enabled() ? application_lifecycle::activity_id::start
-                                   : application_lifecycle::activity_id::stop,
-                  ss::sstring{subsystem_name})) {
-                vlog(adtlog.error, "Failed to enqueue audit lifecycle event");
-                if (_audit_enabled()) {
-                    throw std::runtime_error(
-                      "Failed to enqueue audit lifecycle event for audit "
-                      "system start");
-                }
-            }
             _sink->toggle(_audit_enabled());
         } catch (const ss::gate_closed_exception&) {
             vlog(
@@ -701,25 +712,11 @@ ss::future<> audit_log_manager::start() {
     });
     if (_audit_enabled()) {
         vlog(adtlog.info, "Starting audit_log_manager");
-        if (!this->enqueue_app_lifecycle_event(
-              application_lifecycle::activity_id::start,
-              ss::sstring{subsystem_name})) {
-            vlog(adtlog.error, "Failed to enqueue audit lifecycle start event");
-            // TODO I should error here, yeah?
-        }
         co_await _sink->start();
     }
 }
 
 ss::future<> audit_log_manager::stop() {
-    if (ss::this_shard_id() == client_shard_id) {
-        if (!enqueue_app_lifecycle_event(
-              application_lifecycle::activity_id::stop,
-              ss::sstring{subsystem_name})) {
-            vlog(
-              adtlog.error, "Failed to enqueue audit subsystem shutdown event");
-        }
-    }
     _drain_timer.cancel();
     _as.request_abort();
     if (ss::this_shard_id() == client_shard_id) {
