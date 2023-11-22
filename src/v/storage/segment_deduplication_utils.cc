@@ -29,7 +29,7 @@ ss::future<ss::stop_iteration> put_entry(
   key_offset_map& map,
   const compacted_index::entry& idx_entry,
   bool& fully_indexed) {
-    auto offset = idx_entry.offset + model::offset_delta(idx_entry.delta);
+    auto offset = idx_entry.offset + model::offset(idx_entry.delta);
     bool success = co_await map.put(idx_entry.key, offset);
     if (success) {
         co_return ss::stop_iteration::no;
@@ -42,7 +42,7 @@ ss::future<bool> should_keep(
   const key_offset_map& map,
   const model::record_batch& b,
   const model::record& r) {
-    const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
+    const auto o = b.base_offset() + model::offset(r.offset_delta());
     auto key_view = compaction_key{iobuf_to_bytes(r.key())};
     auto key = enhance_key(
       b.header().type, b.header().attrs.is_control(), key_view);

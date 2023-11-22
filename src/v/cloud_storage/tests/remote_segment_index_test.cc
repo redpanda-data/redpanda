@@ -114,7 +114,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
         BOOST_REQUIRE_EQUAL(kaf, kaf_offsets[ix]);
         BOOST_REQUIRE_EQUAL(fpos, file_offsets[ix]);
 
-        auto kopt = index.find_kaf_offset(kaf_offsets[ix] + model::offset(1));
+        auto kopt = index.find_kaf_offset(kaf_offsets[ix] + kafka::offset(1));
         BOOST_REQUIRE_EQUAL(kopt->rp_offset, rp_offsets[ix]);
         BOOST_REQUIRE_EQUAL(kopt->kaf_offset, kaf_offsets[ix]);
         BOOST_REQUIRE_EQUAL(kopt->file_pos, file_offsets[ix]);

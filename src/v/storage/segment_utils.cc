@@ -410,13 +410,12 @@ ss::future<storage::index_state> do_copy_segment_data(
       seg->reader().filename(),
       tmpname);
 
-    auto should_keep = [compacted_list = std::move(compacted_offsets)](
-                         const model::record_batch& b,
-                         const model::record& r,
-                         bool) {
-        const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-        return ss::make_ready_future<bool>(compacted_list.contains(o));
-    };
+    auto should_keep =
+      [compacted_list = std::move(compacted_offsets)](
+        const model::record_batch& b, const model::record& r, bool) {
+          const auto o = b.base_offset() + model::offset(r.offset_delta());
+          return ss::make_ready_future<bool>(compacted_list.contains(o));
+      };
 
     model::offset segment_last_offset{};
     if (likely(feature_table.local().is_active(
