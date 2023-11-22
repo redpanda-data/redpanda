@@ -371,13 +371,13 @@ FIXTURE_TEST(
 namespace {
 
 ss::future<> scan_until_close(
-  remote_partition& partition,
-  const storage::log_reader_config& reader_config,
+  ss::shared_ptr<remote_partition> partition,
+  storage::log_reader_config reader_config,
   ss::gate& g) {
     gate_guard guard{g};
     while (!g.is_closed()) {
         try {
-            auto translating_reader = co_await partition.make_reader(
+            auto translating_reader = co_await partition->make_reader(
               reader_config);
             auto reader = std::move(translating_reader.reader);
             auto headers_read = co_await reader.consume(
@@ -403,8 +403,6 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    storage::log_reader_config reader_config(
-      base, model::offset::max(), ss::default_priority_class());
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     auto manifest = hydrate_manifest(api.local(), bucket);
@@ -417,17 +415,35 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     ss::gate g;
-    ssx::background = scan_until_close(*partition, reader_config, g);
+    auto scan_future = scan_until_close(
+      partition,
+      storage::log_reader_config(
+        base, model::offset::max(), ss::default_priority_class()),
+      g);
     auto close_fut = ss::maybe_yield()
                        .then([] { return ss::maybe_yield(); })
                        .then([] { return ss::maybe_yield(); })
-                       .then([] {
-                           return ss::sleep(std::chrono::milliseconds(10));
-                       })
+                       .then([] { return ss::sleep(10ms); })
                        .then([this, &g]() mutable {
                            pool.local().shutdown_connections();
                            return g.close();
                        });
-    ss::with_timeout(model::timeout_clock::now() + 60s, std::move(close_fut))
-      .get();
+
+    // NOTE: see issues/11271
+    BOOST_TEST_CONTEXT("scan_unit_close should terminate in a finite amount of "
+                       "time at shutdown") {
+        auto timeout_fut = ss::with_timeout(
+          model::timeout_clock::now() + 60s, std::move(close_fut));
+        try {
+            timeout_fut.get();
+            BOOST_CHECK(scan_future.available());
+            scan_future.get();
+        } catch (...) {
+            // BOOST_REQUIRE_NOTHROW can't print std::current_exception, sadly
+            BOOST_CHECK_MESSAGE(
+              false,
+              fmt::format(
+                "failed with exception {}", std::current_exception()));
+        }
+    }
 }
