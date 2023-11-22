@@ -1040,7 +1040,11 @@ ss::future<std::error_code> topics_frontend::set_topic_partitions_disabled(
         if (!_topics.local().contains(ns_tp)) {
             co_return errc::topic_not_exists;
         }
-        if (_topics.local().is_disabled(ns_tp) == disabled) {
+        if (disabled && _topics.local().is_fully_disabled(ns_tp)) {
+            // no-op
+            co_return errc::success;
+        }
+        if (!disabled && _topics.local().is_fully_enabled(ns_tp)) {
             // no-op
             co_return errc::success;
         }

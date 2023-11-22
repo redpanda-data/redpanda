@@ -518,12 +518,20 @@ public:
         return &it->second;
     }
 
-    bool is_disabled(model::topic_namespace_view ns_tp) const {
+    bool is_fully_disabled(model::topic_namespace_view ns_tp) const {
         auto it = _disabled_partitions.find(ns_tp);
         if (it == _disabled_partitions.end()) {
             return false;
         }
-        return it->second.is_topic_disabled();
+        return it->second.is_fully_disabled();
+    }
+
+    bool is_fully_enabled(model::topic_namespace_view ns_tp) const {
+        auto it = _disabled_partitions.find(ns_tp);
+        if (it == _disabled_partitions.end()) {
+            return true;
+        }
+        return it->second.is_fully_enabled();
     }
 
     bool is_disabled(
