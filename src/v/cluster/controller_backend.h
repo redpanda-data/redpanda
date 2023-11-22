@@ -231,6 +231,7 @@ private:
     struct ntp_reconciliation_state {
         std::optional<model::revision_id> changed_at;
         std::optional<model::revision_id> properties_changed_at;
+        bool removed = false;
 
         std::optional<in_progress_operation> cur_operation;
 
@@ -264,10 +265,11 @@ private:
         operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
             fmt::print(
               o,
-              "{{changed_at: {}, properties_changed_at: {}, "
+              "{{changed_at: {}, properties_changed_at: {}, removed: {}, "
               "cur_operation: {}}}",
               rs.changed_at,
               rs.properties_changed_at,
+              rs.removed,
               rs.cur_operation);
             return o;
         }

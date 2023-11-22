@@ -561,8 +561,35 @@ ss::future<> controller_backend::fetch_deltas() {
           return ss::with_semaphore(
             _topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
                 for (auto& d : deltas) {
+                    vlog(clusterlog.trace, "got delta: {}", d);
+
                     auto& rs = _states[d.ntp];
+
+                    if (rs.changed_at) {
+                        vassert(
+                          *rs.changed_at <= d.revision,
+                          "[{}]: delta revision unexpectedly decreased, "
+                          "was: {}, update: {}",
+                          d.ntp,
+                          rs.changed_at,
+                          d.revision);
+                    }
                     rs.changed_at = d.revision;
+
+                    if (d.type == topic_table_delta_type::added) {
+                        rs.removed = false;
+                    } else {
+                        vassert(
+                          !rs.removed,
+                          "[{}] unexpected delta: {}, state: {}",
+                          d.ntp,
+                          d,
+                          rs);
+                        if (d.type == topic_table_delta_type::removed) {
+                            rs.removed = true;
+                        }
+                    }
+
                     if (d.type == topic_table_delta_type::properties_updated) {
                         rs.properties_changed_at = d.revision;
                     }
@@ -698,18 +725,18 @@ ss::future<> controller_backend::reconcile_ntp(
         co_return;
     }
 
-    while (!_as.local().abort_requested()) {
-        auto tt_revision = _topics.local().last_applied_revision();
+    while (rs.changed_at && !_as.local().abort_requested()) {
+        model::revision_id changed_at = *rs.changed_at;
         cluster::errc last_error = errc::success;
         try {
             auto res = co_await reconcile_ntp_step(ntp, rs);
             if (res.has_value() && res.value() == ss::stop_iteration::yes) {
-                rs.mark_reconciled(tt_revision);
+                rs.mark_reconciled(changed_at);
                 vlog(
                   clusterlog.debug,
                   "[{}] reconciled at revision {}",
                   ntp,
-                  tt_revision);
+                  changed_at);
                 break;
             } else if (res.has_error() && res.error()) {
                 if (res.error().category() == error_category()) {
@@ -800,20 +827,31 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
     // Step 1. Determine if the partition object has to be created/shut
     // down/removed on this shard.
 
+    auto delete_partition_globally = [&]() {
+        if (!rs.removed) {
+            // Even if the partition is not found in the topic table, just to be
+            // on the safe side, we don't delete it until we receive the
+            // corresponding delta (to protect against topic table
+            // inconsistencies).
+            return ss::now();
+        }
+        rs.set_cur_operation(*rs.changed_at, partition_operation_type::remove);
+        return delete_partition(
+          ntp, *rs.changed_at, partition_removal_mode::global);
+    };
+
     auto topic_it = _topics.local().topics_map().find(
       model::topic_namespace_view{ntp});
     if (topic_it == _topics.local().topics_map().end()) {
         // topic was removed
-        rs.set_cur_operation(tt_rev, partition_operation_type::remove);
-        co_await delete_partition(ntp, tt_rev, partition_removal_mode::global);
+        co_await delete_partition_globally();
         co_return ss::stop_iteration::yes;
     }
     auto p_it = topic_it->second.partitions.find(ntp.tp.partition);
     if (p_it == topic_it->second.partitions.end()) {
         // partition was removed (handling this case for completeness, not
         // really possible with current controller commands)
-        rs.set_cur_operation(tt_rev, partition_operation_type::remove);
-        co_await delete_partition(ntp, tt_rev, partition_removal_mode::global);
+        co_await delete_partition_globally();
         co_return ss::stop_iteration::yes;
     }
 
@@ -846,8 +884,9 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
 
     const replicas_t* orig_replicas = &assignment.replicas;
     const replicas_t* updated_replicas = nullptr;
-    model::revision_id last_cmd_revision
+    model::revision_id last_update_finished_revision
       = p_it->second.last_update_finished_revision;
+    model::revision_id last_cmd_revision = last_update_finished_revision;
 
     auto update_it = _topics.local().updates_in_progress().find(ntp);
     if (update_it != _topics.local().updates_in_progress().end()) {
@@ -916,17 +955,26 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
       claim_it != _ntp_claims.end() ? std::optional{claim_it->second}
                                     : std::nullopt);
 
-    // Cleanup older revisions that should not exist on this node. This is
-    // typically done after the replicas update is finished:
-    // * if expected_log_rev is null, partition is not expected to exist on
-    //   the current node.
-    // * if partition log revision is less than expected_log_rev, this means
-    //   that this partition belongs to a previous update epoch or even a
-    //   previous topic incarnation and should be deleted.
+    // Cleanup obsolete revisions that should not exist on this node. This is
+    // typically done after the replicas update is finished.
+
+    auto is_obsolete = [&](model::revision_id log_revision) {
+        if (expected_log_rev) {
+            // If comparison is true, it means either: partition was moved from
+            // this node and back in a previous update epochs, or the topic was
+            // recreated.
+            return log_revision < *expected_log_rev;
+        } else {
+            // Partition is not expected to exist on this node after a finished
+            // update. Compare with last_update_finished_revision before
+            // deleting to be on a safe side.
+            return log_revision < last_update_finished_revision;
+        }
+    };
 
     if (
       claim_it != _ntp_claims.end()
-      && (!expected_log_rev || (claim_it->second.log_revision < *expected_log_rev))) {
+      && is_obsolete(claim_it->second.log_revision)) {
         vlog(
           clusterlog.trace,
           "[{}] dropping obsolete partition claim {}",
@@ -937,16 +985,14 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         claim_it = _ntp_claims.end();
     }
 
-    if (
-      partition
-      && (!expected_log_rev || partition->get_log_revision_id() < *expected_log_rev)) {
+    if (partition && is_obsolete(partition->get_log_revision_id())) {
         rs.set_cur_operation(
-          last_cmd_revision,
+          last_update_finished_revision,
           partition_operation_type::finish_update,
           assignment);
         co_await delete_partition(
           ntp,
-          p_it->second.last_update_finished_revision,
+          last_update_finished_revision,
           partition_removal_mode::local_only);
         co_return ss::stop_iteration::no;
     }
