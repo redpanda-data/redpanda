@@ -21,6 +21,8 @@ enum class event_type : std::uint8_t {
     describe,
     heartbeat,
     authenticate,
+    admin,
+    schema_registry,
     unknown,
     num_elements
 };
@@ -35,6 +37,8 @@ inline event_type string_to_event_type(const std::string_view s) {
       .match("describe", event_type::describe)
       .match("heartbeat", event_type::heartbeat)
       .match("authenticate", event_type::authenticate)
+      .match("admin", event_type::admin)
+      .match("schema_registry", event_type::schema_registry)
       .default_match(event_type::unknown);
 }
 

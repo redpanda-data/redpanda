@@ -176,7 +176,9 @@ validate_audit_event_types(const std::vector<ss::sstring>& vs) {
       "consume",
       "describe",
       "heartbeat",
-      "authenticate"};
+      "authenticate",
+      "admin",
+      "schema_registry"};
 
     for (const auto& e : vs) {
         if (!audit_event_types.contains(e)) {

@@ -50,7 +50,11 @@ std::ostream& operator<<(std::ostream& os, event_type t) {
     case event_type::heartbeat:
         return os << "heartbeat";
     case event_type::authenticate:
-        return os << "authenticated";
+        return os << "authenticate";
+    case event_type::admin:
+        return os << "admin";
+    case event_type::schema_registry:
+        return os << "schema_registry";
     case event_type::unknown:
         return os << "unknown";
     default:
