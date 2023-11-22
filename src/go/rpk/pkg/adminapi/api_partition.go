@@ -94,7 +94,10 @@ func (a *AdminAPI) Reconfigurations(ctx context.Context) ([]ReconfigurationsResp
 // disabled is true, only disabled partitions are returned.
 func (a *AdminAPI) AllClusterPartitions(ctx context.Context, withInternal, disabled bool) ([]ClusterPartition, error) {
 	var clusterPartitions []ClusterPartition
-	partitionsURL := fmt.Sprintf("%v?with_internal=%v&disabled=%v", partitionsBaseURL, withInternal, disabled)
+	partitionsURL := fmt.Sprintf("%v?with_internal=%v", partitionsBaseURL, withInternal)
+	if disabled {
+		partitionsURL += "&disabled=true"
+	}
 	return clusterPartitions, a.sendAny(ctx, http.MethodGet, partitionsURL, nil, &clusterPartitions)
 }
 
@@ -102,6 +105,9 @@ func (a *AdminAPI) AllClusterPartitions(ctx context.Context, withInternal, disab
 // a given topic. If disabled is true, only disabled partitions are returned.
 func (a *AdminAPI) TopicClusterPartitions(ctx context.Context, namespace, topic string, disabled bool) ([]ClusterPartition, error) {
 	var clusterPartition []ClusterPartition
-	partitionURL := fmt.Sprintf("%v/%v/%v?disabled=%v", partitionsBaseURL, namespace, topic, disabled)
+	partitionURL := fmt.Sprintf("%v/%v/%v", partitionsBaseURL, namespace, topic)
+	if disabled {
+		partitionURL += "?disabled=true"
+	}
 	return clusterPartition, a.sendAny(ctx, http.MethodGet, partitionURL, nil, &clusterPartition)
 }
