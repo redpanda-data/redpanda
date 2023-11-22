@@ -1105,8 +1105,17 @@ BOOST_AUTO_TEST_CASE(test_ocsf_size) {
 
     const ss::sstring username = "test";
     const ss::sstring service_name = "test-service";
-    const auto authn = sa::make_authentication_failure_event(
-      http_req, security::credential_user{username}, service_name, "FAILURE");
+    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+      .server_addr = {fmt::format("{}", http_req.get_server_address().addr()), http_req.get_server_address().port(), http_req.get_server_address().addr().in_family()},
+      .svc_name = service_name,
+      .client_addr = {fmt::format("{}", http_req.get_client_address().addr()), http_req.get_client_address().port(), http_req.get_client_address().addr().in_family()},
+      .is_cleartext = sa::authentication::used_cleartext::no,
+      .user = {
+        .name = username,
+        .type_id = sa::user::type::unknown,
+      },
+      .error_reason = "FAILURE"
+    });
 
     size_t estimated_size = sizeof(sa::ocsf_base_event<sa::authentication>);
     const auto& [activity_id, auth_protocol, auth_protocol_id, dest_endpoint_host, is_cleartext, is_mfa, service, src_endpoint_host, status_id, status_detail, user]
