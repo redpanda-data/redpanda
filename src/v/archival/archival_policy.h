@@ -95,14 +95,14 @@ public:
     /// \param end_exclusive is an exclusive end of the range
     /// \param lm is a log manager
     /// \return initializd struct on success, empty struct on failure
-    ss::future<upload_candidate_with_locks> get_next_candidate(
+    ss::future<candidate_creation_result> get_next_candidate(
       model::offset begin_inclusive,
       model::offset end_exclusive,
       ss::shared_ptr<storage::log>,
       const storage::offset_translator_state&,
       ss::lowres_clock::duration segment_lock_duration);
 
-    ss::future<upload_candidate_with_locks> get_next_compacted_segment(
+    ss::future<candidate_creation_result> get_next_compacted_segment(
       model::offset begin_inclusive,
       ss::shared_ptr<storage::log> log,
       const cloud_storage::partition_manifest& manifest,

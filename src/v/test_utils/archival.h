@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "archival/archival_policy.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "model/tests/random_batch.h"
