@@ -549,6 +549,11 @@ class AuditLogTestBase(RedpandaTest):
 
             def ingest(self, records):
                 new_records = records[self.next_offset_ingest:]
+                if len(new_records) == 0:
+                    self.logger.debug(
+                        f"No new records observed, currently have read {len(records)} records so far"
+                    )
+                    return
                 self.next_offset_ingest = len(records)
                 new_records = [json.loads(msg['value']) for msg in records]
                 self.logger.info(f"Ingested: {len(new_records)} records")
