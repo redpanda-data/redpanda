@@ -20,6 +20,7 @@
 
 #include <sys/mman.h>
 
+#include <span>
 #include <stdexcept>
 #include <unistd.h>
 
@@ -31,6 +32,7 @@ heap_allocator::heap_allocator(config c) {
     for (size_t i = 0; i < c.num_heaps; ++i) {
         auto buffer = ss::allocate_aligned_buffer<uint8_t>(
           _max_size, page_size);
+        std::memset(buffer.get(), 0, _max_size);
         _memory_pool.emplace_back(std::move(buffer), _max_size);
     }
 }
@@ -48,7 +50,8 @@ std::optional<heap_memory> heap_allocator::allocate(request req) {
     return front;
 }
 
-void heap_allocator::deallocate(heap_memory m) {
+void heap_allocator::deallocate(heap_memory m, size_t used_amount) {
+    std::memset(m.data.get(), 0, used_amount);
     _memory_pool.push_back(std::move(m));
 }
 
@@ -97,6 +100,7 @@ stack_memory stack_allocator::allocate(size_t size) {
     if (_tracking_enabled) {
         _live_stacks.emplace(mem.bounds());
     }
+    std::memset(mem.bounds().bottom, 0, mem.size());
     return mem;
 }
 

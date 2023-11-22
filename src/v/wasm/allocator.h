@@ -72,13 +72,19 @@ public:
 
     /**
      * Allocate heap memory by taking a memory instance from the pool.
+     *
+     * Memory returned from this method will be zero-filled.
      */
     std::optional<heap_memory> allocate(request);
 
     /**
      * Deallocate heap memory by returing a memory instance to the pool.
+     *
+     * used_amount is to zero out the used memory from the heap, this is
+     * required so that if only a portion of a large memory space was used we
+     * don't have to touch all the bytes.
      */
-    void deallocate(heap_memory);
+    void deallocate(heap_memory, size_t used_amount);
 
     /**
      * The maximum size of a heap_memory that can be allocated.
@@ -143,7 +149,8 @@ private:
 // Stack memory must be page-aligned and a multiple of page size.
 // Some architectures require this alignment for stacks. Additionally, we
 // always allocate a guard page at the bottom, which is unprotected when memory
-// is "deallocated".
+// is "deallocated". Lastly, memory returned from this allocator is always
+// zero-filled as assumed by the Wasm VM.
 //
 // The allocator also supports the ability to query if the current stack being
 // used has been allocated from this allocator and returns the bounds. This is

@@ -16,10 +16,13 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <unistd.h>
 
 namespace wasm {
+
+using ::testing::Optional;
 
 TEST(HeapAllocatorParamsTest, SizeIsAligned) {
     size_t page_size = ::getpagesize();
@@ -89,11 +92,39 @@ TEST(HeapAllocatorTest, CanReturnMemoryToThePool) {
     EXPECT_FALSE(mem.has_value());
     mem = std::move(allocated.back());
     allocated.pop_back();
-    allocator.deallocate(std::move(*mem));
+    allocator.deallocate(std::move(*mem), /*used_amount=*/0);
     mem = allocator.allocate(req);
     EXPECT_TRUE(mem.has_value());
     mem = allocator.allocate(req);
     EXPECT_FALSE(mem.has_value());
+}
+
+MATCHER(HeapIsZeroed, "is zeroed") {
+    std::span<uint8_t> d = {arg.data.get(), arg.size};
+    for (auto e : d) {
+        if (e != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+TEST(HeapAllocatorTest, MemoryIsZeroFilled) {
+    size_t page_size = ::getpagesize();
+    heap_allocator allocator(heap_allocator::config{
+      .heap_memory_size = page_size,
+      .num_heaps = 1,
+    });
+    heap_allocator::request req{.minimum = page_size, .maximum = page_size};
+    auto allocated = allocator.allocate(req);
+    ASSERT_TRUE(allocated.has_value());
+    EXPECT_THAT(allocated, Optional(HeapIsZeroed()));
+    std::fill_n(allocated->data.get(), 4, 1);
+    allocator.deallocate(*std::move(allocated), 4);
+
+    allocated = allocator.allocate(req);
+    ASSERT_TRUE(allocated.has_value());
+    EXPECT_THAT(allocated, Optional(HeapIsZeroed()));
 }
 
 TEST(StackAllocatorParamsTest, TrackingCanBeEnabled) {
@@ -116,8 +147,6 @@ TEST(StackAllocatorTest, CanAllocateOne) {
     EXPECT_EQ(stack.size(), page_size * 4);
     EXPECT_EQ(stack.bounds().top - stack.bounds().bottom, page_size * 4);
 }
-
-using ::testing::Optional;
 
 TEST(StackAllocatorTest, CanLookupMemory) {
     stack_allocator allocator(stack_allocator::config{
@@ -162,6 +191,29 @@ TEST(StackAllocatorTest, CanReturnMemoryToThePool) {
     // stack.
     stack = allocator.allocate(page_size * 4);
     EXPECT_EQ(stack.bounds(), bounds);
+}
+
+MATCHER(StackIsZeroed, "is zeroed") {
+    std::span<uint8_t> d = {arg.bounds().bottom, arg.size()};
+    for (auto e : d) {
+        if (e != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+TEST(StackAllocatorTest, MemoryIsZeroFilled) {
+    stack_allocator allocator(stack_allocator::config{
+      .tracking_enabled = true,
+    });
+    size_t page_size = ::getpagesize();
+    auto stack = allocator.allocate(page_size * 4);
+    EXPECT_THAT(stack, StackIsZeroed());
+    std::fill_n(stack.bounds().bottom, 4, 1);
+    allocator.deallocate(std::move(stack));
+    stack = allocator.allocate(page_size * 4);
+    EXPECT_THAT(stack, StackIsZeroed());
 }
 
 } // namespace wasm

@@ -1311,14 +1311,11 @@ wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(
     auto stack = _stack_allocator.local().allocate(size);
     struct vm_stack {
         stack_memory underlying;
-        ss::noncopyable_function<void(stack_memory)> reclaimer;
+        wasm::stack_allocator* allocator;
     };
     memory_ret->env = new vm_stack{
       .underlying = std::move(stack),
-      .reclaimer =
-        [this](stack_memory mem) {
-            _stack_allocator.local().deallocate(std::move(mem));
-        },
+      .allocator = &_stack_allocator.local(),
     };
     memory_ret->get_stack_memory = [](void* env, size_t* len_ret) -> uint8_t* {
         auto* mem = static_cast<vm_stack*>(env);
@@ -1327,7 +1324,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(
     };
     memory_ret->finalizer = [](void* env) {
         auto* mem = static_cast<vm_stack*>(env);
-        mem->reclaimer(std::move(mem->underlying));
+        mem->allocator->deallocate(std::move(mem->underlying));
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         delete mem;
     };
@@ -1368,18 +1365,18 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
     }
     struct linear_memory {
         heap_memory underlying;
-        ss::noncopyable_function<void(heap_memory)> reclaimer;
+        size_t used_memory;
+        wasm::heap_allocator* allocator;
     };
     memory_ret->env = new linear_memory{
       .underlying = *std::move(memory),
-      .reclaimer =
-        [this](heap_memory mem) {
-            _heap_allocator.local().deallocate(std::move(mem));
-        },
+      .used_memory = minimum,
+      .allocator = &_heap_allocator.local(),
     };
     memory_ret->finalizer = [](void* env) {
         auto* mem = static_cast<linear_memory*>(env);
-        mem->reclaimer(std::move(mem->underlying));
+        mem->allocator->deallocate(
+          std::move(mem->underlying), /*used_amount=*/mem->used_memory);
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         delete mem;
     };
@@ -1387,18 +1384,22 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
       // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
       [](void* env, size_t* byte_size, size_t* max_byte_size) {
           auto* mem = static_cast<linear_memory*>(env);
-          *byte_size = mem->underlying.size;
+          *byte_size = mem->used_memory;
           *max_byte_size = mem->underlying.size;
           return mem->underlying.data.get();
       };
     memory_ret->grow_memory =
       [](void* env, size_t new_size) -> wasmtime_error_t* {
         auto* mem = static_cast<linear_memory*>(env);
-        if (new_size == mem->underlying.size) {
+        if (new_size <= mem->underlying.size) {
+            mem->used_memory = std::max(new_size, mem->used_memory);
             return nullptr;
         }
-        return wasmtime_error_new(
-          "linear memories are fixed size and ungrowable");
+        auto msg = ss::format(
+          "unable to grow memory past {} to {}",
+          human::bytes(double(mem->underlying.size)),
+          human::bytes(double(new_size)));
+        return wasmtime_error_new(msg.c_str());
     };
     return nullptr;
 }
