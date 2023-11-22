@@ -345,12 +345,16 @@ public:
         auto owner = shard_owner(ntp);
         find_coordinator_response resp;
         if (!owner || shard_id != *owner) {
-            resp.ec = cluster::errc::not_leader;
+            for (auto k : req.keys) {
+                resp.errors[k] = cluster::errc::not_leader;
+            }
             co_return resp;
         }
         if (_errors_to_inject > 0) {
             --_errors_to_inject;
-            resp.ec = cluster::errc::timeout;
+            for (auto k : req.keys) {
+                resp.errors[k] = cluster::errc::timeout;
+            }
             co_return resp;
         }
         for (auto k : req.keys) {
@@ -393,19 +397,28 @@ public:
         offset_fetch_response resp;
         auto owner = shard_owner(ntp);
         if (!owner || shard_id != *owner) {
-            resp.errc = cluster::errc::not_leader;
+            for (auto key : req.keys) {
+                resp.errors[key] = cluster::errc::not_leader;
+            }
             co_return resp;
         }
         if (_errors_to_inject > 0) {
             --_errors_to_inject;
-            resp.errc = cluster::errc::timeout;
+            for (auto key : req.keys) {
+                resp.errors[key] = cluster::errc::timeout;
+            }
             co_return resp;
         }
-        if (ntp.tp.partition != _offset_tracker->compute_coordinator(req.key)) {
-            resp.errc = cluster::errc::not_leader;
-            co_return resp;
+        for (auto key : req.keys) {
+            if (ntp.tp.partition != _offset_tracker->compute_coordinator(key)) {
+                resp.errors[key] = cluster::errc::not_leader;
+                continue;
+            }
+            auto value = _offset_tracker->get(key);
+            if (value) {
+                resp.results[key] = *value;
+            }
         }
-        resp.result = _offset_tracker->get(req.key);
         co_return resp;
     }
 

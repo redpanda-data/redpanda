@@ -572,10 +572,12 @@ client::find_coordinator_once(model::transform_offsets_key key) {
         : do_remote_find_coordinator(*leader, std::move(request)));
     vlog(
       log.trace, "find_coordinator_response(node={}): {}", *leader, response);
-    if (response.ec == cluster::errc::success) {
-        co_return response.coordinators.at(key);
+    auto it = response.coordinators.find(key);
+    if (it != response.coordinators.end()) {
+        co_return it->second;
+    } else {
+        co_return response.errors.at(key);
     }
-    co_return response.ec;
 }
 
 ss::future<find_coordinator_response>
@@ -585,23 +587,25 @@ client::do_local_find_coordinator(find_coordinator_request request) {
 
 ss::future<find_coordinator_response> client::do_remote_find_coordinator(
   model::node_id node, find_coordinator_request request) {
-    auto response = co_await _connections->local()
-                      .with_node_client<impl::transform_rpc_client_protocol>(
-                        _self,
-                        ss::this_shard_id(),
-                        node,
-                        timeout,
-                        [req = std::move(request)](
-                          impl::transform_rpc_client_protocol proto) mutable {
-                            return proto.find_coordinator(
-                              std::move(req),
-                              ::rpc::client_opts(
-                                model::timeout_clock::now() + timeout));
-                        })
-                      .then(&::rpc::get_ctx_data<find_coordinator_response>);
+    auto response
+      = co_await _connections->local()
+          .with_node_client<impl::transform_rpc_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            node,
+            timeout,
+            [req = request](impl::transform_rpc_client_protocol proto) mutable {
+                return proto.find_coordinator(
+                  std::move(req),
+                  ::rpc::client_opts(model::timeout_clock::now() + timeout));
+            })
+          .then(&::rpc::get_ctx_data<find_coordinator_response>);
     if (!response) {
         find_coordinator_response find_response;
-        find_response.ec = map_errc(response.error());
+        cluster::errc ec = map_errc(response.error());
+        for (const auto& key : request.keys) {
+            find_response.errors[key] = ec;
+        }
         co_return find_response;
     }
     co_return response.value();
@@ -695,15 +699,22 @@ client::offset_fetch_once(model::transform_offsets_key key) {
                        : do_remote_offset_fetch(*leader, request));
     vlog(log.trace, "offset_fetch_once_response(node={}): {}", *leader, resp);
 
-    if (resp.errc == cluster::errc::success) {
-        co_return resp.result;
+    {
+        auto it = resp.errors.find(key);
+        if (it != resp.errors.end()) {
+            co_return it->second;
+        }
     }
-    co_return resp.errc;
+    auto it = resp.results.find(key);
+    if (it == resp.results.end()) {
+        co_return std::nullopt;
+    }
+    co_return it->second;
 }
 
 ss::future<offset_fetch_response>
 client::do_local_offset_fetch(offset_fetch_request request) {
-    return _local_service->local().offset_fetch(request);
+    return _local_service->local().offset_fetch(std::move(request));
 }
 
 ss::future<offset_fetch_response> client::do_remote_offset_fetch(
@@ -723,7 +734,10 @@ ss::future<offset_fetch_response> client::do_remote_offset_fetch(
           .then(&::rpc::get_ctx_data<offset_fetch_response>);
     if (!response) {
         offset_fetch_response fetch_response;
-        fetch_response.errc = map_errc(response.error());
+        cluster::errc ec = map_errc(response.error());
+        for (const auto& key : request.keys) {
+            fetch_response.errors[key] = ec;
+        }
         co_return fetch_response;
     }
     co_return response.value();

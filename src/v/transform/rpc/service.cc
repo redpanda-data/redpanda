@@ -291,7 +291,9 @@ local_service::find_coordinator(find_coordinator_request request) {
     auto shard = _partition_manager->shard_owner(ntp);
     if (!shard) {
         find_coordinator_response response;
-        response.ec = cluster::errc::not_leader;
+        for (const auto& key : request.keys) {
+            response.errors[key] = cluster::errc::not_leader;
+        }
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(
@@ -320,10 +322,12 @@ local_service::offset_fetch(offset_fetch_request request) {
       model::kafka_internal_namespace,
       model::transform_offsets_topic,
       request.coordinator);
-    offset_fetch_response response{};
     auto shard = _partition_manager->shard_owner(ntp);
     if (!shard) {
-        response.errc = cluster::errc::not_leader;
+        offset_fetch_response response;
+        for (const auto& key : request.keys) {
+            response.errors[key] = cluster::errc::not_leader;
+        }
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(

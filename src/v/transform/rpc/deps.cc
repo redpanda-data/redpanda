@@ -141,24 +141,26 @@ private:
       find_coordinator_request request) {
         find_coordinator_response response;
         if (!partition) {
-            response.ec = cluster::errc::not_leader;
+            for (const auto& key : request.keys) {
+                response.errors[key] = cluster::errc::not_leader;
+            }
             co_return response;
         }
         auto stm = partition->transform_offsets_stm();
         if (partition->ntp().tp.partition != coordinator_partition) {
-            response.ec = cluster::errc::not_leader;
+            for (const auto& key : request.keys) {
+                response.errors[key] = cluster::errc::not_leader;
+            }
             co_return response;
         }
-        for (auto& key : request.keys) {
-            auto coordinator = co_await stm->coordinator(key);
-            if (!coordinator) {
-                response.ec = coordinator.error();
-                response.coordinators.clear();
-                co_return response;
+        for (const auto& key : request.keys) {
+            auto result = co_await stm->coordinator(key);
+            if (result.has_value()) {
+                response.coordinators[key] = result.value();
+            } else {
+                response.errors[key] = result.error();
             }
-            response.coordinators[key] = coordinator.value();
         }
-        response.ec = cluster::errc::success;
         co_return response;
     }
 
@@ -184,17 +186,23 @@ private:
       offset_fetch_request request) {
         offset_fetch_response response{};
         if (!partition) {
-            response.errc = cluster::errc::not_leader;
+            for (const auto& key : request.keys) {
+                response.errors[key] = cluster::errc::not_leader;
+            }
             co_return response;
         }
         auto stm = partition->transform_offsets_stm();
-        auto result = co_await stm->get(request.key);
-        if (!result) {
-            response.errc = result.error();
-            co_return response;
+        for (const auto& key : request.keys) {
+            auto result = co_await stm->get(key);
+            if (result.has_error()) {
+                response.errors[key] = result.error();
+            } else {
+                auto value = result.value();
+                if (value.has_value()) {
+                    response.results[key] = value.value();
+                }
+            }
         }
-        response.errc = cluster::errc::success;
-        response.result = result.value();
         co_return response;
     }
 
