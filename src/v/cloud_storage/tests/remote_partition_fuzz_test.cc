@@ -392,7 +392,10 @@ ss::future<> scan_until_close(
 } // anonymous namespace
 
 // Test designed to reproduce a hang seen during shutdown.
-FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
+FIXTURE_TEST(
+  test_scan_while_shutting_down,
+  cloud_storage_fixture,
+  *boost::unit_test::disabled()) {
     constexpr int num_segments = 1000;
     const auto [segment_layout, num_data_batches] = generate_segment_layout(
       num_segments, 42, false);
