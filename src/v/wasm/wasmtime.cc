@@ -1149,6 +1149,10 @@ wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema_registry> sr)
     // exceptions to grab a lock in libgcc and deadlock the Redpanda
     // process.
     wasmtime_config_native_unwind_info_set(config, false);
+    // Copy on write memory is only used when memory is `mmap`ed and cannot be
+    // used with custom allocators, so let's just disable the generation of the
+    // COW images since we don't use them.
+    wasmtime_config_memory_init_cow_set(config, false);
 
     wasmtime_memory_creator_t memory_creator = {
       .env = this,
