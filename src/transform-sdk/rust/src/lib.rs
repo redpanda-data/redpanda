@@ -47,6 +47,7 @@ extern crate quickcheck;
 extern crate rand;
 
 /// An event generated after a write event within the broker.
+#[derive(Debug)]
 pub struct WriteEvent<'a> {
     /// The record for which the event was generated for.
     pub record: BorrowedRecord<'a>,

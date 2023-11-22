@@ -43,6 +43,7 @@ fn read_kv(payload: &[u8]) -> Result<Decoded<KeyValuePair>, VarintDecodeError> {
 }
 
 /// A zero-copy record header.
+#[derive(Debug)]
 pub struct BorrowedHeader<'a> {
     key: &'a [u8],
     value: Option<&'a [u8]>,
@@ -83,6 +84,7 @@ impl<'a> BorrowedHeader<'a> {
 ///
 /// BorrowedRecords are handed to [`on_record_written`] event handlers as the record that Redpanda
 /// wrote.
+#[derive(Debug)]
 pub struct BorrowedRecord<'a> {
     key: Option<&'a [u8]>,
     value: Option<&'a [u8]>,
@@ -171,6 +173,7 @@ impl<'a> BorrowedRecord<'a> {
 ///
 /// Headers are opaque to the broker and are purely a mechanism for the producer and consumers to
 /// pass information.
+#[derive(Debug)]
 pub struct RecordHeader {
     key: Vec<u8>,
     value: Option<Vec<u8>>,
@@ -206,6 +209,7 @@ impl RecordHeader {
 /// An record in Redpanda.
 ///
 /// Records are generated as the result of any transforms that act upon a [`BorrowedRecord`].
+#[derive(Debug)]
 pub struct Record {
     key: Option<Vec<u8>>,
     value: Option<Vec<u8>>,
