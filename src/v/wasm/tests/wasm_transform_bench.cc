@@ -20,8 +20,13 @@
 #include "wasm/transform_probe.h"
 #include "wasm/wasmtime.h"
 
+#include <seastar/core/align.hh>
+#include <seastar/core/aligned_buffer.hh>
 #include <seastar/testing/perf_tests.hh>
 #include <seastar/util/file.hh>
+
+#include <cstdlib>
+#include <unistd.h>
 
 template<size_t BatchSize, size_t RecordSize>
 class WasmBenchTest {
@@ -111,3 +116,22 @@ private:
 WASM_IDENTITY_PERF_TEST(1, 1_KiB);
 WASM_IDENTITY_PERF_TEST(10, 1_KiB);
 WASM_IDENTITY_PERF_TEST(10, 512);
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define MEMSET_PERF_TEST(buf_size)                                             \
+    PERF_TEST(Memset, Speed_##buf_size) {                                      \
+        constexpr size_t size = buf_size;                                      \
+        size_t pgsz = ::getpagesize();                                         \
+        auto mem = ss::allocate_aligned_buffer<uint8_t>(                       \
+          ss::align_up(size, pgsz), pgsz);                                     \
+        std::memset(mem.get(), 0, size);                                       \
+        perf_tests::do_not_optimize(mem);                                      \
+    }
+
+MEMSET_PERF_TEST(2_MiB);
+MEMSET_PERF_TEST(10_MiB);
+MEMSET_PERF_TEST(20_MiB);
+MEMSET_PERF_TEST(30_MiB);
+MEMSET_PERF_TEST(50_MiB);
+MEMSET_PERF_TEST(80_MiB);
+MEMSET_PERF_TEST(100_MiB);
