@@ -96,9 +96,9 @@ This initializes a transform project in the foobar directory.
 				}
 			}
 			if lang == "" {
-				langVal, err := out.Pick(project.AllWasmLangs, "select a language:")
+				idx, err := out.PickIndex(project.AllWasmLangsWithDescriptions, "select a language:")
 				out.MaybeDie(err, "unable to determine transform language: %v", err)
-				lang = project.WasmLang(langVal)
+				lang = project.WasmLang(project.AllWasmLangs[idx])
 			}
 			p := transformProject{Name: name, Lang: lang, Path: path}
 
@@ -187,7 +187,10 @@ type genFile struct {
 }
 
 func generateManifest(p transformProject) (map[string][]genFile, error) {
-	if p.Lang == project.WasmLangTinygo {
+	switch p.Lang {
+	case project.WasmLangTinygoNoGoroutines:
+		fallthrough
+	case project.WasmLangTinygoWithGoroutines:
 		rpConfig, err := project.MarshalConfig(project.Config{Name: p.Name, Language: p.Lang})
 		if err != nil {
 			return nil, err
@@ -224,7 +227,10 @@ func executeGenerate(fs afero.Fs, p transformProject) error {
 }
 
 func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
-	if p.Lang == project.WasmLangTinygo {
+	switch p.Lang {
+	case project.WasmLangTinygoNoGoroutines:
+		fallthrough
+	case project.WasmLangTinygoWithGoroutines:
 		g, err := exec.LookPath("go")
 		if err != nil {
 			return fmt.Errorf("go is not available on $PATH, please download and install it: https://go.dev/doc/install")

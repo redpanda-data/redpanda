@@ -20,10 +20,22 @@ import (
 type WasmLang string
 
 const (
-	WasmLangTinygo WasmLang = "tinygo"
+	WasmLangTinygoWithGoroutines WasmLang = "tinygo-with-goroutines"
+	WasmLangTinygoNoGoroutines   WasmLang = "tinygo-no-goroutines"
 )
 
-var AllWasmLangs = []string{"tinygo"}
+var AllWasmLangs = []string{
+	string(WasmLangTinygoNoGoroutines),
+	string(WasmLangTinygoWithGoroutines),
+}
+
+// AllWasmLangsWithDescriptions is AllWasmLangs but with extended descriptions.
+//
+// The order here must match AllWasmLangs.
+var AllWasmLangsWithDescriptions = []string{
+	"Tinygo (no goroutines) - higher throughput",
+	"Tinygo (with goroutines)",
+}
 
 func (l *WasmLang) Set(str string) error {
 	lower := strings.ToLower(str)

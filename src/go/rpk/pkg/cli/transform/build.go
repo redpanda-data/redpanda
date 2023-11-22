@@ -30,24 +30,34 @@ It installs the appropriate build plugin, then builds a .wasm file.
 
 When invoked, it passes extra arguments directly to the underlying toolchain.
 
-For example to add debug symbols and use the asyncify scheduler for tinygo:
+For example to add debug symbols for tinygo:
 
-  rpk transform build -- -scheduler=asyncify -no-debug=false
+  rpk transform build -- -no-debug=false
 
 LANGUAGES
 
-Tinygo - By default tinygo uses release builds (-opt=2) and goroutines are 
-disabled, for maximum performance. To enable goroutines, pass 
--scheduler=asyncify to the underlying build command.
+Tinygo - By default tinygo are release builds (-opt=2) for maximum performance.
 `,
 		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, extraArgs []string) {
 			cfg, err := project.LoadCfg(fs)
 			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", project.ConfigFileName)
 			switch cfg.Language {
-			case project.WasmLangTinygo:
+			case project.WasmLangTinygoWithGoroutines:
+				fallthrough
+			case project.WasmLangTinygoNoGoroutines:
 				tinygo, err := buildpack.Tinygo.Install(cmd.Context(), fs)
 				out.MaybeDieErr(err)
+				var scheduler string
+				// The default scheduler is asyncify, which uses Binaryen’s
+				// Asyncify Pass to enable goroutine and channel support.
+				// However, that makes code the code 10x slower in our
+				// benchmarks, so allow disabling it.
+				if cfg.Language == project.WasmLangTinygoWithGoroutines {
+					scheduler = "asyncify"
+				} else {
+					scheduler = "none"
+				}
 				// See https://tinygo.org/docs/guides/optimizing-binaries/
 				args := []string{
 					"build",
@@ -60,19 +70,15 @@ disabled, for maximum performance. To enable goroutines, pass
 					// Print out an error before aborting, this
 					// greatly aids debugging.
 					"-panic", "print",
-					// The default scheduler is asyncify, which uses
-					// Binaryen’s Asyncify Pass to enable goroutine
-					// and channel support. However, that makes code
-					// the code 10x slower in our benchmarks, so
-					// default to that off.
-					"-scheduler", "none",
+					// Use the specified scheduler.
+					"-scheduler", scheduler,
 					// Debug symbols can make the size of binaries to be
 					// an order of magnitude larger, so we remove them.
 					"-no-debug",
 				}
 				// Tinygo's flags can be overridden, so passing flags through
 				// allows the user to customize the defaults (i.e. turn on debug
-				// symbols or the scheduler).
+				// symbols).
 				args = append(args, extraArgs...)
 				// Output using the project name, deploy expects this format.
 				args = append(args, "-o", fmt.Sprintf("%s.wasm", cfg.Name))
