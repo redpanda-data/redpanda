@@ -42,8 +42,8 @@ class RollingRestarter:
                 node_id = self.redpanda.node_id(node)
                 broker_resp = admin.get_broker(node_id, node=node)
                 maintenance_status = broker_resp["maintenance_status"]
-                return maintenance_status["draining"] and maintenance_status[
-                    "finished"]
+                return maintenance_status[
+                    "draining"] and maintenance_status.get("finished", False)
             except requests.exceptions.HTTPError:
                 return False
 
