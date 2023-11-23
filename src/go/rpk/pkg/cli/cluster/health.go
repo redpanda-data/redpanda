@@ -97,6 +97,9 @@ func printHealthOverview(hov *adminapi.ClusterHealthOverview) {
 	tw.Print("Controller ID:", hov.ControllerID)
 	tw.Print("All nodes:", hov.AllNodes)
 	tw.Print("Nodes down:", hov.NodesDown)
+	if hov.NodesInRecoveryMode != nil {
+		tw.Print("Nodes in recovery mode:", hov.NodesInRecoveryMode)
+	}
 	tw.Print(lp, hov.LeaderlessPartitions)
 	tw.Print(urp, hov.UnderReplicatedPartitions)
 }
