@@ -523,7 +523,7 @@ controller_api::get_global_reconciliation_state(
             // not longer updating
             continue;
         }
-        auto all_replicas = union_replica_sets(
+        auto all_replicas = union_vectors(
           it->second.get_previous_replicas(), it->second.get_target_replicas());
         for (const auto& r : all_replicas) {
             grouped_ntps[r.node_id].push_back(ntp);

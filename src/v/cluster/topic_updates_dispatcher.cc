@@ -561,7 +561,7 @@ void topic_updates_dispatcher::deallocate_topic(
         auto it = in_progress.find(p_as.id);
         auto to_delete = it == in_progress.end()
                            ? p_as.replicas
-                           : union_replica_sets(it->second, p_as.replicas);
+                           : union_vectors(it->second, p_as.replicas);
         _partition_allocator.local().remove_allocations(to_delete, domain);
         _partition_allocator.local().remove_final_counts(p_as.replicas, domain);
         if (unlikely(clusterlog.is_enabled(ss::log_level::trace))) {

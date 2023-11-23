@@ -211,23 +211,17 @@ subtract(const std::vector<T>& lhs, const std::vector<T>& rhs) {
     return ret;
 }
 
-inline std::vector<model::broker_shard> union_replica_sets(
-  const std::vector<model::broker_shard>& lhs,
-  const std::vector<model::broker_shard>& rhs) {
-    std::vector<model::broker_shard> ret;
-    // Inefficient but constant time for small replica sets.
+template<class T>
+inline std::vector<T>
+union_vectors(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+    std::vector<T> ret;
+    // Inefficient but constant time for small vectors.
     std::copy_if(
-      lhs.begin(),
-      lhs.end(),
-      std::back_inserter(ret),
-      [&ret](const model::broker_shard& bs) {
+      lhs.begin(), lhs.end(), std::back_inserter(ret), [&ret](const T& bs) {
           return std::find(ret.begin(), ret.end(), bs) == ret.end();
       });
     std::copy_if(
-      rhs.begin(),
-      rhs.end(),
-      std::back_inserter(ret),
-      [&ret](const model::broker_shard& bs) {
+      rhs.begin(), rhs.end(), std::back_inserter(ret), [&ret](const T& bs) {
           return std::find(ret.begin(), ret.end(), bs) == ret.end();
       });
     return ret;
