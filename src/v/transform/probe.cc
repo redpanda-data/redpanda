@@ -53,7 +53,7 @@ void probe::setup_metrics(ss::sstring transform_name) {
       sm::make_counter(
         "failures",
         [this] { return _failures; },
-        sm::description("The number of processor failures"),
+        sm::description("The number of transform failures"),
         labels)
         .aggregate({sm::shard_label}));
 
@@ -67,13 +67,12 @@ void probe::setup_metrics(ss::sstring transform_name) {
           sm::make_gauge(
             "state",
             [this, s] { return _processor_state[s]; },
-            sm::description(
-              "The number of transform processors in a specific state"),
+            sm::description("The number of transforms in a specific state"),
             state_labels)
             .aggregate({sm::shard_label}));
     }
     _public_metrics.add_group(
-      prometheus_sanitize::metrics_name("transform_processor"), metric_defs);
+      prometheus_sanitize::metrics_name("transform"), metric_defs);
 }
 void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
 void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
