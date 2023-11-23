@@ -391,11 +391,12 @@ ss::future<> controller_backend::start() {
 ss::future<> controller_backend::bootstrap_controller_backend() {
     if (!_topics.local().has_pending_changes()) {
         vlog(clusterlog.trace, "no pending changes, skipping bootstrap");
-        return ss::now();
+        co_return;
     }
 
-    // TODO: bootstrap claims after fetch_deltas
-    return fetch_deltas().then([this] { return reconcile_topics(); });
+    co_await fetch_deltas();
+    co_await bootstrap_partition_claims();
+    co_await reconcile_topics();
 }
 
 namespace {
@@ -596,6 +597,69 @@ ss::future<> controller_backend::fetch_deltas() {
                 }
             });
       });
+}
+
+ss::future<> controller_backend::bootstrap_partition_claims() {
+    for (const auto& [ntp, rs] : _states) {
+        co_await ss::maybe_yield();
+
+        if (rs.removed) {
+            continue;
+        }
+
+        auto topic_it = _topics.local().topics_map().find(
+          model::topic_namespace_view{ntp});
+        if (topic_it == _topics.local().topics_map().end()) {
+            continue;
+        }
+        auto p_it = topic_it->second.partitions.find(ntp.tp.partition);
+        if (p_it == topic_it->second.partitions.end()) {
+            continue;
+        }
+        auto as_it = topic_it->second.get_assignments().find(ntp.tp.partition);
+        vassert(
+          as_it != topic_it->second.get_assignments().end(),
+          "[{}] expected assignment",
+          ntp);
+
+        auto update_it = _topics.local().updates_in_progress().find(ntp);
+
+        const auto& orig_replicas
+          = update_it != _topics.local().updates_in_progress().end()
+              ? update_it->second.get_previous_replicas()
+              : as_it->replicas;
+
+        if (has_local_replicas(_self, orig_replicas)) {
+            // We add an initial claim for the partition on the shard from the
+            // original replica set (even in the case of cross-shard move). The
+            // reason for this is that if there is an ongoing cross-shard move,
+            // we can't be sure if it was done before the previous shutdown or
+            // not, so during reconciliation we'll first look for kvstore state
+            // on the original shard, and, if there is none (meaning that the
+            // update was finished previously), use the state on the destination
+            // shard.
+
+            auto replica_it = p_it->second.replicas_revisions.find(_self);
+            vassert(
+              replica_it != p_it->second.replicas_revisions.end(),
+              "[{}] expected to find {} in revisions map: {}",
+              ntp,
+              _self,
+              p_it->second.replicas_revisions);
+
+            vlog(
+              clusterlog.info,
+              "expecting partition {} with log revision {} on this shard",
+              ntp,
+              replica_it->second);
+
+            _ntp_claims[ntp] = partition_claim{
+              .log_revision = replica_it->second,
+              .state = partition_claim_state::released,
+              .hosting = true,
+            };
+        }
+    }
 }
 
 ss::future<result<ss::stop_iteration>>

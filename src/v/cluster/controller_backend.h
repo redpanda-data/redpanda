@@ -295,6 +295,7 @@ private:
 
     ss::future<> fetch_deltas();
 
+    ss::future<> bootstrap_partition_claims();
     ss::future<> reconcile_topics();
     ss::future<> reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
     ss::future<result<ss::stop_iteration>>
