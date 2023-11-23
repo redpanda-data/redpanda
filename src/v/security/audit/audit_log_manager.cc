@@ -12,6 +12,7 @@
 
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
+#include "config/configuration.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"
 #include "kafka/protocol/produce.h"
@@ -355,11 +356,17 @@ ss::future<> audit_client::do_inform(model::node_id id) {
 ss::future<> audit_client::create_internal_topic() {
     constexpr std::string_view retain_forever = "-1";
     constexpr std::string_view seven_days = "604800000";
+    int16_t replication_factor
+      = config::shard_local_cfg().audit_log_replication_factor().value_or(
+        _controller->internal_topic_replication());
+    vlog(
+      adtlog.debug,
+      "Attempting to create internal topic (replication={})",
+      replication_factor);
     kafka::creatable_topic audit_topic{
       .name = model::kafka_audit_logging_topic,
       .num_partitions = config::shard_local_cfg().audit_log_num_partitions(),
-      .replication_factor
-      = config::shard_local_cfg().audit_log_replication_factor(),
+      .replication_factor = replication_factor,
       .assignments = {},
       .configs = {
         kafka::createable_topic_config{

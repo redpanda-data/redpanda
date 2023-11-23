@@ -1382,9 +1382,10 @@ configuration::configuration()
       "audit_log_replication_factor",
       "Replication factor of the internal audit log topic. Attempt to create "
       "topic is only performed if it doesn't already exist, disable and "
-      "re-enable auditing for changes to take affect",
+      "re-enable auditing for changes to take affect.  If unset, defaults to "
+      "`default_topic_replication`",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      3)
+      std::nullopt)
   , audit_client_max_buffer_size(
       *this,
       "audit_client_max_buffer_size",

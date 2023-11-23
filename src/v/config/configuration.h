@@ -269,7 +269,7 @@ struct configuration final : public config_store {
     // Audit logging
     property<bool> audit_enabled;
     property<int32_t> audit_log_num_partitions;
-    property<int16_t> audit_log_replication_factor;
+    property<std::optional<int16_t>> audit_log_replication_factor;
     property<size_t> audit_client_max_buffer_size;
     property<std::chrono::milliseconds> audit_queue_drain_interval_ms;
     property<size_t> audit_max_queue_elements_per_shard;
