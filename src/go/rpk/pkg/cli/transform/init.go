@@ -66,13 +66,13 @@ func newInitializeCommand(fs afero.Fs) *cobra.Command {
 		Short: "Initialize a transform",
 		Long: `Initialize a transform.
 
-Creates a new transform using a template in the current directory.
+Create a new transform using a template in the current directory.
 
-A new directory can be created by specifying it in the command, like:
+A new directory to create by specifying it in the command:
 
   rpk transform init foobar
 
-Will initialize a transform project in the foobar directory.
+This initializes a transform project in the foobar directory.
 		`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

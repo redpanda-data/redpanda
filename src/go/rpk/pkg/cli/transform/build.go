@@ -26,19 +26,19 @@ func newBuildCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Co
 		Long: `Build a transform.
 
 This command looks in the current working directory for a transform.yaml file.
+It installs the appropriate build plugin, then builds a .wasm file.
 
-Then depending on the language, will install the appropriate build plugin then 
-build a .wasm file.
+When invoked, it passes extra arguments directly to the underlying toolchain.
 
-Extra arguments are passed directly to the underlying toolchain when it invoked.
 For example to add debug symbols and use the asyncify scheduler for tinygo:
 
   rpk transform build -- -scheduler=asyncify -no-debug=false
 
-Language specific details:
+LANGUAGES
 
-Tinygo - By default tinygo are release builds (-opt=2) and goroutines are disabled,
-for maximum performance.
+Tinygo - By default tinygo uses release builds (-opt=2) and goroutines are 
+disabled, for maximum performance. To enable goroutines, pass 
+-scheduler=asyncify to the underlying build command.
 `,
 		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, extraArgs []string) {

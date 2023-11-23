@@ -34,21 +34,25 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Deploy a transform",
 		Long: `Deploy a transform.
 
-When run in the same directory as a transform.yaml it will read the configuration file,
-then look for a .wasm file with the same name as your project. If the input and output
-topics are specified in the configuration file, those will be used, otherwise the topics
-can be specified on the command line using the --input-topic and --output-topic flags.
+When run in the same directory as a transform.yaml, this reads the configuration
+file, then looks for a .wasm file with the same name as your project. If the
+input and output topics are specified in the configuration file, those are used.
+Otherwise, the topics can be specified on the command line using the 
+--input-topic and --output-topic flags.
 
-Wasm files can also be deployed directly without a transform.yaml file by specifying it
-like so:
+To deploy Wasm files directly without a transform.yaml file:
 
-  rpk transform deploy transform.wasm --name myTransform
+  rpk transform deploy transform.wasm --name myTransform \
+    --input-topic my-topic-1 \
+    --output-topic my-topic-2
 
 Environment variables can be specified for the transform using the --var flag, these
 are separated by an equals for example: --var=KEY=VALUE
 
-The --var flag can be repeated to specify multiple variables.
-		`,
+The --var flag can be repeated to specify multiple variables like so:
+
+  rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ
+`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
