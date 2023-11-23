@@ -320,6 +320,8 @@ partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
 
 ss::future<>
 partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
+    auto guard = _gate.hold();
+
     auto partition = get(ntp);
 
     if (!partition) {
@@ -353,6 +355,8 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
 }
 
 ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
+    auto guard = _gate.hold();
+
     auto partition = get(ntp);
     if (!partition) {
         return ss::make_exception_future<>(std::invalid_argument(fmt::format(
