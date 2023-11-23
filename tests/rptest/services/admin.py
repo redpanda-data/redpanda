@@ -1174,3 +1174,6 @@ class Admin:
         else:
             req = f"cluster/partitions/{ns}/{topic}"
         return self._request("POST", req, json={"disabled": value})
+
+    def reset_crash_tracking(self, node):
+        return self._request("PUT", "reset_crash_tracking", node=node)

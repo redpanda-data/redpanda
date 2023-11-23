@@ -92,3 +92,19 @@ class CrashLoopChecksTest(RedpandaTest):
 
         # Fix the config and start, crash loop should be reset.
         self.redpanda.start_node(node=broker)
+
+    @cluster(num_nodes=1, log_allow_list=CRASH_LOOP_LOG)
+    def test_crash_loop_tracker_reset_via_recovery_mode(self):
+        broker = self.redpanda.nodes[0]
+        self.get_broker_to_crash_loop_state(broker)
+        cfg = {"recovery_mode_enabled": True}
+        self.redpanda.start_node(broker, override_cfg_params=cfg)
+
+        # reset crash tracking explicitly
+        admin = self.redpanda._admin
+        admin.reset_crash_tracking(node=broker)
+        assert self.redpanda.search_log_node(
+            broker, "Deleted crash loop tracker file")
+        # stop + restart without recovery mode.
+        self.redpanda.stop_node(broker)
+        self.redpanda.start_node(broker)

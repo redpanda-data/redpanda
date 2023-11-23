@@ -2734,6 +2734,19 @@ admin_server::stop_broker_maintenance_handler(
     co_return ss::json::json_void();
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::reset_crash_tracking(std::unique_ptr<ss::http::request>) {
+    auto file = config::node().crash_loop_tracker_path().string();
+    // we don't need to synchronize access to this file because it is only
+    // touched in the very beginning of bootup or very late in shutdown when
+    // everything is already cleaned up. This guarantees that there are no
+    // concurrent modifications to this file while this API is running.
+    co_await ss::remove_file(file);
+    co_await ss::sync_directory(config::node().data_directory().as_sstring());
+    vlog(adminlog.info, "Deleted crash loop tracker file: {}", file);
+    co_return ss::json::json_void();
+}
+
 void admin_server::register_broker_routes() {
     register_route<user>(
       ss::httpd::broker_json::get_cluster_view,
@@ -2846,6 +2859,11 @@ void admin_server::register_broker_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           return cancel_node_partition_moves(
             *req, cluster::partition_move_direction::all);
+      });
+    register_route<superuser>(
+      ss::httpd::broker_json::reset_crash_tracking,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return reset_crash_tracking(std::move(req));
       });
 }
 

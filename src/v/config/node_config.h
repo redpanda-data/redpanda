@@ -95,6 +95,11 @@ public:
         return data_directory().path / "syschecks";
     }
 
+    // This file tracks the metadata needed to detect crash loops
+    std::filesystem::path crash_loop_tracker_path() const {
+        return data_directory().path / "startup_log";
+    }
+
     /**
      * Return the configured cache path if set, otherwise a default
      * path within the data directory.
