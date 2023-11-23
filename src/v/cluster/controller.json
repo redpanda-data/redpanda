@@ -127,6 +127,11 @@
             "output_type": "transfer_leadership_reply"
         },
         {
+            "name": "highest_producer_id",
+            "input_type": "producer_id_lookup_request",
+            "output_type": "producer_id_lookup_reply"
+        },
+        {
             "name": "cloud_storage_usage",
             "input_type": "cloud_storage_usage_request",
             "output_type": "cloud_storage_usage_reply"

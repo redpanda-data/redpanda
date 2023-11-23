@@ -17,6 +17,7 @@
 #include "cluster/cloud_metadata/offsets_lookup.h"
 #include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/cloud_metadata/offsets_uploader.h"
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/node/local_monitor.h"
@@ -138,6 +139,9 @@ public:
     ss::sharded<cluster::cloud_metadata::offsets_uploader> offsets_uploader;
     ss::sharded<cluster::cloud_metadata::offsets_upload_router>
       offsets_upload_router;
+
+    ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>
+      producer_id_recovery_manager;
 
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
     ss::sharded<kafka::group_router> group_router;

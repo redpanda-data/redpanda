@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
@@ -37,6 +38,7 @@ namespace cloud_metadata {
 class cluster_recovery_backend;
 class uploader;
 class offsets_upload_requestor;
+class producer_id_recovery_manager;
 } // namespace cloud_metadata
 
 class cluster_discovery;
@@ -179,7 +181,8 @@ public:
     ss::future<> start(
       cluster_discovery&,
       ss::abort_source&,
-      ss::shared_ptr<cluster::cloud_metadata::offsets_upload_requestor>);
+      ss::shared_ptr<cluster::cloud_metadata::offsets_upload_requestor>,
+      ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>);
 
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();

@@ -53,6 +53,21 @@ struct id_allocator_stm_fixture : simple_raft_fixture {
         _started = true;
     }
 
+    // Allocates n IDs, ensuring that each one new ID is greater than the
+    // previous one, starting with 'cur_last_id'.
+    // Returns the last allocated ID.
+    int64_t allocate_n(int64_t cur_last_id, int n) {
+        for (int i = 0; i < n; i++) {
+            auto result = _stm->allocate_id(1s).get0();
+
+            BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
+            BOOST_REQUIRE_LT(cur_last_id, result.id);
+
+            cur_last_id = result.id;
+        }
+        return cur_last_id;
+    }
+
     ss::shared_ptr<cluster::id_allocator_stm> _stm;
     scoped_config test_local_cfg;
 };
@@ -62,15 +77,7 @@ FIXTURE_TEST(stm_monotonicity_test, id_allocator_stm_fixture) {
     wait_for_confirmed_leader();
 
     int64_t last_id = -1;
-
-    for (int i = 0; i < 5; i++) {
-        auto result = _stm->allocate_id(1s).get0();
-
-        BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
-        BOOST_REQUIRE_LT(last_id, result.id);
-
-        last_id = result.id;
-    }
+    allocate_n(last_id, 5);
 }
 
 FIXTURE_TEST(stm_restart_test, id_allocator_stm_fixture) {
@@ -79,24 +86,48 @@ FIXTURE_TEST(stm_restart_test, id_allocator_stm_fixture) {
 
     int64_t last_id = -1;
 
-    for (int i = 0; i < 5; i++) {
-        auto result = _stm->allocate_id(1s).get0();
-
-        BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
-        BOOST_REQUIRE_LT(last_id, result.id);
-
-        last_id = result.id;
-    }
+    last_id = allocate_n(last_id, 5);
     stop_all();
     create_stm_and_start_raft();
     wait_for_confirmed_leader();
 
-    for (int i = 0; i < 5; i++) {
-        auto result = _stm->allocate_id(1s).get0();
+    allocate_n(last_id, 5);
+}
 
-        BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
-        BOOST_REQUIRE_LT(last_id, result.id);
+FIXTURE_TEST(stm_reset_id_test, id_allocator_stm_fixture) {
+    create_stm_and_start_raft();
+    wait_for_confirmed_leader();
+    int64_t last_id = -1;
+    allocate_n(last_id, 5);
 
-        last_id = result.id;
-    }
+    // Reset to 100.
+    last_id = 100;
+    _stm->reset_next_id(last_id + 1, 1s).get();
+    last_id = allocate_n(last_id, 5);
+    BOOST_REQUIRE_EQUAL(last_id, 105);
+
+    // Even after restarting, the starting point should be where we left off.
+    stop_all();
+    create_stm_and_start_raft();
+    wait_for_confirmed_leader();
+
+    last_id = allocate_n(last_id, 5);
+    BOOST_REQUIRE_EQUAL(last_id, 110);
+}
+
+FIXTURE_TEST(stm_reset_batch_test, id_allocator_stm_fixture) {
+    create_stm_and_start_raft();
+    wait_for_confirmed_leader();
+    int64_t last_id = -1;
+    allocate_n(last_id, 5);
+
+    last_id = 100;
+    _stm->reset_next_id(last_id + 1, 1s).get();
+
+    // After a leadership change, the reset should still take effect. However,
+    // it should be offset by one batch.
+    _raft->step_down("test").get();
+    wait_for_confirmed_leader();
+    last_id = allocate_n(last_id, 1);
+    BOOST_REQUIRE_EQUAL(last_id, 102);
 }

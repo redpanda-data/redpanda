@@ -113,6 +113,63 @@ struct allocate_id_reply
     auto serde_fields() { return std::tie(id, ec); }
 };
 
+struct reset_id_allocator_request
+  : serde::envelope<
+      reset_id_allocator_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::timeout_clock::duration timeout;
+    int64_t producer_id;
+
+    reset_id_allocator_request() noexcept = default;
+
+    explicit reset_id_allocator_request(
+      model::timeout_clock::duration timeout, int64_t producer_id)
+      : timeout(timeout)
+      , producer_id(producer_id) {}
+
+    friend bool operator==(
+      const reset_id_allocator_request&, const reset_id_allocator_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const reset_id_allocator_request& req) {
+        fmt::print(
+          o,
+          "timeout: {}, producer_id: {}",
+          req.timeout.count(),
+          req.producer_id);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(timeout, producer_id); }
+};
+
+struct reset_id_allocator_reply
+  : serde::envelope<
+      reset_id_allocator_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    errc ec;
+
+    reset_id_allocator_reply() noexcept = default;
+
+    explicit reset_id_allocator_reply(errc ec)
+      : ec(ec) {}
+
+    friend bool
+    operator==(const reset_id_allocator_reply&, const reset_id_allocator_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const reset_id_allocator_reply& rep) {
+        fmt::print(o, "ec: {}", rep.ec);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
 enum class tx_errc {
     none = 0,
     leader_not_found,
@@ -3787,6 +3844,36 @@ struct cloud_storage_usage_reply
     auto serde_fields() {
         return std::tie(total_size_bytes, missing_partitions);
     }
+};
+
+struct producer_id_lookup_request
+  : serde::envelope<
+      producer_id_lookup_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    producer_id_lookup_request() noexcept = default;
+    auto serde_fields() { return std::tie(); }
+};
+
+struct producer_id_lookup_reply
+  : serde::envelope<
+      producer_id_lookup_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    cluster::errc ec{};
+    model::producer_id highest_producer_id{};
+
+    producer_id_lookup_reply() noexcept = default;
+    explicit producer_id_lookup_reply(cluster::errc e)
+      : ec(e) {}
+    explicit producer_id_lookup_reply(model::producer_id pid)
+      : highest_producer_id(pid) {}
+
+    auto serde_fields() { return std::tie(ec, highest_producer_id); }
 };
 
 struct partition_state_request

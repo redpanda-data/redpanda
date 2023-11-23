@@ -53,11 +53,42 @@ private:
     ss::sharded<partition_manager>& _partition_manager;
 };
 
-class allocate_id_router
-  : public leader_router<
-      allocate_id_request,
-      allocate_id_reply,
-      allocate_id_handler> {
+class reset_id_handler {
+public:
+    explicit reset_id_handler(
+      ss::smp_service_group ssg, ss::sharded<partition_manager>& pm)
+      : _ssg(ssg)
+      , _partition_manager(pm) {}
+
+    using proto_t = id_allocator_client_protocol;
+
+    static ss::sstring process_name() { return "id allocation"; }
+
+    static reset_id_allocator_reply error_resp(cluster::errc e) {
+        return reset_id_allocator_reply{e};
+    }
+
+    static ss::future<result<rpc::client_context<reset_id_allocator_reply>>>
+    dispatch(
+      id_allocator_client_protocol proto,
+      reset_id_allocator_request req,
+      model::timeout_clock::duration timeout);
+
+    ss::future<reset_id_allocator_reply>
+    process(ss::shard_id, reset_id_allocator_request req);
+
+private:
+    ss::smp_service_group _ssg;
+    ss::sharded<partition_manager>& _partition_manager;
+};
+
+using allocate_router
+  = leader_router<allocate_id_request, allocate_id_reply, allocate_id_handler>;
+using reset_router = leader_router<
+  reset_id_allocator_request,
+  reset_id_allocator_reply,
+  reset_id_handler>;
+class allocate_id_router : public allocate_router {
 public:
     allocate_id_router(
       ss::smp_service_group ssg,
@@ -71,6 +102,22 @@ public:
 
 private:
     allocate_id_handler _handler;
+};
+
+class reset_id_router : public reset_router {
+public:
+    reset_id_router(
+      ss::smp_service_group ssg,
+      ss::sharded<cluster::partition_manager>& partition_manager,
+      ss::sharded<cluster::shard_table>&,
+      ss::sharded<cluster::metadata_cache>&,
+      ss::sharded<rpc::connection_cache>&,
+      ss::sharded<partition_leaders_table>&,
+      const model::node_id);
+    ~reset_id_router() = default;
+
+private:
+    reset_id_handler _handler;
 };
 
 // id_allocator_frontend is an frontend of the id_allocator_stm,
@@ -101,9 +148,13 @@ public:
     ss::future<allocate_id_reply>
     allocate_id(model::timeout_clock::duration timeout);
 
+    ss::future<reset_id_allocator_reply>
+    reset_next_id(model::producer_id, model::timeout_clock::duration timeout);
+
     ss::future<> stop() { return _allocator_router.shutdown(); }
 
     allocate_id_router& allocator_router() { return _allocator_router; }
+    reset_id_router& id_reset_router() { return _id_reset_router; }
 
 private:
     ss::smp_service_group _ssg;
@@ -112,6 +163,7 @@ private:
     std::unique_ptr<cluster::controller>& _controller;
 
     allocate_id_router _allocator_router;
+    reset_id_router _id_reset_router;
 
     // Sets the underlying stm's next id to the given id, returning an error if
     // there was a problem (e.g. not leader, timed out, etc).
@@ -119,6 +171,7 @@ private:
       do_reset_next_id(int64_t, model::timeout_clock::duration);
 
     ss::future<bool> try_create_id_allocator_topic();
+    ss::future<bool> ensure_id_allocator_topic_exists();
 
     friend id_allocator;
 };

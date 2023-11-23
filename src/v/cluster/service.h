@@ -114,6 +114,9 @@ public:
     ss::future<transfer_leadership_reply> transfer_leadership(
       transfer_leadership_request&& r, rpc::streaming_context&) final;
 
+    ss::future<producer_id_lookup_reply> highest_producer_id(
+      producer_id_lookup_request&&, rpc::streaming_context&) final;
+
     ss::future<cloud_storage_usage_reply> cloud_storage_usage(
       cloud_storage_usage_request&& r, rpc::streaming_context&) final;
 

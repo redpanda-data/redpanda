@@ -12,6 +12,7 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/remote.h"
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cluster_recovery_manager.h"
 #include "cluster/cluster_recovery_reconciler.h"
 #include "cluster/cluster_recovery_table.h"
@@ -45,10 +46,12 @@ public:
       security::credential_store&,
       security::acl_store&,
       cluster::topic_table&,
+      cluster::controller_api&,
       cluster::feature_manager&,
       cluster::config_frontend&,
       cluster::security_frontend&,
       cluster::topics_frontend&,
+      ss::shared_ptr<producer_id_recovery_manager> producer_id_recovery,
       ss::sharded<cluster_recovery_table>&,
       consensus_ptr raft0);
 
@@ -62,6 +65,10 @@ public:
     ss::future<> recover_until_term_change();
 
 private:
+    // Syncs the leader in the given term, ensuring it is still leader.
+    // Returns false if not, or if no recovery is active.
+    ss::future<bool> sync_in_term(ss::abort_source& term_as, model::term_id);
+
     ss::future<cluster::errc> apply_controller_actions_in_term(
       model::term_id,
       cloud_metadata::controller_snapshot_reconciler::controller_actions);
@@ -99,12 +106,15 @@ private:
     security::credential_store& _creds;
     security::acl_store& _acls;
     cluster::topic_table& _topics;
+    cluster::controller_api& _controller_api;
 
     // Abstractions that drive replicated changes to controller state.
     cluster::feature_manager& _feature_manager;
     cluster::config_frontend& _config_frontend;
     cluster::security_frontend& _security_frontend;
     cluster::topics_frontend& _topics_frontend;
+
+    ss::shared_ptr<producer_id_recovery_manager> _producer_id_recovery;
 
     // State that backs the recoveries managed by this manager. Sharded so that
     // the status of the controller recovery is propagated across cores.

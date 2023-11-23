@@ -15,19 +15,23 @@
 #include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/manifest_downloads.h"
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cluster_recovery_reconciler.h"
 #include "cluster/cluster_recovery_table.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/config_frontend.h"
+#include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/feature_manager.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/security_frontend.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
+#include "model/metadata.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 
@@ -53,10 +57,12 @@ cluster_recovery_backend::cluster_recovery_backend(
   security::credential_store& creds,
   security::acl_store& acls,
   cluster::topic_table& topics,
+  cluster::controller_api& api,
   cluster::feature_manager& feature_manager,
   cluster::config_frontend& config_frontend,
   cluster::security_frontend& security_frontend,
   cluster::topics_frontend& topics_frontend,
+  ss::shared_ptr<producer_id_recovery_manager> producer_id_recovery,
   ss::sharded<cluster_recovery_table>& recovery_table,
   consensus_ptr raft0)
   : _recovery_manager(mgr)
@@ -68,10 +74,12 @@ cluster_recovery_backend::cluster_recovery_backend(
   , _creds(creds)
   , _acls(acls)
   , _topics(topics)
+  , _controller_api(api)
   , _feature_manager(feature_manager)
   , _config_frontend(config_frontend)
   , _security_frontend(security_frontend)
   , _topics_frontend(topics_frontend)
+  , _producer_id_recovery(std::move(producer_id_recovery))
   , _recovery_table(recovery_table)
   , _raft0(std::move(raft0)) {}
 
@@ -111,6 +119,13 @@ ss::future<> cluster_recovery_backend::stop_and_wait() {
     _as.request_abort();
     vlog(clusterlog.info, "Closing cluster recovery backend gate...");
     co_await _gate.close();
+}
+
+ss::future<bool> cluster_recovery_backend::sync_in_term(
+  ss::abort_source& term_as, model::term_id synced_term) {
+    const auto cur_term_opt = co_await _recovery_manager.sync_leader(term_as);
+    co_return _recovery_table.local().is_recovery_active()
+      && synced_term == cur_term_opt;
 }
 
 ss::future<cluster::errc>
@@ -248,7 +263,50 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
         break;
     }
     case recovery_stage::recovered_controller_snapshot:
-        break;
+        // Wait for leadership of all partitions.
+        auto synced_term = _raft0->term();
+        absl::btree_set<model::topic_namespace> topics_to_wait;
+        for (auto& t : _topics.all_topics()) {
+            topics_to_wait.emplace(std::move(t));
+        }
+        while (true) {
+            if (_raft0->term() != synced_term) {
+                co_return cluster::errc::not_leader;
+            }
+            if (topics_to_wait.empty()) {
+                break;
+            }
+            retry_chain_node leadership_retry(60s, 1s, &parent_retry);
+            auto permit = leadership_retry.retry();
+            if (!permit.is_allowed) {
+                co_return cluster::errc::timeout;
+            }
+            std::vector<model::topic_namespace> done;
+            done.reserve(topics_to_wait.size());
+            co_await ss::max_concurrent_for_each(
+              topics_to_wait,
+              10,
+              [this, &done, &permit](model::topic_namespace tp_ns) {
+                  return _controller_api
+                    .wait_for_topic(
+                      tp_ns, ss::lowres_clock::now() + permit.delay)
+                    .then([&done, tp_ns](std::error_code ec) {
+                        if (!ec) {
+                            done.emplace_back(std::move(tp_ns));
+                        } else {
+                            vlog(
+                              clusterlog.debug,
+                              "Failed to wait for {}: {}",
+                              tp_ns,
+                              ec);
+                            // Fall through to retry the wait.
+                        }
+                    });
+              });
+            for (const auto& tp_ns : done) {
+                topics_to_wait.erase(tp_ns);
+            }
+        }
     };
     co_return cluster::errc::success;
 }
@@ -368,12 +426,8 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
     ss::abort_source term_as;
     _term_as = term_as;
     auto reset_term_as = ss::defer([this] { _term_as.reset(); });
-    auto synced_term_opt = co_await _recovery_manager.sync_leader(term_as);
-    if (!synced_term_opt.has_value()) {
-        co_return;
-    }
-    auto synced_term = synced_term_opt.value();
-    if (!_recovery_table.local().is_recovery_active()) {
+    auto synced_term = _raft0->term();
+    if (!co_await sync_in_term(term_as, synced_term)) {
         co_return;
     }
     auto recovery_state
@@ -419,14 +473,27 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
             co_return;
         }
     }
-    synced_term_opt = co_await _recovery_manager.sync_leader(term_as);
-    if (
-      !synced_term_opt.has_value() || synced_term_opt.value() != synced_term) {
+    if (!co_await sync_in_term(term_as, synced_term)) {
         co_return;
     }
-    if (!_recovery_table.local().is_recovery_active()) {
-        co_return;
+
+    if (may_require_producer_id_recovery(recovery_state.stage)) {
+        auto err = co_await _producer_id_recovery->recover();
+        if (err != error_outcome::success) {
+            co_await _recovery_manager.replicate_update(
+              synced_term,
+              recovery_stage::failed,
+              ssx::sformat(
+                "Failed to apply action for producer_id recovery: {}", err));
+            co_return;
+        }
+        auto errc = co_await _recovery_manager.replicate_update(
+          synced_term, recovery_stage::recovered_tx_coordinator);
+        if (errc != cluster::errc::success) {
+            co_return;
+        }
     }
+
     // All done! Record success.
     co_await _recovery_manager.replicate_update(
       synced_term, recovery_stage::complete);

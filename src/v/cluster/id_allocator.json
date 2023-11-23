@@ -9,6 +9,11 @@
             "name": "allocate_id",
             "input_type": "allocate_id_request",
             "output_type": "allocate_id_reply"
+        },
+        {
+            "name": "reset_id_allocator",
+            "input_type": "reset_id_allocator_request",
+            "output_type": "reset_id_allocator_reply"
         }
     ]
 }
