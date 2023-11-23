@@ -31,6 +31,7 @@ from typing import Mapping, Optional, Tuple, Any
 import yaml
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
+from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
 from rptest.archival.s3_client import S3Client
 from rptest.archival.abs_client import ABSClient
@@ -363,6 +364,7 @@ class SISettings:
     GLOBAL_S3_ACCESS_KEY = "s3_access_key"
     GLOBAL_S3_SECRET_KEY = "s3_secret_key"
     GLOBAL_S3_REGION_KEY = "s3_region"
+    GLOBAL_GCP_PROJECT_ID_KEY = "gcp_project_id"
 
     GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
@@ -403,7 +405,9 @@ class SISettings:
                      int] = None,
                  fast_uploads=False,
                  retention_local_strict=True,
-                 cloud_storage_max_throughput_per_shard: Optional[int] = None):
+                 cloud_storage_max_throughput_per_shard: Optional[int] = None,
+                 cloud_storage_signature_version: str = "s3v4",
+                 before_call_headers: Optional[dict[str, Any]] = None):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -455,6 +459,8 @@ class SISettings:
         self.cloud_storage_spillover_manifest_max_segments = cloud_storage_spillover_manifest_max_segments
         self.retention_local_strict = retention_local_strict
         self.cloud_storage_max_throughput_per_shard = cloud_storage_max_throughput_per_shard
+        self.cloud_storage_signature_version = cloud_storage_signature_version
+        self.before_call_headers = before_call_headers
 
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
@@ -498,16 +504,27 @@ class SISettings:
             self.GLOBAL_S3_SECRET_KEY, None)
         cloud_storage_region = test_context.globals.get(
             self.GLOBAL_S3_REGION_KEY, None)
+        cloud_storage_gcp_project_id = test_context.globals.get(
+            self.GLOBAL_GCP_PROJECT_ID_KEY, None)
 
         # Enable S3 if AWS creds were given at globals
-        if cloud_storage_credentials_source == 'aws_instance_metadata':
+        if cloud_storage_credentials_source == 'aws_instance_metadata' or cloud_storage_credentials_source == 'gcp_instance_metadata':
             logger.info("Running on AWS S3, setting IAM roles")
             self.cloud_storage_credentials_source = cloud_storage_credentials_source
             self.cloud_storage_access_key = None
             self.cloud_storage_secret_key = None
             self.endpoint_url = None  # None so boto auto-gens the endpoint url
+            if test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
+                                        'aws') == 'gcp':
+                self.endpoint_url = 'https://storage.googleapis.com'
+                self.cloud_storage_signature_version = "unsigned"
+                self.before_call_headers = {
+                    "Authorization": f"Bearer {self.gcp_iam_token(logger)}",
+                    "x-goog-project-id": cloud_storage_gcp_project_id
+                }
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
+            self.cloud_storage_api_endpoint_port = 443
         elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
             logger.info("Running on AWS S3, setting credentials")
             self.cloud_storage_access_key = cloud_storage_access_key
@@ -528,6 +545,17 @@ class SISettings:
             return self._cloud_storage_bucket
         elif self.cloud_storage_type == CloudStorageType.ABS:
             return self._cloud_storage_azure_container
+
+    def gcp_iam_token(self, logger):
+        logger.info('Getting gcp iam token')
+        s = requests.Session()
+        s.mount('http://169.254.169.254', HTTPAdapter(max_retries=5))
+        res = s.request(
+            "GET",
+            "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token",
+            headers={"Metadata-Flavor": "Google"})
+        res.raise_for_status()
+        return res.json()["access_token"]
 
     # Call this to update the extra_rp_conf
     def update_rp_conf(self, conf) -> dict[str, Any]:
@@ -2421,7 +2449,9 @@ class RedpandaService(RedpandaServiceBase):
                 secret_key=self._si_settings.cloud_storage_secret_key,
                 endpoint=self._si_settings.endpoint_url,
                 logger=self.logger,
-            )
+                signature_version=self._si_settings.
+                cloud_storage_signature_version,
+                before_call_headers=self._si_settings.before_call_headers)
 
             self.logger.debug(
                 f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}"
