@@ -56,6 +56,13 @@ using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
 
 } // namespace cloud_storage_clients
 
+namespace cloud_storage {
+/// Segment path in S3, expected format:
+/// <prefix>/<ns>/<topic>/<part-id>_<rev>/<base-offset>-<term-id>-<revision>.log.<archiver-term>
+using remote_segment_path
+  = named_type<std::filesystem::path, struct archival_remote_segment_path_t>;
+} // namespace cloud_storage
+
 namespace model {
 
 using node_uuid = named_type<uuid_t, struct node_uuid_type>;

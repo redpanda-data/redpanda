@@ -36,10 +36,6 @@ using remote_metrics_disabled
 /// Segment file name without working directory,
 /// expected format: <base-offset>-<term-id>-<revision>.log
 using segment_name = named_type<ss::sstring, struct archival_segment_name_t>;
-/// Segment path in S3, expected format:
-/// <prefix>/<ns>/<topic>/<part-id>_<rev>/<base-offset>-<term-id>-<revision>.log.<archiver-term>
-using remote_segment_path
-  = named_type<std::filesystem::path, struct archival_remote_segment_path_t>;
 using remote_manifest_path
   = named_type<std::filesystem::path, struct archival_remote_manifest_path_t>;
 /// Local segment path, expected format:
