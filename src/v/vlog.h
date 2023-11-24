@@ -11,6 +11,8 @@
 #pragma once
 #include "utils/source_location.h"
 
+#include <seastar/util/log.hh>
+
 // NOLINTNEXTLINE
 #define fmt_with_ctx(method, fmt, args...)                                     \
     method("{} - " fmt, vlog::file_line::current(), ##args)
