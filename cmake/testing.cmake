@@ -1,6 +1,7 @@
 include(CMakeParseArguments)
 enable_testing()
 set(RUNNER "${PROJECT_SOURCE_DIR}/tools/cmake_test.py")
+set(V_VASSERT_ABORT_DEP v::vassert_abort_implementation)
 option(RP_ENABLE_TESTS "Useful for disabling all tests" ON)
 option(RP_ENABLE_FIXTURE_TESTS "control if integrations are bulit and ran" ON)
 option(RP_ENABLE_UNIT_TESTS "control if unit tests are bulit and ran" ON)
@@ -73,7 +74,7 @@ function (rp_test)
   add_executable(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")
   target_link_libraries(
-    ${RP_TEST_BINARY_NAME} PUBLIC "${RP_TEST_LIBRARIES}")
+    ${RP_TEST_BINARY_NAME} PUBLIC ${V_VASSERT_ABORT_DEP} "${RP_TEST_LIBRARIES}")
   if (RP_TEST_BUILD_DEPENDENCIES)
     add_dependencies(${RP_TEST_BINARY_NAME} ${RP_TEST_BUILD_DEPENDENCIES})
   endif()
