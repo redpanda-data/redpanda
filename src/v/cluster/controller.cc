@@ -10,7 +10,10 @@
 #include "cluster/controller.h"
 
 #include "cluster/bootstrap_backend.h"
+#include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/cluster_recovery_backend.h"
+#include "cluster/cloud_metadata/error_outcome.h"
+#include "cluster/cloud_metadata/manifest_downloads.h"
 #include "cluster/cloud_metadata/offsets_upload_rpc_types.h"
 #include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cloud_metadata/uploader.h"
@@ -110,6 +113,17 @@ controller::controller(
 // Explicit destructor in the .cc file just to avoid bloating the header with
 // includes for destructors of all its members (e.g. the metadata uploader).
 controller::~controller() = default;
+
+std::optional<cloud_storage_clients::bucket_name>
+controller::get_configured_bucket() {
+    auto& bucket_property = cloud_storage::configuration::get_bucket_config();
+    if (
+      !bucket_property.is_overriden() || !bucket_property().has_value()
+      || !_cloud_storage_api.local_is_initialized()) {
+        return std::nullopt;
+    }
+    return cloud_storage_clients::bucket_name(bucket_property().value());
+}
 
 ss::future<> controller::wire_up() {
     return _as.start()
@@ -217,7 +231,8 @@ ss::future<> controller::start(
             std::ref(_storage),
             std::ref(_members_manager),
             std::ref(_feature_table),
-            std::ref(_feature_backend));
+            std::ref(_feature_backend),
+            std::ref(_recovery_table));
       })
       .then([this] { return _recovery_table.start(); })
       .then([this] {
@@ -612,14 +627,11 @@ ss::future<> controller::start(
             &partition_balancer_backend::start);
       })
       .then([this, offsets_uploader, producer_id_recovery] {
-          auto& bucket_property
-            = cloud_storage::configuration::get_bucket_config();
-          if (
-            !bucket_property.is_overriden() || !bucket_property().has_value()
-            || !_cloud_storage_api.local_is_initialized()) {
+          auto bucket_opt = get_configured_bucket();
+          if (!bucket_opt.has_value()) {
               return;
           }
-          cloud_storage_clients::bucket_name bucket(bucket_property().value());
+          cloud_storage_clients::bucket_name bucket = bucket_opt.value();
           _metadata_uploader = std::make_unique<cloud_metadata::uploader>(
             _raft_manager.local(),
             _storage.local(),
@@ -745,8 +757,7 @@ ss::future<> controller::stop() {
     });
 }
 
-ss::future<>
-controller::create_cluster(const bootstrap_cluster_cmd_data cmd_data) {
+ss::future<> controller::create_cluster(bootstrap_cluster_cmd_data cmd_data) {
     vassert(
       ss::this_shard_id() == controller_stm_shard,
       "Cluster can only be created from controller_stm_shard");
@@ -772,6 +783,49 @@ controller::create_cluster(const bootstrap_cluster_cmd_data cmd_data) {
               "Cluster UUID is {}",
               *_storage.local().get_cluster_uuid());
             co_return;
+        }
+
+        // Check if there is any cluster metadata in the cloud.
+        auto bucket_opt = get_configured_bucket();
+        if (
+          bucket_opt.has_value()
+          && config::shard_local_cfg()
+               .cloud_storage_attempt_cluster_recovery_on_bootstrap.value()) {
+            retry_chain_node retry_node(_as.local(), 300s, 5s);
+            auto res
+              = co_await cloud_metadata::download_highest_manifest_in_bucket(
+                _cloud_storage_api.local(), bucket_opt.value(), retry_node);
+            if (res.has_value()) {
+                vlog(
+                  clusterlog.info,
+                  "Found cluster metadata manifest {} in bucket {}",
+                  res.value(),
+                  bucket_opt.value());
+                cmd_data.recovery_state.emplace();
+                cmd_data.recovery_state->manifest = std::move(res.value());
+                cmd_data.recovery_state->bucket = bucket_opt.value();
+                // Proceed with recovery via cluster bootstrap.
+            } else {
+                const auto& err = res.error();
+                if (
+                  err == cloud_metadata::error_outcome::no_matching_metadata) {
+                    vlog(
+                      clusterlog.info,
+                      "No cluster manifest in bucket {}, proceeding without "
+                      "recovery",
+                      bucket_opt.value());
+                    // Fall through to regular cluster bootstrap.
+                } else {
+                    vlog(
+                      clusterlog.error,
+                      "Error looking for cluster recovery material in cloud, "
+                      "retrying: {}",
+                      err);
+                    co_await ss::sleep_abortable(
+                      retry_jitter.next_duration(), _as.local());
+                    continue;
+                }
+            }
         }
 
         vlog(clusterlog.info, "Creating cluster UUID {}", cmd_data.uuid);

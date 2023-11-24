@@ -241,6 +241,8 @@ private:
 
     ss::future<> cluster_creation_hook(cluster_discovery& discovery);
 
+    std::optional<cloud_storage_clients::bucket_name> get_configured_bucket();
+
     // Checks configuration invariants stored in kvstore
     ss::future<> validate_configuration_invariants();
 

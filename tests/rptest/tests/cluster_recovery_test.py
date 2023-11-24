@@ -131,3 +131,50 @@ class ClusterRecoveryTest(RedpandaTest):
                 if u in l and "ALLOW" in l and "DESCRIBE" in l:
                     found = True
             assert found, f"Couldn't find {u} in {acls_lines}"
+
+    @cluster(num_nodes=4)
+    def test_bootstrap_with_recovery(self):
+        """
+        Smoke test that configuring automated recovery at bootstrap will kick
+        in as appropriate.
+        """
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set(
+            "cloud_storage_attempt_cluster_recovery_on_bootstrap", True)
+        for t in self.topics:
+            KgoVerifierProducer.oneshot(self.test_context,
+                                        self.redpanda,
+                                        t.name,
+                                        self.message_size,
+                                        100,
+                                        batch_max_bytes=self.message_size * 8,
+                                        timeout_sec=60)
+        quiesce_uploads(self.redpanda, [t.name for t in self.topics],
+                        timeout_sec=60)
+        time.sleep(5)
+
+        self.redpanda.stop()
+        for n in self.redpanda.nodes:
+            self.redpanda.remove_local_data(n)
+
+        # Restart the nodes, overriding the recovery bootstrap config.
+        extra_rp_conf = dict(
+            cloud_storage_attempt_cluster_recovery_on_bootstrap=True)
+        self.redpanda.set_extra_rp_conf(extra_rp_conf)
+        self.redpanda.write_bootstrap_cluster_config()
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    override_cfg_params=extra_rp_conf)
+
+        # We should see a recovery begin automatically.
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        def cluster_recovery_complete():
+            return "recovery_stage::complete" in self.redpanda._admin.get_cluster_recovery_status(
+            ).json()["state"]
+
+        wait_until(cluster_recovery_complete, timeout_sec=60, backoff_sec=1)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
