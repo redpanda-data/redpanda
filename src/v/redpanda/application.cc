@@ -1447,6 +1447,21 @@ void application::wire_up_redpanda_services(
       std::ref(metadata_cache));
     controller->wire_up().get0();
 
+    if (config::node().recovery_mode_enabled()) {
+        construct_single_service(
+          _tx_manager_migrator,
+          std::ref(controller->get_topics_frontend()),
+          std::ref(controller->get_api()),
+          std::ref(controller->get_topics_state()),
+          std::ref(controller->get_partition_manager()),
+          std::ref(controller->get_shard_table()),
+          std::ref(metadata_cache),
+          std::ref(_connection_cache),
+          std::ref(controller->get_partition_leaders()),
+          config::node().node_id().value(),
+          config::shard_local_cfg().internal_topic_replication_factor());
+    }
+
     if (archival_storage_enabled() && !config::node().recovery_mode_enabled()) {
         construct_service(
           offsets_upload_router,

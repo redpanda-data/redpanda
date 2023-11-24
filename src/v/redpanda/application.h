@@ -321,6 +321,9 @@ private:
 
     ss::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
 
+    // instantiated only in recovery mode
+    std::unique_ptr<cluster::tx_manager_migrator> _tx_manager_migrator;
+
     ss::sharded<ss::abort_source> _as;
 };
 
