@@ -201,6 +201,7 @@ v_cc_library(
     cloud_metadata/manifest_downloads.cc
     cloud_metadata/producer_id_recovery_manager.cc
     cloud_metadata/uploader.cc
+    migrations/tx_manager_migrator.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
