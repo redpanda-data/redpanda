@@ -88,7 +88,8 @@ public:
       ss::sharded<cloud_storage::cache>&,
       ss::sharded<resources::cpu_profiler>&,
       ss::sharded<transform::service>*,
-      ss::sharded<security::audit::audit_log_manager>&);
+      ss::sharded<security::audit::audit_log_manager>&,
+      std::unique_ptr<cluster::tx_manager_migrator>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -419,6 +420,7 @@ private:
     void register_cluster_partitions_routes();
     void register_shadow_indexing_routes();
     void register_wasm_transform_routes();
+    void register_recovery_mode_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -652,6 +654,7 @@ private:
     ss::sharded<resources::cpu_profiler>& _cpu_profiler;
     ss::sharded<transform::service>* _transform_service;
     ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
+    std::unique_ptr<cluster::tx_manager_migrator>& _tx_manager_migrator;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

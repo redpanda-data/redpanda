@@ -1,0 +1,29 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/recovery",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/recovery/migrate_tx_manager",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Execute tx manager partition count migration",
+                    "nickname": "migrate_tx_manager",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Migration completed successfully"
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

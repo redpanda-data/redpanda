@@ -41,6 +41,8 @@
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/migrations/tx_manager_migrator.h"
+#include "cluster/migrations/tx_manager_migrator_handler.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/node_isolation_watcher.h"
 #include "cluster/node_status_rpc_handler.h"
@@ -993,7 +995,8 @@ void application::configure_admin_server() {
       std::ref(shadow_index_cache),
       std::ref(_cpu_profiler),
       &_transform_service,
-      std::ref(audit_mgr))
+      std::ref(audit_mgr),
+      std::ref(_tx_manager_migrator))
       .get();
 }
 
@@ -2589,6 +2592,19 @@ void application::start_runtime_services(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(topic_recovery_service)));
+
+          if (config::node().recovery_mode_enabled()) {
+              runtime_services.push_back(
+                std::make_unique<cluster::tx_manager_migrator_handler>(
+                  sched_groups.cluster_sg(),
+                  smp_service_groups.cluster_smp_sg(),
+                  std::ref(controller->get_partition_manager()),
+                  std::ref(controller->get_shard_table()),
+                  std::ref(metadata_cache),
+                  std::ref(_connection_cache),
+                  std::ref(controller->get_partition_leaders()),
+                  config::node().node_id().value()));
+          }
           s.add_services(std::move(runtime_services));
 
           // Done! Disallow unknown method errors.
