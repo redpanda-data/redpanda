@@ -21,6 +21,7 @@ type ClusterHealthOverview struct {
 	ControllerID              int      `json:"controller_id"`
 	AllNodes                  []int    `json:"all_nodes"`
 	NodesDown                 []int    `json:"nodes_down"`
+	NodesInRecoveryMode       []int    `json:"nodes_in_recovery_mode,omitempty"` // This is nil if not-supported or no nodes in recovery mode.
 	LeaderlessPartitions      []string `json:"leaderless_partitions"`
 	LeaderlessCount           *int     `json:"leaderless_count,omitempty"`
 	UnderReplicatedPartitions []string `json:"under_replicated_partitions"`
