@@ -53,50 +53,17 @@ namespace cluster {
  *
  * Controller backend operations are driven by deltas generated in topics table.
  * Backend waits for the new deltas using condition variable. Each delta
- * represent an operation that must be executed for ntp f.e. create, update
- * properties, move, etc.
+ * represent a notification that something has changed for an ntp in question,
+ * f.e. it was added, removed, its replica set was changed etc.
  *
  * Each controller backend in the cluster (on each node and each core) process
- * all the deltas and based on the situation it either executes an operation or
- * ignore it (command pattern).
+ * all the deltas. For each NTP it was notified of, it queries the topic table
+ * state and if it diverges from the local state, it performs actions to
+ * reconcile local state with the desired state (state reconciliation pattern).
  *
- * Deltas vector for each NTP is processed in separate fiber in other words
- * deltas for different NTPs are executed concurrently but for the same NTP
- * sequentially.
- *
- * Each delta has revision assigned revision for the delta is assigned based on
- * the raft0 log offset of command that the delta is related with. The same
- * delta has the same revision globally.
- *
- * Deltas are executed in order from oldest revision up to the newest.
- *
- *
- * NTP_1
- *                                              Loop until finished or cancelled
- *
- *                                                    ┌──────────────────┐
- *                                                    │                  │
- *                                                    │                  │
- * ┌────────────┐ ┌────────────┐ ┌────────────┐       │  ┌────────────┐  │
- * │   delta    │ │   delta    │ │   delta    │       │  │   delta    │  │
- * │            │ │            │ │            ├──►    └─►│            ├──┘
- * │ revision: 3│ │ revision: 2│ │ revision: 1│          │ revision: 0│
- * └────────────┘ └────────────┘ └────────────┘          └────────────┘
- *
- *                            .
- *                            .
- *                            .
- * NTP_N
- *                                              Loop until finished or cancelled
- *
- *                                                    ┌──────────────────┐
- *                                                    │                  │
- *                                                    │                  │
- * ┌────────────┐ ┌────────────┐ ┌────────────┐       │  ┌────────────┐  │
- * │   delta    │ │   delta    │ │   delta    │       │  │   delta    │  │
- * │            │ │            │ │            ├──►    └─►│            ├──┘
- * │ revision: 3│ │ revision: 2│ │ revision: 1│          │ revision: 0│
- * └────────────┘ └────────────┘ └────────────┘          └────────────┘
+ * Reconciliation for each NTP is done in a separate fiber in other words
+ * different NTPs are reconciled concurrently but for the same NTP
+ * the reconciliation process is sequential.
  *
  * # Revisions
  *
@@ -107,14 +74,17 @@ namespace cluster {
  * again. We must be able to recognize if the instance of partition replica that
  * has been created for the topic belongs to the original topic or the one that
  * was re created. In order to introduce differentiation between the two not
- * distinguishable states we use revision_id as an epoch. Revision is used
- * whenever partition is created or its replicas are moved. This way controller
+ * distinguishable states we use revision_id as an epoch. Each partition tracks
+ * two revisions: log_revision (the offset of the command that created a
+ * replica on this node, it also appears in the partition log directory name)
+ * and cmd_revision (sometimes referred to simply as revision) - the offset of
+ * the command that last modified the replica configuration. This way controller
  * backend is able to recognize if partition replicas have already been updated
  * or if action is required.
  *
  * ## Revisions and raft vnode
  *
- * Whenever a new replica is added to raft configuration it has new revision
+ * Whenever a new replica is added to raft configuration it has new log_revision
  * assigned. In raft each raft group participant is described by a tuple of
  * model::node_id and model::revision_id. This way every time the node is re
  * added to the configuration (consider a situation in which partition with
@@ -224,18 +194,6 @@ namespace cluster {
 class controller_backend
   : public ss::peering_sharded_service<controller_backend> {
 public:
-    struct delta_metadata {
-        explicit delta_metadata(topic_table::delta delta)
-          : delta(std::move(delta)) {}
-
-        topic_table::delta delta;
-        uint64_t retries = 0;
-        cluster::errc last_error = errc::waiting_for_recovery;
-        friend std::ostream& operator<<(std::ostream&, const delta_metadata&);
-    };
-
-    using deltas_t = std::deque<delta_metadata>;
-    using results_t = std::vector<std::error_code>;
     controller_backend(
       ss::sharded<cluster::topic_table>&,
       ss::sharded<shard_table>&,
@@ -254,29 +212,68 @@ public:
     ss::future<> stop();
     ss::future<> start();
 
-    ss::chunked_fifo<delta_metadata> list_ntp_deltas(const model::ntp&) const;
+    struct in_progress_operation {
+        model::revision_id revision;
+        partition_operation_type type;
+        partition_assignment assignment;
+
+        uint64_t retries = 0;
+        cluster::errc last_error = errc::success;
+
+        friend std::ostream&
+        operator<<(std::ostream&, const in_progress_operation&);
+    };
+
+    std::optional<in_progress_operation>
+    get_current_op(const model::ntp&) const;
 
 private:
-    struct cross_shard_move_request {
-        cross_shard_move_request(model::revision_id, raft::group_configuration);
+    struct ntp_reconciliation_state {
+        std::optional<model::revision_id> changed_at;
+        std::optional<model::revision_id> properties_changed_at;
+        bool removed = false;
 
-        // Revision of the ntp directory on this node. This revision can change
-        // over the lifetime of the partition as it moves between nodes.
-        model::revision_id log_revision;
-        raft::group_configuration initial_configuration;
-        friend std::ostream& operator<<(
-          std::ostream& o,
-          const controller_backend::cross_shard_move_request& r) {
+        std::optional<in_progress_operation> cur_operation;
+
+        void mark_reconciled(model::revision_id rev) {
+            mark_properties_reconciled(rev);
+            if (changed_at && *changed_at <= rev) {
+                changed_at = std::nullopt;
+            }
+            cur_operation = std::nullopt;
+        }
+
+        void mark_properties_reconciled(model::revision_id rev) {
+            if (properties_changed_at && *properties_changed_at <= rev) {
+                properties_changed_at = std::nullopt;
+            }
+        }
+
+        void set_cur_operation(
+          model::revision_id rev,
+          partition_operation_type type,
+          partition_assignment p_as = partition_assignment{}) {
+            if (!cur_operation) {
+                cur_operation = in_progress_operation{};
+            }
+            cur_operation->revision = rev;
+            cur_operation->type = type;
+            cur_operation->assignment = std::move(p_as);
+        }
+
+        friend std::ostream&
+        operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
             fmt::print(
               o,
-              "{{log revision: {}, configuration: {}}}",
-              r.log_revision,
-              r.initial_configuration);
+              "{{changed_at: {}, properties_changed_at: {}, removed: {}, "
+              "cur_operation: {}}}",
+              rs.changed_at,
+              rs.properties_changed_at,
+              rs.removed,
+              rs.cur_operation);
             return o;
         }
     };
-
-    using underlying_t = absl::btree_map<model::ntp, deltas_t>;
 
     // Topics
     ss::future<> bootstrap_controller_backend();
@@ -298,27 +295,11 @@ private:
 
     ss::future<> fetch_deltas();
 
+    ss::future<> bootstrap_partition_claims();
     ss::future<> reconcile_topics();
-    ss::future<> reconcile_ntp(const model::ntp&, deltas_t&);
-
-    ss::future<std::error_code> execute_partition_op(const delta_metadata&);
-    ss::future<std::error_code> process_partition_reconfiguration(
-      uint64_t current_retry,
-      partition_operation_type,
-      model::ntp,
-      const delta_reconfiguration_data&,
-      model::revision_id);
-
-    ss::future<std::error_code> execute_reconfiguration(
-      partition_operation_type,
-      const model::ntp&,
-      const delta_reconfiguration_data&,
-      model::revision_id);
-
-    ss::future<> finish_partition_update(
-      model::ntp, const partition_assignment&, model::revision_id);
-
-    ss::future<> process_partition_properties_update(model::ntp);
+    ss::future<> reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
+    ss::future<result<ss::stop_iteration>>
+    reconcile_ntp_step(const model::ntp&, ntp_reconciliation_state&);
 
     ss::future<std::error_code> create_partition(
       model::ntp,
@@ -330,74 +311,73 @@ private:
       // node shard, in which case this is the revision derived from the
       // offset of the update delta. This is used to update the shard
       // table.
-      model::revision_id command_revision,
+      model::revision_id cmd_revision,
+      replicas_t initial_replicas);
+
+    ss::future<std::error_code> do_create_partition(
+      model::ntp,
+      raft::group_id,
+      model::revision_id log_revision,
+      model::revision_id cmd_revision,
       std::vector<model::broker>);
+
     ss::future<> add_to_shard_table(
       model::ntp, raft::group_id, ss::shard_id, model::revision_id);
     ss::future<>
       remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
+
+    ss::future<> shutdown_partition(
+      ss::lw_shared_ptr<partition>, model::revision_id cmd_revision);
+
     ss::future<> delete_partition(
       model::ntp, model::revision_id, partition_removal_mode mode);
-    ss::future<std::error_code> reset_partition(
-      model::ntp,
-      const partition_assignment& target_assignment,
-      const replicas_t& prev_replicas,
-      const replicas_revision_map&,
-      model::revision_id cmd_revision);
+
+    ss::future<result<ss::stop_iteration>> reconcile_partition_reconfiguration(
+      ntp_reconciliation_state&,
+      ss::lw_shared_ptr<partition>,
+      const topic_table::in_progress_update&,
+      const replicas_revision_map& replicas_revisions);
+
     template<typename Func>
-    ss::future<std::error_code> apply_configuration_change_on_leader(
-      const model::ntp&, const replicas_t&, model::revision_id, Func&& f);
-    ss::future<std::error_code> update_partition_replica_set(
-      const model::ntp&,
-      const replicas_t&,
-      const replicas_revision_map&,
-      model::revision_id,
+    ss::future<result<ss::stop_iteration>> apply_configuration_change_on_leader(
+      ss::lw_shared_ptr<partition>,
+      const replicas_t& target_replicas,
+      model::revision_id cmd_revision,
+      Func&&);
+    ss::future<result<ss::stop_iteration>> update_partition_replica_set(
+      ss::lw_shared_ptr<partition>,
+      const replicas_t& target_replicas,
+      const replicas_revision_map& initial_replicas_revisions,
+      model::revision_id cmd_revision,
       reconfiguration_policy);
-    ss::future<std::error_code> cancel_replica_set_update(
-      const model::ntp&,
-      const replicas_t&,
-      const replicas_revision_map&,
-      const replicas_t&,
-      model::revision_id);
-
-    ss::future<std::error_code> force_abort_replica_set_update(
-      const model::ntp&,
-      const replicas_t&,
-      const replicas_revision_map&,
-      const replicas_t&,
-      model::revision_id);
-
-    ss::future<std::error_code> force_replica_set_update(
-      const model::ntp&,
-      const replicas_t& /*new replicas*/,
-      const replicas_revision_map&,
-      model::revision_id);
-
-    ss::future<std::error_code>
-      dispatch_update_finished(model::ntp, partition_assignment);
-
-    ss::future<std::error_code> dispatch_revert_cancel_move(model::ntp);
-
-    ss::future<> do_bootstrap();
-    ss::future<> bootstrap_ntp(const model::ntp&, deltas_t&);
-
-    ss::future<std::error_code>
-      shutdown_on_current_shard(model::ntp, model::revision_id);
-
-    ss::future<std::optional<cross_shard_move_request>>
-      acquire_cross_shard_move_request(model::ntp, ss::shard_id);
-
-    ss::future<> release_cross_shard_move_request(
-      model::ntp, ss::shard_id, cross_shard_move_request);
-
-    ss::future<std::error_code> create_partition_from_remote_shard(
-      model::ntp, model::revision_id, ss::shard_id, partition_assignment);
+    ss::future<result<ss::stop_iteration>> cancel_replica_set_update(
+      ss::lw_shared_ptr<partition>,
+      const replicas_t& target_replicas,
+      const replicas_revision_map& initial_replicas_revisions,
+      const replicas_t& previous_replicas,
+      model::revision_id cmd_revision);
+    ss::future<result<ss::stop_iteration>> force_abort_replica_set_update(
+      ss::lw_shared_ptr<partition>,
+      const replicas_t& target_replicas,
+      const replicas_revision_map& initial_replicas_revisions,
+      const replicas_t& previous_replicas,
+      model::revision_id cmd_revision);
+    ss::future<result<ss::stop_iteration>> force_replica_set_update(
+      ss::lw_shared_ptr<partition>,
+      const replicas_t& new_replicas,
+      const replicas_revision_map& initial_replicas_revisions,
+      model::revision_id cmd_revision);
 
     bool can_finish_update(
       std::optional<model::node_id> current_leader,
       uint64_t current_retry,
-      partition_operation_type operation_type,
+      reconfiguration_state,
       const replicas_t& requested_replicas);
+
+    ss::future<std::error_code>
+      dispatch_update_finished(model::ntp, replicas_t);
+
+    ss::future<std::error_code> dispatch_revert_cancel_move(model::ntp);
 
     void housekeeping();
     void setup_metrics();
@@ -425,28 +405,59 @@ private:
     config::binding<std::optional<std::chrono::milliseconds>>
       _initial_retention_local_target_ms;
     ss::sharded<ss::abort_source>& _as;
-    underlying_t _topic_deltas;
+
+    absl::btree_map<model::ntp, ntp_reconciliation_state> _states;
+
+    enum class partition_claim_state {
+        acquiring, // shard has an intention to own this partition
+        acquired,  // shard is the sole owner of this partition
+        released,  // the partition is free to be acquired by other shards.
+    };
+
+    friend std::ostream& operator<<(std::ostream& o, partition_claim_state s) {
+        switch (s) {
+        case partition_claim_state::acquiring:
+            return o << "acquiring";
+        case partition_claim_state::acquired:
+            return o << "acquired";
+        case partition_claim_state::released:
+            return o << "released";
+        }
+        __builtin_unreachable();
+    }
+
+    /// Partition claim is a small struct that is used for two purposes:
+    /// 1) tracking which shard hosts persistent shard-local kvstore data for
+    /// this partition and 2) is the partition currently
+    /// starting/started/stopping or otherwise in use by this shard (i.e. a
+    /// lock). This is useful for coordinating cross-shard partition moves. The
+    /// _ntp_claims map is usually small because a partition object held by
+    /// partition_manager also counts as a claim so we insert the claim into the
+    /// map before we start the partition and delete the claim after the
+    /// partition is fully started.
+    struct partition_claim {
+        model::revision_id log_revision;
+        partition_claim_state state = partition_claim_state::released;
+        bool hosting = false;
+
+        friend std::ostream& operator<<(std::ostream& o, partition_claim pc) {
+            fmt::print(
+              o,
+              "{{log_revision: {}, state: {}, hosting: {}}}",
+              pc.log_revision,
+              pc.state,
+              pc.hosting);
+            return o;
+        }
+    };
+    // node_hash_map for pointer stability
+    absl::node_hash_map<model::ntp, partition_claim> _ntp_claims;
+
     ss::timer<> _housekeeping_timer;
     ssx::semaphore _topics_sem{1, "c/controller-be"};
     ss::gate _gate;
-    /**
-     * This map is populated by backend instance on shard that given NTP is
-     * moved from. Map is then queried by the controller instance on target
-     * shard. Partition is created on target shard with the same initial
-     * revision and configuration as on originating shard, this way identity of
-     * node i.e. raft vnode doesn't change.
-     */
-    absl::node_hash_map<model::ntp, cross_shard_move_request>
-      _cross_shard_requests;
-    /**
-     * This map is populated when bootstrapping. If partition is moved cross
-     * shard on the same node it has to be created with revision that it was
-     * first created on current node before cross core move series
-     */
-    absl::node_hash_map<model::ntp, model::revision_id> _bootstrap_revisions;
+
     metrics::internal_metric_groups _metrics;
 };
 
-controller_backend::deltas_t calculate_bootstrap_deltas(
-  model::node_id self, const controller_backend::deltas_t&);
 } // namespace cluster

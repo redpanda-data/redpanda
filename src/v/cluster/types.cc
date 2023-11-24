@@ -269,181 +269,6 @@ storage::ntp_config topic_configuration::make_ntp_config(
       init_rev};
 }
 
-topic_table_delta::topic_table_delta(
-  model::ntp ntp,
-  model::revision_id revision,
-  partition_operation_type tp,
-  data_t data)
-  : _ntp(std::move(ntp))
-  , _revision(revision)
-  , _type(tp)
-  , _data(std::move(data)) {}
-
-topic_table_delta topic_table_delta::create_add_partition_delta(
-  model::ntp ntp,
-  model::revision_id rev,
-  partition_assignment assignment,
-  replicas_revision_map replica_revisions) {
-    return topic_table_delta(
-      std::move(ntp),
-      rev,
-      partition_operation_type::add,
-      delta_add_partition_data{
-        .target_assignment = std::move(assignment),
-        .replica_revisions = std::move(replica_revisions),
-      });
-}
-
-topic_table_delta topic_table_delta::create_remove_partition_delta(
-  model::ntp ntp, model::revision_id rev) {
-    return topic_table_delta(
-      std::move(ntp),
-      rev,
-      partition_operation_type::remove,
-      delta_remove_partition_data{});
-}
-
-topic_table_delta topic_table_delta::create_update_delta(
-  model::ntp ntp,
-  model::revision_id rev,
-  is_forced forced,
-  partition_assignment target_assignment,
-  replicas_t previous_replicas,
-  replicas_revision_map replica_revisions,
-  reconfiguration_policy policy) {
-    return topic_table_delta(
-      std::move(ntp),
-      rev,
-      forced ? partition_operation_type::force_update
-             : partition_operation_type::update,
-      delta_reconfiguration_data{
-        .target_assignment = std::move(target_assignment),
-        .previous_replica_set = std::move(previous_replicas),
-        .replica_revisions = std::move(replica_revisions),
-        .policy = policy,
-      });
-}
-
-topic_table_delta topic_table_delta::create_finish_update_delta(
-  model::ntp ntp,
-  model::revision_id rev,
-  partition_assignment target_assignment) {
-    return topic_table_delta(
-      std::move(ntp),
-      rev,
-      partition_operation_type::finish_update,
-      delta_finish_update_data{
-        .target_assignment = std::move(target_assignment)});
-}
-
-topic_table_delta topic_table_delta::create_cancel_update_delta(
-  model::ntp ntp,
-  model::revision_id rev,
-  is_forced forced,
-  partition_assignment target_assignment,
-  replicas_t previous_replicas,
-  replicas_revision_map replica_revisions) {
-    return topic_table_delta(
-      std::move(ntp),
-      rev,
-      forced ? partition_operation_type::force_cancel_update
-             : partition_operation_type::cancel_update,
-      delta_reconfiguration_data{
-        .target_assignment = std::move(target_assignment),
-        .previous_replica_set = std::move(previous_replicas),
-        .replica_revisions = std::move(replica_revisions),
-        /**
-         * Default policy for reconfigurations that are cancelled
-         */
-        .policy = reconfiguration_policy::full_local_retention,
-      });
-}
-
-topic_table_delta topic_table_delta::create_update_properties_delta(
-  model::ntp ntp, model::revision_id rev) {
-    return topic_table_delta(
-      std::move(ntp),
-      rev,
-      partition_operation_type::update_properties,
-      delta_update_properties_data{});
-}
-
-topic_table_delta topic_table_delta::create_reset_delta(
-  model::ntp ntp,
-  model::revision_id rev,
-  partition_assignment target_assignment,
-  replicas_t previous_replicas,
-  replicas_revision_map replica_revisions) {
-    return topic_table_delta(
-      std::move(ntp),
-      rev,
-      partition_operation_type::reset,
-      delta_reconfiguration_data{
-        .target_assignment = std::move(target_assignment),
-        .previous_replica_set = std::move(previous_replicas),
-        .replica_revisions = std::move(replica_revisions),
-      });
-}
-
-namespace {
-model::revision_id do_get_replica_revision(
-  model::node_id replica, const replicas_revision_map& replica_revisions) {
-    auto it = replica_revisions.find(replica);
-
-    vassert(
-      it != replica_revisions.end(),
-      "replica {} must exists in {}",
-      replica,
-      replica_revisions);
-    return it->second;
-}
-} // namespace
-
-model::revision_id
-delta_reconfiguration_data::get_replica_revision(model::node_id replica) const {
-    return do_get_replica_revision(replica, replica_revisions);
-}
-
-model::revision_id
-delta_add_partition_data::get_replica_revision(model::node_id replica) const {
-    return do_get_replica_revision(replica, replica_revisions);
-}
-
-std::ostream&
-operator<<(std::ostream& o, const delta_reconfiguration_data& data) {
-    fmt::print(
-      o,
-      "{{target_assignment: {}, previous_replicas: {}, replica_revisions: {}, "
-      "policy: {}}}",
-      data.target_assignment,
-      data.previous_replica_set,
-      data.replica_revisions,
-      data.policy);
-    return o;
-}
-std::ostream&
-operator<<(std::ostream& o, const delta_add_partition_data& data) {
-    fmt::print(
-      o,
-      "{{target_assignment: {}, replica_revisions: {}}}",
-      data.target_assignment,
-      data.replica_revisions);
-    return o;
-}
-std::ostream&
-operator<<(std::ostream& o, const delta_finish_update_data& data) {
-    fmt::print(o, "{{target_assignment: {}}}", data.target_assignment);
-    return o;
-}
-std::ostream& operator<<(std::ostream& o, const delta_update_properties_data&) {
-    fmt::print(o, "delta_update_properties_data: {{}}");
-    return o;
-}
-std::ostream& operator<<(std::ostream& o, const delta_remove_partition_data&) {
-    fmt::print(o, "delta_remove_partition_data: {{}}");
-    return o;
-}
-
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
   ss::chunked_fifo<backend_operation> ops,
@@ -622,15 +447,23 @@ std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
     __builtin_unreachable();
 }
 
+std::ostream& operator<<(std::ostream& o, const topic_table_delta_type& tp) {
+    switch (tp) {
+    case topic_table_delta_type::added:
+        return o << "added";
+    case topic_table_delta_type::removed:
+        return o << "removed";
+    case topic_table_delta_type::replicas_updated:
+        return o << "replicas_updated";
+    case topic_table_delta_type::properties_updated:
+        return o << "properties_updated";
+    }
+    __builtin_unreachable();
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
     fmt::print(
-      o,
-      "{{ntp: {}, type: {}, revision: {}, data: {}}}",
-      d._ntp,
-      d._type,
-      d._revision,
-      d._data);
-
+      o, "{{ntp: {}, type: {}, revision: {}}}", d.ntp, d.type, d.revision);
     return o;
 }
 

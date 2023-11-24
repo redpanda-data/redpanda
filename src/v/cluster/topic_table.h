@@ -184,6 +184,9 @@ public:
             return _policy;
         }
 
+        friend std::ostream&
+        operator<<(std::ostream&, const in_progress_update&);
+
     private:
         replicas_t _previous_replicas;
         replicas_t _target_replicas;
@@ -581,7 +584,6 @@ private:
     void change_partition_replicas(
       model::ntp ntp,
       const replicas_t& new_assignment,
-      topic_metadata_item& metadata,
       partition_assignment& current_assignment,
       model::offset o,
       bool is_forced,

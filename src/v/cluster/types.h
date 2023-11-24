@@ -2399,6 +2399,10 @@ enum class reconfiguration_policy {
 using replicas_revision_map
   = absl::flat_hash_map<model::node_id, model::revision_id>;
 
+/// Type of controller backend operation
+/// TODO: remove legacy types and bring more in line with what
+/// controller_backend actually does.
+
 enum class partition_operation_type {
     add,
     remove,
@@ -2413,157 +2417,29 @@ enum class partition_operation_type {
     reset,
 };
 std::ostream& operator<<(std::ostream&, const partition_operation_type&);
-/**
- * Data objects specific for a particular type of topic_table_delta
- */
-struct delta_add_partition_data {
-    partition_assignment target_assignment;
-    replicas_revision_map replica_revisions;
 
-    model::revision_id get_replica_revision(model::node_id) const;
-    friend std::ostream&
-    operator<<(std::ostream&, const delta_add_partition_data&);
+/// Notification of topic table state change related to a single ntp
+
+enum class topic_table_delta_type {
+    added,
+    removed,
+    replicas_updated,
+    properties_updated,
 };
-struct delta_finish_update_data {
-    partition_assignment target_assignment;
-    friend std::ostream&
-    operator<<(std::ostream&, const delta_finish_update_data&);
-};
-struct delta_reconfiguration_data {
-    partition_assignment target_assignment;
-    replicas_t previous_replica_set;
-    replicas_revision_map replica_revisions;
-    reconfiguration_policy policy;
+std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
 
-    model::revision_id get_replica_revision(model::node_id) const;
-    friend std::ostream&
-    operator<<(std::ostream&, const delta_reconfiguration_data&);
-};
-struct delta_update_properties_data {
-    friend std::ostream&
-    operator<<(std::ostream&, const delta_update_properties_data&);
-};
-struct delta_remove_partition_data {
-    friend std::ostream&
-    operator<<(std::ostream&, const delta_remove_partition_data&);
-};
-
-using is_forced = ss::bool_class<struct forced_reconfiguration_tag>;
-
-// delta propagated to backend
-class topic_table_delta {
-public:
-    /**
-     * Depending on the context topic table delta will hold one of the specified
-     * data types, having a variant is convenient as we can use either a visitor
-     * pattern or simple switch case.
-     */
-    using data_t = std::variant<
-      delta_add_partition_data,
-      delta_finish_update_data,
-      delta_reconfiguration_data,
-      delta_remove_partition_data,
-      delta_update_properties_data>;
-
-    model::topic_namespace_view tp_ns() const {
-        return model::topic_namespace_view(_ntp);
-    }
-
-    bool is_reconfiguration_operation() const {
-        return _type == partition_operation_type::update
-               || _type == partition_operation_type::force_update
-               || _type == partition_operation_type::cancel_update
-               || _type == partition_operation_type::force_cancel_update;
-    }
-
-    const model::ntp& ntp() const { return _ntp; }
-
-    partition_operation_type type() const { return _type; }
-
-    model::revision_id revision() const { return _revision; }
-
-    friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
-
-    const data_t& get_data() const { return _data; }
-
-    const delta_reconfiguration_data& get_reconfiguration_data() const {
-        vassert(
-          is_reconfiguration_operation()
-            || _type == partition_operation_type::reset,
-          "reconfiguration data can only be returned when operation is of "
-          "reconfiguration type");
-        return std::get<delta_reconfiguration_data>(_data);
-    }
-
-    delta_reconfiguration_data& get_reconfiguration_data() {
-        vassert(
-          is_reconfiguration_operation()
-            || _type == partition_operation_type::reset,
-          "reconfiguration data can only be returned when operation is of "
-          "reconfiguration type");
-        return std::get<delta_reconfiguration_data>(_data);
-    }
-
-    const delta_finish_update_data& get_finish_update_data() const {
-        vassert(
-          _type == partition_operation_type::finish_update,
-          "finish update data can only be returned when operation is of "
-          "finish type");
-
-        return std::get<delta_finish_update_data>(_data);
-    }
-
-    static topic_table_delta create_add_partition_delta(
-      model::ntp,
-      model::revision_id,
-      partition_assignment,
-      replicas_revision_map);
-
-    static topic_table_delta
-      create_remove_partition_delta(model::ntp, model::revision_id);
-
-    static topic_table_delta create_update_delta(
-      model::ntp,
-      model::revision_id,
-      is_forced,
-      partition_assignment,
-      replicas_t,
-      replicas_revision_map,
-      reconfiguration_policy);
-
-    static topic_table_delta create_finish_update_delta(
-      model::ntp, model::revision_id, partition_assignment);
-
-    static topic_table_delta
-      create_update_properties_delta(model::ntp, model::revision_id);
-
-    static topic_table_delta create_cancel_update_delta(
-      model::ntp,
-      model::revision_id,
-      is_forced,
-      partition_assignment,
-      replicas_t,
-      replicas_revision_map);
-
-    static topic_table_delta create_reset_delta(
-      model::ntp,
-      model::revision_id,
-      partition_assignment,
-      replicas_t,
-      replicas_revision_map);
-
-private:
-    /**
-     * Private constructor not to allow caller creating a delta in which data
-     * type is disconnected from operation type
-     */
+struct topic_table_delta {
+    model::ntp ntp;
+    model::revision_id revision;
+    topic_table_delta_type type;
 
     topic_table_delta(
-      model::ntp, model::revision_id, partition_operation_type, data_t);
-    model::ntp _ntp;
-    model::revision_id _revision;
-    partition_operation_type _type;
-    data_t _data;
+      model::ntp ntp, model::revision_id rev, topic_table_delta_type type)
+      : ntp(std::move(ntp))
+      , revision(rev)
+      , type(type) {}
+
+    friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
 };
 
 struct create_acls_cmd_data

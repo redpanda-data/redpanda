@@ -26,7 +26,6 @@ set(srcs
     topic_table_test.cc
     topic_updates_dispatcher_test.cc
     topic_table_partition_generator_test.cc
-    controller_backend_test.cc
     idempotency_tests.cc
     feature_barrier_test.cc
     tm_stm_tests.cc
