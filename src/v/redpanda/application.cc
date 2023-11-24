@@ -1379,10 +1379,7 @@ void application::wire_up_redpanda_services(
 
     syschecks::systemd_message("Creating tm_stm_cache_manager").get();
 
-    construct_service(
-      tm_stm_cache_manager,
-      config::shard_local_cfg().transaction_coordinator_partitions())
-      .get();
+    construct_service(tm_stm_cache_manager).get();
 
     syschecks::systemd_message("Initializing producer state manager").get();
     construct_service(
