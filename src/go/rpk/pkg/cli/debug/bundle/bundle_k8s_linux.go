@@ -223,12 +223,26 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 			func() error { return requestAndSave(ctx, ps, "admin/health_overview.json", cl.GetHealthOverview) },
 			func() error { return requestAndSave(ctx, ps, "admin/license.json", cl.GetLicenseInfo) },
 			func() error { return requestAndSave(ctx, ps, "admin/reconfigurations.json", cl.Reconfigurations) },
+			func() error { return requestAndSave(ctx, ps, "admin/features.json", cl.GetFeatures) },
+			func() error {
+				return requestAndSave(ctx, ps, "admin/partition_balancer_status.json", cl.GetPartitionStatus)
+			},
 			func() error {
 				// Need to wrap this function because cl.Config receives an additional 'includeDefaults' param.
 				f := func(ctx context.Context) (adminapi.Config, error) {
 					return cl.Config(ctx, true)
 				}
 				return requestAndSave(ctx, ps, "admin/cluster_config.json", f)
+			}, func() error {
+				f := func(ctx context.Context) (adminapi.ConfigStatusResponse, error) {
+					return cl.ClusterConfigStatus(ctx, true)
+				}
+				return requestAndSave(ctx, ps, "admin/cluster_config_status.json", f)
+			}, func() error {
+				f := func(ctx context.Context) ([]adminapi.ClusterPartition, error) {
+					return cl.AllClusterPartitions(ctx, true, false) // include defaults, and include disabled.
+				}
+				return requestAndSave(ctx, ps, "admin/cluster_partitions.json", f)
 			},
 		} {
 			grp.Go(f)
