@@ -32,6 +32,7 @@
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
+#include "raft/group_manager.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 

@@ -75,4 +75,19 @@ namespace node {
 class local_monitor;
 } // namespace node
 
+namespace cloud_metadata {
+class cluster_recovery_backend;
+class offsets_lookup;
+class offsets_lookup_batcher;
+class offsets_recoverer;
+class offsets_recovery_manager;
+class offsets_recovery_requestor;
+class offsets_recovery_router;
+class offsets_upload_requestor;
+class offsets_upload_router;
+class offsets_uploader;
+class producer_id_recovery_manager;
+class uploader;
+} // namespace cloud_metadata
+
 } // namespace cluster

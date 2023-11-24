@@ -34,13 +34,6 @@
 
 namespace cluster {
 
-namespace cloud_metadata {
-class cluster_recovery_backend;
-class uploader;
-class offsets_upload_requestor;
-class producer_id_recovery_manager;
-} // namespace cloud_metadata
-
 class cluster_discovery;
 
 class controller {

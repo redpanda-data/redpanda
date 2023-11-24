@@ -10,20 +10,15 @@
  */
 #pragma once
 
-#include "cloud_storage/cache_service.h"
-#include "cloud_storage/remote.h"
-#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
-#include "cluster/cluster_recovery_manager.h"
+#include "cloud_storage/fwd.h"
 #include "cluster/cluster_recovery_reconciler.h"
-#include "cluster/cluster_recovery_table.h"
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
-#include "features/feature_table.h"
+#include "features/fwd.h"
 #include "model/fundamental.h"
-#include "raft/group_manager.h"
+#include "raft/fwd.h"
 #include "seastarx.h"
-#include "security/acl_store.h"
-#include "security/credential_store.h"
+#include "security/fwd.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>
