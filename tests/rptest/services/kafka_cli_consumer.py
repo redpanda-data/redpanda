@@ -80,7 +80,8 @@ class KafkaCliConsumer(BackgroundThreadService):
 
             cmd += ["--bootstrap-server", self._redpanda.brokers()]
 
-            for _ in node.account.ssh_capture(' '.join(cmd)):
+            for l in node.account.ssh_capture(' '.join(cmd)):
+                self._redpanda.logger.debug(l)
                 with self._lock:
                     self._message_cnt += 1
                     self._last_consumed = time.time()
