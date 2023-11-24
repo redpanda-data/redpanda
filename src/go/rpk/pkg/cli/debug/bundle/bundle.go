@@ -201,8 +201,9 @@ COMMON FILES
  - Clock drift: The ntp clock delta (using pool.ntp.org as a reference) & round
    trip time.
 
- - Admin API calls: Cluster and broker configurations, cluster health data, and 
-   license key information.
+ - Admin API calls: Multiple requests to gather information such as: Cluster and
+   broker configurations, cluster health data, balancer status, cloud storage
+   status, and license key information.
 
  - Broker metrics: The broker's Prometheus metrics, fetched through its
    admin API (/metrics and /public_metrics).

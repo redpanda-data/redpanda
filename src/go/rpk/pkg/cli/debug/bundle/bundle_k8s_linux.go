@@ -195,12 +195,8 @@ func getClusterDomain() string {
 	return clusterDomain
 }
 
-// saveClusterAdminAPICalls save the following admin API request to the zip:
-//   - Cluster Health: /v1/cluster/health_overview
-//   - Brokers: /v1/brokers
-//   - License Info: /v1/features/license
-//   - Cluster Config: /v1/cluster_config
-//   - Reconfigurations: /v1/partitions/reconfigurations
+// saveClusterAdminAPICalls saves per-cluster Admin API requests in the 'admin/'
+// directory of the bundle zip.
 func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string) step {
 	return func() error {
 		p = &config.RpkProfile{
@@ -224,6 +220,13 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 			func() error { return requestAndSave(ctx, ps, "admin/license.json", cl.GetLicenseInfo) },
 			func() error { return requestAndSave(ctx, ps, "admin/reconfigurations.json", cl.Reconfigurations) },
 			func() error { return requestAndSave(ctx, ps, "admin/features.json", cl.GetFeatures) },
+			func() error { return requestAndSave(ctx, ps, "admin/uuid.json", cl.ClusterUUID) },
+			func() error {
+				return requestAndSave(ctx, ps, "admin/automated_recovery.json", cl.PollAutomatedRecoveryStatus)
+			},
+			func() error {
+				return requestAndSave(ctx, ps, "admin/cloud_storage_lifecycle.json", cl.CloudStorageLifecycle)
+			},
 			func() error {
 				return requestAndSave(ctx, ps, "admin/partition_balancer_status.json", cl.GetPartitionStatus)
 			},
@@ -252,11 +255,8 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 	}
 }
 
-// saveSingleAdminAPICalls save the following per-node admin API request to the
-// zip:
-//   - Node Config: /v1/node_config
-//   - Prometheus Metrics: /metrics and /public_metrics
-//   - Cluster View: v1/cluster_view
+// saveSingleAdminAPICalls saves per-node admin API requests in the 'admin/'
+// directory of the bundle zip.
 func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval time.Duration) step {
 	return func() error {
 		var rerrs *multierror.Error
@@ -285,6 +285,27 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 				},
 				func() error {
 					return requestAndSave(ctx, ps, fmt.Sprintf("admin/cluster_view_%v.json", aName), cl.ClusterView)
+				},
+				func() error {
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/maintenance_status_%v.json", aName), cl.MaintenanceStatus)
+				},
+				func() error {
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/raft_status_%v.json", aName), cl.RaftRecoveryStatus)
+				},
+				func() error {
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/partition_leader_table_%v.json", aName), cl.PartitionLeaderTable)
+				},
+				func() error {
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/is_node_isolated_%v.json", aName), cl.IsNodeIsolated)
+				},
+				func() error {
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/controller_status_%v.json", aName), cl.ControllerStatus)
+				},
+				func() error {
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/disk_stat_data_%v.json", aName), cl.DiskData)
+				},
+				func() error {
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/disk_stat_cache_%v.json", aName), cl.DiskCache)
 				},
 				func() error {
 					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_metrics.txt", aName), cl.PrometheusMetrics)
