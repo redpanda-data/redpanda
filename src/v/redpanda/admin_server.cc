@@ -3605,14 +3605,6 @@ admin_server::find_tx_coordinator_handler(
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::describe_tx_registry_handler(
-  std::unique_ptr<ss::http::request> req) {
-    ss::httpd::transaction_json::describe_tx_registry_reply reply;
-
-    co_return ss::json::json_return_type(std::move(reply));
-}
-
-ss::future<ss::json::json_return_type>
 admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     auto& tx_frontend = _partition_manager.local().get_tx_frontend();
     if (!tx_frontend.local_is_initialized()) {
@@ -3682,12 +3674,6 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::find_coordinator,
       [this](std::unique_ptr<ss::http::request> req) {
           return find_tx_coordinator_handler(std::move(req));
-      });
-
-    register_route<user>(
-      ss::httpd::transaction_json::describe_tx_registry,
-      [this](std::unique_ptr<ss::http::request> req) {
-          return describe_tx_registry_handler(std::move(req));
       });
 }
 

@@ -26,21 +26,6 @@
             ]
         },
         {
-            "path": "/v1/tx_registry",
-            "operations": [
-                {
-                    "method": "GET",
-                    "summary": "Get tx registry state",
-                    "type": "describe_tx_registry_reply",
-                    "nickname": "describe_tx_registry",
-                    "produces": [
-                        "application/json"
-                    ],
-                    "parameters": []
-                }
-            ]
-        },
-        {
             "path": "/v1/transaction/{transactional_id}/find_coordinator",
             "operations": [
                 {
@@ -135,26 +120,6 @@
                 "hosted_txs": {
                     "type": "hosted_txs",
                     "description": "hosted transactions"
-                }
-            }
-        },
-        "describe_tx_registry_reply": {
-            "id": "describe_tx_registry_reply",
-            "description": "tx registry state",
-            "properties": {
-                "ec": {
-                    "type": "long"
-                },
-                "version": {
-                    "type": "long",
-                    "description": "repartitioning_id"
-                },
-                "tx_mapping": {
-                    "type": "array",
-                    "items": {
-                        "type": "tx_mapping_entry"
-                    },
-                    "description": "tx_mapping"
                 }
             }
         },
