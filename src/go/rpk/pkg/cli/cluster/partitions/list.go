@@ -41,7 +41,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "List partitions in the cluster",
 		Long: `List partitions in the cluster
 
-This commands lists the cluster-level metadata of all partitions in the cluster.
+This command lists the cluster-level metadata of all partitions in the cluster.
 It shows the current replica assignments on both brokers and CPU cores for given
 topics. By default, it assumes the "kafka" namespace, but you can specify an
 internal namespace using the "{namespace}/" prefix.
