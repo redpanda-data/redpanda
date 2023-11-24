@@ -1190,3 +1190,6 @@ class Admin:
 
     def reset_crash_tracking(self, node):
         return self._request("PUT", "reset_crash_tracking", node=node)
+
+    def migrate_tx_manager_in_recovery(self, node):
+        return self._request("POST", "recovery/migrate_tx_manager", node=node)
