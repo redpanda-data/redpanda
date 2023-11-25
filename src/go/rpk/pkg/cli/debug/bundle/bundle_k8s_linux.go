@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,7 +84,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		errs = multierror.Append(errs, fmt.Errorf("skipping admin API calls, unable to get admin API addresses: %v", err))
 	} else {
 		steps = append(steps, []step{
-			saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses),
+			saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
 			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval),
 		}...)
 	}
@@ -197,7 +198,7 @@ func getClusterDomain() string {
 
 // saveClusterAdminAPICalls saves per-cluster Admin API requests in the 'admin/'
 // directory of the bundle zip.
-func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string) step {
+func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, partitions []topicPartitionFilter) step {
 	return func() error {
 		p = &config.RpkProfile{
 			KafkaAPI: config.RpkKafkaAPI{
@@ -214,7 +215,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 		}
 
 		var grp multierror.Group
-		for _, f := range []func() error{
+		reqFuncs := []func() error{
 			func() error { return requestAndSave(ctx, ps, "admin/brokers.json", cl.Brokers) },
 			func() error { return requestAndSave(ctx, ps, "admin/health_overview.json", cl.GetHealthOverview) },
 			func() error { return requestAndSave(ctx, ps, "admin/license.json", cl.GetLicenseInfo) },
@@ -247,7 +248,12 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 				}
 				return requestAndSave(ctx, ps, "admin/cluster_partitions.json", f)
 			},
-		} {
+		}
+		if partitions != nil {
+			extraFuncs := saveExtraFuncs(ctx, ps, cl, partitions)
+			reqFuncs = append(reqFuncs, extraFuncs...)
+		}
+		for _, f := range reqFuncs {
 			grp.Go(f)
 		}
 		errs := grp.Wait()
@@ -528,4 +534,46 @@ func sanitizeName(name string) string {
 		r = strings.Replace(r, s, "-", -1)
 	}
 	return r
+}
+
+func saveExtraFuncs(ctx context.Context, ps *stepParams, cl *adminapi.AdminAPI, partitionFilters []topicPartitionFilter) (funcs []func() error) {
+	for _, tpf := range partitionFilters {
+		tpf := tpf
+		for _, p := range tpf.partitionsID {
+			p := p
+			funcs = append(funcs, []func() error{
+				func() error {
+					f := func(ctx context.Context) (adminapi.Partition, error) {
+						return cl.GetPartition(ctx, tpf.namespace, tpf.topic, p)
+					}
+					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/info_%v_%v_%v.json", tpf.namespace, tpf.topic, p), f)
+				},
+				func() error {
+					f := func(ctx context.Context) (adminapi.DebugPartition, error) {
+						return cl.DebugPartition(ctx, tpf.namespace, tpf.topic, p)
+					}
+					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/debug_%v_%v_%v.json", tpf.namespace, tpf.topic, p), f)
+				},
+				func() error {
+					f := func(ctx context.Context) (adminapi.CloudStorageStatus, error) {
+						return cl.CloudStorageStatus(ctx, tpf.topic, strconv.Itoa(p))
+					}
+					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/cloud_status_%v_%v.json", tpf.topic, p), f)
+				},
+				func() error {
+					f := func(ctx context.Context) (adminapi.CloudStorageManifest, error) {
+						return cl.CloudStorageManifest(ctx, tpf.topic, p)
+					}
+					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/cloud_manifest_%v_%v.json", tpf.topic, p), f)
+				},
+				func() error {
+					f := func(ctx context.Context) (adminapi.CloudStorageAnomalies, error) {
+						return cl.CloudStorageAnomalies(ctx, tpf.namespace, tpf.topic, p)
+					}
+					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/cloud_anomalies_%v_%v_%v.json", tpf.namespace, tpf.topic, p), f)
+				},
+			}...)
+		}
+	}
+	return
 }

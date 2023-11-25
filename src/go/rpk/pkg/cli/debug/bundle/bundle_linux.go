@@ -126,7 +126,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 
 	steps := []step{
 		saveCPUInfo(ps),
-		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs),
+		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.partitions),
 		saveCmdLine(ps),
 		saveConfig(ps, bp.y),
 		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),

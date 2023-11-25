@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/testfs"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseFileArray(t *testing.T) {
@@ -139,6 +140,80 @@ third 5 s2 true 3 0
 			if !reflect.DeepEqual(got, test.exp) {
 				t.Errorf("got %#v != exp %#v", got, test.exp)
 			}
+		})
+	}
+}
+
+func Test_parsePartition(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		input         string
+		expNs         string
+		expTopic      string
+		expPartitions []int
+		expErr        bool
+	}{
+		{
+			name:          "complete",
+			input:         "_redpanda_internal/topic-foo1/2,3,1",
+			expNs:         "_redpanda_internal",
+			expTopic:      "topic-foo1",
+			expPartitions: []int{2, 3, 1},
+		}, {
+			name:          "topic and partitions",
+			input:         "myTopic/1,2",
+			expNs:         "kafka",
+			expTopic:      "myTopic",
+			expPartitions: []int{1, 2},
+		}, {
+			name:          "topic and single partition",
+			input:         "myTopic/12",
+			expNs:         "kafka",
+			expTopic:      "myTopic",
+			expPartitions: []int{12},
+		}, {
+			name:          "just partitions",
+			input:         "1,2,3,5,8,13,21",
+			expNs:         "kafka",
+			expTopic:      "",
+			expPartitions: []int{1, 2, 3, 5, 8, 13, 21},
+		}, {
+			name:          "single partition",
+			input:         "13",
+			expNs:         "kafka",
+			expTopic:      "",
+			expPartitions: []int{13},
+		}, {
+			name:          "topic with dot",
+			input:         "my.topic.foo/1",
+			expNs:         "kafka",
+			expTopic:      "my.topic.foo",
+			expPartitions: []int{1},
+		}, {
+			name:   "wrong format 1",
+			input:  "thirteen",
+			expErr: true,
+		}, {
+			name:   "wrong format 2",
+			input:  "_internal|foo|1,2,3",
+			expErr: true,
+		}, {
+			name:   "empty input",
+			input:  "",
+			expErr: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			gotNs, gotTopic, gotPartitions, err := ParsePartitionString(tt.input)
+			if tt.expErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expNs, gotNs)
+			require.Equal(t, tt.expTopic, gotTopic)
+			require.Equal(t, tt.expPartitions, gotPartitions)
 		})
 	}
 }

@@ -121,6 +121,16 @@ type ControllerStatus struct {
 	DirtyOffset       int `json:"dirty_offset"`
 }
 
+// ReplicaState is the partition state of a replica. There are many keys
+// returned, so the raw response is just unmarshalled into an interface.
+type ReplicaState map[string]any
+
+// DebugPartition is the low level debug information of a partition.
+type DebugPartition struct {
+	Ntp      string         `json:"ntp"`
+	Replicas []ReplicaState `json:"replicas"`
+}
+
 func (a *AdminAPI) StartSelfTest(ctx context.Context, nodeIds []int, params []any) (string, error) {
 	var testID string
 	body := SelfTestRequest{
@@ -168,4 +178,11 @@ func (a *AdminAPI) IsNodeIsolated(ctx context.Context) (bool, error) {
 func (a *AdminAPI) ControllerStatus(ctx context.Context) (ControllerStatus, error) {
 	var response ControllerStatus
 	return response, a.sendAny(ctx, http.MethodGet, "/v1/debug/controller_status", nil, &response)
+}
+
+// DebugPartition returns low level debug information (on any node) of all
+// replicas of a given partition.
+func (a *AdminAPI) DebugPartition(ctx context.Context, namespace, topic string, partitionID int) (DebugPartition, error) {
+	var response DebugPartition
+	return response, a.sendAny(ctx, http.MethodGet, fmt.Sprintf("/v1/debug/partition/%v/%v/%v", namespace, topic, partitionID), nil, &response)
 }
