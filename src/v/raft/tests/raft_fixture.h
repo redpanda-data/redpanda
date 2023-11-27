@@ -93,7 +93,8 @@ struct raft_node_map {
 
 struct response_delay {
     std::chrono::milliseconds length;
-    std::optional<ss::promise<>> on_applied;
+    ss::condition_variable on_applied;
+    uint64_t applied_counter;
 };
 
 using failure_t = std::variant<response_delay>;
@@ -137,6 +138,8 @@ public:
 
     void inject_failure(msg_type type, failure_t failure);
     void remove_failure(msg_type type);
+    std::optional<std::reference_wrapper<const failure_t>>
+    get_failure(msg_type type) const;
 
     ss::future<> stop();
 
@@ -212,6 +215,8 @@ public:
     ss::future<model::offset> random_batch_base_offset(model::offset max);
 
     void inject_failure(msg_type type, failure_t failure);
+    std::optional<std::reference_wrapper<const failure_t>>
+      get_failure(msg_type) const;
     void remove_failure(msg_type type);
 
 private:

@@ -243,6 +243,14 @@ void in_memory_test_protocol::inject_failure(msg_type type, failure_t failure) {
 void in_memory_test_protocol::remove_failure(msg_type type) {
     _failures.erase(type);
 }
+std::optional<std::reference_wrapper<const failure_t>>
+in_memory_test_protocol::get_failure(msg_type type) const {
+    auto it = _failures.find(type);
+    if (it == _failures.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
 
 ss::future<> in_memory_test_protocol::stop() {
     co_await _gate.close();
@@ -307,9 +315,10 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
                   "Injecting response delay of length {} for {}",
                   f.length,
                   msg_type);
-                if (f.on_applied) {
-                    f.on_applied->set_value();
-                }
+
+                f.on_applied.broadcast();
+                f.applied_counter++;
+
                 return ss::sleep(f.length);
             });
         }
@@ -540,6 +549,11 @@ void raft_node_instance::inject_failure(msg_type type, failure_t failure) {
 
 void raft_node_instance::remove_failure(msg_type type) {
     _protocol->remove_failure(type);
+}
+
+std::optional<std::reference_wrapper<const failure_t>>
+raft_node_instance::get_failure(msg_type type) const {
+    return _protocol->get_failure(type);
 }
 
 seastar::future<> raft_fixture::TearDownAsync() {

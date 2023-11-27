@@ -205,10 +205,9 @@ TEST_F_CORO(
 
     auto [plagued_node, delay_applied] = co_await with_leader(
       10s, [](raft::raft_node_instance& node) {
-          raft::response_delay fail{
-            .length = 100ms, .on_applied = ss::promise<>{}};
+          raft::response_delay fail{.length = 100ms};
+          auto delay_applied = fail.on_applied.wait();
 
-          auto delay_applied = fail.on_applied->get_future();
           node.inject_failure(raft::msg_type::append_entries, std::move(fail));
           return std::make_tuple(node.get_vnode(), std::move(delay_applied));
       });
@@ -296,10 +295,9 @@ TEST_F_CORO(
 
     auto [plagued_node, delay_applied] = co_await with_leader(
       10s, [](raft::raft_node_instance& node) {
-          raft::response_delay fail{
-            .length = 5s, .on_applied = ss::promise<>{}};
+          raft::response_delay fail{.length = 5s};
 
-          auto delay_applied = fail.on_applied->get_future();
+          auto delay_applied = fail.on_applied.wait();
           node.inject_failure(raft::msg_type::append_entries, std::move(fail));
           return std::make_tuple(node.get_vnode(), std::move(delay_applied));
       });
