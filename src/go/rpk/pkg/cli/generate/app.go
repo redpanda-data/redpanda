@@ -371,7 +371,7 @@ the user.
 If you are having trouble connecting to your cluster, you can use -X
 admin.hosts=comma,delimited,host:ports to pass a specific admin api address.
 
-Examples:
+EXAMPLES
 
 Generate an app with interactive prompts:
   rpk generate app
