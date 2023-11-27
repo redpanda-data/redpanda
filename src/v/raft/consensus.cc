@@ -1307,10 +1307,13 @@ consensus::abort_configuration_change(model::revision_id revision) {
 }
 
 ss::future<std::error_code> consensus::force_replace_configuration_locally(
-  std::vector<vnode> nodes, model::revision_id new_revision) {
+  std::vector<vnode> voters,
+  std::vector<vnode> learners,
+  model::revision_id new_revision) {
     try {
         auto units = co_await _op_lock.get_units();
-        auto new_cfg = group_configuration(std::move(nodes), new_revision);
+        auto new_cfg = group_configuration(
+          std::move(voters), std::move(learners), new_revision);
         vlog(_ctxlog.info, "Force replacing configuration with: {}", new_cfg);
         auto batches = details::serialize_configuration_as_batches(
           std::move(new_cfg));

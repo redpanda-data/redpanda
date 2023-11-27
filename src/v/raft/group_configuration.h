@@ -169,6 +169,11 @@ public:
      * This is preferred constructor for group configuration
      */
     group_configuration(std::vector<vnode>, model::revision_id);
+
+    group_configuration(
+      std::vector<vnode> voters,
+      std::vector<vnode> learners,
+      model::revision_id);
     /**
      * creates joint configuration, version 4, with brokers
      */

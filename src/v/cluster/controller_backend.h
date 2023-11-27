@@ -301,6 +301,18 @@ private:
     ss::future<result<ss::stop_iteration>>
     reconcile_ntp_step(const model::ntp&, ntp_reconciliation_state&);
 
+    /**
+     * Given the original and new replica set for a force configuration, splits
+     * the new replica set into voters and learners and returns the equivalent
+     * pair.
+     */
+    using vnodes = std::vector<raft::vnode>;
+    std::pair<vnodes, vnodes> split_voters_learners_for_force_reconfiguration(
+      const replicas_t& original,
+      const replicas_t& new_replicas,
+      const replicas_revision_map&,
+      model::revision_id command_revision);
+
     ss::future<std::error_code> create_partition(
       model::ntp,
       raft::group_id,
@@ -364,6 +376,7 @@ private:
       model::revision_id cmd_revision);
     ss::future<result<ss::stop_iteration>> force_replica_set_update(
       ss::lw_shared_ptr<partition>,
+      const replicas_t& previous_replicas,
       const replicas_t& new_replicas,
       const replicas_revision_map& initial_replicas_revisions,
       model::revision_id cmd_revision);
