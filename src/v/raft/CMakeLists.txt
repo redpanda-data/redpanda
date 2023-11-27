@@ -38,6 +38,7 @@ v_cc_library(
     state_machine_manager.cc
     state_machine_base.cc
     recovery_scheduler.cc
+    persisted_stm.cc
   DEPS
     v::storage
     raft_rpc

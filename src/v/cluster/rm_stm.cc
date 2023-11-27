@@ -11,7 +11,6 @@
 
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
-#include "cluster/persisted_stm.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_utils.h"
 #include "kafka/protocol/wire.h"
@@ -22,6 +21,7 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
+#include "raft/persisted_stm.h"
 #include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
@@ -253,7 +253,7 @@ rm_stm::rm_stm(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<producer_state_manager>& producer_state_manager)
-  : persisted_stm<>(rm_stm_snapshot, logger, c)
+  : raft::persisted_stm<>(rm_stm_snapshot, logger, c)
   , _tx_locks(
       mt::
         map<absl::flat_hash_map, model::producer_id, ss::lw_shared_ptr<mutex>>(
@@ -994,7 +994,7 @@ ss::future<> rm_stm::stop() {
     co_await _gate.close();
     co_await reset_producers();
     _metrics.clear();
-    co_await persisted_stm<>::stop();
+    co_await raft::persisted_stm<>::stop();
 }
 
 ss::future<> rm_stm::start() { return persisted_stm::start(); }
@@ -1956,7 +1956,7 @@ static void move_snapshot_wo_seqs(tx_snapshot_v4& target, T& source) {
 }
 
 ss::future<>
-rm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     vlog(
       _ctx_log.trace,
       "applying snapshot with last included offset: {}",
@@ -2124,13 +2124,13 @@ ss::future<> rm_stm::offload_aborted_txns() {
     _log_state.aborted = std::move(snapshot.aborted);
 }
 
-ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot> rm_stm::take_local_snapshot() {
     return do_take_local_snapshot(active_snapshot_version());
 }
 
 // DO NOT coroutinize this method as it may cause issues on ARM:
 // https://github.com/redpanda-data/redpanda/issues/6768
-ss::future<stm_snapshot> rm_stm::do_take_local_snapshot(uint8_t version) {
+ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(uint8_t version) {
     auto start_offset = _raft->start_offset();
     vlog(
       _ctx_log.trace,
@@ -2271,7 +2271,7 @@ ss::future<stm_snapshot> rm_stm::do_take_local_snapshot(uint8_t version) {
                   vassert(false, "unsupported tx_snapshot version {}", version);
               }
               return fut_serialize.then([version, &tx_ss_buf, this]() {
-                  return stm_snapshot::create(
+                  return raft::stm_snapshot::create(
                     version, last_applied_offset(), std::move(tx_ss_buf));
               });
           });

@@ -1430,7 +1430,7 @@ ss::future<std::error_code> controller_backend::create_partition(
           group, source_shard.value(), ss::this_shard_id(), _storage);
         co_await raft::offset_translator::move_persistent_state(
           group, source_shard.value(), ss::this_shard_id(), _storage);
-        co_await detail::move_persistent_stm_state(
+        co_await raft::move_persistent_stm_state(
           ntp, source_shard.value(), ss::this_shard_id(), _storage);
 
         my_claim.hosting = true;

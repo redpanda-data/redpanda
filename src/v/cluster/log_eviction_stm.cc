@@ -382,7 +382,7 @@ ss::future<> log_eviction_stm::apply_raft_snapshot(const iobuf&) {
 }
 
 ss::future<> log_eviction_stm::apply_local_snapshot(
-  stm_snapshot_header header, iobuf&& data) {
+  raft::stm_snapshot_header header, iobuf&& data) {
     auto snapshot = serde::from_iobuf<snapshot_data>(std::move(data));
     vlog(
       _log.info, "Applying snapshot {} at offset: {}", snapshot, header.offset);
@@ -391,11 +391,11 @@ ss::future<> log_eviction_stm::apply_local_snapshot(
     return ss::now();
 }
 
-ss::future<stm_snapshot> log_eviction_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot> log_eviction_stm::take_local_snapshot() {
     vlog(_log.trace, "Taking snapshot at offset: {}", last_applied_offset());
     iobuf snap_data = serde::to_iobuf(
       snapshot_data{.effective_start_offset = _delete_records_eviction_offset});
-    co_return stm_snapshot::create(
+    co_return raft::stm_snapshot::create(
       0, last_applied_offset(), std::move(snap_data));
 }
 

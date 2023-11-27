@@ -12,7 +12,6 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "cluster/persisted_stm.h"
 #include "cluster/producer_state.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
@@ -24,6 +23,7 @@
 #include "model/record.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
 #include "storage/offset_translator_state.h"
@@ -62,7 +62,7 @@ namespace cluster {
  *   - enforces monotonicity of the sequential numbers
  *   - fences against old epochs
  */
-class rm_stm final : public persisted_stm<> {
+class rm_stm final : public raft::persisted_stm<> {
 public:
     using clock_type = ss::lowres_clock;
     using time_point_type = clock_type::time_point;
@@ -288,9 +288,10 @@ private:
       model::producer_identity,
       std::optional<model::tx_seq>,
       model::timeout_clock::duration);
-    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_local_snapshot() override;
-    ss::future<stm_snapshot> do_take_local_snapshot(uint8_t version);
+    ss::future<>
+    apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
+    ss::future<raft::stm_snapshot> take_local_snapshot() override;
+    ss::future<raft::stm_snapshot> do_take_local_snapshot(uint8_t version);
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
 

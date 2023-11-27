@@ -875,7 +875,7 @@ FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
         iobuf buf;
         reflection::adl<reflection::tx_snapshot_v3>{}.to(
           buf, std::move(snap_v3));
-        cluster::stm_snapshot_header hdr{
+        raft::stm_snapshot_header hdr{
           .version = reflection::tx_snapshot_v3::version,
           .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
           .offset = stm.last_stable_offset(),
@@ -893,7 +893,7 @@ FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
         iobuf buf;
         reflection::adl<reflection::tx_snapshot_v4>{}.to(
           buf, std::move(snap_v4));
-        cluster::stm_snapshot_header hdr{
+        raft::stm_snapshot_header hdr{
           .version = reflection::tx_snapshot_v4::version,
           .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
           .offset = stm.last_stable_offset(),
@@ -914,7 +914,7 @@ FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
         reflection::async_adl<reflection::tx_snapshot>{}
           .to(buf, std::move(snap_v5))
           .get();
-        cluster::stm_snapshot_header hdr{
+        raft::stm_snapshot_header hdr{
           .version = reflection::tx_snapshot::version,
           .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
           .offset = stm.last_stable_offset(),

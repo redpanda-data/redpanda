@@ -16,7 +16,6 @@
 #include "cloud_storage/types.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/persisted_stm.h"
 #include "cluster/prefix_truncate_record.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -26,6 +25,7 @@
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "raft/consensus.h"
+#include "raft/persisted_stm.h"
 #include "resource_mgmt/io_priority.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
@@ -547,7 +547,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .highest_producer_id = m.highest_producer_id(),
     });
 
-    auto snapshot = stm_snapshot::create(
+    auto snapshot = raft::stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
 
     storage::simple_snapshot_manager tmp_snapshot_mgr(
@@ -555,7 +555,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       "archival_metadata.snapshot",
       raft_priority());
 
-    co_await file_backed_stm_snapshot::persist_local_snapshot(
+    co_await raft::file_backed_stm_snapshot::persist_local_snapshot(
       tmp_snapshot_mgr, std::move(snapshot));
 }
 
@@ -565,7 +565,7 @@ archival_metadata_stm::archival_metadata_stm(
   features::feature_table& ft,
   ss::logger& logger,
   ss::shared_ptr<util::mem_tracker> partition_mem_tracker)
-  : cluster::persisted_stm<>(archival_stm_snapshot, logger, raft)
+  : raft::persisted_stm<>(archival_stm_snapshot, logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
       raft->ntp(),
@@ -1110,7 +1110,7 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
 }
 
 ss::future<> archival_metadata_stm::apply_local_snapshot(
-  stm_snapshot_header header, iobuf&& data) {
+  raft::stm_snapshot_header header, iobuf&& data) {
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
     if (
@@ -1176,7 +1176,7 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
     co_return;
 }
 
-ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot> archival_metadata_stm::take_local_snapshot() {
     auto segments = segments_from_manifest(*_manifest);
     auto replaced = replaced_segments_from_manifest(*_manifest);
     auto spillover = spillover_from_manifest(*_manifest);
@@ -1206,7 +1206,8 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
       last_applied_offset(),
       get_start_offset(),
       get_last_offset());
-    co_return stm_snapshot::create(
+
+    co_return raft::stm_snapshot::create(
       0, last_applied_offset(), std::move(snap_data));
 }
 
@@ -1509,7 +1510,7 @@ archival_metadata_stm::get_segments_to_cleanup() const {
 
 ss::future<> archival_metadata_stm::stop() {
     _download_as.request_abort();
-    co_await persisted_stm<>::stop();
+    co_await raft::persisted_stm<>::stop();
 }
 
 const cloud_storage::partition_manifest&
