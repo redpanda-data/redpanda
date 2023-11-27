@@ -13,6 +13,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
+#include "kafka/latency_probe.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
@@ -843,6 +844,9 @@ class simple_fetch_planner final : public fetch_planner::impl {
  */
 
 static ss::future<> fetch_topic_partitions(op_context& octx) {
+    auto bytes_left_before = octx.bytes_left;
+
+    auto start_time = latency_probe::hist_t::clock_type::now();
     auto planner = make_fetch_planner<simple_fetch_planner>();
 
     auto fetch_plan = planner.create_plan(octx);
@@ -850,6 +854,14 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
     fetch_plan_executor executor
       = make_fetch_plan_executor<parallel_fetch_plan_executor>();
     co_await executor.execute_plan(octx, std::move(fetch_plan));
+
+    auto end_time = latency_probe::hist_t::clock_type::now();
+
+    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(
+      end_time - start_time);
+
+    octx.rctx.probe().record_fetch_plan_and_execute_measurement(
+      latency, bytes_left_before == octx.bytes_left);
 
     if (octx.should_stop_fetch()) {
         co_return;
