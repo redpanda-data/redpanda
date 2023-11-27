@@ -1,4 +1,0 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: upd-schema-registry-secret-node-certificate
