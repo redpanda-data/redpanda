@@ -23,7 +23,7 @@ class HTObserveTest(Test):
 
     def setUp(self):
         self.redpanda.start()
-        self._clusterId = self.redpanda._cloud_cluster.config.id
+        self._clusterId = self.redpanda._cloud_cluster.cluster_id
 
     def load_grafana_rules(self):
         headers = {'Authorization': "Bearer {}".format(self._token)}

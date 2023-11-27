@@ -27,7 +27,7 @@ class cloudv2_object_store_blocked_aws:
     """Temporary block writes to a cloudv2 TS bucket"""
     def __init__(self, rp, logger):
         self.logger = logger
-        cluster_id = rp._cloud_cluster.config.id
+        cluster_id = rp._cloud_cluster.cluster_id
         network_id = rp._cloud_cluster.current.network_id
         self._cloud_provider_client = rp._cloud_cluster.provider_cli
         # This is different for BYOC and FMC
@@ -56,7 +56,7 @@ class cloudv2_object_store_blocked_aws:
 class cloudv2_object_store_blocked_gcp:
     def __init__(self, rp, logger):
         self.logger = logger
-        self._cluster_id = rp._cloud_cluster.config.id
+        self._cluster_id = rp._cloud_cluster.cluster_id
         network_id = rp._cloud_cluster.current.network_id
         self._cloud_provider_client = rp._cloud_cluster.provider_cli
         self._bucket_name = f'redpanda-cloud-storage-{self._cluster_id}'
