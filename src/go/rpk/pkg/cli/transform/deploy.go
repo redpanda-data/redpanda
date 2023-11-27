@@ -138,6 +138,9 @@ func (e *environment) Set(s string) error {
 	if v == "" {
 		return errors.New("missing value")
 	}
+	if e.vars == nil {
+		e.vars = make(map[string]string)
+	}
 	e.vars[k] = v
 	return nil
 }
