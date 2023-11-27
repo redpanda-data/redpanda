@@ -1,7 +1,0 @@
-apiVersion: kuttl.dev/v1beta1
-kind: TestStep
-delete:
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    name: datadir-decommission-2
-    namespace: redpanda-system
