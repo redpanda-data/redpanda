@@ -648,6 +648,8 @@ class AuditLogTestAdminApi(AuditLogTestBase):
     def __init__(self, test_context):
         super(AuditLogTestAdminApi,
               self).__init__(test_context=test_context,
+                             audit_log_config=AuditLogConfig(num_partitions=1,
+                                                             event_types=[]),
                              log_config=LoggingConfig('info',
                                                       logger_levels={
                                                           'auditing':
@@ -709,6 +711,8 @@ class AuditLogTestAdminApi(AuditLogTestBase):
             ) == n_expected, f"Expected: {n_expected}, Actual: {self.aggregate_count(records)}"
             return records
 
+        self.modify_audit_event_types(['admin'])
+
         # The test override the default event type to 'heartbeat', therefore
         # any actions on the admin server should not result in audit msgs
         api_calls = {
@@ -722,12 +726,14 @@ class AuditLogTestAdminApi(AuditLogTestBase):
             call_apis()
         self.logger.debug("Finished 500 api calls with management enabled")
 
+        time.sleep(5)
         records = number_of_records_matching(api_keys, 1000)
         self.redpanda.logger.debug(f"records: {records}")
 
         # Remove management setting
         self.modify_audit_event_types(['heartbeat'])
 
+        time.sleep(5)
         self.logger.debug("Started 500 api calls with management disabled")
         for _ in range(0, 500):
             call_apis()
