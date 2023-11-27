@@ -163,7 +163,7 @@ materialized_resources::materialized_resources()
   , _storage_read_readahead_count(
       config::shard_local_cfg().storage_read_readahead_count.bind())
   , _mem_units(
-      memory_groups::tiered_storage_max_memory(),
+      memory_groups().tiered_storage_max_memory(),
       "cst_materialized_resources_memory")
   , _hydration_units(max_parallel_hydrations(), "cst_hydrations")
   , _manifest_meta_size(
@@ -344,10 +344,10 @@ size_t materialized_resources::max_memory_utilization() const {
         auto max_mem = projected_remote_segment_reader_memory_usage()
                        * max_readers.value();
         return std::min(
-          memory_groups::tiered_storage_max_memory(),
+          memory_groups().tiered_storage_max_memory(),
           static_cast<size_t>(max_mem));
     }
-    return memory_groups::tiered_storage_max_memory();
+    return memory_groups().tiered_storage_max_memory();
 }
 
 size_t materialized_resources::max_parallel_hydrations() const {

@@ -30,3 +30,13 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::storage_resource_mgmt v::config
   LABELS resource_mgmt
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_resource_mgmt
+  SOURCES
+    memory_groups_test.cc
+  LIBRARIES v::resource_mgmt v::gtest_main v::utils
+  LABELS resource_mgmt
+)

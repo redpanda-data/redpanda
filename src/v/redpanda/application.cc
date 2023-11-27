@@ -86,6 +86,7 @@
 #include "raft/service.h"
 #include "redpanda/admin/server.h"
 #include "resource_mgmt/io_priority.h"
+#include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/rpc_utils.h"
 #include "security/audit/audit_log_manager.h"
@@ -444,6 +445,10 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<YAML::Node> audit_log_client_cfg,
   std::optional<scheduling_groups> groups) {
+    ss::smp::invoke_on_all([] {
+        // initialize memory groups now that our configuration is loaded
+        memory_groups();
+    }).get();
     construct_service(
       _memory_sampling, std::ref(_log), ss::sharded_parameter([]() {
           return config::shard_local_cfg().sampled_memory_profile.bind();
@@ -1120,7 +1125,7 @@ void application::wire_up_runtime_services(
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/redpanda-data/redpanda/issues/1392
-          memory_groups::kafka_total_memory(),
+          memory_groups().kafka_total_memory(),
           *_proxy_client_config,
           *_proxy_config,
           controller.get());
@@ -1132,7 +1137,7 @@ void application::wire_up_runtime_services(
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/redpanda-data/redpanda/issues/1392
-          memory_groups::kafka_total_memory(),
+          memory_groups().kafka_total_memory(),
           *_schema_reg_client_config,
           *_schema_reg_config,
           std::reference_wrapper(controller));
@@ -1750,8 +1755,8 @@ void application::wire_up_redpanda_services(
       .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
               c.conn_quotas = std::ref(_kafka_conn_quotas);
-              c.max_service_memory_per_core
-                = memory_groups::kafka_total_memory();
+              c.max_service_memory_per_core = int64_t(
+                memory_groups().kafka_total_memory());
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
               if (config::shard_local_cfg().kafka_rpc_server_tcp_recv_buf()) {
@@ -1987,7 +1992,8 @@ void application::wire_up_bootstrap_services() {
               // shard assignment deterministic.
               c.load_balancing_algo
                 = ss::server_socket::load_balancing_algorithm::port;
-              c.max_service_memory_per_core = memory_groups::rpc_total_memory();
+              c.max_service_memory_per_core = int64_t(
+                memory_groups().rpc_total_memory());
               c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
               c.disable_public_metrics = net::public_metrics_disabled(
