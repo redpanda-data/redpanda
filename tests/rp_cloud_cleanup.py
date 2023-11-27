@@ -106,8 +106,6 @@ class CloudCleanup():
         self.log.info(f"# Using CloudV2 API at '{self.config.api_url}'")
         self.log.info(f"# Using provider {self.config.provider}")
 
-        self.log.info("# Preparing rpk")
-        self.utils.rpk_plugin_uninstall('byoc')
         # Fugure out which time was 36h back
         self.back_36h = datetime.now() - timedelta(hours=36)
 
@@ -192,16 +190,6 @@ class CloudCleanup():
                 except Exception as e:
                     _message += "| ERROR: failed to login as " \
                                 f"'{self.config.oauth_client_id}': {e}"
-                    self.log.error(_message)
-                    return False
-                # Uninstall/Install plugin
-                try:
-                    _message += "| update plugin "
-                    self.utils.rpk_plugin_uninstall('byoc')
-                    self.utils.rpk_cloud_byoc_install(_id)
-                except Exception as e:
-                    _message += "| ERROR: failed to update byoc plugin " \
-                                f"for '{_id}': {e}"
                     self.log.error(_message)
                     return False
 
