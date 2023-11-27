@@ -225,7 +225,8 @@ ss::future<> processor::run_producer_loop() {
         auto drained = co_await drain_queue(&_transform_producer_pipe, _probe);
         co_await _sinks[0]->write(std::move(drained.batches));
         co_await _offset_tracker->commit_offset(drained.latest_offset);
-        report_lag(_source->latest_offset() - drained.latest_offset);
+        report_lag(
+          kafka::prev_offset(_source->latest_offset()) - drained.latest_offset);
     }
 }
 
