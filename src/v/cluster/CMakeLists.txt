@@ -90,7 +90,6 @@ v_cc_library(
     id_allocator.cc
     id_allocator_frontend.cc
     rm_partition_frontend.cc
-    tx_registry_frontend.cc
     tx_gateway_frontend.cc
     tx_gateway.cc
     tx_snapshot_utils.cc
@@ -114,7 +113,6 @@ v_cc_library(
     controller.cc
     partition.cc
     partition_probe.cc
-    tx_registry_stm.cc
     id_allocator_stm.cc
     persisted_stm.cc
     tm_stm_cache.cc

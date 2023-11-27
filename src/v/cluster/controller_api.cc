@@ -280,22 +280,26 @@ controller_api::get_reconciliation_state(
 
 // high level APIs
 ss::future<std::error_code> controller_api::wait_for_topic(
-  model::topic_namespace_view tp_ns, model::timeout_clock::time_point timeout) {
-    auto metadata = _topics.local().get_topic_metadata_ref(tp_ns);
-    if (!metadata) {
-        vlog(clusterlog.trace, "topic {} does not exists", tp_ns);
-        co_return make_error_code(errc::topic_not_exists);
-    }
-
-    std::deque<model::ntp> all_ntps;
-    for (const auto& p_as : metadata->get().get_assignments()) {
-        all_ntps.emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
-    }
+  model::topic_namespace_view tp_ns_view,
+  model::timeout_clock::time_point timeout) {
+    model::topic_namespace tp_ns(tp_ns_view);
     bool ready = false;
     while (!ready) {
         if (model::timeout_clock::now() > timeout) {
             co_return make_error_code(errc::timeout);
         }
+        auto metadata = _topics.local().get_topic_metadata_ref(tp_ns);
+        if (!metadata) {
+            vlog(clusterlog.trace, "topic {} does not exists", tp_ns);
+            co_await ss::sleep_abortable(
+              std::chrono::milliseconds(100), _as.local());
+            continue;
+        }
+        std::deque<model::ntp> all_ntps;
+        for (const auto& p_as : metadata->get().get_assignments()) {
+            all_ntps.emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
+        }
+
         auto res = co_await all_reconciliations_done(all_ntps);
         ready = !res.has_error() && res.value();
         if (!ready) {

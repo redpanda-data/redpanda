@@ -16,11 +16,16 @@
 
 #include <cstdint>
 
+cluster::tx_hash_range make_range(int begin, int end) {
+    return {cluster::tx_id_hash(begin), cluster::tx_id_hash(end)};
+}
+
 SEASTAR_THREAD_TEST_CASE(hash_ranges_addition_union_test) {
-    cluster::tx_hash_range range_start(0, 100);
-    cluster::tx_hash_range range_middle(101, cluster::tx_tm_hash_max - 100);
-    cluster::tx_hash_range range_end(
-      cluster::tx_tm_hash_max - 99, cluster::tx_tm_hash_max);
+    cluster::tx_hash_range range_start = make_range(0, 100);
+    cluster::tx_hash_range range_middle = make_range(
+      101, cluster::tx_id_hash::max() - 100);
+    cluster::tx_hash_range range_end = make_range(
+      cluster::tx_id_hash::max() - 99, cluster::tx_id_hash::max());
     cluster::tx_hash_ranges_errc add_res;
 
     cluster::tm_stm::locally_hosted_txs hosted_transactions_1{};
@@ -34,10 +39,12 @@ SEASTAR_THREAD_TEST_CASE(hash_ranges_addition_union_test) {
       hosted_transactions_1, range_end);
     BOOST_REQUIRE(add_res == cluster::tx_hash_ranges_errc::success);
     BOOST_REQUIRE_EQUAL(hosted_transactions_1.hash_ranges.ranges.size(), 1);
-    BOOST_REQUIRE_EQUAL(hosted_transactions_1.hash_ranges.ranges[0].first, 0);
+    BOOST_REQUIRE_EQUAL(
+      hosted_transactions_1.hash_ranges.ranges[0].first,
+      cluster::tx_id_hash(0));
     BOOST_REQUIRE_EQUAL(
       hosted_transactions_1.hash_ranges.ranges[0].last,
-      cluster::tx_tm_hash_max);
+      cluster::tx_id_hash::max());
 
     cluster::tm_stm::locally_hosted_txs hosted_transactions_2{};
     add_res = cluster::hosted_transactions::add_range(
@@ -50,10 +57,12 @@ SEASTAR_THREAD_TEST_CASE(hash_ranges_addition_union_test) {
       hosted_transactions_2, range_middle);
     BOOST_REQUIRE(add_res == cluster::tx_hash_ranges_errc::success);
     BOOST_REQUIRE_EQUAL(hosted_transactions_2.hash_ranges.ranges.size(), 1);
-    BOOST_REQUIRE_EQUAL(hosted_transactions_2.hash_ranges.ranges[0].first, 0);
+    BOOST_REQUIRE_EQUAL(
+      hosted_transactions_2.hash_ranges.ranges[0].first,
+      cluster::tx_id_hash(0));
     BOOST_REQUIRE_EQUAL(
       hosted_transactions_2.hash_ranges.ranges[0].last,
-      cluster::tx_tm_hash_max);
+      cluster::tx_id_hash::max());
 
     cluster::tm_stm::locally_hosted_txs hosted_transactions_3{};
     add_res = cluster::hosted_transactions::add_range(
@@ -66,18 +75,20 @@ SEASTAR_THREAD_TEST_CASE(hash_ranges_addition_union_test) {
       hosted_transactions_3, range_start);
     BOOST_REQUIRE(add_res == cluster::tx_hash_ranges_errc::success);
     BOOST_REQUIRE_EQUAL(hosted_transactions_3.hash_ranges.ranges.size(), 1);
-    BOOST_REQUIRE_EQUAL(hosted_transactions_3.hash_ranges.ranges[0].first, 0);
+    BOOST_REQUIRE_EQUAL(
+      hosted_transactions_3.hash_ranges.ranges[0].first,
+      cluster::tx_id_hash(0));
     BOOST_REQUIRE_EQUAL(
       hosted_transactions_3.hash_ranges.ranges[0].last,
-      cluster::tx_tm_hash_max);
+      cluster::tx_id_hash::max());
 }
 
 SEASTAR_THREAD_TEST_CASE(hash_ranges_addition_intersects_test) {
     cluster::tx_hash_ranges_errc add_res;
-    cluster::tx_hash_range range_100_200(100, 200);
-    cluster::tx_hash_range range_100_150(100, 150);
-    cluster::tx_hash_range range_150_170(150, 170);
-    cluster::tx_hash_range range_170_200(170, 200);
+    cluster::tx_hash_range range_100_200 = make_range(100, 200);
+    cluster::tx_hash_range range_100_150 = make_range(100, 150);
+    cluster::tx_hash_range range_150_170 = make_range(150, 170);
+    cluster::tx_hash_range range_170_200 = make_range(170, 200);
 
     cluster::tm_stm::locally_hosted_txs hosted_transactions_1{};
     add_res = cluster::hosted_transactions::add_range(
@@ -122,7 +133,7 @@ SEASTAR_THREAD_TEST_CASE(hash_ranges_include_exclude_test) {
     kafka::transactional_id tx_id("tx_1");
     cluster::tm_stm::locally_hosted_txs hosted_transactions_1{};
     add_res = cluster::hosted_transactions::add_range(
-      hosted_transactions_1, {0, cluster::tx_tm_hash_max});
+      hosted_transactions_1, make_range(0, cluster::tx_id_hash::max()));
     BOOST_REQUIRE(add_res == cluster::tx_hash_ranges_errc::success);
     add_res = cluster::hosted_transactions::include_transaction(
       hosted_transactions_1, tx_id);

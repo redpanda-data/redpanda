@@ -45,7 +45,6 @@
 #include "cluster/topic_recovery_status_rpc_handler.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
-#include "cluster/tx_registry_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
@@ -306,7 +305,6 @@ admin_server::admin_server(
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
     topic_recovery_status_frontend,
-  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
   ss::sharded<storage::node>& storage_node,
   ss::sharded<memory_sampling>& memory_sampling_service,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
@@ -334,7 +332,6 @@ admin_server::admin_server(
   , _schema_registry(schema_registry)
   , _topic_recovery_service(topic_recovery_svc)
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
-  , _tx_registry_frontend(tx_registry_frontend)
   , _storage_node(storage_node)
   , _memory_sampling_service(memory_sampling_service)
   , _cloud_storage_cache(cloud_storage_cache)
@@ -3858,8 +3855,8 @@ admin_server::find_tx_coordinator_handler(
   std::unique_ptr<ss::http::request> req) {
     auto transaction_id = req->param["transactional_id"];
     kafka::transactional_id tid(transaction_id);
-    auto r = co_await _tx_registry_frontend.local().find_coordinator(
-      tid, config::shard_local_cfg().find_coordinator_timeout_ms());
+    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+    auto r = co_await tx_frontend.local().find_coordinator(tid);
 
     ss::httpd::transaction_json::find_coordinator_reply reply;
     if (r.coordinator) {
@@ -3878,47 +3875,6 @@ admin_server::find_tx_coordinator_handler(
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::describe_tx_registry_handler(
-  std::unique_ptr<ss::http::request> req) {
-    if (need_redirect_to_leader(model::tx_registry_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::tx_registry_ntp);
-    }
-
-    ss::httpd::transaction_json::describe_tx_registry_reply reply;
-    auto r = co_await _tx_registry_frontend.local().route_locally(
-      cluster::describe_tx_registry_request());
-    if (r.ec != cluster::tx_errc::none) {
-        reply.ec = static_cast<int>(r.ec);
-        co_return ss::json::json_return_type(std::move(reply));
-    }
-    reply.ec = 0;
-
-    reply.version = r.id();
-    for (auto& [partition, hosted] : r.mapping) {
-        ss::httpd::transaction_json::tx_mapping_entry entry;
-        entry.partition_id = partition();
-
-        ss::httpd::transaction_json::hosted_txs hosted_txs;
-        for (auto tx_id : hosted.excluded_transactions) {
-            hosted_txs.excluded_transactions.push(tx_id());
-        }
-        for (auto tx_id : hosted.included_transactions) {
-            hosted_txs.included_transactions.push(tx_id());
-        }
-        for (auto range : hosted.hash_ranges.ranges) {
-            ss::httpd::transaction_json::hash_range hash_range;
-            hash_range.first = range.first;
-            hash_range.last = range.last;
-            hosted_txs.hash_ranges.push(hash_range);
-        }
-        entry.hosted_txs = hosted_txs;
-        reply.tx_mapping.push(entry);
-    }
-
-    co_return ss::json::json_return_type(std::move(reply));
-}
-
-ss::future<ss::json::json_return_type>
 admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     auto& tx_frontend = _partition_manager.local().get_tx_frontend();
     if (!tx_frontend.local_is_initialized()) {
@@ -3927,8 +3883,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     auto transaction_id = req->param["transactional_id"];
     kafka::transactional_id tid(transaction_id);
 
-    auto r = co_await _tx_registry_frontend.local().find_coordinator(
-      tid, config::shard_local_cfg().find_coordinator_timeout_ms());
+    auto r = co_await tx_frontend.local().find_coordinator(tid);
     if (!r.ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
@@ -3936,7 +3891,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, *r.ntp);
     }
 
-    auto tx_ntp = co_await tx_frontend.local().ntp_for_tx_id(tid);
+    auto tx_ntp = tx_frontend.local().ntp_for_tx_id(tid);
     if (!tx_ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
@@ -3989,12 +3944,6 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::find_coordinator,
       [this](std::unique_ptr<ss::http::request> req) {
           return find_tx_coordinator_handler(std::move(req));
-      });
-
-    register_route<user>(
-      ss::httpd::transaction_json::describe_tx_registry,
-      [this](std::unique_ptr<ss::http::request> req) {
-          return describe_tx_registry_handler(std::move(req));
       });
 }
 

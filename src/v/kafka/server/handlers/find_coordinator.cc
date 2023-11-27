@@ -11,7 +11,6 @@
 
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
-#include "cluster/tx_registry_frontend.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/find_coordinator.h"
@@ -102,11 +101,8 @@ ss::future<response_ptr> find_coordinator_handler::handle(
           std::move(ctx),
           [request = std::move(request),
            tx_id = std::move(tx_id)](request_context& ctx) mutable {
-              return ctx.tx_registry_frontend()
-                .find_coordinator(
-                  tx_id,
-                  config::shard_local_cfg().find_coordinator_timeout_ms())
-                .then([&ctx](cluster::find_coordinator_reply r) {
+              return ctx.tx_gateway_frontend().find_coordinator(tx_id).then(
+                [&ctx](cluster::find_coordinator_reply r) {
                     if (r.coordinator) {
                         return handle_leader(ctx, *r.coordinator);
                     }

@@ -83,7 +83,6 @@ public:
       pandaproxy::schema_registry::api*,
       ss::sharded<cloud_storage::topic_recovery_service>&,
       ss::sharded<cluster::topic_recovery_status_frontend>&,
-      ss::sharded<cluster::tx_registry_frontend>&,
       ss::sharded<storage::node>&,
       ss::sharded<memory_sampling>&,
       ss::sharded<cloud_storage::cache>&,
@@ -490,8 +489,6 @@ private:
     ss::future<ss::json::json_return_type>
       delete_partition_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      describe_tx_registry_handler(std::unique_ptr<ss::http::request>);
-    ss::future<ss::json::json_return_type>
       find_tx_coordinator_handler(std::unique_ptr<ss::http::request>);
 
     /// Cluster routes
@@ -631,7 +628,6 @@ private:
     ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;
     ss::sharded<cluster::topic_recovery_status_frontend>&
       _topic_recovery_status_frontend;
-    ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
     ss::sharded<storage::node>& _storage_node;
     ss::sharded<memory_sampling>& _memory_sampling_service;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;

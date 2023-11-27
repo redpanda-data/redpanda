@@ -21,18 +21,18 @@ import uuid
 import random
 
 from ducktape.utils.util import wait_until
-from ducktape.errors import TimeoutError
+
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService, SecurityConfig, SaslCredentials
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 import confluent_kafka as ck
-from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import wait_for_num_versions
-from rptest.clients.rpk import RpkTool, AclList
-from rptest.clients.python_librdkafka import PythonLibrdkafka
 
-from rptest.tests.cluster_features_test import FeaturesTestBase
+from rptest.services.admin import Admin
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.clients.rpk import RpkTool, AclList
+
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class TransactionsMixin:
@@ -105,7 +105,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     @cluster(num_nodes=3)
     def find_coordinator_creates_tx_topics_test(self):
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
+            for tx_topic in ["tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert not node.account.exists(path)
@@ -113,7 +113,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         self.find_coordinator("tx0")
 
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
+            for tx_topic in ["tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert node.account.exists(path)
@@ -122,7 +122,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     @cluster(num_nodes=3)
     def init_transactions_creates_eos_topics_test(self):
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["id_allocator", "tx", "tx_registry"]:
+            for tx_topic in ["id_allocator", "tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert not node.account.exists(path)
@@ -136,7 +136,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer.init_transactions()
 
         for node in self.redpanda.started_nodes():
-            for tx_topic in ["id_allocator", "tx", "tx_registry"]:
+            for tx_topic in ["id_allocator", "tx"]:
                 path = join(RedpandaService.DATA_DIR, "kafka_internal",
                             tx_topic)
                 assert node.account.exists(path)
@@ -1236,100 +1236,90 @@ def remote_path_exists(node, path):
                err_msg=f"Can't find \"{path}\" on {node.account.hostname}")
 
 
-class StaticPartitioning_MixedVersionsTest(RedpandaTest, TransactionsMixin):
+class TxUpgradeTest(RedpandaTest):
+    """
+    Basic test verifying if mapping between transaction coordinator and transaction_id is preserved across the upgrades
+    """
     def __init__(self, test_context):
-        extra_rp_conf = {
-            "enable_leader_balancer": False,
-            "partition_autobalancing_mode": "off",
-            "enable_auto_rebalance_on_node_add": False,
-        }
+        super(TxUpgradeTest, self).__init__(test_context=test_context,
+                                            num_brokers=3)
+        self.installer = self.redpanda._installer
+        self.partition_count = 10
+        self.msg_sent = 0
+        self.producers_count = 100
 
-        environment = {
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 9,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        }
+    def setUp(self):
+        self.old_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
 
-        super(StaticPartitioning_MixedVersionsTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf,
-                             log_level="trace",
-                             environment=environment)
+        self.old_version_str = f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        self.installer.install(self.redpanda.nodes, self.old_version)
+        super(TxUpgradeTest, self).setUp()
 
-        self.admin = Admin(self.redpanda)
+    def _tx_id(self, idx):
+        return f"test-producer-{idx}"
 
+    def _populate_tx_coordinator(self, topic):
+        def delivery_callback(err, msg):
+            if err:
+                assert False, "failed to deliver message: %s" % err
+
+        for i in range(self.producers_count):
+            producer = ck.Producer({
+                'bootstrap.servers': self.redpanda.brokers(),
+                'transactional.id': self._tx_id(i),
+                'transaction.timeout.ms': 10000,
+            })
+            producer.init_transactions()
+            producer.begin_transaction()
+            for m in range(random.randint(1, 50)):
+                producer.produce(topic,
+                                 f"p-{i}-key-{m}",
+                                 f"p-{i}-value-{m}",
+                                 random.randint(0, self.partition_count - 1),
+                                 callback=delivery_callback)
+            producer.commit_transaction()
+            producer.flush()
+
+    def _get_tx_id_mapping(self):
+        mapping = {}
+        admin = Admin(self.redpanda)
+        for idx in range(self.producers_count):
+            c = admin.find_tx_coordinator(self._tx_id(idx))
+            mapping[self._tx_id(
+                idx)] = f"{c['ntp']['topic']}/{c['ntp']['partition']}"
+
+        return mapping
+
+    @skip_debug_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def find_coordinator_on_old_node_doesnt_create_tx_registry_test(self):
-        self.redpanda.set_environment({
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        })
-        old_node = self.redpanda.started_nodes()[0]
-        new_node = self.redpanda.started_nodes()[1]
-        self.redpanda.restart_nodes([new_node], stop_timeout=60)
+    def upgrade_does_not_change_tx_coordinator_assignment_test(self):
+        topic = TopicSpec(partition_count=self.partition_count)
+        self.client().create_topic(topic)
 
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                assert not node.account.exists(path)
+        self._populate_tx_coordinator(topic=topic.name)
+        initial_mapping = self._get_tx_id_mapping()
+        self.logger.info(f"Initial mapping {initial_mapping}")
 
-        self.find_coordinator("tx0", node=old_node)
+        first_node = self.redpanda.nodes[0]
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert self.old_version_str in unique_versions, unique_versions
 
-        for node in self.redpanda.started_nodes():
-            path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                        "tx_registry")
-            assert not node.account.exists(path)
-            path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
-            remote_path_exists(node, path)
-            assert node.account.isdir(path)
+        # Upgrade one node to the head version.
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.redpanda.restart_nodes([first_node])
+        unique_versions = wait_for_num_versions(self.redpanda, 2)
+        assert self.old_version_str in unique_versions, unique_versions
+        assert self._get_tx_id_mapping(
+        ) == initial_mapping, "Mapping changed after upgrading one of the nodes"
 
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def find_coordinator_on_new_node_doesnt_create_tx_registry_test(self):
-        self.redpanda.set_environment({
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        })
-        new_node = self.redpanda.started_nodes()[1]
-        self.redpanda.restart_nodes([new_node], stop_timeout=60)
+        # verify if txs are handled correctly with mixed versions
+        self._populate_tx_coordinator(topic.name)
 
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                assert not node.account.exists(path)
-
-        self.find_coordinator("tx0", node=new_node)
-
-        for node in self.redpanda.started_nodes():
-            path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                        "tx_registry")
-            assert not node.account.exists(path)
-            path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
-            remote_path_exists(node, path)
-            assert node.account.isdir(path)
-
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def find_coordinator_creates_tx_topics_after_upgrade_test(self):
-        self.redpanda.set_environment({
-            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
-        })
-        nodes = list(self.redpanda.started_nodes())
-        self.redpanda.restart_nodes(nodes, stop_timeout=60)
-
-        FeaturesTestBase._wait_for_version_everywhere(self, 10)
-
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                assert not node.account.exists(path)
-
-        self.find_coordinator("tx0")
-
-        for node in self.redpanda.started_nodes():
-            for tx_topic in ["tx", "tx_registry"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
-                remote_path_exists(node, path)
-                assert node.account.isdir(path)
+        # Only once we upgrade the rest of the nodes do we converge on the new
+        # version.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert self.old_version_str not in unique_versions, unique_versions
+        assert self._get_tx_id_mapping(
+        ) == initial_mapping, "Mapping changed after full upgrade"
