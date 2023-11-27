@@ -1,8 +1,0 @@
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
-metadata:
-  name: centralized-configuration-bootstrap
-spec:
-  additionalConfiguration:
-    redpanda.append_chunk_size: "40960"
-    redpanda.segment_appender_flush_timeout_ms: "1003"
