@@ -1169,6 +1169,7 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::transform_invalid_environment:
         case cluster::errc::source_topic_not_exists:
         case cluster::errc::source_topic_still_in_use:
+        case cluster::errc::invalid_partition_operation:
             throw ss::httpd::bad_request_exception(
               fmt::format("{}", ec.message()));
         default:

@@ -1037,6 +1037,10 @@ ss::future<std::error_code> topics_frontend::set_topic_partitions_disabled(
         co_return errc::feature_disabled;
     }
 
+    if (!model::is_user_topic(ns_tp)) {
+        co_return errc::invalid_partition_operation;
+    }
+
     auto r = co_await stm_linearizable_barrier(timeout);
     if (!r) {
         co_return r.error();

@@ -76,6 +76,7 @@ enum class errc : int16_t {
     trackable_keys_limit_exceeded,
     topic_disabled,
     partition_disabled,
+    invalid_partition_operation,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -220,6 +221,8 @@ struct errc_category final : public std::error_category {
             return "Topic disabled by user";
         case errc::partition_disabled:
             return "Partition disabled by user";
+        case errc::invalid_partition_operation:
+            return "Invalid partition operation";
         }
         return "cluster::errc::unknown";
     }

@@ -11,6 +11,7 @@ import tempfile
 import dataclasses
 
 from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -239,6 +240,13 @@ class DisablingPartitionsTest(RedpandaTest):
     def test_apis(self):
         rpk = RpkTool(self.redpanda)
         admin = Admin(self.redpanda)
+
+        try:
+            admin.set_partitions_disabled(ns="redpanda", topic="controller")
+        except HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            assert False, "disabling internal topics should fail"
 
         topics = ["mytopic1", "mytopic2", "mytopic3", "mytopic4"]
         for topic in topics:
