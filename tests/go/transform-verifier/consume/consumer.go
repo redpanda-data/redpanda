@@ -29,21 +29,21 @@ var (
 )
 
 type ConsumeStatus struct {
-	RecordsRecv    map[int]int `json:"records_recv"`
-	InvalidRecords int         `json:"invalid_records"`
-	ErrorCount     int         `json:"error_count"`
+	LatestSeqnos   map[int]uint64 `json:"latest_seqnos"`
+	InvalidRecords int            `json:"invalid_records"`
+	ErrorCount     int            `json:"error_count"`
 }
 
 func (self ConsumeStatus) Merge(other ConsumeStatus) ConsumeStatus {
-	combined := make(map[int]int)
-	for k, v := range self.RecordsRecv {
-		combined[k] += v
+	combined := make(map[int]uint64)
+	for k, v := range self.LatestSeqnos {
+		combined[k] = max(v, combined[k])
 	}
-	for k, v := range other.RecordsRecv {
-		combined[k] += v
+	for k, v := range other.LatestSeqnos {
+		combined[k] = max(v, combined[k])
 	}
 	return ConsumeStatus{
-		RecordsRecv:    combined,
+		LatestSeqnos:   combined,
 		InvalidRecords: self.InvalidRecords + other.InvalidRecords,
 		ErrorCount:     self.ErrorCount + other.ErrorCount,
 	}
@@ -76,33 +76,34 @@ func createReporter(ctx context.Context) func(ConsumeStatus) {
 	}
 }
 
-// recordValidator takes a record and returns if the record counts
-// towards progress (ie is not a duplicate because of at least once
+// recordValidator takes a record and validates the record makes
+// progress (ie is not a duplicate because of at least once
 // processing) and an error if the record was invalid.
-type recordValidator = func(*kgo.Record) (bool, error)
+//
+// The latest seqno is returned
+type recordValidator = func(*kgo.Record) (uint64, error)
 
 func createRecordValidator() recordValidator {
 	latestSeqno := uint64(0)
-	return func(r *kgo.Record) (bool, error) {
+	return func(r *kgo.Record) (uint64, error) {
 		seqno, err := common.FindSeqnoHeader(r)
 		if err != nil {
-			return false, fmt.Errorf("missing seqno header: %v", err)
+			return 0, fmt.Errorf("missing seqno header: %v", err)
 		}
 		// Make sure we initialize the seqno correctly (we can start from any offset).
 		if latestSeqno == 0 {
 			latestSeqno = seqno
-			return true, nil
+			return latestSeqno, nil
 		}
 		// Do to at least once processing we can get duplicates, so equal seqno is fine
 		// Additionally because we commit async, it's possible we rewind multiple seqno.
 		// The real thing we can guarantee is that once we get a new seqno, there are no
 		// gaps we've seen.
 		if seqno > latestSeqno && latestSeqno+1 != seqno {
-			return false, fmt.Errorf("detected missing seqno: seqno=%d latest=%d", seqno, latestSeqno)
+			return latestSeqno, fmt.Errorf("detected missing seqno: seqno=%d latest=%d", seqno, latestSeqno)
 		}
-		progress := seqno > latestSeqno
 		latestSeqno = max(seqno, latestSeqno)
-		return progress, nil
+		return latestSeqno, nil
 	}
 }
 
@@ -133,7 +134,7 @@ func consume(ctx context.Context) error {
 			slog.Error("consume error", "topic", topic, "partition", partition, "err", err)
 			errorCount++
 		})
-		counts := make(map[int]int)
+		seqnos := make(map[int]uint64)
 		bytes := 0
 		invalidRecords := 0
 		fetches.EachPartition(func(ftp kgo.FetchTopicPartition) {
@@ -145,19 +146,17 @@ func consume(ctx context.Context) error {
 			}
 			for _, r := range ftp.Records {
 				bytes += common.RecordSize(r)
-				progress, err := validator(r)
+				latestSeqno, err := validator(r)
 				if err != nil {
 					slog.Warn("invalid record", "err", err)
 					invalidRecords++
 				}
-				if progress {
-					counts[p]++
-				}
+				seqnos[p] = max(seqnos[p], latestSeqno)
 			}
 		})
 		reporter(ConsumeStatus{
 			ErrorCount:     errorCount,
-			RecordsRecv:    counts,
+			LatestSeqnos:   seqnos,
 			InvalidRecords: invalidRecords,
 		})
 		// Rate limit before fetching again

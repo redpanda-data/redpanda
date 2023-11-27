@@ -74,7 +74,7 @@ public:
       model::transform_id,
       model::ntp,
       model::transform_metadata,
-      processor::error_callback,
+      processor::state_callback,
       probe*)
       = 0;
 };
@@ -121,9 +121,9 @@ public:
     void on_leadership_change(model::ntp, ntp_leader);
     // Called everytime a transform changes
     void on_plugin_change(model::transform_id);
-    // Called when processors have errors
-    void on_transform_error(
-      model::transform_id, model::ntp, model::transform_metadata);
+    // Called when processors have state changes
+    void on_transform_state_change(
+      model::transform_id, model::ntp, processor::state);
 
     // Get the current state of all the transforms this manager is responsible
     // for.
@@ -141,9 +141,10 @@ private:
     ss::future<> handle_leadership_change(model::ntp, ntp_leader);
     // Implementation of `on_plugin_change`
     ss::future<> handle_plugin_change(model::transform_id);
-    // Implementation of `on_transform_error`
-    ss::future<> handle_transform_error(
-      model::transform_id, model::ntp, model::transform_metadata);
+    // Implementation of `on_transform_state_change` for errors
+    ss::future<> handle_transform_error(model::transform_id, model::ntp);
+    // Implementation of `on_transform_state_change` for running states
+    ss::future<> handle_transform_running(model::transform_id, model::ntp);
     // Attempt to start a processor if the existing one is idle or there is no
     // currently running processor.
     ss::future<> start_processor(model::ntp, model::transform_id);

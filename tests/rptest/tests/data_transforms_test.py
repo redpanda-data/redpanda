@@ -35,7 +35,10 @@ class DataTransformsTest(RedpandaTest):
     def __init__(self, test_context):
         super(DataTransformsTest,
               self).__init__(test_context=test_context,
-                             extra_rp_conf={'data_transforms_enabled': True})
+                             extra_rp_conf={
+                                 'data_transforms_enabled': True,
+                                 'data_transforms_commit_interval_ms': 1
+                             })
         self._ctx = test_context
         self._rpk = RpkTool(self.redpanda)
 
@@ -124,15 +127,15 @@ class DataTransformsTest(RedpandaTest):
         self._delete_wasm("identity-xform")
 
     def _produce_input_topic(self) -> TransformVerifierProduceStatus:
-        input_topic = self.topics[1]
+        input_topic = self.topics[0]
 
         status = TransformVerifierService.oneshot(
             context=self.test_context,
             redpanda=self.redpanda,
             config=TransformVerifierProduceConfig(
-                bytes_per_second='1MB',
-                max_batch_size='512KB',
-                max_bytes='10MB',
+                bytes_per_second='256KB',
+                max_batch_size='64KB',
+                max_bytes='1MB',
                 message_size='1KB',
                 topic=input_topic.name,
             ))

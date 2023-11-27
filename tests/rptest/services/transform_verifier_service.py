@@ -23,7 +23,7 @@ class TransformVerifierProduceStatus(typing.NamedTuple):
     # The number of bytes sent by the producer
     bytes_sent: int
     # The number of records sent by the producer by partition
-    records_acked: dict[int, int]
+    latest_seqnos: dict[int, int]
     # The number of errors producing
     error_count: int
     # If all the records have been produced
@@ -34,18 +34,18 @@ class TransformVerifierProduceStatus(typing.NamedTuple):
         data = json.loads(buf)
         return cls(
             bytes_sent=data["bytes_sent"],
-            records_acked=data["records_acked"],
+            latest_seqnos=data["latest_seqnos"],
             error_count=data["error_count"],
             done=data["done"],
         )
 
     def merge(self, other: 'TransformVerifierProduceStatus'):
-        combined = self.records_acked.copy()
-        for k, v in other.records_acked.items():
-            combined[k] = combined.get(k, 0) + v
+        combined = self.latest_seqnos.copy()
+        for k, v in other.latest_seqnos.items():
+            combined[k] = max(combined.get(k, 0), v)
         return TransformVerifierProduceStatus(
             bytes_sent=self.bytes_sent + other.bytes_sent,
-            records_acked=combined,
+            latest_seqnos=combined,
             error_count=self.error_count + other.error_count,
             done=self.done and other.done,
         )
@@ -87,7 +87,7 @@ class TransformVerifierProduceConfig(typing.NamedTuple):
 
 class TransformVerifierConsumeStatus(typing.NamedTuple):
     # The number of records recieved by consumers by partition
-    records_recv: dict[int, int]
+    latest_seqnos: dict[int, int]
     # The number of invalid records
     invalid_records: int
     # The number of errors
@@ -97,17 +97,17 @@ class TransformVerifierConsumeStatus(typing.NamedTuple):
     def deserialize(cls, buf: str | bytes | bytearray):
         data = json.loads(buf)
         return cls(
-            records_recv=data["records_recv"],
+            latest_seqnos=data["latest_seqnos"],
             invalid_records=data["invalid_records"],
             error_count=data["error_count"],
         )
 
     def merge(self, other: 'TransformVerifierConsumeStatus'):
-        combined = self.records_recv.copy()
-        for k, v in other.records_recv.items():
-            combined[k] = combined.get(k, 0) + v
+        combined = self.latest_seqnos.copy()
+        for k, v in other.latest_seqnos.items():
+            combined[k] = max(combined.get(k, 0), v)
         return TransformVerifierConsumeStatus(
-            records_recv=combined,
+            latest_seqnos=combined,
             invalid_records=self.invalid_records + other.invalid_records,
             error_count=self.error_count + other.error_count,
         )
@@ -135,8 +135,8 @@ class TransformVerifierConsumeConfig(typing.NamedTuple):
         return TransformVerifierConsumeStatus.deserialize(buf)
 
     def is_done(self, status: TransformVerifierConsumeStatus) -> bool:
-        for partition, amt in self.validate.records_acked.items():
-            if status.records_recv.get(partition, 0) < amt:
+        for partition, amt in self.validate.latest_seqnos.items():
+            if status.latest_seqnos.get(partition, 0) < amt:
                 return False
         return True
 

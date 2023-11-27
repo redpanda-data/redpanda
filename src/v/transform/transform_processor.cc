@@ -102,7 +102,7 @@ processor::processor(
   model::ntp ntp,
   model::transform_metadata meta,
   ss::shared_ptr<wasm::engine> engine,
-  error_callback cb,
+  state_callback cb,
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,
   std::unique_ptr<offset_tracker> offset_tracker,
@@ -114,7 +114,7 @@ processor::processor(
   , _source(std::move(source))
   , _sinks(std::move(sinks))
   , _offset_tracker(std::move(offset_tracker))
-  , _error_callback(std::move(cb))
+  , _state_callback(std::move(cb))
   , _probe(p)
   , _consumer_transform_pipe(1)
   , _transform_producer_pipe(1)
@@ -132,18 +132,20 @@ processor::processor(
 
 ss::future<> processor::start() {
     _as = {};
-    try {
-        co_await _engine->start();
-        co_await _source->start();
-        co_await _offset_tracker->start();
-    } catch (const std::exception& ex) {
-        vlog(_logger.warn, "error starting processor engine: {}", ex);
-        _error_callback(_id, _ntp, _meta);
-    }
+    co_await _source->start();
+    co_await _offset_tracker->start();
     _consumer_transform_pipe = ss::queue<model::record_batch>(1);
     _transform_producer_pipe = ss::queue<transformed_batch>(1);
-    _task = when_all_shutdown(
-      run_consumer_loop(), run_transform_loop(), run_producer_loop());
+    _task = handle_processor_task(_engine->start().then([this] {
+        return load_start_offset().then([this](kafka::offset start_offset) {
+            // Mark that we're running now that the start offset is loaded.
+            _state_callback(_id, _ntp, state::running);
+            return when_all_shutdown(
+              run_consumer_loop(start_offset),
+              run_transform_loop(),
+              run_producer_loop());
+        });
+    }));
 }
 
 ss::future<> processor::stop() {
@@ -189,8 +191,7 @@ ss::future<kafka::offset> processor::load_start_offset() {
     co_return latest;
 }
 
-ss::future<> processor::run_consumer_loop() {
-    auto offset = co_await load_start_offset();
+ss::future<> processor::run_consumer_loop(kafka::offset offset) {
     vlog(_logger.debug, "starting at offset {}", offset);
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);
@@ -231,18 +232,18 @@ ss::future<> processor::run_producer_loop() {
 
 template<typename... T>
 ss::future<> processor::when_all_shutdown(T&&... futs) {
-    return ss::when_all_succeed(handle_run_loop(std::forward<T>(futs))...)
+    return ss::when_all_succeed(handle_processor_task(std::forward<T>(futs))...)
       .discard_result();
 }
 
-ss::future<> processor::handle_run_loop(ss::future<> fut) {
+ss::future<> processor::handle_processor_task(ss::future<> fut) {
     try {
         co_await std::move(fut);
     } catch (const processor_shutdown_exception&) {
         // Do nothing, this is an expected error on shutdown
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error running transform: {}", ex);
-        _error_callback(_id, _ntp, _meta);
+        _state_callback(_id, _ntp, state::errored);
     }
 }
 

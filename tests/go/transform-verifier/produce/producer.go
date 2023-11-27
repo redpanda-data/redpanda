@@ -25,23 +25,23 @@ var (
 )
 
 type ProduceStatus struct {
-	BytesSent    int         `json:"bytes_sent"`
-	RecordsAcked map[int]int `json:"records_acked"`
-	ErrorCount   int         `json:"error_count"`
-	Done         bool        `json:"done"`
+	BytesSent    int            `json:"bytes_sent"`
+	LatestSeqnos map[int]uint64 `json:"latest_seqnos"`
+	ErrorCount   int            `json:"error_count"`
+	Done         bool           `json:"done"`
 }
 
 func (self ProduceStatus) Merge(other ProduceStatus) ProduceStatus {
-	combined := make(map[int]int)
-	for k, v := range self.RecordsAcked {
-		combined[k] += v
+	combined := make(map[int]uint64)
+	for k, v := range self.LatestSeqnos {
+		combined[k] = max(v, combined[k])
 	}
-	for k, v := range other.RecordsAcked {
-		combined[k] += v
+	for k, v := range other.LatestSeqnos {
+		combined[k] = max(v, combined[k])
 	}
 	return ProduceStatus{
 		BytesSent:    self.BytesSent + other.BytesSent,
-		RecordsAcked: combined,
+		LatestSeqnos: combined,
 		ErrorCount:   self.ErrorCount + other.ErrorCount,
 		Done:         self.Done || other.Done,
 	}
@@ -199,17 +199,23 @@ func produceForPartition(ctx context.Context, config partitionProduceConfig) err
 		}
 		wg.Add(1)
 		client.Produce(ctx, r, func(r *kgo.Record, err error) {
+			defer wg.Done()
 			if ctx.Err() != nil {
 				// Do nothing we were cancelled, just stop ASAP
 			} else if err != nil {
 				slog.Warn("error producing record", "err", err)
 				config.reporter(ProduceStatus{ErrorCount: 1})
 			} else {
-				acks := make(map[int]int)
-				acks[int(r.Partition)] = 1
-				config.reporter(ProduceStatus{RecordsAcked: acks})
+				seqno, err := common.FindSeqnoHeader(r)
+				if err != nil {
+					slog.Warn("invalid produced record", "err", err)
+					config.reporter(ProduceStatus{ErrorCount: 1})
+				} else {
+					seqnos := make(map[int]uint64)
+					seqnos[int(r.Partition)] = seqno
+					config.reporter(ProduceStatus{LatestSeqnos: seqnos})
+				}
 			}
-			wg.Done()
 		})
 		bytesSent += size
 		config.reporter(ProduceStatus{BytesSent: size})
