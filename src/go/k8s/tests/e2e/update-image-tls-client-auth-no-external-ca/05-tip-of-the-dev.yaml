@@ -1,7 +1,0 @@
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
-metadata:
-  name: up-img
-spec:
-  image: "localhost/redpanda"
-  version: "dev"
