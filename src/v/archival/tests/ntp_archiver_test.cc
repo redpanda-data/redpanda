@@ -1732,6 +1732,8 @@ static void test_manifest_spillover_impl(
       *part,
       amv);
 
+    auto stop_archiver = ss::defer([&archiver] { archiver.stop().get(); });
+
     // Do not start archiver and run spillover manually.
     vlog(
       test_log.debug,
