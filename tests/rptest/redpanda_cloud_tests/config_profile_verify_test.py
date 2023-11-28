@@ -38,7 +38,7 @@ class ConfigProfileVerifyTest(Test):
     def setUp(self):
         self.redpanda.start()
         self._ip = self._ipClient.getInstallPack(self.redpanda.get_version(0))
-        self._clusterId = self.redpanda._cloud_cluster.config.id
+        self._clusterId = self.redpanda._cloud_cluster.cluster_id
         self._configProfile = self._ip['config_profiles'][
             self.redpanda._cloud_cluster.config.config_profile_name]
 

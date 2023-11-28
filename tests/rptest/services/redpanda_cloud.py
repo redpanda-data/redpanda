@@ -124,7 +124,11 @@ class LiveClusterParams:
     """
     Active Cluster params.
     Should not be used outside of the redpanda_cloud module
+
+    DO NOT USE outside this module. To expose any paramteter,
+    create property method in CloudCluster class
     """
+    cluster_id: str = ""
     _isAlive: bool = False
     connection_type: str = 'public'
     namespace_uuid: str = None
@@ -282,8 +286,10 @@ class CloudCluster():
         """
         The clusterId of the created cluster.
         """
-
-        return self.config.id
+        if self.current._isAlive:
+            return self.current.cluster_id
+        else:
+            return None
 
     def get_ducktape_meta(self):
         """
@@ -295,7 +301,7 @@ class CloudCluster():
 
     @property
     def isAlive(self):
-        _c = self._get_cluster(self.config.id)
+        _c = self._get_cluster(self.current.cluster_id)
         self.current._isAlive = True if _c['status'][
             'health'] == 'healthy' else False
         return self.current._isAlive
@@ -360,10 +366,10 @@ class CloudCluster():
     def _cluster_ready(self):
         # Get cluster info
         try:
-            c = self._get_cluster(self.current.id)
+            c = self._get_cluster(self.current.cluster_id)
         except Exception as e:
             # Consider it non critical and try again later
-            self._logger.warn(f"Failed to get cluster info: {e}")
+            self._logger.warning(f"Failed to get cluster info: {e}")
             return False
         # Check state and raise error if anything critical happens
         self._logger.debug(f"Cluster status: {c['state']}")
@@ -381,12 +387,12 @@ class CloudCluster():
 
     def _cluster_status(self, status):
         _cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         return _cluster['state'] == status
 
     def _get_cluster_console_url(self):
         cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         return cluster['status']['listeners']['redpandaConsole']['default'][
             'urls'][0]
 
@@ -396,7 +402,7 @@ class CloudCluster():
         :return: networkId as a string or None if not found
         """
         _cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         return _cluster['spec']['networkId']
 
     def _get_network(self):
@@ -511,7 +517,7 @@ class CloudCluster():
         Update info from existing cluster (BYOC)
         """
         # get cluster data
-        _c = self._get_cluster(self.config.id)
+        _c = self._get_cluster(self.current.cluster_id)
         # Fill in immediate configuration
         self.current._isAlive = True if _c['status'][
             'health'] == 'healthy' else False
@@ -536,7 +542,7 @@ class CloudCluster():
         :return: string or None if failure
         """
 
-        cluster = self._get_cluster(self.config.id)
+        cluster = self._get_cluster(self.current.cluster_id)
         base_url = cluster['status']['listeners']['redpandaConsole'][
             'default']['urls'][0]
         username = cluster['spec']['consolePrometheusCredentials']['username']
@@ -673,7 +679,7 @@ class CloudCluster():
             self.utils.rpk_cloud_login(self.config.oauth_client_id,
                                        self.config.oauth_client_secret)
             # save cluster id so we can delete it in case of failure
-            self.config.id = _cluster_id
+            self.current.cluster_id = _cluster_id
             # Kick off cluster creation
             # Timeout for this is half an hour as this is only agent
             self.utils.rpk_cloud_apply(_cluster_id)
@@ -684,14 +690,14 @@ class CloudCluster():
             raise RuntimeError("Cloud type not supported: "
                                f"'{self.config.type}'")
 
-        self.current.id = _cluster_id
+        self.current.cluster_id = _cluster_id
         # In case of FMC, just poll the cluster and wait when ready
         # Poll API and wait for the cluster creation
         # Announce wait
         self._logger.info(
             f'waiting for creation of cluster {self.current.name} '
-            f'({self.current.id}), namespaceUuid {r["namespaceUuid"]}, '
-            f'checking every {self.CHECK_BACKOFF_SEC} seconds')
+            f'({self.current.cluster_id}), namespaceUuid {r["namespaceUuid"]},'
+            f' checking every {self.CHECK_BACKOFF_SEC} seconds')
         wait_until(lambda: self._cluster_ready(),
                    timeout_sec=self.CHECK_TIMEOUT_SEC,
                    backoff_sec=self.CHECK_BACKOFF_SEC,
@@ -704,7 +710,7 @@ class CloudCluster():
         # at this point cluster is ready
         # just save the id to reuse it in next test
         if self.config.use_same_cluster:
-            self.save_cluster_id(self.config.id)
+            self.save_cluster_id(self.current.cluster_id)
 
         return
 
@@ -732,19 +738,37 @@ class CloudCluster():
         cluster = {}
         try:
             self._logger.info("Getting cluster specs")
-            cluster = self._get_cluster(self.config.id)
+            cluster = self._get_cluster(self.current.cluster_id)
         except Exception as e:
-            self._logger.warn("# Failed to get info for cluster with Id: "
-                              f"'{self.config.id}'")
+            self._logger.warning("# Failed to get info for cluster with Id: "
+                                 f"'{self.current.cluster_id}'")
             return False
+
+        # list cluster specs
+        self._logger.warning(f"Cluster '{self.current.cluster_id}': "
+                             f"health = '{cluster['status']['health']}', "
+                             f"state = '{cluster['state']}'")
+
+        # Check if panda-proxy is available
+        if not 'panda-proxy' in cluster['status']['listeners']['pandaProxy']:
+            self._logger.warning("Panda-Proxy listener is not available")
+            return False
+        else:
+            _u = cluster['status']['listeners']['pandaProxy']['panda-proxy'][
+                'urls'][0]
+            self._logger.warning(f"Panda-Proxy listener: '{_u}'")
 
         # Check that cluster is operational
         # Check brokers count
         self._logger.info("Checking cluster brokers")
         _brokers = _get(cluster, "/brokers", superuser)
         if len(_brokers['brokers']) < 3:
-            self._logger.warn("Less than 3 brokers operational")
+            self._logger.warning("Less than 3 brokers operational")
             return False
+        else:
+            self._logger.warning(
+                f"Console reports '{len(_brokers['brokers'])}' brokers")
+
         # Check topic count
         self._logger.info("Checking cluster topics")
         _topics = _get(cluster, "/topics", superuser)
@@ -755,8 +779,11 @@ class CloudCluster():
         ]
         _intersect = list(set(_topics) & set(_critical))
         if len(_intersect) < 6:
-            self._logger.warn("Cluster missing critical topics")
+            self._logger.warning("Cluster missing critical topics")
             return False
+        else:
+            _t = ', '.join(_intersect)
+            self._logger.warning(f"Critical topics present: '{_t}'")
 
         # Check brokers metric
         self._logger.info("Checking cluster public_metrics")
@@ -767,17 +794,43 @@ class CloudCluster():
             if _metric.name == "redpanda_cluster_brokers":
                 _brokers_metric = _metric
         if _brokers_metric is None:
-            self._logger.warn("Failed to get brokers metric")
+            self._logger.warning("Failed to get brokers metric")
             return False
+        else:
+            self._logger.warning("Public metric 'redpanda_cluster_brokers' "
+                                 "is available")
 
         # Get Samples
         _instances = [s.value for s in _brokers_metric.samples]
         if max(_instances) < 3:
-            self._logger.warn("Prometheus reports less than 3 instances")
+            self._logger.warning("Prometheus reports less than 3 instances")
             return False
-
+        else:
+            self._logger.warning("Prometheus samples reports maximum of "
+                                 f"{max(_instances)} instances")
         # All checks passed
         return True
+
+    def _select_cluster_id(self):
+        """
+        Function check if previous test saved cluster id
+        Also, global configuration takes priority
+        so the cluster id would be loaded only once in any case
+        This will work for FMC and BYOC alike
+        """
+
+        # If globals.json originally had cluster id set,
+        # use it as a priority
+        _id = self.config.id
+        # if _id was not provided, this will trigger safe_load_cluster_id from disk
+        _id = self.safe_load_cluster_id() if not _id else _id
+        # if _id loaded or provided, use it in the next run
+        if _id and self.config.use_same_cluster:
+            # update config with new id
+            return _id
+        else:
+            # if there is still no id, just copy what globals.json had
+            return self.config.id
 
     def create(self, superuser: Optional[SaslCredentials] = None) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
@@ -785,42 +838,51 @@ class CloudCluster():
         :param config_profile_name: config profile name, default 'tier-1-aws'
         :return: clusterId, e.g. 'cimuhgmdcaa1uc1jtabc'
         """
-        # Check if previous test saved cluster id
-        # also, configuration takes priority
-        # so the cluster id would be loaded only once
-        # This will work for FMC and BYOC alike
-        _id = self.config.id
-        _id = self.safe_load_cluster_id() if not _id else _id
-        if _id and self.config.use_same_cluster:
-            # update config with new id
-            self.config.id = _id
+        # Select cluster id for the test run
+        # From this point, only self.current.cluster_id should be used
+        self.current.cluster_id = self._select_cluster_id()
 
         # set network flag
         if not self.isPublicNetwork:
             self.current.connection_type = 'private'
 
         # Prepare the cluster
-        if self.config.id != '':
+        if self.current.cluster_id != '':
             # Cluster already exist
             # Check if cluster is healthy
             try:
+                # In case this is a provided cluster,
+                # make sure that we ready for the health check.
+                # Users and ACLs will not be recreated if they exists
+                self.current.consoleUrl = self._get_cluster_console_url()
+                self.update_cluster_acls(superuser)
+                # Do the health check
                 _isHealthy = self._ensure_cluster_health(superuser)
             except Exception as e:
                 self._logger.warning(f"Failed to ensure cluster health: {e}")
                 _isHealthy = False
+
             if not _isHealthy:
-                self._logger.warn(f"Cluster with id '{self.config.id}' "
-                                  "not healthy, creating new")
-                # Health check fail, remove cluster id
-                self.config.id = ""
+                if self.current.cluster_id == self.config.id:
+                    # Cluster id was provided. Generate exception as
+                    # cluster creation not logical in this case
+                    raise RuntimeError("Provided Cluster with id "
+                                       f"'{self.config.id}' "
+                                       "is no longer operational")
+
+                # Health check fail, create new cluster
+                self._logger.warning(f"Cluster '{self.current.cluster_id}' "
+                                     "not healthy, creating new")
+                self.current.cluster_id = ""
+
                 # Clean out cluster id file
                 self.rm_cluster_id_file()
                 # Create new cluster
                 self._create_new_cluster()
             else:
                 # Just load needed info to create peering
-                self._logger.warn('will not create cluster; already have '
-                                  f'cluster_id {self.config.id}')
+                self._logger.warning('will not create cluster; already have '
+                                     f'cluster_id {self.current.cluster_id}')
                 # Populate self.current from cluster info
                 self._update_live_cluster_info()
                 # Fill in additional info based on collected from cluster
@@ -839,18 +901,19 @@ class CloudCluster():
         if not self.isPublicNetwork:
             self.create_vpc_peering()
         self.current._isAlive = True
-        return self.config.id
+        return self.current.cluster_id
 
     def delete(self):
         """
         Deletes a cloud cluster and the namespace it belongs to.
         Cluster delete is initiated via cluster nodes stop.
         """
-        if self.config.id == '':
-            self._logger.warn(f'cluster_id is empty, unable to delete cluster')
+        if self.current.cluster_id == '':
+            self._logger.warning('cluster_id is empty, '
+                                 'unable to delete cluster')
             return
         elif not self.config.delete_cluster:
-            self._logger.warn(f'Cluster deletion skipped as configured')
+            self._logger.warning('Cluster deletion skipped as configured')
             return
         elif self.config.use_same_cluster:
             # Check for tests finished flag only when same cluster used
@@ -862,7 +925,7 @@ class CloudCluster():
 
         self._logger.info("Deleting cluster")
         resp = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         namespace_uuid = resp['namespaceUuid']
 
         # For FMC, just delete the cluster and the rest will happen
@@ -874,7 +937,7 @@ class CloudCluster():
         # 3. Use rpk to delete agent
 
         resp = self.cloudv2._http_delete(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         self._logger.debug(f'resp: {json.dumps(resp)}')
 
         # Check if this is a BYOC and delete agent
@@ -885,10 +948,10 @@ class CloudCluster():
                        err_msg='Timeout waiting for deletion '
                        f'of cloud cluster {self.current.name}')
             # Once deleted run agent delete
-            self.utils.rpk_cloud_agent_delete(self.config.id)
+            self.utils.rpk_cloud_agent_delete(self.current.cluster_id)
 
         # This cluster is no longer available
-        self.config.id = ''
+        self.current.cluster_id = ''
         # skip namespace deletion to avoid error because cluster delete not complete yet
         if self._delete_namespace:
             resp = self.cloudv2._http_delete(
@@ -913,7 +976,7 @@ class CloudCluster():
         """
 
         cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         base_url = cluster['status']['listeners']['redpandaConsole'][
             'default']['urls'][0]
         for rt in ('Topic', 'Group', 'TransactionalID'):
@@ -945,12 +1008,12 @@ class CloudCluster():
 
     def get_broker_address(self):
         cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         return cluster['status']['listeners']['kafka']['default']['urls'][0]
 
     def get_install_pack_version(self):
         cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.config.id}')
+            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
         return cluster['status']['installPackVersion']
 
     def _create_network_peering_payload_aws(self):
