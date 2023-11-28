@@ -47,8 +47,9 @@ public:
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;
 
-    /*
-     * Get the latest offset in the log to read from.
+    /**
+     * The last offset of a record the log - if the log is empty then
+     * `kafka::offset::min()` is returned.
      */
     virtual kafka::offset latest_offset() = 0;
 

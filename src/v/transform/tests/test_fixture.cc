@@ -46,9 +46,9 @@ ss::future<> fake_source::stop() { co_return; }
 
 kafka::offset fake_source::latest_offset() {
     if (_batches.empty()) {
-        return kafka::offset(0);
+        return {};
     }
-    return kafka::next_offset(_batches.rbegin()->first);
+    return _batches.rbegin()->first;
 }
 
 ss::future<model::record_batch_reader>
