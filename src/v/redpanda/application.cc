@@ -2440,12 +2440,18 @@ void application::start_runtime_services(
     if (offsets_upload_router.local_is_initialized()) {
         offsets_upload_requestor = offsets_upload_router.local_shared();
     }
+    ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>
+      offsets_recovery_requestor;
+    if (offsets_recovery_router.local_is_initialized()) {
+        offsets_recovery_requestor = offsets_recovery_manager;
+    }
     controller
       ->start(
         cd,
         app_signal.abort_source(),
         std::move(offsets_upload_requestor),
-        producer_id_recovery_manager)
+        producer_id_recovery_manager,
+        std::move(offsets_recovery_requestor))
       .get0();
 
     // FIXME: in first patch explain why this is started after the

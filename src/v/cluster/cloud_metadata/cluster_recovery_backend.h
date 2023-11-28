@@ -29,6 +29,8 @@
 
 namespace cluster::cloud_metadata {
 
+class offsets_recovery_requestor;
+
 class cluster_recovery_backend {
 public:
     cluster_recovery_backend(
@@ -47,6 +49,7 @@ public:
       cluster::security_frontend&,
       cluster::topics_frontend&,
       ss::shared_ptr<producer_id_recovery_manager> producer_id_recovery,
+      ss::shared_ptr<offsets_recovery_requestor> offsets_recovery,
       ss::sharded<cluster_recovery_table>&,
       consensus_ptr raft0);
 
@@ -110,6 +113,7 @@ private:
     cluster::topics_frontend& _topics_frontend;
 
     ss::shared_ptr<producer_id_recovery_manager> _producer_id_recovery;
+    ss::shared_ptr<offsets_recovery_requestor> _offsets_recovery;
 
     // State that backs the recoveries managed by this manager. Sharded so that
     // the status of the controller recovery is propagated across cores.
