@@ -564,23 +564,11 @@ ss::future<> persisted_stm<T>::start() {
               _log.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_backend.store_path());
-            vlog(
-              _log.debug,
-              "start with non-applied snapshot, set_next {}",
-              next_offset);
-            _insync_offset = model::prev_offset(next_offset);
-            set_next(next_offset);
         }
 
         _resolved_when_snapshot_hydrated.set_value();
     } else {
-        auto offset = _c->start_offset();
-        vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
-
-        if (offset >= model::offset(0)) {
-            _insync_offset = model::prev_offset(offset);
-            set_next(offset);
-        }
+        vlog(_log.debug, "starting without snapshot");
         _resolved_when_snapshot_hydrated.set_value();
     }
     co_await state_machine::start();
