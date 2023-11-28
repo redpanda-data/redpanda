@@ -232,6 +232,19 @@ void application::shutdown() {
     if (_rpc.local_is_initialized()) {
         _rpc.invoke_on_all(&rpc::rpc_server::shutdown_input).get();
     }
+    // Stop routing upload requests, as each may take a while to process.
+    if (offsets_upload_router.local_is_initialized()) {
+        offsets_upload_router
+          .invoke_on_all(
+            &cluster::cloud_metadata::offsets_upload_router::request_stop)
+          .get();
+    }
+    if (offsets_uploader.local_is_initialized()) {
+        offsets_uploader
+          .invoke_on_all(
+            &cluster::cloud_metadata::offsets_uploader::request_stop)
+          .get();
+    }
 
     // We schedule shutting down controller input and aborting its operation as
     // one of the first shutdown steps. This way we terminate all long running
