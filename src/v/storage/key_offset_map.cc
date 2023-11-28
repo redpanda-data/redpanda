@@ -179,9 +179,9 @@ model::offset hash_key_offset_map::max_offset() const { return max_offset_; }
 size_t hash_key_offset_map::size() const { return size_; }
 size_t hash_key_offset_map::capacity() const { return capacity_; }
 
-seastar::future<> hash_key_offset_map::reset(size_t size) {
+seastar::future<> hash_key_offset_map::initialize(size_t size_bytes) {
     co_await fragmented_vector_clear_async(entries_);
-    while (entries_.memory_size() < size) {
+    while (entries_.memory_size() < size_bytes) {
         for (size_t i = 0; i < entries_.elements_per_fragment(); ++i) {
             entries_.push_back(entry{});
         }
@@ -203,7 +203,7 @@ seastar::future<> hash_key_offset_map::reset(size_t size) {
     probe_count_ = 0;
 }
 
-seastar::future<> hash_key_offset_map::initialize() {
+seastar::future<> hash_key_offset_map::reset() {
     co_await fragmented_vector_fill_async(entries_, entry{});
     size_ = 0;
     max_offset_ = model::offset{};
