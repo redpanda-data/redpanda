@@ -57,6 +57,7 @@ from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.redpanda_cloud import CloudCluster, CloudTierName, get_config_profile_name
+from rptest.services.cloud_broker import CloudBroker
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
@@ -1450,26 +1451,6 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     use `RedpandaServiceCloud`.
     """
 
-    # This parameter used in make_redpanda_service
-    # and multiple other services for detection
-    # TODO: Update it to GLOBAL_CLOUD_CLUSTER_CONFIG
-    GLOBAL_CLOUD_OAUTH_URL = 'cloud_oauth_url'
-    # Deprecated. Left for future reference
-    # GLOBAL_CLOUD_OAUTH_CLIENT_ID = 'cloud_oauth_client_id'
-    # GLOBAL_CLOUD_OAUTH_CLIENT_SECRET = 'cloud_oauth_client_secret'
-    # GLOBAL_CLOUD_OAUTH_AUDIENCE = 'cloud_oauth_audience'
-    # GLOBAL_CLOUD_API_URL = 'cloud_api_url'
-    # GLOBAL_CLOUD_CLUSTER_ID = 'cloud_cluster_id'
-    # GLOBAL_CLOUD_DELETE_CLUSTER = 'cloud_delete_cluster'
-    # GLOBAL_TELEPORT_AUTH_SERVER = 'cloud_teleport_auth_server'
-    # GLOBAL_TELEPORT_BOT_TOKEN = 'cloud_teleport_bot_token'
-    # GLOBAL_CLOUD_CLUSTER_REGION = 'cloud_cluster_region'
-    # GLOBAL_CLOUD_CLUSTER_PROVIDER = 'cloud_provider'
-    # GLOBAL_CLOUD_CLUSTER_TYPE = 'cloud_cluster_type'
-    # GLOBAL_CLOUD_CLUSTER_NETWORK = 'cloud_cluster_network'
-    # GLOBAL_CLOUD_PEER_VPC_ID = 'cloud_cluster_peer_vpc_id'
-    # GLOBAL_CLOUD_PEER_OWNER_ID = 'cloud_cluster_peer_owner_id'
-
     GLOBAL_CLOUD_CLUSTER_CONFIG = 'cloud_cluster'
 
     def __init__(self,
@@ -1515,47 +1496,19 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         # log cloud cluster id
         self.logger.debug(f"initial cluster_id: {self._cc_config['id']}")
 
-        # Removed in favor to serialization
-        # self._cloud_oauth_url = context.globals.get(
-        #     self.GLOBAL_CLOUD_OAUTH_URL, None)
-        # self._cloud_oauth_client_id = context.globals.get(
-        #     self.GLOBAL_CLOUD_OAUTH_CLIENT_ID, None)
-        # self._cloud_oauth_client_secret = context.globals.get(
-        #     self.GLOBAL_CLOUD_OAUTH_CLIENT_SECRET, None)
-        # self._cloud_oauth_audience = context.globals.get(
-        #     self.GLOBAL_CLOUD_OAUTH_AUDIENCE, None)
-        # self._cloud_teleport_proxy = context.globals.get(
-        #     self.GLOBAL_TELEPORT_AUTH_SERVER, None)
-        # self._cloud_teleport_bot_token = context.globals.get(
-        #     self.GLOBAL_TELEPORT_BOT_TOKEN, None)
-        # self._cloud_api_url = context.globals.get(self.GLOBAL_CLOUD_API_URL,
-        #                                           None)
-        # self._cloud_cluster_id = context.globals.get(
-        #     self.GLOBAL_CLOUD_CLUSTER_ID, '')
-        # self._cloud_delete_cluster = context.globals.get(
-        #     self.GLOBAL_CLOUD_DELETE_CLUSTER, True)
-        # self._cloud_cluster_provider = context.globals.get(
-        #     self.GLOBAL_CLOUD_CLUSTER_PROVIDER, "AWS").upper()
-        # self._cloud_cluster_region = context.globals.get(
-        #     self.GLOBAL_CLOUD_CLUSTER_REGION, "us-west-2")
-        # self._cloud_cluster_type = context.globals.get(
-        #     self.GLOBAL_CLOUD_CLUSTER_TYPE, "FMC").upper()
-
-        # self._cloud_cluster_network = context.globals.get(
-        #     self.GLOBAL_CLOUD_CLUSTER_NETWORK, "public").lower()
-        # self._cloud_peer_vpc_id = context.globals.get(
-        #     self.GLOBAL_CLOUD_PEER_VPC_ID, None)
-        # self._cloud_peer_owner_id = context.globals.get(
-        #     self.GLOBAL_CLOUD_PEER_OWNER_ID, None)
-
+        # Create cluster class
         self._cloud_cluster = CloudCluster(
             context,
             self.logger,
             self._cc_config,
             provider_config=self._provider_config)
-
+        # Prepare kubectl
         self._kubectl = None
 
+        # Backward compatibility with RedpandaService
+        # Fake out sasl_enabled callable
+        self.sasl_enabled = lambda: True
+        # Always true for Cloud Cluster
         self._dedicated_nodes = True
         self.logger.info(
             'ResourceSettings: setting dedicated_nodes=True because serving from redpanda cloud'
@@ -1586,6 +1539,24 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             cluster_region=self._cloud_cluster.config.region,
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token)
+
+        # Get pods and form node list
+        self.pods = []
+        _r = self._kubectl.run_kube_command("get pods -o json")
+        _pods = json.loads(_r.decode())
+        for p in _pods['items']:
+            if not p['metadata']['name'].startswith(
+                    f"rp-{self._cloud_cluster.config.id}"):
+                continue
+            else:
+                _node = CloudBroker(p, self._kubectl, self.logger)
+                self.pods.append(_node)
+
+    def get_node_by_id(self, id):
+        for p in self.pods:
+            if p.slot_id == id:
+                return p
+        return None
 
     def stop_node(self, node, **kwargs):
         pass

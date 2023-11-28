@@ -444,6 +444,10 @@ class HighThroughputTest(PreallocNodesTest):
         idx = random.randrange(len(self.cluster.nodes))
         return self.cluster.nodes[idx]
 
+    def get_broker_pod(self):
+        idx = random.randrange(len(self.redpanda.pods))
+        return self.redpanda.pods[idx]
+
     @cluster(num_nodes=2)
     def test_throughput_simple(self):
         # create default topics
@@ -899,15 +903,17 @@ class HighThroughputTest(PreallocNodesTest):
             self.free_preallocated_nodes()
 
     def stage_decommission_and_add(self):
-        node, node_id, node_str = self.get_node()
+        pod = self.get_broker_pod()
+        pod_id = pod.slot_id
+        pod_str = pod.name
 
-        def topic_partitions_on_node():
+        def topic_partitions_on_pod():
             try:
                 parts = self.redpanda.partitions(self.topic)
             except StopIteration:
                 return 0
             n = sum([
-                1 if r.account == node.account else 0 for p in parts
+                1 if r.account == pod.account else 0 for p in parts
                 for r in p.replicas
             ])
             self.logger.debug(f"Partitions in the node-topic: {n}")
@@ -916,44 +922,44 @@ class HighThroughputTest(PreallocNodesTest):
         # create default topics
         self._create_default_topics()
 
-        nt_partitions_before = topic_partitions_on_node()
+        nt_partitions_before = topic_partitions_on_pod()
 
         self.logger.info(
-            f"Decommissioning node {node_str}, partitions: {nt_partitions_before}"
+            f"Decommissioning node {pod_str}, partitions: {nt_partitions_before}"
         )
         decomm_time = time.monotonic()
         admin = self.redpanda._admin
-        admin.decommission_broker(node_id)
+        admin.decommission_broker(pod_id)
         waiter = NodeDecommissionWaiter(self.redpanda,
-                                        node_id,
+                                        pod_id,
                                         self.logger,
                                         progress_timeout=120)
         waiter.wait_for_removal()
-        self.redpanda.stop_node(node)
-        assert topic_partitions_on_node() == 0
+        self.redpanda.stop_node(pod)
+        assert topic_partitions_on_pod() == 0
         decomm_time = time.monotonic() - decomm_time
 
         self.logger.info(f"Adding a node")
-        self.redpanda.clean_node(node,
+        self.redpanda.clean_node(pod,
                                  preserve_logs=True,
                                  preserve_current_install=True)
-        self.redpanda.start_node(node,
+        self.redpanda.start_node(pod,
                                  auto_assign_node_id=False,
                                  omit_seeds_on_idx_one=False)
         wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
-        new_node_id = self.redpanda.node_id(node, force_refresh=True)
+        new_node_id = self.redpanda.node_id(pod, force_refresh=True)
 
         self.logger.info(
             f"Node added, new node_id: {new_node_id}, waiting for {int(nt_partitions_before/2)} partitions to move there in {int(decomm_time*2)} s"
         )
         wait_until(
-            lambda: topic_partitions_on_node() > nt_partitions_before / 2,
+            lambda: topic_partitions_on_pod() > nt_partitions_before / 2,
             timeout_sec=max(120, decomm_time * 2),
             backoff_sec=2,
             err_msg=
             f"{int(nt_partitions_before/2)} partitions failed to move to node {new_node_id} in {max(60, decomm_time*2)} s"
         )
-        self.logger.info(f"{topic_partitions_on_node()} partitions moved")
+        self.logger.info(f"{topic_partitions_on_pod()} partitions moved")
 
     @cluster(num_nodes=3, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_cloud_cache_thrash(self):
