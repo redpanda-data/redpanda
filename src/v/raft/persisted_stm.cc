@@ -586,20 +586,10 @@ ss::future<> persisted_stm<T>::start() {
               _log.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_backend.store_path());
-            vlog(
-              _log.debug,
-              "start with non-applied snapshot, set_next {}",
-              next_offset);
-            set_next(next_offset);
         }
 
     } else {
-        auto offset = _raft->start_offset();
-        vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
-
-        if (offset >= model::offset(0)) {
-            set_next(offset);
-        }
+        vlog(_log.debug, "starting without snapshot");
     }
     _snapshot_hydrated = true;
     _on_snapshot_hydrated.broadcast();
