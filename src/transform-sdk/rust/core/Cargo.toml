@@ -1,0 +1,23 @@
+[package]
+name = "redpanda-transform-sdk"
+description = "A Rust library for authoring Redpanda Data Transforms."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+redpanda-transform-sdk-types = { path = "../core-types" }
+redpanda-transform-sdk-sys = { path = "../core-sys" }
+
+[dev-dependencies]
+quickcheck = { workspace = true }
+rand = { workspace = true}
+anyhow = { workspace = true }
+serde_json = "1.0.108"
+apache-avro = "0.16.0"
+

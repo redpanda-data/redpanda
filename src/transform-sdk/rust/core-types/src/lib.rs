@@ -12,34 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::varint;
 use std::time::SystemTime;
 
-use crate::varint::{Decoded, VarintDecodeError};
-
-pub(crate) struct BatchHeader {
-    pub base_offset: i64,
-    pub record_count: i32,
-    pub partition_leader_epoch: i32,
-    pub attributes: i16,
-    pub last_offset_delta: i32,
-    pub base_timestamp: i64,
-    pub max_timestamp: i64,
-    pub producer_id: i64,
-    pub producer_epoch: i16,
-    pub base_sequence: i32,
-}
-
-type KeyValuePair<'a> = (Option<&'a [u8]>, Option<&'a [u8]>);
-
-fn read_kv(payload: &[u8]) -> Result<Decoded<KeyValuePair>, VarintDecodeError> {
-    let key = varint::read_sized_buffer(payload)?;
-    let payload = &payload[key.read..];
-    let value = varint::read_sized_buffer(payload)?;
-    Ok(Decoded {
-        value: (key.value, value.value),
-        read: key.read + value.read,
-    })
+/// An event generated after a write event within the broker.
+#[derive(Debug)]
+pub struct WriteEvent<'a> {
+    /// The record for which the event was generated for.
+    pub record: BorrowedRecord<'a>,
 }
 
 /// A zero-copy record header.
@@ -53,15 +32,6 @@ impl<'a> BorrowedHeader<'a> {
     /// Create a new header without any copies.
     pub fn new(key: &'a [u8], value: Option<&'a [u8]>) -> Self {
         Self { key, value }
-    }
-
-    fn read_from_payload(payload: &'a [u8]) -> Result<Decoded<Self>, VarintDecodeError> {
-        read_kv(payload).map(|result| {
-            result.map(|(key, value)| BorrowedHeader {
-                key: key.unwrap_or("".as_bytes()),
-                value,
-            })
-        })
     }
 
     /// Returns the header's key or `None` if there is no key.
@@ -120,30 +90,6 @@ impl<'a> BorrowedRecord<'a> {
             timestamp,
             headers,
         }
-    }
-
-    pub(crate) fn read_from_payload(
-        payload: &'a [u8],
-        timestamp: SystemTime,
-    ) -> Result<Self, VarintDecodeError> {
-        let kv = read_kv(payload)?;
-        let mut payload = &payload[kv.read..];
-        let header_count_result = varint::read(payload)?;
-        payload = &payload[header_count_result.read..];
-        let mut headers: Vec<BorrowedHeader<'a>> =
-            Vec::with_capacity(header_count_result.value as usize);
-        for _ in 0..header_count_result.value {
-            let header_result = BorrowedHeader::read_from_payload(payload)?;
-            payload = &payload[header_result.read..];
-            headers.push(header_result.value);
-        }
-        let (key, value) = kv.value;
-        Ok(BorrowedRecord {
-            key,
-            value,
-            timestamp,
-            headers,
-        })
     }
 
     /// Returns the record's key or `None` if there is no key.
@@ -276,89 +222,5 @@ impl Record {
     /// Returns a collection of headers for this record.
     pub fn headers(&self) -> &[RecordHeader] {
         &self.headers[..]
-    }
-
-    pub(crate) fn write_payload(&self, payload: &mut Vec<u8>) {
-        varint::write_sized_buffer(payload, self.key());
-        varint::write_sized_buffer(payload, self.value());
-        varint::write(payload, self.headers.len() as i64);
-        for h in &self.headers {
-            varint::write_sized_buffer(payload, Some(h.key()));
-            varint::write_sized_buffer(payload, h.value());
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::SystemTime;
-
-    use crate::RecordHeader;
-
-    use super::{BorrowedRecord, Record};
-    use anyhow::{ensure, Result};
-    use rand::prelude::*;
-
-    #[test]
-    fn payload_roundtrips() {
-        let owned = Record::new_with_headers(
-            Some(random_bytes(128)),
-            Some(random_bytes(128)),
-            vec![
-                RecordHeader::new(random_bytes(12), Some(random_bytes(16))),
-                RecordHeader::new(random_bytes(16), None),
-                RecordHeader::new(random_bytes(16), Some(random_bytes(0))),
-            ],
-        );
-        validate_roundtrip(&owned).unwrap();
-        let owned = Record::new_with_headers(None, Some(random_bytes(128)), vec![]);
-        validate_roundtrip(&owned).unwrap();
-        let owned = Record::new_with_headers(
-            Some(random_bytes(0)),
-            Some(random_bytes(0)),
-            vec![RecordHeader::new(random_bytes(12), Some(random_bytes(16)))],
-        );
-        validate_roundtrip(&owned).unwrap();
-        let owned = Record::new_with_headers(
-            Some(random_bytes(128)),
-            None,
-            vec![
-                RecordHeader::new(random_bytes(12), Some(random_bytes(16))),
-                RecordHeader::new(random_bytes(16), None),
-                RecordHeader::new(random_bytes(16), Some(random_bytes(0))),
-            ],
-        );
-        validate_roundtrip(&owned).unwrap();
-    }
-
-    quickcheck! {
-        fn roundtrip(key: Option<Vec<u8>>, value: Option<Vec<u8>>, headers: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> Result<()> {
-            let record = Record::new_with_headers(key, value, headers.into_iter().map(|(k, v)| RecordHeader::new(k, v)).collect());
-            validate_roundtrip(&record)
-        }
-    }
-
-    fn validate_roundtrip(owned: &Record) -> Result<()> {
-        let mut buf: Vec<u8> = Vec::new();
-        owned.write_payload(&mut buf);
-        let borrowed = BorrowedRecord::read_from_payload(&buf, SystemTime::UNIX_EPOCH)?;
-        ensure!(borrowed.key() == owned.key(), "keys not equal");
-        ensure!(borrowed.value() == owned.value(), "values not equal");
-        ensure!(
-            borrowed.headers().len() == owned.headers().len(),
-            "header count not equal"
-        );
-        for (b, o) in borrowed.headers.iter().zip(owned.headers().iter()) {
-            ensure!(b.key() == o.key(), "header keys not equal");
-            ensure!(b.value() == o.value(), "header values not equal");
-        }
-        Ok(())
-    }
-
-    fn random_bytes(n: usize) -> Vec<u8> {
-        let mut v = Vec::new();
-        v.resize(n, 0);
-        rand::thread_rng().fill(&mut v[..]);
-        v
     }
 }

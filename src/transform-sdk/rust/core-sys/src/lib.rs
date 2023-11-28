@@ -12,15 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Redpanda Data Transforms Rust library.
-//!
-//! Provides a framework for writing in-broker data transforms.
-//!
-//! [`on_record_written`]: Transforms records after they have been written to an input topic.
-//! Resulting records are written to the output topic.
-//!
-//! Transforms must compile to WebAssembly via `--target=wasm32-wasi`, for the broker to run them.
-
 use std::{
     fmt::Debug,
     time::{Duration, SystemTime},
@@ -32,12 +23,12 @@ mod abi;
 mod stub_abi;
 #[cfg(not(target_os = "wasi"))]
 use stub_abi as abi;
-
+mod serde;
 mod varint;
 
-pub mod record;
+extern crate redpanda_transform_sdk_types;
 
-pub use record::*;
+use redpanda_transform_sdk_types::*;
 
 #[cfg(test)]
 #[macro_use]
@@ -46,51 +37,7 @@ extern crate quickcheck;
 #[cfg(test)]
 extern crate rand;
 
-/// An event generated after a write event within the broker.
-#[derive(Debug)]
-pub struct WriteEvent<'a> {
-    /// The record for which the event was generated for.
-    pub record: BorrowedRecord<'a>,
-}
-
-/// Register a callback to be fired when a record is written to the input topic.
-///
-/// This callback is triggered after the record has been written and fsynced to disk and the
-/// producer has been acknowledged.
-///
-/// This method blocks and runs forever, it should be called from `main` and any setup that is
-/// needed can be done before calling this method.
-///
-/// # Examples
-///
-/// ```no_run
-/// extern crate redpanda_transform_sdk as redpanda;
-///
-/// use redpanda::*;
-/// use anyhow::Result;
-///
-/// fn main() {
-///   on_record_written(my_transform);
-/// }
-///
-/// fn my_transform(event: WriteEvent) -> Result<Vec<Record>> {
-///   Ok(vec![
-///     Record::new(
-///       event.record.key().map(|k| k.to_owned()),
-///       event.record.value().map(|v| v.to_owned()),
-///     )
-///   ])
-/// }
-/// ```
-pub fn on_record_written<E, F>(cb: F)
-where
-    E: Debug,
-    F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
-{
-    process(cb)
-}
-
-fn process<E, F>(cb: F)
+pub fn process<E, F>(cb: F)
 where
     E: Debug,
     F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
@@ -103,12 +50,25 @@ where
     }
 }
 
+struct BatchHeader {
+    pub base_offset: i64,
+    pub record_count: i32,
+    pub partition_leader_epoch: i32,
+    pub attributes: i16,
+    pub last_offset_delta: i32,
+    pub base_timestamp: i64,
+    pub max_timestamp: i64,
+    pub producer_id: i64,
+    pub producer_epoch: i16,
+    pub base_sequence: i32,
+}
+
 fn process_batch<E, F>(cb: &F)
 where
     E: Debug,
     F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
 {
-    let mut header = record::BatchHeader {
+    let mut header = BatchHeader {
         base_offset: 0,
         record_count: 0,
         partition_leader_epoch: 0,
@@ -160,12 +120,12 @@ where
         );
         let amt = errno_or_amt as usize;
         let ts = SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp as u64);
-        let record = BorrowedRecord::read_from_payload(&input_buffer[0..amt], ts)
+        let record = serde::read_record_from_payload(&input_buffer[0..amt], ts)
             .expect("deserializing record failed");
         let transformed = cb(WriteEvent { record }).expect("transforming record failed");
         for record in transformed {
             output_buffer.clear();
-            record.write_payload(&mut output_buffer);
+            serde::write_record_payload(&record, &mut output_buffer);
             let errno_or_amt =
                 unsafe { abi::write_record(output_buffer.as_ptr(), output_buffer.len() as u32) };
             assert!(
