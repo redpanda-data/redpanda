@@ -16,16 +16,19 @@
 #include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
+#include "cluster/cloud_metadata/offsets_recoverer.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/cloud_metadata/offsets_uploader.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/controller.h"
+#include "config/node_config.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_manager.h"
+#include "kafka/server/rm_group_frontend.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
@@ -427,6 +430,74 @@ FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
     // Download each snapshot and collect their committed offsets, ensuring
     // they are equivalent to what we started with.
     validate_downloaded_offsets(*this, committed_offsets, remote_paths).get();
+}
+
+FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+
+    // Commit a bunch of offsets.
+    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto remote_paths = upload_offsets().get();
+    BOOST_REQUIRE_EQUAL(16, remote_paths.size());
+    info("Stopping client...");
+    client.stop().get();
+    stop_client.cancel();
+    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
+
+    // Wipe the cluster and restore the groups from the snapshot.
+    info("Clearing cluster...");
+    redpanda_thread_fixture::restart(should_wipe::yes);
+    make_partitions(1).get();
+    BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
+                    app.coordinator_ntp_mapper.local(),
+                    app.controller->get_topics_frontend().local(),
+                    1)
+                    .get());
+
+    // Wait for the group_manager to report healthy (but empty).
+    absl::flat_hash_map<model::ntp, size_t> empty_group_map;
+    for (const auto& ntp : offset_ntps) {
+        wait_for_leader(ntp).get();
+        empty_group_map[ntp] = 0;
+    }
+    validate_group_counts_eventually(empty_group_map).get();
+
+    // Now run recovery across the partitions using the snapshots.
+    offsets_recoverer recoverer(
+      config::node().node_id().value(),
+      app.cloud_storage_api,
+      app.shadow_index_cache,
+      app.offsets_lookup,
+      app.controller->get_partition_leaders(),
+      app._connection_cache,
+      app._group_manager);
+    auto cleanup = ss::defer([&] { recoverer.stop().get(); });
+    for (int i = 0; i < remote_paths.size(); i++) {
+        offsets_recovery_request req;
+        req.offsets_ntp = {
+          model::kafka_consumer_offsets_nt.ns,
+          model::kafka_consumer_offsets_nt.tp,
+          model::partition_id(i),
+        };
+        req.bucket = bucket;
+        req.offsets_snapshot_paths.emplace_back((remote_paths[i])().string());
+        auto small_batch_size = 1;
+        auto reply = recoverer.recover(std::move(req), small_batch_size).get();
+        BOOST_REQUIRE_EQUAL(reply.ec, cluster::errc::success);
+    }
+    validate_group_counts_eventually(groups_per_ntp).get();
+    size_t num_groups_total = 0;
+    for (const auto& [_, num_groups] : groups_per_ntp) {
+        num_groups_total += num_groups;
+    }
+    BOOST_REQUIRE_EQUAL(num_groups_total, num_groups);
 }
 
 FIXTURE_TEST(test_upload_dispatch_to_leaders, offsets_recovery_fixture) {
