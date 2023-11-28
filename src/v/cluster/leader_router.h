@@ -94,8 +94,14 @@ public:
     find_shard_and_process(req_t req, model::ntp, duration timeout);
 
     ss::future<> shutdown() {
+        vlog(
+          clusterlog.debug,
+          "Shutting down {} router",
+          handler_t::process_name());
         _as.request_abort();
         co_await _gate.close();
+        vlog(
+          clusterlog.debug, "Shut down {} router", handler_t::process_name());
     }
 
 private:

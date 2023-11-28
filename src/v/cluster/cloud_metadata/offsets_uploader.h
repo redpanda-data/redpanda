@@ -13,6 +13,7 @@
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cloud_metadata/offsets_upload_rpc_types.h"
 #include "cluster/cloud_metadata/types.h"
+#include "cluster/logger.h"
 #include "kafka/server/fwd.h"
 #include "outcome.h"
 #include "seastarx.h"
@@ -40,8 +41,10 @@ public:
       , _remote(remote) {}
 
     ss::future<> stop() {
+        vlog(clusterlog.debug, "Stopping consumer offsets uploader");
         _as.abort_requested();
-        return _gate.close();
+        co_await _gate.close();
+        vlog(clusterlog.debug, "Stopped consumer offsets uploader");
     }
 
     ss::future<offsets_upload_reply> upload(offsets_upload_request req);
