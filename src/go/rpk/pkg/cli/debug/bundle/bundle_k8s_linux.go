@@ -69,8 +69,8 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveDataDirStructure(ps, bp.y),
 		saveDiskUsage(ctx, ps, bp.y),
 		saveInterrupts(ps),
-		saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes),
-		saveK8SResources(ctx, ps, bp.namespace),
+		saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes, bp.labelSelector),
+		saveK8SResources(ctx, ps, bp.namespace, bp.labelSelector),
 		saveKafkaMetadata(ctx, ps, bp.cl),
 		saveMdstat(ps),
 		saveMountedFilesystems(ps),
@@ -118,13 +118,15 @@ func k8sClientset() (*kubernetes.Clientset, error) {
 // k8sPodList will create a clientset using the config object which uses the
 // service account kubernetes gives to pods (InClusterConfig) and the list of
 // pods in the given namespace.
-func k8sPodList(ctx context.Context, namespace string) (*kubernetes.Clientset, *k8score.PodList, error) {
+func k8sPodList(ctx context.Context, namespace string, labelSelector map[string]string) (*kubernetes.Clientset, *k8score.PodList, error) {
 	clientset, err := k8sClientset()
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to create kubernetes client: %v", err)
 	}
 
-	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labels.Set(labelSelector).String(),
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get pods in the %q namespace: %v", namespace, err)
 	}
@@ -355,9 +357,9 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 
 // saveK8SResources will issue a GET request to the K8S API to a set of fixed
 // resources that we want to include in the bundle.
-func saveK8SResources(ctx context.Context, ps *stepParams, namespace string) step {
+func saveK8SResources(ctx context.Context, ps *stepParams, namespace string, labelSelector map[string]string) step {
 	return func() error {
-		clientset, pods, err := k8sPodList(ctx, namespace)
+		clientset, pods, err := k8sPodList(ctx, namespace, labelSelector)
 		if err != nil {
 			return err
 		}
@@ -397,9 +399,9 @@ func saveK8SResources(ctx context.Context, ps *stepParams, namespace string) ste
 	}
 }
 
-func saveK8SLogs(ctx context.Context, ps *stepParams, namespace, since string, logsLimitBytes int) step {
+func saveK8SLogs(ctx context.Context, ps *stepParams, namespace, since string, logsLimitBytes int, labelSelector map[string]string) step {
 	return func() error {
-		clientset, pods, err := k8sPodList(ctx, namespace)
+		clientset, pods, err := k8sPodList(ctx, namespace, labelSelector)
 		if err != nil {
 			return err
 		}
