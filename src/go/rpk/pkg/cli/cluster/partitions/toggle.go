@@ -13,10 +13,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -178,7 +174,7 @@ func runToggle(ctx context.Context, cl *adminapi.AdminAPI, all bool, topicArg, p
 	}
 	g, egCtx := errgroup.WithContext(ctx)
 	for _, ntp := range partitionFlag {
-		ns, topicName, partitions, err := parsePartition(ntp)
+		ns, topicName, partitions, err := out.ParsePartitionString(ntp)
 		if err != nil {
 			return err
 		}
@@ -203,41 +199,4 @@ func runToggle(ctx context.Context, cl *adminapi.AdminAPI, all bool, topicArg, p
 		}
 	}
 	return g.Wait()
-}
-
-var (
-	partitionRe     *regexp.Regexp
-	partitionReOnce sync.Once
-)
-
-// parsePartition parses the partition flag with the format:
-// {namespace}/{topic}/[partitions...]
-// where namespace and topic are optionals, and partitions are comma-separated
-// partitions ID. If namespace is not provided, the function assumes 'kafka'.
-func parsePartition(ntp string) (ns, topic string, partitions []int, rerr error) {
-	partitionReOnce.Do(func() {
-		// Matches {namespace}/{topic}/[partitions...]
-		// - Index 0: Full Match.
-		// - Index 1: Namespace, if present.
-		// - Index 2: Topic, if present.
-		// - Index 3: Comma-separated partitions.
-		partitionRe = regexp.MustCompile(`^(?:(?:([^/]+)/)?([^/]+)/)?(\d+(?:,\d+)*)$`)
-	})
-	match := partitionRe.FindStringSubmatch(ntp)
-	if len(match) == 0 {
-		return "", "", nil, fmt.Errorf("unable to parse %q: wrong format", ntp)
-	}
-	ns = match[1]
-	if ns == "" {
-		ns = "kafka"
-	}
-	partitionString := strings.Split(match[3], ",")
-	for _, str := range partitionString {
-		p, err := strconv.Atoi(str)
-		if err != nil {
-			return "", "", nil, fmt.Errorf("unable to parse partition %v in flag %v: %v", str, ntp, err)
-		}
-		partitions = append(partitions, p)
-	}
-	return ns, match[2], partitions, nil
 }

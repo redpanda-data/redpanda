@@ -159,6 +159,12 @@ func (a *AdminAPI) DisableMaintenanceMode(ctx context.Context, nodeID int, useLe
 	}
 }
 
+// MaintenanceStatus returns the maintenance status of a node.
+func (a *AdminAPI) MaintenanceStatus(ctx context.Context) (MaintenanceStatus, error) {
+	var response MaintenanceStatus
+	return response, a.sendAny(ctx, http.MethodGet, "/v1/maintenance", nil, nil)
+}
+
 func (a *AdminAPI) CancelNodePartitionsMovement(ctx context.Context, node int) ([]PartitionsMovementResult, error) {
 	var response []PartitionsMovementResult
 	return response, a.sendAny(ctx, http.MethodPost, fmt.Sprintf("%s/%d/cancel_partition_moves", brokersEndpoint, node), nil, &response)

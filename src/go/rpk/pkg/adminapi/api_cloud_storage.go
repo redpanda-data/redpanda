@@ -61,6 +61,24 @@ type CloudStorageStatus struct {
 	MetadataUpdatePending     bool   `json:"metadata_update_pending"`               // If true, the remote metadata may not yet include all segments that have been uploaded.
 }
 
+// CloudStorageLifecycle are the lifecycle markers for topics pending deletion.
+type CloudStorageLifecycle struct {
+	Markers []LifecycleMarker `json:"markers"`
+}
+
+// LifecycleMarker Is the lifecycle status of a topic (e.g. during deletion).
+type LifecycleMarker struct {
+	Ns         string `json:"ns"`
+	Topic      string `json:"topic"`
+	RevisionID int    `json:"revision_id"`
+	Status     string `json:"status"`
+}
+
+type (
+	CloudStorageManifest  map[string]any
+	CloudStorageAnomalies map[string]any
+)
+
 // StartAutomatedRecovery starts the automated recovery process by sending a request to the automated recovery API endpoint.
 func (a *AdminAPI) StartAutomatedRecovery(ctx context.Context, topicNamesPattern string) (RecoveryStartResponse, error) {
 	requestParams := &RecoveryRequestParams{
@@ -81,4 +99,22 @@ func (a *AdminAPI) CloudStorageStatus(ctx context.Context, topic, partition stri
 	var response CloudStorageStatus
 	path := fmt.Sprintf("/v1/cloud_storage/status/%s/%s", topic, partition)
 	return response, a.sendAny(ctx, http.MethodGet, path, http.NoBody, &response)
+}
+
+// CloudStorageLifecycle returns lifecycle markers for topics pending deletion.
+func (a *AdminAPI) CloudStorageLifecycle(ctx context.Context) (CloudStorageLifecycle, error) {
+	var response CloudStorageLifecycle
+	return response, a.sendToLeader(ctx, http.MethodGet, "/v1/cloud_storage/lifecycle", nil, &response)
+}
+
+func (a *AdminAPI) CloudStorageManifest(ctx context.Context, topic string, partition int) (CloudStorageManifest, error) {
+	var response CloudStorageManifest
+	path := fmt.Sprintf("/v1/cloud_storage/manifest/%v/%v", topic, partition)
+	return response, a.sendAny(ctx, http.MethodGet, path, nil, &response)
+}
+
+func (a *AdminAPI) CloudStorageAnomalies(ctx context.Context, namespace, topic string, partition int) (CloudStorageAnomalies, error) {
+	var response CloudStorageAnomalies
+	path := fmt.Sprintf("/v1/cloud_storage/anomalies/%v/%v/%v", namespace, topic, partition)
+	return response, a.sendAny(ctx, http.MethodGet, path, nil, &response)
 }

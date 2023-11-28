@@ -54,7 +54,7 @@ type LicenseProperties struct {
 // GetFeatures returns information about the available features.
 func (a *AdminAPI) GetFeatures(ctx context.Context) (FeaturesResponse, error) {
 	var features FeaturesResponse
-	return features, a.sendAny(
+	return features, a.sendToLeader(
 		ctx,
 		http.MethodGet,
 		"/v1/features",
@@ -64,7 +64,7 @@ func (a *AdminAPI) GetFeatures(ctx context.Context) (FeaturesResponse, error) {
 
 func (a *AdminAPI) GetLicenseInfo(ctx context.Context) (License, error) {
 	var license License
-	return license, a.sendAny(ctx, http.MethodGet, "/v1/features/license", nil, &license)
+	return license, a.sendToLeader(ctx, http.MethodGet, "/v1/features/license", nil, &license)
 }
 
 func (a *AdminAPI) SetLicense(ctx context.Context, license interface{}) error {

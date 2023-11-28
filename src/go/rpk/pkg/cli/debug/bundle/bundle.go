@@ -40,6 +40,13 @@ type bundleParams struct {
 	controllerLogLimitBytes int
 	timeout                 time.Duration
 	metricsInterval         time.Duration
+	partitions              []topicPartitionFilter
+}
+
+type topicPartitionFilter struct {
+	namespace    string
+	topic        string
+	partitionsID []int
 }
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -54,6 +61,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 		controllerLogsSizeLimit string
 		namespace               string
+		partitionFlag           []string
 
 		timeout         time.Duration
 		metricsInterval time.Duration
@@ -80,6 +88,9 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				yActual = y
 			}
 
+			partitions, err := parsePartitionFlag(partitionFlag)
+			out.MaybeDie(err, "unable to parse partition flag %v: %v", partitionFlag, err)
+
 			cl, err := kafka.NewFranzClient(fs, p)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
@@ -103,6 +114,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				controllerLogLimitBytes: int(controllerLogsLimit),
 				timeout:                 timeout,
 				metricsInterval:         metricsInterval,
+				partitions:              partitions,
 			}
 
 			// To execute the appropriate bundle we look for
@@ -136,6 +148,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.StringVar(&controllerLogsSizeLimit, "controller-logs-size-limit", "20MB", "The size limit of the controller logs that can be stored in the bundle (e.g. 3MB, 1GiB)")
 	f.StringVar(&uploadURL, "upload-url", "", "If provided, where to upload the bundle in addition to creating a copy on disk")
 	f.StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
+	f.StringArrayVarP(&partitionFlag, "partition", "p", nil, "Comma-separated partition IDs; when provided, rpk saves extra admin API requests for those partitions. Check help for extended usage")
 
 	return cmd
 }
@@ -156,6 +169,24 @@ func uploadBundle(ctx context.Context, filepath, uploadURL string) error {
 		))
 
 	return cl.Put(ctx, uploadURL, nil, uploadFile, nil)
+}
+
+func parsePartitionFlag(flags []string) (filters []topicPartitionFilter, rerr error) {
+	for _, flag := range flags {
+		ns, topic, partitions, err := out.ParsePartitionString(flag)
+		if err != nil {
+			return nil, err
+		}
+		if topic == "" {
+			return nil, fmt.Errorf("you must provide a topic")
+		}
+		filters = append(filters, topicPartitionFilter{
+			namespace:    ns,
+			topic:        topic,
+			partitionsID: partitions,
+		})
+	}
+	return
 }
 
 // S3EndpointError is the error that we get when calling an S3 url.
@@ -201,8 +232,9 @@ COMMON FILES
  - Clock drift: The ntp clock delta (using pool.ntp.org as a reference) & round
    trip time.
 
- - Admin API calls: Cluster and broker configurations, cluster health data, and 
-   license key information.
+ - Admin API calls: Multiple requests to gather information such as: Cluster and
+   broker configurations, cluster health data, balancer status, cloud storage
+   status, and license key information.
 
  - Broker metrics: The broker's Prometheus metrics, fetched through its
    admin API (/metrics and /public_metrics).
@@ -242,6 +274,20 @@ KUBERNETES
    --logs-since is passed, only the logs within the given timeframe are 
    included.
 
+EXTRA REQUESTS FOR PARTITIONS
+
+You can provide a list of partitions to save additional admin API requests
+specifically for those partitions.
+
+The partition flag accepts the format {namespace}/[topic]/[partitions...]
+where the namespace is optional, if the namespace is not provided, rpk will 
+assume 'kafka'. For example:
+
+Topic 'foo', partitions 1, 2 and 3:
+  --partitions foo/1,2,3
+
+Namespace _redpanda-internal, topic 'bar', partition 2
+  --partitions _redpanda-internal/bar/2
 
 If you have an upload URL from the Redpanda support team, provide it in the 
 --upload-url flag to upload your diagnostics bundle to Redpanda.

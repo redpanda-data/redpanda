@@ -17,8 +17,10 @@ import (
 	"io"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
@@ -161,4 +163,41 @@ func ParseTopicPartitions(list []string) (map[string][]int32, error) {
 		tps[split[0]] = i32Parts
 	}
 	return tps, nil
+}
+
+var (
+	partitionRe     *regexp.Regexp
+	partitionReOnce sync.Once
+)
+
+// ParsePartitionString parses a partition string with the format:
+// {namespace}/{topic}/[partitions...]
+// where namespace and topic are optionals, and partitions are comma-separated
+// partitions ID. If namespace is not provided, the function assumes 'kafka'.
+func ParsePartitionString(ntp string) (ns, topic string, partitions []int, rerr error) {
+	partitionReOnce.Do(func() {
+		// Matches {namespace}/{topic}/[partitions...]
+		// - Index 0: Full Match.
+		// - Index 1: Namespace, if present.
+		// - Index 2: Topic, if present.
+		// - Index 3: Comma-separated partitions.
+		partitionRe = regexp.MustCompile(`^(?:(?:([^/]+)/)?([^/]+)/)?(\d+(?:,\d+)*)$`)
+	})
+	match := partitionRe.FindStringSubmatch(ntp)
+	if len(match) == 0 {
+		return "", "", nil, fmt.Errorf("unable to parse %q: wrong format", ntp)
+	}
+	ns = match[1]
+	if ns == "" {
+		ns = "kafka"
+	}
+	partitionString := strings.Split(match[3], ",")
+	for _, str := range partitionString {
+		p, err := strconv.Atoi(str)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("unable to parse partition %v from string %v: %v", str, ntp, err)
+		}
+		partitions = append(partitions, p)
+	}
+	return ns, match[2], partitions, nil
 }

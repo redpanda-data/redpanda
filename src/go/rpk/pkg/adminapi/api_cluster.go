@@ -70,6 +70,10 @@ type PartitionsMovementResult struct {
 	Result    string `json:"result,omitempty"`
 }
 
+type ClusterUUID struct {
+	UUID string `json:"cluster_uuid"`
+}
+
 // ClusterView represents a cluster view as seen by one node. There are
 // many keys returned, so the raw response is just unmarshalled into an
 // interface.
@@ -94,4 +98,11 @@ func (a *AdminAPI) CancelAllPartitionsMovement(ctx context.Context) ([]Partition
 func (a *AdminAPI) ClusterView(ctx context.Context) (ClusterView, error) {
 	var response ClusterView
 	return response, a.sendOne(ctx, http.MethodGet, "/v1/cluster_view", nil, &response, true)
+}
+
+// ClusterUUID returns the UUID of the cluster this node belongs to. Not to be
+// confused with the configurable cluster identifier used in metrics.
+func (a *AdminAPI) ClusterUUID(ctx context.Context) (ClusterUUID, error) {
+	var response ClusterUUID
+	return response, a.sendToLeader(ctx, http.MethodGet, "/v1/cluster/uuid", nil, &response)
 }

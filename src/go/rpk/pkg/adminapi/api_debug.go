@@ -100,6 +100,37 @@ type SelfTestRequest struct {
 	Nodes []int `json:"nodes,omitempty"`
 }
 
+// PartitionLeaderTable is the information about leaders, the information comes
+// from the Redpanda's partition_leaders_table.
+type PartitionLeaderTable struct {
+	Ns                   string `json:"ns"`
+	Topic                string `json:"topic"`
+	PartitionID          int    `json:"partition_id"`
+	Leader               int    `json:"leader"`
+	PreviousLeader       int    `json:"previous_leader"`
+	LastStableLeaderTerm int    `json:"last_stable_leader_term"`
+	UpdateTerm           int    `json:"update_term"`
+	PartitionRevision    int    `json:"partition_revision"`
+}
+
+// ControllerStatus is the status of a controller, as seen by a node.
+type ControllerStatus struct {
+	StartOffset       int `json:"start_offset"`
+	LastAppliedOffset int `json:"last_applied_offset"`
+	CommittedIndex    int `json:"committed_index"`
+	DirtyOffset       int `json:"dirty_offset"`
+}
+
+// ReplicaState is the partition state of a replica. There are many keys
+// returned, so the raw response is just unmarshalled into an interface.
+type ReplicaState map[string]any
+
+// DebugPartition is the low level debug information of a partition.
+type DebugPartition struct {
+	Ntp      string         `json:"ntp"`
+	Replicas []ReplicaState `json:"replicas"`
+}
+
 func (a *AdminAPI) StartSelfTest(ctx context.Context, nodeIds []int, params []any) (string, error) {
 	var testID string
 	body := SelfTestRequest{
@@ -128,4 +159,30 @@ func (a *AdminAPI) SelfTestStatus(ctx context.Context) ([]SelfTestNodeReport, er
 	var response []SelfTestNodeReport
 	err := a.sendAny(ctx, http.MethodGet, fmt.Sprintf("%s/status", debugEndpoint), nil, &response)
 	return response, err
+}
+
+// PartitionLeaderTable returns the partitions leader table for the requested
+// node.
+func (a *AdminAPI) PartitionLeaderTable(ctx context.Context) ([]PartitionLeaderTable, error) {
+	var response []PartitionLeaderTable
+	return response, a.sendAny(ctx, http.MethodGet, "/v1/debug/partition_leaders_table", nil, &response)
+}
+
+func (a *AdminAPI) IsNodeIsolated(ctx context.Context) (bool, error) {
+	var isIsolated bool
+	return isIsolated, a.sendAny(ctx, http.MethodGet, "/v1/debug/is_node_isolated", nil, &isIsolated)
+}
+
+// ControllerStatus returns the controller status, as seen by the requested
+// node.
+func (a *AdminAPI) ControllerStatus(ctx context.Context) (ControllerStatus, error) {
+	var response ControllerStatus
+	return response, a.sendAny(ctx, http.MethodGet, "/v1/debug/controller_status", nil, &response)
+}
+
+// DebugPartition returns low level debug information (on any node) of all
+// replicas of a given partition.
+func (a *AdminAPI) DebugPartition(ctx context.Context, namespace, topic string, partitionID int) (DebugPartition, error) {
+	var response DebugPartition
+	return response, a.sendAny(ctx, http.MethodGet, fmt.Sprintf("/v1/debug/partition/%v/%v/%v", namespace, topic, partitionID), nil, &response)
 }
