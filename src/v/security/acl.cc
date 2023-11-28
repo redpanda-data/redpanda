@@ -322,7 +322,7 @@ std::ostream& operator<<(std::ostream& os, principal_type type) {
 }
 
 std::ostream& operator<<(std::ostream& os, const acl_principal& principal) {
-    fmt::print(os, "{{type {} name {}}}", principal._type, principal._name);
+    fmt::print(os, "type {{{}}} name {{{}}}", principal._type, principal._name);
     return os;
 }
 
