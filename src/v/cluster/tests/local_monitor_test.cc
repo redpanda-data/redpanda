@@ -79,9 +79,6 @@ local_monitor_fixture::local_monitor_fixture() {
             return config::shard_local_cfg()
               .storage_space_alert_free_threshold_percent.bind();
         }),
-        ss::sharded_parameter([] {
-            return config::shard_local_cfg().storage_min_free_bytes.bind();
-        }),
         std::ref(_storage_node_api))
       .get();
 
