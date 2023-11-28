@@ -61,7 +61,11 @@ jobs:
 
       - name: Run tests
         working-directory: src/transform-sdk/rust
-        run: cargo test
+        run: cargo test --workspace
+
+      - name: Check format
+        working-directory: src/transform-sdk/rust
+        run: cargo fmt --check --all
 
       - name: Run clippy
         working-directory: src/transform-sdk/rust

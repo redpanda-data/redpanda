@@ -6,4 +6,4 @@ This library provides a framework for transforming records written within Redpan
 
 See [`examples/`][examples] for sample usages.
 
-[examples]: https://github.com/redpanda-data/redpanda/tree/dev/src/transform-sdk/rust/core/examples
+[examples]: https://github.com/redpanda-data/redpanda/tree/dev/src/transform-sdk/rust/examples
