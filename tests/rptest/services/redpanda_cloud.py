@@ -851,6 +851,12 @@ class CloudCluster():
             # Cluster already exist
             # Check if cluster is healthy
             try:
+                # In case this is a provided cluster,
+                # make sure that we ready for the health check.
+                # Users and ACLs will not be recreated if they exists
+                self.current.consoleUrl = self._get_cluster_console_url()
+                self.update_cluster_acls(superuser)
+                # Do the health check
                 _isHealthy = self._ensure_cluster_health(superuser)
             except Exception as e:
                 self._logger.warning(f"Failed to ensure cluster health: {e}")
