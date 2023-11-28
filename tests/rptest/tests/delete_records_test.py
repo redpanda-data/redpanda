@@ -170,8 +170,8 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
                 if fn():
                     return value_on_read
             except Exception as e:
-                # Transient failure, desired to retry
-                if 'unknown broker' in str(e):
+                # Not transient failure, no need to retry
+                if 'unknown broker' not in str(e):
                     raise e
             return not value_on_read
 
