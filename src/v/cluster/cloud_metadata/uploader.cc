@@ -426,13 +426,19 @@ void uploader::start() {
     ssx::spawn_with_gate(_gate, [this] { return upload_until_abort(); });
 }
 
-ss::future<> uploader::stop_and_wait() {
+void uploader::stop() {
     _group_manager.unregister_leadership_notification(_leader_cb_id);
     _leader_cond.broken();
     if (_term_as.has_value()) {
         _term_as.value().get().request_abort();
     }
     _as.request_abort();
+}
+
+ss::future<> uploader::stop_and_wait() {
+    if (!_as.abort_requested()) {
+        stop();
+    }
     co_await _gate.close();
 }
 

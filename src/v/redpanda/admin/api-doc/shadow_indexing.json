@@ -39,7 +39,7 @@
       ]
     },
     {
-      "path": "/v1/cloud_storage/cluster_recovery",
+      "path": "/v1/cloud_storage/automated_recovery",
       "operations": [
         {
           "method": "POST",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "path": "/v1/cloud_storage/automated_recovery",
+      "path": "/v1/cloud_storage/topic_recovery",
       "operations": [
         {
           "method": "POST",

@@ -58,6 +58,7 @@ public:
     void start();
 
     // Stops the upload loop.
+    void stop();
     ss::future<> stop_and_wait();
 
     ss::future<> upload_until_abort();

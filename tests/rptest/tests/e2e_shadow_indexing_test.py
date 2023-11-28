@@ -64,6 +64,15 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.test_context = test_context
         self.topic = self.s3_topic_name
 
+        conf = dict(enable_cluster_metadata_upload_loop=True,
+                    cloud_storage_cluster_metadata_upload_interval_ms=1000,
+                    controller_snapshot_max_age_sec=1)
+        if extra_rp_conf:
+            for k, v in conf.items():
+                extra_rp_conf[k] = v
+        else:
+            extra_rp_conf = conf
+
         self.si_settings = SISettings(
             test_context,
             cloud_storage_max_connections=5,
@@ -958,7 +967,8 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
             test_context,
             log_segment_size=self.small_segment_size,
             cloud_storage_cache_size=20 * 2**30,
-            cloud_storage_segment_max_upload_interval_sec=1)
+            cloud_storage_segment_max_upload_interval_sec=1,
+        )
         super().__init__(
             test_context,
             node_prealloc_count=1,
@@ -968,6 +978,9 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 "cloud_storage_enable_segment_merging": False,
                 'log_segment_size_min': 1024,
                 'cloud_storage_cache_chunk_size': self.chunk_size,
+                'cloud_storage_cluster_metadata_upload_interval_ms': 1000,
+                'enable_cluster_metadata_upload_loop': True,
+                'controller_snapshot_max_age_sec': 1,
             },
             environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
             si_settings=si_settings,

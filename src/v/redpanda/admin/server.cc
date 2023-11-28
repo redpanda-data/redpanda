@@ -4979,11 +4979,14 @@ admin_server::initialize_cluster_recovery(
 ss::future<ss::json::json_return_type>
 admin_server::get_cluster_recovery(std::unique_ptr<ss::http::request> req) {
     ss::httpd::shadow_indexing_json::cluster_recovery_status ret;
+    ret.state = "inactive";
 
     auto latest_recovery
       = _controller->get_cluster_recovery_table().local().current_recovery();
-    if (!latest_recovery.has_value()) {
-        ret.state = "No recoveries active";
+    if (
+      !latest_recovery.has_value()
+      || latest_recovery.value().get().stage
+           == cluster::recovery_stage::complete) {
         co_return ret;
     }
     auto& recovery = latest_recovery.value().get();
