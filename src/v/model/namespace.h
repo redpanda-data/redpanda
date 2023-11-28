@@ -68,7 +68,9 @@ inline const model::topic_partition schema_registry_internal_tp{
   model::topic{"_schemas"}, model::partition_id{0}};
 
 inline const model::ntp wasm_binaries_internal_ntp(
-  model::redpanda_ns, model::topic("wasm_binaries"), model::partition_id(0));
+  model::kafka_internal_namespace,
+  model::topic("wasm_binaries"),
+  model::partition_id(0));
 
 inline bool is_user_topic(topic_namespace_view tp_ns) {
     return tp_ns.ns == kafka_namespace
