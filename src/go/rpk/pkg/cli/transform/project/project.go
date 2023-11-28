@@ -39,6 +39,12 @@ var AllWasmLangsWithDescriptions = []string{
 
 func (l *WasmLang) Set(str string) error {
 	lower := strings.ToLower(str)
+	// For compatibility with old projects, we map bare `tinygo` to the version
+	// without goroutines.
+	if lower == "tinygo" {
+		*l = WasmLangTinygoNoGoroutines
+		return nil
+	}
 	for _, s := range AllWasmLangs {
 		if lower == s {
 			*l = WasmLang(s)
