@@ -11,6 +11,7 @@
 #include "cluster/cluster_recovery_table.h"
 
 #include "cluster/cloud_metadata/cluster_manifest.h"
+#include "cluster/cluster_recovery_state.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 
@@ -53,7 +54,10 @@ ss::future<> cluster_recovery_table::wait_for_active_recovery() {
 }
 
 std::error_code cluster_recovery_table::apply(
-  model::offset offset, cluster_recovery_init_cmd cmd) {
+  model::offset offset,
+  cloud_metadata::cluster_metadata_manifest manifest,
+  cloud_storage_clients::bucket_name bucket,
+  wait_for_nodes wait_for_nodes) {
     if (!_states.empty() && _states.back().is_active()) {
         return errc::update_in_progress;
     }
@@ -62,14 +66,23 @@ std::error_code cluster_recovery_table::apply(
     vlog(
       clusterlog.info,
       "Initializing cluster recovery at offset {} with manifest {} from bucket "
-      "{}",
+      "{}, waiting for nodes: {}",
       offset,
-      cmd.value.manifest,
-      cmd.value.bucket);
+      manifest,
+      bucket,
+      wait_for_nodes);
     _states.emplace_back(
-      std::move(cmd.value.manifest), std::move(cmd.value.bucket));
+      std::move(manifest), std::move(bucket), wait_for_nodes);
     _has_active_recovery.signal();
     return errc::success;
+}
+
+std::error_code cluster_recovery_table::apply(
+  model::offset offset, cluster_recovery_init_cmd cmd) {
+    return apply(
+      offset,
+      std::move(cmd.value.state.manifest),
+      std::move(cmd.value.state.bucket));
 }
 
 std::error_code

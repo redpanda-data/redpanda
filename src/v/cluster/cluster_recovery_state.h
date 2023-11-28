@@ -16,7 +16,11 @@
 #include "serde/envelope.h"
 #include "serde/serde.h"
 
+#include <seastar/util/bool_class.hh>
+
 namespace cluster {
+
+using wait_for_nodes = ss::bool_class<struct wait_tag>;
 
 // Tracks the state of an on-going cluster recovery. This only exposes an
 // interface to expose and modify the current status of recovery; an external
@@ -35,10 +39,14 @@ public:
     cluster_recovery_state() = default;
     explicit cluster_recovery_state(
       cloud_metadata::cluster_metadata_manifest manifest,
-      cloud_storage_clients::bucket_name bucket)
+      cloud_storage_clients::bucket_name bucket,
+      wait_for_nodes wait)
       : manifest(std::move(manifest))
-      , bucket(std::move(bucket)) {}
-    auto serde_fields() { return std::tie(stage, manifest, bucket, error_msg); }
+      , bucket(std::move(bucket))
+      , wait_for_nodes(wait) {}
+    auto serde_fields() {
+        return std::tie(stage, manifest, bucket, wait_for_nodes, error_msg);
+    }
 
     bool is_active() const {
         return !(
@@ -57,6 +65,13 @@ public:
 
     // Bucket being recovered from.
     cloud_storage_clients::bucket_name bucket;
+
+    // Whether the recovery should wait for the cluster to become at least the
+    // size of the original cluster before proceeding with recovery.
+    //
+    // This may be desirable when the recovery was started as a part of cluster
+    // bootstrap.
+    wait_for_nodes wait_for_nodes;
 
     // Only applicable when failed.
     std::optional<ss::sstring> error_msg;

@@ -453,6 +453,43 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
           clusterlog.info,
           "Downloaded controller snapshot. Proceeding with reconciliation...");
 
+        if (recovery_state.wait_for_nodes) {
+            const auto& nodes = controller_snap.value().members.nodes;
+            vlog(
+              clusterlog.info,
+              "Original cluster had {} nodes. Waiting for cluster "
+              "membership...",
+              nodes.size());
+            retry_chain_node membership_retry(term_as, 600s, 10s);
+            while (_members_table.node_count() < nodes.size()) {
+                if (term_as.abort_requested()) {
+                    co_return;
+                }
+                auto permit = membership_retry.retry();
+                if (!permit.is_allowed) {
+                    co_await _recovery_manager.replicate_update(
+                      synced_term,
+                      recovery_stage::failed,
+                      ssx::sformat(
+                        "Timed out waiting for cluster, {}/{} nodes...",
+                        _members_table.node_count(),
+                        nodes.size()));
+                    co_return;
+                }
+                vlog(
+                  clusterlog.info,
+                  "Cluster only has reached {}/{} nodes, waiting...",
+                  _members_table.node_count(),
+                  nodes.size());
+                co_await ss::sleep_abortable(permit.delay, term_as);
+            }
+            vlog(
+              clusterlog.info,
+              "Cluster has reached {}/{} nodes, proceeding...",
+              _members_table.node_count(),
+              nodes.size());
+        }
+
         // We may need to restore state from the controller snapshot.
         cloud_metadata::controller_snapshot_reconciler reconciler(
           _recovery_table.local(),

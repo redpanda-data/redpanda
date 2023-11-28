@@ -15,6 +15,7 @@
 #include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/feature_backend.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
 #include "cluster/types.h"
@@ -40,12 +41,14 @@ bootstrap_backend::bootstrap_backend(
   ss::sharded<storage::api>& storage,
   ss::sharded<members_manager>& members_manager,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<feature_backend>& feature_backend)
+  ss::sharded<feature_backend>& feature_backend,
+  ss::sharded<cluster_recovery_table>& cluster_recovery_table)
   : _credentials(credentials)
   , _storage(storage)
   , _members_manager(members_manager)
   , _feature_table(feature_table)
-  , _feature_backend(feature_backend) {}
+  , _feature_backend(feature_backend)
+  , _cluster_recovery_table(cluster_recovery_table) {}
 
 namespace {
 
@@ -192,6 +195,16 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd, model::offset offset) {
         if (!_feature_backend.local().has_local_snapshot()) {
             co_await _feature_backend.local().save_local_snapshot();
         }
+    }
+
+    // If this is a recovery cluster, initialize recovery state.
+    if (cmd.value.recovery_state.has_value()) {
+        co_await _cluster_recovery_table.invoke_on_all(
+          [o = offset,
+           m = cmd.value.recovery_state->manifest,
+           b = cmd.value.recovery_state->bucket](auto& recovery_table) {
+              recovery_table.apply(o, m, b, wait_for_nodes::yes);
+          });
     }
 
     co_await apply_cluster_uuid(cmd.value.uuid);

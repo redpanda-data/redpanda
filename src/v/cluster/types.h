@@ -2887,10 +2887,30 @@ struct user_and_credential
     security::scram_credential credential;
 };
 
+struct cluster_recovery_init_state
+  : serde::envelope<
+      cluster_recovery_init_state,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    friend bool operator==(
+      const cluster_recovery_init_state&, const cluster_recovery_init_state&)
+      = default;
+
+    auto serde_fields() { return std::tie(manifest, bucket); }
+
+    // Cluster metadata manifest used to define the desired end state of the
+    // recovery.
+    cluster::cloud_metadata::cluster_metadata_manifest manifest;
+
+    // Bucket from which to download the cluster recovery state.
+    cloud_storage_clients::bucket_name bucket;
+};
+
 struct bootstrap_cluster_cmd_data
   : serde::envelope<
       bootstrap_cluster_cmd_data,
-      serde::version<2>,
+      serde::version<3>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -2904,7 +2924,8 @@ struct bootstrap_cluster_cmd_data
           bootstrap_user_cred,
           node_ids_by_uuid,
           founding_version,
-          initial_nodes);
+          initial_nodes,
+          recovery_state);
     }
 
     model::cluster_uuid uuid;
@@ -2916,6 +2937,9 @@ struct bootstrap_cluster_cmd_data
     // the node that generated the bootstrap record.
     cluster_version founding_version{invalid_version};
     std::vector<model::broker> initial_nodes;
+
+    // If set, begins a cluster recovery using this state as the basis.
+    std::optional<cluster_recovery_init_state> recovery_state;
 };
 
 struct cluster_recovery_init_cmd_data
@@ -2924,19 +2948,15 @@ struct cluster_recovery_init_cmd_data
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+
     friend bool operator==(
       const cluster_recovery_init_cmd_data&,
       const cluster_recovery_init_cmd_data&)
       = default;
 
-    auto serde_fields() { return std::tie(manifest, bucket); }
+    auto serde_fields() { return std::tie(state); }
 
-    // Cluster metadata manifest used to define the desired end state of the
-    // recovery.
-    cluster::cloud_metadata::cluster_metadata_manifest manifest;
-
-    // Bucket from which to download the cluster recovery state.
-    cloud_storage_clients::bucket_name bucket;
+    cluster_recovery_init_state state;
 };
 
 enum class recovery_stage : int8_t {

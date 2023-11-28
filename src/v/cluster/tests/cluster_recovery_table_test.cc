@@ -25,8 +25,8 @@ namespace cluster {
 namespace {
 cluster_recovery_init_cmd make_init_cmd(int meta_id) {
     cluster_recovery_init_cmd_data data;
-    data.manifest.metadata_id = cluster::cloud_metadata::cluster_metadata_id{
-      meta_id};
+    data.state.manifest.metadata_id
+      = cluster::cloud_metadata::cluster_metadata_id{meta_id};
     return cluster_recovery_init_cmd{0, std::move(data)};
 }
 cluster_recovery_update_cmd make_update_cmd(

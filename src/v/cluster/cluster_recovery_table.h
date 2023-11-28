@@ -92,6 +92,11 @@ public:
         return std::reference_wrapper(_states.back());
     }
 
+    std::error_code apply(
+      model::offset offset,
+      cloud_metadata::cluster_metadata_manifest,
+      cloud_storage_clients::bucket_name,
+      wait_for_nodes wait = wait_for_nodes::no);
     std::error_code apply(model::offset offset, cluster_recovery_init_cmd);
     std::error_code apply(model::offset offset, cluster_recovery_update_cmd);
 
