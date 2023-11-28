@@ -441,6 +441,9 @@ private:
         model::offset high_watermark() const final {
             throw std::runtime_error("unimplemented");
         }
+        model::offset log_end_offset() const final {
+            throw std::runtime_error("unimplemented");
+        }
         checked<model::offset, kafka::error_code>
         last_stable_offset() const final {
             throw std::runtime_error("unimplemented");
@@ -452,7 +455,6 @@ private:
         get_leader_epoch_last_offset(kafka::leader_epoch) const final {
             throw std::runtime_error("unimplemented");
         }
-        bool is_elected_leader() const final { return true; }
         bool is_leader() const final { return true; }
         ss::future<std::error_code> linearizable_barrier() final {
             throw std::runtime_error("unimplemented");

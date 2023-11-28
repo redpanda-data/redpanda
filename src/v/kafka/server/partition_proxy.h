@@ -37,12 +37,13 @@ public:
           sync_effective_start(model::timeout_clock::duration) = 0;
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
+        virtual model::offset log_end_offset() const = 0;
         virtual checked<model::offset, error_code>
         last_stable_offset() const = 0;
         virtual kafka::leader_epoch leader_epoch() const = 0;
         virtual ss::future<std::optional<model::offset>>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
-        virtual bool is_elected_leader() const = 0;
+
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
         virtual ss::future<error_code>
@@ -88,6 +89,7 @@ public:
     model::offset start_offset() const { return _impl->start_offset(); }
 
     model::offset high_watermark() const { return _impl->high_watermark(); }
+    model::offset log_end_offset() const { return _impl->log_end_offset(); }
 
     checked<model::offset, error_code> last_stable_offset() const {
         return _impl->last_stable_offset();
@@ -101,8 +103,6 @@ public:
     prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline) {
         return _impl->prefix_truncate(o, deadline);
     }
-
-    bool is_elected_leader() const { return _impl->is_elected_leader(); }
 
     bool is_leader() const { return _impl->is_leader(); }
 
