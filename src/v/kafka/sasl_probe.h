@@ -46,6 +46,12 @@ public:
                 sm::description(
                   "Total number of SASL reauthentication attempts"))
                 .aggregate(aggregate_labels));
+            defs.emplace_back(
+              sm::make_counter(
+                "session_revoked_total",
+                [this] { return _session_revoked_count; },
+                sm::description("Total number of SASL sessions revoked"))
+                .aggregate(aggregate_labels));
             return defs;
         };
 
@@ -71,12 +77,14 @@ public:
 
     void session_expired() { ++_session_expiration_count; }
     void session_reauth() { ++_session_reauth_attempts; }
+    void session_revoked() { ++_session_revoked_count; }
 
 private:
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
     uint32_t _session_expiration_count{0};
     uint32_t _session_reauth_attempts{0};
+    uint32_t _session_revoked_count{0};
 };
 
 }; // namespace kafka
