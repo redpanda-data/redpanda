@@ -72,6 +72,7 @@ enum class feature : std::uint64_t {
     fast_partition_reconfiguration = 1ULL << 38U,
     disabling_partitions = 1ULL << 39U,
     cloud_metadata_cluster_recovery = 1ULL << 40U,
+    audit_logging = 1ULL << 41U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -355,6 +356,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{11},
     "cloud_metadata_cluster_recovery",
     feature::cloud_metadata_cluster_recovery,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{11},
+    "audit_logging",
+    feature::audit_logging,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always}};
 

@@ -1086,3 +1086,55 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
     auto ser = sa::rjson_serialize(authn);
     BOOST_REQUIRE_EQUAL(ser, ::json::minify(expected));
 }
+
+BOOST_AUTO_TEST_CASE(test_ocsf_size) {
+    auto req = test_http_request();
+    req.http_headers.push_back(req.http_headers[0]); // Add another element
+
+    const ss::socket_address client_addr{ss::ipv4_addr("10.0.0.1", 12345)};
+    const ss::socket_address server_addr{ss::ipv4_addr("10.1.1.1", 23456)};
+    auto http_req = ss::http::request::make(
+      req.http_method, req.url.hostname, req.url.url_string);
+    http_req.parse_query_param();
+    http_req._client_address = client_addr;
+    http_req._server_address = server_addr;
+    http_req._version = req.version;
+    http_req._headers["User-Agent"] = req.user_agent;
+    http_req._headers["Authorization"] = "You shouldn't see this at all";
+    http_req.protocol_name = req.url.scheme;
+
+    const ss::sstring username = "test";
+    const ss::sstring service_name = "test-service";
+    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+      .server_addr = {fmt::format("{}", http_req.get_server_address().addr()), http_req.get_server_address().port(), http_req.get_server_address().addr().in_family()},
+      .svc_name = service_name,
+      .client_addr = {fmt::format("{}", http_req.get_client_address().addr()), http_req.get_client_address().port(), http_req.get_client_address().addr().in_family()},
+      .is_cleartext = sa::authentication::used_cleartext::no,
+      .user = {
+        .name = username,
+        .type_id = sa::user::type::unknown,
+      },
+      .error_reason = "FAILURE"
+    });
+
+    size_t estimated_size = sizeof(sa::ocsf_base_event<sa::authentication>);
+    const auto& [activity_id, auth_protocol, auth_protocol_id, dest_endpoint_host, is_cleartext, is_mfa, service, src_endpoint_host, status_id, status_detail, user]
+      = authn.equality_fields();
+    estimated_size += sizeof(activity_id);
+    estimated_size += sizeof(ss::sstring) + auth_protocol.size();
+    estimated_size += sizeof(auth_protocol_id);
+    estimated_size += sizeof(ss::sstring) + dest_endpoint_host.size();
+    estimated_size += sizeof(is_cleartext);
+    estimated_size += sizeof(is_mfa);
+    estimated_size += sizeof(ss::sstring) + service.name.size();
+    estimated_size += sizeof(ss::sstring) + src_endpoint_host.size();
+    estimated_size += sizeof(status_id);
+    estimated_size
+      += sizeof(std::optional<ss::sstring>)
+         + (status_detail.has_value() ? sizeof(ss::sstring) + status_detail->size() : 0);
+    estimated_size += user.domain.size() + user.name.size() + user.uid.size()
+                      + sizeof(user.type_id) + (sizeof(ss::sstring) * 3);
+
+    BOOST_CHECK_EQUAL(estimated_size, 376);
+    BOOST_CHECK_EQUAL(authn.estimated_size(), 376);
+}

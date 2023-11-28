@@ -80,18 +80,24 @@ public:
     /// initialization completes with success.
     ss::future<> initialize();
 
-    /// Closes the gate and flushes all buffers before severing connection to
-    /// broker(s)
+    /// Shuts down the client, may wait for up to
+    /// kafka::config::produce_shutdown_delay_ms to complete
     ss::future<> shutdown();
 
     /// Produces to the audit topic, internal partitioner assigns partitions
     /// to the batches provided. Blocks if semaphore is exhausted.
     ss::future<>
-    produce(std::vector<kafka::client::record_essence>, audit_probe& probe);
+    produce(std::vector<kafka::client::record_essence>, audit_probe&);
 
+    /// Returns true if the configuration phase has completed which includes:
+    /// - Connecting to the broker(s) w/ ephemeral creds
+    /// - Creating ACLs
+    /// - Creating internal audit topic
     bool is_initialized() const { return _is_initialized; }
 
 private:
+    ss::future<> do_produce(
+      std::vector<kafka::client::record_essence> records, audit_probe& probe);
     ss::future<> update_status(kafka::error_code);
     ss::future<> update_status(kafka::produce_response);
     ss::future<> configure();
@@ -142,10 +148,10 @@ public:
     /// Allocates and connects, or deallocates and shuts down the audit client
     void toggle(bool enabled);
 
-    /// Returns true if _client has a value
-    bool is_enabled() const { return _client != nullptr; }
-
 private:
+    ss::future<>
+      publish_app_lifecycle_event(application_lifecycle::activity_id);
+
     ss::future<> update_auth_status(auth_misconfigured_t);
 
     ss::future<> do_toggle(bool enabled);
@@ -154,6 +160,11 @@ private:
     /// work occur in lock step
     ss::gate _gate;
     mutex _mutex;
+
+    /// In the case the client did not finish intialization this optional may be
+    /// fufilled by a fiber attempting to shutdown the client. The future will
+    /// then later be waited on by the fiber that was initializing the client.
+    std::optional<ss::future<>> _early_exit_future;
 
     /// Reference to audit manager so synchronization with its fibers may occur.
     /// Supports pausing and resuming these fibers so the client can safely be
@@ -220,9 +231,17 @@ ss::future<> audit_client::set_client_credentials() {
 
 ss::future<> audit_client::configure() {
     try {
+        const auto& feature_table = _controller->get_feature_table();
+        if (!feature_table.local().is_active(
+              features::feature::audit_logging)) {
+            throw std::runtime_error(
+              "Failing to create audit client until cluster has been fully "
+              "upgraded to the min supported version for audit_logging");
+        }
         co_await set_client_credentials();
         co_await set_auditing_permissions();
         co_await create_internal_topic();
+        co_await _client.connect();
 
         /// Retries should be "infinite", to avoid dropping data, there is a
         /// known issue within the client setting this value to size_t::max
@@ -308,10 +327,6 @@ ss::future<> audit_client::update_status(kafka::produce_response response) {
 }
 
 ss::future<> audit_client::mitigate_error(std::exception_ptr eptr) {
-    if (_gate.is_closed() || _as.abort_requested()) {
-        /// TODO: Investigate looping behavior on shutdown
-        co_return;
-    }
     vlog(adtlog.trace, "mitigate_error: {}", eptr);
     auto f = ss::now();
     try {
@@ -404,12 +419,46 @@ ss::future<> audit_client::create_internal_topic() {
 }
 
 ss::future<> audit_client::shutdown() {
-    /// Repeated calls to shutdown() are possible, although unlikely
-    if (_as.abort_requested()) {
-        co_return;
-    }
-    vlog(adtlog.info, "Shutting down audit client");
+    /// On shutdown the best attempt to send all data residing in the queues
+    /// must be made, therefore we must:
+    /// - Send the data from all shards queues to the kafka/client
+    /// - Send the shutdown signal to the client
+    /// - client::stop() will make a best attempt to send records residing
+    ///   within its buffers
+    ///
+    /// _client->stop() must only be called when the records reside within the
+    /// client, otherwise the client upon call to stop() will have no records in
+    /// its buffer to send. Therefore client->stop() should only be called once
+    /// the records exist within the clients internal buffers, but how to
+    /// exactly know that? One could synchronously wait until
+    /// client->produce_records() has finished but this is not a good solution
+    /// because:
+    ///
+    /// 1. It returns when the data has been acked (waiting longer then
+    ///    necessary)
+    /// 2. If there is an error in produce it will permanently loop since
+    ///    the audit retry count is set high - deadlock can occur.
+    ///
+    /// Therefore the solution here is to on call to audit_client::shutdown,
+    /// wait until all outstanding requests complete within a fixed timeout
+    /// (since the semaphore units have been taken from the most recent call to
+    /// drain() via pause() during the shutdown sequence in do_toggle()
+    ///
+    /// If the timeout expires then the client will immediately send the
+    /// batch waiting another configurable amount of time before it abruptly
+    /// cancels the operation.
     _as.request_abort();
+    vlog(adtlog.info, "Waiting for audit client to shutdown");
+    static constexpr auto client_drain_wait_timeout = 3s;
+    try {
+        co_await _send_sem.wait(client_drain_wait_timeout, _max_buffer_size);
+    } catch (const ss::semaphore_timed_out&) {
+        vlog(
+          adtlog.warn,
+          "Timed out after {}ms waiting for records to be sent from the audit "
+          "client",
+          client_drain_wait_timeout);
+    }
     _send_sem.broken();
     co_await _client.stop();
     co_await _gate.close();
@@ -445,40 +494,7 @@ ss::future<> audit_client::produce(
            &probe,
            units = std::move(units),
            records = std::move(records)]() mutable {
-              const auto n_records = records.size();
-              return _client
-                .produce_records(
-                  model::kafka_audit_logging_topic, std::move(records))
-                .then([this, n_records, &probe](kafka::produce_response r) {
-                    bool errored = std::any_of(
-                      r.data.responses.cbegin(),
-                      r.data.responses.cend(),
-                      [](const kafka::topic_produce_response& tp) {
-                          return std::any_of(
-                            tp.partitions.cbegin(),
-                            tp.partitions.cend(),
-                            [](const kafka::partition_produce_response& p) {
-                                return p.error_code != kafka::error_code::none;
-                            });
-                      });
-                    if (errored) {
-                        if (_as.abort_requested()) {
-                            vlog(
-                              adtlog.warn,
-                              "{} audit records dropped, shutting down",
-                              n_records);
-                        } else {
-                            vlog(
-                              adtlog.error,
-                              "{} audit records dropped",
-                              n_records);
-                        }
-                        probe.audit_error();
-                    } else {
-                        probe.audit_event();
-                    }
-                    return update_status(std::move(r));
-                })
+              return do_produce(std::move(records), probe)
                 .finally([units = std::move(units)] {});
           });
     } catch (const ss::broken_semaphore&) {
@@ -487,6 +503,38 @@ ss::future<> audit_client::produce(
           "Shutting down the auditor kafka::client, semaphore broken");
     }
     co_return;
+}
+
+ss::future<> audit_client::do_produce(
+  std::vector<kafka::client::record_essence> records, audit_probe& probe) {
+    const auto n_records = records.size();
+    kafka::produce_response r = co_await _client.produce_records(
+      model::kafka_audit_logging_topic, std::move(records));
+    bool errored = std::any_of(
+      r.data.responses.cbegin(),
+      r.data.responses.cend(),
+      [](const kafka::topic_produce_response& tp) {
+          return std::any_of(
+            tp.partitions.cbegin(),
+            tp.partitions.cend(),
+            [](const kafka::partition_produce_response& p) {
+                return p.error_code != kafka::error_code::none;
+            });
+      });
+    if (errored) {
+        if (_as.abort_requested()) {
+            vlog(
+              adtlog.warn,
+              "{} audit records dropped, shutting down",
+              n_records);
+        } else {
+            vlog(adtlog.error, "{} audit records dropped", n_records);
+        }
+        probe.audit_error();
+    } else {
+        probe.audit_event();
+    }
+    co_return co_await update_status(std::move(r));
 }
 
 /// audit_sink
@@ -505,10 +553,8 @@ ss::future<> audit_sink::start() {
 }
 
 ss::future<> audit_sink::stop() {
-    _mutex.broken();
-    if (_client) {
-        co_await _client->shutdown();
-    }
+    vlog(adtlog.info, "stop() invoked on audit_sink");
+    toggle(false);
     co_await _gate.close();
 }
 
@@ -528,42 +574,77 @@ audit_sink::produce(std::vector<kafka::client::record_essence> records) {
     co_await _client->produce(std::move(records), _audit_mgr->probe());
 }
 
+ss::future<> audit_sink::publish_app_lifecycle_event(
+  application_lifecycle::activity_id event) {
+    /// Directly publish the event instead of enqueuing it like all other
+    /// events. This ensures that the event won't get discarded in the case
+    /// audit is disabled.
+    auto lifecycle_event = std::make_unique<application_lifecycle>(
+      make_application_lifecycle(event, ss::sstring{subsystem_name}));
+    auto as_json = lifecycle_event->to_json();
+    iobuf b;
+    b.append(as_json.c_str(), as_json.size());
+    std::vector<kafka::client::record_essence> rs;
+    rs.push_back(kafka::client::record_essence{.value = std::move(b)});
+    co_await produce(std::move(rs));
+}
+
 void audit_sink::toggle(bool enabled) {
-    ssx::spawn_with_gate(
-      _gate, [this, enabled]() { return do_toggle(enabled); });
+    vlog(adtlog.info, "Setting auditing enabled state to: {}", enabled);
+    ssx::spawn_with_gate(_gate, [this, enabled]() {
+        return _mutex.with(5s, [this, enabled] { return do_toggle(enabled); })
+          .handle_exception_type(
+            [this, enabled](const ss::semaphore_timed_out&) {
+                /// If within 5s the mutex cannot be aquired AND the client is
+                /// stuck in an initialization loop, then allow it to exit.
+                if (
+                  !enabled && _client && !_client->is_initialized()
+                  && !_early_exit_future.has_value()) {
+                    _early_exit_future = _client->shutdown();
+                }
+            });
+    });
 }
 
 ss::future<> audit_sink::do_toggle(bool enabled) {
-    try {
-        ssx::semaphore_units lock;
-        if (enabled && !_client) {
-            lock = co_await _mutex.get_units();
-            _client = std::make_unique<audit_client>(
-              this, _controller, _config);
-            co_await _client->initialize();
-            if (_client->is_initialized()) {
-                /// Only if shutdown succeeded before initializtion could
-                /// complete would this case evaluate to false
-                co_await _audit_mgr->resume();
-            }
-        } else if (!enabled && _client) {
-            /// Call to shutdown does not exist within the lock so that
-            /// shutting down isn't blocked on the lock held above in the
-            /// case initialize() doesn't complete. This is common if for
-            /// example the audit topic is improperly configured
-            /// intitialization will forever hang.
-            co_await _client->shutdown();
-            lock = co_await _mutex.get_units();
-            co_await _audit_mgr->pause();
+    if (enabled && !_client) {
+        _client = std::make_unique<audit_client>(this, _controller, _config);
+        co_await _client->initialize();
+        if (_client->is_initialized()) {
+            co_await publish_app_lifecycle_event(
+              application_lifecycle::activity_id::start);
+            co_await _audit_mgr->resume();
+            vlog(adtlog.info, "Auditing fibers started");
+        } else if (_early_exit_future.has_value()) {
+            /// This is for shutting down the client when initialize() hasn't
+            /// completed.
+            ///
+            /// This special future allows the shutdown method to still execute
+            /// under the scope the mutex, even though it was initiated outside
+            /// outside the scope of the mutex.
+            co_await std::move(*_early_exit_future);
+            _early_exit_future = std::nullopt;
             _client.reset(nullptr);
+        } else {
+            /// There is currently no known way this could occur, that is
+            /// because initialize() should loop forever in the case it cannot
+            /// fully succeed.
+            vlog(
+              adtlog.warn,
+              "Client initialization exited in an unexpected manner");
         }
-    } catch (const ss::broken_semaphore&) {
-        vlog(adtlog.info, "Failed to toggle audit status, shutting down");
-    } catch (...) {
+    } else if (!enabled && _client) {
+        co_await publish_app_lifecycle_event(
+          application_lifecycle::activity_id::stop);
+        co_await _audit_mgr->pause();
+        vlog(adtlog.info, "Auditing fibers stopped");
+        co_await _client->shutdown();
+        _client.reset(nullptr);
+    } else {
         vlog(
-          adtlog.error,
-          "Failed to toggle audit status: {}",
-          std::current_exception());
+          adtlog.info,
+          "Ignored update to audit_enabled(), auditing is already {}",
+          (enabled ? "enabled" : "disabled"));
     }
 }
 
@@ -586,14 +667,15 @@ audit_log_manager::audit_log_manager(
   : _audit_enabled(config::shard_local_cfg().audit_enabled.bind())
   , _queue_drain_interval_ms(
       config::shard_local_cfg().audit_queue_drain_interval_ms.bind())
-  , _max_queue_elements_per_shard(
-      config::shard_local_cfg().audit_max_queue_elements_per_shard.bind())
   , _audit_event_types(
       config::shard_local_cfg().audit_enabled_event_types.bind())
+  , _max_queue_size_bytes(
+      config::shard_local_cfg().audit_queue_max_buffer_size_per_shard())
   , _audit_excluded_topics_binding(
       config::shard_local_cfg().audit_excluded_topics.bind())
   , _audit_excluded_principals_binding(
       config::shard_local_cfg().audit_excluded_principals.bind())
+  , _queue_bytes_sem(_max_queue_size_bytes, "s/audit/buffer")
   , _controller(controller)
   , _config(client_config) {
     if (ss::this_shard_id() == client_shard_id) {
@@ -662,24 +744,13 @@ ss::future<> audit_log_manager::start() {
     _probe = std::make_unique<audit_probe>();
     _probe->setup_metrics([this] {
         return static_cast<double>(pending_events())
-               / static_cast<double>(_max_queue_elements_per_shard());
+               / static_cast<double>(_max_queue_size_bytes);
     });
     if (ss::this_shard_id() != client_shard_id) {
         co_return;
     }
     _audit_enabled.watch([this] {
         try {
-            if (!enqueue_app_lifecycle_event(
-                  _audit_enabled() ? application_lifecycle::activity_id::start
-                                   : application_lifecycle::activity_id::stop,
-                  ss::sstring{subsystem_name})) {
-                vlog(adtlog.error, "Failed to enqueue audit lifecycle event");
-                if (_audit_enabled()) {
-                    throw std::runtime_error(
-                      "Failed to enqueue audit lifecycle event for audit "
-                      "system start");
-                }
-            }
             _sink->toggle(_audit_enabled());
         } catch (const ss::gate_closed_exception&) {
             vlog(
@@ -693,25 +764,11 @@ ss::future<> audit_log_manager::start() {
     });
     if (_audit_enabled()) {
         vlog(adtlog.info, "Starting audit_log_manager");
-        if (!this->enqueue_app_lifecycle_event(
-              application_lifecycle::activity_id::start,
-              ss::sstring{subsystem_name})) {
-            vlog(adtlog.error, "Failed to enqueue audit lifecycle start event");
-            // TODO I should error here, yeah?
-        }
         co_await _sink->start();
     }
 }
 
 ss::future<> audit_log_manager::stop() {
-    if (ss::this_shard_id() == client_shard_id) {
-        if (!enqueue_app_lifecycle_event(
-              application_lifecycle::activity_id::stop,
-              ss::sstring{subsystem_name})) {
-            vlog(
-              adtlog.error, "Failed to enqueue audit subsystem shutdown event");
-        }
-    }
     _drain_timer.cancel();
     _as.request_abort();
     if (ss::this_shard_id() == client_shard_id) {
@@ -733,10 +790,17 @@ ss::future<> audit_log_manager::stop() {
 
 ss::future<> audit_log_manager::pause() {
     return container().invoke_on_all([](audit_log_manager& mgr) {
+        mgr._effectively_enabled = false;
         /// Wait until drain() has completed, with timer cancelled it can be
         /// ensured no more work will be performed
         return ss::get_units(mgr._active_drain, 1).then([&mgr](auto) {
             mgr._drain_timer.cancel();
+            return mgr.drain().handle_exception(
+              [&mgr](const std::exception_ptr& e) {
+                  vlog(
+                    adtlog.warn, "Exception in audit_log_manager fiber: {}", e);
+                  mgr.probe().audit_error();
+              });
         });
     });
 }
@@ -747,15 +811,9 @@ ss::future<> audit_log_manager::resume() {
         vassert(
           !mgr._drain_timer.armed(),
           "Timer is already armed upon call to ::resume");
+        mgr._effectively_enabled = true;
         mgr._drain_timer.arm(mgr._queue_drain_interval_ms());
     });
-}
-
-bool audit_log_manager::is_client_enabled() const {
-    vassert(
-      ss::this_shard_id() == client_shard_id,
-      "Must be called on audit client shard");
-    return _sink->is_enabled();
 }
 
 bool audit_log_manager::report_redpanda_app_event(is_started app_started) {
@@ -770,31 +828,37 @@ bool audit_log_manager::do_enqueue_audit_event(
     auto& map = _queue.get<underlying_unordered_map>();
     auto it = map.find(msg->key());
     if (it == map.end()) {
-        if (_queue.size() >= _max_queue_elements_per_shard()) {
+        const auto msg_size = msg->estimated_size();
+        auto units = ss::try_get_units(_queue_bytes_sem, msg_size);
+        if (!units) {
             vlog(
               adtlog.warn,
-              "Unable to enqueue audit message: {} >= {}",
-              _queue.size(),
-              _max_queue_elements_per_shard());
+              "Unable to enqueue audit message, msg size: {}, avail units: {}",
+              msg_size,
+              _queue_bytes_sem.available_units());
             probe().audit_error();
             return false;
         }
         auto& list = _queue.get<underlying_list>();
-        vlog(adtlog.trace, "Successfully enqueued audit event {}", *msg);
-        list.push_back(std::move(msg));
+        vlog(
+          adtlog.trace,
+          "Successfully enqueued audit event {}, semaphore contains {} units",
+          *msg,
+          _queue_bytes_sem.available_units());
+        list.push_back(audit_msg(std::move(msg), std::move(*units)));
     } else {
-        vlog(adtlog.trace, "incrementing count of event {}", *msg);
+        vlog(adtlog.trace, "Incrementing count of event {}", *msg);
         auto now = security::audit::timestamp_t{
           std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
             .count()};
-        (*it)->increment(now);
+        it->increment(now);
     }
     return true;
 }
 
 ss::future<> audit_log_manager::drain() {
-    if (_queue.empty() || _as.abort_requested()) {
+    if (_queue.empty()) {
         co_return;
     }
 
@@ -808,9 +872,9 @@ ss::future<> audit_log_manager::drain() {
     auto records = std::exchange(_queue, underlying_t{});
     auto& records_seq = records.get<underlying_list>();
     while (!records_seq.empty()) {
-        const auto& front = records_seq.front();
-        auto as_json = front->to_json();
-        records_seq.pop_front();
+        auto first = records_seq.extract(records_seq.begin());
+        auto audit_msg = std::move(first.value()).release();
+        auto as_json = audit_msg->to_json();
         iobuf b;
         b.append(as_json.c_str(), as_json.size());
         essences.push_back(
@@ -839,6 +903,15 @@ audit_log_manager::should_enqueue_audit_event() const {
         /// Prevent auditing new messages when shutdown starts that way the
         /// queue may be entirely flushed before shutdown
         return std::make_optional(audit_event_passthrough::no);
+    }
+    const auto& feature_table = _controller->get_feature_table();
+    if (!feature_table.local().is_active(features::feature::audit_logging)) {
+        vlog(
+          adtlog.warn,
+          "Audit message passthrough active until cluster has been fully "
+          "upgraded to the min supported version for audit_logging");
+        _probe->audit_error();
+        return std::make_optional(audit_event_passthrough::yes);
     }
     if (_auth_misconfigured) {
         /// Audit logging depends on having auth enabled, if it is not

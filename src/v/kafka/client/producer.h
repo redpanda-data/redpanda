@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/client/logger.h"
 #include "kafka/client/produce_batcher.h"
 #include "kafka/client/produce_partition.h"
 #include "kafka/client/topic_cache.h"
@@ -47,12 +48,7 @@ public:
     ss::future<produce_response::partition>
     produce(model::topic_partition tp, model::record_batch&& batch);
 
-    ss::future<> stop() {
-        _as.request_abort();
-        return ssx::parallel_transform(
-          _partitions,
-          [](partitions_t::value_type p) { return p.second->stop(); });
-    }
+    ss::future<> stop();
 
 private:
     ss::future<> send(model::topic_partition tp, model::record_batch&& batch);
@@ -62,7 +58,10 @@ private:
 
     auto make_consumer(model::topic_partition tp) {
         return [this, tp](model::record_batch&& batch) {
-            (void)send(tp, std::move(batch));
+            (void)send(tp, std::move(batch))
+              .handle_exception_type([](const ss::gate_closed_exception&) {
+                  vlog(kclog.debug, "Failed to call send() shutting down");
+              });
         };
     }
 
@@ -85,6 +84,8 @@ private:
     brokers& _brokers;
     int16_t _acks;
     ss::abort_source _as;
+    ss::abort_source _ingest_as;
+    ss::gate _gate;
 };
 
 } // namespace kafka::client

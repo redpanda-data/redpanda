@@ -145,9 +145,14 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
 }
 
 ss::future<> client::apply(metadata_response res) {
-    co_await _brokers.apply(std::move(res.data.brokers));
-    co_await _topic_cache.apply(std::move(res.data.topics));
-    _controller = res.data.controller_id;
+    try {
+        co_await _brokers.apply(std::move(res.data.brokers));
+        co_await _topic_cache.apply(std::move(res.data.topics));
+        _controller = res.data.controller_id;
+    } catch (const std::exception& ex) {
+        vlog(kclog.debug, "{}Failed to apply metadata request", *this);
+        throw;
+    }
 }
 
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
@@ -243,7 +248,7 @@ ss::future<produce_response> client::produce_records(
         if (!p_id) {
             p_id = co_await gated_retry_with_mitigation([&, this]() {
                        return _topic_cache.partition_for(topic, record);
-                   }).handle_exception_type([](const topic_error&) {
+                   }).handle_exception([](std::exception_ptr) {
                 // Assume auto topic creation is on and assign to first
                 // partition
                 return model::partition_id{0};

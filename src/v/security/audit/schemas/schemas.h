@@ -37,10 +37,17 @@ type_uid get_ocsf_type(class_uid class_uid, T activity_id) {
 
 class ocsf_base_impl {
 public:
+    /// Instances of this class are moveable but not copyable
+    ocsf_base_impl() = default;
+    ocsf_base_impl(ocsf_base_impl&&) = default;
+    ocsf_base_impl& operator=(ocsf_base_impl&&) = default;
+    ocsf_base_impl(const ocsf_base_impl&) = delete;
+    ocsf_base_impl& operator=(const ocsf_base_impl&) = delete;
     virtual ~ocsf_base_impl() = default;
 
     virtual ss::sstring to_json() const = 0;
     virtual size_t key() const noexcept = 0;
+    virtual size_t estimated_size() const noexcept = 0;
     virtual void increment(timestamp_t) const = 0;
     virtual category_uid get_category_uid() const = 0;
     virtual class_uid get_class_uid() const = 0;
@@ -56,6 +63,11 @@ public:
     void increment(timestamp_t event_time) const final {
         this->_count++;
         this->_end_time = event_time;
+    }
+
+    size_t estimated_size() const noexcept final {
+        return sizeof(*this)
+               + estimated_ocsf_size(*static_cast<const Derived*>(this));
     }
 
     size_t key() const noexcept final {
@@ -169,6 +181,51 @@ private:
         boost::hash_combine(h, std::hash<type_uid>()(_type_uid));
 
         return h;
+    }
+
+    /// Method to estimate the size of an ocsf message
+    ///
+    /// This works by iterating on the fields within the tuple returned by the
+    /// 'equality_fields()' method. This method is implemented on all ocsf
+    /// structures.
+    ///
+    /// The returned size is 'estimated' because it doesn't take into account
+    /// things like padding and any fields that a struct contains that it did
+    /// not include in its return value for 'equality_fields()'. Currently
+    /// the only example of this is the 'network_endpoint' struct.
+    template<typename T>
+    size_t estimated_ocsf_size(const T& t) const noexcept {
+        size_t sz = 0;
+        if constexpr (reflection::is_std_vector<T>) {
+            sz += sizeof(t);
+            for (const auto& element : t) {
+                sz += estimated_ocsf_size(element);
+            }
+        } else if constexpr (reflection::is_std_optional<T>) {
+            sz += sizeof(t);
+            if (t.has_value()) {
+                sz += estimated_ocsf_size(*t);
+            }
+        } else if constexpr (std::is_same_v<ss::sstring, T>) {
+            sz += sizeof(ss::sstring) + t.size();
+        } else if constexpr (std::is_enum_v<T>) {
+            sz += sizeof(std::underlying_type_t<T>(t));
+        } else if constexpr (
+          std::is_integral_v<T> || reflection::is_ss_bool_class<T>) {
+            sz += sizeof(t);
+        } else if constexpr (reflection::is_rp_named_type<T>) {
+            sz += estimated_ocsf_size(t());
+        } else if constexpr (has_equality_fields<T>) {
+            std::apply(
+              [this, &sz](auto&&... xs) {
+                  ((sz += this->estimated_ocsf_size(xs)), ...);
+              },
+              t.equality_fields());
+        } else {
+            static_assert(
+              always_false_v<T>, "Unsupported type passed to ocsf_size()");
+        }
+        return sz;
     }
 };
 } // namespace security::audit

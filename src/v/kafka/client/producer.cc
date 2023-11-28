@@ -66,9 +66,50 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     return response;
 }
 
+ss::future<> producer::stop() {
+    vlog(kclog.debug, "Stopping kafka/client producer");
+    /// Stop new messages from entering the system, the second abort source is
+    /// triggered when the timeout below expires
+    _ingest_as.request_abort();
+
+    /// partition::stop() will invoke send(), it is a last chance best effort
+    /// attempt for the current queued records to be sent.
+    co_await ssx::parallel_transform(
+      _partitions, [](partitions_t::value_type p) { return p.second->stop(); });
+
+    /// send() is wrapped by a gate, and can be aborted with the internal
+    /// abort source (_as). This future triggers the abort source after the
+    /// configured interval or when the gate is eventually closed whichever
+    /// comes first.
+    ss::abort_source exit;
+    if (_config.produce_shutdown_delay() > 0ms) {
+        vlog(
+          kclog.debug,
+          "Waiting {}ms to allow final flush of producers batched records",
+          _config.produce_shutdown_delay());
+    }
+    auto abort = ss::sleep_abortable(_config.produce_shutdown_delay(), exit)
+                   .then([this] {
+                       if (_config.produce_shutdown_delay() > 0ms) {
+                           vlog(
+                             kclog.warn,
+                             "Forcefully stopping kafka client producer after "
+                             "waiting {}ms for its gate to close",
+                             _config.produce_shutdown_delay());
+                       }
+                       _as.request_abort();
+                   })
+                   .handle_exception_type([](ss::sleep_aborted) {
+                       vlog(kclog.debug, "Producer shutdown cleanly");
+                   });
+    co_await _gate.close();
+    exit.request_abort();
+    co_await std::move(abort);
+}
+
 ss::future<produce_response::partition>
 producer::produce(model::topic_partition tp, model::record_batch&& batch) {
-    if (_as.abort_requested()) {
+    if (_ingest_as.abort_requested()) {
         return ss::make_ready_future<produce_response::partition>(
           make_produce_response(
             tp.partition,
@@ -96,6 +137,7 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
 
 ss::future<>
 producer::send(model::topic_partition tp, model::record_batch&& batch) {
+    auto gh = _gate.hold();
     auto record_count = batch.record_count();
     vlog(
       kclog.debug,
@@ -125,15 +167,16 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
       .handle_exception([p_id](std::exception_ptr ex) {
           return make_produce_response(p_id, std::move(ex));
       })
-      .then([this, tp, record_count](produce_response::partition res) mutable {
-          vlog(
-            kclog.debug,
-            "sent record_batch: {}, {{record_count: {}}}, {}",
-            tp,
-            record_count,
-            res.error_code);
-          get_context(std::move(tp))->handle_response(std::move(res));
-      });
+      .then(
+        [this, tp, record_count, gh](produce_response::partition res) mutable {
+            vlog(
+              kclog.debug,
+              "sent record_batch: {}, {{record_count: {}}}, {}",
+              tp,
+              record_count,
+              res.error_code);
+            get_context(std::move(tp))->handle_response(std::move(res));
+        });
 }
 
 } // namespace kafka::client

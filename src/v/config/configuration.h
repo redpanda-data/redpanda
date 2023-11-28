@@ -272,7 +272,7 @@ struct configuration final : public config_store {
     property<std::optional<int16_t>> audit_log_replication_factor;
     property<size_t> audit_client_max_buffer_size;
     property<std::chrono::milliseconds> audit_queue_drain_interval_ms;
-    property<size_t> audit_max_queue_elements_per_shard;
+    property<size_t> audit_queue_max_buffer_size_per_shard;
     property<std::vector<ss::sstring>> audit_enabled_event_types;
     property<std::vector<ss::sstring>> audit_excluded_topics;
     property<std::vector<ss::sstring>> audit_excluded_principals;

@@ -9,6 +9,7 @@
  */
 
 #include "cluster/types.h"
+#include "kafka/client/test/fixture.h"
 #include "kafka/types.h"
 #include "redpanda/tests/fixture.h"
 #include "security/audit/audit_log_manager.h"
@@ -48,38 +49,43 @@ ss::future<size_t> pending_audit_events(sa::audit_log_manager& m) {
       std::plus<>());
 }
 
-FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
-    /// Initialize auditing configurations
-    ss::smp::invoke_on_all([this] {
+ss::future<> set_auditing_config_options(size_t event_size) {
+    return ss::smp::invoke_on_all([event_size] {
         std::vector<ss::sstring> enabled_types{"management", "consume"};
         config::shard_local_cfg().get("audit_enabled").set_value(false);
         config::shard_local_cfg()
           .get("audit_log_replication_factor")
           .set_value(std::make_optional(int16_t(1)));
         config::shard_local_cfg()
-          .get("audit_max_queue_elements_per_shard")
-          .set_value(size_t(5));
+          .get("audit_queue_max_buffer_size_per_shard")
+          .set_value(event_size * 100);
         config::shard_local_cfg()
           .get("audit_queue_drain_interval_ms")
           .set_value(std::chrono::milliseconds(60000));
         config::shard_local_cfg()
           .get("audit_enabled_event_types")
           .set_value(enabled_types);
-        auto& node_config = config::node();
-        node_config.get("kafka_api")
-          .set_value(std::vector<config::broker_authn_endpoint>{
-            config::broker_authn_endpoint{
-              .address = net::unresolved_address("127.0.0.1", kafka_port),
-              .authn_method = config::broker_authn_method::sasl}});
-    }).get();
+    });
+}
+
+FIXTURE_TEST(test_audit_init_phase, kafka_client_fixture) {
+    /// Knowing the size of one event allows to set a predetermined maximum
+    /// shard allowance for auditing that way backpressure is applied when
+    /// anticipated
+    const size_t event_size = make_random_audit_event().estimated_size();
+    info("Single event size bytes: {}", event_size);
 
     ss::global_logger_registry().set_logger_level(
       "auditing", ss::log_level::trace);
+
+    set_auditing_config_options(event_size).get();
+    enable_sasl_and_restart("username");
 
     wait_for_controller_leadership().get0();
     auto& audit_mgr = app.audit_mgr;
 
     /// with auditing disabled, calls to enqueue should be no-ops
+    const auto n_events = pending_audit_events(audit_mgr.local()).get0();
     audit_mgr
       .invoke_on_all([](sa::audit_log_manager& m) {
           for (auto i = 0; i < 20; ++i) {
@@ -89,11 +95,10 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
       })
       .get0();
 
-    BOOST_CHECK_EQUAL(
-      pending_audit_events(audit_mgr.local()).get0(), size_t(0));
+    BOOST_CHECK_EQUAL(pending_audit_events(audit_mgr.local()).get0(), n_events);
 
     /// with auditing enabled, the system should block when the threshold of
-    /// 5 records has been surpassed
+    /// audit_queue_max_buffer_size_per_shard has been reached
     ss::smp::invoke_on_all([] {
         config::shard_local_cfg().get("audit_enabled").set_value(true);
     }).get();
@@ -104,56 +109,40 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
         model::kafka_namespace, model::kafka_audit_logging_topic))})
       .get();
 
+    /// Wait until the run loops are available, otherwise enqueuing events will
+    /// pass through
+    info("Waiting until the audit fibers are up");
+    tests::cooperative_spin_wait_with_timeout(10s, [&audit_mgr] {
+        return audit_mgr.local().is_effectively_enabled();
+    }).get();
+
     /// Verify auditing can enqueue up until the max configured, and further
     /// calls to enqueue return false, signifying action did not occur.
-    const auto rs = audit_mgr
-                      .map([](sa::audit_log_manager& m) {
-                          uint32_t n_enqueued = 0;
-                          for (auto i = 0; i < 20; ++i) {
-                              bool enqueued = m.enqueue_audit_event(
-                                sa::event_type::management,
-                                make_random_audit_event());
-                              if (enqueued) {
-                                  n_enqueued++;
-                              }
-                          }
-                          return n_enqueued;
-                      })
-                      .get();
-
-    // With a single CPU, we expect a total of 3 events to be enqueued
-    // There already exists a create topics event and a lifecycle event
-    // With two CPUs, we expect each to enqueue 4, where one shard has lifecycle
-    // and the other create topics
-    // With three or more CPUs, we would expect 2 CPUs to enqueue 4 and the
-    // others to enqueue 5
-
-    auto expected_count = [](uint32_t enqueue_count) {
-        if (enqueue_count == 3) {
-            return ss::smp::count == 1 ? 1 : 0;
-        } else if (enqueue_count == 4) {
-            return ss::smp::count == 1 ? 0 : 2;
-        } else if (enqueue_count == 5) {
-            return ss::smp::count > 2 ? int(ss::smp::count) - 2 : 0;
-        } else {
-            return 0;
+    auto enqueue_some = [event_size](sa::audit_log_manager& m) {
+        bool success = true;
+        for (auto i = 0; i < 200; ++i) {
+            const bool can_enqueue = m.avaiable_reservation() >= event_size;
+            if (m.enqueue_audit_event(
+                  sa::event_type::management, make_random_audit_event())) {
+                success &= can_enqueue;
+            } else {
+                success &= !can_enqueue;
+            }
         }
+        return success;
     };
+    info("Enqueue 200 records per shard");
+    const bool success
+      = audit_mgr
+          .map_reduce0(std::move(enqueue_some), true, std::logical_and<>())
+          .get();
 
-    const auto equal_to = [](auto a) {
-        return [a](auto b) { return std::equal_to<>()(a, b); };
-    };
-
-    BOOST_CHECK_EQUAL(
-      expected_count(3), std::count_if(rs.cbegin(), rs.cend(), equal_to(3)));
-    BOOST_CHECK_EQUAL(
-      expected_count(4), std::count_if(rs.cbegin(), rs.cend(), equal_to(4)));
-    BOOST_CHECK_EQUAL(
-      expected_count(5), std::count_if(rs.cbegin(), rs.cend(), equal_to(5)));
-
-    BOOST_CHECK_EQUAL(
-      pending_audit_events(audit_mgr.local()).get0(),
-      size_t(5 * ss::smp::count));
+    /// Since different messages related to application lifecycle may be
+    /// enqueued during program execution, the test solely asserts that at any
+    /// given time "if enough memory reservation does or does not exist, should
+    /// the next enqueue work or not". Success is determined if the expectation
+    /// matches the observed outcome, on all attempts, across all shards.
+    BOOST_CHECK(success);
 
     /// Verify auditing doesn't enqueue the non configured types
     BOOST_CHECK(audit_mgr.local().enqueue_audit_event(
@@ -166,24 +155,19 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
     /// Toggle the audit switch a few times
     for (auto i = 0; i < 5; ++i) {
         const bool val = i % 2 != 0;
+        info("Toggling audit_enabled() to {}", val);
         ss::smp::invoke_on_all([val] {
             config::shard_local_cfg().get("audit_enabled").set_value(val);
-        }).get0();
-        audit_mgr
-          .invoke_on(
-            0,
-            [val](sa::audit_log_manager& m) {
-                return tests::cooperative_spin_wait_with_timeout(
-                  10s, [&m, val] { return m.is_client_enabled() == val; });
-            })
-          .get0();
+        }).get();
+        tests::cooperative_spin_wait_with_timeout(10s, [&audit_mgr, val] {
+            return audit_mgr.local().is_effectively_enabled() == val;
+        }).get();
     }
-    /// Ensure in the off state even with buffers filled, no data is lost
     BOOST_CHECK(!config::shard_local_cfg().audit_enabled());
-    BOOST_CHECK_EQUAL(
-      pending_audit_events(audit_mgr.local()).get0(),
-      size_t(5 * ss::smp::count));
 
+    /// Ensure with auditing disabled that there is no backpressure applied
+    /// All enqueues should passthrough with success
+    const size_t number_events = pending_audit_events(audit_mgr.local()).get();
     const bool enqueued = audit_mgr
                             .map_reduce0(
                               [](sa::audit_log_manager& m) {
@@ -197,8 +181,25 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
 
     BOOST_CHECK(enqueued);
     BOOST_CHECK_EQUAL(
-      pending_audit_events(audit_mgr.local()).get0(),
-      size_t(5 * ss::smp::count));
+      pending_audit_events(audit_mgr.local()).get0(), number_events);
+
+    /// Verify that eventually, all messages are drained
+    ss::smp::invoke_on_all([] {
+        config::shard_local_cfg().get("audit_enabled").set_value(true);
+        /// Lower the fiber loop interval from 60s (set high so that messages
+        /// wouldn't be sent quicker then they could be enqueued) to a smaller
+        /// interval so test can end quick as records are written and purged
+        /// from each shards audit fibers queue.
+        config::shard_local_cfg()
+          .get("audit_queue_drain_interval_ms")
+          .set_value(std::chrono::milliseconds(10));
+    }).get();
+    info("Waiting for all records to drain");
+    tests::cooperative_spin_wait_with_timeout(30s, [&audit_mgr] {
+        return pending_audit_events(audit_mgr.local()).then([](size_t pending) {
+            return pending == 0;
+        });
+    }).get();
 
     BOOST_TEST_MESSAGE("End of test");
 }

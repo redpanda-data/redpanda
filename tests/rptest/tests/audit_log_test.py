@@ -17,6 +17,7 @@ import re
 import requests
 import socket
 import time
+import random
 from typing import Any, Optional
 
 from ducktape.cluster.cluster import ClusterNode
@@ -548,6 +549,11 @@ class AuditLogTestBase(RedpandaTest):
 
             def ingest(self, records):
                 new_records = records[self.next_offset_ingest:]
+                if len(new_records) == 0:
+                    self.logger.debug(
+                        f"No new records observed, currently have read {len(records)} records so far"
+                    )
+                    return
                 self.next_offset_ingest = len(records)
                 new_records = [json.loads(msg['value']) for msg in records]
                 self.logger.info(f"Ingested: {len(new_records)} records")
@@ -619,27 +625,50 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
     def __init__(self, test_context):
         super(AuditLogTestsAppLifecycle,
               self).__init__(test_context=test_context,
-                             audit_log_config=AuditLogConfig(event_types=[]))
+                             audit_log_config=AuditLogConfig(event_types=[]),
+                             log_config=LoggingConfig('info',
+                                                      logger_levels={
+                                                          'auditing': 'trace',
+                                                          'kafka/client':
+                                                          'trace',
+                                                      }))
+
+    @staticmethod
+    def is_lifecycle_match(feature: Optional[str], is_start: bool, record):
+        expected_activity_id = 3 if is_start else 4
+
+        return record['class_uid'] == 6002 and record[
+            'activity_id'] == expected_activity_id and (
+                (feature is not None and 'feature' in record['app']
+                 and record['app']['feature']['name'] == feature) or
+                (feature is None and 'feature' not in record['app']))
 
     @cluster(num_nodes=5)
     def test_app_lifecycle(self):
-        def is_lifecycle_match(feature: Optional[str], is_start: bool, record):
-            expected_activity_id = 3 if is_start else 4
-
-            return record['class_uid'] == 6002 and record[
-                'activity_id'] == expected_activity_id and (
-                    (feature is not None and 'feature' in record['app']
-                     and record['app']['feature']['name'] == feature) or
-                    (feature is None and 'feature' not in record['app']))
-
         _ = self.find_matching_record(
-            partial(is_lifecycle_match, "Audit System",
-                    True), lambda record_count: record_count == 3,
+            partial(AuditLogTestsAppLifecycle.is_lifecycle_match,
+                    "Audit System", True),
+            lambda record_count: record_count == 3,
             "Single redpanda audit start event per node")
 
-        _ = self.find_matching_record(partial(is_lifecycle_match, None, True),
-                                      lambda record_count: record_count == 3,
-                                      "Single redpanda start event per node")
+        _ = self.find_matching_record(
+            partial(AuditLogTestsAppLifecycle.is_lifecycle_match, None,
+                    True), lambda record_count: record_count == 3,
+            "Single redpanda start event per node")
+
+    @cluster(num_nodes=5)
+    def test_drain_on_audit_disabled(self):
+        """
+        Test the drain on disabling of audit is working properly by setting audit_enabled
+        to False and asserting that the stop application_lifecycle event is observed"""
+
+        self._modify_cluster_config({'audit_enabled': False})
+
+        _ = self.find_matching_record(
+            partial(AuditLogTestsAppLifecycle.is_lifecycle_match,
+                    "Audit System", False),
+            lambda record_count: record_count == 3,
+            "One stop event observed for shutdown node")
 
 
 class AuditLogTestAdminApi(AuditLogTestBase):

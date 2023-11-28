@@ -95,6 +95,8 @@ std::string_view to_string_view(feature f) {
         return "disabling_partitions";
     case feature::cloud_metadata_cluster_recovery:
         return "cloud_metadata_cluster_recovery";
+    case feature::audit_logging:
+        return "audit_logging";
 
     /*
      * testing features

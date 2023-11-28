@@ -216,7 +216,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
                      none;
         };
         if (
-          cfg.cloud_storage_enabled
+          cfg.audit_enabled || cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
                == model::partition_autobalancing_mode::continuous
           || has_gssapi() || has_schma_id_validation()) {
