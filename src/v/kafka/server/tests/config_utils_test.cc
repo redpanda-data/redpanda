@@ -97,7 +97,7 @@ BOOST_AUTO_TEST_CASE(parse_and_set_topic_replication_factor_test) {
       "3",
       kafka::config_resource_operation::set,
       rep_factor_validator{});
-    BOOST_REQUIRE_EQUAL(property.value, 3);
+    BOOST_REQUIRE_EQUAL(property.value, cluster::replication_factor{3});
 
     auto is_pos_error = [](const validation_error& ex) {
         return ss::sstring(ex.what()).contains("positive");
