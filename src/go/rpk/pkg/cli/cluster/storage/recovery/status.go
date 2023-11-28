@@ -22,8 +22,8 @@ import (
 func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Fetch the status of the topic recovery process",
-		Long: `Fetch the status of the topic recovery process.
+		Short: "Fetch the status of the topic restoration process",
+		Long: `Fetch the status of the topic restoration process.
 		
 This command fetches the status of the process of restoring topics from the 
 archival bucket.`,
