@@ -58,6 +58,10 @@ public:
         return ss::now();
     }
 
+    void take_batch(model::record_batch&& batch, produce_partition& partition) {
+        _batcher.take_batch(std::move(batch), partition._batcher);
+    }
+
 private:
     model::record_batch do_consume() {
         vassert(!_in_flight, "do_consume should not run concurrently");

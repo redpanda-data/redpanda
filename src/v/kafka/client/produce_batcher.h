@@ -115,6 +115,30 @@ public:
         }
     }
 
+    /// Used for when the current in_flight batch is instead to be batched
+    /// to another partition
+    void take_batch(model::record_batch&& batch, produce_batcher& batcher) {
+        const auto ctx = consume_front(batcher._broker_reqs);
+        vassert(
+          batch.record_count() == ctx.record_count,
+          "Batch to take is not the in_flight batch");
+        auto records_consumed = 0;
+        const auto consume_limit = ctx.record_count;
+        while (records_consumed != consume_limit) {
+            auto client_req = consume_front(batcher._client_reqs);
+            records_consumed += client_req.record_count;
+            vassert(
+              records_consumed <= ctx.record_count,
+              "Attempted to take too many records from foreign batcher");
+            _client_reqs.push_back(std::move(client_req));
+        }
+        _broker_reqs.emplace_back(batch.record_count());
+        batch.for_each_record([this](model::record rec) {
+            _builder.add_raw_kw(
+              rec.release_key(), rec.release_value(), std::move(rec.headers()));
+        });
+    }
+
 private:
     storage::record_batch_builder make_builder() {
         auto builder = storage::record_batch_builder(
