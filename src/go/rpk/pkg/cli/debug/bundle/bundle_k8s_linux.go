@@ -28,6 +28,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 	k8score "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -81,13 +82,16 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 
 	adminAddresses, err := adminAddressesFromK8S(ctx, bp.namespace)
 	if err != nil {
-		errs = multierror.Append(errs, fmt.Errorf("skipping admin API calls, unable to get admin API addresses: %v", err))
-	} else {
-		steps = append(steps, []step{
-			saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
-			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval),
-		}...)
+		zap.L().Sugar().Debugf("unable to get admin API addresses from the k8s API: %v", err)
 	}
+	if len(adminAddresses) == 0 {
+		adminAddresses = []string{fmt.Sprintf("127.0.0.1:%v", config.DefaultAdminPort)}
+	}
+	steps = append(steps, []step{
+		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval),
+	}...)
+
 	for _, s := range steps {
 		grp.Go(s)
 	}
