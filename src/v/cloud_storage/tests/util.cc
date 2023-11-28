@@ -458,7 +458,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           "computed segment delta {}, segment {}",
           segment_delta,
           s);
-        BOOST_REQUIRE(segment_delta <= s.base_offset);
+        BOOST_REQUIRE(model::offset_cast(segment_delta) <= s.base_offset());
         cloud_storage::partition_manifest::segment_meta meta{
           .is_compacted = false,
           .size_bytes = s.bytes.size(),

@@ -128,7 +128,7 @@ public:
         new_archiver.housekeeping().get();
         BOOST_REQUIRE_EQUAL(
           new_archiver.manifest().get_start_kafka_offset_override(),
-          model::offset{});
+          kafka::offset{});
     }
     scoped_config test_local_cfg;
 
@@ -164,7 +164,8 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
                     .list_offset_for_partition(
                       topic_name, model::partition_id(0), first_seg_max_ts)
                     .get();
-    BOOST_REQUIRE_EQUAL(first_seg->last_kafka_offset(), offset);
+    BOOST_REQUIRE_EQUAL(
+      first_seg->last_kafka_offset(), model::offset_cast(offset));
     auto second_seg = stm_manifest.segment_containing(
       first_seg->next_kafka_offset());
 
@@ -198,7 +199,7 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
               kafka::offset_cast(first_local_offset),
               5s)
             .get();
-    BOOST_REQUIRE_EQUAL(first_local_offset, lwm);
+    BOOST_REQUIRE_EQUAL(first_local_offset, model::offset_cast(lwm));
 
     // Timequeries into the cloud region should be bumped up.
     post_delete_offset = lister
@@ -207,7 +208,8 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
                              model::partition_id(0),
                              first_seg_max_ts)
                            .get();
-    BOOST_REQUIRE_EQUAL(first_local_offset, post_delete_offset);
+    BOOST_REQUIRE_EQUAL(
+      first_local_offset, model::offset_cast(post_delete_offset));
 }
 
 FIXTURE_TEST(
@@ -363,13 +365,13 @@ FIXTURE_TEST(
     auto new_start_offset = kafka::offset(245);
     BOOST_REQUIRE_EQUAL(
       new_start_offset,
-      deleter
-        .delete_records_from_partition(
-          topic_name,
-          model::partition_id(0),
-          kafka::offset_cast(new_start_offset),
-          5s)
-        .get());
+      model::offset_cast(deleter
+                           .delete_records_from_partition(
+                             topic_name,
+                             model::partition_id(0),
+                             kafka::offset_cast(new_start_offset),
+                             5s)
+                           .get()));
 
     // The first housekeeping should remove all spillover segments.
     auto archive_start = stm_manifest.get_archive_start_offset();
@@ -401,13 +403,13 @@ FIXTURE_TEST(
       stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
 
     // Produce more data and upload to cloud.
-    auto produced_kafka_base_offset = gen.producer()
-                                        .produce_to_partition(
-                                          topic_name,
-                                          model::partition_id(0),
-                                          tests::kv_t::sequence(
-                                            0, records_per_seg))
-                                        .get();
+    auto produced_kafka_base_offset = model::offset_cast(
+      gen.producer()
+        .produce_to_partition(
+          topic_name,
+          model::partition_id(0),
+          tests::kv_t::sequence(0, records_per_seg))
+        .get());
     log->flush().get();
     log->force_roll(ss::default_priority_class()).get();
     BOOST_REQUIRE_GT(produced_kafka_base_offset, new_start_offset);
@@ -425,7 +427,7 @@ FIXTURE_TEST(
       archiver->upload_manifest("test").get());
     BOOST_REQUIRE(stm_manifest.get_start_kafka_offset().has_value());
     BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_start_kafka_offset().value(), model::offset(200));
+      stm_manifest.get_start_kafka_offset().value(), kafka::offset(200));
 
     // When truncating the STM, we should still honor the requested start.
     archiver->housekeeping().get();
@@ -433,7 +435,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_start_kafka_offset().value(), new_start_offset);
     BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_start_kafka_offset_override(), model::offset(245));
+      stm_manifest.get_start_kafka_offset_override(), kafka::offset(245));
 
     auto size_above_override = segment_bytes_above_offset(
       stm_manifest, kafka::offset(245));

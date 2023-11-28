@@ -836,7 +836,7 @@ FIXTURE_TEST(
     // The start kafka offset doesn't change, only the override changes.
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_start_kafka_offset_override(),
-      model::offset(200));
+      kafka::offset(200));
     BOOST_REQUIRE_EQUAL(
       archival_stm->get_start_kafka_offset(), kafka::offset(1000));
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
@@ -849,7 +849,7 @@ FIXTURE_TEST(
       archival_stm->get_start_kafka_offset(), kafka::offset(1000));
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_start_kafka_offset_override(),
-      model::offset(1200));
+      kafka::offset(1200));
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
 
     // Advancing the start offset past the override resets the override.

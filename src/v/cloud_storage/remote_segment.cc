@@ -1107,7 +1107,7 @@ public:
 
         if (header.type == model::record_batch_type::raft_data) {
             auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
-            if (next > _config.start_offset) {
+            if (kafka::offset_cast(next) > _config.start_offset) {
                 _config.start_offset = kafka::offset_cast(next);
             }
         }
@@ -1122,7 +1122,9 @@ public:
           header,
           _parent._cur_delta);
 
-        if (rp_to_kafka(header.base_offset) > _config.max_offset) {
+        if (
+          rp_to_kafka(header.base_offset)
+          > model::offset_cast(_config.max_offset)) {
             vlog(
               _ctxlog.debug,
               "[{}] accept_batch_start stop parser because {} > {}(kafka "
@@ -1148,7 +1150,8 @@ public:
         // The segment can be scanned from the begining so we should skip
         // irrelevant batches.
         if (unlikely(
-              rp_to_kafka(header.last_offset()) < _config.start_offset)) {
+              rp_to_kafka(header.last_offset())
+              < model::offset_cast(_config.start_offset))) {
             vlog(
               _ctxlog.debug,
               "[{}] accept_batch_start skip because "

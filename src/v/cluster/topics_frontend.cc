@@ -1390,7 +1390,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
               return ss::now();
           }
           auto p_id = assignment.id;
-          if (assignment.replicas.size() > new_replication_factor) {
+          if (assignment.replicas.size() > new_replication_factor()) {
               vlog(
                 clusterlog.warn,
                 "Current size of replicas {} > new_replication_factor {} for "
@@ -1477,7 +1477,7 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
           if (error) {
               return ss::now();
           }
-          if (assignment.replicas.size() < new_replication_factor) {
+          if (assignment.replicas.size() < new_replication_factor()) {
               error = errc::topic_invalid_replication_factor;
               return ss::now();
           }
