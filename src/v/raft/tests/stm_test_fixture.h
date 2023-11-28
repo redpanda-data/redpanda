@@ -36,9 +36,11 @@
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/log.hh>
 
+#include <ostream>
+
 using namespace raft;
 namespace {
-static ss::logger logger("stm-test-logger");
+
 /**
  * We use value entry struct to make kv_store apply operations not
  * idempotent
@@ -55,6 +57,11 @@ struct value_entry
     friend bool operator==(const value_entry&, const value_entry&) = default;
 
     auto serde_fields() { return std::tie(value, update_cnt); }
+
+    friend std::ostream& operator<<(std::ostream& o, const value_entry& ve) {
+        fmt::print(o, "{{value: {}, update_cnt: {}}}", ve.value, ve.update_cnt);
+        return o;
+    }
 };
 } // namespace
 
@@ -202,7 +209,7 @@ struct state_machine_fixture : raft_fixture {
 
             auto result = co_await replicate(std::move(ops));
             vlog(
-              logger.debug,
+              logger().debug,
               "replication result: [last_offset: {}]",
               result.value().last_offset);
         }

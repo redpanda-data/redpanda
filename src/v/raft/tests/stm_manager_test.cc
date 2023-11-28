@@ -11,6 +11,7 @@
 
 using namespace raft;
 
+inline ss::logger logger("stm-test-logger");
 struct other_simple_kv : public simple_kv {
     explicit other_simple_kv(raft_node_instance& rn)
       : simple_kv(rn) {}
