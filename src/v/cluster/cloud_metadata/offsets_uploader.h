@@ -42,7 +42,7 @@ public:
 
     ss::future<> stop() {
         vlog(clusterlog.debug, "Stopping consumer offsets uploader");
-        _as.abort_requested();
+        _as.request_abort();
         co_await _gate.close();
         vlog(clusterlog.debug, "Stopped consumer offsets uploader");
     }
