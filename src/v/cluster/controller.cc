@@ -682,6 +682,9 @@ ss::future<> controller::shutdown_input() {
     if (_raft0) {
         _raft0->shutdown_input();
     }
+    if (_metadata_uploader) {
+        _metadata_uploader->stop();
+    }
     co_await _as.invoke_on_all(&ss::abort_source::request_abort);
     vlog(clusterlog.debug, "Shut down controller inputs");
 }

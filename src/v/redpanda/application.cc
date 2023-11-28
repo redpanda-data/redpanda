@@ -232,7 +232,7 @@ void application::shutdown() {
     if (_rpc.local_is_initialized()) {
         _rpc.invoke_on_all(&rpc::rpc_server::shutdown_input).get();
     }
-    // Stop routing upload requests, as each may take a while to process.
+    // Stop routing upload requests, as each may take a while to finish.
     if (offsets_upload_router.local_is_initialized()) {
         offsets_upload_router
           .invoke_on_all(
