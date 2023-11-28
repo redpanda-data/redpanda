@@ -68,7 +68,8 @@ offsets_lookup_batcher::send_request(offsets_lookup_request req) {
 }
 
 ss::future<> offsets_lookup_batcher::run_lookups(
-  absl::btree_set<model::ntp> ntps_to_lookup, retry_chain_node& retry_node) {
+  absl::btree_set<model::ntp> ntps_to_lookup, retry_chain_node& parent_node) {
+    retry_chain_node retry_node(&parent_node);
     // Keep sending out lookup requests until a non-retriable error is hit, or
     // until there are no more NTPs to retry.
     while (!ntps_to_lookup.empty()) {
