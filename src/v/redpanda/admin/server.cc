@@ -2663,7 +2663,7 @@ admin_server::get_decommission_progress_handler(
         status.ns = p.ntp.ns;
         status.topic = p.ntp.tp.topic;
         status.partition = p.ntp.tp.partition;
-        auto added_replicas = cluster::subtract_replica_sets(
+        auto added_replicas = cluster::subtract(
           p.current_assignment, p.previous_assignment);
         // we are only interested in reconfigurations where one replica was
         // added to the node

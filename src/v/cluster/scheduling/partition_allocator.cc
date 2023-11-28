@@ -491,7 +491,7 @@ partition_allocator::apply_snapshot(const controller_snapshot& snap) {
                 const auto& update = it->second;
                 // Both old and new replicas contribute to allocator weights
                 // regardless of the update state.
-                auto additional_replicas = subtract_replica_sets(
+                auto additional_replicas = subtract(
                   update.target_assignment, partition.replicas);
                 for (const auto& bs : additional_replicas) {
                     new_state->add_allocation(bs, domain);

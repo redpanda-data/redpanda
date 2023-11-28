@@ -413,9 +413,9 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
         }
         const auto& sizes = size_it->second;
 
-        auto moving_from = subtract_replica_sets(
+        auto moving_from = subtract(
           update.get_previous_replicas(), update.get_target_replicas());
-        auto moving_to = subtract_replica_sets(
+        auto moving_to = subtract(
           update.get_target_replicas(), update.get_previous_replicas());
 
         switch (update.get_state()) {
@@ -594,8 +594,7 @@ public:
             auto sizes_it = _ctx._ntp2sizes.find(_ntp);
             if (sizes_it != _ctx._ntp2sizes.end()) {
                 const auto& sizes = sizes_it->second;
-                auto moving_to = subtract_replica_sets(
-                  _replicas, _orig_replicas);
+                auto moving_to = subtract(_replicas, _orig_replicas);
                 for (const auto& bs : moving_to) {
                     auto node_it = _ctx.node_disk_reports.find(bs.node_id);
                     if (node_it != _ctx.node_disk_reports.end()) {
