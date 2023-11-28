@@ -8,8 +8,8 @@ class CloudBroker():
         self.operating_system = 'k8s'
         self._meta = pod['metadata']
         self.name = self._meta['name']
-        self.slot_id = int(self._meta['labels'][
-            'operator.redpanda.com/node-id'])
+        self.slot_id = int(
+            self._meta['labels']['operator.redpanda.com/node-id'])
         self.uuid = self._meta['uid']
 
         # Save other data

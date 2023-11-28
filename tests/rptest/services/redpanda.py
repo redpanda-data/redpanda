@@ -1510,7 +1510,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         _pods = json.loads(_r.decode())
         for p in _pods['items']:
             if not p['metadata']['name'].startswith(
-                f"rp-{self._cloud_cluster.config.id}"):
+                    f"rp-{self._cloud_cluster.config.id}"):
                 continue
             else:
                 _node = CloudBroker(p, self._kubectl, self.logger)
