@@ -99,6 +99,14 @@ configuration::configuration()
           }
           return std::nullopt;
       })
+  , produce_partition_agnostic_retries(
+      *this,
+      "produce_partition_agnostic_retries",
+      "Allow automatic error handling mechanism in the produce_records() API "
+      "which will automatically select a different partition to produce to if "
+      "failures occur, after this configured number of attempts",
+      {},
+      0)
   , consumer_request_timeout(
       *this,
       "consumer_request_timeout_ms",
