@@ -53,6 +53,7 @@
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/file.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
@@ -218,7 +219,9 @@ ss::future<> channel::dispatch_loop() {
 in_memory_test_protocol::in_memory_test_protocol(
   raft_node_map& node_map, prefix_logger& logger)
   : _nodes(node_map)
-  , _logger(logger) {}
+  , _logger(logger) {
+    std::ignore = _logger;
+}
 
 channel& in_memory_test_protocol::get_channel(model::node_id id) {
     auto it = _channels.find(id);
@@ -236,12 +239,9 @@ channel& in_memory_test_protocol::get_channel(model::node_id id) {
     return *it->second;
 }
 
-void in_memory_test_protocol::inject_failure(msg_type type, failure_t failure) {
-    _failures.emplace(type, std::move(failure));
-}
-
-void in_memory_test_protocol::remove_failure(msg_type type) {
-    _failures.erase(type);
+void in_memory_test_protocol::on_dispatch(
+  ss::noncopyable_function<ss::future<>(msg_type)> f) {
+    _on_dispatch_handlers.push_back(std::move(f));
 }
 
 ss::future<> in_memory_test_protocol::stop() {
@@ -296,24 +296,13 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
 
     iobuf buffer;
     co_await serde::write_async(buffer, std::move(req));
+
+    const auto msg_type = map_msg_type<ReqT>();
+    for (const auto& f : _on_dispatch_handlers) {
+        co_await f(msg_type);
+    }
+
     try {
-        const auto msg_type = map_msg_type<ReqT>();
-
-        if (auto iter = _failures.find(msg_type); iter != _failures.end()) {
-            auto& fail = iter->second;
-            co_await ss::visit(fail, [this, msg_type](response_delay& f) {
-                vlog(
-                  _logger.info,
-                  "Injecting response delay of length {} for {}",
-                  f.length,
-                  msg_type);
-                if (f.on_applied) {
-                    f.on_applied->set_value();
-                }
-                return ss::sleep(f.length);
-            });
-        }
-
         auto resp = co_await node_channel.exchange(msg_type, std::move(buffer));
         iobuf_parser parser(std::move(resp));
         co_return co_await serde::read_async<RespT>(parser);
@@ -534,12 +523,9 @@ raft_node_instance::random_batch_base_offset(model::offset max) {
     co_return batches.front().base_offset();
 }
 
-void raft_node_instance::inject_failure(msg_type type, failure_t failure) {
-    _protocol->inject_failure(type, std::move(failure));
-}
-
-void raft_node_instance::remove_failure(msg_type type) {
-    _protocol->remove_failure(type);
+void raft_node_instance::on_dispatch(
+  ss::noncopyable_function<ss::future<>(msg_type)> f) {
+    _protocol->on_dispatch(std::move(f));
 }
 
 seastar::future<> raft_fixture::TearDownAsync() {
