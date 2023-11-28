@@ -1189,6 +1189,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
     _log_stats_timer.cancel();
+    _metrics.clear();
     return raft::state_machine::stop();
 }
 

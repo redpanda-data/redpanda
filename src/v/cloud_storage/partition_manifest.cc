@@ -730,7 +730,7 @@ void partition_manifest::set_archive_clean_offset(
 
 bool partition_manifest::advance_start_kafka_offset(
   kafka::offset new_start_offset) {
-    if (_start_kafka_offset_override >= new_start_offset) {
+    if (_start_kafka_offset_override > new_start_offset) {
         return false;
     }
     _start_kafka_offset_override = new_start_offset;
