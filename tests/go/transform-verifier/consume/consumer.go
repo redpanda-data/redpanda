@@ -100,7 +100,7 @@ func createRecordValidator() recordValidator {
 		// The real thing we can guarantee is that once we get a new seqno, there are no
 		// gaps we've seen.
 		if seqno > latestSeqno && latestSeqno+1 != seqno {
-			return latestSeqno, fmt.Errorf("detected missing seqno: seqno=%d latest=%d", seqno, latestSeqno)
+			return latestSeqno, fmt.Errorf("detected missing seqno: partition=%d seqno=%d latest=%d", r.Partition, seqno, latestSeqno)
 		}
 		latestSeqno = max(seqno, latestSeqno)
 		return latestSeqno, nil
