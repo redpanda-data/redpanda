@@ -12,16 +12,15 @@ from functools import partial, reduce
 import time
 import threading
 import json
+import random
 import re
 import requests
 import socket
 import time
 from typing import Any, Optional
 
-from rptest.utils.rpk_config import read_redpanda_cfg
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import ok_to_fail
 from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
@@ -38,6 +37,7 @@ from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until, wait_until_result
+from rptest.utils.rpk_config import read_redpanda_cfg
 from urllib.parse import urlparse
 
 
@@ -64,11 +64,11 @@ class MTLSProvider(TLSProvider):
 
 class BaseTestItem:
     """Base test item
-    
+
     """
     def __init__(self, name: str, generate_function, filter_function):
         """Creates BaseTestItem
-        
+
         Parameters
         ----------
         name : str
@@ -87,7 +87,7 @@ class BaseTestItem:
 
     def valid_count(self, count: int) -> bool:
         """Checks to see if the count is valid
-        
+
         Parameters
         ----------
         count: int
@@ -102,7 +102,7 @@ class BaseTestItem:
 
     def desc(self) -> str:
         """Returns description of test
-        
+
         Returns
         -------
         str
@@ -128,7 +128,7 @@ class AbsoluteTestItem(BaseTestItem):
         filter_function: function pointer
             The function used to generate received audit messages.  Last argument
             of function must be for the records to parse
-        
+
         count: int
             The expected count
         """
@@ -162,7 +162,7 @@ class RangeTestItem(BaseTestItem):
         filter_function: function pointer
             The function used to generate received audit messages.  Last argument
             of function must be for the records to parse
-        
+
         min: int
             The minimum expected count of messages
 
@@ -188,9 +188,9 @@ class AuditLogConfig:
     def __init__(self,
                  enabled: bool = True,
                  num_partitions: int = 8,
-                 event_types=['management']):
+                 event_types=['management', 'admin']):
         """Initializes the config
-        
+
         Parameters
         ----------
         enabled: bool, default=True
@@ -208,7 +208,7 @@ class AuditLogConfig:
 
     def to_conf(self) -> {str, str}:
         """Converts conf to dict
-        
+
         Returns
         -------
         {str, str}
@@ -275,6 +275,7 @@ class AuditLogTestBase(RedpandaTest):
     audit_log = "__audit_log"
     kafka_rpc_service_name = "kafka rpc protocol"
     admin_audit_svc_name = "Redpanda Admin HTTP Server"
+    sr_audit_svc_name = "Redpanda Schema Registry Service"
 
     def __init__(
             self,
@@ -313,7 +314,9 @@ class AuditLogTestBase(RedpandaTest):
 
         self.rpk = self.get_rpk()
         self.super_rpk = self.get_super_rpk()
-        self.admin = Admin(self.redpanda)
+        self.admin = Admin(self.redpanda,
+                           auth=(self.redpanda.SUPERUSER_CREDENTIALS[0],
+                                 self.redpanda.SUPERUSER_CREDENTIALS[1]))
         self.ocsf_server = OcsfServer(test_context)
 
     def get_rpk_credentials(self, username: str, password: str,
@@ -512,23 +515,23 @@ class AuditLogTestBase(RedpandaTest):
                                 timeout_sec: int = 60,
                                 backoff_sec: int = 1):
         """Reads all messages from the audit log
-        
+
         Parameters
         ----------
         filter_fn:
             The function used to filter messages.  Last argument must accept
             a list of records
-            
+
         stop_cond:
             The function to use to check to stop.  Last argument must accept
             a list of records
-        
+
         timeout_sec: int, default=30,
             How long to wait
-            
+
         backoff_sec: int, default=1
             Backoff
-            
+
         Returns
         -------
         [str]
@@ -581,7 +584,7 @@ class AuditLogTestBase(RedpandaTest):
 
     def find_matching_record(self, filter_fn, valid_check_fn, desc):
         """Finds matching records and validate the count
-        
+
         Parameters
         ----------
         filter_fn:
@@ -645,6 +648,8 @@ class AuditLogTestAdminApi(AuditLogTestBase):
     def __init__(self, test_context):
         super(AuditLogTestAdminApi,
               self).__init__(test_context=test_context,
+                             audit_log_config=AuditLogConfig(num_partitions=1,
+                                                             event_types=[]),
                              log_config=LoggingConfig('info',
                                                       logger_levels={
                                                           'auditing':
@@ -706,6 +711,8 @@ class AuditLogTestAdminApi(AuditLogTestBase):
             ) == n_expected, f"Expected: {n_expected}, Actual: {self.aggregate_count(records)}"
             return records
 
+        self.modify_audit_event_types(['admin'])
+
         # The test override the default event type to 'heartbeat', therefore
         # any actions on the admin server should not result in audit msgs
         api_calls = {
@@ -719,12 +726,14 @@ class AuditLogTestAdminApi(AuditLogTestBase):
             call_apis()
         self.logger.debug("Finished 500 api calls with management enabled")
 
+        time.sleep(5)
         records = number_of_records_matching(api_keys, 1000)
         self.redpanda.logger.debug(f"records: {records}")
 
         # Remove management setting
         self.modify_audit_event_types(['heartbeat'])
 
+        time.sleep(5)
         self.logger.debug("Started 500 api calls with management disabled")
         for _ in range(0, 500):
             call_apis()
@@ -783,6 +792,86 @@ class AuditLogTestAdminApi(AuditLogTestBase):
             upsert={'audit_enabled_event_types': ['heartbeat']})
         wait_for_version_sync(self.admin, self.redpanda,
                               patch_result['config_version'])
+
+
+class AuditLogTestAdminAuthApi(AuditLogTestBase):
+    """
+    Validates auditing when auth is enabled on the
+    Admin API
+    """
+    username = 'test'
+    password = 'test12345'
+    algorithm = 'SCRAM-SHA-256'
+
+    ignored_user = 'ignored-test'
+    ignored_pass = 'ignored-test'
+
+    def __init__(self, test_context):
+        super(AuditLogTestAdminAuthApi, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                num_partitions=1, event_types=['admin', 'authenticate']),
+            log_config=LoggingConfig('info',
+                                     logger_levels={
+                                         'auditing': 'trace',
+                                         'admin_api_server': 'trace'
+                                     }),
+            security=AuditLogTestSecurityConfig(user_creds=(self.username,
+                                                            self.password,
+                                                            self.algorithm)))
+
+    def setup_cluster(self):
+        self._modify_cluster_config({'admin_api_require_auth': True})
+        self.admin.create_user(self.username, self.password, self.algorithm)
+        self.admin.create_user(self.ignored_user, self.ignored_pass,
+                               self.algorithm)
+
+    @cluster(num_nodes=5)
+    def test_excluded_principal(self):
+        self.setup_cluster()
+        self.modify_audit_excluded_principals([self.ignored_user])
+
+        Admin(self.redpanda,
+              auth=(self.username, self.password)).get_raft_recovery_status(
+                  node=self.redpanda.nodes[0])
+        Admin(self.redpanda,
+              auth=(self.ignored_user,
+                    self.ignored_pass)).get_raft_recovery_status(
+                        node=self.redpanda.nodes[0])
+
+        def match_api_user(endpoint, user, svc_name, record):
+            if record['class_uid'] == 6003 and record['dst_endpoint'][
+                    'svc_name'] == svc_name:
+                regex = re.compile(
+                    "http:\/\/(?P<address>.*):(?P<port>\d+)\/v1\/(?P<handler>.*)"
+                )
+                url_string = record['http_request']['url']['url_string']
+                match = regex.match(url_string)
+                if match and match.group('handler') == endpoint and record[
+                        'actor']['user']['name'] == user:
+                    return True
+            return False
+
+        records = self.find_matching_record(
+            lambda record:
+            match_api_user("raft/recovery/status", self.username, self.
+                           admin_audit_svc_name, record),
+            lambda record_count: record_count >= 1, 'raft recory normal user')
+        assert len(records) == 1, f'Expected one record found {len(records)}'
+
+        try:
+            records = self.find_matching_record(
+                lambda record:
+                match_api_user("raft/recovery/status", self.ignored_user, self.
+                               admin_audit_svc_name, record),
+                lambda record_count: record_count >= 1,
+                'raft recovery ignored user',
+            )
+            assert len(
+                records
+            ) == 0, f'Expected to find zero records but found {len(records)}: {records}'
+        except TimeoutError:
+            pass
 
 
 class AuditLogTestKafkaApi(AuditLogTestBase):
@@ -1079,6 +1168,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         enqueued, thus blocking all requests for which auditing is enabled for
         """
         stop_thread = False
+        self.modify_audit_event_types(['admin'])
 
         def generate_async_audit_events():
             while stop_thread is not True:
@@ -1095,21 +1185,22 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                                             args=())
         gen_event_thread.start()
 
-        def modify_auth_method(method, node_cfg):
+        def modify_auth_method(method, listeners: [str], node_cfg):
             node_kafka_cfg = node_cfg['redpanda']['kafka_api']
-            dnslistener = [
-                e for e in node_kafka_cfg if e['name'] == 'dnslistener'
-            ]
-            assert len(dnslistener) == 1
-            dnslistener = dnslistener[0]
-            assert 'authentication_method' in dnslistener, 'Expected auth enabled on interface'
-            dnslistener['authentication_method'] = method
+            for l in listeners:
+                listener = [e for e in node_kafka_cfg if e['name'] == l]
+                assert len(listener) == 1, f'Expected listener {l}'
+                listener = listener[0]
+                assert 'authentication_method' in listener, f'Expected authentication_method in {l}'
+                listener['authentication_method'] = method
+
             return node_cfg['redpanda']
 
         # Modify the node config to remove authentication on the listener of 9092
         node = self.redpanda.nodes[0]
         self.modify_node_config(node,
-                                partial(modify_auth_method, 'none'),
+                                partial(modify_auth_method, 'none',
+                                        ['dnslistener', 'iplistener']),
                                 skip_readiness_check=True)
 
         # Observe that auditing is issuing warnings about misconfiguration
@@ -1130,7 +1221,8 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             self.modify_node_config(node,
                                     partial(
                                         modify_auth_method,
-                                        self.security.endpoint_authn_method),
+                                        self.security.endpoint_authn_method,
+                                        ['dnslistener', 'iplistener']),
                                     skip_readiness_check=False)
 
         if exc is not None:
@@ -1619,3 +1711,168 @@ class AuditLogTestOauth(AuditLogTestBase):
             lambda records: self.aggregate_count(records) >= 1)
 
         assert len(records) == 1, f"Expected one record got {len(records)}"
+
+
+class AuditLogTestSchemaRegistry(AuditLogTestBase):
+    """
+    Validates schema registry auditing
+    """
+
+    HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
+
+    username = 'test'
+    password = 'test'
+    algorithm = 'SCRAM-SHA-256'
+
+    def __init__(self, test_context):
+        sr_config = SchemaRegistryConfig()
+        sr_config.authn_method = 'http_basic'
+        super(AuditLogTestSchemaRegistry, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                num_partitions=1,
+                event_types=['schema_registry', 'authenticate']),
+            log_config=LoggingConfig('info',
+                                     logger_levels={
+                                         'auditing': 'trace',
+                                         'pandaproxy': 'trace'
+                                     }),
+            schema_registry_config=sr_config)
+
+    def _request(self, verb, path, hostname=None, **kwargs):
+        if hostname is None:
+            nodes = [n for n in self.redpanda.nodes]
+            random.shuffle(nodes)
+            node = nodes[0]
+            hostname = node.account.hostname
+
+        scheme = 'http'
+        uri = f'{scheme}://{hostname}:8081/{path}'
+
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 60
+
+        # Error codes that may appear during normal API operation, do not
+        # indicate an issue with the service
+        acceptable_errors = {409, 422, 404}
+
+        def accept_response(resp):
+            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+
+        self.logger.debug(f"{verb} hostname={hostname} {path} {kwargs}")
+
+        r = requests.request(verb, uri, **kwargs)
+        if not accept_response(r):
+            self.logger.info(
+                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
+            )
+            time.sleep(10)
+            r = requests.request(verb, uri, **kwargs)
+            if accept_response(r):
+                self.logger.info(
+                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+            else:
+                self.logger.info(
+                    f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+
+        self.logger.info(
+            f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
+
+        return r
+
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET",
+                             f"subjects{'?deleted=true' if deleted else ''}",
+                             headers=headers,
+                             **kwargs)
+
+    def setup_cluster(self):
+        self.admin.create_user(self.username, self.password, self.algorithm)
+
+    @cluster(num_nodes=5)
+    def test_sr_audit(self):
+        self.setup_cluster()
+
+        r = self._get_subjects(auth=(self.username, self.password))
+        assert r.status_code == requests.codes.ok
+
+        def match_api_user(endpoint, user, svc_name, record):
+            if record['class_uid'] == 6003 and record['dst_endpoint'][
+                    'svc_name'] == svc_name:
+                regex = re.compile(
+                    "http:\/\/(?P<address>.*):(?P<port>\d+)\/(?P<handler>.*)")
+                url_string = record['http_request']['url']['url_string']
+                match = regex.match(url_string)
+                if match and match.group('handler') == endpoint and record[
+                        'actor']['user']['name'] == user:
+                    return True
+
+            return False
+
+        records = self.find_matching_record(
+            lambda record: match_api_user("subjects", self.username, self.
+                                          sr_audit_svc_name, record),
+            lambda record_count: record_count >= 1, 'sr get api call')
+
+        assert self.aggregate_count(
+            records
+        ) == 1, f'Expected one record found {self.aggregate_count(records)}: {records}'
+
+        def match_authn_user(user, svc_name, result, record):
+            return record['class_uid'] == 3002 and record['dst_endpoint'][
+                'svc_name'] == svc_name and record['user'][
+                    'name'] == user and record['status_id'] == result
+
+        _ = self.find_matching_record(
+            lambda record: match_authn_user(self.username, self.
+                                            sr_audit_svc_name, 1, record),
+            lambda record_count: record_count > 1, 'authn attempt in sr')
+
+    @cluster(num_nodes=5)
+    def test_sr_audit_bad_authn(self):
+        r = self._get_subjects(auth=(self.username, self.password))
+        assert r.json()['error_code'] == 40101
+
+        def match_authn_user(user, svc_name, result, record):
+            return record['class_uid'] == 3002 and record['dst_endpoint'][
+                'svc_name'] == svc_name and record['user'][
+                    'name'] == user and record['status_id'] == result
+
+        _ = self.find_matching_record(
+            lambda record: match_authn_user(self.username, self.
+                                            sr_audit_svc_name, 2, record),
+            lambda record_count: record_count > 1, 'authn fail attempt in sr')
+
+        try:
+            records = self.find_matching_record(
+                lambda record: match_authn_user(self.username, self.
+                                                sr_audit_svc_name, 1, record),
+                lambda record_count: record_count > 1,
+                'authn fail attempt in sr')
+            assert f"Should not have found any records but found {self.aggregate_count(records)}: {records}"
+        except TimeoutError:
+            pass
+
+        def match_api_user(endpoint, user, svc_name, record):
+            if record['class_uid'] == 6003 and record['dst_endpoint'][
+                    'svc_name'] == svc_name:
+                regex = re.compile(
+                    "http:\/\/(?P<address>.*):(?P<port>\d+)\/(?P<handler>.*)")
+                url_string = record['http_request']['url']['url_string']
+                match = regex.match(url_string)
+                if match and match.group('handler') == endpoint and record[
+                        'actor']['user']['name'] == user:
+                    return True
+
+            return False
+
+        try:
+            records = self.find_matching_record(
+                lambda record: match_api_user("subjects", self.username, self.
+                                              sr_audit_svc_name, record),
+                lambda aggregate_count: aggregate_count > 1, 'API call')
+            assert f'Should not have found any records but found {self.aggregate_count(records)}: {records}'
+        except TimeoutError:
+            pass

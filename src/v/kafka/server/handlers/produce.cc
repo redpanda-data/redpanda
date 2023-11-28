@@ -509,7 +509,15 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         const bool audit_produce_restricted
           = !octx.rctx.authorized_auditor()
             && topic.name == model::kafka_audit_logging_topic();
-        if (is_noproduce_topic || audit_produce_restricted) {
+
+        // Need to make an exception here in case the audit log topic is in the
+        // noproduce topics list
+        const bool is_audit_produce
+          = octx.rctx.authorized_auditor()
+            && topic.name == model::kafka_audit_logging_topic();
+        if (
+          (is_noproduce_topic || audit_produce_restricted)
+          && !is_audit_produce) {
             partitions_dispatched.push_back(ss::now());
             partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(

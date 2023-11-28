@@ -24,6 +24,7 @@
 #include "security/audit/schemas/schemas.h"
 #include "security/audit/schemas/utils.h"
 #include "security/audit/types.h"
+#include "security/request_auth.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>
@@ -170,6 +171,38 @@ public:
           make_application_lifecycle(std::forward<Args>(args)...)));
     }
 
+    bool enqueue_api_activity_event(
+      event_type type,
+      ss::httpd::const_req req,
+      const request_auth_result& auth_result,
+      const ss::sstring& svc_name,
+      bool authorized,
+      const std::optional<std::string_view>& reason) {
+        if (auto val = should_enqueue_audit_event(
+              type, auth_result.get_username());
+            val.has_value()) {
+            return (bool)*val;
+        }
+
+        return do_enqueue_audit_event(
+          std::make_unique<api_activity>(make_api_activity_event(
+            req, auth_result, svc_name, authorized, reason)));
+    }
+
+    bool enqueue_api_activity_event(
+      event_type type,
+      ss::httpd::const_req req,
+      const ss::sstring& user,
+      const ss::sstring& svc_name) {
+        if (auto val = should_enqueue_audit_event(type, user);
+            val.has_value()) {
+            return (bool)*val;
+        }
+
+        return do_enqueue_audit_event(std::make_unique<api_activity>(
+          make_api_activity_event(req, user, svc_name)));
+    }
+
     /// Enqueue an event to be produced onto an audit log partition.  This will
     /// always enqueue the event (if auditing is enabled).  This is used for
     /// items like authentication events or application events.
@@ -204,12 +237,16 @@ private:
     /// whether it could not be enqueued due to error or due to the event
     /// not having attributes of desired trackable events
     std::optional<audit_event_passthrough> should_enqueue_audit_event() const;
+    std::optional<audit_event_passthrough>
+      should_enqueue_audit_event(event_type) const;
+    std::optional<audit_event_passthrough> should_enqueue_audit_event(
+      event_type, const security::acl_principal&) const;
     std::optional<audit_event_passthrough> should_enqueue_audit_event(
       kafka::api_key, const security::acl_principal&) const;
     std::optional<audit_event_passthrough>
     should_enqueue_audit_event(event_type, const security::audit::user&) const;
     std::optional<audit_event_passthrough>
-      should_enqueue_audit_event(event_type) const;
+    should_enqueue_audit_event(event_type, const ss::sstring&) const;
     std::optional<audit_event_passthrough> should_enqueue_audit_event(
       kafka::api_key,
       const security::acl_principal&,

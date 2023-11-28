@@ -742,7 +742,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
         "decision": "authorized",
         "policy": {{
           "desc": "",
-          "name": "Admin httpd authorizer"
+          "name": "http"
         }}
       }}
     ],
@@ -942,7 +942,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
         "decision": "authorized",
         "policy": {{
           "desc": "Auth Disabled",
-          "name": "Admin httpd authorizer"
+          "name": "http"
         }}
       }}
     ],

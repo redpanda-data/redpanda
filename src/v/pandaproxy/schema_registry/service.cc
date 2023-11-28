@@ -31,7 +31,12 @@
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/util.h"
 #include "security/acl.h"
+#include "security/audit/audit_log_manager.h"
+#include "security/audit/schemas/application_activity.h"
+#include "security/audit/schemas/utils.h"
+#include "security/audit/types.h"
 #include "security/ephemeral_credential_store.h"
+#include "security/request_auth.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/coroutine.hh>
@@ -43,6 +48,8 @@
 #include <seastar/util/noncopyable_function.hh>
 
 namespace pandaproxy::schema_registry {
+
+static constexpr auto audit_svc_name = "Redpanda Schema Registry Service";
 
 using server = ctx_server<service>;
 const security::acl_principal principal{
@@ -60,11 +67,22 @@ public:
         rq.authn_method = config::get_authn_method(
           rq.service().config().schema_registry_api.value(),
           rq.req->get_listener_idx());
-        rq.user = maybe_authenticate_request(
-          rq.authn_method, rq.service().authenticator(), *rq.req);
+        try {
+            rq.user = maybe_authenticate_request(
+              rq.authn_method, rq.service().authenticator(), *rq.req);
+        } catch (unauthorized_user_exception& e) {
+            audit_authn_failure(rq, e.get_username(), e.what());
+            throw;
+        } catch (ss::httpd::base_exception& e) {
+            audit_authn_failure(rq, "", e.what());
+            throw;
+        }
+
+        audit_authn(rq);
 
         auto units = co_await _os();
         auto guard = _g.hold();
+        audit_authz(rq);
         try {
             co_return co_await _h(std::move(rq), std::move(rp));
         } catch (kafka::client::partition_error const& ex) {
@@ -76,6 +94,98 @@ public:
                   "_schemas topic does not exist");
             }
             throw;
+        }
+    }
+
+private:
+    inline net::unresolved_address
+    from_ss_sa(const ss::socket_address& sa) const {
+        return {fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family()};
+    }
+
+    security::audit::authentication::used_cleartext
+    is_cleartext(const ss::sstring& protocol) const {
+        return boost::iequals(protocol, "https")
+                 ? security::audit::authentication::used_cleartext::no
+                 : security::audit::authentication::used_cleartext::yes;
+    }
+    security::audit::authentication_event_options
+    make_authn_event_options(const server::request_t& rq) const {
+        return {
+          .auth_protocol = rq.user.sasl_mechanism,
+          .server_addr = from_ss_sa(rq.req->get_server_address()),
+          .svc_name = audit_svc_name,
+          .client_addr = from_ss_sa(rq.req->get_client_address()),
+          .is_cleartext = is_cleartext(rq.req->get_protocol_name()),
+          .user = {
+            .name = rq.user.name.empty() ? "{{anonymous}}" : rq.user.name,
+            .type_id = rq.user.name.empty()
+                         ? security::audit::user::type::unknown
+                         : security::audit::user::type::user}};
+    }
+    security::audit::authentication_event_options make_authn_event_error(
+      const server::request_t& rq,
+      const ss::sstring& username,
+      ss::sstring reason) const {
+        return {
+          .server_addr = from_ss_sa(rq.req->get_server_address()),
+          .svc_name = audit_svc_name,
+          .client_addr = from_ss_sa(rq.req->get_client_address()),
+          .is_cleartext = is_cleartext(rq.req->get_protocol_name()),
+          .user
+          = {.name = username, .type_id = security::audit::user::type::unknown},
+          .error_reason = reason};
+    }
+
+    void audit_authn_failure(
+      const server::request_t& rq,
+      const ss::sstring& username,
+      ss::sstring reason) const {
+        do_audit_authn(
+          rq, make_authn_event_error(rq, username, std::move(reason)));
+    }
+
+    void audit_authn(const server::request_t& rq) const {
+        do_audit_authn(rq, make_authn_event_options(rq));
+    }
+
+    void audit_authz(const server::request_t& rq) const { do_audit_authz(rq); }
+
+    void do_audit_authn(
+      const server::request_t& rq,
+      security::audit::authentication_event_options options) const {
+        vlog(
+          plog.trace, "Attempting to audit authn for {}", rq.req->format_url());
+        auto success = rq.service().audit_mgr().enqueue_authn_event(
+          std::move(options));
+        if (!success) {
+            vlog(
+              plog.error,
+              "Failed to audit authnetication request for endpoint: {}",
+              rq.req->format_url());
+            throw ss::httpd::base_exception(
+              "Failed to audit authentication request",
+              ss::http::reply::status_type::service_unavailable);
+        }
+    }
+
+    void do_audit_authz(const server::request_t& rq) const {
+        vlog(
+          plog.trace, "Attempting to audit authz for {}", rq.req->format_url());
+        auto success = rq.service().audit_mgr().enqueue_api_activity_event(
+          security::audit::event_type::schema_registry,
+          *rq.req,
+          rq.user.name,
+          audit_svc_name);
+
+        if (!success) {
+            vlog(
+              plog.error,
+              "Failed to audit authorization request for endpoint: {}",
+              rq.req->format_url());
+            throw ss::httpd::base_exception(
+              "Failed to audit authorization request",
+              ss::http::reply::status_type::service_unavailable);
         }
     }
 
@@ -388,7 +498,8 @@ service::service(
   ss::sharded<kafka::client::client>& client,
   sharded_store& store,
   ss::sharded<seq_writer>& sequencer,
-  std::unique_ptr<cluster::controller>& controller)
+  std::unique_ptr<cluster::controller>& controller,
+  ss::sharded<security::audit::audit_log_manager>& audit_mgr)
   : _config(config)
   , _mem_sem(max_memory, "pproxy/schema-svc")
   , _client(client)
@@ -404,6 +515,7 @@ service::service(
   , _store(store)
   , _writer(sequencer)
   , _controller(controller)
+  , _audit_mgr(audit_mgr)
   , _ensure_started{[this]() { return do_start(); }}
   , _auth{
       config::always_true(),

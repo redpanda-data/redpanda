@@ -193,6 +193,11 @@ ss::future<> health_manager::do_tick() {
         if (ok) {
             ok = co_await ensure_topic_replication(model::transform_offsets_nt);
         }
+
+        if (ok) {
+            ok = co_await ensure_topic_replication(
+              model::kafka_audit_logging_nt);
+        }
     }
 
     _timer.arm(_tick_interval);

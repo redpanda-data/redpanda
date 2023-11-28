@@ -33,13 +33,15 @@ api::api(
   size_t max_memory,
   kafka::client::configuration& client_cfg,
   configuration& cfg,
-  std::unique_ptr<cluster::controller>& c) noexcept
+  std::unique_ptr<cluster::controller>& c,
+  ss::sharded<security::audit::audit_log_manager>& audit_mgr) noexcept
   : _node_id{node_id}
   , _sg{sg}
   , _max_memory{max_memory}
   , _client_cfg{client_cfg}
   , _cfg{cfg}
-  , _controller(c) {}
+  , _controller(c)
+  , _audit_mgr(audit_mgr) {}
 
 api::~api() noexcept = default;
 
@@ -67,7 +69,8 @@ ss::future<> api::start() {
       std::ref(_client),
       std::ref(*_store),
       std::ref(_sequencer),
-      std::ref(_controller));
+      std::ref(_controller),
+      std::ref(_audit_mgr));
 
     co_await _service.invoke_on_all(&service::start);
 }

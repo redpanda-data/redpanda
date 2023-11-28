@@ -55,7 +55,7 @@ FIXTURE_TEST(test_audit_init_phase, redpanda_thread_fixture) {
         config::shard_local_cfg().get("audit_enabled").set_value(false);
         config::shard_local_cfg()
           .get("audit_log_replication_factor")
-          .set_value(int16_t(1));
+          .set_value(std::make_optional(int16_t(1)));
         config::shard_local_cfg()
           .get("audit_max_queue_elements_per_shard")
           .set_value(size_t(5));

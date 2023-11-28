@@ -29,6 +29,7 @@ v_cc_library(
     v::pandaproxy_json
     v::kafka_client
     v::kafka_protocol
+    v::security_audit
     v::ssx
     v::utils
     v::pandaproxy_schema_registry_protobuf

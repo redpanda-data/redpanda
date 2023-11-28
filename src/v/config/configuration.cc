@@ -1371,9 +1371,10 @@ configuration::configuration()
       "audit_log_replication_factor",
       "Replication factor of the internal audit log topic. Attempt to create "
       "topic is only performed if it doesn't already exist, disable and "
-      "re-enable auditing for changes to take affect",
+      "re-enable auditing for changes to take affect.  If unset, defaults to "
+      "`default_topic_replication`",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      3)
+      std::nullopt)
   , audit_client_max_buffer_size(
       *this,
       "audit_client_max_buffer_size",
@@ -1405,7 +1406,8 @@ configuration::configuration()
       *this,
       "audit_enabled_event_types",
       "List of event classes that will be audited, options are: "
-      "[management, produce, consume, describe, heartbeat, authenticate]. "
+      "[management, produce, consume, describe, heartbeat, authenticate, "
+      "admin, schema_registry]. "
       "Please refer to the documentation to know exactly which request(s) map "
       "to a particular audit event type.",
       {
@@ -1413,7 +1415,7 @@ configuration::configuration()
         .example = R"(["management", "describe"])",
         .visibility = visibility::user,
       },
-      {"management"},
+      {"management", "authenticate", "admin"},
       validate_audit_event_types)
   , audit_excluded_topics(
       *this,

@@ -42,6 +42,9 @@ inline const model::topic_namespace kafka_consumer_offsets_nt(
 
 inline const model::topic kafka_audit_logging_topic("__audit_log");
 
+inline const model::topic_namespace
+  kafka_audit_logging_nt(model::kafka_namespace, kafka_audit_logging_topic);
+
 inline const model::topic tx_manager_topic("tx");
 inline const model::topic_namespace
   tx_manager_nt(model::kafka_internal_namespace, tx_manager_topic);
@@ -70,7 +73,8 @@ inline const model::ntp wasm_binaries_internal_ntp(
 inline bool is_user_topic(topic_namespace_view tp_ns) {
     return tp_ns.ns == kafka_namespace
            && tp_ns.tp != kafka_consumer_offsets_topic
-           && tp_ns.tp != schema_registry_internal_tp.topic;
+           && tp_ns.tp != schema_registry_internal_tp.topic
+           && tp_ns.tp != kafka_audit_logging_topic;
 }
 
 inline bool is_user_topic(const ntp& ntp) {

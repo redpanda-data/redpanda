@@ -657,10 +657,13 @@ void admin_server::audit_authz(
   httpd_authorized authorized,
   std::optional<std::string_view> reason) {
     vlog(adminlog.trace, "Attempting to audit authz for {}", req.format_url());
-    auto api_event = security::audit::make_api_activity_event(
-      req, auth_result, audit_svc_name, bool(authorized), reason);
-    auto success = _audit_mgr.local().enqueue_audit_event(
-      security::audit::event_type::management, std::move(api_event));
+    auto success = _audit_mgr.local().enqueue_api_activity_event(
+      security::audit::event_type::admin,
+      req,
+      auth_result,
+      audit_svc_name,
+      bool(authorized),
+      reason);
     if (!success) {
         ///
         /// The following "break glass" mechanism allows the cluster config

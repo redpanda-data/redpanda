@@ -168,7 +168,8 @@ PREV_VERSION_LOG_ALLOW_LIST = [
 AUDIT_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
     re.compile(".*Failed to audit authentication.*"),
     re.compile(".*Failed to append authz event to audit log.*"),
-    re.compile(".*Failed to append authentication event to audit log.*")
+    re.compile(".*Failed to append authentication event to audit log.*"),
+    re.compile(".*Failed to audit authorization request for endpoint.*")
 ]
 
 # Path to the LSAN suppressions file

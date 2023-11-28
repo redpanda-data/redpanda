@@ -12,6 +12,7 @@
 
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
+#include "config/configuration.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"
 #include "kafka/protocol/produce.h"
@@ -22,6 +23,7 @@
 #include "security/audit/logger.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/types.h"
+#include "security/audit/schemas/utils.h"
 #include "security/ephemeral_credential_store.h"
 #include "storage/parser_utils.h"
 #include "utils/retry.h"
@@ -50,7 +52,11 @@ std::ostream& operator<<(std::ostream& os, event_type t) {
     case event_type::heartbeat:
         return os << "heartbeat";
     case event_type::authenticate:
-        return os << "authenticated";
+        return os << "authenticate";
+    case event_type::admin:
+        return os << "admin";
+    case event_type::schema_registry:
+        return os << "schema_registry";
     case event_type::unknown:
         return os << "unknown";
     default:
@@ -350,11 +356,17 @@ ss::future<> audit_client::do_inform(model::node_id id) {
 ss::future<> audit_client::create_internal_topic() {
     constexpr std::string_view retain_forever = "-1";
     constexpr std::string_view seven_days = "604800000";
+    int16_t replication_factor
+      = config::shard_local_cfg().audit_log_replication_factor().value_or(
+        _controller->internal_topic_replication());
+    vlog(
+      adtlog.debug,
+      "Attempting to create internal topic (replication={})",
+      replication_factor);
     kafka::creatable_topic audit_topic{
       .name = model::kafka_audit_logging_topic,
       .num_partitions = config::shard_local_cfg().audit_log_num_partitions(),
-      .replication_factor
-      = config::shard_local_cfg().audit_log_replication_factor(),
+      .replication_factor = replication_factor,
       .assignments = {},
       .configs = {
         kafka::createable_topic_config{
@@ -841,49 +853,41 @@ audit_log_manager::should_enqueue_audit_event() const {
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(event_type type) const {
+    if (!is_audit_event_enabled(type)) {
+        return std::make_optional(audit_event_passthrough::yes);
+    }
+    return should_enqueue_audit_event();
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
-  kafka::api_key api, const security::acl_principal& principal) const {
+  event_type type, const security::acl_principal& principal) const {
     if (_audit_excluded_principals.contains(principal)) {
         return std::make_optional(audit_event_passthrough::yes);
     }
 
-    if (auto val = should_enqueue_audit_event(); val.has_value()) {
-        return val;
-    }
-    if (!is_audit_event_enabled(kafka_api_to_event_type(api))) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
+    return should_enqueue_audit_event(type);
+}
 
-    return std::nullopt;
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(
+  kafka::api_key key, const security::acl_principal& principal) const {
+    return should_enqueue_audit_event(kafka_api_to_event_type(key), principal);
+}
+
+std::optional<audit_log_manager::audit_event_passthrough>
+audit_log_manager::should_enqueue_audit_event(
+  event_type type, const ss::sstring& username) const {
+    return should_enqueue_audit_event(
+      type, security::acl_principal{security::principal_type::user, username});
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
   event_type type, const security::audit::user& user) const {
-    if (auto val = should_enqueue_audit_event(); val.has_value()) {
-        return val;
-    }
-    if (!is_audit_event_enabled(type)) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
-
-    if (_audit_excluded_principals.contains(
-          security::acl_principal{security::principal_type::user, user.name})) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
-
-    return std::nullopt;
-}
-
-std::optional<audit_log_manager::audit_event_passthrough>
-audit_log_manager::should_enqueue_audit_event(event_type type) const {
-    if (auto val = should_enqueue_audit_event(); val.has_value()) {
-        return val;
-    }
-    if (!is_audit_event_enabled(type)) {
-        return std::make_optional(audit_event_passthrough::yes);
-    }
-    return std::nullopt;
+    return should_enqueue_audit_event(
+      type, security::acl_principal{security::principal_type::user, user.name});
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
