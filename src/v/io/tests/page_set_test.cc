@@ -26,12 +26,12 @@ auto make_page(uint64_t offset, uint64_t size) {
 } // namespace
 
 TEST(PageSet, EmptyBeginEnd) {
-    io::page_set set;
+    const io::page_set set;
     EXPECT_EQ(set.begin(), set.end());
 }
 
 TEST(PageSet, EmptyFind) {
-    io::page_set set;
+    const io::page_set set;
     EXPECT_EQ(set.find(0), set.end());
 }
 
