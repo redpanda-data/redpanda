@@ -84,6 +84,7 @@ public:
     }
     model::record_batch read_batch() { return _sinks[0]->read().get(); }
     uint64_t error_count() const { return _error_count; }
+    int64_t lag() const { return _p->current_lag(); }
 
     void restart() {
         stop();
@@ -182,6 +183,15 @@ TEST_F(ProcessorTestFixture, HandlesEmptyBatches) {
     push_batch(batch_three.copy());
     wait_for_committed_offset(batch_three.last_offset());
     EXPECT_EQ(read_batch(), batch_three);
+}
+
+TEST_F(ProcessorTestFixture, LagOffByOne) {
+    EXPECT_EQ(lag(), 0);
+    auto batch_one = make_tiny_batch();
+    push_batch(batch_one.copy());
+    wait_for_committed_offset(batch_one.last_offset());
+    EXPECT_EQ(read_batch(), batch_one);
+    EXPECT_EQ(lag(), 0);
 }
 
 } // namespace transform

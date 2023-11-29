@@ -115,7 +115,7 @@ public:
             throw std::runtime_error(
               kafka::make_error_code(result.error()).message());
         }
-        return model::offset_cast(result.value());
+        return model::offset_cast(model::prev_offset(result.value()));
     }
 
     ss::future<model::record_batch_reader>

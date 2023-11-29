@@ -181,14 +181,17 @@ ss::future<kafka::offset> processor::load_start_offset() {
     co_await _offset_tracker->wait_for_previous_flushes(&_as);
     auto latest_committed = co_await _offset_tracker->load_committed_offset();
     auto latest = _source->latest_offset();
-    if (latest_committed) {
-        auto start_offset = kafka::next_offset(latest_committed.value());
-        report_lag(latest - start_offset);
-        co_return start_offset;
+    if (!latest_committed) {
+        // If we have never committed, mark the end of the log as our starting
+        // place, and start processing from the next record that is produced.
+        co_await _offset_tracker->commit_offset(latest);
+        co_return kafka::next_offset(latest);
     }
-    // We "commit" at the previous offset so that we resume at the latest.
-    co_await _offset_tracker->commit_offset(kafka::prev_offset(latest));
-    co_return latest;
+    // The latest record is inclusive of the last record, so we want to start
+    // reading from the following record.
+    auto last_processed_offset = latest_committed.value_or(latest);
+    report_lag(latest - last_processed_offset);
+    co_return kafka::next_offset(last_processed_offset);
 }
 
 ss::future<> processor::run_consumer_loop(kafka::offset offset) {
