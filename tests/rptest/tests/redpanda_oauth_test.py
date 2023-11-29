@@ -56,8 +56,6 @@ class RedpandaOIDCTestBase(Test):
                  use_ssl=False,
                  **kwargs):
         super(RedpandaOIDCTestBase, self).__init__(test_context, **kwargs)
-        self.produce_messages = []
-        self.produce_errors = []
         self.tls = None
         provider = None
         if use_ssl:
@@ -129,8 +127,6 @@ class RedpandaOIDCTestBase(Test):
         )
 
     def setUp(self):
-        self.produce_messages.clear()
-        self.produce_errors.clear()
         self.redpanda.logger.info("Starting Redpanda")
         self.redpanda.start()
 
