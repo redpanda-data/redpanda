@@ -1035,6 +1035,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
               txlog.trace,
               "[tx_id: {}] waiting for {} topic to apper in metadata cache, "
               "retries left: {}",
+              tx_id,
               model::tx_manager_nt,
               retries);
             if (_metadata_cache.local().contains(model::tx_manager_nt)) {
