@@ -276,6 +276,20 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # tp-workload-compaction - topic with compaction
         # tp-workload-fast       - topic with fast partition movements enabled
 
+        def enable_fast_partition_movement():
+            if not with_tiered_storage:
+                return False
+            if num_to_upgrade == 0:
+                return True
+
+            initial_version = self.redpanda._installer.highest_from_prior_feature_version(
+                RedpandaInstaller.HEAD)
+            supported_by_prev = initial_version[0] >= 22 and initial_version[
+                1] >= 3
+            # do not enable fast partition movement with
+            # upgrades as the feature is not enabled
+            return supported_by_prev
+
         lock = threading.Lock()
         default_segment_size = 1024 * 1024
 
@@ -289,6 +303,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # start redpanda process
         self._start_redpanda(num_to_upgrade,
                              with_tiered_storage=with_tiered_storage)
+
         self.redpanda.set_cluster_config(
             {"controller_snapshot_max_age_sec": 1})
 
@@ -344,7 +359,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         regular_producer_consumer.start()
         compacted_producer_consumer.start()
 
-        if with_tiered_storage:
+        if enable_fast_partition_movement():
             # if running with tiered storage create a topic with fast partition
             # moves enabled
             fast_topic = TopicSpec(name='tp-workload-fast',
@@ -412,8 +427,11 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # stop producer and consumer and verify results
         regular_producer_consumer.verify()
         compacted_producer_consumer.verify()
-        if with_tiered_storage:
+
+        if enable_fast_partition_movement():
             fast_producer_consumer.verify()
+
+        if with_tiered_storage:
             self.redpanda.stop_and_scrub_object_storage()
 
         # Validate that the controller log written during the test is readable by offline log viewer
