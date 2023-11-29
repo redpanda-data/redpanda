@@ -157,6 +157,14 @@ RUN /franz-bench && \
 
 #################################
 
+FROM golang as flink
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/flink /
+RUN /flink && \
+    rm /flink
+
+#################################
+
 FROM golang as kcl
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kcl /
