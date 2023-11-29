@@ -95,6 +95,17 @@ public:
 
     void set_ready() { _ready = true; }
 
+    struct string_conversion_exception
+      : public default_control_character_thrower {
+        using default_control_character_thrower::
+          default_control_character_thrower;
+        [[noreturn]] [[gnu::cold]] void conversion_error() override {
+            throw ss::httpd::bad_request_exception(
+              "Parameter contained invalid control characters: "
+              + get_sanitized_string());
+        }
+    };
+
 private:
     enum class auth_level {
         // Unauthenticated endpoint (not a typo, 'public' is a keyword)
@@ -379,6 +390,9 @@ private:
           _server._routes,
           new handler_impl<required_auth>{*this, std::move(handler)});
     }
+
+    static bool need_redirect_to_leader(
+      model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache);
 
     void log_request(
       const ss::http::request& req,
