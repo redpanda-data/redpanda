@@ -843,4 +843,16 @@ service::remove_plugin(remove_plugin_request&& req, rpc::streaming_context&) {
     co_return remove_plugin_response{.uuid = result.uuid, .ec = result.ec};
 }
 
+ss::future<delete_topics_reply>
+service::delete_topics(delete_topics_request&& req, rpc::streaming_context&) {
+    // Capture the request values in this coroutine
+    auto topics = req.topics_to_delete;
+    auto timeout = req.timeout;
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto result = co_await _topics_frontend.local().delete_topics(
+      std::move(topics), model::timeout_clock::now() + timeout);
+
+    co_return delete_topics_reply{.results = std::move(result)};
+}
+
 } // namespace cluster

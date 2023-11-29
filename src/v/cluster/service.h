@@ -133,6 +133,9 @@ public:
     ss::future<remove_plugin_response>
     remove_plugin(remove_plugin_request&&, rpc::streaming_context&) final;
 
+    ss::future<delete_topics_reply>
+    delete_topics(delete_topics_request&&, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::

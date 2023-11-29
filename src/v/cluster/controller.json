@@ -155,6 +155,11 @@
             "name": "remove_plugin",
             "input_type": "remove_plugin_request",
             "output_type": "remove_plugin_response"
+        },
+        {
+            "name": "delete_topics",
+            "input_type": "delete_topics_request",
+            "output_type": "delete_topics_reply"
         }
     ]
 }
