@@ -261,7 +261,11 @@ class TransformVerifierService(Service):
             return
 
         # Attempt a graceful stop
-        self._execute_cmd(node, "stop")
+        try:
+            self._execute_cmd(node, "stop")
+        except Exception as e:
+            self.logger.warn("unable to request /stop {self.who_am_i()}: {e}")
+
         try:
             wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                        timeout_sec=10,
@@ -269,10 +273,11 @@ class TransformVerifierService(Service):
             self._pid = None
             return
         except TimeoutError as e:
-            self.logger.warn("gracefully stopping service failed: {e}")
+            self.logger.warn(
+                "gracefully stopping {self.who_am_i()} failed: {e}")
 
         # Gracefully stop did not work, try a hard kill
-        self.logger.debug(f"Killing pid {self._pid}")
+        self.logger.debug(f"Killing pid for {self.who_am_i()}")
         try:
             node.account.signal(self._pid, signal.SIGKILL, allow_fail=False)
         except RemoteCommandError as e:
