@@ -134,9 +134,11 @@ public:
 
         seastar::future<> close() noexcept override;
 
-        uint64_t disk_read_dma_alignment() const noexcept override;
-        uint64_t disk_write_dma_alignment() const noexcept override;
-        uint64_t memory_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_read_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_write_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t memory_dma_alignment() const noexcept override;
 
     private:
         seastar::file file_;
@@ -210,9 +212,11 @@ public:
 
         seastar::future<> close() noexcept override;
 
-        uint64_t disk_read_dma_alignment() const noexcept override;
-        uint64_t disk_write_dma_alignment() const noexcept override;
-        uint64_t memory_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_read_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_write_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t memory_dma_alignment() const noexcept override;
 
     private:
         seastar::future<> ensure_capacity(size_t);
