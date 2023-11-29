@@ -55,6 +55,9 @@ public:
     ss::future<model::partition_id>
     partition_for(model::topic_view tv, const record_essence& rec);
 
+    /// \brief Obtain the total number of partitions for a topic
+    ss::future<size_t> number_of_partitions_for(model::topic_view tv);
+
 private:
     /// \brief Cache of topic information.
     topics_t _topics;

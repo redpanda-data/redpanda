@@ -71,4 +71,13 @@ topic_cache::partition_for(model::topic_view tv, const record_essence& rec) {
       topic_error(tv, error_code::unknown_topic_or_partition));
 }
 
+ss::future<size_t> topic_cache::number_of_partitions_for(model::topic_view tv) {
+    if (auto topic_it = _topics.find(tv); topic_it != _topics.end()) {
+        return ss::make_ready_future<size_t>(
+          topic_it->second.partitions.size());
+    }
+    return ss::make_exception_future<size_t>(
+      topic_error(tv, error_code::unknown_topic_or_partition));
+}
+
 } // namespace kafka::client
