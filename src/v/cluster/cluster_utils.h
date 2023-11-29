@@ -200,19 +200,12 @@ ss::future<std::error_code> replicate_and_wait(
 std::vector<custom_assignable_topic_configuration>
   without_custom_assignments(std::vector<topic_configuration>);
 
-/**
- * Subtracts second replica set from the first one. Result contains only brokers
- * shards that are present in first replica set but not in the second one.
- */
-inline std::vector<model::broker_shard> subtract_replica_sets(
-  const std::vector<model::broker_shard>& lhs,
-  const std::vector<model::broker_shard>& rhs) {
-    std::vector<model::broker_shard> ret;
+template<class T>
+inline std::vector<T>
+subtract(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+    std::vector<T> ret;
     std::copy_if(
-      lhs.begin(),
-      lhs.end(),
-      std::back_inserter(ret),
-      [&rhs](const model::broker_shard& bs) {
+      lhs.begin(), lhs.end(), std::back_inserter(ret), [&rhs](const T& bs) {
           return std::find(rhs.begin(), rhs.end(), bs) == rhs.end();
       });
     return ret;
@@ -236,6 +229,19 @@ inline std::vector<model::broker_shard> union_replica_sets(
       std::back_inserter(ret),
       [&ret](const model::broker_shard& bs) {
           return std::find(ret.begin(), ret.end(), bs) == ret.end();
+      });
+    return ret;
+}
+
+template<class T>
+inline std::vector<T>
+intersect(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+    std::vector<T> ret;
+    ret.reserve(std::min(lhs.size(), rhs.size()));
+    // Inefficient but constant time for inputs.
+    std::copy_if(
+      lhs.begin(), lhs.end(), std::back_inserter(ret), [&](const T& entry) {
+          return std::find(rhs.begin(), rhs.end(), entry) != rhs.end();
       });
     return ret;
 }

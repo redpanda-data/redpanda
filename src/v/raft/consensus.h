@@ -163,7 +163,9 @@ public:
      * majority.
      */
     ss::future<std::error_code> force_replace_configuration_locally(
-      std::vector<vnode>, model::revision_id);
+      std::vector<vnode> voters,
+      std::vector<vnode> learners,
+      model::revision_id);
 
     // Abort ongoing configuration change - may cause data loss
     ss::future<std::error_code> abort_configuration_change(model::revision_id);

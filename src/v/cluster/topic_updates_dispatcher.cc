@@ -228,12 +228,12 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being updated",
             ntp);
 
-          auto to_add = subtract_replica_sets(
+          auto to_add = subtract(
             *new_target_replicas, current_assignment->replicas);
           _partition_allocator.local().add_final_counts(
             to_add, get_allocation_domain(ntp));
 
-          auto to_remove = subtract_replica_sets(
+          auto to_remove = subtract(
             current_assignment->replicas, *new_target_replicas);
           _partition_allocator.local().remove_final_counts(
             to_remove, get_allocation_domain(ntp));
@@ -296,8 +296,7 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
           std::vector<model::broker_shard> to_delete;
           // move was successful, not cancelled
           if (target_replicas == command_replicas) {
-              to_delete = subtract_replica_sets(
-                *previous_replicas, command_replicas);
+              to_delete = subtract(*previous_replicas, command_replicas);
           } else {
               vassert(
                 previous_replicas == command_replicas,
@@ -308,8 +307,7 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
                 ntp,
                 command_replicas,
                 previous_replicas);
-              to_delete = subtract_replica_sets(
-                *target_replicas, command_replicas);
+              to_delete = subtract(*target_replicas, command_replicas);
           }
           _partition_allocator.local().remove_allocations(
             to_delete, get_allocation_domain(ntp));
@@ -420,13 +418,11 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being cancelled",
             ntp);
 
-          auto to_add = subtract_replica_sets(
-            *target_replicas, *previous_replicas);
+          auto to_add = subtract(*target_replicas, *previous_replicas);
           _partition_allocator.local().add_final_counts(
             to_add, get_allocation_domain(ntp));
 
-          auto to_delete = subtract_replica_sets(
-            *previous_replicas, *target_replicas);
+          auto to_delete = subtract(*previous_replicas, *target_replicas);
           _partition_allocator.local().remove_allocations(
             to_delete, get_allocation_domain(ntp));
           _partition_allocator.local().remove_final_counts(
@@ -587,11 +583,11 @@ void topic_updates_dispatcher::update_allocations_for_reconfiguration(
   const std::vector<model::broker_shard>& previous,
   const std::vector<model::broker_shard>& target,
   partition_allocation_domain domain) {
-    auto to_add = subtract_replica_sets(target, previous);
+    auto to_add = subtract(target, previous);
     _partition_allocator.local().add_allocations(to_add, domain);
     _partition_allocator.local().add_final_counts(to_add, domain);
 
-    auto to_remove = subtract_replica_sets(previous, target);
+    auto to_remove = subtract(previous, target);
     _partition_allocator.local().remove_final_counts(to_remove, domain);
 }
 

@@ -272,6 +272,16 @@ group_configuration::group_configuration(
 }
 
 group_configuration::group_configuration(
+  std::vector<vnode> voters,
+  std::vector<vnode> learners,
+  model::revision_id rev)
+  : _version(v_5)
+  , _revision(rev) {
+    _current.voters = std::move(voters);
+    _current.learners = std::move(learners);
+}
+
+group_configuration::group_configuration(
   std::vector<model::broker> brokers,
   group_nodes current,
   model::revision_id revision,
