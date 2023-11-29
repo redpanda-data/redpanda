@@ -23,5 +23,13 @@ CheckOptions:
     value:           llvm
   - key:             modernize-use-nullptr.NullMacros
     value:           NULL
+  - key:             readability-identifier-length.IgnoredVariableNames
+    value:           ^it$
+  - key:             readability-identifier-length.IgnoredParameterNames
+    value:           ^(it|a|b)$
+  - key:             readability-uppercase-literal-suffix.NewSuffixes
+    value:           KiB;MiB;GiB;TiB
+  - key:             hicpp-uppercase-literal-suffix.NewSuffixes
+    value:           KiB;MiB;GiB;TiB
 ...
 
