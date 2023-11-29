@@ -44,7 +44,7 @@ std::optional<seastar::future<size_t>> check_alignment(
   std::span<const char> data,
   uint64_t memory_alignment,
   uint64_t disk_alignment) {
-    if (pos % disk_alignment) {
+    if ((pos % disk_alignment) != 0) {
         return make_alignment_error(name, "pos", pos, disk_alignment);
     }
 
@@ -54,7 +54,7 @@ std::optional<seastar::future<size_t>> check_alignment(
         return make_alignment_error(name, "buf", ptr, memory_alignment);
     }
 
-    if (data.size() % disk_alignment) {
+    if ((data.size() % disk_alignment) != 0) {
         return make_alignment_error(name, "len", data.size(), disk_alignment);
     }
 
@@ -256,7 +256,7 @@ memory_persistence::memory_file::read(uint64_t pos, char* buffer, size_t len) {
 
     size_t bytes_read = 0;
     len = std::min(len, size_ - pos);
-    while (len) {
+    while (len != 0) {
         assert(it != data_.end());
 
         auto chunk_pos = pos - it->first;
@@ -294,7 +294,7 @@ seastar::future<size_t> memory_persistence::memory_file::write(
 
     size_t written = 0;
     std::span input(buf, len);
-    while (len) {
+    while (len != 0) {
         assert(it != data_.end());
 
         auto chunk_pos = pos - it->first;
