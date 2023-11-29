@@ -872,14 +872,13 @@ std::optional<size_t> partition_manifest::move_aligned_offset_range(
     }
 
     size_t total_replaced_size = 0;
+
     auto replacing_path = generate_remote_segment_name(replacing_segment);
-    for (auto it = _segments.lower_bound(replacing_segment.base_offset),
-              end_it = _segments.end();
-         it != end_it
-         // The segment is considered replaced only if all its
-         // offsets are covered by new segment's offset range
-         && it->base_offset >= replacing_segment.base_offset
-         && it->committed_offset <= replacing_segment.committed_offset;
+
+    // The segment is considered replaced only if all its
+    // offsets are covered by new segment's offset range
+    for (auto [it, end_covered] = _segments.covered_range(replacing_segment);
+         it != end_covered;
          ++it) {
         if (generate_remote_segment_name(*it) == replacing_path) {
             // The replacing segment shouldn't be exactly the same as the
