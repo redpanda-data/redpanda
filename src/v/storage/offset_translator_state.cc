@@ -115,6 +115,7 @@ model::offset offset_translator_state::to_log_offset(
     vassert(
       interval_end_it != _last_offset2batch.begin(),
       "ntp {}: log offset search start too small: {}",
+      _ntp,
       search_start);
     auto delta = std::prev(interval_end_it)->second.next_delta;
 
