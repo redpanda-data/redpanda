@@ -10,6 +10,7 @@
 
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"
@@ -20,6 +21,7 @@
 
 class cloud_storage_manual_multinode_test_base
   : public s3_imposter_fixture
+  , public manual_metadata_upload_mixin
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:

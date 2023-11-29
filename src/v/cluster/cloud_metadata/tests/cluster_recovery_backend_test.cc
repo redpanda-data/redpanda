@@ -12,6 +12,7 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/tests/cluster_metadata_utils.h"
+#include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/cluster_recovery_reconciler.h"
 #include "cluster/config_frontend.h"
@@ -48,6 +49,7 @@ static ss::abort_source never_abort;
 class ClusterRecoveryBackendTest
   : public seastar_test
   , public s3_imposter_fixture
+  , public manual_metadata_upload_mixin
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:
