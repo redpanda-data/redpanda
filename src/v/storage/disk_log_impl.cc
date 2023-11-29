@@ -29,6 +29,7 @@
 #include "storage/offset_assignment.h"
 #include "storage/offset_to_filepos.h"
 #include "storage/readers_cache.h"
+#include "storage/scoped_file_tracker.h"
 #include "storage/segment.h"
 #include "storage/segment_deduplication_utils.h"
 #include "storage/segment_set.h"
@@ -619,6 +620,10 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // tries to write only one segment (or more if the term had a large
         // amount of data), rather than replacing N segments with N segments.
         const auto tmpname = seg->reader().path().to_compaction_staging();
+        const auto cmp_idx_tmpname = tmpname.to_compacted_index();
+        auto staging_to_clean = scoped_file_tracker{
+          cfg.files_to_cleanup, {tmpname, cmp_idx_tmpname}};
+
         auto appender = co_await internal::make_segment_appender(
           tmpname,
           segment_appender::write_behind_memory
@@ -628,7 +633,6 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           resources(),
           cfg.sanitizer_config);
 
-        const auto cmp_idx_tmpname = tmpname.to_compacted_index();
         auto cmp_idx_name = seg->path().to_compacted_index();
         auto compacted_idx_writer = make_file_backed_compacted_index(
           cmp_idx_tmpname, cfg.iopc, true, resources(), cfg.sanitizer_config);
@@ -701,6 +705,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         seg->mark_as_finished_windowed_compaction();
         _probe->segment_compacted();
         seg->advance_generation();
+        staging_to_clean.clear();
         vlog(
           gclog.debug, "[{}] Final compacted segment {}", config().ntp(), seg);
     }
@@ -822,6 +827,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // compaction process operates on replacement segment, and any conflicting
     // log operations are later identified before committing changes.
     auto staging_path = target->reader().path().to_compaction_staging();
+    auto staging_to_clean = scoped_file_tracker{
+      cfg.files_to_cleanup, {staging_path, staging_path.to_compacted_index()}};
     auto [replacement, generations]
       = co_await storage::internal::make_concatenated_segment(
         staging_path, segments, cfg, _manager.resources(), _feature_table);
@@ -882,21 +889,6 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
               *gen_it);
             ret.executed_compaction = false;
             ret.size_after = ret.size_before;
-
-            // Clean up any staging files that will go unused.
-            // TODO: generalize this cleanup for other compaction abort paths.
-            std::vector<std::filesystem::path> rm;
-            rm.reserve(3);
-            rm.emplace_back(replacement->reader().filename().c_str());
-            rm.emplace_back(replacement->index().path().string());
-            rm.emplace_back(replacement->reader().path().to_compacted_index());
-            vlog(
-              gclog.debug, "Cleaning up files from aborted compaction: {}", rm);
-            for (const auto& f : rm) {
-                if (co_await ss::file_exists(ss::sstring(f))) {
-                    co_await ss::remove_file(ss::sstring(f));
-                }
-            }
             co_return ret;
         }
         if (unlikely(segment->is_closed())) {
@@ -917,6 +909,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // compaction to two segments, and we check that assumption here and use
     // simplified clean-up routine.
     locks.clear();
+    staging_to_clean.clear();
     vassert(segments.size() == 2, "Cannot compact more than two segments");
     auto it = std::find(_segs.begin(), _segs.end(), segments.back());
     if (it != _segs.end()) {
@@ -1088,9 +1081,28 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
+        scoped_file_tracker::set_t leftovers;
+        cfg.compact.files_to_cleanup = &leftovers;
         auto fut = co_await ss::coroutine::as_future(
           do_compact(cfg.compact, new_start_offset));
 
+        while (!leftovers.empty()) {
+            auto first_leftover = leftovers.begin();
+            auto file = first_leftover->string();
+            vlog(gclog.debug, "Cleaning up leftover file: {}", file);
+            try {
+                if (co_await ss::file_exists(file)) {
+                    co_await ss::remove_file(file);
+                }
+            } catch (...) {
+                vlog(
+                  gclog.warn,
+                  "Error while cleaning up {} after aborted compaction: {}",
+                  file,
+                  std::current_exception());
+            }
+            leftovers.erase(first_leftover);
+        }
         if (fut.failed()) {
             std::rethrow_exception(fut.get_exception());
         }

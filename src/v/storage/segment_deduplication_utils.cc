@@ -14,6 +14,7 @@
 #include "storage/index_state.h"
 #include "storage/key_offset_map.h"
 #include "storage/probe.h"
+#include "storage/scoped_file_tracker.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
@@ -111,6 +112,7 @@ ss::future<model::offset> build_offset_map(
         vlog(gclog.debug, "Adding segment to offset map: {}", seg->filename());
         auto read_lock = co_await seg->read_lock();
         segment_full_path idx_path = seg->path().to_compacted_index();
+        std::optional<scoped_file_tracker> to_clean;
         bool segment_closed = false;
         while (true) {
             if (seg->is_closed()) {
@@ -131,6 +133,14 @@ ss::future<model::offset> build_offset_map(
             // Rebuilding the compaction index will take the read lock again,
             // so release here.
             read_lock.return_all();
+
+            // Until we check the segment isn't closed under lock, we may need
+            // to delete the new index: its segment may already be removed!
+            if (!to_clean.has_value()) {
+                to_clean.emplace(
+                  scoped_file_tracker{cfg.files_to_cleanup, {idx_path}});
+            }
+
             co_await internal::rebuild_compaction_index(
               *iter, stm_manager, cfg, probe, resources);
 
@@ -140,6 +150,9 @@ ss::future<model::offset> build_offset_map(
         }
         if (segment_closed) {
             break;
+        }
+        if (to_clean.has_value()) {
+            to_clean->clear();
         }
         auto seg_fully_indexed = co_await build_offset_map_for_segment(
           cfg, *seg, m);

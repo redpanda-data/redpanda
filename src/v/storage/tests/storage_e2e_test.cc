@@ -37,6 +37,7 @@
 #include "vassert.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
@@ -2686,11 +2687,8 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
                 return ss::make_ready_future<>();
             })
           .get();
-        // TODO: re-enable. See:
-        // https://github.com/redpanda-data/redpanda/issues/8153
-        // throw;
     }
-    // BOOST_REQUIRE_EQUAL(false, ss::file_exists(dir_path).get());
+    BOOST_REQUIRE_EQUAL(false, ss::file_exists(dir_path).get());
 };
 
 FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
