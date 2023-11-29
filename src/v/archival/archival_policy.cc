@@ -87,6 +87,60 @@ std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
     return s;
 }
 
+std::ostream& operator<<(std::ostream& os, candidate_creation_error err) {
+    os << "compacted candidate creation error: ";
+    switch (err) {
+    case candidate_creation_error::no_segments_collected:
+        return os << "no segments collected";
+    case candidate_creation_error::begin_offset_seek_error:
+        return os << "failed to seek begin offset";
+    case candidate_creation_error::end_offset_seek_error:
+        return os << "failed to seek end offset";
+    case candidate_creation_error::offset_inside_batch:
+        return os << "offset inside batch";
+    case candidate_creation_error::upload_size_unchanged:
+        return os << "size of candidate unchanged";
+    case candidate_creation_error::cannot_replace_manifest_entry:
+        return os << "candidate cannot replace manifest entry";
+    case candidate_creation_error::no_segment_for_begin_offset:
+        return os << "no segment for begin offset";
+    case candidate_creation_error::missing_ntp_config:
+        return os << "missing config for NTP";
+    case candidate_creation_error::failed_to_get_file_range:
+        return os << "failed to get file range for candidate";
+    case candidate_creation_error::zero_content_length:
+        return os << "candidate has no content";
+    }
+}
+
+ss::log_level log_level_for_error(const candidate_creation_error& error) {
+    switch (error) {
+    case candidate_creation_error::no_segments_collected:
+    case candidate_creation_error::begin_offset_seek_error:
+    case candidate_creation_error::end_offset_seek_error:
+    case candidate_creation_error::upload_size_unchanged:
+    case candidate_creation_error::cannot_replace_manifest_entry:
+    case candidate_creation_error::no_segment_for_begin_offset:
+    case candidate_creation_error::failed_to_get_file_range:
+    case candidate_creation_error::zero_content_length:
+        return ss::log_level::debug;
+    case candidate_creation_error::offset_inside_batch:
+    case candidate_creation_error::missing_ntp_config:
+        return ss::log_level::warn;
+    }
+}
+
+std::ostream&
+operator<<(std::ostream& os, const skip_offset_range& skip_range) {
+    fmt::print(
+      os,
+      "skip_offset_range{{begin: {}, end: {}, error: {}}}",
+      skip_range.begin_offset,
+      skip_range.end_offset,
+      skip_range.reason);
+    return os;
+}
+
 archival_policy::archival_policy(
   model::ntp ntp,
   std::optional<segment_time_limit> limit,
@@ -317,7 +371,7 @@ static ss::future<std::optional<std::error_code>> get_file_range(
 ///       a name '1000-1-v1.log'. If we were only able to find offset
 ///       990 instead of 1000, we will upload starting from it and
 ///       the name will be '990-1-v1.log'.
-static ss::future<upload_candidate_with_locks> create_upload_candidate(
+static ss::future<candidate_creation_result> create_upload_candidate(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
@@ -353,7 +407,7 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
           archival_log.error,
           "Upload candidate not created, failed to get file range: {}",
           file_range_result.value().message());
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return candidate_creation_error::failed_to_get_file_range;
     }
     if (result->starting_offset != segment->offsets().base_offset) {
         // We need to generate new name for the segment
@@ -376,7 +430,7 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
     co_return upload_candidate_with_locks{*result, std::move(locks)};
 }
 
-ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
+ss::future<candidate_creation_result> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
   ss::shared_ptr<storage::log> log,
@@ -387,8 +441,12 @@ ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
     auto adjusted_lso = end_exclusive - model::offset(1);
     auto [segment, ntp_conf, forced] = find_segment(
       begin_inclusive, adjusted_lso, std::move(log), ot_state);
-    if (segment.get() == nullptr || ntp_conf == nullptr) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    if (segment.get() == nullptr) {
+        co_return candidate_creation_error::no_segment_for_begin_offset;
+    }
+
+    if (ntp_conf == nullptr) {
+        co_return candidate_creation_error::missing_ntp_config;
     }
     // We need to adjust LSO since it points to the first
     // recordbatch with uncommitted transactions data
@@ -408,13 +466,15 @@ ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
       ntp_conf,
       _io_priority,
       segment_lock_duration);
-    if (upload.candidate.content_length == 0) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    if (const auto* u = std::get_if<upload_candidate_with_locks>(&upload); u) {
+        if (u->candidate.content_length == 0) {
+            co_return candidate_creation_error::zero_content_length;
+        }
     }
     co_return upload;
 }
 
-ss::future<upload_candidate_with_locks>
+ss::future<candidate_creation_result>
 archival_policy::get_next_compacted_segment(
   model::offset begin_inclusive,
   ss::shared_ptr<storage::log> log,
@@ -425,7 +485,7 @@ archival_policy::get_next_compacted_segment(
           archival_log.warn,
           "Upload policy find next compacted segment: no segments ntp: {}",
           _ntp);
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return candidate_creation_error::no_segments_collected;
     }
     segment_collector compacted_segment_collector{
       begin_inclusive,
@@ -436,7 +496,7 @@ archival_policy::get_next_compacted_segment(
 
     compacted_segment_collector.collect_segments();
     if (!compacted_segment_collector.should_replace_manifest_segment()) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return candidate_creation_error::cannot_replace_manifest_entry;
     }
 
     co_return co_await compacted_segment_collector.make_upload_candidate(

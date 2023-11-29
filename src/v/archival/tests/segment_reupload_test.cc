@@ -768,11 +768,11 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
     collector.collect_segments();
     BOOST_REQUIRE(collector.should_replace_manifest_segment());
 
-    auto upload_with_locks = collector
-                               .make_upload_candidate(
-                                 ss::default_priority_class(),
-                                 segment_lock_timeout)
-                               .get();
+    auto upload_with_locks = require_upload_candidate(
+      collector
+        .make_upload_candidate(
+          ss::default_priority_class(), segment_lock_timeout)
+        .get());
 
     auto upload_candidate = upload_with_locks.candidate;
     BOOST_REQUIRE(!upload_candidate.sources.empty());
@@ -850,11 +850,11 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
     collector.collect_segments();
     BOOST_REQUIRE(collector.should_replace_manifest_segment());
 
-    auto upload_with_locks = collector
-                               .make_upload_candidate(
-                                 ss::default_priority_class(),
-                                 segment_lock_timeout)
-                               .get();
+    auto upload_with_locks = require_upload_candidate(
+      collector
+        .make_upload_candidate(
+          ss::default_priority_class(), segment_lock_timeout)
+        .get());
 
     auto upload_candidate = upload_with_locks.candidate;
     BOOST_REQUIRE(!upload_candidate.sources.empty());
@@ -927,12 +927,11 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
         BOOST_REQUIRE_EQUAL(collector.collected_size(), first_seg_size);
         BOOST_REQUIRE(collector.should_replace_manifest_segment());
 
-        auto noop_candidate
-          = collector.make_upload_candidate(ss::default_priority_class(), 1s)
-              .get();
-        BOOST_REQUIRE(noop_candidate.candidate.sources.empty());
-        BOOST_REQUIRE_EQUAL(
-          noop_candidate.candidate.final_offset, model::offset{1});
+        require_skip_offset(
+          collector.make_upload_candidate(ss::default_priority_class(), 1s)
+            .get(),
+          candidate_creation_error::upload_size_unchanged,
+          model::offset{1});
     }
 
     // Add another segment to the log and change the manifest to contain
@@ -971,12 +970,11 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
           collector.collected_size(), first_seg_size + second_seg_size);
         BOOST_REQUIRE(collector.should_replace_manifest_segment());
 
-        auto noop_candidate
-          = collector.make_upload_candidate(ss::default_priority_class(), 1s)
-              .get();
-        BOOST_REQUIRE(noop_candidate.candidate.sources.empty());
-        BOOST_REQUIRE_EQUAL(
-          noop_candidate.candidate.final_offset, model::offset{3});
+        require_skip_offset(
+          collector.make_upload_candidate(ss::default_priority_class(), 1s)
+            .get(),
+          candidate_creation_error::upload_size_unchanged,
+          model::offset{3});
     }
 }
 
@@ -1222,8 +1220,9 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
     */
 
     b | storage::add_segment(0) | storage::add_random_batch(0, 2)
-      | storage::add_segment(2) | storage::add_random_batch(2, 113)
-      | storage::add_segment(115) | storage::add_random_batch(115, 96);
+      | storage::add_segment(2) | storage::add_random_batch(2, 102)
+      | storage::add_random_batch(104, 11) | storage::add_segment(115)
+      | storage::add_random_batch(115, 96);
 
     cloud_storage::partition_manifest m;
     m.update(
@@ -1239,9 +1238,8 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
       model::offset{115}};
 
     collector.collect_segments(segment_collector_mode::collect_non_compacted);
-    auto candidate = collector
-                       .make_upload_candidate(ss::default_priority_class(), 10s)
-                       .get();
+    auto candidate = require_upload_candidate(
+      collector.make_upload_candidate(ss::default_priority_class(), 10s).get());
     BOOST_REQUIRE_EQUAL(
       candidate.candidate.starting_offset, model::offset{104});
     BOOST_REQUIRE_EQUAL(candidate.candidate.final_offset, model::offset{115});

@@ -416,8 +416,7 @@ void segment_collector::align_begin_offset_to_manifest() {
     }
 }
 
-ss::future<upload_candidate_with_locks>
-segment_collector::make_upload_candidate(
+ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
   ss::io_priority_class io_priority_class,
   ss::lowres_clock::duration segment_lock_duration) {
     if (_segments.empty()) {
@@ -425,7 +424,8 @@ segment_collector::make_upload_candidate(
           archival_log.debug,
           "No segments to reupload for {}",
           _manifest.get_ntp());
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return candidate_creation_error::no_segments_collected;
+        ;
     } else {
         if (archival_log.is_enabled(ss::log_level::debug)) {
             std::stringstream seg;
@@ -465,14 +465,14 @@ segment_collector::make_upload_candidate(
       io_priority_class);
 
     if (head_seek_result.has_error()) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return candidate_creation_error::begin_offset_seek_error;
     }
 
     auto tail_seek_result = co_await storage::convert_end_offset_to_file_pos(
       _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
 
     if (tail_seek_result.has_error()) {
-        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+        co_return candidate_creation_error::end_offset_seek_error;
     }
 
     auto head_seek = head_seek_result.value();
@@ -491,20 +491,10 @@ segment_collector::make_upload_candidate(
           _end_inclusive,
           tail_seek.offset_inside_batch,
           tail_seek.offset);
-        co_return upload_candidate_with_locks{
-          upload_candidate{
-            .exposed_name = {},
-            .starting_offset = _begin_inclusive,
-            .file_offset = 0,
-            .content_length = 0,
-            .final_offset = _end_inclusive,
-            .final_file_offset = 0,
-            .base_timestamp = {},
-            .max_timestamp = {},
-            .term = {},
-            .sources = {},
-          },
-          {}};
+        co_return skip_offset_range{
+          .begin_offset = _begin_inclusive,
+          .end_offset = _end_inclusive,
+          .reason = candidate_creation_error::offset_inside_batch};
     }
 
     vlog(
@@ -556,20 +546,10 @@ segment_collector::make_upload_candidate(
               "not decreased as a result of self-compaction: {}",
               _segments.front());
 
-            co_return upload_candidate_with_locks{
-              upload_candidate{
-                .exposed_name = {},
-                .starting_offset = _begin_inclusive,
-                .file_offset = 0,
-                .content_length = 0,
-                .final_offset = _end_inclusive,
-                .final_file_offset = 0,
-                .base_timestamp = {},
-                .max_timestamp = {},
-                .term = {},
-                .sources = {},
-              },
-              {}};
+            co_return skip_offset_range{
+              .begin_offset = _begin_inclusive,
+              .end_offset = _end_inclusive,
+              .reason = candidate_creation_error::upload_size_unchanged};
         }
     }
 

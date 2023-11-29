@@ -418,6 +418,9 @@ private:
         model::term_id archiver_term;
     };
 
+    ss::future<scheduled_upload> do_schedule_single_upload(
+      upload_candidate_with_locks, model::term_id, segment_upload_kind);
+
     /// Start upload without waiting for it to complete
     ss::future<scheduled_upload>
     schedule_single_upload(const upload_context& upload_ctx);

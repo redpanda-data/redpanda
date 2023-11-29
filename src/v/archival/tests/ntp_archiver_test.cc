@@ -32,6 +32,7 @@
 #include "storage/parser.h"
 #include "storage/storage_resources.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "test_utils/archival.h"
 #include "test_utils/fixture.h"
 #include "utils/retry_chain_node.h"
 
@@ -827,10 +828,11 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     // Starting offset is lower than offset1
     auto upload1
-      = policy
-          .get_next_candidate(
-            model::offset(0), lso, log, tr, segment_read_lock_timeout)
-          .get()
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              model::offset(0), lso, log, tr, segment_read_lock_timeout)
+            .get())
           .candidate;
     log_upload_candidate(upload1);
     BOOST_REQUIRE(!upload1.sources.empty());
@@ -840,10 +842,11 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     start_offset = upload1.sources.front()->offsets().dirty_offset
                    + model::offset(1);
-    auto upload2 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
+    auto upload2 = require_upload_candidate(
+                     policy
+                       .get_next_candidate(
+                         start_offset, lso, log, tr, segment_read_lock_timeout)
+                       .get())
                      .candidate;
     log_upload_candidate(upload2);
     BOOST_REQUIRE(!upload2.sources.empty());
@@ -854,10 +857,11 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     start_offset = upload2.sources.front()->offsets().dirty_offset
                    + model::offset(1);
-    auto upload3 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
+    auto upload3 = require_upload_candidate(
+                     policy
+                       .get_next_candidate(
+                         start_offset, lso, log, tr, segment_read_lock_timeout)
+                       .get())
                      .candidate;
     log_upload_candidate(upload3);
     BOOST_REQUIRE(!upload3.sources.empty());
@@ -868,20 +872,18 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     start_offset = upload3.sources.front()->offsets().dirty_offset
                    + model::offset(1);
-    auto upload4 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
-                     .candidate;
-    BOOST_REQUIRE(upload4.sources.empty());
-
-    start_offset = lso + model::offset(1);
-    auto upload5 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
-                     .candidate;
-    BOOST_REQUIRE(upload5.sources.empty());
+    require_candidate_creation_error(
+      policy
+        .get_next_candidate(
+          start_offset, lso, log, tr, segment_read_lock_timeout)
+        .get(),
+      candidate_creation_error::no_segment_for_begin_offset);
+    require_candidate_creation_error(
+      policy
+        .get_next_candidate(
+          lso + model::offset(1), lso, log, tr, segment_read_lock_timeout)
+        .get(),
+      candidate_creation_error::no_segment_for_begin_offset);
 }
 
 FIXTURE_TEST(
@@ -921,14 +923,15 @@ FIXTURE_TEST(
     auto partition = app.partition_manager.local().get(manifest_ntp);
     BOOST_REQUIRE(partition);
 
-    auto candidate = archival::archival_policy{manifest_ntp}
-                       .get_next_candidate(
-                         model::offset(0),
-                         lso,
-                         log,
-                         *partition->get_offset_translator_state(),
-                         segment_read_lock_timeout)
-                       .get()
+    auto candidate = require_upload_candidate(
+                       archival::archival_policy{manifest_ntp}
+                         .get_next_candidate(
+                           model::offset(0),
+                           lso,
+                           log,
+                           *partition->get_offset_translator_state(),
+                           segment_read_lock_timeout)
+                         .get())
                        .candidate;
 
     // The search is expected to find the next segment after the compacted
@@ -963,18 +966,16 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     auto get_next_upload = [&]() {
         auto last_stable_offset = log->offsets().dirty_offset
                                   + model::offset{1};
-        auto ret = policy
-                     .get_next_candidate(
-                       start_offset,
-                       last_stable_offset,
-                       log,
-                       tr_state,
-                       segment_read_lock_timeout)
-                     .get()
+        auto ret = require_upload_candidate(policy
+                                              .get_next_candidate(
+                                                start_offset,
+                                                last_stable_offset,
+                                                log,
+                                                tr_state,
+                                                segment_read_lock_timeout)
+                                              .get())
                      .candidate;
-        if (!ret.sources.empty()) {
-            start_offset = ret.final_offset + model::offset{1};
-        }
+        start_offset = ret.final_offset + model::offset{1};
         return ret;
     };
 
@@ -1029,8 +1030,16 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
 
     // should skip uploading because there are no data batches to upload
     {
-        auto upload = get_next_upload();
-        BOOST_REQUIRE(upload.sources.empty());
+        require_candidate_creation_error(
+          policy
+            .get_next_candidate(
+              start_offset,
+              log->offsets().dirty_offset + model::offset{1},
+              log,
+              tr_state,
+              segment_read_lock_timeout)
+            .get(),
+          candidate_creation_error::no_segment_for_begin_offset);
     }
 
     // data[17-17]
@@ -1059,8 +1068,16 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
 
     // should skip uploading because there are no data batches to upload
     {
-        auto upload6 = get_next_upload();
-        BOOST_REQUIRE(upload6.sources.empty());
+        require_candidate_creation_error(
+          policy
+            .get_next_candidate(
+              start_offset,
+              log->offsets().dirty_offset + model::offset{1},
+              log,
+              tr_state,
+              segment_read_lock_timeout)
+            .get(),
+          candidate_creation_error::no_segment_for_begin_offset);
     }
 
     b.stop().get();
@@ -1546,10 +1563,11 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     model::offset start_offset{0};
     model::offset lso{9999};
     // Starting offset is lower than offset1
-    auto upload1 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
+    auto upload1 = require_upload_candidate(
+                     policy
+                       .get_next_candidate(
+                         start_offset, lso, log, tr, segment_read_lock_timeout)
+                       .get())
                      .candidate;
     log_upload_candidate(upload1);
     BOOST_REQUIRE(!upload1.sources.empty());
@@ -1557,10 +1575,11 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
 
     start_offset = upload1.sources.front()->offsets().dirty_offset
                    + model::offset(1);
-    auto upload2 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
+    auto upload2 = require_upload_candidate(
+                     policy
+                       .get_next_candidate(
+                         start_offset, lso, log, tr, segment_read_lock_timeout)
+                       .get())
                      .candidate;
     log_upload_candidate(upload2);
     BOOST_REQUIRE(!upload2.sources.empty());
@@ -1571,10 +1590,11 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
 
     start_offset = upload2.sources.front()->offsets().dirty_offset
                    + model::offset(1);
-    auto upload3 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
+    auto upload3 = require_upload_candidate(
+                     policy
+                       .get_next_candidate(
+                         start_offset, lso, log, tr, segment_read_lock_timeout)
+                       .get())
                      .candidate;
     log_upload_candidate(upload3);
     BOOST_REQUIRE(!upload3.sources.empty());
@@ -1585,12 +1605,12 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
 
     start_offset = upload3.sources.front()->offsets().dirty_offset
                    + model::offset(1);
-    auto upload4 = policy
-                     .get_next_candidate(
-                       start_offset, lso, log, tr, segment_read_lock_timeout)
-                     .get()
-                     .candidate;
-    BOOST_REQUIRE(upload4.sources.empty());
+    require_candidate_creation_error(
+      policy
+        .get_next_candidate(
+          start_offset, lso, log, tr, segment_read_lock_timeout)
+        .get(),
+      candidate_creation_error::no_segment_for_begin_offset);
 }
 
 SEASTAR_THREAD_TEST_CASE(small_segment_run_test) {

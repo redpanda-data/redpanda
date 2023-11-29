@@ -80,7 +80,7 @@ public:
 
     /// Creates upload candidate by computing file offsets and timestamps from
     /// the collected segments.
-    ss::future<upload_candidate_with_locks> make_upload_candidate(
+    ss::future<candidate_creation_result> make_upload_candidate(
       ss::io_priority_class io_priority_class,
       ss::lowres_clock::duration segment_lock_duration);
 
