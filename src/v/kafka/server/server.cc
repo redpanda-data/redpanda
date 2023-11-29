@@ -1050,6 +1050,10 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                       case cluster::tx_errc::timeout:
                           partition.error_code = error_code::request_timed_out;
                           break;
+                      case cluster::tx_errc::partition_disabled:
+                          partition.error_code
+                            = error_code::replica_not_available;
+                          break;
                       default:
                           partition.error_code
                             = error_code::unknown_server_error;

@@ -181,6 +181,10 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
     std::vector<ss::future<list_offset_partition_response>> partitions;
     partitions.reserve(topic.partitions.size());
 
+    const auto* disabled_set
+      = octx.rctx.metadata_cache().get_topic_disabled_set(
+        model::topic_namespace_view{model::kafka_namespace, topic.name});
+
     for (auto& part : topic.partitions) {
         if (octx.request.duplicate_tp(topic.name, part.partition_index)) {
             partitions.push_back(
@@ -198,6 +202,14 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
                 list_offsets_response::make_partition(
                   part.partition_index,
                   error_code::unknown_topic_or_partition)));
+            continue;
+        }
+
+        if (disabled_set && disabled_set->is_disabled(part.partition_index)) {
+            partitions.push_back(
+              ss::make_ready_future<list_offset_partition_response>(
+                list_offsets_response::make_partition(
+                  part.partition_index, error_code::replica_not_available)));
             continue;
         }
 

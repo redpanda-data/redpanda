@@ -1570,6 +1570,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
         model::topic topic(req_topic.name);
 
+        const auto* disabled_set
+          = _metadata_cache.local().get_topic_disabled_set(
+            model::topic_namespace_view{model::kafka_namespace, topic});
+
         res_topic.results.reserve(req_topic.partitions.size());
         for (model::partition_id req_partition : req_topic.partitions) {
             model::ntp ntp(model::kafka_namespace, topic, req_partition);
@@ -1581,6 +1585,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
                 add_paritions_tx_reply::partition_result res_partition;
                 res_partition.partition_index = req_partition;
                 res_partition.error_code = tx_errc::none;
+                res_topic.results.push_back(res_partition);
+            } else if (
+              disabled_set && disabled_set->is_disabled(req_partition)) {
+                add_paritions_tx_reply::partition_result res_partition;
+                res_partition.partition_index = req_partition;
+                res_partition.error_code = tx_errc::partition_disabled;
                 res_topic.results.push_back(res_partition);
             } else {
                 new_partitions.push_back(ntp);

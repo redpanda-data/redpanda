@@ -457,6 +457,14 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                 loggable_string(cmd.value.input_topic.tp()));
               return errc::transform_invalid_create;
           }
+          if (_topics->is_fully_disabled(cmd.value.input_topic)) {
+              vlog(
+                clusterlog.info,
+                "attempted to deploy transform {} to a disabled topic {}",
+                cmd.value.name,
+                loggable_string(cmd.value.input_topic.tp()));
+              return errc::transform_invalid_create;
+          }
           if (cmd.value.output_topics.empty()) {
               vlog(
                 clusterlog.info,
@@ -532,6 +540,15 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                     "{}",
                     cmd.value.name,
                     out_name.tp);
+                  return errc::transform_invalid_create;
+              }
+              if (_topics->is_fully_disabled(out_name)) {
+                  vlog(
+                    clusterlog.info,
+                    "attempted to deploy transform {} to write to a disabled "
+                    "topic {}",
+                    cmd.value.name,
+                    loggable_string(out_name.tp()));
                   return errc::transform_invalid_create;
               }
               if (would_cause_cycle(cmd.value.input_topic, out_name)) {

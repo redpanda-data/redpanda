@@ -362,4 +362,14 @@ bool metadata_cache::is_update_in_progress(const model::ntp& ntp) const {
     return _topics_state.local().is_update_in_progress(ntp);
 }
 
+bool metadata_cache::is_disabled(
+  model::topic_namespace_view ns_tp, model::partition_id p_id) const {
+    return _topics_state.local().is_disabled(ns_tp, p_id);
+}
+
+const topic_disabled_partitions_set* metadata_cache::get_topic_disabled_set(
+  model::topic_namespace_view ns_tp) const {
+    return _topics_state.local().get_topic_disabled_set(ns_tp);
+}
+
 } // namespace cluster

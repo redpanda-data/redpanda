@@ -133,6 +133,10 @@ get_offsets_for_leader_epochs(
           offset_for_leader_topic_result{.topic = request_topic.topic});
         result.back().partitions.reserve(request_topic.partitions.size());
 
+        const auto* disabled_set = ctx.metadata_cache().get_topic_disabled_set(
+          model::topic_namespace_view{
+            model::kafka_namespace, request_topic.topic});
+
         for (auto& request_partition : request_topic.partitions) {
             // add response placeholder
             result.back().partitions.push_back(epoch_end_offset{});
@@ -148,6 +152,15 @@ get_offsets_for_leader_epochs(
                 partition_response = response_t::make_epoch_end_offset(
                   request_partition.partition,
                   error_code::unknown_topic_or_partition);
+                continue;
+            }
+
+            if (
+              disabled_set
+              && disabled_set->is_disabled(request_partition.partition)) {
+                partition_response = response_t::make_epoch_end_offset(
+                  request_partition.partition,
+                  error_code::replica_not_available);
                 continue;
             }
 

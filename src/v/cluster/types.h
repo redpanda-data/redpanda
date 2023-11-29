@@ -200,7 +200,8 @@ enum class tx_errc {
     invalid_txn_state,
     invalid_producer_epoch,
     tx_not_found,
-    tx_id_not_found
+    tx_id_not_found,
+    partition_disabled,
 };
 
 std::ostream& operator<<(std::ostream&, const tx_errc&);
@@ -2425,6 +2426,7 @@ enum class topic_table_delta_type {
     removed,
     replicas_updated,
     properties_updated,
+    disabled_flag_updated,
 };
 std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
 

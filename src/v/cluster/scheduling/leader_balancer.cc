@@ -636,6 +636,7 @@ leader_balancer::index_type leader_balancer::build_index() {
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
+        const auto* disabled_set = _topics.get_topic_disabled_set(topic.first);
         for (const auto& partition : topic.second.get_assignments()) {
             if (partition.replicas.empty()) {
                 vlog(
@@ -653,6 +654,12 @@ leader_balancer::index_type leader_balancer::build_index() {
             if (
               topic.first.ns == model::controller_ntp.ns
               && topic.first.tp == model::controller_ntp.tp.topic) {
+                continue;
+            }
+
+            if (disabled_set && disabled_set->is_disabled(partition.id)) {
+                // skip balancing disabled partitions, as they shouldn't have
+                // leaders anyway
                 continue;
             }
 

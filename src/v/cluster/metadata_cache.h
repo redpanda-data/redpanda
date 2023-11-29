@@ -200,6 +200,10 @@ public:
     const topic_table::updates_t& updates_in_progress() const;
     bool is_update_in_progress(const model::ntp& ntp) const;
 
+    bool is_disabled(model::topic_namespace_view, model::partition_id) const;
+    const topic_disabled_partitions_set*
+      get_topic_disabled_set(model::topic_namespace_view) const;
+
 private:
     ss::sharded<topic_table>& _topics_state;
     ss::sharded<members_table>& _members_table;

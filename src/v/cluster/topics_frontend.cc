@@ -269,6 +269,10 @@ ss::future<std::error_code> topics_frontend::do_update_replication_factor(
             co_return cluster::errc::feature_disabled;
         }
 
+        if (_topics.local().is_fully_disabled(update.tp_ns)) {
+            co_return errc::topic_disabled;
+        }
+
         auto value = update.custom_properties.replication_factor.value;
         if (
           !value.has_value()
@@ -802,6 +806,9 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
         co_return result.error();
     }
 
+    if (_topics.local().is_disabled(ntp)) {
+        co_return errc::partition_disabled;
+    }
     if (_topics.local().is_update_in_progress(ntp)) {
         co_return errc::update_in_progress;
     }
@@ -845,6 +852,9 @@ ss::future<std::error_code> topics_frontend::force_update_partition_replicas(
     if (!result) {
         co_return result.error();
     }
+    if (_topics.local().is_disabled(ntp)) {
+        co_return errc::partition_disabled;
+    }
     force_partition_reconfiguration_cmd cmd{
       std::move(ntp),
       force_partition_reconfiguration_cmd_data{std::move(new_replica_set)}};
@@ -860,6 +870,9 @@ ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
     auto result = co_await stm_linearizable_barrier(timeout);
     if (!result) {
         co_return result.error();
+    }
+    if (_topics.local().is_disabled(ntp)) {
+        co_return errc::partition_disabled;
     }
     if (!_topics.local().is_update_in_progress(ntp)) {
         co_return errc::no_update_in_progress;
@@ -882,6 +895,9 @@ ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
         co_return result.error();
     }
 
+    if (_topics.local().is_disabled(ntp)) {
+        co_return errc::partition_disabled;
+    }
     if (!_topics.local().is_update_in_progress(ntp)) {
         co_return errc::no_update_in_progress;
     }
@@ -1021,6 +1037,10 @@ ss::future<std::error_code> topics_frontend::set_topic_partitions_disabled(
         co_return errc::feature_disabled;
     }
 
+    if (!model::is_user_topic(ns_tp)) {
+        co_return errc::invalid_partition_operation;
+    }
+
     auto r = co_await stm_linearizable_barrier(timeout);
     if (!r) {
         co_return r.error();
@@ -1098,6 +1118,9 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
         co_return make_error_result(
           p_cfg.tp_ns, errc::topic_invalid_partitions);
+    }
+    if (_topics.local().is_fully_disabled(p_cfg.tp_ns)) {
+        co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
     }
 
     auto units = co_await _allocator.invoke_on(
@@ -1247,6 +1270,10 @@ ss::future<std::error_code> topics_frontend::change_replication_factor(
         co_return errc::success;
     }
 
+    if (_topics.local().is_fully_disabled(topic)) {
+        co_return errc::topic_disabled;
+    }
+
     if (new_replication_factor < current_replication_factor) {
         co_return co_await decrease_replication_factor(
           topic, new_replication_factor, timeout);
@@ -1360,6 +1387,10 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
         co_return errc::topic_not_exists;
     }
 
+    if (_topics.local().is_fully_disabled(topic)) {
+        co_return errc::topic_disabled;
+    }
+
     auto partition_count = tp_metadata->get_configuration().partition_count;
 
     // units shold exist during replicate_and_wait call
@@ -1465,6 +1496,10 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
         co_return errc::topic_not_exists;
     }
 
+    if (_topics.local().is_fully_disabled(topic)) {
+        co_return errc::topic_disabled;
+    }
+
     std::optional<std::error_code> error;
 
     auto metadata_ref = tp_metadata.value().get();
@@ -1522,6 +1557,10 @@ topics_frontend::generate_reassignments(
       model::topic_namespace{ntp.ns, ntp.tp.topic});
     if (!tp_metadata.has_value()) {
         co_return errc::topic_not_exists;
+    }
+
+    if (_topics.local().is_disabled(ntp)) {
+        co_return errc::partition_disabled;
     }
 
     auto tp_replication_factor

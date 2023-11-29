@@ -114,7 +114,7 @@ struct config_t
 
 struct topics_t
   : public serde::
-      envelope<topics_t, serde::version<1>, serde::compat_version<0>> {
+      envelope<topics_t, serde::version<0>, serde::compat_version<0>> {
     // NOTE: layout here is a bit different than in the topic table because it
     // allows more compact storage and more convenient generation of controller
     // backend deltas when applying the snapshot.
@@ -164,10 +164,11 @@ struct topics_t
 
     struct topic_t
       : public serde::
-          envelope<topic_t, serde::version<0>, serde::compat_version<0>> {
+          envelope<topic_t, serde::version<1>, serde::compat_version<0>> {
         topic_metadata_fields metadata;
         absl::node_hash_map<model::partition_id, partition_t> partitions;
         absl::node_hash_map<model::partition_id, update_t> updates;
+        std::optional<topic_disabled_partitions_set> disabled_set;
 
         friend bool operator==(const topic_t&, const topic_t&) = default;
 
@@ -184,13 +185,6 @@ struct topics_t
       nt_revision_hash,
       nt_revision_eq>
       lifecycle_markers;
-
-    absl::node_hash_map<
-      model::topic_namespace,
-      topic_disabled_partitions_set,
-      model::topic_namespace_hash,
-      model::topic_namespace_eq>
-      disabled_partitions;
 
     friend bool operator==(const topics_t&, const topics_t&) = default;
 

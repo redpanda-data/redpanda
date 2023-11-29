@@ -768,6 +768,15 @@ class simple_fetch_planner final : public fetch_planner::impl {
 
             auto& tp = fp.topic_partition;
 
+            if (unlikely(octx.rctx.metadata_cache().is_disabled(
+                  tp.as_tn_view(), tp.get_partition()))) {
+                resp_it->set(make_partition_response_error(
+                  fp.topic_partition.get_partition(),
+                  error_code::replica_not_available));
+                ++resp_it;
+                return;
+            }
+
             auto shard = octx.rctx.shards().shard_for(tp);
             if (unlikely(!shard)) {
                 // there is given partition in topic metadata, return
