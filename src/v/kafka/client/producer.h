@@ -56,6 +56,9 @@ private:
     ss::future<produce_response::partition>
     do_send(model::topic_partition tp, model::record_batch batch);
 
+    ss::future<model::topic_partition>
+    move_batch(model::topic_partition tp, model::record_batch batch);
+
     auto make_consumer(model::topic_partition tp) {
         return [this, tp](model::record_batch&& batch) {
             (void)send(tp, std::move(batch));

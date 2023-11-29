@@ -17,6 +17,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
+#include "random/fast_prng.h"
 
 #include <seastar/core/gate.hh>
 
@@ -117,6 +118,35 @@ producer::produce(model::topic_partition tp, model::record_batch&& batch) {
             std::make_exception_ptr(ss::abort_requested_exception())));
     }
     return get_context(std::move(tp))->produce(std::move(batch));
+}
+
+ss::future<model::topic_partition>
+producer::move_batch(model::topic_partition tp, model::record_batch batch) {
+    const auto random_id_except =
+      [](size_t number_of_partitions, model::partition_id except) {
+          int n = fast_prng_source() % number_of_partitions;
+          return model::partition_id(
+            n != except() ? n : (number_of_partitions - 1));
+      };
+    /// Fail if there is only 1 or no partitions
+    const auto num_partitions = co_await _topic_cache.number_of_partitions_for(
+      tp.topic);
+    if (num_partitions <= 1) {
+        throw partition_error(tp, error_code::operation_not_attempted);
+    }
+
+    /// Otherwise, grab another random partition id...
+    const auto new_p_id = random_id_except(num_partitions, tp.partition);
+    const auto new_tp = model::topic_partition(tp.topic, new_p_id);
+    auto& old_context = *(get_context(tp).get());
+
+    /// And take the batch and corresponding state from the old produce_batcher
+    /// and move it into the newly responsible partitions batcher
+    vlog(klog.info, "Moving in-flight batch from {} to {}", tp, new_tp);
+    get_context(new_tp)->take_batch(std::move(batch), old_context);
+
+    /// Return the new topic_partition selected
+    co_return new_tp;
 }
 
 ss::future<produce_response::partition>
