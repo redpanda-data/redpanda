@@ -39,7 +39,7 @@ public:
         friend class boost::iterator_core_access;
         friend class page_set;
         explicit const_iterator(map_type::const_iterator it);
-        reference dereference() const;
+        [[nodiscard]] reference dereference() const;
     };
 
     /**
