@@ -44,13 +44,18 @@
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/optimized_optional.hh>
 
+#include <absl/strings/escaping.h>
+
 #include <alloca.h>
 #include <cmath>
 #include <csignal>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <pthread.h>
 #include <span>
 #include <unistd.h>
+#include <utility>
 #include <wasm.h>
 #include <wasmtime.h>
 
@@ -81,6 +86,20 @@ constexpr uint64_t fuel_amount = 5'000'000'000;
 // more than 1 millisecond max at once.
 constexpr uint64_t fuel_yield_interval = 2'000'000;
 
+// The reserved memory for an instance of a WebAssembly VM.
+//
+// The wasmtime memory APIs don't allow us to pass information into an
+// allocation request, so we use a thread local variable as a side channel to
+// pass the allocated memory to wasmtime when we instantiate a module.
+//
+// We need this side channel because allocating memory is async, due to the case
+// when memory is large enough we deallocate asynchronously. This variable is
+// only set for a synchronous period where we pass the memory from where it was
+// allocated into where wasmtime grabs host provided memory.
+//
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static thread_local std::optional<heap_memory> prereserved_memory;
+
 template<typename T, auto fn>
 struct deleter {
     void operator()(T* ptr) { fn(ptr); }
@@ -101,7 +120,7 @@ public:
 
     wasm_engine_t* engine() const;
 
-    const heap_allocator* heap_allocator() const;
+    heap_allocator* heap_allocator();
 
     engine_probe_cache* engine_probe_cache();
 
@@ -127,7 +146,7 @@ private:
     // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 
     wasmtime_error_t* allocate_heap_memory(
-      size_t minimum, size_t maximum, wasmtime_linear_memory_t* memory_ret);
+      heap_allocator::request, wasmtime_linear_memory_t* memory_ret);
 
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
     std::unique_ptr<schema_registry> _sr;
@@ -316,6 +335,54 @@ private:
 };
 
 /**
+ * The declared limits of a WebAssembly's Linear Memory.
+ *
+ * The bounds here are inclusive.
+ */
+struct memory_limits {
+    uint32_t minimum = 0;
+    uint32_t maximum = std::numeric_limits<uint32_t>::max();
+};
+
+memory_limits lookup_memory_limits(const wasmtime_module_t* mod) {
+    wasm_exporttype_vec_t exports;
+    wasm_exporttype_vec_new_empty(&exports);
+    auto _ = ss::defer([&exports] { wasm_exporttype_vec_delete(&exports); });
+    wasmtime_module_exports(mod, &exports);
+    for (const wasm_exporttype_t* module_export :
+         std::span(exports.data, exports.size)) {
+        const wasm_externtype_t* extern_type = wasm_exporttype_type(
+          module_export);
+        if (wasm_externtype_kind(extern_type) != WASM_EXTERN_MEMORY) {
+            continue;
+        }
+        const wasm_name_t* raw_name = wasm_exporttype_name(module_export);
+        auto name = std::string_view(raw_name->data, raw_name->size);
+        if (name != "memory") {
+            throw wasm_exception(
+              ss::format(
+                "invalid memory export name: \"{}\"", absl::CHexEscape(name)),
+              errc::user_code_failure);
+        }
+        const wasm_memorytype_t* memory_type
+          = wasm_externtype_as_memorytype_const(extern_type);
+        if (wasmtime_memorytype_is64(memory_type)) {
+            throw wasm_exception(
+              ss::format("invalid 64bit memory"), errc::user_code_failure);
+        }
+        uint64_t minimum = wasmtime_memorytype_minimum(memory_type);
+        uint64_t maximum = std::numeric_limits<uint32_t>::max();
+        wasmtime_memorytype_maximum(memory_type, &maximum);
+        return {
+          .minimum = static_cast<uint32_t>(minimum),
+          .maximum = static_cast<uint32_t>(maximum),
+        };
+    }
+    throw wasm_exception(
+      "wasm module missing memory export", errc::user_code_failure);
+}
+
+/**
  * Preinitialized instances only need a store to be plugged in and start
  * running. All compilation including any trampolines for host functions have
  * already been compiled in and no other code generation/compilation needs to
@@ -331,14 +398,21 @@ public:
     preinitialized_instance(preinitialized_instance&&) = delete;
     preinitialized_instance& operator=(const preinitialized_instance&) = delete;
     preinitialized_instance& operator=(preinitialized_instance&&) = delete;
-    ~preinitialized_instance() { _cleanup_fn(); }
+    ~preinitialized_instance() {
+        if (_cleanup_fn) {
+            _cleanup_fn();
+        }
+    }
 
     wasmtime_instance_pre_t* get() noexcept { return _underlying.get(); }
+
+    memory_limits mem_limits() const { return _memory_limits; }
 
 private:
     friend class wasmtime_runtime;
     handle<wasmtime_instance_pre_t, wasmtime_instance_pre_delete> _underlying
       = nullptr;
+    memory_limits _memory_limits;
     ss::noncopyable_function<void() noexcept> _cleanup_fn;
 };
 
@@ -524,6 +598,28 @@ private:
 
         _wasi_module.set_walltime(model::timestamp::min());
 
+        auto requested = _preinitialized->mem_limits();
+
+        // Wait for memory to be available if the allocator is currently freeing
+        // memory.
+        auto memory = co_await _runtime->heap_allocator()->allocate({
+          .minimum = requested.minimum,
+          .maximum = std::min(requested.maximum, max_memory_size),
+        });
+
+        if (!memory) {
+            throw wasm_exception(
+              ss::format(
+                "unable to allocate memory within requested bounds: [{}, {}]",
+                requested.minimum,
+                requested.maximum),
+              errc::engine_creation_failure);
+        }
+
+        // Assign our allocated memory to thread local storage so we can bypass
+        // it into the allocator for the VM
+        prereserved_memory = std::move(memory);
+
         // The wasm spec has a feature that a module can specify a startup
         // function that is run on start.
         wasm_trap_t* trap_ptr = nullptr;
@@ -536,7 +632,19 @@ private:
             &trap_ptr,
             &error_ptr)};
 
-        co_await execute(std::move(fut));
+        // The first poll of the call future is what allocates memory/stack so
+        // we need to do that before we assert that it was used.
+        ss::future<> ready = execute(std::move(fut));
+
+        if (prereserved_memory) {
+            vlog(
+              wasm_log.error,
+              "did not use prereserved memory when instantiating wasm vm");
+            _runtime->heap_allocator()->deallocate(
+              std::exchange(prereserved_memory, std::nullopt).value(), 0);
+        }
+
+        co_await std::move(ready);
 
         // Now that the call future has returned as completed, we can assume the
         // out pointers have been set, we need to check them for errors.
@@ -1149,6 +1257,10 @@ wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema_registry> sr)
     // exceptions to grab a lock in libgcc and deadlock the Redpanda
     // process.
     wasmtime_config_native_unwind_info_set(config, false);
+    // Copy on write memory is only used when memory is `mmap`ed and cannot be
+    // used with custom allocators, so let's just disable the generation of the
+    // COW images since we don't use them.
+    wasmtime_config_memory_init_cow_set(config, false);
 
     wasmtime_memory_creator_t memory_creator = {
       .env = this,
@@ -1192,9 +1304,16 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
         throw std::runtime_error("must allow at least one wasm heap");
     }
 
+    // The maximum amount of memory we memset in a single task.
+    //
+    // In an effort to prevent reactor stalls, we memset only this size of
+    // chunk, otherwise we yield control.
+    constexpr static size_t memset_chunk_size = 10_MiB;
+
     co_await _heap_allocator.start(heap_allocator::config{
       .heap_memory_size = aligned_instance_limit,
       .num_heaps = num_heaps,
+      .memset_chunk_size = memset_chunk_size,
     });
     co_await _stack_allocator.start(stack_allocator::config{
       .tracking_enabled = c.stack_memory.debug_host_stack_usage,
@@ -1274,6 +1393,8 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
           error.reset(wasmtime_linker_instantiate_pre(
             linker.get(), user_module.get(), &preinitialized_ptr));
           preinitialized->_underlying.reset(preinitialized_ptr);
+          preinitialized->_memory_limits = lookup_memory_limits(
+            user_module.get());
           check_error(error.get());
 
           size_t start = 0, end = 0;
@@ -1293,7 +1414,7 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
 }
 
 wasm_engine_t* wasmtime_runtime::engine() const { return _engine.get(); }
-const heap_allocator* wasmtime_runtime::heap_allocator() const {
+heap_allocator* wasmtime_runtime::heap_allocator() {
     return &_heap_allocator.local();
 }
 engine_probe_cache* wasmtime_runtime::engine_probe_cache() {
@@ -1351,16 +1472,28 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
       guard_size_in_bytes == 0,
       "this value should be set to 0 according to the config");
     auto* runtime = static_cast<wasmtime_runtime*>(env);
-    return runtime->allocate_heap_memory(minimum, maximum, memory_ret);
+    return runtime->allocate_heap_memory({minimum, maximum}, memory_ret);
 }
 
 wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
-  size_t minimum, size_t maximum, wasmtime_linear_memory_t* memory_ret) {
-    auto memory = _heap_allocator.local().allocate(
-      {.minimum = minimum, .maximum = maximum});
+  heap_allocator::request req, wasmtime_linear_memory_t* memory_ret) {
+    auto memory = std::exchange(prereserved_memory, std::nullopt);
     if (!memory) {
+        vlog(
+          wasm_log.error,
+          "attempted to allocate heap memory without any memory in thread "
+          "local storage");
+        return wasmtime_error_new("preserved memory was missing");
+    }
+    if (memory->size < req.minimum || memory->size > req.maximum) {
         auto msg = ss::format(
-          "unable to allocate memory with bounds [{}, {}]", minimum, maximum);
+          "allocated memory (size={}) was not within requested bounds: [{}, "
+          "{}]",
+          memory->size,
+          req.minimum,
+          req.maximum);
+        // return the memory we used back to the allocator
+        _heap_allocator.local().deallocate(std::move(*memory), 0);
         return wasmtime_error_new(msg.c_str());
     }
     struct linear_memory {
@@ -1370,7 +1503,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
     };
     memory_ret->env = new linear_memory{
       .underlying = *std::move(memory),
-      .used_memory = minimum,
+      .used_memory = req.minimum,
       .allocator = &_heap_allocator.local(),
     };
     memory_ret->finalizer = [](void* env) {
