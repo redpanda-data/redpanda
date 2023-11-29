@@ -1,0 +1,59 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: trigger-redpanda-bk
+on:
+  push:
+    branches:
+      - dev
+      - 'v[0-9][0-9].[0-9].[0-9]+'
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+    paths:
+      - 'src/v/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'install-dependencies.sh'
+      - '.github/workflows/trigger-redpanda-bk.yml'
+
+jobs:
+  trigger-buildkite:
+    if: github.event.pull_request.draft == false
+    name: Trigger redpanda pipeline on buildkite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: redpanda-data/sparse-checkout
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          path: sparse-checkout
+
+      - uses: ./sparse-checkout
+        with:
+          repository: redpanda-data/vtools
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          patterns: actions
+          path: ghca
+
+      - uses: ./ghca/actions/buildkite-pipeline-trigger
+        with:
+          buildkite_org: redpanda
+          buildkite_pipeline: redpanda-dev
+          buildkite_token: ${{ secrets.BUILDKITE_TOKEN }}
+          message: ${{ github.event.client_payload.pull_request.title }}
+          commit: ${{ github.event.client_payload.pull_request.head.sha }}
+          branch: ${{ github.event.client_payload.pull_request.head.label }}
+          pull_request_base_branch: ${{ github.event.client_payload.pull_request.base.label }}
+          pull_request_id: ${{ github.event.client_payload.pull_request.number }}
+          pull_request_repository: ${{ github.event.client_payload.pull_request.repo.html_url }}
