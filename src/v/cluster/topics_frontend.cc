@@ -221,7 +221,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         // replicate empty batch to make sure leader local state is up to date.
         auto result = co_await stm_linearizable_barrier(timeout);
         if (!result) {
-            co_return make_error_topic_results(updates, map_errc(result.error()));
+            co_return make_error_topic_results(
+              updates, map_errc(result.error()));
         }
 
         auto results = co_await ssx::parallel_transform(
@@ -523,6 +524,50 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
                 topic_result(std::move(tp_ns), errc::replication_error));
           }
       });
+}
+
+ss::future<std::vector<topic_result>> topics_frontend::dispatch_delete_topics(
+  std::vector<model::topic_namespace> topics,
+  std::chrono::milliseconds timeout) {
+    auto controller_leader = _leaders.local().get_leader(model::controller_ntp);
+    if (controller_leader == _self) {
+        co_return co_await delete_topics(
+          std::move(topics), timeout + model::timeout_clock::now());
+    }
+
+    if (controller_leader) {
+        vlog(
+          clusterlog.debug,
+          "dispatching delete topics request to {}",
+          controller_leader);
+        auto reply
+          = co_await _connections.local()
+              .with_node_client<cluster::controller_client_protocol>(
+                _self,
+                ss::this_shard_id(),
+                *controller_leader,
+                timeout,
+                [topics, timeout](controller_client_protocol cp) mutable {
+                    return cp.delete_topics(
+                      delete_topics_request{
+                        .topics_to_delete = std::move(topics),
+                        .timeout = timeout},
+                      rpc::client_opts(model::timeout_clock::now() + timeout));
+                })
+              .then(&rpc::get_ctx_data<delete_topics_reply>);
+
+        if (reply.has_error()) {
+            vlog(
+              clusterlog.warn,
+              "delete topics failed with an error - {}",
+              reply.error().message());
+            co_return make_error_topic_results(
+              topics, errc::topic_operation_error);
+        }
+        co_return std::move(reply.value().results);
+    }
+
+    co_return make_error_topic_results(topics, errc::no_leader_controller);
 }
 
 ss::future<std::vector<topic_result>> topics_frontend::delete_topics(
