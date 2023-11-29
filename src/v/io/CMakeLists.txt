@@ -6,6 +6,7 @@ v_cc_library(
     persistence.cc
     page.cc
     page_set.cc
+    clang-tidy-helper.cc
   DEPS
     Seastar::seastar
     absl::btree
