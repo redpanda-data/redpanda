@@ -964,7 +964,8 @@ consensus::update_group_member(model::broker broker) {
           if (!cfg.contains_broker(broker.id())) {
               vlog(
                 _ctxlog.warn,
-                "Node with id {} does not exists in current configuration");
+                "Node with id {} does not exists in current configuration",
+                broker.id());
               return ss::make_ready_future<std::error_code>(
                 errc::node_does_not_exists);
           }
