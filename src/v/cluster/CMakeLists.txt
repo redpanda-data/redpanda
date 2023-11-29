@@ -114,7 +114,6 @@ v_cc_library(
     partition.cc
     partition_probe.cc
     id_allocator_stm.cc
-    persisted_stm.cc
     tm_stm_cache.cc
     tm_stm.cc
     rm_stm.cc

@@ -52,6 +52,7 @@ set(gsrcs
     basic_raft_fixture_test.cc
     stm_manager_test.cc
     raft_reconfiguration_test.cc
+    persisted_stm_test.cc
 )
 
 rp_test(

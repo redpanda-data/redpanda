@@ -30,7 +30,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
-namespace cluster {
+namespace raft {
 
 static constexpr const int8_t stm_snapshot_version_v0 = 0;
 static constexpr const int8_t stm_snapshot_version = 1;
@@ -121,6 +121,12 @@ private:
     prefix_logger& _log;
     storage::kvstore& _kvstore;
 };
+
+ss::future<> move_persistent_stm_state(
+  model::ntp ntp,
+  ss::shard_id source_shard,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>&);
 
 template<typename T>
 concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
@@ -248,4 +254,4 @@ private:
     model::offset _last_snapshot_offset;
 };
 
-} // namespace cluster
+} // namespace raft

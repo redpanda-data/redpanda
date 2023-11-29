@@ -12,12 +12,12 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "cluster/persisted_stm.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
@@ -32,7 +32,7 @@ namespace cluster {
 
 // id_allocator is a service to generate cluster-wide unique id (int64)
 
-class id_allocator_stm final : public persisted_stm<> {
+class id_allocator_stm final : public raft::persisted_stm<> {
 public:
     struct stm_allocation_result {
         int64_t id;
@@ -110,8 +110,9 @@ private:
       advance_state(int64_t, model::timeout_clock::duration);
 
     ss::future<> write_snapshot();
-    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_local_snapshot() override;
+    ss::future<>
+    apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
+    ss::future<raft::stm_snapshot> take_local_snapshot() override;
     ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<bool> sync(model::timeout_clock::duration);
 

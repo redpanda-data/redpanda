@@ -12,8 +12,8 @@
 #pragma once
 
 #include "cluster/logger.h"
-#include "cluster/persisted_stm.h"
 #include "distributed_kv_stm_types.h"
+#include "raft/persisted_stm.h"
 
 #include <type_traits>
 
@@ -76,7 +76,7 @@ template<
   size_t MaxMemoryUsage = 1_MiB>
 requires std::is_trivially_copyable_v<Key>
          && std::is_trivially_copyable_v<Value>
-class distributed_kv_stm final : public persisted_stm<> {
+class distributed_kv_stm final : public raft::persisted_stm<> {
 public:
     explicit distributed_kv_stm(
       size_t max_partitions, ss::logger& logger, raft::consensus* raft)
@@ -84,7 +84,7 @@ public:
       , _default_max_partitions(max_partitions)
       , _is_routing_partition(_raft->ntp().tp.partition == routing_partition){};
 
-    ss::future<> start() override { co_await persisted_stm<>::start(); }
+    ss::future<> start() override { co_await raft::persisted_stm<>::start(); }
     ss::future<> stop() override { co_await _gate.close(); }
 
     ss::future<> apply(const model::record_batch& record_batch) override {
@@ -116,8 +116,8 @@ public:
           });
     }
 
-    ss::future<>
-    apply_local_snapshot(stm_snapshot_header header, iobuf&& bytes) override {
+    ss::future<> apply_local_snapshot(
+      raft::stm_snapshot_header header, iobuf&& bytes) override {
         auto holder = _gate.hold();
         auto units = _snapshot_lock.hold_write_lock();
 
@@ -134,7 +134,7 @@ public:
         _kvs = std::move(snap.kv_data);
     }
 
-    ss::future<stm_snapshot> take_local_snapshot() override {
+    ss::future<raft::stm_snapshot> take_local_snapshot() override {
         auto holder = _gate.hold();
         auto units = _snapshot_lock.hold_write_lock();
         auto last_applied = last_applied_offset();
@@ -146,7 +146,8 @@ public:
         result.kv_data = _kvs;
         iobuf result_buf;
         co_await serde::write_async(result_buf, std::move(result));
-        co_return stm_snapshot::create(0, last_applied, std::move(result_buf));
+        co_return raft::stm_snapshot::create(
+          0, last_applied, std::move(result_buf));
     }
 
     ss::future<> apply_raft_snapshot(const iobuf&) final {

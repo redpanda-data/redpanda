@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cluster/logger.h"
-#include "cluster/persisted_stm.h"
 #include "cluster/tm_stm_cache.h"
 #include "cluster/tx_hash_ranges.h"
 #include "config/configuration.h"
@@ -25,6 +24,7 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
 #include "storage/snapshot.h"
@@ -113,7 +113,7 @@ public:
  * ongoing and executed transactions and maps tx.id to its latest
  * session (producer_identity)
  */
-class tm_stm final : public persisted_stm<> {
+class tm_stm final : public raft::persisted_stm<> {
 public:
     using clock_type = ss::lowres_system_clock;
 
@@ -362,8 +362,9 @@ protected:
 
 private:
     std::optional<tm_transaction> find_tx(kafka::transactional_id);
-    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_local_snapshot() override;
+    ss::future<>
+    apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
+    ss::future<raft::stm_snapshot> take_local_snapshot() override;
 
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _transactional_id_expiration;
@@ -393,7 +394,7 @@ private:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
-    ss::future<stm_snapshot> do_take_snapshot();
+    ss::future<raft::stm_snapshot> do_take_snapshot();
     ss::future<result<raft::replicate_result>>
       quorum_write_empty_batch(model::timeout_clock::time_point);
 

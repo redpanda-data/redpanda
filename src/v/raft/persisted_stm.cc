@@ -7,17 +7,16 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/persisted_stm.h"
+#include "raft/persisted_stm.h"
 
 #include "bytes/iostream.h"
-#include "cluster/cluster_utils.h"
-#include "cluster/logger.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
 #include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "ssx/sformat.h"
+#include "storage/api.h"
 #include "storage/kvstore.h"
 #include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
@@ -27,33 +26,76 @@
 #include <seastar/core/future.hh>
 
 #include <filesystem>
-
+namespace raft {
 namespace {
 
-std::optional<cluster::stm_snapshot_header> read_snapshot_header(
+std::optional<raft::stm_snapshot_header> read_snapshot_header(
   iobuf_parser& parser, const model::ntp& ntp, const ss::sstring& name) {
     auto version = reflection::adl<int8_t>{}.from(parser);
     vassert(
-      version == cluster::stm_snapshot_version
-        || version == cluster::stm_snapshot_version_v0,
+      version == raft::stm_snapshot_version
+        || version == raft::stm_snapshot_version_v0,
       "[{} ({})] Unsupported persisted_stm snapshot_version {}",
       ntp,
       name,
       version);
 
-    if (version == cluster::stm_snapshot_version_v0) {
+    if (version == raft::stm_snapshot_version_v0) {
         return std::nullopt;
     }
 
-    cluster::stm_snapshot_header header;
+    raft::stm_snapshot_header header;
     header.offset = model::offset(reflection::adl<int64_t>{}.from(parser));
     header.version = reflection::adl<int8_t>{}.from(parser);
     header.snapshot_size = reflection::adl<int32_t>{}.from(parser);
     return header;
 }
 
+ss::sstring
+stm_snapshot_key(const ss::sstring& snapshot_name, const model::ntp& ntp) {
+    return ssx::sformat("{}/{}", snapshot_name, ntp);
+}
+
+ss::future<> do_move_persistent_stm_state(
+  ss::sstring snapshot_name,
+  model::ntp ntp,
+  ss::shard_id source_shard,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& api) {
+    using state_ptr = std::unique_ptr<iobuf>;
+    using state_fptr = ss::foreign_ptr<state_ptr>;
+
+    const auto key_as_str = stm_snapshot_key(snapshot_name, ntp);
+    bytes key;
+    key.append(
+      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
+
+    state_fptr snapshot = co_await api.invoke_on(
+      source_shard, [key](storage::api& api) {
+          const auto ks = storage::kvstore::key_space::stms;
+          auto snapshot_data = api.kvs().get(ks, key);
+          auto snapshot_ptr = !snapshot_data ? nullptr
+                                             : std::make_unique<iobuf>(
+                                               std::move(*snapshot_data));
+          return ss::make_foreign<state_ptr>(std::move(snapshot_ptr));
+      });
+
+    if (snapshot) {
+        co_await api.invoke_on(
+          target_shard,
+          [key, snapshot = std::move(snapshot)](storage::api& api) {
+              const auto ks = storage::kvstore::key_space::stms;
+              return api.kvs().put(ks, key, snapshot->copy());
+          });
+
+        co_await api.invoke_on(source_shard, [key](storage::api& api) {
+            const auto ks = storage::kvstore::key_space::stms;
+            return api.kvs().remove(ks, key);
+        });
+    }
+}
+
 } // namespace
-namespace cluster {
 
 template<supported_stm_snapshot T>
 template<typename... Args>
@@ -192,7 +234,7 @@ kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
   storage::kvstore& kvstore)
   : _ntp(c->ntp())
   , _name(snapshot_name)
-  , _snapshot_key(detail::stm_snapshot_key(snapshot_name, c->ntp()))
+  , _snapshot_key(stm_snapshot_key(snapshot_name, c->ntp()))
   , _log(log)
   , _kvstore(kvstore) {}
 
@@ -203,7 +245,7 @@ kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
   storage::kvstore& kvstore)
   : _ntp(ntp)
   , _name(snapshot_name)
-  , _snapshot_key(detail::stm_snapshot_key(snapshot_name, ntp))
+  , _snapshot_key(stm_snapshot_key(snapshot_name, ntp))
   , _log(log)
   , _kvstore(kvstore) {}
 
@@ -243,7 +285,7 @@ kvstore_backed_stm_snapshot::load_snapshot() {
     auto thin_snapshot = serde::from_iobuf<stm_thin_snapshot>(
       std::move(*snapshot_blob));
     stm_snapshot snapshot;
-    snapshot.header = stm_snapshot_header{
+    snapshot.header = raft::stm_snapshot_header{
       .version = stm_snapshot_version,
       .snapshot_size = static_cast<int32_t>(thin_snapshot.data.size_bytes()),
       .offset = thin_snapshot.offset};
@@ -544,20 +586,10 @@ ss::future<> persisted_stm<T>::start() {
               _log.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_backend.store_path());
-            vlog(
-              _log.debug,
-              "start with non-applied snapshot, set_next {}",
-              next_offset);
-            set_next(next_offset);
         }
 
     } else {
-        auto offset = _raft->start_offset();
-        vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
-
-        if (offset >= model::offset(0)) {
-            set_next(offset);
-        }
+        vlog(_log.debug, "starting without snapshot");
     }
     _snapshot_hydrated = true;
     _on_snapshot_hydrated.broadcast();
@@ -572,4 +604,24 @@ template persisted_stm<file_backed_stm_snapshot>::persisted_stm(
 template persisted_stm<kvstore_backed_stm_snapshot>::persisted_stm(
   ss::sstring, seastar::logger&, raft::consensus*, storage::kvstore&);
 
-} // namespace cluster
+ss::future<> move_persistent_stm_state(
+  model::ntp ntp,
+  ss::shard_id source_shard,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& api) {
+    static const std::vector<ss::sstring> stm_snapshot_names{
+      cluster::archival_stm_snapshot,
+      cluster::tm_stm_snapshot,
+      cluster::id_allocator_snapshot,
+      cluster::rm_stm_snapshot};
+
+    return ss::parallel_for_each(
+      stm_snapshot_names,
+      [ntp = std::move(ntp), source_shard, target_shard, &api](
+        const ss::sstring& snapshot_name) {
+          return do_move_persistent_stm_state(
+            snapshot_name, ntp, source_shard, target_shard, api);
+      });
+}
+
+} // namespace raft

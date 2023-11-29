@@ -379,6 +379,32 @@ raft_node_instance::raft_node_instance(
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
+raft_node_instance::raft_node_instance(
+  model::node_id id,
+  model::revision_id revision,
+  ss::sstring base_directory,
+  raft_node_map& node_map,
+  ss::sharded<features::feature_table>& feature_table,
+  leader_update_clb_t leader_update_clb)
+  : _id(id)
+  , _revision(revision)
+  , _logger(test_log, fmt::format("[node: {}]", _id))
+  , _base_directory(std::move(base_directory))
+  , _protocol(ss::make_shared<in_memory_test_protocol>(node_map, _logger))
+  , _features(feature_table)
+  , _recovery_mem_quota([] {
+      return raft::recovery_memory_quota::configuration{
+        .max_recovery_memory = config::mock_binding<std::optional<size_t>>(
+          200_MiB),
+        .default_read_buffer_size = config::mock_binding<size_t>(128_KiB),
+      };
+  })
+  , _recovery_scheduler(
+      config::mock_binding<size_t>(64), config::mock_binding(10ms))
+  , _leader_clb(std::move(leader_update_clb)) {
+    config::shard_local_cfg().disable_metrics.set_value(true);
+}
+
 ss::future<>
 raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     _hb_manager = std::make_unique<heartbeat_manager>(
@@ -553,6 +579,20 @@ raft_fixture::add_node(model::node_id id, model::revision_id rev) {
       id, rev, *this, _features, [id, this](leadership_status lst) {
           _leaders_view[id] = lst;
       });
+
+    auto [it, success] = _nodes.emplace(id, std::move(instance));
+    return *it->second;
+}
+
+raft_node_instance& raft_fixture::add_node(
+  model::node_id id, model::revision_id rev, ss::sstring base_dir) {
+    auto instance = std::make_unique<raft_node_instance>(
+      id,
+      rev,
+      std::move(base_dir),
+      *this,
+      _features,
+      [id, this](leadership_status lst) { _leaders_view[id] = lst; });
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;

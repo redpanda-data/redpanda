@@ -220,13 +220,13 @@ ss::future<> id_allocator_stm::write_snapshot() {
 }
 
 ss::future<>
-id_allocator_stm::apply_local_snapshot(stm_snapshot_header, iobuf&&) {
+id_allocator_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) {
     return ss::make_exception_future<>(
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<stm_snapshot> id_allocator_stm::take_local_snapshot() {
-    return ss::make_exception_future<stm_snapshot>(
+ss::future<raft::stm_snapshot> id_allocator_stm::take_local_snapshot() {
+    return ss::make_exception_future<raft::stm_snapshot>(
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 

@@ -102,7 +102,7 @@ tm_stm::tm_stm(
   raft::consensus* c,
   ss::sharded<features::feature_table>& feature_table,
   ss::lw_shared_ptr<cluster::tm_stm_cache> tm_stm_cache)
-  : persisted_stm<>(tm_stm_snapshot, logger, c)
+  : raft::persisted_stm<>(tm_stm_snapshot, logger, c)
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
@@ -739,7 +739,7 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
 }
 
 ss::future<>
-tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
+tm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     vassert(
       hdr.version >= tm_snapshot_v0::version
         && hdr.version <= tm_snapshot::version,
@@ -771,7 +771,7 @@ tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     return ss::now();
 }
 
-ss::future<stm_snapshot> tm_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot> tm_stm::take_local_snapshot() {
     // Update hash ranges to always have batch in log
     // So it cannot be deleted with cleanup policy
     if (_raft->is_leader()) {
@@ -785,7 +785,7 @@ ss::future<stm_snapshot> tm_stm::take_local_snapshot() {
       _gate, [this] { return do_take_snapshot(); });
 }
 
-ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
+ss::future<raft::stm_snapshot> tm_stm::do_take_snapshot() {
     auto snapshot_version = active_snapshot_version();
     if (snapshot_version == tm_snapshot_v0::version) {
         tm_snapshot_v0 tm_ss;
@@ -795,7 +795,7 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
         iobuf tm_ss_buf;
         reflection::adl<tm_snapshot_v0>{}.to(tm_ss_buf, std::move(tm_ss));
 
-        co_return stm_snapshot::create(
+        co_return raft::stm_snapshot::create(
           tm_snapshot_v0::version, last_applied_offset(), std::move(tm_ss_buf));
     } else {
         tm_snapshot tm_ss;
@@ -805,7 +805,7 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
         iobuf tm_ss_buf;
         reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
 
-        co_return stm_snapshot::create(
+        co_return raft::stm_snapshot::create(
           tm_snapshot::version, last_applied_offset(), std::move(tm_ss_buf));
     }
 }

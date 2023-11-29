@@ -150,7 +150,15 @@ class raft_node_instance : public ss::weakly_referencable<raft_node_instance> {
 public:
     using leader_update_clb_t
       = ss::noncopyable_function<void(leadership_status)>;
-    explicit raft_node_instance(
+    raft_node_instance(
+      model::node_id id,
+      model::revision_id revision,
+      ss::sstring base_directory,
+      raft_node_map& node_map,
+      ss::sharded<features::feature_table>& feature_table,
+      leader_update_clb_t leader_update_clb);
+
+    raft_node_instance(
       model::node_id id,
       model::revision_id revision,
       raft_node_map& node_map,
@@ -255,6 +263,10 @@ public:
     };
     using remove_data_dir = ss::bool_class<struct remove_data_dir_tag>;
     raft_node_instance& add_node(model::node_id id, model::revision_id rev);
+
+    raft_node_instance&
+    add_node(model::node_id id, model::revision_id rev, ss::sstring data_dir);
+
     ss::future<>
     stop_node(model::node_id id, remove_data_dir remove = remove_data_dir::no);
 
@@ -435,6 +447,8 @@ public:
     retry_with_leader(model::timeout_clock::time_point deadline, Func&& f) {
         return retry_with_leader(deadline, 100ms, std::forward<Func>(f));
     }
+
+    ss::logger& logger() { return _logger; }
 
 private:
     void validate_leaders();

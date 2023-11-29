@@ -14,10 +14,10 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
-#include "cluster/persisted_stm.h"
 #include "features/fwd.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "raft/persisted_stm.h"
 #include "storage/record_batch_builder.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
@@ -99,7 +99,7 @@ private:
 /// This is needed to 1) avoid querying cloud storage on partition startup and
 /// 2) to replicate metadata to raft followers so that they can decide which
 /// segments can be safely evicted.
-class archival_metadata_stm final : public persisted_stm<> {
+class archival_metadata_stm final : public raft::persisted_stm<> {
     friend class details::archival_metadata_stm_accessor;
 
 public:
@@ -266,8 +266,9 @@ private:
     ss::future<> apply(const model::record_batch& batch) override;
     ss::future<> apply_raft_snapshot(const iobuf&) override;
 
-    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_local_snapshot() override;
+    ss::future<>
+    apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
+    ss::future<raft::stm_snapshot> take_local_snapshot() override;
 
     struct segment;
     struct start_offset;

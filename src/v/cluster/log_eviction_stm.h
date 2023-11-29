@@ -10,11 +10,11 @@
  */
 
 #pragma once
-#include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "outcome.h"
 #include "raft/fwd.h"
+#include "raft/persisted_stm.h"
 #include "seastarx.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
@@ -43,7 +43,8 @@ class consensus;
  * stm will be searching for. Upon processing of this record a new snapshot will
  * be written which may also trigger deletion of data on disk.
  */
-class log_eviction_stm : public persisted_stm<kvstore_backed_stm_snapshot> {
+class log_eviction_stm
+  : public raft::persisted_stm<raft::kvstore_backed_stm_snapshot> {
 public:
     using offset_result = result<model::offset, std::error_code>;
     log_eviction_stm(raft::consensus*, ss::logger&, storage::kvstore&);
@@ -106,9 +107,10 @@ public:
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 protected:
-    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<>
+    apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
 
-    ss::future<stm_snapshot> take_local_snapshot() override;
+    ss::future<raft::stm_snapshot> take_local_snapshot() override;
 
     virtual ss::future<model::offset> storage_eviction_event();
 

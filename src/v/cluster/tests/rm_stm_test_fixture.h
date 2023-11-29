@@ -39,7 +39,7 @@ struct rm_stm_test_fixture : simple_raft_fixture {
         return _stm->do_take_local_snapshot(version);
     }
 
-    auto apply_snapshot(cluster::stm_snapshot_header hdr, iobuf buf) {
+    auto apply_snapshot(raft::stm_snapshot_header hdr, iobuf buf) {
         return _stm->apply_local_snapshot(hdr, std::move(buf));
     }
 

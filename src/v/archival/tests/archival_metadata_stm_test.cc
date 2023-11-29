@@ -12,13 +12,13 @@
 #include "cloud_storage/types.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/errc.h"
-#include "cluster/persisted_stm.h"
 #include "features/feature_table.h"
 #include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "raft/persisted_stm.h"
 #include "raft/state_machine_manager.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/tests/simple_raft_fixture.h"
@@ -584,8 +584,8 @@ namespace cluster::details {
 class archival_metadata_stm_accessor {
 public:
     static ss::future<> persist_snapshot(
-      storage::simple_snapshot_manager& mgr, cluster::stm_snapshot&& snapshot) {
-        return file_backed_stm_snapshot::persist_local_snapshot(
+      storage::simple_snapshot_manager& mgr, raft::stm_snapshot&& snapshot) {
+        return raft::file_backed_stm_snapshot::persist_local_snapshot(
           mgr, std::move(snapshot));
     }
 };
@@ -600,7 +600,7 @@ ss::future<> make_old_snapshot(
     iobuf snap_data = serde::to_iobuf(
       old::snapshot{.segments = std::move(segments)});
 
-    auto snapshot = cluster::stm_snapshot::create(
+    auto snapshot = raft::stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
 
     storage::simple_snapshot_manager tmp_snapshot_mgr(

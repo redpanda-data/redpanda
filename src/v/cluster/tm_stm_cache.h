@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
@@ -22,6 +21,7 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
 #include "storage/snapshot.h"
