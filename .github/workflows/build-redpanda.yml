@@ -68,3 +68,8 @@ jobs:
             CCACHE_DIR: /mnt/ccache
             CCACHE_COMPRESSLEVEL: 6
           run: ninja -C build/release
+        - name: trim cache
+          env:
+            CCACHE_DIR: /mnt/ccache
+            CCACHE_MAXSIZE: 300M
+          run: ccache -c
