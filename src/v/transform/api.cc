@@ -77,16 +77,31 @@ public:
 
 private:
     model::partition_id compute_output_partition() {
-        const auto& config = _topic_table->get_topic_cfg({
-          model::kafka_namespace,
-          _topic,
-        });
+        model::topic_namespace_view ns_tp{model::kafka_namespace, _topic};
+        const auto& config = _topic_table->get_topic_cfg(ns_tp);
         if (!config) {
             throw std::runtime_error(ss::format(
               "unable to compute output partition for topic: {}", _topic));
         }
-        return model::partition_id(
-          _input_partition_id % config->partition_count);
+
+        const auto* disabled_set = _topic_table->get_topic_disabled_set(ns_tp);
+        if (!(disabled_set && disabled_set->is_fully_disabled())) {
+            // Do linear probing to find a non-disabled partition. The
+            // expectation is that most of the times we'll need just a few
+            // probes.
+            for (int32_t i = 0; i < config->partition_count; ++i) {
+                model::partition_id candidate(
+                  (_input_partition_id + i) % config->partition_count);
+                if (!(disabled_set && disabled_set->is_disabled(candidate))) {
+                    return candidate;
+                }
+            }
+        }
+
+        throw std::runtime_error(ss::format(
+          "unable to compute output partition for topic: {}, all output "
+          "partitions disabled",
+          _topic));
     }
 
     model::topic _topic;
