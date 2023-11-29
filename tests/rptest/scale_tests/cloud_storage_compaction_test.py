@@ -131,6 +131,7 @@ class CloudStorageCompactionTest(EndToEndTest):
         wait_until(lambda: len(self.producer.last_acked_offsets) != 0, 30)
 
     def _init_redpanda_read_replica(self):
+        extra_rp_conf = dict(enable_cluster_metadata_upload_loop=False)
         self.rr_si_settings = SISettings(
             self.test_context,
             bypass_bucket_creation=True,
@@ -141,7 +142,10 @@ class CloudStorageCompactionTest(EndToEndTest):
             configuration["cloud_storage_segment_max_upload_interval_sec"])
         self.rr_si_settings.load_context(self.logger, self.test_context)
         self.rr_cluster = make_redpanda_service(
-            self.test_context, num_brokers=3, si_settings=self.rr_si_settings)
+            self.test_context,
+            num_brokers=3,
+            si_settings=self.rr_si_settings,
+            extra_rp_conf=extra_rp_conf)
 
     def _create_read_repica_topic_success(self):
         try:

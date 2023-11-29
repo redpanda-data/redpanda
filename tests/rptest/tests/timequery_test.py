@@ -531,9 +531,12 @@ class TestReadReplicaTimeQuery(RedpandaTest):
         self.rr_cluster = None
 
     def start_read_replica_cluster(self, num_brokers) -> None:
+        # NOTE: the RRR cluster won't have a bucket, so don't upload.
+        extra_rp_conf = dict(enable_cluster_metadata_upload_loop=False)
         self.rr_cluster = make_redpanda_service(self.test_context,
                                                 num_brokers=num_brokers,
-                                                si_settings=self.rr_settings)
+                                                si_settings=self.rr_settings,
+                                                extra_rp_conf=extra_rp_conf)
         self.rr_cluster.start(start_si=False)
 
     def create_read_replica_topic(self) -> None:

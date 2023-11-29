@@ -219,6 +219,10 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # config version that would disrupt our tests.
         rp_conf['cluster_id'] = "placeholder"
 
+        # Explicitly disable metadata uploads, since some tests may mess around
+        # with cloud configs and prevent uploads from succeeding.
+        rp_conf['enable_cluster_metadata_upload_loop'] = False
+
         super(ClusterConfigTest, self).__init__(*args,
                                                 extra_rp_conf=rp_conf,
                                                 **kwargs)
@@ -1431,8 +1435,10 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         """
         # Aliases should work when used in bootstrap
         # NOTE due to https://github.com/redpanda-data/redpanda/issues/13362 this is incomplete (see commented line)
-        self.redpanda.set_extra_rp_conf(
-            {prop_set.aliased_name: prop_set.test_values[0]})
+        self.redpanda.set_extra_rp_conf({
+            prop_set.aliased_name:
+            prop_set.test_values[0],
+        })
         self.redpanda.start()
         # self._check_value_everywhere(prop_set.primary_name, prop_set.values[0])
 
