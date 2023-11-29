@@ -19,6 +19,7 @@
 #include "config/configuration.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
@@ -678,6 +679,89 @@ group_manager::snapshot_groups(const model::ntp& ntp) {
         co_await ss::maybe_yield();
     }
     co_return snap;
+}
+
+ss::future<kafka::error_code>
+group_manager::recover_offsets(group_offsets_snapshot snap) {
+    vassert(!snap.groups.empty(), "Group data must not be empty");
+    auto offsets_ntp = model::ntp{
+      model::kafka_namespace,
+      model::kafka_consumer_offsets_topic,
+      snap.offsets_topic_pid,
+    };
+    vlog(
+      klog.info,
+      "Received request to recover {} groups from snapshot on partition {}",
+      snap.groups.size(),
+      offsets_ntp);
+    auto p = _partitions.find(offsets_ntp);
+    if (p == _partitions.end()) {
+        co_return kafka::error_code::not_leader_for_partition;
+    }
+    auto units = co_await ss::get_units(p->second->sem, 1, p->second->as);
+    if (!p->second->partition->is_leader()) {
+        co_return kafka::error_code::not_leader_for_partition;
+    }
+    if (p->second->loading) {
+        co_return kafka::error_code::coordinator_load_in_progress;
+    }
+    auto lock = co_await p->second->catchup_lock->hold_write_lock();
+
+    vlog(
+      klog.info,
+      "Proceeding to recover {} groups on {}",
+      snap.groups.size(),
+      offsets_ntp);
+    for (auto& g : snap.groups) {
+        offset_commit_request kafka_r;
+        kafka_r.ntp = offsets_ntp;
+        auto& kafka_data = kafka_r.data;
+        kafka_data.group_id = kafka::group_id(g.group_id);
+
+        auto& kafka_topics = kafka_data.topics;
+        for (auto& t : g.offsets) {
+            offset_commit_request_topic kafka_t;
+            kafka_t.name = model::topic(t.topic);
+            for (auto& p : t.partitions) {
+                offset_commit_request_partition kafka_p;
+                kafka_p.partition_index = p.partition;
+                kafka_p.committed_offset = kafka::offset_cast(p.offset);
+                kafka_t.partitions.emplace_back(std::move(kafka_p));
+            }
+            kafka_topics.emplace_back(std::move(kafka_t));
+            co_await ss::maybe_yield();
+        }
+        vlog(
+          klog.info,
+          "Recovering group {} from snapshot on {}",
+          kafka_r.data.group_id,
+          offsets_ntp);
+        auto stages = offset_commit(std::move(kafka_r));
+        co_await std::move(stages.dispatched);
+        auto kafka_res = co_await std::move(stages.result);
+        error_code first_error = error_code::none;
+        for (const auto& kafka_t : kafka_res.data.topics) {
+            for (const auto& kafka_p : kafka_t.partitions) {
+                if (kafka_p.error_code != kafka::error_code::none) {
+                    vlog(
+                      klog.warn,
+                      "Error on {}/{} while recovering group {} on {}: {}",
+                      kafka_t.name,
+                      kafka_p.partition_index,
+                      kafka_r.data.group_id,
+                      offsets_ntp,
+                      kafka_p.error_code);
+                    if (first_error != error_code::none) {
+                        first_error = kafka_p.error_code;
+                    }
+                }
+            }
+        }
+        if (first_error != error_code::none) {
+            co_return first_error;
+        }
+    }
+    co_return error_code::none;
 }
 
 ss::future<> group_manager::handle_partition_leader_change(

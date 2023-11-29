@@ -16,16 +16,24 @@
 #include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
+#include "cluster/cloud_metadata/offsets_lookup_batcher.h"
+#include "cluster/cloud_metadata/offsets_recoverer.h"
+#include "cluster/cloud_metadata/offsets_recovery_manager.h"
+#include "cluster/cloud_metadata/offsets_recovery_router.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
+#include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/cloud_metadata/offsets_uploader.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/controller.h"
+#include "config/node_config.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_manager.h"
+#include "kafka/server/rm_group_frontend.h"
+#include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
@@ -34,6 +42,7 @@
 #include <seastar/util/later.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/test/tools/old/interface.hpp>
 
 namespace {
 ss::logger logger("offsets_recovery_test");
@@ -49,6 +58,7 @@ const std::vector<model::ntp> offset_ntps = [] {
     }
     return ntps;
 }();
+
 } // anonymous namespace
 
 namespace kc = kafka::client;
@@ -230,22 +240,26 @@ public:
 
     // Uploads the offsets from each offsets topic partition, returning the
     // resulting remote paths.
-    ss::future<std::vector<cloud_storage::remote_segment_path>>
+    ss::future<std::vector<std::vector<cloud_storage::remote_segment_path>>>
     upload_offsets() {
         retry_chain_node retry_node(
           never_abort, ss::lowres_clock::time_point::max(), 10ms);
         offsets_uploader uploader(
           bucket, app._group_manager, app.cloud_storage_api);
-        std::vector<cloud_storage::remote_segment_path> remote_paths;
+        std::vector<std::vector<cloud_storage::remote_segment_path>>
+          paths_per_pid;
+        paths_per_pid.resize(offset_ntps.size());
         for (const auto& ntp : offset_ntps) {
+            std::vector<cloud_storage::remote_segment_path> remote_paths;
             auto res = co_await uploader.upload(
               cluster_uuid, ntp, cluster_metadata_id{0}, retry_node);
             BOOST_REQUIRE(!res.has_error());
             for (auto& p : res.value().paths) {
                 remote_paths.emplace_back(std::move(p));
             }
+            paths_per_pid[ntp.tp.partition()] = std::move(remote_paths);
         }
-        co_return remote_paths;
+        co_return paths_per_pid;
     }
 
     ss::future<> validate_downloaded_offsets(
@@ -278,6 +292,22 @@ public:
             }
         }
         BOOST_REQUIRE_EQUAL(committed_offsets, downloaded_offsets);
+    }
+
+    using wipe = ss::bool_class<struct wipe_on_restart_tag>;
+    void restart(wipe should_wipe = wipe::no) {
+        shutdown();
+        if (should_wipe) {
+            std::filesystem::remove_all(data_dir);
+        }
+        app_signal = std::make_unique<::stop_signal>();
+        ss::smp::invoke_on_all([] {
+            auto& config = config::shard_local_cfg();
+            config.get("disable_metrics").set_value(false);
+        }).get0();
+        app.initialize(proxy_config(), proxy_client_config());
+        app.check_environment();
+        app.wire_up_and_start(*app_signal, true);
     }
 
 protected:
@@ -422,11 +452,84 @@ FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
     auto committed_offsets = commit_random_offsets(client, members).get();
 
     // Upload the offsets.
-    auto remote_paths = upload_offsets().get();
+    auto paths_per_pid = upload_offsets().get();
+    std::vector<cloud_storage::remote_segment_path> remote_paths;
+    for (const auto& paths : paths_per_pid) {
+        remote_paths.insert(remote_paths.end(), paths.begin(), paths.end());
+    }
 
     // Download each snapshot and collect their committed offsets, ensuring
     // they are equivalent to what we started with.
     validate_downloaded_offsets(*this, committed_offsets, remote_paths).get();
+}
+
+FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+
+    // Commit a bunch of offsets.
+    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto remote_paths = upload_offsets().get();
+    BOOST_REQUIRE_EQUAL(16, remote_paths.size());
+    info("Stopping client...");
+    client.stop().get();
+    stop_client.cancel();
+    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
+
+    // Wipe the cluster and restore the groups from the snapshot.
+    info("Clearing cluster...");
+    redpanda_thread_fixture::restart(should_wipe::yes);
+    make_partitions(1).get();
+    BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
+                    app.coordinator_ntp_mapper.local(),
+                    app.controller->get_topics_frontend().local(),
+                    1)
+                    .get());
+
+    // Wait for the group_manager to report healthy (but empty).
+    absl::flat_hash_map<model::ntp, size_t> empty_group_map;
+    for (const auto& ntp : offset_ntps) {
+        wait_for_leader(ntp).get();
+        empty_group_map[ntp] = 0;
+    }
+    validate_group_counts_eventually(empty_group_map).get();
+
+    // Now run recovery across the partitions using the snapshots.
+    offsets_recoverer recoverer(
+      config::node().node_id().value(),
+      app.cloud_storage_api,
+      app.shadow_index_cache,
+      app.offsets_lookup,
+      app.controller->get_partition_leaders(),
+      app._connection_cache,
+      app._group_manager);
+    auto cleanup = ss::defer([&] { recoverer.stop().get(); });
+    for (int i = 0; i < remote_paths.size(); i++) {
+        offsets_recovery_request req;
+        req.offsets_ntp = {
+          model::kafka_consumer_offsets_nt.ns,
+          model::kafka_consumer_offsets_nt.tp,
+          model::partition_id(i),
+        };
+        req.bucket = bucket;
+        BOOST_REQUIRE_EQUAL(remote_paths[i].size(), 1);
+        req.offsets_snapshot_paths.emplace_back(remote_paths[i][0]());
+        auto small_batch_size = 1;
+        auto reply = recoverer.recover(std::move(req), small_batch_size).get();
+        BOOST_REQUIRE_EQUAL(reply.ec, cluster::errc::success);
+    }
+    validate_group_counts_eventually(groups_per_ntp).get();
+    size_t num_groups_total = 0;
+    for (const auto& [_, num_groups] : groups_per_ntp) {
+        num_groups_total += num_groups;
+    }
+    BOOST_REQUIRE_EQUAL(num_groups_total, num_groups);
 }
 
 FIXTURE_TEST(test_upload_dispatch_to_leaders, offsets_recovery_fixture) {
@@ -552,4 +655,88 @@ FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
         }
     }
     BOOST_REQUIRE_GT(num_deleted_offsets_snapshots, 0);
+}
+
+FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
+    // Test that from an offset snapshot, we're able to recover.
+    make_partitions(1).get();
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto num_groups_per_ntp = snap_num_group_per_offsets_ntp();
+
+    auto paths_per_pid = upload_offsets().get();
+    BOOST_REQUIRE_EQUAL(paths_per_pid.size(), 16);
+    client.stop().get();
+    stop_client.cancel();
+
+    // Restart empty.
+    restart(wipe::yes);
+    RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+        return app.storage.local().get_cluster_uuid().has_value();
+    });
+
+    // Cheat a little here: instead of restoring partitions, we'll just produce
+    // to new partitions to fake their offsets.
+    auto new_cluster_uuid = app.storage.local().get_cluster_uuid().value();
+    BOOST_REQUIRE_NE(new_cluster_uuid(), cluster_uuid());
+    make_partitions(1).get();
+    tests::kafka_produce_transport produce(make_kafka_client().get());
+    produce.start().get();
+    int64_t num_records = 5;
+    produce
+      .produce_to_partition(
+        topic_name,
+        model::partition_id(0),
+        tests::kv_t::sequence(0, num_records))
+      .get();
+
+    // Begin recovery.
+    offsets_recovery_manager recovery_mgr(
+      app.offsets_recovery_router,
+      app.coordinator_ntp_mapper,
+      app.controller->get_members_table(),
+      app.controller->get_api(),
+      app.controller->get_topics_frontend());
+    retry_chain_node retry_node(never_abort, 30s, 10ms);
+    auto err = recovery_mgr
+                 .recover(retry_node, bucket, std::move(paths_per_pid))
+                 .get();
+    BOOST_REQUIRE_EQUAL(err, error_outcome::success);
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        // Wait for all partitions to finish loading.
+        const auto [err, l] = app._group_manager.local().list_groups();
+        return err == kafka::error_code::none;
+    });
+    validate_group_counts_exactly(num_groups_per_ntp).get();
+    absl::flat_hash_map<kafka::group_id, int> restored_offsets_per_group;
+    for (const auto& ntp : offset_ntps) {
+        auto snap = app._group_manager.local().snapshot_groups(ntp).get();
+        BOOST_REQUIRE(snap.has_value());
+
+        // All groups should have committed one offset.
+        for (const auto& g : snap.value().groups) {
+            BOOST_REQUIRE_EQUAL(1, g.offsets.size());
+            BOOST_REQUIRE_EQUAL(1, g.offsets[0].partitions.size());
+
+            // Trim the expected offset.
+            int64_t expected_offset
+              = committed_offsets[kafka::group_id{g.group_id}];
+            expected_offset = std::min(expected_offset, num_records);
+            BOOST_REQUIRE_EQUAL(
+              g.offsets[0].partitions[0].offset(), expected_offset);
+        }
+    }
+
+    restart(wipe::no);
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        const auto [err, l] = app._group_manager.local().list_groups();
+        return err == kafka::error_code::none;
+    });
+    validate_group_counts_exactly(num_groups_per_ntp).get();
 }

@@ -44,7 +44,8 @@ public:
     // Stops early if the given retry node is no longer permitted to proceed
     // (e.g. timeout, aborted, etc).
     ss::future<> run_lookups(
-      absl::btree_set<model::ntp> ntps_to_lookup, retry_chain_node& retry_node);
+      absl::btree_set<model::ntp> ntps_to_lookup,
+      retry_chain_node& parent_node);
 
     // Should not be used while `run_lookups()` is called.
     const map_t& offsets_by_ntp() const { return _offset_by_ntp; }

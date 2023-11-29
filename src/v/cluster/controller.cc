@@ -186,7 +186,9 @@ ss::future<> controller::start(
   ss::shared_ptr<cluster::cloud_metadata::offsets_upload_requestor>
     offsets_uploader,
   ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>
-    producer_id_recovery) {
+    producer_id_recovery,
+  ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>
+    offsets_recovery) {
     auto initial_raft0_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
     seed_nodes.reserve(initial_raft0_brokers.size());
@@ -626,7 +628,7 @@ ss::future<> controller::start(
             partition_balancer_backend::shard,
             &partition_balancer_backend::start);
       })
-      .then([this, offsets_uploader, producer_id_recovery] {
+      .then([this, offsets_uploader, producer_id_recovery, offsets_recovery] {
           auto bucket_opt = get_configured_bucket();
           if (!bucket_opt.has_value()) {
               return;
@@ -660,6 +662,7 @@ ss::future<> controller::start(
               _security_frontend.local(),
               _tp_frontend.local(),
               producer_id_recovery,
+              offsets_recovery,
               std::ref(_recovery_table),
               _raft0);
           if (!config::shard_local_cfg()

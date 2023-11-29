@@ -1,0 +1,163 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+import re
+import time
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.services.redpanda import SISettings
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils.si_utils import quiesce_uploads
+from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
+from rptest.utils.si_utils import BucketView
+
+
+class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
+    def __init__(self, test_ctx, *args):
+        self._ctx = test_ctx
+        self.initial_partition_count = 3
+        self.si_settings = SISettings(
+            test_ctx,
+            cloud_storage_segment_max_upload_interval_sec=1,
+            fast_uploads=True,
+        )
+        super(ConsumerOffsetsRecoveryTest, self).__init__(
+            test_ctx,
+            num_brokers=3,
+            *args,
+            extra_rp_conf={
+                "kafka_nodelete_topics": [],
+                "group_topic_partitions": self.initial_partition_count,
+                'controller_snapshot_max_age_sec': 1,
+                "enable_cluster_metadata_upload_loop": True,
+                "cloud_storage_cluster_metadata_upload_interval_ms": 1000,
+            },
+            node_prealloc_count=1,
+            si_settings=self.si_settings)
+
+    def describe_all_groups(self, num_groups: int = 1):
+        rpk = RpkTool(self.redpanda)
+        all_groups = {}
+
+        # The one consumer group in this test comes from KgoVerifierConsumerGroupConsumer
+        # for example, kgo-verifier-1691097745-347-0
+        kgo_group_re = re.compile(r'^kgo-verifier-[0-9]+-[0-9]+-0$')
+
+        self.logger.debug(f"Issue ListGroups, expect {num_groups} groups")
+
+        def do_list_groups():
+            res = rpk.group_list()
+
+            if res is None:
+                return False
+
+            if len(res) != num_groups:
+                return False
+
+            kgo_group_m = kgo_group_re.match(res[0])
+            self.logger.debug(f"kgo group match {kgo_group_m}")
+            return False if kgo_group_m is None else (True, res)
+
+        group_list_res = wait_until_result(
+            do_list_groups,
+            timeout_sec=30,
+            backoff_sec=0.5,
+            err_msg="RPK failed to list consumer groups")
+
+        for g in group_list_res:
+            gd = rpk.group_describe(g)
+            all_groups[gd.name] = {}
+            for p in gd.partitions:
+                all_groups[
+                    gd.name][f"{p.topic}/{p.partition}"] = p.current_offset
+
+        return all_groups
+
+    def bucket_has_consumer_offsets(self):
+        try:
+            s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+            latest_manifest = s3_snapshot.latest_cluster_metadata_manifest
+            if len(latest_manifest["offsets_snapshots_by_partition"]) == 0:
+                return False
+        except Exception as e:
+            self.logger.warn(f"Error while populating snapshot: {str(e)}")
+            return False
+        return True
+
+    @cluster(num_nodes=4)
+    def test_consumer_offsets_partition_recovery(self):
+        topic = TopicSpec(partition_count=16, replication_factor=3)
+        self.client().create_topic([topic])
+        msg_size = 1024
+        msg_cnt = 10000
+
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       topic.name,
+                                       msg_size,
+                                       msg_cnt,
+                                       custom_node=self.preallocated_nodes)
+
+        producer.start(clean=False)
+
+        wait_until(lambda: producer.produce_status.acked > 10,
+                   timeout_sec=30,
+                   backoff_sec=0.5)
+
+        consumer = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            topic.name,
+            msg_size,
+            readers=3,
+            nodes=self.preallocated_nodes)
+        consumer.start(clean=False)
+
+        producer.wait()
+        consumer.wait()
+
+        quiesce_uploads(self.redpanda, [topic.name], timeout_sec=60)
+        wait_until(self.bucket_has_consumer_offsets,
+                   timeout_sec=60,
+                   backoff_sec=5)
+        time.sleep(10)
+
+        groups_pre_restore = self.describe_all_groups()
+        self.logger.debug(f"Groups pre-restore {groups_pre_restore}")
+
+        self.redpanda.stop()
+        for n in self.redpanda.nodes:
+            self.redpanda.remove_local_data(n)
+
+        self.redpanda.si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest"})
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    auto_assign_node_id=True,
+                                    omit_seeds_on_idx_one=False)
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        self.redpanda._admin.initialize_cluster_recovery()
+
+        def cluster_recovery_complete():
+            return "inactive" in self.redpanda._admin.get_cluster_recovery_status(
+            ).json()["state"]
+
+        wait_until(cluster_recovery_complete, timeout_sec=60, backoff_sec=1)
+
+        groups_post_restore = self.describe_all_groups()
+        self.logger.debug(f"Groups post-restore {groups_post_restore}")
+        assert groups_post_restore == groups_pre_restore, f"{groups_post_restore} vs {groups_pre_restore}"

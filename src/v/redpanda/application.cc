@@ -19,7 +19,13 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/bootstrap_service.h"
+#include "cluster/cloud_metadata/offsets_lookup.h"
+#include "cluster/cloud_metadata/offsets_recoverer.h"
+#include "cluster/cloud_metadata/offsets_recovery_manager.h"
+#include "cluster/cloud_metadata/offsets_recovery_router.h"
 #include "cluster/cloud_metadata/offsets_recovery_service.h"
+#include "cluster/cloud_metadata/offsets_upload_router.h"
+#include "cluster/cloud_metadata/offsets_uploader.h"
 #include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
@@ -1651,12 +1657,40 @@ void application::wire_up_redpanda_services(
       &kafka::make_consumer_offsets_serializer,
       kafka::enable_group_metrics::yes)
       .get();
+    construct_service(
+      offsets_recoverer,
+      node_id,
+      std::ref(cloud_storage_api),
+      std::ref(shadow_index_cache),
+      std::ref(offsets_lookup),
+      std::ref(controller->get_partition_leaders()),
+      std::ref(_connection_cache),
+      std::ref(_group_manager))
+      .get();
+    construct_service(
+      offsets_recovery_router,
+      std::ref(offsets_recoverer),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      node_id)
+      .get();
+
     syschecks::systemd_message("Creating kafka group shard mapper").get();
     construct_service(
       coordinator_ntp_mapper,
       std::ref(metadata_cache),
       model::kafka_consumer_offsets_nt)
       .get();
+
+    offsets_recovery_manager
+      = ss::make_shared<cluster::cloud_metadata::offsets_recovery_manager>(
+        std::ref(offsets_recovery_router),
+        std::ref(coordinator_ntp_mapper),
+        controller->get_members_table(),
+        controller->get_api(),
+        std::ref(controller->get_topics_frontend()));
     syschecks::systemd_message("Creating kafka group router").get();
     construct_service(
       group_router,
@@ -2423,12 +2457,18 @@ void application::start_runtime_services(
     if (offsets_upload_router.local_is_initialized()) {
         offsets_upload_requestor = offsets_upload_router.local_shared();
     }
+    ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>
+      offsets_recovery_requestor;
+    if (offsets_recovery_router.local_is_initialized()) {
+        offsets_recovery_requestor = offsets_recovery_manager;
+    }
     controller
       ->start(
         cd,
         app_signal.abort_source(),
         std::move(offsets_upload_requestor),
-        producer_id_recovery_manager)
+        producer_id_recovery_manager,
+        std::move(offsets_recovery_requestor))
       .get0();
 
     // FIXME: in first patch explain why this is started after the
@@ -2448,6 +2488,7 @@ void application::start_runtime_services(
               sched_groups.archival_upload(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(offsets_lookup),
+              std::ref(offsets_recovery_router),
               std::ref(offsets_upload_router)));
           runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             sched_groups.raft_sg(),
