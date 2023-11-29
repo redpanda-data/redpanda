@@ -295,6 +295,7 @@ ss::future<> segment_appender::truncate(size_t n) {
       n <= file_byte_offset(),
       "Cannot ask to truncate at:{} which is more bytes than we have:{} - {}",
       file_byte_offset(),
+      n,
       *this);
     return hard_flush()
       .then([this, n] { return do_truncation(n); })
@@ -664,7 +665,10 @@ bool segment_appender::inflight_write::try_merge(
         // writes should form a contiguous series of writes and we only check
         // the last write for merging.
         vassert(
-          committed_offset == pco, "in try_merge writes didn't touch: {} {}");
+          committed_offset == pco,
+          "in try_merge writes didn't touch: {} {}",
+          committed_offset,
+          pco);
 
         // the lhs write cannot be full since then how could the next write
         // share its chunk: it must use a new chunk
