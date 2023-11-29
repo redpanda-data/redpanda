@@ -275,28 +275,12 @@ static ss::future<> do_write_clean_compacted_index(
   storage_resources& resources) {
     const auto tmpname = std::filesystem::path(
       fmt::format("{}.staging", reader.path()));
-    return natural_index_of_entries_to_keep(reader)
-      .then(
-        [reader, cfg, tmpname, &resources](
-          roaring::Roaring bitmap) -> ss::future<> {
-            auto truncating_writer = make_file_backed_compacted_index(
-              tmpname.string(),
-              cfg.iopc,
-              true,
-              resources,
-              cfg.sanitizer_config);
-
-            return copy_filtered_entries(
-              reader, std::move(bitmap), std::move(truncating_writer));
-        })
-      .then(
-        [old_name = tmpname,
-         new_name = ss::sstring(reader.path())]() -> ss::future<> {
-            // from glibc: If oldname is not a directory, then any
-            // existing file named newname is removed during the
-            // renaming operation
-            return ss::rename_file(std::string(old_name), new_name);
-        });
+    auto bitmap = co_await natural_index_of_entries_to_keep(reader);
+    auto truncating_writer = make_file_backed_compacted_index(
+      tmpname.string(), cfg.iopc, true, resources, cfg.sanitizer_config);
+    co_await copy_filtered_entries(
+      reader, std::move(bitmap), std::move(truncating_writer));
+    co_await ss::rename_file(std::string(tmpname), ss::sstring(reader.path()));
 };
 
 ss::future<> write_clean_compacted_index(
