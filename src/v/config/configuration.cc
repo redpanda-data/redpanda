@@ -1048,6 +1048,16 @@ configuration::configuration()
        .visibility = visibility::tunable},
       128_MiB,
       {.min = 16_MiB, .max = 100_GiB})
+  , storage_compaction_key_map_memory(
+      *this,
+      "storage_compaction_key_map_memory",
+      "Maximum number of bytes that may be used on each shard by compaction"
+      "key-offset maps",
+      {.needs_restart = needs_restart::no,
+       .example = "1073741824",
+       .visibility = visibility::tunable},
+      128_MiB,
+      {.min = 16_MiB, .max = 100_GiB})
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",

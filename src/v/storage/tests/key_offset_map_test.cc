@@ -34,7 +34,7 @@ public:
  */
 class default_sized_hash_key_offset_map : public storage::hash_key_offset_map {
 public:
-    default_sized_hash_key_offset_map() { reset(1_MiB).get(); }
+    default_sized_hash_key_offset_map() { initialize(1_MiB).get(); }
 };
 
 using test_types = ::testing::
@@ -193,7 +193,7 @@ TYPED_TEST(KeyOffsetMapTest, UpdateSucceedsWhenFull) {
 
 TEST(HashKeyOffsetMapTest, HitRate) {
     storage::hash_key_offset_map map;
-    map.reset(20_MiB).get();
+    map.initialize(20_MiB).get();
 
     int i = 0;
     while (true) {
@@ -210,7 +210,7 @@ TEST(HashKeyOffsetMapTest, HitRate) {
 
 TEST(HashKeyOffsetMapTest, Initialize) {
     storage::hash_key_offset_map map;
-    map.reset(1_MiB).get();
+    map.initialize(1_MiB).get();
 
     // fill it up with keys with offset 100
     for (int i = 0;; ++i) {
@@ -241,7 +241,7 @@ TEST(HashKeyOffsetMapTest, Initialize) {
     EXPECT_EQ(map.size(), orig_size);
 
     // but now we'll initialize it
-    map.initialize().get();
+    map.reset().get();
     EXPECT_EQ(map.size(), 0);
 
     // now try to write the 99 offsets

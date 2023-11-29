@@ -128,14 +128,14 @@ public:
      * container which may otherwise incur reactor stalls when freed as part of
      * the destructor cleanup.
      */
-    seastar::future<> reset(size_t size);
+    seastar::future<> initialize(size_t size_bytes);
 
     /**
      * Initialize prepares the container for use in a new context by resetting
      * every element to an initial state. This call does not change the size of
      * the container.
      */
-    seastar::future<> initialize();
+    seastar::future<> reset();
 
     /**
      * The ratio of hash table searches (e.g. one get or put) to the number of
