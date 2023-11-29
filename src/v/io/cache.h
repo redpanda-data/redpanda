@@ -439,15 +439,17 @@ private:
             return &((value.*Hook).hook_);
         }
 
-        static pointer to_value_ptr(hook_ptr n) {
+        static pointer to_value_ptr(hook_ptr hook) {
             return boost::intrusive::get_parent_from_member(
-              boost::intrusive::get_parent_from_member(n, &cache_hook::hook_),
+              boost::intrusive::get_parent_from_member(
+                hook, &cache_hook::hook_),
               Hook);
         }
 
-        static const_pointer to_value_ptr(const_hook_ptr n) {
+        static const_pointer to_value_ptr(const_hook_ptr hook) {
             return boost::intrusive::get_parent_from_member(
-              boost::intrusive::get_parent_from_member(n, &cache_hook::hook_),
+              boost::intrusive::get_parent_from_member(
+                hook, &cache_hook::hook_),
               Hook);
         }
     };

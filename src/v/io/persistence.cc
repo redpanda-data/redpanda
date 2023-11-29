@@ -24,10 +24,13 @@ namespace {
  * build an alignment error to return from read/write
  */
 seastar::future<size_t> make_alignment_error(
-  std::string_view op, std::string_view arg, auto val, uint64_t alignment) {
+  std::string_view op_name,
+  std::string_view arg,
+  auto val,
+  uint64_t alignment) {
     auto msg = fmt::format(
       R"(Op "{}" arg "{}" with value {} expects alignment {})",
-      op,
+      op_name,
       arg,
       val,
       alignment);
@@ -64,8 +67,8 @@ std::optional<seastar::future<size_t>> check_alignment(
 
 namespace experimental::io {
 
-disk_persistence::disk_file::disk_file(seastar::file f)
-  : file_(std::move(f)) {}
+disk_persistence::disk_file::disk_file(seastar::file file)
+  : file_(std::move(file)) {}
 
 seastar::future<size_t> disk_persistence::disk_file::dma_read(
   uint64_t pos, char* buf, size_t len) noexcept {
