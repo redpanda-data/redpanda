@@ -1743,9 +1743,8 @@ configuration::configuration()
       "enable_cluster_metadata_upload_loop",
       "Enables the cluster metadata upload loop.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
-      // TODO: set to true by default once the feature is ready.
       // TODO: make this runtime configurable.
-      false)
+      true)
   , cloud_storage_max_segments_pending_deletion_per_partition(
       *this,
       "cloud_storage_max_segments_pending_deletion_per_partition",
