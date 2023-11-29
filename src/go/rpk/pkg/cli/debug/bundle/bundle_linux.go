@@ -181,13 +181,14 @@ type stepParams struct {
 }
 
 type fileInfo struct {
-	Size     string `json:"size"`
-	Mode     string `json:"mode"`
-	Symlink  string `json:"symlink,omitempty"`
-	Error    string `json:"error,omitempty"`
-	Modified string `json:"modified"`
-	User     string `json:"user"`
-	Group    string `json:"group"`
+	Size      string `json:"size"`
+	Mode      string `json:"mode"`
+	Symlink   string `json:"symlink,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Modified  string `json:"modified"`
+	User      string `json:"user"`
+	Group     string `json:"group"`
+	SizeBytes int64  `json:"size_bytes"`
 }
 
 type limitedWriter struct {
@@ -994,7 +995,9 @@ func walkDir(root string, files map[string]*fileInfo) error {
 				return nil
 			}
 
-			i.Size = units.HumanSize(float64(info.Size()))
+			bSize := info.Size()
+			i.SizeBytes = bSize
+			i.Size = units.HumanSize(float64(bSize))
 			i.Mode = info.Mode().String()
 			i.Modified = info.ModTime().String()
 
