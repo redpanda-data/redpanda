@@ -30,8 +30,8 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start the topic recovery process",
-		Long: `Start the topic recovery process.
+		Short: "Start the topic restoration process",
+		Long: `Start the topic restoration process.
 		
 This command starts the process of restoring topics from the archival bucket.
 If the wait flag (--wait/-w) is set, the command will poll the status of the
@@ -66,7 +66,7 @@ recovery process until it's finished.`,
 			fmt.Println("Successfully started topic recovery")
 
 			if !wait {
-				fmt.Println("To check the recovery status, run 'rpk cluster storage recovery status'")
+				fmt.Println("To check the recovery status, run 'rpk cluster storage restore status'")
 				return
 			}
 
