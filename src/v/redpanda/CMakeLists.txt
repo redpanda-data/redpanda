@@ -44,6 +44,7 @@ v_cc_library(
     admin/server.cc
     admin/debug.cc
     admin/transform.cc
+    admin/security.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc
