@@ -39,14 +39,18 @@ static size_t add_sqrt_jitter(size_t mean, size_t item_size) {
 
 class partition_balancer_sim_fixture {
 public:
-    void add_node(model::node_id id, size_t total_size, uint32_t n_cores = 4) {
+    void add_node(
+      model::node_id id,
+      size_t total_size,
+      uint32_t n_cores = 4,
+      std::optional<model::rack_id> rack = std::nullopt) {
         vassert(!_nodes.contains(id), "duplicate node id: {}", id);
 
         model::broker broker(
           id,
           net::unresolved_address{},
           net::unresolved_address{},
-          std::nullopt,
+          rack,
           model::broker_properties{
             .cores = n_cores,
             .available_memory_gb = 2,
@@ -690,4 +694,27 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
     BOOST_REQUIRE(run_to_completion(1000));
     validate_even_replica_distribution();
     validate_even_topic_distribution();
+}
+
+FIXTURE_TEST(
+  test_heterogeneous_racks_full_disk, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 3; ++i) {
+        add_node(
+          model::node_id{i},
+          1000_GiB,
+          4,
+          model::rack_id{ssx::sformat("rack_{}", i)});
+    }
+    add_node(model::node_id{3}, 1000_GiB, 4, model::rack_id{"rack_0"});
+
+    add_topic("topic_1", 50, 3, 18_GiB);
+
+    // Nodes 0 and 3 are in rack_0 and 1 and 2 are each in racks of their own.
+    // We expect 1 and 2 to go over 80% disk limit and the balancer to fix this
+    // (even though some rack constraint violations are introduced).
+
+    BOOST_REQUIRE(run_to_completion(100));
+    for (const auto& [id, node] : nodes()) {
+        BOOST_REQUIRE(double(node.used) / node.total < 0.8);
+    }
 }
