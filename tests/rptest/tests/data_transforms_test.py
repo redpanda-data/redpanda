@@ -9,6 +9,7 @@
 
 import typing
 
+from ducktape.mark import matrix
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
@@ -126,7 +127,8 @@ class DataTransformsTest(RedpandaTest):
         self._deploy_wasm("identity-xform")
         self._delete_wasm("identity-xform")
 
-    def _produce_input_topic(self) -> TransformVerifierProduceStatus:
+    def _produce_input_topic(
+            self, transactional: bool) -> TransformVerifierProduceStatus:
         input_topic = self.topics[0]
 
         status = TransformVerifierService.oneshot(
@@ -138,6 +140,7 @@ class DataTransformsTest(RedpandaTest):
                 max_bytes='1MB',
                 message_size='1KB',
                 topic=input_topic.name,
+                transactional=transactional,
             ))
         return typing.cast(TransformVerifierProduceStatus, status)
 
@@ -153,16 +156,19 @@ class DataTransformsTest(RedpandaTest):
                 topic=output_topic.name,
                 bytes_per_second='1MB',
                 validate=status,
-            ))
+            ),
+            timeout_sec=10)
         return typing.cast(TransformVerifierConsumeStatus, result)
 
     @cluster(num_nodes=4)
-    def test_identity(self):
+    @matrix(transactional=[False, True])
+    def test_identity(self, transactional):
         """
         Test that a transform that only copies records from the input to the output topic works as intended.
         """
         self._deploy_wasm("identity-xform")
-        producer_status = self._produce_input_topic()
+        producer_status = self._produce_input_topic(
+            transactional=transactional)
         consumer_status = self._consume_output_topic(producer_status)
         self.logger.info(f"{consumer_status}")
-        assert consumer_status.invalid_records == 0, "transform verification failed with invalid records: {consumer_status}"
+        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"

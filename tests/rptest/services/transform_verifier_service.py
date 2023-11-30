@@ -67,16 +67,20 @@ class TransformVerifierProduceConfig(typing.NamedTuple):
     # Maximum size to batch records on the client
     # i.e. 1MB
     max_batch_size: str
+    transactional: bool = False
 
     def serialize_cmd(self) -> str:
-        return " ".join([
+        cmd = [
             "produce",
             f"--topic={self.topic}",
             f"--max-bytes={self.max_bytes}",
             f"--bytes-per-second={self.bytes_per_second}",
             f"--message-size={self.message_size}",
             f"--max-batch-size={self.max_batch_size}",
-        ])
+        ]
+        if self.transactional:
+            cmd.append("--transactional")
+        return " ".join(cmd)
 
     def deserialize_status(self, buf: str | bytes | bytearray):
         return TransformVerifierProduceStatus.deserialize(buf)
@@ -135,6 +139,8 @@ class TransformVerifierConsumeConfig(typing.NamedTuple):
         return TransformVerifierConsumeStatus.deserialize(buf)
 
     def is_done(self, status: TransformVerifierConsumeStatus) -> bool:
+        if status.invalid_records > 0:
+            return True
         for partition, amt in self.validate.latest_seqnos.items():
             if status.latest_seqnos.get(partition, 0) < amt:
                 return False
@@ -170,16 +176,19 @@ class TransformVerifierService(Service):
     _pid: typing.Optional[int]
 
     @classmethod
-    def oneshot(cls, context: TestContext, redpanda: RedpandaService,
+    def oneshot(cls,
+                context: TestContext,
+                redpanda: RedpandaService,
                 config: TransformVerifierConsumeConfig
-                | TransformVerifierProduceConfig):
+                | TransformVerifierProduceConfig,
+                timeout_sec=300):
         """
         Common pattern to use the service
         """
         service = cls(context, redpanda, config)
         service.start()
         try:
-            service.wait()
+            service.wait(timeout_sec=timeout_sec)
             final_status = service.get_status()
             service.stop()
             service.free()
@@ -252,7 +261,11 @@ class TransformVerifierService(Service):
             return
 
         # Attempt a graceful stop
-        self._execute_cmd(node, "stop")
+        try:
+            self._execute_cmd(node, "stop")
+        except Exception as e:
+            self.logger.warn("unable to request /stop {self.who_am_i()}: {e}")
+
         try:
             wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                        timeout_sec=10,
@@ -260,10 +273,11 @@ class TransformVerifierService(Service):
             self._pid = None
             return
         except TimeoutError as e:
-            self.logger.warn("gracefully stopping service failed: {e}")
+            self.logger.warn(
+                "gracefully stopping {self.who_am_i()} failed: {e}")
 
         # Gracefully stop did not work, try a hard kill
-        self.logger.debug(f"Killing pid {self._pid}")
+        self.logger.debug(f"Killing pid for {self.who_am_i()}")
         try:
             node.account.signal(self._pid, signal.SIGKILL, allow_fail=False)
         except RemoteCommandError as e:

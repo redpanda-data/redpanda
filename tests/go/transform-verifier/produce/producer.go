@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
@@ -18,10 +20,11 @@ import (
 )
 
 var (
-	bps          = 512 * bytesize.KB
-	totalBytes   = 10 * bytesize.MB
-	messageSize  = 1 * bytesize.KB
-	maxBatchSize = 1 * bytesize.MB
+	bps           = 512 * bytesize.KB
+	totalBytes    = 10 * bytesize.MB
+	messageSize   = 1 * bytesize.KB
+	maxBatchSize  = 1 * bytesize.MB
+	transactional = false
 )
 
 type ProduceStatus struct {
@@ -64,6 +67,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().Var(&totalBytes, "max-bytes", "How many bytes to send overall")
 	cmd.Flags().Var(&messageSize, "message-size", "How many bytes to send per message")
 	cmd.Flags().Var(&maxBatchSize, "max-batch-size", "How many bytes to send per batch")
+	cmd.Flags().BoolVar(&transactional, "transactional", false, "Use transactions to produce, and occationally abort transactions")
 
 	return cmd
 }
@@ -87,7 +91,9 @@ func createValueGenerator() func(size int) ([]byte, error) {
 	}
 }
 
-func createRecordGenerator(partition int32) func() (*kgo.Record, error) {
+type recordGenerator = func() (*kgo.Record, error)
+
+func createRecordGenerator(partition int32) recordGenerator {
 	seqno := uint64(0)
 	keyGen := createKeyGenerator()
 	valGen := createValueGenerator()
@@ -149,12 +155,18 @@ func produce(ctx context.Context) error {
 		partition := p // prevent silly golang loop variable bounding issues
 		wg.Go(func() error {
 			slog.Info("starting to produce", "partition", partition)
-			err := produceForPartition(ctx, partitionProduceConfig{
+			config := partitionProduceConfig{
 				maxBytes,
 				partition,
 				reporter,
 				rateLimiter,
-			})
+			}
+			var err error
+			if transactional {
+				err = produceTransactionallyForPartition(ctx, config)
+			} else {
+				err = produceForPartition(ctx, config)
+			}
 			slog.Info("finished producing", "partition", partition, "err", err)
 			return err
 		})
@@ -221,5 +233,91 @@ func produceForPartition(ctx context.Context, config partitionProduceConfig) err
 		config.reporter(ProduceStatus{BytesSent: size})
 	}
 	wg.Wait()
+	return nil
+}
+
+func createInvalidRecordGenerator(partition int32) recordGenerator {
+	// Create an empty record with the highest seqno that would cause the checks in the consumer to fail.
+	return func() (*kgo.Record, error) {
+		return &kgo.Record{
+			Key:       nil,
+			Value:     nil,
+			Timestamp: time.Now(),
+			Partition: partition,
+			Headers: []kgo.RecordHeader{
+				common.MakeSeqnoHeader(math.MaxUint64),
+			},
+		}, nil
+	}
+}
+
+func produceTransactionallyForPartition(ctx context.Context, config partitionProduceConfig) error {
+	client, err := common.NewClient(
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		kgo.TransactionalID(fmt.Sprintf("%d-%s-txn-producer-%d", os.Getpid(), os.Args[0], config.partition)),
+	)
+	if err != nil {
+		return fmt.Errorf("unable to create client: %v", err)
+	}
+	defer client.Close()
+	generator := createRecordGenerator(config.partition)
+	invalidGenerator := createInvalidRecordGenerator(config.partition)
+	bytesSent := 0
+	produce := func(r *kgo.Record, commit kgo.TransactionEndTry) ProduceStatus {
+		if err := client.BeginTransaction(); err != nil {
+			slog.Warn("error starting txn", "err", err)
+			return ProduceStatus{ErrorCount: 1}
+		}
+		err := client.ProduceSync(ctx, r).FirstErr()
+		if ctx.Err() != nil {
+			// we're cancelled do nothing
+			return ProduceStatus{}
+		} else if err != nil {
+			slog.Warn("error producing record", "err", err)
+			return ProduceStatus{ErrorCount: 1}
+		}
+		if err := client.Flush(ctx); err != nil {
+			slog.Warn("error flushing record", "err", err)
+			return ProduceStatus{ErrorCount: 1}
+		}
+		if err := client.EndTransaction(ctx, commit); err != nil {
+			slog.Warn("error ending txn", "err", err)
+			return ProduceStatus{ErrorCount: 1}
+		}
+		seqnos := make(map[int]uint64)
+		h, err := common.FindSeqnoHeader(r)
+		if err != nil {
+			slog.Warn("error finding seqno header", "err", err)
+			return ProduceStatus{ErrorCount: 1}
+		}
+		seqnos[int(r.Partition)] = h
+		return ProduceStatus{LatestSeqnos: seqnos}
+	}
+
+	for bytesSent < config.maxBytes && ctx.Err() == nil {
+		r, err := generator()
+		if err != nil {
+			return fmt.Errorf("unable to create record: %v", err)
+		}
+		size := common.RecordSize(r)
+		if err := config.rateLimiter.WaitN(ctx, size); err != nil {
+			// Only return the error if we were not cancelled
+			if ctx.Err() == nil {
+				return fmt.Errorf("unable to rate limit: %v", err)
+			}
+			return nil
+		}
+		status := produce(r, kgo.TryCommit)
+		bytesSent += size
+		status.BytesSent += size
+		config.reporter(status)
+
+		// Every time we commit something successfully, also abort a record that would break the consumer to ensure those records aren't surfaced.
+		r, err = invalidGenerator()
+		if err != nil {
+			return fmt.Errorf("unable to create record: %v", err)
+		}
+		produce(r, kgo.TryAbort)
+	}
 	return nil
 }
