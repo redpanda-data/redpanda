@@ -203,23 +203,17 @@ subtract(const std::vector<T>& lhs, const std::vector<T>& rhs) {
     return ret;
 }
 
-inline std::vector<model::broker_shard> union_replica_sets(
-  const std::vector<model::broker_shard>& lhs,
-  const std::vector<model::broker_shard>& rhs) {
-    std::vector<model::broker_shard> ret;
-    // Inefficient but constant time for small replica sets.
+template<class T>
+inline std::vector<T>
+union_vectors(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+    std::vector<T> ret;
+    // Inefficient but constant time for small vectors.
     std::copy_if(
-      lhs.begin(),
-      lhs.end(),
-      std::back_inserter(ret),
-      [&ret](const model::broker_shard& bs) {
+      lhs.begin(), lhs.end(), std::back_inserter(ret), [&ret](const T& bs) {
           return std::find(ret.begin(), ret.end(), bs) == ret.end();
       });
     std::copy_if(
-      rhs.begin(),
-      rhs.end(),
-      std::back_inserter(ret),
-      [&ret](const model::broker_shard& bs) {
+      rhs.begin(), rhs.end(), std::back_inserter(ret), [&ret](const T& bs) {
           return std::find(ret.begin(), ret.end(), bs) == ret.end();
       });
     return ret;
@@ -254,9 +248,11 @@ inline bool is_proper_subset(
  * Subtracts second replica set from the first one. Result contains only brokers
  * that node_ids are present in the first list but not the other one
  */
+template<class T>
+requires std::is_same_v<T, model::broker_shard>
+         || std::is_same_v<T, model::node_id>
 inline std::vector<model::broker_shard> subtract_replica_sets_by_node_id(
-  const std::vector<model::broker_shard>& lhs,
-  const std::vector<model::broker_shard>& rhs) {
+  const std::vector<model::broker_shard>& lhs, const std::vector<T>& rhs) {
     std::vector<model::broker_shard> ret;
     std::copy_if(
       lhs.begin(),
@@ -266,13 +262,17 @@ inline std::vector<model::broker_shard> subtract_replica_sets_by_node_id(
           return std::find_if(
                    rhs.begin(),
                    rhs.end(),
-                   [&lhs_bs](const model::broker_shard& rhs_bs) {
-                       return rhs_bs.node_id == lhs_bs.node_id;
+                   [&lhs_bs](const T& entry) {
+                       if constexpr (std::is_same_v<T, model::broker_shard>) {
+                           return entry.node_id == lhs_bs.node_id;
+                       }
+                       return entry == lhs_bs.node_id;
                    })
                  == rhs.end();
       });
     return ret;
 }
+
 // check if replica set contains a node
 inline bool contains_node(
   const std::vector<model::broker_shard>& replicas, model::node_id id) {

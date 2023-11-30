@@ -23,10 +23,13 @@
 
 namespace cluster {
 
+enum ntp_reassignment_type : int8_t { regular, force };
+
 struct ntp_reassignment {
     model::ntp ntp;
     allocated_partition allocated;
     reconfiguration_policy reconfiguration_policy;
+    ntp_reassignment_type type;
 };
 
 struct planner_config {
@@ -97,6 +100,7 @@ private:
     class request_context;
     class partition;
     class reassignable_partition;
+    class force_reassignable_partition;
     class moving_partition;
     class immutable_partition;
 
@@ -117,6 +121,7 @@ private:
     static ss::future<> get_rack_constraint_repair_actions(request_context&);
     static ss::future<> get_full_node_actions(request_context&);
     static ss::future<> get_counts_rebalancing_actions(request_context&);
+    static ss::future<> get_force_repair_actions(request_context&);
 
     static size_t calculate_full_disk_partition_move_priority(
       model::node_id, const reassignable_partition&, const request_context&);

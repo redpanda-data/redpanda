@@ -393,6 +393,16 @@ std::ostream& operator<<(std::ostream& o, maintenance_state st) {
     __builtin_unreachable();
 }
 
+std::ostream& operator<<(std::ostream& o, liveness_state state) {
+    switch (state) {
+    case liveness_state::functional:
+        return o << "functional";
+    case liveness_state::defunct:
+        return o << "defunct";
+    }
+    __builtin_unreachable();
+}
+
 std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs) {
     switch (cs) {
     case cloud_credentials_source::config_file:

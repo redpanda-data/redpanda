@@ -49,7 +49,8 @@ private:
     ss::sstring _msg;
 };
 
-inline void validate(json::validator& validator, const json::Document& json) {
+inline void
+validate(json::validator& validator, const json::Document::ValueType& json) {
     validator.schema_validator.Reset();
     validator.schema_validator.ResetError();
 

@@ -52,7 +52,7 @@ struct features_t
 
 struct members_t
   : public serde::
-      envelope<members_t, serde::version<0>, serde::compat_version<0>> {
+      envelope<members_t, serde::version<1>, serde::compat_version<0>> {
     struct node_t
       : serde::envelope<node_t, serde::version<0>, serde::compat_version<0>> {
         model::broker broker;
@@ -85,6 +85,8 @@ struct members_t
     absl::node_hash_map<model::node_id, update_t> in_progress_updates;
 
     model::offset first_node_operation_command_offset;
+    absl::btree_map<model::ntp, std::vector<ntp_with_majority_loss>>
+      partitions_to_force_recover;
 
     friend bool operator==(const members_t&, const members_t&) = default;
 
@@ -96,7 +98,8 @@ struct members_t
           removed_nodes,
           removed_nodes_still_in_raft0,
           in_progress_updates,
-          first_node_operation_command_offset);
+          first_node_operation_command_offset,
+          partitions_to_force_recover);
     }
 };
 

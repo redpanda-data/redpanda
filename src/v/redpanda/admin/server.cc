@@ -464,7 +464,8 @@ namespace {
  * string-ize any schema errors in the 400 response to help
  * caller see what went wrong.
  */
-void apply_validator(json::validator& validator, json::Document const& doc) {
+void apply_validator(
+  json::validator& validator, json::Document::ValueType const& doc) {
     try {
         json::validate(validator, doc);
     } catch (json::json_validation_error& err) {
@@ -1033,6 +1034,8 @@ get_brokers(cluster::controller* const controller) {
               }
               b.membership_status = fmt::format(
                 "{}", nm.state.get_membership_state());
+              b.liveness_status = fmt::format(
+                "{}", nm.state.get_liveness_state());
 
               // These fields are defaults that will be overwritten with
               // data from the health report.
@@ -2915,6 +2918,10 @@ admin_server::force_set_partition_replicas_handler(
           "Feature not active yet, upgrade in progress?");
     }
 
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
     auto ntp = parse_ntp_from_request(req->param);
     if (ntp == model::controller_ntp) {
         throw ss::httpd::bad_request_exception(
@@ -3198,6 +3205,18 @@ void admin_server::register_partition_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           return get_reconfigurations_handler(std::move(req));
       });
+
+    register_route<user>(
+      ss::httpd::partition_json::majority_lost,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return get_majority_lost_partitions(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::partition_json::force_recover_from_nodes,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return force_recover_partitions_from_nodes(std::move(req));
+      });
 }
 namespace {
 ss::httpd::partition_json::partition
@@ -3352,6 +3371,330 @@ admin_server::get_topic_partitions_handler(
       });
 
     co_return ss::json::json_return_type(partitions);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_majority_lost_partitions(
+  std::unique_ptr<ss::http::request> request) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*request, model::controller_ntp);
+    }
+
+    auto input = request->get_query_param("defunct_nodes");
+    if (input.length() <= 0) {
+        throw ss::httpd::bad_param_exception(
+          "Query parameter defunct_nodes not set, expecting a csv of integers "
+          "(broker_ids)");
+    }
+
+    std::vector<ss::sstring> tokens;
+    boost::split(tokens, input, boost::is_any_of(","));
+
+    std::vector<model::node_id> defunct_nodes;
+    defunct_nodes.reserve(tokens.size());
+    for (auto& token : tokens) {
+        try {
+            defunct_nodes.emplace_back(std::stoi(token));
+        } catch (...) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "Token {} doesn't parse to an integer in input: {}, expecting a "
+              "csv of integer broker_ids",
+              token,
+              input));
+        }
+    }
+
+    if (defunct_nodes.size() == 0) {
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Malformed input query parameter: {}, expecting a csv of "
+          "integers (broker_ids)",
+          input));
+    }
+
+    vlog(
+      adminlog.info,
+      "Request for majority loss partitions from input defunct nodes: {}",
+      defunct_nodes);
+
+    auto result = co_await _controller->get_topics_frontend()
+                    .local()
+                    .partitions_with_lost_majority(std::move(defunct_nodes));
+    if (!result) {
+        if (
+          result.error().category() == cluster::error_category()
+          && result.error() == cluster::errc::concurrent_modification_error) {
+            throw ss::httpd::base_exception(
+              "Concurrent changes to topics while the operation, retry after "
+              "some time, ensure there are no reconfigurations in progress.",
+              ss::http::reply::status_type::service_unavailable);
+        } else if (
+          result.error().category() == cluster::error_category()
+          && result.error() == cluster::errc::invalid_request) {
+            throw ss::httpd::base_exception{
+              "Invalid request, check the broker log for details.",
+              ss::http::reply::status_type::bad_request};
+        }
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Internal error while processing request: {}",
+            result.error().message()),
+          ss::http::reply::status_type::internal_server_error);
+    }
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      lw_shared_container(std::move(result.value())),
+      [](const cluster::ntp_with_majority_loss& ntp) mutable {
+          ss::httpd::partition_json::ntp ntp_json;
+          ntp_json.ns = ntp.ntp.ns();
+          ntp_json.topic = ntp.ntp.tp.topic();
+          ntp_json.partition = ntp.ntp.tp.partition();
+
+          ss::httpd::partition_json::ntp_with_majority_loss result;
+          result.ntp = std::move(ntp_json);
+          result.topic_revision = ntp.topic_revision;
+          for (auto& replica : ntp.assignment) {
+              ss::httpd::partition_json::assignment assignment;
+              assignment.node_id = replica.node_id;
+              assignment.core = replica.shard;
+              result.replicas.push(assignment);
+          }
+          for (auto& node : ntp.defunct_nodes) {
+              result.defunct_nodes.push(node());
+          }
+          return result;
+      }));
+}
+
+namespace {
+
+json::validator make_node_id_array_validator() {
+    const std::string schema = R"(
+    {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    }
+  )";
+    return json::validator(schema);
+}
+
+std::vector<model::node_id>
+parse_node_ids_from_json(const json::Document::ValueType& val) {
+    static thread_local json::validator validator(
+      make_node_id_array_validator());
+    apply_validator(validator, val);
+    std::vector<model::node_id> nodes;
+    for (auto& r : val.GetArray()) {
+        nodes.emplace_back(r.GetInt());
+    }
+    return nodes;
+}
+
+json::validator make_force_recover_partitions_validator() {
+    const std::string schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "defunct_nodes": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "partitions_to_force_recover": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ntp": {
+            "type": "object",
+            "properties": {
+              "ns": {
+                "type": "string"
+              },
+              "topic": {
+                "type": "string"
+              },
+              "partition": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "ns",
+              "topic",
+              "partition"
+            ]
+          },
+          "topic_revision": {
+            "type": "number"
+          },
+          "replicas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "node_id": {
+                  "type": "number"
+                },
+                "core": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "node_id",
+                "core"
+              ]
+            }
+          },
+          "defunct_nodes": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "ntp",
+          "topic_revision",
+          "replicas",
+          "defunct_nodes"
+        ]
+      }
+    }
+  },
+  "required": [
+    "defunct_nodes",
+    "partitions_to_force_recover"
+  ]
+}
+)";
+    return json::validator(schema);
+}
+
+json::validator make_ntp_validator() {
+    const std::string schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "ns": {
+      "type": "string"
+    },
+    "topic": {
+      "type": "string"
+    },
+    "partition": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "ns",
+    "topic",
+    "partition"
+  ]
+}
+)";
+    return json::validator(schema);
+}
+
+model::ntp parse_ntp_from_json(const json::Document::ValueType& value) {
+    static thread_local json::validator validator(make_ntp_validator());
+    apply_validator(validator, value);
+    return {
+      model::ns{value["ns"].GetString()},
+      model::topic(value["topic"].GetString()),
+      model::partition_id(value["partition"].GetInt())};
+}
+
+json::validator make_replicas_validator() {
+    const std::string schema = R"(
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "node_id": {
+        "type": "number"
+      },
+      "core": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "node_id",
+      "core"
+    ]
+  }
+}
+  )";
+    return json::validator(schema);
+}
+
+std::vector<model::broker_shard>
+parse_replicas_from_json(const json::Document::ValueType& value) {
+    static thread_local json::validator validator(make_replicas_validator());
+    apply_validator(validator, value);
+    std::vector<model::broker_shard> replicas;
+    replicas.reserve(value.GetArray().Size());
+    for (auto& r : value.GetArray()) {
+        model::broker_shard bs;
+        bs.node_id = model::node_id(r["node_id"].GetInt());
+        bs.shard = r["core"].GetInt();
+        replicas.push_back(bs);
+    }
+    return replicas;
+}
+
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::force_recover_partitions_from_nodes(
+  std::unique_ptr<ss::http::request> request) {
+    if (!_controller->get_feature_table().local().is_active(
+          features::feature::enhanced_force_reconfiguration)) {
+        throw ss::httpd::bad_request_exception(
+          "Required feature is not active yet which indicates the cluster has "
+          "not fully upgraded yet, retry after a successful upgrade.");
+    }
+
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*request, model::controller_ntp);
+    }
+
+    static thread_local json::validator validator(
+      make_force_recover_partitions_validator());
+
+    auto doc = co_await parse_json_body(request.get());
+    apply_validator(validator, doc);
+
+    // parse the json body into a controller command.
+    std::vector<model::node_id> dead_nodes = parse_node_ids_from_json(
+      doc["defunct_nodes"]);
+    fragmented_vector<cluster::ntp_with_majority_loss>
+      partitions_to_force_recover;
+    for (auto& r : doc["partitions_to_force_recover"].GetArray()) {
+        auto ntp = parse_ntp_from_json(r["ntp"]);
+        auto replicas = parse_replicas_from_json(r["replicas"]);
+        auto topic_revision = model::revision_id(
+          r["topic_revision"].GetInt64());
+        auto dead_replicas = parse_node_ids_from_json(r["defunct_nodes"]);
+
+        cluster::ntp_with_majority_loss ntp_entry;
+        ntp_entry.ntp = std::move(ntp);
+        ntp_entry.assignment = std::move(replicas);
+        ntp_entry.topic_revision = topic_revision;
+        ntp_entry.defunct_nodes = std::move(dead_replicas);
+        partitions_to_force_recover.push_back(std::move(ntp_entry));
+    }
+
+    auto ec = co_await _controller->get_topics_frontend()
+                .local()
+                .force_recover_partitions_from_nodes(
+                  std::move(dead_nodes),
+                  std::move(partitions_to_force_recover),
+                  model::timeout_clock::now() + 5s);
+
+    co_await throw_on_error(*request, ec, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
 }
 
 ss::future<ss::json::json_return_type>
@@ -4080,6 +4423,13 @@ admin_server::get_partition_balancer_status_handler(
 
     ret.current_reassignments_count
       = _controller->get_topics_state().local().updates_in_progress().size();
+
+    ret.partitions_pending_force_recovery_count
+      = overview.partitions_pending_force_recovery_count;
+    for (const auto& ntp : overview.partitions_pending_force_recovery_sample) {
+        ret.partitions_pending_force_recovery_sample.push(fmt::format(
+          "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition()));
+    }
 
     co_return ss::json::json_return_type(ret);
 }

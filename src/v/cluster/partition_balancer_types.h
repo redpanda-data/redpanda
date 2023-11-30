@@ -21,6 +21,7 @@
 
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 
 namespace cluster {
 
@@ -204,7 +205,7 @@ struct partition_balancer_overview_request
 struct partition_balancer_overview_reply
   : serde::envelope<
       partition_balancer_overview_reply,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -214,6 +215,8 @@ struct partition_balancer_overview_reply
     std::optional<partition_balancer_violations> violations;
     absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
       decommission_realloc_failures;
+    size_t partitions_pending_force_recovery_count;
+    std::vector<model::ntp> partitions_pending_force_recovery_sample;
 
     auto serde_fields() {
         return std::tie(
@@ -221,25 +224,33 @@ struct partition_balancer_overview_reply
           last_tick_time,
           status,
           violations,
-          decommission_realloc_failures);
+          decommission_realloc_failures,
+          partitions_pending_force_recovery_count,
+          partitions_pending_force_recovery_sample);
     }
 
     bool operator==(const partition_balancer_overview_reply& other) const {
         return error == other.error && last_tick_time == other.last_tick_time
                && status == other.status && violations == other.violations
                && decommission_realloc_failures
-                    == other.decommission_realloc_failures;
+                    == other.decommission_realloc_failures
+               && partitions_pending_force_recovery_count
+                    == other.partitions_pending_force_recovery_count
+               && partitions_pending_force_recovery_sample
+                    == other.partitions_pending_force_recovery_sample;
     }
 
     friend std::ostream&
     operator<<(std::ostream& o, const partition_balancer_overview_reply& rep) {
         fmt::print(
           o,
-          "{{ error: {} last_tick_time: {} status: {} violations: {}}}",
+          "{{ error: {} last_tick_time: {} status: {} violations: {}, "
+          "partitions_pending_force_recovery: {}}}",
           rep.error,
           rep.last_tick_time,
           rep.status,
-          rep.violations);
+          rep.violations,
+          rep.partitions_pending_force_recovery_count);
         return o;
     }
 };

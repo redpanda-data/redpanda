@@ -278,6 +278,10 @@
                     "type": "string",
                     "description": "Broker membership status"
                 },
+                "liveness_status": {
+                    "type": "string",
+                    "description": "Current liveness state, functional unless opted in as defunct by operator"
+                },
                 "is_alive": {
                     "type": "boolean",
                     "description": "is node seen as alive by the cluster"

@@ -1246,6 +1246,34 @@ operator<<(std::ostream& o, const add_paritions_tx_request::topic& t) {
     fmt::print(o, "{{topic: {}, partitions: {}}}", t.name, t.partitions);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const ntp_with_majority_loss& entry) {
+    fmt::print(
+      o,
+      "{{ ntp: {}, topic_revision: {}, replicas: {}, defunct nodes: {} }}",
+      entry.ntp,
+      entry.topic_revision,
+      entry.assignment,
+      entry.defunct_nodes);
+    return o;
+}
+
+defunct_node_cmd_data::defunct_node_cmd_data(const defunct_node_cmd_data& other)
+  : defunct_nodes(other.defunct_nodes) {
+    user_approved_force_recovery_partitions
+      = other.user_approved_force_recovery_partitions.copy();
+}
+
+defunct_node_cmd_data&
+defunct_node_cmd_data::operator=(const defunct_node_cmd_data& other) {
+    if (this != &other) {
+        defunct_nodes = other.defunct_nodes;
+        user_approved_force_recovery_partitions
+          = other.user_approved_force_recovery_partitions.copy();
+    }
+    return *this;
+}
+
 } // namespace cluster
 
 namespace reflection {

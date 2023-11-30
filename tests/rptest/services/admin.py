@@ -747,6 +747,19 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration"
         return self._request('post', path, node=node)
 
+    def get_majority_lost_partitions_from_nodes(self,
+                                                defunct_brokers: list[int],
+                                                node=None):
+        assert defunct_brokers
+        brokers_csv = ','.join(str(b) for b in defunct_brokers)
+        path = f"partitions/majority_lost?defunct_nodes={brokers_csv}"
+        return self._request('get', path, node).json()
+
+    def force_recover_partitions_from_nodes(self, payload: dict, node=None):
+        assert payload
+        path = "partitions/force_recover_from_nodes"
+        return self._request('post', path, node, json=payload)
+
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.debug(
             f"Creating user {username}:{password}:{algorithm}")
