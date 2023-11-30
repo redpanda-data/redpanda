@@ -127,16 +127,18 @@ public:
         explicit disk_file(seastar::file file);
 
         seastar::future<size_t>
-        dma_read(uint64_t, char*, size_t) noexcept override;
+        dma_read(uint64_t pos, char* buf, size_t len) noexcept override;
 
         seastar::future<size_t>
-        dma_write(uint64_t, const char*, size_t) noexcept override;
+        dma_write(uint64_t pos, const char* buf, size_t len) noexcept override;
 
         seastar::future<> close() noexcept override;
 
-        uint64_t disk_read_dma_alignment() const noexcept override;
-        uint64_t disk_write_dma_alignment() const noexcept override;
-        uint64_t memory_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_read_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_write_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t memory_dma_alignment() const noexcept override;
 
     private:
         seastar::file file_;
@@ -210,14 +212,17 @@ public:
 
         seastar::future<> close() noexcept override;
 
-        uint64_t disk_read_dma_alignment() const noexcept override;
-        uint64_t disk_write_dma_alignment() const noexcept override;
-        uint64_t memory_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_read_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t
+        disk_write_dma_alignment() const noexcept override;
+        [[nodiscard]] uint64_t memory_dma_alignment() const noexcept override;
 
     private:
-        seastar::future<> ensure_capacity(size_t);
-        seastar::future<size_t> read(uint64_t, char*, size_t);
-        seastar::future<size_t> write(uint64_t, const char*, size_t);
+        seastar::future<> ensure_capacity(size_t size);
+        seastar::future<size_t> read(uint64_t pos, char* buf, size_t len);
+        seastar::future<size_t>
+        write(uint64_t pos, const char* buf, size_t len);
 
         size_t size_{0};
         size_t capacity_{0};

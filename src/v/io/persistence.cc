@@ -24,10 +24,13 @@ namespace {
  * build an alignment error to return from read/write
  */
 seastar::future<size_t> make_alignment_error(
-  std::string_view op, std::string_view arg, auto val, uint64_t alignment) {
+  std::string_view op_name,
+  std::string_view arg,
+  auto val,
+  uint64_t alignment) {
     auto msg = fmt::format(
       R"(Op "{}" arg "{}" with value {} expects alignment {})",
-      op,
+      op_name,
       arg,
       val,
       alignment);
@@ -44,7 +47,7 @@ std::optional<seastar::future<size_t>> check_alignment(
   std::span<const char> data,
   uint64_t memory_alignment,
   uint64_t disk_alignment) {
-    if (pos % disk_alignment) {
+    if ((pos % disk_alignment) != 0) {
         return make_alignment_error(name, "pos", pos, disk_alignment);
     }
 
@@ -54,7 +57,7 @@ std::optional<seastar::future<size_t>> check_alignment(
         return make_alignment_error(name, "buf", ptr, memory_alignment);
     }
 
-    if (data.size() % disk_alignment) {
+    if ((data.size() % disk_alignment) != 0) {
         return make_alignment_error(name, "len", data.size(), disk_alignment);
     }
 
@@ -64,8 +67,8 @@ std::optional<seastar::future<size_t>> check_alignment(
 
 namespace experimental::io {
 
-disk_persistence::disk_file::disk_file(seastar::file f)
-  : file_(std::move(f)) {}
+disk_persistence::disk_file::disk_file(seastar::file file)
+  : file_(std::move(file)) {}
 
 seastar::future<size_t> disk_persistence::disk_file::dma_read(
   uint64_t pos, char* buf, size_t len) noexcept {
@@ -256,7 +259,7 @@ memory_persistence::memory_file::read(uint64_t pos, char* buffer, size_t len) {
 
     size_t bytes_read = 0;
     len = std::min(len, size_ - pos);
-    while (len) {
+    while (len != 0) {
         assert(it != data_.end());
 
         auto chunk_pos = pos - it->first;
@@ -294,7 +297,7 @@ seastar::future<size_t> memory_persistence::memory_file::write(
 
     size_t written = 0;
     std::span input(buf, len);
-    while (len) {
+    while (len != 0) {
         assert(it != data_.end());
 
         auto chunk_pos = pos - it->first;

@@ -14,7 +14,7 @@
 namespace io = experimental::io;
 
 TEST(Page, Empty) {
-    io::page p(1, {});
+    const io::page p(1, {});
     EXPECT_EQ(p.offset(), 1);
     EXPECT_EQ(p.size(), 0);
     EXPECT_EQ(p.data().size(), 0);
@@ -23,7 +23,7 @@ TEST(Page, Empty) {
 TEST(Page, NonEmpty) {
     constexpr auto size = 10;
     seastar::temporary_buffer<char> data(size);
-    io::page p(1, std::move(data));
+    const io::page p(1, std::move(data));
     EXPECT_EQ(p.offset(), 1);
     EXPECT_EQ(p.size(), size);
     EXPECT_EQ(p.data().size(), size);

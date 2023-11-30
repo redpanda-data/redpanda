@@ -31,9 +31,8 @@ make_random_data(size_t size, std::optional<uint64_t> alignment) {
         if (alignment.has_value()) {
             return seastar::temporary_buffer<char>::aligned(
               alignment.value(), size);
-        } else {
-            return seastar::temporary_buffer<char>(size);
         }
+        return seastar::temporary_buffer<char>(size);
     }();
 
     uint64_t offset = 0;

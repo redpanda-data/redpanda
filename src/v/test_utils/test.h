@@ -30,6 +30,7 @@ private:
     void TearDown() override { TearDownAsync().get(); }
 };
 
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,bugprone-macro-parentheses)
 #define GTEST_TEST_SEASTAR_(                                                   \
   test_suite_name, test_name, parent_class, parent_id)                         \
     static_assert(                                                             \
@@ -172,3 +173,4 @@ private:
 #define ASSERT_LT_CORO(val1, val2) GTEST_ASSERT_LT_CORO(val1, val2)
 #define ASSERT_LE_CORO(val1, val2) GTEST_ASSERT_LE_CORO(val1, val2)
 #define ASSERT_NE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
+// NOLINTEND(cppcoreguidelines-macro-usage,bugprone-macro-parentheses)
