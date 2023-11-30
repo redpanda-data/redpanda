@@ -110,7 +110,13 @@ tm_stm::tm_stm(
   , _cache(tm_stm_cache)
   , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {}
 
-ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
+ss::future<> tm_stm::start() {
+    // clear cache on startup as the stm now owns the state and it will be
+    // populated with stm internal mechanics
+    _cache->clear_log();
+    _cache->clear_mem();
+    co_await persisted_stm::start();
+}
 
 uint8_t tm_stm::active_snapshot_version() {
     if (_feature_table.local().is_active(
