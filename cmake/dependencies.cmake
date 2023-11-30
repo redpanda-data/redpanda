@@ -104,7 +104,7 @@ list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --features=addr2line)
 FetchContent_Declare(
   wasmtime
   GIT_REPOSITORY https://github.com/bytecodealliance/wasmtime
-  GIT_TAG 282edac149c0883a7d064132f93ce0a20a50d0d7
+  GIT_TAG v15.0.0
   GIT_PROGRESS TRUE
   USES_TERMINAL_DOWNLOAD TRUE
   OVERRIDE_FIND_PACKAGE
