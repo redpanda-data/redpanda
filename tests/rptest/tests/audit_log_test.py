@@ -407,6 +407,13 @@ class AuditLogTestBase(RedpandaTest):
         """
         self._modify_cluster_config({'audit_excluded_principals': principals})
 
+    def change_max_buffer_size_per_shard(self, new_size: int):
+        """
+        Modifies the audit_queue_max_buffer_size_per_shard configuration
+        """
+        self._modify_cluster_config(
+            {'audit_queue_max_buffer_size_per_shard': new_size})
+
     def modify_node_config(self, node, update_fn, skip_readiness_check=True):
         """Modifies the current node configuration, restarts the node for
         changes to take effect
@@ -555,7 +562,7 @@ class AuditLogTestBase(RedpandaTest):
                     )
                     return
                 self.next_offset_ingest = len(records)
-                new_records = [json.loads(msg['value']) for msg in records]
+                new_records = [json.loads(msg['value']) for msg in new_records]
                 self.logger.info(f"Ingested: {len(new_records)} records")
                 self.logger.debug(f'Ingested records:')
                 for rec in new_records:
@@ -669,6 +676,54 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
                     "Audit System", False),
             lambda record_count: record_count == 3,
             "One stop event observed for shutdown node")
+
+    @cluster(num_nodes=5)
+    def test_recovery_mode(self):
+        """
+        Tests that audit logging does not start when in recovery mode
+        """
+
+        # Expect to find the audit system to come up
+        _ = self.find_matching_record(
+            partial(AuditLogTestsAppLifecycle.is_lifecycle_match,
+                    "Audit System", True),
+            lambda record_count: record_count == 3,
+            "Single redpanda audit start event per node")
+        # Change goes into effect next restart
+        self.change_max_buffer_size_per_shard(1)
+        self.modify_audit_event_types(['admin', 'authenticate'])
+
+        # Restart and ensure we see the error message
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes,
+            override_cfg_params={"recovery_mode_enabled": True})
+        wait_until(lambda: self.redpanda.search_log_any(
+            'Redpanda is operating in recovery mode.  Auditing is disabled!'),
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Did not find expected log statement")
+
+        # Execute a few Admin API calls that would be normally audited
+        # If everything is working, these should return true with
+        # no issue
+        for _ in range(0, 10):
+            _ = self.admin.get_features()
+
+        # Change goes into effect next restart
+        self.change_max_buffer_size_per_shard(1024 * 1024)
+        self.modify_audit_event_types([])
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes,
+            override_cfg_params={"recovery_mode_enabled": False})
+        # Now we should see it 6 times, 3 times for initial boot, and 3 more times for this latest
+        # boot.  Seeing >6 would mean auditing somehow worked while in recovery mode
+        records = self.find_matching_record(
+            partial(AuditLogTestsAppLifecycle.is_lifecycle_match,
+                    "Audit System", True),
+            lambda record_count: record_count >= 6,
+            "Single redpanda audit start event per node")
+        assert len(
+            records) == 6, f'Expected 6 start up records, found {len(records)}'
 
 
 class AuditLogTestAdminApi(AuditLogTestBase):
@@ -1857,7 +1912,7 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
         _ = self.find_matching_record(
             lambda record: match_authn_user(self.username, self.
                                             sr_audit_svc_name, 1, record),
-            lambda record_count: record_count > 1, 'authn attempt in sr')
+            lambda record_count: record_count == 1, 'authn attempt in sr')
 
     @cluster(num_nodes=5)
     def test_sr_audit_bad_authn(self):
