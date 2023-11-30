@@ -10,6 +10,7 @@
 package txn
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -19,6 +20,19 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 )
+
+type describeProducersResponse struct {
+	Leader           int32  `json:"leader" yaml:"leader"`
+	Topic            string `json:"topic" yaml:"topic"`
+	Partition        int32  `json:"partition" yaml:"partition"`
+	ProducerID       int64  `json:"producer_id" yaml:"producer_id"`
+	ProducerEpoch    int16  `json:"producer_epoch" yaml:"producer_epoch"`
+	LastSequence     int32  `json:"last_sequence" yaml:"last_sequence"`
+	LastTimestamp    string `json:"last_timestamp" yaml:"last_timestamp"`
+	CoordinatorEpoch int32  `json:"coordinator_epoch" yaml:"coordinator_epoch"`
+	TxnStartOffset   int64  `json:"transaction_start_offset" yaml:"transaction_start_offset"`
+	Err              string `json:"error,omitempty" yaml:"error,omitempty"`
+}
 
 func newDescribeProducersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
@@ -52,6 +66,10 @@ partitions with --partitions.
 `,
 
 		Run: func(cmd *cobra.Command, txnIDs []string) {
+			f := p.Formatter
+			if h, ok := f.Help([]describeProducersResponse{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -74,36 +92,10 @@ partitions with --partitions.
 			described, err := adm.DescribeProducers(cmd.Context(), s)
 			out.HandleShardError("DescribeProducers", err)
 
-			tw := out.NewTable(
-				"leader",
-				"topic",
-				"partition",
-				"producer-id",
-				"producer-epoch",
-				"last-timestamp",
-				"last-sequence",
-				"coordinator-epoch",
-				"txn-start-offset",
-				"error",
-			)
-			defer tw.Flush()
-
-			type fields struct {
-				Leader           int32
-				Topic            string
-				Partition        int32
-				ProducerID       int64
-				ProducerEpoch    int16
-				LastSequence     int32
-				LastTimestamp    string
-				CoordinatorEpoch int32
-				TxnStartOffset   int64
-				Err              string
-			}
-
+			var response []describeProducersResponse
 			for _, d := range described.SortedPartitions() {
 				if d.Err != nil {
-					tw.PrintStructFields(fields{
+					response = append(response, describeProducersResponse{
 						Leader:    d.Leader,
 						Topic:     d.Topic,
 						Partition: d.Partition,
@@ -114,18 +106,42 @@ partitions with --partitions.
 					continue
 				}
 				for _, p := range d.ActiveProducers.Sorted() {
-					tw.PrintStructFields(fields{
+					timestamp := strconv.Itoa(int(p.LastTimestamp))
+					if f.Kind == "text" {
+						timestamp = time.UnixMilli(p.LastTimestamp).Format(rfc3339Milli)
+					}
+					response = append(response, describeProducersResponse{
 						Leader:           p.Leader,
 						Topic:            p.Topic,
 						Partition:        p.Partition,
 						ProducerID:       p.ProducerID,
 						ProducerEpoch:    p.ProducerEpoch,
 						LastSequence:     p.LastSequence,
-						LastTimestamp:    time.UnixMilli(p.LastTimestamp).Format(rfc3339Milli),
+						LastTimestamp:    timestamp,
 						CoordinatorEpoch: p.CoordinatorEpoch,
 						TxnStartOffset:   p.CurrentTxnStartOffset,
 					})
 				}
+			}
+			if isText, _, s, err := f.Format(response); !isText {
+				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
+				out.Exit(s)
+			}
+			tw := out.NewTable(
+				"leader",
+				"topic",
+				"partition",
+				"producer-id",
+				"producer-epoch",
+				"last-sequence",
+				"last-timestamp",
+				"coordinator-epoch",
+				"txn-start-offset",
+				"error",
+			)
+			defer tw.Flush()
+			for _, r := range response {
+				tw.PrintStructFields(r)
 			}
 		},
 	}

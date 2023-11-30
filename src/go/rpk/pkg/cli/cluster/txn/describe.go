@@ -24,11 +24,20 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
+type describeResponse struct {
+	Coordinator    int32         `json:"coordinator_id" yaml:"coordinator_id"`
+	TxnID          string        `json:"transaction_id" yaml:"transaction_id"`
+	ProducerID     int64         `json:"producer_id" yaml:"producer_id"`
+	ProducerEpoch  int16         `json:"producer_epoch" yaml:"producer_epoch"`
+	State          string        `json:"state" yaml:"state"`
+	StartTimestamp string        `json:"start_timestamp" yaml:"start_timestamp"`
+	Timeout        time.Duration `json:"timeout" yaml:"timeout"`
+	Topic          string        `json:"topic" yaml:"topic"`
+	Partition      int32         `json:"partition" yaml:"partition"`
+}
+
 func newDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var (
-		format          string
-		printPartitions bool
-	)
+	var printPartitions bool
 	cmd := &cobra.Command{
 		Use:   "describe [TXN-IDS...]",
 		Short: "Describe transactional IDs",
@@ -43,12 +52,17 @@ transaction. For information on what the columns in the output mean, see
 
 By default, all topics in a transaction are merged into one line. To print a
 row per topic, use --format=long. To include partitions with topics, use
---print-partitions,
+--print-partitions; --format=json/yaml will return the equivalent of the long
+format with print partitions included.
 
 If no transactional IDs are requested, all transactional IDs are printed.
 `,
 
 		Run: func(cmd *cobra.Command, txnIDs []string) {
+			f := p.Formatter
+			if h, ok := f.Help([]describeResponse{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -88,7 +102,29 @@ If no transactional IDs are requested, all transactional IDs are printed.
 				})
 			}
 
-			switch format {
+			switch f.Kind {
+			case "json", "yaml":
+				result := []describeResponse{}
+				for _, x := range described.Sorted() {
+					for _, t := range x.Topics.Sorted() {
+						for _, p := range t.Partitions {
+							result = append(result, describeResponse{
+								Coordinator:    x.Coordinator,
+								TxnID:          x.TxnID,
+								ProducerID:     x.ProducerID,
+								ProducerEpoch:  x.ProducerEpoch,
+								State:          x.State,
+								StartTimestamp: strconv.Itoa(int(x.StartTimestamp)),
+								Timeout:        time.Duration(x.TimeoutMillis),
+								Topic:          t.Topic,
+								Partition:      p,
+							})
+						}
+					}
+				}
+				_, _, s, err := f.Format(result)
+				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
+				out.Exit(s)
 			case "short", "text":
 				tw := out.NewTable(append(headers, "topics")...)
 				defer tw.Flush()
@@ -111,7 +147,7 @@ If no transactional IDs are requested, all transactional IDs are printed.
 						sort.Strings(ts)
 						topics = strings.Join(ts, ",")
 					}
-					tw.Print(append(common(x), topics))
+					tw.Print(append(common(x), topics)...)
 				}
 
 			case "long", "wide":
@@ -121,7 +157,7 @@ If no transactional IDs are requested, all transactional IDs are printed.
 					for _, x := range described.Sorted() {
 						for _, t := range x.Topics.Sorted() {
 							for _, p := range t.Partitions {
-								tw.Print(append(common(x), t.Topic, p))
+								tw.Print(append(common(x), t.Topic, p)...)
 							}
 						}
 					}
@@ -130,17 +166,16 @@ If no transactional IDs are requested, all transactional IDs are printed.
 					defer tw.Flush()
 					for _, x := range described.Sorted() {
 						for _, t := range x.Topics.Sorted() {
-							tw.Print(append(common(x), t.Topic))
+							tw.Print(append(common(x), t.Topic)...)
 						}
 					}
 				}
 			default:
-				out.Die("unrecognized format %q", format)
+				out.Die("unrecognized format %q", f.Kind)
 			}
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (short, long)")
 	cmd.Flags().BoolVarP(&printPartitions, "print-partitions", "p", false, "Include per-topic partitions that are in the transaction")
 	return cmd
 }

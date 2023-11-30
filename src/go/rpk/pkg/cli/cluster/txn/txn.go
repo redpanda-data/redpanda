@@ -83,5 +83,6 @@ producers by looking for the earliest transaction start offset per partition.
 		newDescribeProducersCommand(fs, p),
 		newListCommand(fs, p),
 	)
+	p.InstallFormatFlag(cmd)
 	return cmd
 }
