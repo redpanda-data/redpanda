@@ -10,6 +10,7 @@
 
 #include "cloud_storage/recovery_request.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/topic_recovery_service.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
@@ -126,6 +127,7 @@ bool is_manifest_list_request(const http_test_utils::request_info& req) {
 
 class fixture
   : public s3_imposter_fixture
+  , public manual_metadata_upload_mixin
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:

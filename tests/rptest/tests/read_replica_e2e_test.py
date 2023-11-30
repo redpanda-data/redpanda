@@ -157,8 +157,13 @@ class TestReadReplicaService(EndToEndTest):
         self.second_cluster = None
 
     def start_second_cluster(self) -> None:
+        # NOTE: the RRR cluster won't have a bucket, so don't upload.
+        extra_rp_conf = dict(enable_cluster_metadata_upload_loop=False)
         self.second_cluster = make_redpanda_service(
-            self.test_context, num_brokers=3, si_settings=self.rr_settings)
+            self.test_context,
+            num_brokers=3,
+            si_settings=self.rr_settings,
+            extra_rp_conf=extra_rp_conf)
         self.second_cluster.start(start_si=False)
 
     def create_read_replica_topic(self) -> None:
@@ -450,12 +455,12 @@ class ReadReplicasUpgradeTest(EndToEndTest):
                 cloud_storage_segment_max_upload_interval_sec=3,
                 fast_uploads=True))
 
-        # Read replica shouldn't have it's own bucket.
-        # We're adding 'none' as a bucket name without creating
-        # an actual bucket with such name.
+        # Unlike other read replica tests, create a bucket so we can upgrade to
+        # a version that uses cluster metadata uploads by default (that expects
+        # a bucket).
         self.rr_settings = SISettings(
             test_context,
-            bypass_bucket_creation=True,
+            bypass_bucket_creation=False,
             cloud_storage_max_connections=5,
             log_segment_size=self.log_segment_size,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
@@ -496,7 +501,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             RedpandaInstaller.HEAD)
         self.second_cluster._installer.install(self.second_cluster.nodes,
                                                previous_version)
-        self.second_cluster.start(start_si=False)
+        self.second_cluster.start(start_si=True)
         create_read_replica_topic(self.second_cluster, self.topic_name,
                                   self.si_settings.cloud_storage_bucket)
 

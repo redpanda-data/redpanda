@@ -16,6 +16,7 @@
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/key_utils.h"
 #include "cluster/cloud_metadata/manifest_downloads.h"
+#include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/cloud_metadata/uploader.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller_snapshot.h"
@@ -39,7 +40,8 @@ static ss::abort_source never_abort;
 } // anonymous namespace
 
 class cluster_metadata_uploader_fixture
-  : public s3_imposter_fixture
+  : public manual_metadata_upload_mixin
+  , public s3_imposter_fixture
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:

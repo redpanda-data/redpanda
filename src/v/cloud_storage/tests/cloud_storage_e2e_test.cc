@@ -14,6 +14,7 @@
 #include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/health_monitor_frontend.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"
@@ -35,6 +36,7 @@ static ss::logger e2e_test_log("e2e_test");
 
 class e2e_fixture
   : public s3_imposter_fixture
+  , public manual_metadata_upload_mixin
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:

@@ -14,6 +14,7 @@
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/key_utils.h"
 #include "cluster/cloud_metadata/manifest_downloads.h"
+#include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "model/fundamental.h"
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
@@ -29,6 +30,7 @@ using namespace cluster::cloud_metadata;
 
 class cluster_metadata_fixture
   : public s3_imposter_fixture
+  , public manual_metadata_upload_mixin
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:

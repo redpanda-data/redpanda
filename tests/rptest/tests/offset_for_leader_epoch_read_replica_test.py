@@ -61,8 +61,13 @@ class OffsetForLeaderEpochReadReplicaTest(EndToEndTest):
         self.epoch_offsets = {}
 
     def start_second_cluster(self) -> None:
+        # NOTE: the RRR cluster won't have a bucket, so don't upload.
+        extra_rp_conf = dict(enable_cluster_metadata_upload_loop=False)
         self.second_cluster = make_redpanda_service(
-            self.test_context, num_brokers=3, si_settings=self.rr_settings)
+            self.test_context,
+            num_brokers=3,
+            si_settings=self.rr_settings,
+            extra_rp_conf=extra_rp_conf)
         self.second_cluster.start(start_si=False)
 
     def create_source_topic(self):
