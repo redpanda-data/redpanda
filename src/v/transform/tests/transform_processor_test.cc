@@ -75,7 +75,7 @@ public:
 
     model::record_batch make_tiny_batch() {
         return model::test::make_random_batch(model::test::record_batch_spec{
-          .offset = kafka::offset_cast(++_offset),
+          .offset = kafka::offset_cast(_offset++),
           .allow_compression = false,
           .count = 1});
     }
@@ -189,6 +189,16 @@ TEST_F(ProcessorTestFixture, LagOffByOne) {
     EXPECT_EQ(lag(), 0);
     auto batch_one = make_tiny_batch();
     push_batch(batch_one.copy());
+    wait_for_committed_offset(batch_one.last_offset());
+    EXPECT_EQ(read_batch(), batch_one);
+    EXPECT_EQ(lag(), 0);
+}
+
+TEST_F(ProcessorTestFixture, LagOverflowBug) {
+    stop();
+    auto batch_one = make_tiny_batch();
+    push_batch(batch_one.copy());
+    start();
     wait_for_committed_offset(batch_one.last_offset());
     EXPECT_EQ(read_batch(), batch_one);
     EXPECT_EQ(lag(), 0);

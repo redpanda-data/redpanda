@@ -189,7 +189,17 @@ ss::future<kafka::offset> processor::load_start_offset() {
     }
     // The latest record is inclusive of the last record, so we want to start
     // reading from the following record.
-    auto last_processed_offset = latest_committed.value_or(latest);
+    auto last_processed_offset = latest_committed.value();
+    if (
+      latest != kafka::offset::min()
+      && last_processed_offset == kafka::offset::min()) {
+        // In cases where we committed the start of the log without any records,
+        // then the log has added records, we will overflow computing
+        // small_offset - min_offset. Instead normalize last processed to -1 so
+        // that the computed lag is correct (these ranges are inclusive).
+        // For example: latest(1) - last_processed(-1) = lag(2)
+        last_processed_offset = kafka::offset(-1);
+    }
     report_lag(latest - last_processed_offset);
     co_return kafka::next_offset(last_processed_offset);
 }
