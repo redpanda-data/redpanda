@@ -448,19 +448,11 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     // NOTE: see issues/11271
     BOOST_TEST_CONTEXT("scan_unit_close should terminate in a finite amount of "
                        "time at shutdown") {
-        try {
-            test_log.info("waiting on close future with timeout");
-            BOOST_CHECK_LE(close_fut.get(), 60s);
-            test_log.info(
-              "waiting on scan_future, this should be immediately available");
-            BOOST_CHECK(scan_future.available());
-            scan_future.get();
-        } catch (...) {
-            // BOOST_REQUIRE_NOTHROW can't print std::current_exception, sadly
-            BOOST_CHECK_MESSAGE(
-              false,
-              fmt::format(
-                "failed with exception {}", std::current_exception()));
-        }
+        test_log.info("waiting on close future with timeout");
+        BOOST_CHECK_LE(close_fut.get(), 60s);
+        test_log.info(
+          "waiting on scan_future, this should be immediately available");
+        BOOST_CHECK(scan_future.available());
+        scan_future.get();
     }
 }
