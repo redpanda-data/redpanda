@@ -189,6 +189,8 @@ private:
     find_compaction_range(const compaction_config&);
 
     ss::future<std::optional<model::offset>> do_gc(gc_config);
+    ss::future<> do_compact(
+      compaction_config, std::optional<model::offset> new_start_offset);
 
     ss::future<> remove_empty_segments();
 

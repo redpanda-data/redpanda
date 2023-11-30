@@ -1088,48 +1088,59 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
-        // TODO: unify error handling.
-        if (config::shard_local_cfg().log_compaction_use_sliding_window()) {
-            cfg.compact.asrc = &_compaction_as;
-            auto did_compact_fut = co_await ss::coroutine::as_future(
-              sliding_window_compact(cfg.compact, new_start_offset));
-            if (did_compact_fut.failed()) {
-                auto eptr = did_compact_fut.get_exception();
-                if (ssx::is_shutdown_exception(eptr)) {
-                    vlog(
-                      gclog.debug,
-                      "Compaction of {} stopped because of shutdown",
-                      config().ntp());
-                    co_return;
-                }
-                std::rethrow_exception(eptr);
-            }
-            bool compacted = did_compact_fut.get();
-            if (!compacted) {
-                if (auto range = find_compaction_range(cfg.compact); range) {
-                    auto r = co_await compact_adjacent_segments(
-                      std::move(*range), cfg.compact);
-                    vlog(
-                      gclog.debug,
-                      "Adjacent segments of {}, compaction result: {}",
-                      config().ntp(),
-                      r);
-                    if (r.did_compact()) {
-                        _compaction_ratio.update(r.compaction_ratio());
-                    }
-                } else {
-                    vlog(
-                      gclog.debug,
-                      "Adjacent segments of {}, no adjacent pair",
-                      config().ntp());
-                }
-            }
-        } else {
-            co_await adjacent_merge_compact(cfg.compact, new_start_offset);
+        auto fut = co_await ss::coroutine::as_future(
+          do_compact(cfg.compact, new_start_offset));
+
+        if (fut.failed()) {
+            std::rethrow_exception(fut.get_exception());
         }
     }
 
     _probe->set_compaction_ratio(_compaction_ratio.get());
+}
+
+ss::future<> disk_log_impl::do_compact(
+  compaction_config compact_cfg,
+  std::optional<model::offset> new_start_offset) {
+    if (!config::shard_local_cfg().log_compaction_use_sliding_window()) {
+        co_return co_await adjacent_merge_compact(
+          compact_cfg, new_start_offset);
+    }
+    // TODO: unify error handling.
+    compact_cfg.asrc = &_compaction_as;
+    auto did_compact_fut = co_await ss::coroutine::as_future(
+      sliding_window_compact(compact_cfg, new_start_offset));
+    if (did_compact_fut.failed()) {
+        auto eptr = did_compact_fut.get_exception();
+        if (ssx::is_shutdown_exception(eptr)) {
+            vlog(
+              gclog.debug,
+              "Compaction of {} stopped because of shutdown",
+              config().ntp());
+            co_return;
+        }
+        std::rethrow_exception(eptr);
+    }
+    bool compacted = did_compact_fut.get();
+    if (!compacted) {
+        if (auto range = find_compaction_range(compact_cfg); range) {
+            auto r = co_await compact_adjacent_segments(
+              std::move(*range), compact_cfg);
+            vlog(
+              gclog.debug,
+              "Adjacent segments of {}, compaction result: {}",
+              config().ntp(),
+              r);
+            if (r.did_compact()) {
+                _compaction_ratio.update(r.compaction_ratio());
+            }
+        } else {
+            vlog(
+              gclog.debug,
+              "Adjacent segments of {}, no adjacent pair",
+              config().ntp());
+        }
+    }
 }
 
 ss::future<> disk_log_impl::gc(gc_config cfg) {
