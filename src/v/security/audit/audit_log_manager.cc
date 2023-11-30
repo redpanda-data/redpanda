@@ -18,6 +18,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_response.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "model/namespace.h"
 #include "security/acl.h"
 #include "security/audit/client_probe.h"
 #include "security/audit/logger.h"
@@ -662,6 +663,10 @@ void audit_log_manager::set_enabled_events() {
       "Unknown event_type observed");
 }
 
+bool audit_log_manager::recovery_mode_enabled() noexcept {
+    return config::node().recovery_mode_enabled.value();
+}
+
 audit_log_manager::audit_log_manager(
   cluster::controller* controller, kafka::client::configuration& client_config)
   : _audit_enabled(config::shard_local_cfg().audit_enabled.bind())
@@ -741,6 +746,12 @@ bool audit_log_manager::is_audit_event_enabled(event_type event_type) const {
 }
 
 ss::future<> audit_log_manager::start() {
+    if (recovery_mode_enabled()) {
+        vlog(
+          adtlog.warn,
+          "Redpanda is operating in recovery mode.  Auditing is disabled!");
+        co_return;
+    }
     _probe = std::make_unique<audit_probe>();
     _probe->setup_metrics([this] {
         return static_cast<double>(pending_events())
@@ -896,7 +907,7 @@ ss::future<> audit_log_manager::drain() {
 
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event() const {
-    if (!_audit_enabled()) {
+    if (recovery_mode_enabled() || !_audit_enabled()) {
         return std::make_optional(audit_event_passthrough::yes);
     }
     if (_as.abort_requested()) {
@@ -926,8 +937,11 @@ audit_log_manager::should_enqueue_audit_event() const {
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
-audit_log_manager::should_enqueue_audit_event(event_type type) const {
-    if (!is_audit_event_enabled(type)) {
+audit_log_manager::should_enqueue_audit_event(
+  event_type type, ignore_enabled_events ignore_events) const {
+    if (
+      ignore_events == ignore_enabled_events::no
+      && !is_audit_event_enabled(type)) {
         return std::make_optional(audit_event_passthrough::yes);
     }
     return should_enqueue_audit_event();
@@ -935,18 +949,23 @@ audit_log_manager::should_enqueue_audit_event(event_type type) const {
 
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
-  event_type type, const security::acl_principal& principal) const {
+  event_type type,
+  const security::acl_principal& principal,
+  ignore_enabled_events ignore_events) const {
     if (_audit_excluded_principals.contains(principal)) {
         return std::make_optional(audit_event_passthrough::yes);
     }
 
-    return should_enqueue_audit_event(type);
+    return should_enqueue_audit_event(type, ignore_events);
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
-  kafka::api_key key, const security::acl_principal& principal) const {
-    return should_enqueue_audit_event(kafka_api_to_event_type(key), principal);
+  kafka::api_key key,
+  const security::acl_principal& principal,
+  ignore_enabled_events ignore_events) const {
+    return should_enqueue_audit_event(
+      kafka_api_to_event_type(key), principal, ignore_events);
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
@@ -968,11 +987,14 @@ audit_log_manager::should_enqueue_audit_event(
   kafka::api_key key,
   const security::acl_principal& principal,
   const model::topic& t) const {
+    auto ignore_events = ignore_enabled_events::no;
     if (_audit_excluded_topics.contains(t)) {
         return std::make_optional(audit_event_passthrough::yes);
+    } else if (t == model::kafka_audit_logging_topic) {
+        ignore_events = ignore_enabled_events::yes;
     }
 
-    return should_enqueue_audit_event(key, principal);
+    return should_enqueue_audit_event(key, principal, ignore_events);
 }
 
 } // namespace security::audit

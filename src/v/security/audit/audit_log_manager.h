@@ -104,8 +104,7 @@ public:
         if constexpr (std::is_same_v<T, model::topic>) {
             if (auto val = should_enqueue_audit_event(
                   api, result.principal, resource_name);
-                val.has_value()
-                && resource_name != model::kafka_audit_logging_topic) {
+                val.has_value()) {
                 return (bool)*val;
             }
         } else {
@@ -133,8 +132,7 @@ public:
         if constexpr (std::is_same_v<T, model::topic>) {
             if (auto val = should_enqueue_audit_event(
                   api, result.principal, resource_name);
-                val.has_value()
-                && resource_name != model::kafka_audit_logging_topic) {
+                val.has_value()) {
                 return (bool)*val;
             }
         } else {
@@ -220,17 +218,24 @@ public:
     bool report_redpanda_app_event(is_started);
 
 private:
+    using ignore_enabled_events
+      = ss::bool_class<struct ignore_enabled_events_tag>;
     /// The following methods return nullopt in the case the event should
     /// be audited, otherwise the optional is filled with the value representing
     /// whether it could not be enqueued due to error or due to the event
     /// not having attributes of desired trackable events
     std::optional<audit_event_passthrough> should_enqueue_audit_event() const;
-    std::optional<audit_event_passthrough>
-      should_enqueue_audit_event(event_type) const;
     std::optional<audit_event_passthrough> should_enqueue_audit_event(
-      event_type, const security::acl_principal&) const;
+      event_type,
+      ignore_enabled_events ignore_events = ignore_enabled_events::no) const;
     std::optional<audit_event_passthrough> should_enqueue_audit_event(
-      kafka::api_key, const security::acl_principal&) const;
+      event_type,
+      const security::acl_principal&,
+      ignore_enabled_events ignore_events = ignore_enabled_events::no) const;
+    std::optional<audit_event_passthrough> should_enqueue_audit_event(
+      kafka::api_key,
+      const security::acl_principal&,
+      ignore_enabled_events ignore_events = ignore_enabled_events::no) const;
     std::optional<audit_event_passthrough>
     should_enqueue_audit_event(event_type, const security::audit::user&) const;
     std::optional<audit_event_passthrough>
@@ -264,6 +269,8 @@ private:
 
         return result;
     }
+
+    static bool recovery_mode_enabled() noexcept;
 
 private:
     class audit_msg {
