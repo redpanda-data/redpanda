@@ -18,7 +18,7 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 )
 
 var (

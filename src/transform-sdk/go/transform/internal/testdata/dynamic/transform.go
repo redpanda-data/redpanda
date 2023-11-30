@@ -19,7 +19,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 )
 
 func main() {

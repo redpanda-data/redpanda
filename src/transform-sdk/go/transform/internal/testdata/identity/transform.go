@@ -15,13 +15,13 @@
 package main
 
 import (
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 )
 
 func main() {
-	redpanda.OnRecordWritten(panicTransform)
+	redpanda.OnRecordWritten(identityTransform)
 }
 
-func panicTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	panic("oh noes!")
+func identityTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+	return []redpanda.Record{e.Record()}, nil
 }

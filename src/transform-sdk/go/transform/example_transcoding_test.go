@@ -22,7 +22,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 )
 
 // This example shows a transform that converts CSV into JSON.

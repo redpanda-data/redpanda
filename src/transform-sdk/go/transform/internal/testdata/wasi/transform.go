@@ -15,15 +15,35 @@
 package main
 
 import (
-	"errors"
+	"encoding/json"
+	"math/rand"
+	"os"
+	"time"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 )
 
 func main() {
-	redpanda.OnRecordWritten(errTransform)
+	redpanda.OnRecordWritten(wasiTransform)
 }
 
-func errTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	return nil, errors.New("oh noes!")
+type WasiInfo struct {
+	Args         []string
+	Env          []string
+	NowNanos     int64
+	RandomNumber int
+}
+
+func wasiTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+	w := &WasiInfo{
+		Args:         os.Args,
+		Env:          os.Environ(),
+		NowNanos:     time.Now().UnixNano(),
+		RandomNumber: rand.Int(),
+	}
+	b, err := json.Marshal(w)
+	if err != nil {
+		return nil, err
+	}
+	return []redpanda.Record{{Value: b}}, nil
 }

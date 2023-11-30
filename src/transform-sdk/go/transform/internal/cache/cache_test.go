@@ -3,7 +3,7 @@ package cache_test
 import (
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go/internal/cache"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/cache"
 )
 
 func expectValue(t *testing.T, c cache.Cache[int, string], key int) string {
