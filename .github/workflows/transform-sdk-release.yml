@@ -1,0 +1,48 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: transform-sdk-release
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  list-golang:
+    name: List Golang Transform SDK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.20.6
+
+      - name: List module
+        working-directory: src/transform-sdk/go
+        # https://go.dev/doc/modules/publishing
+        run: go list -m github.com/redpanda-data/redpanda/src/transform-sdk/go/transform@${{github.ref_name}}
+
+  publish-rust:
+    name: Publish Rust Transform SDK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup update stable --no-self-update && rustup default stable
+
+      - name: Publish
+        working-directory: src/transform-sdk/rust
+        run: ./scripts/publish.py --version ${{github.ref_name}}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
