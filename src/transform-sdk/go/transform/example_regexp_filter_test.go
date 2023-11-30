@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redpanda_test
+package transform_test
 
 import (
 	"os"
@@ -39,10 +39,10 @@ func Example_regularExpressionFilter() {
 	mk, ok := os.LookupEnv("MATCH_VALUE")
 	checkValue = ok && mk == "1"
 
-	redpanda.OnRecordWritten(doRegexFilter)
+	transform.OnRecordWritten(doRegexFilter)
 }
 
-func doRegexFilter(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+func doRegexFilter(e transform.WriteEvent) ([]transform.Record, error) {
 	var b []byte
 	if checkValue {
 		b = e.Record().Value
@@ -54,7 +54,7 @@ func doRegexFilter(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	}
 	pass := re.Match(b)
 	if pass {
-		return []redpanda.Record{e.Record()}, nil
+		return []transform.Record{e.Record()}, nil
 	} else {
 		return nil, nil
 	}

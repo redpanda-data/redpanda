@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redpanda_test
+package transform_test
 
 import (
 	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
@@ -27,12 +27,12 @@ func Example_identityTransform() {
 
 	// Make sure to register your callback so Redpanda knows which
 	// function to invoke when records are written
-	redpanda.OnRecordWritten(mirrorTransform)
+	transform.OnRecordWritten(mirrorTransform)
 }
 
 // This will be called for each record in the source topic.
 //
 // The output records returned will be written to the destination topic.
-func mirrorTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	return []redpanda.Record{e.Record()}, nil
+func mirrorTransform(e transform.WriteEvent) ([]transform.Record, error) {
+	return []transform.Record{e.Record()}, nil
 }

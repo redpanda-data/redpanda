@@ -18,4 +18,4 @@ Package redpanda is the SDK for Redpanda's inline Data Transforms, based on WebA
 This library provides a framework for transforming records written within Redpanda from
 an input to an output topic.
 */
-package redpanda
+package transform

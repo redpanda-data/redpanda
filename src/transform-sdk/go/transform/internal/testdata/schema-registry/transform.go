@@ -38,11 +38,11 @@ func main() {
 	if err != nil {
 		println("unable to registry schema: ", err)
 	}
-	redpanda.OnRecordWritten(avroToJsonTransform)
+	transform.OnRecordWritten(avroToJsonTransform)
 }
 
 // This is an example transform that converts avro->json using the avro schema specified in schema registry.
-func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+func avroToJsonTransform(e transform.WriteEvent) ([]transform.Record, error) {
 	v := e.Record().Value
 	ex := avro.Example{}
 	// Attempt to decode the value, if it's from a schema we don't know about then
@@ -75,7 +75,7 @@ func avroToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 	}
 	// Output the record as JSON.
 	j, err := ex.MarshalJSON()
-	return []redpanda.Record{{
+	return []transform.Record{{
 		Key:   e.Record().Key,
 		Value: j,
 	}}, err

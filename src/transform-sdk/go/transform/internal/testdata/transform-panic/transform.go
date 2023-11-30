@@ -19,9 +19,9 @@ import (
 )
 
 func main() {
-	redpanda.OnRecordWritten(panicTransform)
+	transform.OnRecordWritten(panicTransform)
 }
 
-func panicTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+func panicTransform(e transform.WriteEvent) ([]transform.Record, error) {
 	panic("oh noes!")
 }

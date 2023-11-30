@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redpanda_test
+package transform_test
 
 import (
 	"bytes"
@@ -27,7 +27,7 @@ import (
 
 // This example shows a transform that converts CSV into JSON.
 func Example_transcoding() {
-	redpanda.OnRecordWritten(csvToJsonTransform)
+	transform.OnRecordWritten(csvToJsonTransform)
 }
 
 type Foo struct {
@@ -35,14 +35,14 @@ type Foo struct {
 	B int    `json:"b"`
 }
 
-func csvToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
+func csvToJsonTransform(e transform.WriteEvent) ([]transform.Record, error) {
 	// The input data is a CSV (without a header row) that is the structure of:
 	// key, a, b
 	// This transform emits each row in that CSV as JSON.
 	reader := csv.NewReader(bytes.NewReader(e.Record().Value))
 	// Improve performance by reusing the result slice.
 	reader.ReuseRecord = true
-	output := []redpanda.Record{}
+	output := []transform.Record{}
 	for {
 		row, err := reader.Read()
 		if err == io.EOF {
@@ -68,7 +68,7 @@ func csvToJsonTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
 			return nil, err
 		}
 		// Add our output record using the first column as the key.
-		output = append(output, redpanda.Record{
+		output = append(output, transform.Record{
 			Key:   []byte(row[0]),
 			Value: v,
 		})

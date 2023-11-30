@@ -14,7 +14,7 @@
 
 //go:build wasip1 || tinygo
 
-package redpanda
+package transform
 
 import (
 	"unsafe"
