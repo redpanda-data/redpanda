@@ -17,6 +17,8 @@
 
 #include <seastar/core/lowres_clock.hh>
 
+#include <fmt/chrono.h>
+
 #include <random>
 
 using namespace cloud_storage;
@@ -428,36 +430,30 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
       storage::log_reader_config(
         base, model::offset::max(), ss::default_priority_class()),
       g);
-    auto close_fut = ss::maybe_yield()
-                       .then([] { return ss::maybe_yield(); })
-                       .then([] { return ss::maybe_yield(); })
-                       .then([] { return ss::sleep(10ms); })
-                       .then([this, &g]() mutable {
-                           test_log.info("shutting down connections");
-                           pool.local().shutdown_connections();
-                           test_log.info("closing gate");
-                           return g.close();
-                       })
-                       .then([] { test_log.info("gate closed"); });
-
+    auto close_fut
+      = ss::maybe_yield()
+          .then([] { return ss::maybe_yield(); })
+          .then([] { return ss::maybe_yield(); })
+          .then([] { return ss::sleep(10ms); })
+          .then([this, &g]() mutable {
+              auto begin_shutdown = std::chrono::steady_clock::now();
+              test_log.info("shutting down connections");
+              pool.local().shutdown_connections();
+              test_log.info("closing gate");
+              return g.close().then([begin_shutdown] {
+                  auto end_shutdown = std::chrono::steady_clock::now();
+                  test_log.info("gate closed");
+                  return end_shutdown - begin_shutdown;
+              });
+          });
     // NOTE: see issues/11271
     BOOST_TEST_CONTEXT("scan_unit_close should terminate in a finite amount of "
                        "time at shutdown") {
-        auto timeout_fut = ss::with_timeout(
-          model::timeout_clock::now() + 60s, std::move(close_fut));
-        try {
-            test_log.info("waiting on close future with timeout");
-            timeout_fut.get();
-            test_log.info(
-              "waiting on scan_future, this should be immediatly available");
-            BOOST_CHECK(scan_future.available());
-            scan_future.get();
-        } catch (...) {
-            // BOOST_REQUIRE_NOTHROW can't print std::current_exception, sadly
-            BOOST_CHECK_MESSAGE(
-              false,
-              fmt::format(
-                "failed with exception {}", std::current_exception()));
-        }
+        test_log.info("waiting on close future with timeout");
+        BOOST_CHECK_LE(close_fut.get(), 60s);
+        test_log.info(
+          "waiting on scan_future, this should be immediately available");
+        BOOST_CHECK(scan_future.available());
+        scan_future.get();
     }
 }
