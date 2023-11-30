@@ -618,7 +618,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // TODO: implement a segment replacement strategy such that each term
         // tries to write only one segment (or more if the term had a large
         // amount of data), rather than replacing N segments with N segments.
-        auto tmpname = seg->reader().path().to_staging();
+        const auto tmpname = seg->reader().path().to_compaction_staging();
         auto appender = co_await internal::make_segment_appender(
           tmpname,
           segment_appender::write_behind_memory
@@ -628,7 +628,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           resources(),
           cfg.sanitizer_config);
 
-        auto cmp_idx_tmpname = seg->path().to_compaction_staging();
+        const auto cmp_idx_tmpname = tmpname.to_compacted_index();
         auto cmp_idx_name = seg->path().to_compacted_index();
         auto compacted_idx_writer = make_file_backed_compacted_index(
           cmp_idx_tmpname, cfg.iopc, true, resources(), cfg.sanitizer_config);
