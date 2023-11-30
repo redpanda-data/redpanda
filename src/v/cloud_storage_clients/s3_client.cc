@@ -55,6 +55,9 @@ struct aws_header_names {
     static constexpr boost::beast::string_view x_amz_tagging = "x-amz-tagging";
     static constexpr boost::beast::string_view x_amz_request_id
       = "x-amz-request-id";
+    // https://cloud.google.com/storage/docs/xml-api/reference-headers#xguploaderuploadid
+    static constexpr boost::beast::string_view x_guploader_uploadid
+      = "x-guploader-uploadid";
     static constexpr boost::beast::string_view delimiter = "delimiter";
 };
 
@@ -401,7 +404,13 @@ ss::future<ResultT> parse_head_error_response(
             code = fmt::format("{}", status_to_error_code(hdr.result()));
             msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
         }
-        auto rid = hdr.at(aws_header_names::x_amz_request_id);
+        boost::string_view rid;
+        if (hdr.find(aws_header_names::x_amz_request_id) != hdr.end()) {
+            rid = hdr.at(aws_header_names::x_amz_request_id);
+        } else if (
+          hdr.find(aws_header_names::x_guploader_uploadid) != hdr.end()) {
+            rid = hdr.at(aws_header_names::x_guploader_uploadid);
+        }
         rest_error_response err(
           code, msg, ss::sstring(rid.data(), rid.size()), key().native());
         return ss::make_exception_future<ResultT>(err);
