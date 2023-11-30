@@ -1006,6 +1006,12 @@ public:
     /// already in the segment_meta_cstore
     bool can_be_inserted(const segment_meta&) const;
 
+    /// returns the range of segments that will be removed if the segment meta
+    /// is inserted. the list has first base_offset >= in.base_offset, and last
+    /// committed_offset <=in.commited_offset
+    auto covered_range(const segment_meta& in) const
+      -> std::pair<const_iterator, const_iterator>;
+
     class [[nodiscard]] append_tx {
     public:
         explicit append_tx(segment_meta_cstore&, const segment_meta&);

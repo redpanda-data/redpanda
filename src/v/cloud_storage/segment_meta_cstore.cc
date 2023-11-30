@@ -1137,6 +1137,30 @@ public:
           });
     }
 
+    auto covered_range(const segment_meta& sm) const -> std::pair<
+      std::unique_ptr<segment_meta_materializing_iterator::impl>,
+      std::unique_ptr<segment_meta_materializing_iterator::impl>> {
+        if (unlikely(!can_be_inserted(sm))) {
+            return {end(), end()};
+        }
+        flush_write_buffer();
+        auto it = lower_bound(sm.base_offset);
+        auto it_end = end();
+        if (it->equal(*it_end)) {
+            // no segment is entirely covered by sm
+            return {std::move(it), std::move(it_end)};
+        }
+        // first segment covered by sm
+        auto begin_range = at_index(it->index());
+        // find first segment not entirely covered by sm
+        for (;
+             !it->equal(*it_end)
+             && details::left_covers_the_range_of_right(sm, it->dereference());
+             it->increment()) {
+        }
+        return {std::move(begin_range), std::move(it)};
+    }
+
     auto inflated_actual_size() const {
         auto res = _col.inflated_actual_size();
         // approximate
@@ -1280,6 +1304,13 @@ bool segment_meta_cstore::insert(const segment_meta& s) {
 
 bool segment_meta_cstore::can_be_inserted(const segment_meta& sm) const {
     return _impl->can_be_inserted(sm);
+}
+
+auto segment_meta_cstore::covered_range(const segment_meta& sm) const
+  -> std::pair<const_iterator, const_iterator> {
+    auto [begin_r, end_r] = _impl->covered_range(sm);
+    return {
+      const_iterator{std::move(begin_r)}, const_iterator{std::move(end_r)}};
 }
 
 void segment_meta_cstore::prefix_truncate(model::offset new_start_offset) {
