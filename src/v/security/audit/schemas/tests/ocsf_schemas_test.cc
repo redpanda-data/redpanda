@@ -155,6 +155,7 @@ static const ss::sstring metadata_ser{
 {
   "product": {
     "name": "Redpanda",
+    "uid": "0",
     "vendor_name": "Redpanda Data, Inc.",
     "version": ")"
   + ss::sstring{redpanda_git_version()} + R"("
@@ -168,6 +169,7 @@ static const ss::sstring metadata_cloud_profile_ser{
 {
   "product": {
     "name": "Redpanda",
+    "uid": "0",
     "vendor_name": "Redpanda Data, Inc.",
     "version": ")"
   + ss::sstring{redpanda_git_version()} + R"("
@@ -209,6 +211,7 @@ static const ss::sstring test_http_request_ser{
 
 static const sa::product test_product{
   .name = "test-product",
+  .uid = "0",
   .vendor_name = ss::sstring{sa::vendor_name},
   .version = ss::sstring{redpanda_git_version()},
   .feature = sa::feature{.name = "test-feature"}};
@@ -220,6 +223,7 @@ static const ss::sstring test_product_ser{
     "name": "test-feature"
   },
   "name": "test-product",
+  "uid": "0",
   "vendor_name": ")"
   + ss::sstring{sa::vendor_name} + R"(",
   "version": ")"
@@ -1135,6 +1139,6 @@ BOOST_AUTO_TEST_CASE(test_ocsf_size) {
     estimated_size += user.domain.size() + user.name.size() + user.uid.size()
                       + sizeof(user.type_id) + (sizeof(ss::sstring) * 3);
 
-    BOOST_CHECK_EQUAL(estimated_size, 376);
-    BOOST_CHECK_EQUAL(authn.estimated_size(), 376);
+    BOOST_CHECK_EQUAL(estimated_size, 392);
+    BOOST_CHECK_EQUAL(authn.estimated_size(), 392);
 }

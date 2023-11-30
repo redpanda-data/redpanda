@@ -128,12 +128,13 @@ struct feature {
 // https://schema.ocsf.io/1.0.0/objects/product?extensions=
 struct product {
     ss::sstring name;
+    ss::sstring uid;
     ss::sstring vendor_name;
     ss::sstring version;
     std::optional<feature> feature;
 
     auto equality_fields() const {
-        return std::tie(name, vendor_name, version, feature);
+        return std::tie(name, uid, vendor_name, version, feature);
     }
 };
 
@@ -381,6 +382,8 @@ inline void rjson_serialize(Writer<StringBuffer>& w, const sa::product& p) {
     }
     w.Key("name");
     rjson_serialize(w, p.name);
+    w.Key("uid");
+    rjson_serialize(w, p.uid);
     w.Key("vendor_name");
     rjson_serialize(w, p.vendor_name);
     w.Key("version");

@@ -48,6 +48,7 @@
 #include "kafka/protocol/schemata/sync_group_request.h"
 #include "kafka/protocol/schemata/txn_offset_commit_request.h"
 #include "kafka/protocol/types.h"
+#include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "security/acl.h"
 #include "security/audit/schemas/application_activity.h"
@@ -622,9 +623,12 @@ api_activity make_api_activity_event(
 
 application_lifecycle
 make_application_lifecycle(application_lifecycle::activity_id activity_id) {
+    auto product = redpanda_product();
+    product.uid = ss::to_sstring(
+      config::node().node_id().value_or(model::node_id{0}));
     return {
       activity_id,
-      redpanda_product(),
+      std::move(product),
       severity_id::informational,
       create_timestamp_t()};
 }
@@ -633,6 +637,8 @@ application_lifecycle make_application_lifecycle(
   application_lifecycle::activity_id activity_id, ss::sstring feature_name) {
     auto product = redpanda_product();
     product.feature = feature{.name = std::move(feature_name)};
+    product.uid = ss::to_sstring(
+      config::node().node_id().value_or(model::node_id{0}));
 
     return {
       activity_id,
