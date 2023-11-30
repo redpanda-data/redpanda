@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "config/node_config.h"
 #include "security/audit/schemas/types.h"
 
 namespace security::audit {
@@ -104,13 +105,13 @@ protected:
       severity_id severity_id,
       timestamp_t time,
       T activity_id)
-      : _category_uid(category_uid)
-      , _class_uid(class_uid)
-      , _metadata(ocsf_redpanda_metadata())
-      , _severity_id(severity_id)
-      , _start_time(time)
-      , _time(time)
-      , _type_uid(get_ocsf_type(this->_class_uid, activity_id)) {}
+      : ocsf_base_event(
+        category_uid,
+        class_uid,
+        ocsf_redpanda_metadata(),
+        severity_id,
+        time,
+        activity_id) {}
 
     template<typename T>
     ocsf_base_event(
@@ -126,7 +127,10 @@ protected:
       , _severity_id(severity_id)
       , _start_time(time)
       , _time(time)
-      , _type_uid(get_ocsf_type(this->_class_uid, activity_id)) {}
+      , _type_uid(get_ocsf_type(this->_class_uid, activity_id)) {
+        _metadata.product.uid = ss::to_sstring(
+          config::node().node_id().value_or(model::node_id{0}));
+    }
 
     virtual size_t hash() const = 0;
 
