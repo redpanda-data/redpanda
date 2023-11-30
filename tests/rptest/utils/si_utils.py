@@ -717,12 +717,12 @@ class SpillMeta:
     def make(ntpr: NTPR, path: str):
         base, last, base_kafka, last_kafka, base_ts, last_ts = SpillMeta._parse_path(
             ntpr, path)
-        return SpillMeta(base=base,
-                         last=last,
-                         base_kafka=base_kafka,
-                         last_kafka=last_kafka,
-                         base_ts=base_ts,
-                         last_ts=last_ts,
+        return SpillMeta(base=int(base),
+                         last=int(last),
+                         base_kafka=int(base_kafka),
+                         last_kafka=int(last_kafka),
+                         base_ts=int(base_ts),
+                         last_ts=int(last_ts),
                          ntpr=ntpr,
                          path=path)
 
@@ -1236,20 +1236,21 @@ class BucketView:
         )
         return decoded
 
-    def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
+    def find_segment_in_manifests(self, o: ObjectMetadata) -> Optional[dict]:
         """
-        Queries that given object is a segment, and is a part of one of the test partition manifests
-        with a matching archiver term
+        Checks that given object is a segment, and is a part of one of the test partition manifests
+        with a matching archiver term. If that's the case, the metadata associated with the segment
+        is returned.
         """
         try:
             if not self.path_matcher.is_segment(o):
-                return False
+                return None
 
             segment_path = parse_s3_segment_path(o.key)
             partition_manifest = self.get_partition_manifest(segment_path.ntpr)
             if not partition_manifest:
                 self.logger.warn(f'no manifest found for {segment_path.ntpr}')
-                return False
+                return None
 
             segments_in_manifest = partition_manifest['segments']
 
@@ -1267,20 +1268,20 @@ class BucketView:
                     f'no entry found for segment path {manifest_key} '
                     f'in manifest: {pprint.pformat(segments_in_manifest, indent=2)}'
                 )
-                return False
+                return None
 
             # Archiver term should match the value in partition manifest
             manifest_archiver_term = str(segment_entry['archiver_term'])
             if archiver_term == manifest_archiver_term:
-                return True
+                return segment_entry
 
             self.logger.warn(
                 f'{segment_path} has archiver term {archiver_term} '
                 f'which does not match manifest term {manifest_archiver_term}')
-            return False
+            return None
         except Exception as e:
             self.logger.info(f'error {e} while checking if {o} is a segment')
-            return False
+            return None
 
     def is_ntp_in_manifest(self,
                            topic: str,

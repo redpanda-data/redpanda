@@ -429,7 +429,6 @@ kafka_stages partition::replicate_in_stages(
 
 ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
     const auto& ntp = _raft->ntp();
-    _probe.setup_metrics(ntp);
     raft::state_machine_manager_builder builder;
     // special cases for id_allocator and transaction coordinator partitions
     if (is_id_allocator_topic(ntp)) {
@@ -530,6 +529,10 @@ ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
                 *_cloud_storage_probe);
         }
     }
+
+    // Start the probe after the partition is fully initialised, but before
+    // starting everything.
+    _probe.setup_metrics(ntp);
 
     if (_cloud_storage_manifest_view) {
         co_await _cloud_storage_manifest_view->start();

@@ -402,6 +402,8 @@ struct anomalies
 
     bool has_value() const;
 
+    size_t count_segment_meta_anomaly_type(anomaly_type type) const;
+
     anomalies& operator+=(anomalies&&);
 
     friend bool operator==(const anomalies& lhs, const anomalies& rhs);

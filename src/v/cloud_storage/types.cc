@@ -252,6 +252,16 @@ bool anomalies::has_value() const {
            || segment_metadata_anomalies.size() > 0;
 }
 
+size_t anomalies::count_segment_meta_anomaly_type(anomaly_type type) const {
+    auto begin = segment_metadata_anomalies.begin();
+    auto end = segment_metadata_anomalies.end();
+    const auto count = std::count_if(begin, end, [&type](const auto& anomaly) {
+        return anomaly.type == type;
+    });
+
+    return static_cast<size_t>(count);
+}
+
 anomalies& anomalies::operator+=(anomalies&& other) {
     missing_partition_manifest |= other.missing_partition_manifest;
     missing_spillover_manifests.insert(

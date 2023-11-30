@@ -11,21 +11,26 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings, get_cloud_storage_type
+from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, BucketView, NTP, NTPR
+from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, BucketView, NTP, NTPR, SpillMeta
+from rptest.archival.s3_client import ObjectMetadata
 from rptest.util import wait_until_result
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 
+import collections
+from dataclasses import dataclass
+
 import json
 import random
 import time
+import itertools
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import DefaultDict, Optional, Tuple
 from requests.exceptions import HTTPError
 
 SCRUBBER_LOG_ALLOW_LIST = [
@@ -85,8 +90,21 @@ class SegmentMetaAnomaly:
 
 
 @dataclass
+class OffsetRange:
+    first_inclusive: int
+    last_inclusive: int
+
+    def overlaps(self, other: 'OffsetRange') -> bool:
+        return (self.first_inclusive <= other.last_inclusive
+                and self.last_inclusive >= other.first_inclusive)
+
+
+def overlaps_with_any(r: OffsetRange, others: list[OffsetRange]):
+    return any((r.overlaps(o) for o in others))
+
+
+@dataclass
 class Anomalies:
-    ntpr: NTPR
     missing_partition_manifest: bool
     missing_spillover_manifests: set[str]
     missing_segments: set[str]
@@ -94,16 +112,15 @@ class Anomalies:
     last_complete_scrub_at: Optional[int]
 
     @staticmethod
-    def make_empty(ntpr: NTPR):
-        return Anomalies(ntpr=ntpr,
-                         missing_partition_manifest=False,
+    def make_empty():
+        return Anomalies(missing_partition_manifest=False,
                          missing_spillover_manifests=set(),
                          missing_segments=set(),
                          segment_metadata_anomalies=set(),
                          last_complete_scrub_at=None)
 
     @staticmethod
-    def from_dict(json_dict: dict):
+    def from_dict(json_dict: dict) -> Tuple[NTPR, "Anomalies"]:
         ntpr = NTPR(ns=json_dict["ns"],
                     topic=json_dict["topic"],
                     partition=json_dict["partition"],
@@ -115,14 +132,13 @@ class Anomalies:
             map(lambda a: SegmentMetaAnomaly.from_dict(a),
                 json_dict.get("segment_metadata_anomalies", [])))
 
-        return Anomalies(ntpr=ntpr,
-                         missing_partition_manifest=json_dict.get(
-                             "missing_partition_manifest", False),
-                         missing_spillover_manifests=missing_spills,
-                         missing_segments=missing_segs,
-                         segment_metadata_anomalies=meta_anomalies,
-                         last_complete_scrub_at=json_dict.get(
-                             "last_complete_scrub_at", None))
+        return ntpr, Anomalies(missing_partition_manifest=json_dict.get(
+            "missing_partition_manifest", False),
+                               missing_spillover_manifests=missing_spills,
+                               missing_segments=missing_segs,
+                               segment_metadata_anomalies=meta_anomalies,
+                               last_complete_scrub_at=json_dict.get(
+                                   "last_complete_scrub_at", None))
 
     def is_empty(self) -> bool:
         return (self.missing_partition_manifest == False
@@ -139,6 +155,33 @@ class Anomalies:
                     other.missing_spillover_manifests)
                 and self.segment_metadata_anomalies.issubset(
                     other.segment_metadata_anomalies))
+
+    def get_impacted_offset_ranges(self, ntpr: NTPR,
+                                   view: BucketView) -> list[OffsetRange]:
+        impacted_ranges: list[OffsetRange] = []
+        for spill in self.missing_spillover_manifests:
+            meta = SpillMeta.make(ntpr=ntpr, path=spill)
+            impacted_ranges.append(
+                OffsetRange(first_inclusive=meta.base,
+                            last_inclusive=meta.last))
+
+        for seg in self.missing_segments:
+            obj_meta = ObjectMetadata(key=seg,
+                                      bucket="",
+                                      etag="",
+                                      content_length=0)
+            if seg_meta := view.find_segment_in_manifests(obj_meta):
+                impacted_ranges.append(
+                    OffsetRange(first_inclusive=seg_meta["base_offset"],
+                                last_inclusive=seg_meta["committed_offset"]))
+
+        for anomaly_meta in self.segment_metadata_anomalies:
+            impacted_ranges.append(
+                OffsetRange(
+                    first_inclusive=anomaly_meta.at_segment.base_offset,
+                    last_inclusive=anomaly_meta.at_segment.committed_offset))
+
+        return impacted_ranges
 
 
 class CloudStorageScrubberTest(RedpandaTest):
@@ -234,8 +277,8 @@ class CloudStorageScrubberTest(RedpandaTest):
                                                    topic=self.topic,
                                                    partition=pid)
 
-            anomalies = Anomalies.from_dict(json_anomalies)
-            anomalies_per_ntpr[anomalies.ntpr] = anomalies
+            ntpr, anomalies = Anomalies.from_dict(json_anomalies)
+            anomalies_per_ntpr[ntpr] = anomalies
 
         return anomalies_per_ntpr
 
@@ -255,21 +298,30 @@ class CloudStorageScrubberTest(RedpandaTest):
             assert anomalies.is_empty(
             ), f"{ntpr} reported unexpected anomalies: {anomalies}"
 
-    def _delete_segment_and_await_anomaly(self,
-                                          expected_anomalies: dict[NTPR,
-                                                                   Anomalies]):
+    def _delete_segment_and_await_anomaly(
+            self, expected_anomalies: DefaultDict[NTPR, Anomalies]):
         segment_metas = [
             meta for meta in self.cloud_storage_client.list_objects(
                 self.bucket_name) if "log" in meta.key
         ]
 
         view = BucketView(self.redpanda)
-        to_delete = random.choice(segment_metas)
         attempts = 1
-        while view.is_segment_part_of_a_manifest(to_delete) == False:
+        while True:
             to_delete = random.choice(segment_metas)
-            attempts += 1
 
+            if seg_meta := view.find_segment_in_manifests(to_delete):
+                ntpr = parse_s3_segment_path(to_delete.key).ntpr
+                selected_range = OffsetRange(
+                    first_inclusive=seg_meta["base_offset"],
+                    last_inclusive=seg_meta["committed_offset"])
+
+                impacted_ranges = expected_anomalies[
+                    ntpr].get_impacted_offset_ranges(ntpr, view)
+                if not overlaps_with_any(selected_range, impacted_ranges):
+                    break
+
+            attempts += 1
             assert attempts < 100, "Too many attempts to find a segment to delete"
 
         self.logger.info(f"Deleting segment at {to_delete.key}")
@@ -299,19 +351,33 @@ class CloudStorageScrubberTest(RedpandaTest):
             backoff_sec=2,
             err_msg="Missing segment anomaly not reported")
 
-        if ntpr not in expected_anomalies:
-            expected_anomalies[ntpr] = Anomalies.make_empty(ntpr)
-
         expected_anomalies[ntpr].missing_segments.add(missing_seg)
 
     def _delete_spillover_manifest_and_await_anomaly(
-            self, expected_anomalies: dict[NTPR, Anomalies]):
-        pid = random.randint(0, 2)
-        view = BucketView(self.redpanda)
-        spillover_metas = view.get_spillover_metadata(
-            NTP(ns="kafka", topic=self.topic, partition=pid))
-        to_delete = random.choice(spillover_metas)
-        ntpr = to_delete.ntpr
+            self, expected_anomalies: DefaultDict[NTPR, Anomalies]):
+        attempts = 1
+        to_delete = None
+
+        while to_delete is None:
+            pid = random.randint(0, 2)
+            view = BucketView(self.redpanda)
+            spillover_metas = view.get_spillover_metadata(
+                NTP(ns="kafka", topic=self.topic, partition=pid))
+
+            to_delete = random.choice(spillover_metas)
+            ntpr = to_delete.ntpr
+
+            selected_range = OffsetRange(first_inclusive=to_delete.base,
+                                         last_inclusive=to_delete.last)
+            impacted_ranges = expected_anomalies[
+                ntpr].get_impacted_offset_ranges(ntpr, view)
+            if overlaps_with_any(selected_range, impacted_ranges):
+                to_delete = None
+            else:
+                break
+
+            attempts += 1
+            assert attempts < 100, "Too many attempts to find a spillover manifest to delete"
 
         self.logger.info(f"Deleting spillover manifest at {to_delete.path}")
         self.cloud_storage_client.delete_object(self.bucket_name,
@@ -339,13 +405,10 @@ class CloudStorageScrubberTest(RedpandaTest):
             backoff_sec=2,
             err_msg="Missing spillover manifest anomaly not reported")
 
-        if ntpr not in expected_anomalies:
-            expected_anomalies[ntpr] = Anomalies.make_empty(ntpr)
-
         expected_anomalies[ntpr].missing_spillover_manifests.add(missing_spill)
 
     def _assert_anomalies_stable_after_leader_shuffle(
-            self, expected_anomalies: dict[NTPR, Anomalies]):
+            self, expected_anomalies: DefaultDict[NTPR, Anomalies]):
         self.logger.info(
             f"Checking anomalies stay stable after leader shuffle. "
             f"Expected subset: {expected_anomalies}")
@@ -378,7 +441,7 @@ class CloudStorageScrubberTest(RedpandaTest):
             err_msg="Reported anomalies changed after leadership shuffle")
 
     def _assert_anomalies_stable_after_restart(
-            self, expected_anomalies: dict[NTPR, Anomalies]):
+            self, expected_anomalies: DefaultDict[NTPR, Anomalies]):
         self.logger.info(
             "Checking anomalies stay stable after full cluster restart")
 
@@ -406,7 +469,7 @@ class CloudStorageScrubberTest(RedpandaTest):
                    err_msg="Reported anomalies changed after full restart")
 
     def _assert_segment_metadata_anomalies(
-            self, expected_anomalies: dict[NTPR, Anomalies]):
+            self, expected_anomalies: DefaultDict[NTPR, Anomalies]):
         self.logger.info(
             "Fudging manifest and waiting on segment metadata anomalies")
 
@@ -421,12 +484,32 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         # Remove the metadata for the penultimate segment, thus creating an offset gap
         # for the scrubber to detect
-        seg_to_remove_name, seg_to_remove_meta = sorted_segments[-2]
-        manifest['segments'].pop(seg_to_remove_name)
-        self.logger.info(f"Removing segment with meta {seg_to_remove_meta}")
+        found = False
+        for crnt_seg, next_seg in itertools.pairwise(sorted_segments):
+            name, meta = crnt_seg
 
-        detect_at_seg_meta = sorted_segments[-1][1]
+            ntpr = NTPR(ns="kafka",
+                        topic=self.topic,
+                        partition=0,
+                        revision=meta["ntp_revision"])
+            seg_to_remove_name = name
+            seg_to_remove_meta = meta
+            detect_at_seg_meta = next_seg[1]
+
+            offset_range = OffsetRange(first_inclusive=meta["base_offset"],
+                                       last_inclusive=meta["committed_offset"])
+            impacted_ranges = expected_anomalies[
+                ntpr].get_impacted_offset_ranges(ntpr, view)
+
+            if not overlaps_with_any(offset_range, impacted_ranges):
+                found = True
+                break
+
+        assert found, f"Could not find a segment to remove from the STM manifest: {removed_ranges=}"
+
+        self.logger.info(f"Removing segment with meta {seg_to_remove_meta}")
         self.logger.info(f"Anomaly should be detected at {detect_at_seg_meta}")
+        manifest['segments'].pop(seg_to_remove_name)
 
         # Forcefully reset the manifest. Remote writes are disabled first
         # to make this operation safe.
@@ -443,17 +526,9 @@ class CloudStorageScrubberTest(RedpandaTest):
         self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
                                     'true')
 
-        ntpr = NTPR(ns="kafka",
-                    topic=self.topic,
-                    partition=0,
-                    revision=seg_to_remove_meta["ntp_revision"])
-
         def gap_reported():
             anomalies_per_ntpr = self._collect_anomalies()
             self.logger.debug(f"Reported anomalies {anomalies_per_ntpr}")
-
-            if ntpr not in anomalies_per_ntpr:
-                return False
 
             seg_meta_anomalies = anomalies_per_ntpr[
                 ntpr].segment_metadata_anomalies
@@ -471,18 +546,74 @@ class CloudStorageScrubberTest(RedpandaTest):
             backoff_sec=2,
             err_msg="Gap not reported")
 
-        if ntpr not in expected_anomalies:
-            expected_anomalies[ntpr] = Anomalies.make_empty(ntpr)
-
         expected_anomalies[ntpr].segment_metadata_anomalies.add(meta_anomaly)
+
+    def _assert_metrics_updated(self):
+        metrics = [
+            self.redpanda.metrics(n, MetricsEndpoint.PUBLIC_METRICS)
+            for n in self.redpanda.nodes
+        ]
+
+        missing_segments = 0
+        missing_spills = 0
+        offset_gaps = 0
+
+        def validate_labels(labels):
+            label_validators = {
+                "redpanda_namespace": [lambda val: val == "kafka"],
+                "redpanda_topic": [],
+                "redpanda_type": [],
+                "redpanda_severity":
+                [lambda val: val == "high" or val == "low"]
+            }
+
+            for name, validators in label_validators.items():
+                assert name in labels, f"Label {name} not found in {labels}"
+                for v in validators:
+                    assert v(labels[name]
+                             ), f"Validator for {name}={labels[name]} failed"
+
+            expected_labels = set(label_validators.keys())
+            found_labels = set(labels.keys())
+            assert expected_labels == found_labels, f"Label keys do not match: {expected_labels=} != {found_labels=}"
+
+        for node_metrics in metrics:
+            for family in node_metrics:
+                for sample in family.samples:
+                    if "redpanda_type" in sample.labels and "redpanda_severity" in sample.labels:
+                        self.logger.debug(f"anomaly_metric_sample: {sample}")
+                        validate_labels(sample.labels)
+
+                        anomaly_type = sample.labels["redpanda_type"]
+                        if anomaly_type == "missing_segments":
+                            missing_segments += int(sample.value)
+                        elif anomaly_type == "missing_spillover_manifests":
+                            missing_spills += int(sample.value)
+                        elif anomaly_type == "offset_gaps":
+                            offset_gaps += int(sample.value)
+
+        self.logger.info(
+            f"Metrics reported: {missing_segments=}, {missing_spills=} {offset_gaps=}"
+        )
+
+        assert missing_segments == 1, "No missing segments repoted via metrics"
+        assert missing_spills == 1, "No missing spillovers repoted via metrics"
+        assert offset_gaps >= 1, "No offset gaps reported via metrics"
 
     @cluster(num_nodes=4, log_allow_list=SCRUBBER_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_scrubber(self, cloud_storage_type):
-        expected_anomalies: dict[NTPR, Anomalies] = dict()
+        """
+        Test the internal cloud storage scrubber. Various anomalies are introduced
+        by removing files from cloud storage and erroneously force updating the partition
+        manifest. We then verify that the scrubber detects the issues and that the set of
+        issues remains stable.
+        """
+        expected_anomalies = collections.defaultdict(Anomalies.make_empty)
 
         self._produce()
         self._assert_no_anomalies()
+
         self._delete_spillover_manifest_and_await_anomaly(expected_anomalies)
         self._delete_segment_and_await_anomaly(expected_anomalies)
 
@@ -490,6 +621,8 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         self._assert_anomalies_stable_after_leader_shuffle(expected_anomalies)
         self._assert_anomalies_stable_after_restart(expected_anomalies)
+
+        self._assert_metrics_updated()
 
         # This test deletes segments, spillover manifests
         # and fudges the manifest. rp-storage-tool also picks
