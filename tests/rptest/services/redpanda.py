@@ -1647,6 +1647,13 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         # Load install pack and check profile
         return install_pack_client.getInstallPack(install_pack_version)
 
+    def cloud_agent_ssh(self, remote_cmd):
+        """Run the given command on the redpanda agent node of the cluster.
+
+        :param remote_cmd: The command to run on the agent node.
+        """
+        return self._kubectl._cmd(remote_cmd)
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
