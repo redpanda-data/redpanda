@@ -1258,7 +1258,11 @@ class RedpandaServiceBase(Service):
         test_name = self._context.function_name
 
         bad_lines = collections.defaultdict(list)
+        bad_lines_logged = 0
+        bad_lines_log_limit = 32
         for node in self.nodes:
+            if bad_lines_logged > bad_lines_log_limit:
+                break
 
             if self._skip_if_no_redpanda_log and not node.account.exists(
                     RedpandaServiceBase.STDOUT_STDERR_CAPTURE):
@@ -1286,6 +1290,8 @@ class RedpandaServiceBase(Service):
             for line in node.account.ssh_capture(
                     f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=60):
+                if bad_lines_logged > bad_lines_log_limit:
+                    break
                 line = line.strip()
 
                 allowed = False
@@ -1318,6 +1324,7 @@ class RedpandaServiceBase(Service):
                     self.logger.warn(
                         f"[{test_name}] Unexpected log line on {node.account.hostname}: {line}"
                     )
+                    bad_lines_logged += 1
 
         if bad_lines:
             raise BadLogLines(bad_lines)

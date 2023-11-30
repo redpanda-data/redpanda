@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from re import T
+import time
 from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
 
@@ -41,6 +42,9 @@ class BucketUsage(NamedTuple):
 READ_REPLICA_LOG_ALLOW_LIST = [
     "Failed to download partition manifest",
     "Failed to download manifest",
+]
+READ_REPLICA_STRESS_LOG_ALLOW_LIST = READ_REPLICA_LOG_ALLOW_LIST + [
+    "Can't replicate archival_metadata_stm configuration batch"
 ]
 
 
@@ -100,14 +104,17 @@ def hwms_are_identical(logger, src_cluster, dst_cluster, topic_name,
     return src_hwms == rr_hwms
 
 
-def create_read_replica_topic(dst_cluster, topic_name, bucket_name) -> None:
+def create_read_replica_topic(dst_cluster,
+                              topic_name,
+                              bucket_name,
+                              replicas=1) -> None:
     rpk_dst_cluster = RpkTool(dst_cluster)
     # NOTE: we set 'redpanda.remote.readreplica' to ORIGIN
     # cluster's bucket
     conf = {
         'redpanda.remote.readreplica': bucket_name,
     }
-    rpk_dst_cluster.create_topic(topic_name, config=conf)
+    rpk_dst_cluster.create_topic(topic_name, config=conf, replicas=replicas)
 
     def has_leader():
         partitions = list(
@@ -156,14 +163,19 @@ class TestReadReplicaService(EndToEndTest):
             cloud_storage_housekeeping_interval_ms=10)
         self.second_cluster = None
 
-    def start_second_cluster(self) -> None:
+    def start_second_cluster(self, extra_rp_conf=None) -> None:
         self.second_cluster = make_redpanda_service(
-            self.test_context, num_brokers=3, si_settings=self.rr_settings)
+            self.test_context,
+            num_brokers=3,
+            si_settings=self.rr_settings,
+            extra_rp_conf=extra_rp_conf)
         self.second_cluster.start(start_si=False)
 
-    def create_read_replica_topic(self) -> None:
-        create_read_replica_topic(self.second_cluster, self.topic_name,
-                                  self.si_settings.cloud_storage_bucket)
+    def create_read_replica_topic(self, replicas=1) -> None:
+        create_read_replica_topic(self.second_cluster,
+                                  self.topic_name,
+                                  self.si_settings.cloud_storage_bucket,
+                                  replicas=replicas)
 
     def start_consumer(self) -> None:
         # important side effect for superclass; we will use the replica
@@ -187,9 +199,9 @@ class TestReadReplicaService(EndToEndTest):
             message_validator=is_int_with_prefix)
         self.producer.start()
 
-    def create_read_replica_topic_success(self) -> bool:
+    def create_read_replica_topic_success(self, replicas=1) -> bool:
         try:
-            self.create_read_replica_topic()
+            self.create_read_replica_topic(replicas=replicas)
         except RpkException as e:
             if "The server experienced an unexpected error when processing the request" in str(
                     e):
@@ -202,7 +214,9 @@ class TestReadReplicaService(EndToEndTest):
     def _setup_read_replica(self,
                             num_messages=0,
                             partition_count=3,
-                            producer_timeout=None) -> None:
+                            producer_timeout=None,
+                            extra_rp_conf=None,
+                            rr_rf=1) -> None:
         if producer_timeout is None:
             producer_timeout = 30
 
@@ -229,11 +243,11 @@ class TestReadReplicaService(EndToEndTest):
                             str(self.producer.last_acked_offsets))
             self.producer.stop()
 
-        self.start_second_cluster()
+        self.start_second_cluster(extra_rp_conf=extra_rp_conf)
 
         # wait until the read replica topic creation succeeds
         wait_until(
-            self.create_read_replica_topic_success,
+            lambda: self.create_read_replica_topic_success(replicas=rr_rf),
             timeout_sec=300,
             backoff_sec=5,
             err_msg="Could not create read replica topic. Most likely " +
@@ -353,6 +367,49 @@ class TestReadReplicaService(EndToEndTest):
         wait_until(clusters_report_identical_hwms,
                    timeout_sec=30,
                    backoff_sec=1)
+
+    @cluster(num_nodes=8, log_allow_list=READ_REPLICA_STRESS_LOG_ALLOW_LIST)
+    def test_stress_read_replicas(self) -> None:
+        """
+        This test attempts to stress the read replica path in a few ways:
+        - having a large number of partitions
+        - reducing the Raft intervals, reducing tolerance for delays
+        - increasing the frequency of manifest syncs
+        """
+        self.rr_settings.cloud_storage_readreplica_manifest_sync_timeout_ms = 1
+        extra_rp_conf = dict()
+        extra_rp_conf["election_timeout_ms"] = "25"
+        extra_rp_conf["raft_heartbeat_interval_ms"] = "8"
+        self._setup_read_replica(partition_count=120,
+                                 num_messages=12000,
+                                 extra_rp_conf=extra_rp_conf,
+                                 rr_rf=3)
+
+        def clusters_report_identical_hwms():
+            return hwms_are_identical(self.logger, self.redpanda,
+                                      self.second_cluster, self.topic_name,
+                                      120)
+
+        wait_until(clusters_report_identical_hwms,
+                   timeout_sec=300,
+                   backoff_sec=1)
+
+        self.producer = VerifiableProducer(
+            self.test_context,
+            num_nodes=1,
+            redpanda=self.redpanda,
+            topic=self.topic_name,
+            throughput=1000,
+            message_validator=is_int_with_prefix)
+        self.producer.start()
+        wait_until(
+            lambda: self.producer.num_acked > 36000,
+            timeout_sec=240,
+            err_msg=
+            f"Producer only produced {self.producer.num_acked}/1000 messages in 60s"
+        )
+        self.producer.stop()
+        time.sleep(60)
 
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
