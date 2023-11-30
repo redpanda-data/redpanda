@@ -81,6 +81,7 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       std::vector<std::vector<cloud_storage::remote_segment_path>>)
       = 0;
+    virtual ~offsets_recovery_requestor() = default;
 };
 
 } // namespace cluster::cloud_metadata

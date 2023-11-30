@@ -39,6 +39,7 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       std::vector<std::vector<cloud_storage::remote_segment_path>>
         snapshot_paths_per_pid) override;
+    ~offsets_recovery_manager() override = default;
 
 private:
     ss::sharded<offsets_recovery_router>& _recovery_router;
