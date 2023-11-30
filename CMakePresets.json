@@ -54,12 +54,23 @@
       }
     },
     {
+      "name": "ci",
+      "hidden": true,
+      "cacheVariables": {
+        "Redpanda_ENABLE_CLANG_TIDY": "FORCE_ON"
+      }
+    },
+    {
       "name": "release",
       "inherits": ["base", "release-type", "shared"]
     },
     {
       "name": "release-static",
       "inherits": ["base", "release-type", "static"]
+    },
+    {
+      "name": "release-ci",
+      "inherits": ["release", "ci"]
     },
     {
       "name": "debug",
@@ -82,6 +93,10 @@
     {
       "name": "release-static",
       "configurePreset": "release-static"
+    },
+    {
+      "name": "release-ci",
+      "configurePreset": "release-ci"
     },
     {
       "name": "debug",
