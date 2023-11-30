@@ -14,6 +14,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/docker/go-units"
@@ -24,6 +25,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 type bundleParams struct {
@@ -41,6 +43,7 @@ type bundleParams struct {
 	timeout                 time.Duration
 	metricsInterval         time.Duration
 	partitions              []topicPartitionFilter
+	labelSelector           map[string]string
 }
 
 type topicPartitionFilter struct {
@@ -61,6 +64,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 		controllerLogsSizeLimit string
 		namespace               string
+		labelSelector           []string
 		partitionFlag           []string
 
 		timeout         time.Duration
@@ -116,7 +120,11 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				metricsInterval:         metricsInterval,
 				partitions:              partitions,
 			}
-
+			if len(labelSelector) > 0 {
+				labelsMap, err := labels.ConvertSelectorToLabelsMap(strings.Join(labelSelector, ","))
+				out.MaybeDie(err, "unable to parse label-selector flag: %v", err)
+				bp.labelSelector = labelsMap
+			}
 			// To execute the appropriate bundle we look for
 			// kubernetes_service_* env variables to identify if we are in a
 			// k8s environment.
@@ -148,6 +156,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.StringVar(&controllerLogsSizeLimit, "controller-logs-size-limit", "20MB", "The size limit of the controller logs that can be stored in the bundle (e.g. 3MB, 1GiB)")
 	f.StringVar(&uploadURL, "upload-url", "", "If provided, where to upload the bundle in addition to creating a copy on disk")
 	f.StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
+	f.StringArrayVarP(&labelSelector, "label-selector", "l", []string{"app.kubernetes.io/name=redpanda"}, "Comma-separated label selectors to filter your resources. e.g: <label>=<value>,<label>=<value> (k8s only)")
 	f.StringArrayVarP(&partitionFlag, "partition", "p", nil, "Comma-separated partition IDs; when provided, rpk saves extra admin API requests for those partitions. Check help for extended usage")
 
 	return cmd
