@@ -22,6 +22,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
+#include "storage/disk_log_impl.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/types.h"
@@ -289,7 +290,7 @@ public:
           lstats.start_offset,
           lstats.committed_offset,
           ss::default_priority_class());
-        auto reader = log->make_reader(std::move(cfg)).get0();
+        auto reader = dynamic_cast<storage::disk_log_impl*>(log.get())->make_unchecked_reader(std::move(cfg)).get0();
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
           .get0();
     }

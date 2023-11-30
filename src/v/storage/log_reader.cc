@@ -55,18 +55,21 @@ batch_consumer::consume_result skipping_consumer::accept_batch_start(
      * Check if we have to skip the batch
      */
     if (header.last_offset() < _reader._config.start_offset) {
+        vlog(stlog.info, "AWONG SKIP {} V {}", header.last_offset(), _reader._config.start_offset);
         return batch_consumer::consume_result::skip_batch;
     }
     if (
       _reader._config.type_filter
       && _reader._config.type_filter != header.type) {
         _reader._config.start_offset = header.last_offset() + model::offset(1);
+        vlog(stlog.info, "AWONG SKIP");
         return batch_consumer::consume_result::skip_batch;
     }
     if (_reader._config.first_timestamp > header.max_timestamp) {
         // kakfa requires that we return messages >= the timestamp, it is
         // permitted to include a few earlier
         _reader._config.start_offset = header.last_offset() + model::offset(1);
+        vlog(stlog.info, "AWONG SKIP");
         return batch_consumer::consume_result::skip_batch;
     }
     // we want to consume the batch
@@ -246,6 +249,7 @@ log_reader::log_reader(
         _iterator.reader = std::make_unique<log_segment_batch_reader>(
           **_iterator.next_seg, _config, _probe);
     }
+    vlog(stlog.info, "AWONG CONSTRUCTED W {}", _config.start_offset);
 }
 
 ss::future<> log_reader::find_next_valid_iterator() {

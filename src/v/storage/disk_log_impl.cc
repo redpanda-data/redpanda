@@ -1986,12 +1986,14 @@ ss::future<> disk_log_impl::do_truncate(
     // if no offset is found in an index we will start from the segment base
     // offset
     model::offset start = last->offsets().base_offset;
+    auto target = std::max(start, model::prev_offset(cfg.base_offset));
 
     auto pidx = last->index().find_nearest(
-      std::max(start, model::prev_offset(cfg.base_offset)));
+        target);
     size_t initial_size = 0;
     model::timestamp initial_timestamp = last->index().max_timestamp();
     if (pidx) {
+        vlog(stlog.info, "AWONG FOUND {} LOOKING FOR {}", start, target);
         start = pidx->offset;
         initial_size = pidx->filepos;
         initial_timestamp = pidx->timestamp;
@@ -2002,6 +2004,7 @@ ss::future<> disk_log_impl::do_truncate(
     // an unchecked reader is created which does not enforce the logical
     // starting offset. this is needed because we really do want to read
     // all the data in the segment to find the correct physical offset.
+    vlog(stlog.info, "AWONG READER START AT {}", start);
     auto reader = co_await make_unchecked_reader(
       log_reader_config(start, model::offset::max(), cfg.prio));
     auto phs = co_await std::move(reader).consume(
@@ -2041,6 +2044,7 @@ ss::future<> disk_log_impl::do_truncate(
           *this));
     }
     auto [prev_last_offset, file_position, new_max_timestamp] = phs.value();
+    vlog(stlog.info, "AWONG truncating at offset {}], filepos {}", prev_last_offset, file_position);
 
     if (file_position == 0) {
         _segs.pop_back();

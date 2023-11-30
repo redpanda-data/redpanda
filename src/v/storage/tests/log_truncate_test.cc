@@ -68,6 +68,36 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(lstats.start_offset, model::offset{});
 }
 
+FIXTURE_TEST(test_truncate_empty_batch, storage_test_fixture) {
+    storage::log_manager mgr = make_log_manager();
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 1, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{1}, 0, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{1}, 0, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{1}, 1, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{2}, 1, true));
+    log
+      ->truncate(storage::truncate_config(
+        model::offset{2}, ss::default_priority_class()))
+      .get();
+    append_batch(
+      log, model::test::make_random_batch(model::offset{2}, 1, true));
+    auto read_batches = read_and_validate_all_batches(log);
+    for (const auto& b : read_batches) {
+        info("AWONG [{}, {}], {}", b.base_offset(), b.last_offset(), b);
+    }
+    BOOST_REQUIRE_EQUAL(read_batches.size(), 4);
+}
+
 FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
