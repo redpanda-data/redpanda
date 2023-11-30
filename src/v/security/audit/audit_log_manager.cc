@@ -663,6 +663,10 @@ void audit_log_manager::set_enabled_events() {
       "Unknown event_type observed");
 }
 
+bool audit_log_manager::recovery_mode_enabled() noexcept {
+    return config::node().recovery_mode_enabled.value();
+}
+
 audit_log_manager::audit_log_manager(
   cluster::controller* controller, kafka::client::configuration& client_config)
   : _audit_enabled(config::shard_local_cfg().audit_enabled.bind())
@@ -742,6 +746,12 @@ bool audit_log_manager::is_audit_event_enabled(event_type event_type) const {
 }
 
 ss::future<> audit_log_manager::start() {
+    if (recovery_mode_enabled()) {
+        vlog(
+          adtlog.warn,
+          "Redpanda is operating in recovery mode.  Auditing is disabled!");
+        co_return;
+    }
     _probe = std::make_unique<audit_probe>();
     _probe->setup_metrics([this] {
         return static_cast<double>(pending_events())
@@ -897,7 +907,7 @@ ss::future<> audit_log_manager::drain() {
 
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event() const {
-    if (!_audit_enabled()) {
+    if (recovery_mode_enabled() || !_audit_enabled()) {
         return std::make_optional(audit_event_passthrough::yes);
     }
     if (_as.abort_requested()) {

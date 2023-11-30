@@ -270,6 +270,8 @@ private:
         return result;
     }
 
+    static bool recovery_mode_enabled() noexcept;
+
 private:
     class audit_msg {
     public:
