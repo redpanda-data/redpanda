@@ -32,7 +32,9 @@ void admin_server::register_wasm_transform_routes() {
 ss::future<ss::json::json_return_type>
 admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
     if (!_transform_service->local_is_initialized()) {
-        throw ss::httpd::bad_request_exception("data transforms not enabled");
+        throw ss::httpd::bad_request_exception(
+          "data transforms disabled - use `rpk cluster config "
+          "data_transforms_enabled true` to enable");
     }
     auto name = model::transform_name(req->param["name"]);
     auto ec = co_await _transform_service->local().delete_transform(
@@ -67,7 +69,9 @@ ss::httpd::transform_json::partition_transform_status::
 ss::future<ss::json::json_return_type>
 admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
     if (!_transform_service->local_is_initialized()) {
-        throw ss::httpd::bad_request_exception("data transforms not enabled");
+        throw ss::httpd::bad_request_exception(
+          "data transforms disabled - use `rpk cluster config "
+          "data_transforms_enabled true` to enable");
     }
     auto report = co_await _transform_service->local().list_transforms();
     ss::json::json_list<ss::httpd::transform_json::transform_metadata>
@@ -155,7 +159,9 @@ void validate_transform_deploy_document(const json::Document& doc) {
 ss::future<ss::json::json_return_type>
 admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
     if (!_transform_service->local_is_initialized()) {
-        throw ss::httpd::bad_request_exception("data transforms not enabled");
+        throw ss::httpd::bad_request_exception(
+          "data transforms disabled - use `rpk cluster config "
+          "data_transforms_enabled true` to enable");
     }
     // The request body could be large here, so stream it into an iobuf.
     iobuf body;
