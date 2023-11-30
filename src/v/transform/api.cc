@@ -591,7 +591,13 @@ ss::future<model::cluster_transform_report> service::list_transforms() {
         co_return model::cluster_transform_report{};
     }
     auto _ = _gate.hold();
-    co_return co_await _rpc_client->local().generate_report();
+    // The default report marks all transform's partitions in the unknown state,
+    // then update the report with the information that we gather from all the
+    // nodes in the cluster's in memory state. This allows us to report on
+    // partitions that may not be actively in memory on a node somewhere.
+    auto report = compute_default_report();
+    report.merge(co_await _rpc_client->local().generate_report());
+    co_return report;
 }
 
 ss::future<> service::cleanup_wasm_binary(uuid_t key) {
@@ -669,6 +675,30 @@ service::compute_node_local_report() {
           agg.merge(local);
           return agg;
       });
+}
+
+model::cluster_transform_report service::compute_default_report() {
+    using state = model::transform_report::processor::state;
+    model::cluster_transform_report report;
+    // Mark all transforms in an unknown state if they don't get an update
+    for (auto [id, transform] : _plugin_frontend->local().all_transforms()) {
+        auto cfg = _topic_table->local().get_topic_cfg(transform.input_topic);
+        if (!cfg) {
+            continue;
+        }
+        for (int32_t i = 0; i < cfg->partition_count; ++i) {
+            report.add(
+              id,
+              transform,
+              {
+                .id = model::partition_id(i),
+                .status = state::unknown,
+                .node = _self,
+                .lag = 0,
+              });
+        }
+    }
+    return report;
 }
 
 std::unique_ptr<rpc::reporter>

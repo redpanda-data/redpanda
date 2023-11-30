@@ -91,6 +91,7 @@ private:
 
     friend class wrapped_service_reporter;
     ss::future<model::cluster_transform_report> compute_node_local_report();
+    model::cluster_transform_report compute_default_report();
 
     ss::gate _gate;
 
