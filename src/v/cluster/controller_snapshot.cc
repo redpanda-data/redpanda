@@ -41,7 +41,7 @@ ss::future<> write_map_async(iobuf& out, Map t) {
     return ss::do_with(std::move(t), [&out](Map& t) {
         return ss::do_for_each(t, [&out](auto& el) {
             write(out, el.first);
-            write(out, std::move(el.second));
+            return serde::write_async(out, std::move(el.second));
         });
     });
 }

@@ -242,7 +242,8 @@ FIXTURE_TEST(test_upload_next_metadata, cluster_metadata_uploader_fixture) {
     const size_t snap_size = reader.get_snapshot_size().get();
     auto snap_buf_parser = iobuf_parser{
       read_iobuf_exactly(reader.input(), snap_size).get()};
-    auto snapshot = serde::read<cluster::controller_snapshot>(snap_buf_parser);
+    auto snapshot
+      = serde::read_async<cluster::controller_snapshot>(snap_buf_parser).get();
     BOOST_REQUIRE_EQUAL(snapshot.bootstrap.cluster_uuid, cluster_uuid);
 
     // We should see timeouts when appropriate; errors should still increment.
