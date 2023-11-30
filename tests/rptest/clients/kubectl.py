@@ -18,7 +18,6 @@ class KubectlTool:
     Wrapper around kubectl for operating on a redpanda cluster.
     """
 
-    KUBECTL_VERSION = '1.24.10'
     TELEPORT_DEST_DIR = '/tmp/machine-id'
     TELEPORT_IDENT_FILE = f'{TELEPORT_DEST_DIR}/identity'
 
@@ -120,28 +119,15 @@ class KubectlTool:
         '''
         if not self._kubectl_installed and self._remote_uri is not None:
             ssh_prefix = self._ssh_prefix()
-            download_cmd = ssh_prefix + [
-                'wget', '-q',
-                f'https://dl.k8s.io/release/v{self.KUBECTL_VERSION}/bin/linux/amd64/kubectl',
-                '-O', '/tmp/kubectl'
-            ]
-            install_cmd = ssh_prefix + [
-                'sudo', 'install', '-m', '0755', '/tmp/kubectl',
-                '/usr/local/bin/kubectl'
-            ]
-            cleanup_cmd = ssh_prefix + ['rm', '-f', '/tmp/kubectl']
+            bg_cmd = ssh_prefix + ['./breakglass-tools.sh']
 
             if self._provider == 'aws':
                 config_cmd = ssh_prefix + self._aws_config_cmd()
             elif self._provider == 'gcp':
                 config_cmd = ssh_prefix + self._gcp_config_cmd()
 
-            self._redpanda.logger.info(download_cmd)
-            res = subprocess.check_output(download_cmd)
-            self._redpanda.logger.info(install_cmd)
-            res = subprocess.check_output(install_cmd)
-            self._redpanda.logger.info(cleanup_cmd)
-            res = subprocess.check_output(cleanup_cmd)
+            self._redpanda.logger.info(bg_cmd)
+            res = subprocess.check_output(bg_cmd)
             self._redpanda.logger.info(config_cmd)
             res = subprocess.check_output(config_cmd)
             self._kubectl_installed = True
