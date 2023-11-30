@@ -11,8 +11,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-redpanda-transform-sdk-types = { path = "./core-types" }
-redpanda-transform-sdk-sys = { path = "./core-sys" }
+redpanda-transform-sdk-types = { path = "./core-types", version = "=0.0.0-dev" }
+redpanda-transform-sdk-sys = { path = "./core-sys", version = "=0.0.0-dev" }
 
 [dev-dependencies]
 quickcheck = { workspace = true }
@@ -29,7 +29,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.0-dev"
 edition = "2021"
 rust-version = "1.72.0"
 authors = ["Redpanda Data Transforms Team"]
