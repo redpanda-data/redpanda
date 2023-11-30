@@ -129,6 +129,18 @@ auto tuple_map(Fn&& map_fn, auto&& first_tuple, auto&& second_tuple) {
       first_tuple);
 }
 
+struct sm_range {
+    model::offset base_offset;
+    model::offset committed_offset;
+};
+
+constexpr bool
+left_covers_the_range_of_right(auto const& left, auto const& right) {
+    // ensure that left is bigger or equal than right (a sort of >= relation)
+    return left.base_offset <= right.base_offset
+           && left.committed_offset >= right.committed_offset;
+}
+
 } // namespace details
 
 /// The aggregated columnar storage for segment_meta.
@@ -434,9 +446,8 @@ public:
                 auto to_replace = dereference(old_segments_it);
                 // find first segment that is not completely covered by
                 // replacement_meta
-                if (!(to_replace.base_offset >= replacement_meta.base_offset
-                      && to_replace.committed_offset
-                           <= replacement_meta.committed_offset)) {
+                if (!details::left_covers_the_range_of_right(
+                      replacement_meta, to_replace)) {
                     break;
                 }
                 details::increment_all(old_segments_it);
@@ -1012,7 +1023,7 @@ public:
               std::next(m_it), _write_buffer.end(), [&](auto& kv) {
                   // first element with a committed offset that spans over the
                   // range of m
-                  return kv.second.committed_offset > m.committed_offset;
+                  return !details::left_covers_the_range_of_right(m, kv.second);
               });
             // if(next(m_it) == not_replaced_segment) there is nothing to erase,
             // _write_buffer.erase would do nothing
