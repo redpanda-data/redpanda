@@ -996,7 +996,15 @@ public:
     const_iterator at_index(size_t ix) const;
     const_iterator prev(const_iterator const& it) const;
 
-    void insert(const segment_meta&);
+    /// insert segment_meta, possibly replacing some other segments. false means
+    /// that the parameter cannot be inserted, it breaks the precondition (see
+    /// can_be_inserted())
+    bool insert(const segment_meta&);
+
+    /// check that the current sm can be inserted without breaking the
+    /// precondition of a segment not being completely covered by another
+    /// already in the segment_meta_cstore
+    bool can_be_inserted(const segment_meta&) const;
 
     class [[nodiscard]] append_tx {
     public:

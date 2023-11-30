@@ -141,6 +141,60 @@ left_covers_the_range_of_right(auto const& left, auto const& right) {
            && left.committed_offset >= right.committed_offset;
 }
 
+// can_be_inserted implementation, takes as parameters adapters to be able to
+// operate on both _write_buffer and counter_col_t search m.base_offset. either
+// it's an exact match, so the result can be inspected, or it's a
+// segment starting after m.base_offset. if it's begin(), then m can be
+// inserted (the container starts strictly after m) otherwise check the
+// prev segment, as it might cover m.
+constexpr auto impl_can_be_inserted(
+  auto& sm,
+  auto const& container,
+  auto dereference_op,
+  auto committed_offset_dereference_op,
+  auto prev_op) {
+    if (container.empty()) {
+        // empty container, can be inserted
+        return true;
+    }
+    // look for an exact match or whatever comes after it
+    auto candidate = container.lower_bound(sm.base_offset);
+    if (
+      candidate == container.begin()
+      && dereference_op(candidate) != sm.base_offset) {
+        // not an exact hit, and candidate starts after offset. can be
+        // inserted
+        return true;
+    }
+
+    if (
+      candidate != container.end()
+      && dereference_op(candidate) == sm.base_offset) {
+        // candidate is not end() and it's an exact hit, check
+        // committed_offset and return true if the new
+        // committed_offset is greater or equal.
+        return left_covers_the_range_of_right(
+          sm,
+          sm_range{
+            dereference_op(candidate),
+            committed_offset_dereference_op(candidate)});
+    }
+
+    // candidate comes after the offset and it's not begin(), check
+    // the prev segment as it might contain offset
+    auto prev_it = prev_op(candidate);
+    // first part of condition is always true (it's not less than sm,
+    // and it's not equal)
+    if (left_covers_the_range_of_right(
+          sm_range{
+            dereference_op(prev_it), committed_offset_dereference_op(prev_it)},
+          sm)) {
+        // prev already covers the range from sm
+        return false;
+    }
+    // no perfect overlap
+    return true;
+}
 } // namespace details
 
 /// The aggregated columnar storage for segment_meta.
@@ -1014,7 +1068,10 @@ public:
         _write_buffer.erase(it);
     }
 
-    void insert(const segment_meta& m) {
+    bool insert(const segment_meta& m) {
+        if (unlikely(!can_be_inserted(m))) {
+            return false;
+        }
         auto [m_it, _] = _write_buffer.insert_or_assign(m.base_offset, m);
         // the new segment_meta could be a replacement for subsequent entries in
         // the buffer, so do a pass to clean them
@@ -1033,6 +1090,51 @@ public:
         if (_write_buffer.size() > max_buffer_entries) {
             flush_write_buffer();
         }
+        return true;
+    }
+
+    bool can_be_inserted(const segment_meta& m) const {
+        // segment insertion is order dependant, so not all the sequence of
+        // insertions of the same set of segment_meta will result in the same
+        // end result. for example. given this manifest [0, 10][11, 20],
+        // inserting the segment [9, 12] is symptomatic of an underlying issue
+        // (no alignment whatsoever), but can't be rejected immediately. other
+        // edge cases can be rejected in the interest of keeping the manifest in
+        // a reasonable state: if the new segment is entirely inside an old
+        // segment it can be rejected. in this case [12, 20], [18,20] and [14,
+        // 17] should be rejected.
+        // in case of perfect overlap, the insertion can be done since it does
+        // not break the invariants, but the user of this class
+        // (partition_manifest) will apply further logic to restrict this case
+
+        // check _write_buffer first
+        auto allowed_in_write_buffer = details::impl_can_be_inserted(
+          m,
+          _write_buffer,
+          [](auto& it) { return it->second.base_offset; },
+          [](auto& it) { return it->second.committed_offset; },
+          [](auto& it) { return std::prev(it); });
+
+        if (!allowed_in_write_buffer) {
+            return false;
+        }
+
+        // then cstore
+        auto& base_col = _col.get_column_cref<segment_meta_ix::base_offset>();
+        auto& committed_col
+          = _col.get_column_cref<segment_meta_ix::committed_offset>();
+
+        return details::impl_can_be_inserted(
+          m,
+          base_col,
+          [](auto& it) { return model::offset{*it}; },
+          [&](auto& it) {
+              return model::offset{*committed_col.at_index(it.index())};
+          },
+          [&](auto& it) {
+              return base_col.at_index(
+                (it.is_end() ? _col.size() : it.index()) - 1);
+          });
     }
 
     auto inflated_actual_size() const {
@@ -1172,7 +1274,13 @@ segment_meta_cstore::lower_bound(model::offset o) const {
     return const_iterator(_impl->lower_bound(o));
 }
 
-void segment_meta_cstore::insert(const segment_meta& s) { _impl->insert(s); }
+bool segment_meta_cstore::insert(const segment_meta& s) {
+    return _impl->insert(s);
+}
+
+bool segment_meta_cstore::can_be_inserted(const segment_meta& sm) const {
+    return _impl->can_be_inserted(sm);
+}
 
 void segment_meta_cstore::prefix_truncate(model::offset new_start_offset) {
     return _impl->prefix_truncate(new_start_offset);
