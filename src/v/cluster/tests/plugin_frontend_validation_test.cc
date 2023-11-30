@@ -132,6 +132,15 @@ public:
         }
         return ec;
     }
+    std::error_code set_topic_disabled(std::string_view name, bool disabled) {
+        set_topic_partitions_disabled_cmd cmd(
+          0,
+          set_topic_partitions_disabled_cmd_data{
+            .ns_tp = model::
+              topic_namespace{model::kafka_namespace, model::topic{name}},
+            .disabled = disabled});
+        return _topic_table.apply(std::move(cmd), ++_latest_offset).get();
+    }
 };
 
 } // namespace
@@ -368,6 +377,34 @@ TEST_F(PluginValidationTest, InternalTopicsCannotBeDeployedToAsOutput) {
       upsert_transform({
         .name = "pass_go_and_collect_200_dollars",
         .src = "__internal_topic",
+        .sinks = {"bar"},
+      }),
+      errc::success);
+}
+
+TEST_F(PluginValidationTest, NoDisabledTopics) {
+    EXPECT_EQ(create_topic("foo"), errc::success);
+    EXPECT_EQ(create_topic("bar"), errc::success);
+    EXPECT_EQ(set_topic_disabled("bar", true), errc::success);
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "baz",
+        .src = "foo",
+        .sinks = {"bar"},
+      }),
+      errc::transform_invalid_create);
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "baz",
+        .src = "bar",
+        .sinks = {"foo"},
+      }),
+      errc::transform_invalid_create);
+    EXPECT_EQ(set_topic_disabled("bar", false), errc::success);
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "baz",
+        .src = "foo",
         .sinks = {"bar"},
       }),
       errc::success);
