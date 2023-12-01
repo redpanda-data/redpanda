@@ -1839,6 +1839,8 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
 
 void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
+    vlog(
+      _ctx_log.trace, "applying control batch of type {}, pid: {}", crt, pid);
     // either epoch is the same as fencing or it's lesser in the latter
     // case we don't fence off aborts and commits because transactional
     // manager already decided a tx's outcome and acked it to the client
