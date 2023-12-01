@@ -1,0 +1,10 @@
+set -e
+
+# download the latest version of Apache Flink from the Apache website
+wget https://www.apache.org/dyn/closer.lua/flink/flink-1.18.0/flink-1.18.0-bin-scala_2.12.tgz
+
+# extract the Flink tarball
+mkdir flink && tar -xzf flink-1.18.0-bin-scala_2.12.tgz -C flink --strip-components 1
+
+# verify that Flink is installed correctly by running the following command
+/opt/flink/bin/flink version
