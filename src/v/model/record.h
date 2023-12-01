@@ -575,6 +575,8 @@ struct batch_identity {
     bool is_transactional{false};
 
     bool has_idempotent() { return pid.id >= 0; }
+
+    friend std::ostream& operator<<(std::ostream&, const batch_identity&);
 };
 
 // A simple iterator for model::record_batch

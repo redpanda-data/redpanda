@@ -474,4 +474,17 @@ std::ostream& operator<<(std::ostream& o, const control_record_type& crt) {
     }
 }
 
+std::ostream& operator<<(std::ostream& o, const batch_identity& bid) {
+    fmt::print(
+      o,
+      "{{pid: {}, first_seq: {}, is_transactional: {}, record_count: {}, "
+      "last_seq: {}}}",
+      bid.pid,
+      bid.first_seq,
+      bid.is_transactional,
+      bid.record_count,
+      bid.last_seq);
+    return o;
+}
+
 } // namespace model
