@@ -20,6 +20,7 @@
 #include "security/scram_credential.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/http/exception.hh>
 
 namespace {
 
@@ -171,6 +172,11 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
 
     auto username = security::credential_user(doc["username"].GetString());
     validate_no_control(username(), string_conversion_exception{username()});
+
+    if (!security::validate_scram_username(username())) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Invalid SCRAM username {{{}}}", username()));
+    }
 
     if (is_no_op_user_write(
           _controller->get_credential_store().local(), username, credential)) {
