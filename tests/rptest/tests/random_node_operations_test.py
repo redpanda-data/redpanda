@@ -410,7 +410,11 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             fi.start()
 
         # main workload loop
-        executor = NodeOpsExecutor(self.redpanda, self.logger, lock)
+        executor = NodeOpsExecutor(
+            self.redpanda,
+            self.logger,
+            lock,
+            progress_timeout=120 if enable_failures else 60)
         for i, op in enumerate(
                 generate_random_workload(
                     available_nodes=self.active_node_idxs)):
