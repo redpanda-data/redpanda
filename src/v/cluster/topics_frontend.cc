@@ -967,6 +967,7 @@ topics_frontend::partitions_with_lost_majority(
                   assignment.replicas,
                   all_defunct_nodes);
                 co_await ss::coroutine::maybe_yield();
+                it.check();
             }
         }
         co_return result;
