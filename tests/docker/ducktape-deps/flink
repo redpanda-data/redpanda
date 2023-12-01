@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -e
+mkdir /opt/flink
+
+# Download
+FLINK_FILE=flink-1.18.0-bin-scala_2.12.tgz
+KAFKA_CONNECTOR=flink-sql-connector-kafka-3.0.1-1.18.jar
+wget https://dlcdn.apache.org/flink/flink-1.18.0/${FLINK_FILE}
+
+# Extract
+tar -xvf ${FLINK_FILE} -C /opt/flink --strip-components 1
+rm ${FLINK_FILE}
+
+# Download connector
+mkdir /opt/flink/connectors
+wget https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.0.1-1.18/${KAFKA_CONNECTOR} -O /opt/flink/connectors/${KAFKA_CONNECTOR}
+
+# Show version
+/opt/flink/bin/flink --version

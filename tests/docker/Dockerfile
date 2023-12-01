@@ -157,6 +157,14 @@ RUN /franz-bench && \
 
 #################################
 
+FROM base as flink
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/flink /
+RUN /flink && \
+    rm /flink
+
+#################################
+
 FROM golang as kcl
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kcl /
@@ -300,6 +308,7 @@ COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
 COPY --from=wasi-transforms /opt/transforms/ /opt/transforms/
 COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
 COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
+COPY --from=flink /opt/flink/ /opt/flink/
 
 RUN ldconfig
 
