@@ -55,7 +55,7 @@ func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID in
 		// If the proto FQN is not provided, but we only have one message, we
 		// use that.
 		if protoFQN == "" && compiled.FindFileByPath(inMemFileName).Messages().Len() == 1 {
-			protoFQN = string(compiled.FindFileByPath(inMemFileName).Messages().Get(0).Name())
+			protoFQN = string(compiled.FindFileByPath(inMemFileName).Messages().Get(0).FullName())
 		}
 		var encFn serdeFunc
 		// If there is no FQN, most likely we are trying to decode only.
