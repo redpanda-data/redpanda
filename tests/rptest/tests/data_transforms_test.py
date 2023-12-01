@@ -182,3 +182,31 @@ class DataTransformsTest(BaseDataTransformsTest):
                                                      status=producer_status)
         self.logger.info(f"{consumer_status}")
         assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+
+class DataTransformsChainingTest(BaseDataTransformsTest):
+    """
+    Tests related to WebAssembly powered data transforms that are chained together, it is possible to create a full DAG.
+    """
+    topics = [
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+    ]
+
+    @cluster(num_nodes=4)
+    def test_multiple_transforms_chained_together(self):
+        """
+        Test that multiple (3) transforms chained together can produce a record from the first to the last topic.
+        """
+        for n, (i, o) in enumerate(zip(self.topics, self.topics[1:])):
+            self._deploy_wasm(f"identity-xform-{n}",
+                              input_topic=i,
+                              output_topic=o)
+        producer_status = self._produce_input_topic(topic=self.topics[0])
+        consumer_status = self._consume_output_topic(topic=self.topics[-1],
+                                                     status=producer_status,
+                                                     timeout_sec=60)
+        self.logger.info(f"{consumer_status}")
+        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
