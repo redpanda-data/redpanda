@@ -64,6 +64,8 @@
 // NOLINTNEXTLINE
 #define SASLNAME "(?:" VALUE_SAFE_CHAR "|=2C|=3D)+"
 
+#define BARE_SASLNAME "(" SASLNAME ")"
+
 // value-char = value-safe-char / "="
 // value = 1*value-char
 // NOLINTNEXTLINE
@@ -327,6 +329,19 @@ parse_server_final(std::string_view message) {
 #endif
 }
 
+static std::optional<ss::sstring> parse_saslname(std::string_view message) {
+    static thread_local const re2::RE2 re(BARE_SASLNAME, re2::RE2::Quiet);
+    vassert(re.ok(), "saslname regex failure: {}", re.error());
+
+    re2::StringPiece username;
+
+    if (!re2::RE2::FullMatch(message, re, &username)) {
+        return std::nullopt;
+    }
+
+    return ss::sstring(spv(username));
+}
+
 namespace security {
 
 client_first_message::client_first_message(bytes_view data) {
@@ -477,6 +492,11 @@ server_final_message::server_final_message(bytes_view data) {
 
     _error = std::move(match->error);
     _signature = std::move(match->signature);
+}
+
+bool validate_scram_username(std::string_view username) {
+    auto match = parse_saslname(username);
+    return match.has_value() && match.value() == username;
 }
 
 } // namespace security
