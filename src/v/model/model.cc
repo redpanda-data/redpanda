@@ -463,4 +463,15 @@ std::istream& operator>>(std::istream& i, leader_balancer_mode& lbt) {
     return i;
 }
 
+std::ostream& operator<<(std::ostream& o, const control_record_type& crt) {
+    switch (crt) {
+    case control_record_type::tx_abort:
+        return o << "tx_abort";
+    case control_record_type::tx_commit:
+        return o << "tx_commit";
+    case control_record_type::unknown:
+        return o << "unknown";
+    }
+}
+
 } // namespace model

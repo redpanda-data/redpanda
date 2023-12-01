@@ -344,6 +344,7 @@ enum class control_record_type : int16_t {
     tx_commit = 1,
     unknown = -1
 };
+std::ostream& operator<<(std::ostream&, const control_record_type&);
 
 using control_record_version
   = named_type<int16_t, struct control_record_version_tag>;
