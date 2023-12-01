@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! An internal crate providing the ABI contract for Redpanda's Data Transforms.
+//!
+//! If you are looking to use transforms you probably want crate
+//! [redpanda-transform-sdk](https://crates.io/crates/redpanda-transform-sdk).
+
 use std::{
     fmt::Debug,
     time::{Duration, SystemTime},

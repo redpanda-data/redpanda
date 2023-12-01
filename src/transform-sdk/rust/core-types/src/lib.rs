@@ -12,16 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! An internal crate providing shared types for Redpanda's Data Transforms.
+//!
+//! If you are looking to use transforms you probably want crate
+//! [redpanda-transform-sdk](https://crates.io/crates/redpanda-transform-sdk). These types are
+//! re-exported there for usage.
+
 use std::time::SystemTime;
 
 /// An event generated after a write event within the broker.
+///
+/// These events are asynchronously triggered after the producer's write request has been
+/// acknowledged.
 #[derive(Debug)]
 pub struct WriteEvent<'a> {
     /// The record for which the event was generated for.
     pub record: BorrowedRecord<'a>,
 }
 
-/// A zero-copy record header.
+/// A zero-copy [`BorrowedRecord`] header.
 #[derive(Debug)]
 pub struct BorrowedHeader<'a> {
     key: &'a [u8],
@@ -50,9 +59,9 @@ impl<'a> BorrowedHeader<'a> {
     }
 }
 
-/// A zero-copy representation of a record within Redpanda.
+/// A zero-copy representation of a [`Record`] within Redpanda.
 ///
-/// BorrowedRecords are handed to [`on_record_written`] event handlers as the record that Redpanda
+/// A [`BorrowedRecord`] is handed to `on_record_written` event handlers as the record that Redpanda
 /// wrote.
 #[derive(Debug)]
 pub struct BorrowedRecord<'a> {
@@ -115,7 +124,7 @@ impl<'a> BorrowedRecord<'a> {
     }
 }
 
-/// Records may have a collection of headers attached to them.
+/// A key value pair attached to a [`Record`].
 ///
 /// Headers are opaque to the broker and are purely a mechanism for the producer and consumers to
 /// pass information.
@@ -152,7 +161,9 @@ impl RecordHeader {
     }
 }
 
-/// An record in Redpanda.
+/// A record in Redpanda.
+///
+/// A record is a key-value pair of bytes, along with a collection of [`RecordHeader`].
 ///
 /// Records are generated as the result of any transforms that act upon a [`BorrowedRecord`].
 #[derive(Debug)]

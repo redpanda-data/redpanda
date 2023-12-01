@@ -14,16 +14,21 @@
 
 //! Redpanda Data Transforms Rust library.
 //!
-//! Provides a framework for writing in-broker data transforms.
+//! Data transforms let you run common data streaming tasks, like filtering,
+//! scrubbing, and transcoding, within Redpanda. For example, you may have consumers
+//! that require you to redact credit card numbers or convert JSON to Avro.
 //!
-//! [`on_record_written`]: Transforms records after they have been written to an input topic.
+//! Data transforms use a WebAssembly (Wasm) engine inside a Redpanda broker.
+//! Thus, transforms must compile to WebAssembly via `--target=wasm32-wasi`.
+//! A Wasm function acts on a single record in an input topic.
+//! You can develop and manage data transforms with `rpk transform` commands.
+//!
+//! This crate provides a framework for writing transforms.
+//!
+//! [`on_record_written`]: Transforms individual records after they have been written to an input topic.
 //! Resulting records are written to the output topic.
-//!
-//! Transforms must compile to WebAssembly via `--target=wasm32-wasi`, for the broker to run them.
 
 use std::fmt::Debug;
-
-extern crate redpanda_transform_sdk_types;
 
 pub use redpanda_transform_sdk_types::*;
 
@@ -32,8 +37,8 @@ pub use redpanda_transform_sdk_types::*;
 /// This callback is triggered after the record has been written and fsynced to disk and the
 /// producer has been acknowledged.
 ///
-/// This method blocks and runs forever, it should be called from `main` and any setup that is
-/// needed can be done before calling this method.
+/// This method blocks and runs forever, it should be called from `main`. Any setup that is
+/// needed prior to transforming any records can be done before calling this method.
 ///
 /// # Examples
 ///
@@ -47,6 +52,7 @@ pub use redpanda_transform_sdk_types::*;
 ///   on_record_written(my_transform);
 /// }
 ///
+/// // A transform that duplicates the record on the input topic to the output topic.
 /// fn my_transform(event: WriteEvent) -> Result<Vec<Record>> {
 ///   Ok(vec![
 ///     Record::new(
