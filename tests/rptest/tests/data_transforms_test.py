@@ -8,12 +8,15 @@
 # by the Apache License, Version 2.0
 
 import typing
+import time
+import random
 
 from ducktape.mark import matrix
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.services.transform_verifier_service import TransformVerifierProduceConfig, TransformVerifierProduceStatus, TransformVerifierService, TransformVerifierConsumeConfig, TransformVerifierConsumeStatus
+from rptest.services.admin import Admin
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
@@ -34,7 +37,6 @@ class BaseDataTransformsTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         extra_rp_conf = {
             'data_transforms_enabled': True,
-            'data_transforms_commit_interval_ms': 1,
         } | kwargs.pop('extra_rp_conf', {})
         super(BaseDataTransformsTest,
               self).__init__(*args, extra_rp_conf=extra_rp_conf, **kwargs)
@@ -205,6 +207,107 @@ class DataTransformsChainingTest(BaseDataTransformsTest):
                               input_topic=i,
                               output_topic=o)
         producer_status = self._produce_input_topic(topic=self.topics[0])
+        consumer_status = self._consume_output_topic(topic=self.topics[-1],
+                                                     status=producer_status,
+                                                     timeout_sec=60)
+        self.logger.info(f"{consumer_status}")
+        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+
+class Move(typing.NamedTuple):
+    topic: str
+    partition: int
+    current_leader: int
+    new_leader: int
+
+
+class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
+    """
+    Tests related to WebAssembly powered data transforms that are chained together, it is possible to create a full DAG.
+    """
+    def __init__(self, *args, **kwargs):
+        super(DataTransformsLeadershipChangingTest, self).__init__(
+            *args,
+            extra_rp_conf={
+                # Disable leader balancer, as this test is doing its own
+                # partition movement and the balancer would interfere
+                'enable_leader_balancer': False
+            },
+            **kwargs)
+        self._admin = Admin(self.redpanda)
+
+    topics = [
+        TopicSpec(partition_count=20),
+        TopicSpec(partition_count=20),
+    ]
+
+    def _start_producer(self):
+        """
+        Start a producer that should run for about 10 seconds.
+        """
+        producer = TransformVerifierService(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            config=TransformVerifierProduceConfig(
+                bytes_per_second='256KB',
+                max_batch_size='64KB',
+                max_bytes='2.5MB',
+                message_size='1KB',
+                topic=self.topics[0].name,
+                transactional=False,
+            ))
+        producer.start()
+        return producer
+
+    def _wait_for_producer(
+            self, producer: TransformVerifierService
+    ) -> TransformVerifierProduceStatus:
+        producer.wait(timeout_sec=10)
+        producer_status = producer.get_status()
+        producer.stop()
+        producer.free()
+        return typing.cast(TransformVerifierProduceStatus, producer_status)
+
+    def _select_random_move(self) -> Move:
+        """
+        Select a random ntp and a node to move it to.
+        """
+        topic_to_move = random.choice(self.topics)
+        partition_id = random.choice(range(0, topic_to_move.partition_count))
+        leader = self._admin.get_partition_leader(namespace="kafka",
+                                                  topic=topic_to_move.name,
+                                                  partition=partition_id)
+        node_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
+        new_leader_node_id: int = random.choice(
+            [i for i in node_ids if i != leader])
+        return Move(topic=topic_to_move.name,
+                    partition=partition_id,
+                    current_leader=leader,
+                    new_leader=new_leader_node_id)
+
+    @cluster(num_nodes=4)
+    def test_leadership_changing_randomly(self):
+        """
+        Test that transforms can still make progress without dropping records in the face of leadership transfers.
+        """
+        self._deploy_wasm("identity-xform",
+                          input_topic=self.topics[0],
+                          output_topic=self.topics[-1])
+
+        producer = self._start_producer()
+        # Move a leader every second the test runs
+        for _ in range(8):
+            time.sleep(1)
+            mv = self._select_random_move()
+            self.logger.debug(
+                f"Moving {mv.topic}/{mv.partition} from {mv.current_leader} -> {mv.new_leader}"
+            )
+            self._admin.transfer_leadership_to(namespace="kafka",
+                                               topic=mv.topic,
+                                               partition=mv.partition,
+                                               target_id=mv.new_leader)
+
+        producer_status = self._wait_for_producer(producer)
         consumer_status = self._consume_output_topic(topic=self.topics[-1],
                                                      status=producer_status,
                                                      timeout_sec=60)
