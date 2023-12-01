@@ -1543,7 +1543,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         # Get pods and form node list
         self.pods = []
-        _r = self._kubectl.run_kube_command("get pods -o json")
+        _r = self._kubectl.cmd('get pods -n redpanda -o json')
         _pods = json.loads(_r.decode())
         for p in _pods['items']:
             if not p['metadata']['name'].startswith(

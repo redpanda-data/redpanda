@@ -147,23 +147,25 @@ class KubectlTool:
             self._kubectl_installed = True
         return
 
-    def _run(self, cmd):
+    def _cmd(self, cmd):
         # Log and run
         ssh_prefix = self._ssh_prefix()
         remote_cmd = ssh_prefix + cmd
         self._redpanda.logger.info(remote_cmd)
         return subprocess.check_output(remote_cmd)
 
-    def run_kube_command(self, kcmd):
+    def cmd(self, kcmd):
+        """Execute a kubectl command on the agent node.
+        """
         # prepare
         self._install()
-        _kubectl = ["kubectl", '-n', self._namespace]
+        _kubectl = ['kubectl']
 
         # Make it universal for str/list
         _kcmd = kcmd if isinstance(kcmd, list) else kcmd.split()
         # Format command
         cmd = _kubectl + _kcmd
-        return self._run(cmd)
+        return self._cmd(cmd)
 
     def exec(self, remote_cmd):
         self._install()
@@ -171,7 +173,7 @@ class KubectlTool:
             'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
             f'rp-{self._cluster_id}-0', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
-        return self._run(cmd)
+        return self._cmd(cmd)
 
     def exists(self, remote_path):
         self._install()
