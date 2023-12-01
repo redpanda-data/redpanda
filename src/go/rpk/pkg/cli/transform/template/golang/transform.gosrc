@@ -1,17 +1,17 @@
 package main
 
 import (
-	"github.com/redpanda-data/redpanda/src/transform-sdk/go"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 )
 
 func main() {
         // Register your transform function. 
         // This is a good place to perform other setup too.
-	redpanda.OnRecordWritten(doTransform)
+	transform.OnRecordWritten(doTransform)
 }
 
 // doTransform is where you read the record that was written, and then you can
 // return new records that will be written to the output topic
-func doTransform(e redpanda.WriteEvent) ([]redpanda.Record, error) {
-	return []redpanda.Record{e.Record()}, nil
+func doTransform(e transform.WriteEvent) ([]transform.Record, error) {
+	return []transform.Record{e.Record()}, nil
 }
