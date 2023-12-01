@@ -38,6 +38,21 @@ if(REDPANDA_RUN_CLANG_TIDY)
     unset(clang_tidy_checks)
 endif()
 
+#
+# The `enable_clang_tidy` macro should be used to turn on clang-tidy checks in
+# sub-directories that are clang-tidy clean according to .clang-tidy-strict and
+# .clang-tidy-strict-tests. These two files should also be symlinked with the
+# standard name .clang-tidy into the compliant sub-directories.
+#
+# The clang-tidy checks above are being phased out and are currently only used
+# in the buildkite private build.
+#
+macro(enable_clang_tidy)
+  if(Redpanda_ENABLE_CLANG_TIDY)
+    set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_COMMAND} -warnings-as-errors=*)
+  endif()
+endmacro()
+
 # Redpanda's internal build system constructs a Python virtual environment
 # executable using pex that contains all of the Python build dependencies. If
 # this isn't found, then fall back to the system Python3 interpreter.

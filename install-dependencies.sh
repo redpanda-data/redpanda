@@ -28,6 +28,7 @@ deb_deps=(
   cargo
   ccache
   clang
+  clang-tidy
   cmake
   git
   gnutls-dev
@@ -63,6 +64,7 @@ fedora_deps=(
   cargo
   ccache
   clang
+  clang-tools-extra
   cmake
   compiler-rt
   cryptopp-devel

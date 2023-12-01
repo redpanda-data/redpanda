@@ -46,4 +46,29 @@ if(Redpanda_ENABLE_COVERAGE)
   add_link_options(--coverage)
 endif()
 
+#
+# Configure clang-tidy checks. By default checks will be enabled if the
+# clang-tidy tool is found. Otherwise, it can be explicitly disabled. It's
+# recommended to use FORCE_ON in contexts such as CI where we want to fail
+# configuration if clang-tidy is not available.
+#
+set(Redpanda_ENABLE_CLANG_TIDY "ON" CACHE STRING
+  "Enable clang-tidy checks if available. Can be ON, OFF, or FORCE_ON")
+
+if(NOT Redpanda_ENABLE_CLANG_TIDY STREQUAL OFF)
+  if(Redpanda_ENABLE_CLANG_TIDY STREQUAL FORCE_ON)
+    find_program(CLANG_TIDY_COMMAND clang-tidy
+      PATHS ${PROJECT_SOURCE_DIR}/vbuild/llvm/install/bin
+      REQUIRED)
+  else()
+    find_program(CLANG_TIDY_COMMAND clang-tidy
+      PATHS ${PROJECT_SOURCE_DIR}/vbuild/llvm/install/bin)
+  endif()
+  if(CLANG_TIDY_COMMAND)
+    set(Redpanda_ENABLE_CLANG_TIDY ON)
+  else()
+    set(Redpanda_ENABLE_CLANG_TIDY OFF)
+  endif()
+endif()
+
 add_subdirectory(src)
