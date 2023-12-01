@@ -1051,9 +1051,10 @@ configuration::configuration()
   , storage_compaction_key_map_memory(
       *this,
       "storage_compaction_key_map_memory",
-      "Maximum number of bytes that may be used on each shard by compaction"
-      "key-offset maps",
-      {.needs_restart = needs_restart::no,
+      "Maximum number of bytes that may be used on each shard by compaction "
+      "key-offset maps. Only respected when "
+      "`log_compaction_use_sliding_window` is true.",
+      {.needs_restart = needs_restart::yes,
        .example = "1073741824",
        .visibility = visibility::tunable},
       128_MiB,
