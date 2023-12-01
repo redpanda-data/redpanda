@@ -109,6 +109,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
@@ -1856,6 +1857,11 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
 
     auto username = security::credential_user(doc["username"].GetString());
     validate_no_control(username(), string_conversion_exception{username()});
+
+    if (!security::validate_scram_username(username())) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Invalid SCRAM username {{{}}}", username()));
+    }
 
     if (is_no_op_user_write(
           _controller->get_credential_store().local(), username, credential)) {
