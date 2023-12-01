@@ -1817,7 +1817,7 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
     } else if (hdr.type == model::record_batch_type::raft_data) {
         auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
-            co_await apply_control(bid.pid, parse_control_batch(b));
+            apply_control(bid.pid, parse_control_batch(b));
         } else {
             apply_data(bid, last_offset);
         }
@@ -1826,6 +1826,7 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
     }
+    co_return;
 }
 
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
@@ -1836,7 +1837,7 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     _mem_state.preparing.erase(pid);
 }
 
-ss::future<> rm_stm::apply_control(
+void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
     // either epoch is the same as fencing or it's lesser in the latter
     // case we don't fence off aborts and commits because transactional
@@ -1876,8 +1877,6 @@ ss::future<> rm_stm::apply_control(
         _mem_state.forget(pid);
         _log_state.expiration.erase(pid);
     }
-
-    co_return;
 }
 
 ss::future<> rm_stm::reduce_aborted_list() {

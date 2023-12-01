@@ -371,8 +371,7 @@ private:
     ss::future<> apply(const model::record_batch&) override;
     void apply_fence(model::record_batch&&);
     void apply_prepare(rm_stm::prepare_marker);
-    ss::future<>
-      apply_control(model::producer_identity, model::control_record_type);
+    void apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
 
     ss::future<> reduce_aborted_list();
