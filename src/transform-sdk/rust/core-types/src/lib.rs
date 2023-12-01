@@ -128,7 +128,7 @@ impl<'a> BorrowedRecord<'a> {
 ///
 /// Headers are opaque to the broker and are purely a mechanism for the producer and consumers to
 /// pass information.
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct RecordHeader {
     key: Vec<u8>,
     value: Option<Vec<u8>>,
@@ -166,7 +166,7 @@ impl RecordHeader {
 /// A record is a key-value pair of bytes, along with a collection of [`RecordHeader`].
 ///
 /// Records are generated as the result of any transforms that act upon a [`BorrowedRecord`].
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Record {
     key: Option<Vec<u8>>,
     value: Option<Vec<u8>>,
