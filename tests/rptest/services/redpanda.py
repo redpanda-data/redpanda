@@ -1515,6 +1515,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             'ResourceSettings: setting dedicated_nodes=True because serving from redpanda cloud'
         )
 
+    @property
+    def kubectl(self):
+        return self._kubectl
+
     def start_node(self, node, **kwargs):
         pass
 
