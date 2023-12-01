@@ -809,7 +809,7 @@ public:
     }
 
 protected:
-    auto get_frame_iterator_by_element_index(size_t ix) {
+    auto get_frame_iterator_by_element_index(size_t ix) const {
         return std::find_if(
           _frames.begin(), _frames.end(), [ix](frame_t const& f) mutable {
               if (f.size() > ix) {
