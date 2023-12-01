@@ -567,18 +567,19 @@ public:
             }
 
             auto& hint_vec = hint_it->second.value();
-            auto hint_threshold = base_offset_iter.get_frame_initial_value();
-            auto hint_initial
-              = hint_vec.at(static_cast<size_t>(segment_meta_ix::base_offset))
-                  .initial;
+            auto hint_bo = hint_vec.at(
+              static_cast<size_t>(segment_meta_ix::base_offset));
 
             // The hint can only be applied within the same column_store_frame
             // instance. If the hint belongs to the previous frame we need to
             // materialize without optimization.
-            if (hint_initial < hint_threshold) {
-                return std::nullopt;
+            if (_base_offset
+                  .get_frame_iterator_by_element_index(base_offset_iter.index())
+                  ->is_applicable(hint_bo)) {
+                return hint_vec;
             }
-            return hint_vec;
+
+            return std::nullopt;
         }();
 
         if (!maybe_hint) {
