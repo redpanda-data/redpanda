@@ -149,27 +149,25 @@ class KubectlTool:
 
     def _run(self, cmd):
         # Log and run
-        self._redpanda.logger.info(cmd)
-        res = subprocess.check_output(cmd)
-        return res
+        ssh_prefix = self._ssh_prefix()
+        remote_cmd = ssh_prefix + cmd
+        self._redpanda.logger.info(remote_cmd)
+        return subprocess.check_output(remote_cmd)
 
     def run_kube_command(self, kcmd):
         # prepare
         self._install()
-        _ssh_prefix = self._ssh_prefix()
         _kubectl = ["kubectl", '-n', self._namespace]
 
         # Make it universal for str/list
         _kcmd = kcmd if isinstance(kcmd, list) else kcmd.split()
         # Format command
-        cmd = _ssh_prefix + _kubectl + _kcmd
-        # Log and run
+        cmd = _kubectl + _kcmd
         return self._run(cmd)
 
     def exec(self, remote_cmd):
         self._install()
-        ssh_prefix = self._ssh_prefix()
-        cmd = ssh_prefix + [
+        cmd = [
             'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
             f'rp-{self._cluster_id}-0', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
