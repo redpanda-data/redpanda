@@ -63,6 +63,20 @@ struct produce_batcher_context {
         });
         return batch.second.record_count();
     }
+    void take_batch(model::offset up_until, produce_batcher_context& other) {
+        auto running_offset = model::offset{0};
+        while (!broker_batches.empty()) {
+            auto [next_offset, next_batch] = kc::consume_front(broker_batches);
+            if (next_offset > up_until) {
+                break;
+            }
+            other.broker_batches.emplace_back(next_offset, next_batch.share());
+            other.batcher.take_batch(next_batch.share(), batcher);
+            other.client_req_offset += next_batch.record_count();
+            running_offset = next_offset;
+        }
+        vassert(running_offset == up_until, "Error");
+    }
     ss::future<std::vector<kafka::produce_response::partition>>
     get_responses() {
         return ss::when_all_succeed(produce_futs.begin(), produce_futs.end());
@@ -134,6 +148,41 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_overlapped) {
     BOOST_REQUIRE(offsets == ctx.expected_offsets);
 
     BOOST_REQUIRE(ctx.consume() == 0);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_partition_producer_take_batch) {
+    produce_batcher_context ctx, ctx2;
+
+    const auto base_offset = ctx.broker_req_offset;
+    ctx.produce(2);
+    ctx.produce(2);
+    ctx.produce(2);
+    BOOST_REQUIRE(ctx.consume() == 6); // broker_req 42
+
+    ctx.produce(2);
+    ctx.produce(2);
+    BOOST_REQUIRE(ctx.consume() == 4); // broker_req 48
+
+    /// Steal the batches from ctx
+    ctx.take_batch(base_offset + model::offset{6}, ctx2);
+    BOOST_CHECK(ctx.broker_batches.empty());
+
+    /// ctx2 should be able to handle the responses that ctx was initially
+    /// supposed to handle
+    BOOST_REQUIRE(ctx2.consume() == 10);
+    BOOST_CHECK_EQUAL(ctx2.handle_response(), 6);
+    BOOST_CHECK_EQUAL(ctx2.handle_response(), 4);
+
+    /// however the original futures that were returned to the client reside in
+    /// ctx, wait on them here to get the desired response
+    auto offsets = ctx.get_response_offsets().get0();
+    BOOST_REQUIRE_EQUAL(offsets, ctx.expected_offsets);
+
+    /// verify the integrity of the internal batcher
+    BOOST_REQUIRE(ctx.batcher.consume().record_count() == 0);
+    BOOST_REQUIRE(ctx.broker_batches.empty());
+    BOOST_REQUIRE(ctx2.batcher.consume().record_count() == 0);
+    BOOST_REQUIRE(ctx2.broker_batches.empty());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_partition_producer_error) {
