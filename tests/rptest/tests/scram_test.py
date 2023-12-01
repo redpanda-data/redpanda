@@ -88,10 +88,11 @@ class BaseScramTest(RedpandaTest):
         self.logger.debug(f"User Creation Arguments: {data}")
         res = requests.post(url, json=data)
 
-        assert res.status_code == expected_status_code
+        assert res.status_code == expected_status_code, f"Expected {expected_status_code}, got {res.status_code}: {res.content}"
 
         if err_msg is not None:
-            assert res.json()['message'] == err_msg
+            assert res.json(
+            )['message'] == err_msg, f"{res.json()['message']} != {err_msg}"
 
         return password
 
@@ -459,7 +460,8 @@ class InvalidNewUserStrings(BaseScramTest):
     @cluster(num_nodes=3)
     def test_invalid_user_name(self):
         """
-        Validates that usernames that contain control characters are properly rejected
+        Validates that usernames that contain control characters and usernames which
+        do not match the SCRAM regex are properly rejected
         """
         username = self.generate_string_with_control_character(15)
 
@@ -470,6 +472,15 @@ class InvalidNewUserStrings(BaseScramTest):
             err_msg=
             f'Parameter contained invalid control characters: {username.translate(CONTROL_CHARS_MAP)}'
         )
+
+        # Two ordinals (corresponding to ',' and '=') are explicitly excluded from SASL usernames
+        for ordinal in [0x2c, 0x3d]:
+            username = f"john{chr(ordinal)}doe"
+            self.create_user(
+                username=username,
+                algorithm='SCRAM-SHA-256',
+                expected_status_code=400,
+                err_msg=f'Invalid SCRAM username {"{" + username + "}"}')
 
     @cluster(num_nodes=3)
     def test_invalid_alg(self):
