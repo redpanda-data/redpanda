@@ -27,28 +27,24 @@ class WasmException(Exception):
         return repr(self.message)
 
 
-class DataTransformsTest(RedpandaTest):
+class BaseDataTransformsTest(RedpandaTest):
     """
-    Tests related to WebAssembly powered data transforms
+    A base test class providing helpful data transform related functionality.
     """
-    topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
-
-    def __init__(self, test_context):
-        super(DataTransformsTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf={
-                                 'data_transforms_enabled': True,
-                                 'data_transforms_commit_interval_ms': 1
-                             })
-        self._ctx = test_context
+    def __init__(self, *args, **kwargs):
+        extra_rp_conf = {
+            'data_transforms_enabled': True,
+            'data_transforms_commit_interval_ms': 1,
+        } | kwargs.pop('extra_rp_conf', {})
+        super(BaseDataTransformsTest,
+              self).__init__(*args, extra_rp_conf=extra_rp_conf, **kwargs)
         self._rpk = RpkTool(self.redpanda)
 
-    def _deploy_wasm(self, name: str):
+    def _deploy_wasm(self, name: str, input_topic: TopicSpec,
+                     output_topic: TopicSpec):
         """
         Deploy a wasm transform and wait for all processors to be running.
         """
-        [input_topic, output_topic] = self.topics
-
         def do_deploy():
             self._rpk.deploy_wasm(name, input_topic.name, output_topic.name)
             return True
@@ -119,18 +115,10 @@ class DataTransformsTest(RedpandaTest):
             retry_on_exc=True,
         )
 
-    @cluster(num_nodes=3)
-    def test_lifecycle(self):
-        """
-        Test that a Wasm binary can be deployed, reach steady state and then be deleted.
-        """
-        self._deploy_wasm("identity-xform")
-        self._delete_wasm("identity-xform")
-
     def _produce_input_topic(
-            self, transactional: bool) -> TransformVerifierProduceStatus:
-        input_topic = self.topics[0]
-
+            self,
+            topic: TopicSpec,
+            transactional: bool = False) -> TransformVerifierProduceStatus:
         status = TransformVerifierService.oneshot(
             context=self.test_context,
             redpanda=self.redpanda,
@@ -139,26 +127,43 @@ class DataTransformsTest(RedpandaTest):
                 max_batch_size='64KB',
                 max_bytes='1MB',
                 message_size='1KB',
-                topic=input_topic.name,
+                topic=topic.name,
                 transactional=transactional,
             ))
         return typing.cast(TransformVerifierProduceStatus, status)
 
     def _consume_output_topic(
-        self, status: TransformVerifierProduceStatus
-    ) -> TransformVerifierConsumeStatus:
-        output_topic = self.topics[1]
-
+            self,
+            topic: TopicSpec,
+            status: TransformVerifierProduceStatus,
+            timeout_sec=10) -> TransformVerifierConsumeStatus:
         result = TransformVerifierService.oneshot(
             context=self.test_context,
             redpanda=self.redpanda,
             config=TransformVerifierConsumeConfig(
-                topic=output_topic.name,
+                topic=topic.name,
                 bytes_per_second='1MB',
                 validate=status,
             ),
-            timeout_sec=10)
+            timeout_sec=timeout_sec)
         return typing.cast(TransformVerifierConsumeStatus, result)
+
+
+class DataTransformsTest(BaseDataTransformsTest):
+    """
+    Tests related to WebAssembly powered data transforms
+    """
+    topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
+
+    @cluster(num_nodes=3)
+    def test_lifecycle(self):
+        """
+        Test that a Wasm binary can be deployed, reach steady state and then be deleted.
+        """
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=self.topics[0],
+                          output_topic=self.topics[1])
+        self._delete_wasm(name="identity-xform")
 
     @cluster(num_nodes=4)
     @matrix(transactional=[False, True])
@@ -166,9 +171,14 @@ class DataTransformsTest(RedpandaTest):
         """
         Test that a transform that only copies records from the input to the output topic works as intended.
         """
-        self._deploy_wasm("identity-xform")
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=input_topic,
+                          output_topic=output_topic)
         producer_status = self._produce_input_topic(
-            transactional=transactional)
-        consumer_status = self._consume_output_topic(producer_status)
+            topic=self.topics[0], transactional=transactional)
+        consumer_status = self._consume_output_topic(topic=self.topics[1],
+                                                     status=producer_status)
         self.logger.info(f"{consumer_status}")
         assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
