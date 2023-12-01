@@ -1461,7 +1461,7 @@ ss::future<> partition_balancer_planner::get_rack_constraint_repair_actions(
                           // other reasons
                           (void)part.move_replica(
                             replica,
-                            ctx.config().hard_max_disk_usage_ratio,
+                            ctx.config().soft_max_disk_usage_ratio,
                             change_reason::rack_constraint_repair);
                       }
                   }
@@ -1926,8 +1926,8 @@ partition_balancer_planner::plan_actions(
         }
         co_await get_node_drain_actions(
           ctx, unavailable_nodes, change_reason::node_unavailable);
-        co_await get_rack_constraint_repair_actions(ctx);
         co_await get_full_node_actions(ctx);
+        co_await get_rack_constraint_repair_actions(ctx);
     }
     co_await get_counts_rebalancing_actions(ctx);
     co_await get_force_repair_actions(ctx);
