@@ -68,7 +68,7 @@ TEST(MemoryGroups, DividesSharesWithCompaction) {
     class system_memory_groups groups(
       2_GiB,
       /*compaction_memory_reservation=*/
-      {.max_bytes = compaction_reserved_memory},
+      {.max_bytes = compaction_reserved_memory, .max_limit_pct = 100.0},
       /*wasm_enabled=*/true);
     EXPECT_THAT(groups.chunk_cache_min_memory(), IsApprox(184_MiB));
     EXPECT_THAT(groups.chunk_cache_max_memory(), IsApprox(553_MiB));
@@ -84,4 +84,35 @@ TEST(MemoryGroups, DividesSharesWithCompaction) {
       2_GiB - compaction_reserved_memory);
 
     EXPECT_EQ(compaction_reserved_memory, groups.compaction_reserved_memory());
+}
+
+TEST(MemoryGroups, CompactionMemoryBytes) {
+    constexpr size_t total_memory = 2_GiB;
+    constexpr size_t compaction_max_bytes = 1_GiB;
+    for (auto pct = 50; pct <= 100; pct++) {
+        // Configure the percent limit just above the bytes-configured value.
+        // We should be capped.
+        system_memory_groups groups(
+          total_memory,
+          /*compaction_memory_reservation=*/
+          {
+            .max_bytes = compaction_max_bytes,
+            .max_limit_pct = double(pct),
+          },
+          /*wasm_enabled=*/false);
+        EXPECT_EQ(1_GiB, groups.compaction_reserved_memory());
+    }
+    for (auto pct = 1; pct <= 49; pct++) {
+        // Below we shouldn't be capped.
+        system_memory_groups groups(
+          total_memory,
+          /*compaction_memory_reservation=*/
+          {
+            .max_bytes = compaction_max_bytes,
+            .max_limit_pct = double(pct),
+          },
+          /*wasm_enabled=*/false);
+        EXPECT_EQ(
+          total_memory * pct / 100, groups.compaction_reserved_memory());
+    }
 }

@@ -47,7 +47,8 @@ struct memory_shares {
 
 size_t
 compaction_memory_reservation::reserved_bytes(size_t total_memory) const {
-    return std::min(total_memory, max_bytes);
+    size_t bytes_limit = total_memory * (max_limit_pct / 100.0);
+    return std::min(max_bytes, bytes_limit);
 }
 
 system_memory_groups::system_memory_groups(
@@ -117,6 +118,8 @@ system_memory_groups& memory_groups() {
     compaction_memory_reservation compaction;
     if (cfg.log_compaction_use_sliding_window.value()) {
         compaction.max_bytes = cfg.storage_compaction_key_map_memory.value();
+        compaction.max_limit_pct
+          = cfg.storage_compaction_key_map_memory_limit_percent.value();
     }
     groups.emplace(total, compaction, wasm);
     return *groups;

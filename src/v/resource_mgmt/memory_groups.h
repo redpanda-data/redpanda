@@ -26,6 +26,9 @@ struct compaction_memory_reservation {
 
     // Maximum amount of memory in bytes to reserve for compaction.
     size_t max_bytes{0};
+
+    // Limit on compaction memory expressed as percent of total system memory.
+    double max_limit_pct{100.0};
 };
 
 /**
