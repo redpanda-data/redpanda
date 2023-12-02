@@ -47,10 +47,8 @@ inline topic_properties uploadable_topic_properties() {
       || !is_archival_enabled(props.shadow_indexing.value())) {
         props.shadow_indexing.emplace(model::shadow_indexing_mode::full);
     }
-    // Explicitly fix revision ID. Topic recovery can't deserialize
-    // negatives correctly.
-    props.remote_topic_properties->remote_revision = model::initial_revision_id{
-      0};
+    // Remote topic properties should only be set for recovery topics.
+    props.remote_topic_properties = std::nullopt;
     props.recovery = false;
     props.read_replica = false;
     props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;

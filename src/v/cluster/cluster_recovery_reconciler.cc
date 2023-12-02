@@ -114,8 +114,16 @@ controller_snapshot_reconciler::get_actions(
           si_props.has_value()
           && model::is_archival_enabled(si_props.value())) {
             // We expect to create the topic with tiered storage data.
-            actions.remote_topics.emplace_back(tp_config);
-            actions.remote_topics.back().properties.recovery = true;
+            auto new_config = tp_config;
+            if (!new_config.properties.remote_topic_properties.has_value()) {
+                auto& remote_props
+                  = new_config.properties.remote_topic_properties.emplace();
+                remote_props.remote_revision = model::initial_revision_id{
+                  meta.metadata.revision};
+                remote_props.remote_partition_count = tp_config.partition_count;
+            }
+            new_config.properties.recovery = true;
+            actions.remote_topics.emplace_back(std::move(new_config));
             continue;
         };
         // Either this is a read replica or no metadata is expected to exist in
