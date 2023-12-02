@@ -35,6 +35,7 @@
 #include "model/metadata.h"
 #include "raft/group_manager.h"
 #include "seastarx.h"
+#include "serde/async.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
@@ -366,7 +367,7 @@ cluster_recovery_backend::find_controller_snapshot_in_bucket(
             const size_t snap_size = co_await reader.get_snapshot_size();
             auto snap_buf_parser = iobuf_parser{
               co_await read_iobuf_exactly(reader.input(), snap_size)};
-            snapshot = serde::read<cluster::controller_snapshot>(
+            snapshot = co_await serde::read_async<cluster::controller_snapshot>(
               snap_buf_parser);
         } catch (...) {
             eptr = std::current_exception();

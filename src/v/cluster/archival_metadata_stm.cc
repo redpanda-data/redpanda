@@ -162,6 +162,11 @@ struct archival_metadata_stm::process_anomalies_cmd {
 
         cloud_storage::scrub_status status;
         cloud_storage::anomalies detected;
+
+        auto serde_fields() {
+            return std::tie(
+              scrub_timestamp, last_scrubbed_offset, status, detected);
+        }
     };
 };
 
@@ -220,6 +225,26 @@ struct archival_metadata_stm::snapshot
     cloud_storage::anomalies detected_anomalies;
     // Highest producer ID used by this partition.
     model::producer_id highest_producer_id;
+
+    auto serde_fields() {
+        return std::tie(
+          segments,
+          replaced,
+          start_offset,
+          last_offset,
+          last_uploaded_compacted_offset,
+          dirty,
+          archive_start_offset,
+          archive_start_offset_delta,
+          archive_clean_offset,
+          archive_size_bytes,
+          start_kafka_offset,
+          spillover_manifests,
+          last_partition_scrub,
+          last_scrubbed_offset,
+          detected_anomalies,
+          highest_producer_id);
+    }
 };
 
 inline archival_metadata_stm::segment

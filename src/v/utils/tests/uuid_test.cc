@@ -71,7 +71,7 @@ void verify_uuid_map() {
     BOOST_CHECK_EQUAL(m.size(), r.size());
     for (const auto& [k, v] : m) {
         const auto r_it = r.find(k);
-        BOOST_CHECK(m.end() != r_it);
+        BOOST_CHECK(r.end() != r_it);
         BOOST_CHECK_EQUAL(v, r_it->second);
     }
 }

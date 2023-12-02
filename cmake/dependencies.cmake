@@ -22,6 +22,11 @@ function(fetch_dep NAME)
     ${fetch_dep_args_UNPARSED_ARGUMENTS})
 endfunction()
 
+set(ABSL_PROPAGATE_CXX_STD ON)
+fetch_dep(absl
+  REPO https://github.com/abseil/abseil-cpp
+  TAG 20230802.1)
+
 fetch_dep(fmt
   REPO https://github.com/fmtlib/fmt.git
   TAG 8.1.1)
@@ -111,12 +116,8 @@ FetchContent_Declare(
   SYSTEM
   SOURCE_SUBDIR crates/c-api)
 
-set(ABSL_PROPAGATE_CXX_STD ON)
-fetch_dep(absl
-  REPO https://github.com/abseil/abseil-cpp
-  TAG 20220623.0)
-
 FetchContent_MakeAvailable(
+    absl
     fmt
     rapidjson
     seastar
@@ -128,8 +129,7 @@ FetchContent_MakeAvailable(
     tinygo
     wasmtime
     hdrhistogram
-    ada
-    absl)
+    ada)
 
 add_library(Crc32c::crc32c ALIAS crc32c)
 add_library(aklomp::base64 ALIAS base64)
