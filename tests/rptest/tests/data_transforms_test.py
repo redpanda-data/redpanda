@@ -11,6 +11,8 @@ import typing
 import time
 import random
 
+from requests.exceptions import RequestException
+
 from ducktape.mark import matrix
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
@@ -285,6 +287,32 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
                     current_leader=leader,
                     new_leader=new_leader_node_id)
 
+    def _perform_move(self, mv: Move):
+        """
+        Perform a leadership transfer, handling timeouts by retrying the request.
+        """
+        def do_move():
+            try:
+                self._admin.transfer_leadership_to(namespace="kafka",
+                                                   topic=mv.topic,
+                                                   partition=mv.partition,
+                                                   target_id=mv.new_leader)
+                return True
+            except RequestException as e:
+                # The broker returns a Gateway Timeout when the underlying request times out in the controller.
+                # So that we should retry.
+                if e.response is not None and e.response.status_code == 504:
+                    return False
+                # Other errors are unexpected and we should throw
+                raise
+
+        wait_until(
+            do_move,
+            timeout_sec=30,
+            backoff_sec=5,
+            err_msg=f"unable to perform move {mv}",
+        )
+
     @cluster(num_nodes=4)
     def test_leadership_changing_randomly(self):
         """
@@ -302,10 +330,7 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
             self.logger.debug(
                 f"Moving {mv.topic}/{mv.partition} from {mv.current_leader} -> {mv.new_leader}"
             )
-            self._admin.transfer_leadership_to(namespace="kafka",
-                                               topic=mv.topic,
-                                               partition=mv.partition,
-                                               target_id=mv.new_leader)
+            self._perform_move(mv)
 
         producer_status = self._wait_for_producer(producer)
         consumer_status = self._consume_output_topic(topic=self.topics[-1],
