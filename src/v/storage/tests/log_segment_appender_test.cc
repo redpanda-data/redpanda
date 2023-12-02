@@ -455,6 +455,17 @@ static void run_concurrent_append_flush(
             last_append->get();
         }
 
+        // append a final flush, so we are in a known flushed state for the
+        // following checks
+        futs.emplace_back(appender.flush());
+
+        for (auto& f : futs) {
+            // get all the flush futures
+            // whp these are all available except possibly the last one
+            // (appended above) but this is not actually guaranteed, see
+            // redpanda#13035
+            f.get();
+        }
         auto sa_state = fmt::format("{}", appender);
 
         // now there should be nothing in-flight
