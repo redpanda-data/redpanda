@@ -80,7 +80,7 @@ public:
 
         audit_authn(rq);
 
-        auto units = co_await _os();
+        co_await _os();
         auto guard = _g.hold();
         audit_authz(rq);
         try {
