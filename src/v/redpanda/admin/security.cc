@@ -20,6 +20,8 @@
 #include "security/scram_credential.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/http/exception.hh>
+#include <seastar/http/url.hh>
 
 namespace {
 
@@ -172,6 +174,11 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
     auto username = security::credential_user(doc["username"].GetString());
     validate_no_control(username(), string_conversion_exception{username()});
 
+    if (!security::validate_scram_username(username())) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Invalid SCRAM username {{{}}}", username()));
+    }
+
     if (is_no_op_user_write(
           _controller->get_credential_store().local(), username, credential)) {
         vlog(
@@ -211,7 +218,12 @@ admin_server::delete_user_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    auto user = security::credential_user(req->param["user"]);
+    ss::sstring user_v;
+    if (!ss::http::internal::url_decode(req->param["user"], user_v)) {
+        throw ss::httpd::bad_param_exception{fmt::format(
+          "Invalid parameter 'user' got {{{}}}", req->param["user"])};
+    }
+    auto user = security::credential_user(user_v);
 
     if (!_controller->get_credential_store().local().contains(user)) {
         vlog(adminlog.debug, "User '{}' already gone during deletion", user);
@@ -238,7 +250,12 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    auto user = security::credential_user(req->param["user"]);
+    ss::sstring user_v;
+    if (!ss::http::internal::url_decode(req->param["user"], user_v)) {
+        throw ss::httpd::bad_param_exception{fmt::format(
+          "Invalid parameter 'user' got {{{}}}", req->param["user"])};
+    }
+    auto user = security::credential_user(user_v);
 
     auto doc = co_await parse_json_body(req.get());
 

@@ -346,6 +346,8 @@ private:
     }
 };
 
+bool validate_scram_username(std::string_view username);
+
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
 using scram_sha512 = scram_algorithm<hmac_sha512, hash_sha512, 130, 4096>;
 

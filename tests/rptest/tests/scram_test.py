@@ -12,10 +12,12 @@ import string
 import requests
 from requests.exceptions import HTTPError
 import time
+import urllib.parse
 import re
 
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+from ducktape.errors import TimeoutError
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -33,11 +35,13 @@ class BaseScramTest(RedpandaTest):
     def __init__(self, test_context, **kwargs):
         super(BaseScramTest, self).__init__(test_context, **kwargs)
 
-    def update_user(self, username):
+    def update_user(self, username, quote: bool = True):
         def gen(length):
             return "".join(
                 random.choice(string.ascii_letters) for _ in range(length))
 
+        if quote:
+            username = urllib.parse.quote(username, safe='')
         password = gen(20)
 
         controller = self.redpanda.nodes[0]
@@ -52,11 +56,13 @@ class BaseScramTest(RedpandaTest):
         assert res.status_code == 200
         return password
 
-    def delete_user(self, username):
+    def delete_user(self, username, quote: bool = True):
+        if quote:
+            username = urllib.parse.quote(username, safe='')
         controller = self.redpanda.nodes[0]
         url = f"http://{controller.account.hostname}:9644/v1/security/users/{username}"
         res = requests.delete(url)
-        assert res.status_code == 200
+        assert res.status_code == 200, f"Status code: {res.status_code} for DELETE user {username}"
 
     def list_users(self):
         controller = self.redpanda.nodes[0]
@@ -88,10 +94,11 @@ class BaseScramTest(RedpandaTest):
         self.logger.debug(f"User Creation Arguments: {data}")
         res = requests.post(url, json=data)
 
-        assert res.status_code == expected_status_code
+        assert res.status_code == expected_status_code, f"Expected {expected_status_code}, got {res.status_code}: {res.content}"
 
         if err_msg is not None:
-            assert res.json()['message'] == err_msg
+            assert res.json(
+            )['message'] == err_msg, f"{res.json()['message']} != {err_msg}"
 
         return password
 
@@ -459,7 +466,8 @@ class InvalidNewUserStrings(BaseScramTest):
     @cluster(num_nodes=3)
     def test_invalid_user_name(self):
         """
-        Validates that usernames that contain control characters are properly rejected
+        Validates that usernames that contain control characters and usernames which
+        do not match the SCRAM regex are properly rejected
         """
         username = self.generate_string_with_control_character(15)
 
@@ -470,6 +478,15 @@ class InvalidNewUserStrings(BaseScramTest):
             err_msg=
             f'Parameter contained invalid control characters: {username.translate(CONTROL_CHARS_MAP)}'
         )
+
+        # Two ordinals (corresponding to ',' and '=') are explicitly excluded from SASL usernames
+        for ordinal in [0x2c, 0x3d]:
+            username = f"john{chr(ordinal)}doe"
+            self.create_user(
+                username=username,
+                algorithm='SCRAM-SHA-256',
+                expected_status_code=400,
+                err_msg=f'Invalid SCRAM username {"{" + username + "}"}')
 
     @cluster(num_nodes=3)
     def test_invalid_alg(self):
@@ -498,6 +515,88 @@ class InvalidNewUserStrings(BaseScramTest):
             password=password,
             expected_status_code=400,
             err_msg='Parameter contained invalid control characters: PASSWORD')
+
+
+class EscapedNewUserStrings(BaseScramTest):
+
+    # All of the non-control characters that need escaping
+    NEED_ESCAPE = [
+        '!',
+        '"',
+        '#',
+        '$',
+        '%',
+        '&',
+        '\'',
+        '(',
+        ')',
+        '+',
+        # ',', Excluded by SASLNAME regex
+        '/',
+        ':',
+        ';',
+        '<',
+        # '=', Excluded by SASLNAME regex
+        '>',
+        '?',
+        '[',
+        '\\',
+        ']',
+        '^',
+        '`',
+        '{',
+        '}',
+        '~',
+    ]
+
+    @cluster(num_nodes=3)
+    def test_update_delete_user(self):
+        """
+        Verifies that users whose names contain characters which require URL escaping can be subsequently deleted.
+        i.e. that the username included with a delete request is properly unescaped by the admin server.
+        """
+
+        su_username = self.redpanda.SUPERUSER_CREDENTIALS.username
+
+        users = []
+
+        self.logger.debug(
+            "Create some users with names that will require URL escaping")
+
+        for ch in self.NEED_ESCAPE:
+            username = f"john{ch}doe"
+            self.create_user(username=username,
+                             algorithm="SCRAM-SHA-256",
+                             password="passwd",
+                             expected_status_code=200)
+            users.append(username)
+
+        admin = Admin(self.redpanda)
+
+        def _users_match(expected: list[str]):
+            live_users = admin.list_users()
+            live_users.remove(su_username)
+            return len(expected) == len(live_users) and set(expected) == set(
+                live_users)
+
+        wait_until(lambda: _users_match(users), timeout_sec=5, backoff_sec=0.5)
+
+        self.logger.debug(
+            "We should be able to update and delete these users without issue")
+        for username in users:
+            self.update_user(username=username)
+            self.delete_user(username=username)
+
+        try:
+            wait_until(lambda: _users_match([]),
+                       timeout_sec=5,
+                       backoff_sec=0.5)
+        except TimeoutError:
+            live_users = admin.list_users()
+            live_users.remove(su_username)
+            assert len(
+                live_users
+            ) == 0, f"Expected no users, got {len(live_users)}: {live_users}"
 
 
 class SCRAMReauthTest(BaseScramTest):
