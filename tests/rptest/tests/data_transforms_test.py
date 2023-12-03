@@ -225,15 +225,23 @@ class Move(typing.NamedTuple):
 
 class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
     """
-    Tests related to WebAssembly powered data transforms that are chained together, it is possible to create a full DAG.
+    Tests related to WebAssembly powered data transforms leadership changing.
+    On the input topic moves requires shutdown and spinning up processors, and
+    for the output topic it requires produce retries.
     """
     def __init__(self, *args, **kwargs):
         super(DataTransformsLeadershipChangingTest, self).__init__(
             *args,
             extra_rp_conf={
                 # Disable leader balancer, as this test is doing its own
-                # partition movement and the balancer would interfere
-                'enable_leader_balancer': False
+                # leadership transfers and the balancer would interfere
+                'enable_leader_balancer': False,
+                # Lower the delay before we start processing.
+                # In slow debug mode tests the default here is
+                # three seconds, and we have to wait on leadership
+                # transfer this long for commits to be flushed, so
+                # we can more easily timeout with the long wait.
+                'data_transforms_commit_interval_ms': 500,
             },
             **kwargs)
         self._admin = Admin(self.redpanda)
