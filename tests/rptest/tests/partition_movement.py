@@ -122,7 +122,13 @@ class PartitionMovementMixin():
             return all(results)
 
         # wait until redpanda reports complete
-        wait_until(status_done, timeout_sec=timeout_sec, backoff_sec=2)
+        wait_until(
+            status_done,
+            timeout_sec=timeout_sec,
+            backoff_sec=2,
+            err_msg=
+            f"Timeout waiting for partition {topic}/{partition} to stop moving"
+        )
 
         def derived_done():
             info = self._get_current_partitions(admin, topic, partition)
@@ -130,7 +136,13 @@ class PartitionMovementMixin():
                 f"derived assignments for {topic}-{partition}: {info}")
             return self._equal_assignments(info, assignments)
 
-        wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=2)
+        wait_until(
+            derived_done,
+            timeout_sec=timeout_sec,
+            backoff_sec=2,
+            err_msg=
+            f"Timeout while waiting for partition {topic}/{partition} assignment to be consistent"
+        )
 
     def _wait_post_cancel(self, topic, partition, prev_assignments,
                           new_assignment, timeout_sec):
@@ -144,7 +156,13 @@ class PartitionMovementMixin():
 
             return all(results)
 
-        wait_until(cancel_finished, timeout_sec=timeout_sec, backoff_sec=1)
+        wait_until(
+            cancel_finished,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=
+            f"Timeout waiting for cancel move operation on partition  {topic}/{partition} to finish"
+        )
 
         result_configuration = admin.wait_stable_configuration(
             topic=topic, partition=partition, timeout_s=timeout_sec)
@@ -254,7 +272,12 @@ class PartitionMovementMixin():
                 for n in self.redpanda._started
             ]
 
-        wait_until(move_in_progress, timeout_sec=timeout)
+        wait_until(
+            move_in_progress,
+            timeout_sec=timeout,
+            err_msg=
+            f"Timeout while waiting for partition to {topic}/{partition} to start moving"
+        )
 
     def _request_move_cancel(self,
                              topic,
