@@ -22,6 +22,8 @@
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/later.hh>
 
+#include <stdexcept>
+
 using cloud_storage::segment_name;
 using segment_meta = cloud_storage::partition_manifest::segment_meta;
 
@@ -292,4 +294,142 @@ TEST_F_CORO(
 
     ASSERT_EQ_CORO(committed_offset, model::offset{2});
     ASSERT_EQ_CORO(term, model::term_id{1});
+}
+
+TEST_F_CORO(archival_metadata_stm_gtest_fixture, test_add_segment_unsafe) {
+    co_await start();
+    ss::abort_source never_abort;
+
+    // Imagine this was built by the archiver service based what it thinks the
+    // actual state is.
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    // We try to add a segment but suspend this task just before replication
+    // happens. Then, we'll move the leadership to another node and return it
+    // back and let the task finish.
+
+    ss::promise<> resume_add_segments;
+
+    co_await wait_for_leader(3s);
+    const auto leader = get_leader().value();
+
+    bool drop_messages = false;
+    node(leader).on_dispatch([&drop_messages](auto t) -> ss::future<> {
+        std::ignore = t;
+        if (drop_messages) {
+            return ss::sleep(1s);
+        }
+
+        return ss::now();
+    });
+
+    auto res = with_leader(
+      10s,
+      [this, &m, &never_abort, &resume_add_segments](
+        raft::raft_node_instance&) {
+          return get_leader_stm().add_segments_with_suspend(
+            m,
+            std::nullopt,
+            model::producer_id{},
+            ss::lowres_clock::now() + 10s,
+            never_abort,
+            cluster::segment_validated::yes,
+            resume_add_segments.get_future());
+      });
+
+    // Allow the above launched future to make progress up to our suspended
+    // future point. Best effort for PoC.
+    co_await ss::sleep(10ms);
+
+    // Let's move to another leader briefly.
+    vlog(fixture_logger.warn, "Moving leadership first time");
+    drop_messages = true;
+    while (leader == get_leader().value()) {
+        co_await node(leader).raft()->step_down("testing");
+        co_await wait_for_leader(3s);
+    }
+    {
+        // Similar to above. Imagine this is built by the archiver service on
+        // the new leader based on its local state.
+        std::vector<cloud_storage::segment_meta> m;
+        m.push_back(segment_meta{
+          .base_offset = model::offset(200),
+          .committed_offset = model::offset(300),
+          .archiver_term = model::term_id(1),
+          .segment_term = model::term_id(1)});
+
+        co_await get_leader_stm().add_segments(
+          m,
+          std::nullopt,
+          model::producer_id{},
+          ss::lowres_clock::now() + 10s,
+          never_abort,
+          cluster::segment_validated::yes);
+    }
+
+    // Hose the new leader
+    node(get_leader().value()).on_dispatch([](auto) -> ss::future<> {
+        return ss::sleep(1s);
+    });
+
+    vlog(fixture_logger.warn, "Moving leadership back");
+    drop_messages = false;
+    while (leader != get_leader().value()) {
+        co_await node(leader).raft()->step_down("testing");
+        co_await wait_for_leader(3s);
+    }
+    co_await ss::sleep(50ms);
+
+    vlog(fixture_logger.warn, "We are so back: {}", get_leader().value());
+
+    // Concurrent sync. Could it have been triggered by a concurrent operation.
+    // Why not? There are no lock guaranteeing that...
+    co_await get_leader_stm().sync(1s);
+
+    resume_add_segments.set_value();
+
+    // Assert that the replication command did succeed.
+    // Note! This is a future started in term 1, but it did replicate in a much
+    // later term.
+    ASSERT_TRUE_CORO(!co_await std::move(res));
+
+    get_leader_stm().manifest().serialize_json(std::cout);
+
+    // The above prints this:
+    // Note the start_offset!
+    //
+    // {
+    //   "version": 1,
+    //   "namespace": "kafka",
+    //   "topic": "node_0",
+    //   "partition": 0,
+    //   "revision": 0,
+    //   "last_offset": 300,
+    //   "insync_offset": 4,
+    //   "start_offset": 200,
+    //   "cloud_log_size_bytes": 0,
+    //   "segments": {
+    //     "0-1-v1.log": {
+    //       "is_compacted": false,
+    //       "size_bytes": 0,
+    //       "committed_offset": 99,
+    //       "base_offset": 0,
+    //       "archiver_term": 1,
+    //       "segment_term": 1
+    //     },
+    //     "200-1-v1.log": {
+    //       "is_compacted": false,
+    //       "size_bytes": 0,
+    //       "committed_offset": 300,
+    //       "base_offset": 200,
+    //       "archiver_term": 1,
+    //       "segment_term": 1
+    //     }
+    //   }
+    // }
 }

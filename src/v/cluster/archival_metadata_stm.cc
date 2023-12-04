@@ -42,6 +42,7 @@
 #include <seastar/util/defer.hh>
 
 #include <algorithm>
+#include <utility>
 
 namespace cluster {
 
@@ -797,6 +798,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
 
     const auto current_term = _insync_term;
 
+    vlog(_logger.warn, "!! insync term {}", _insync_term);
+
     ss::promise<result<raft::replicate_result>> replication_promise;
     _last_replicate = replication_promise.get_future();
 
@@ -827,6 +830,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     // with our abort source
     fut = ssx::with_timeout_abortable(std::move(fut), model::no_timeout, as);
 
+    vlog(_logger.warn, "waiting on replicate call");
+
     auto result = co_await std::move(fut);
     if (!result) {
         vlog(
@@ -843,6 +848,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         }
         co_return result.error();
     }
+
+    vlog(_logger.warn, "waiting for offset sync");
 
     auto applied = co_await wait_no_throw(
       result.value().last_offset, model::no_timeout, as);
@@ -877,24 +884,44 @@ ss::future<std::error_code> archival_metadata_stm::add_segments(
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as,
   segment_validated is_validated) {
+    return add_segments_with_suspend(
+      std::move(segments),
+      clean_offset,
+      highest_pid,
+      deadline,
+      as,
+      is_validated,
+      ss::now());
+}
+
+ss::future<std::error_code> archival_metadata_stm::add_segments_with_suspend(
+  std::vector<cloud_storage::segment_meta> segments,
+  std::optional<model::offset> clean_offset,
+  model::producer_id highest_pid,
+  ss::lowres_clock::time_point deadline,
+  ss::abort_source& as,
+  segment_validated is_validated,
+  ss::future<> can_resume) {
     auto now = ss::lowres_clock::now();
     auto timeout = now < deadline ? deadline - now : 0ms;
     return _lock.with(
       timeout,
       [this,
        s = std::move(segments),
+       can_resume = std::move(can_resume),
        clean_offset,
        highest_pid,
        deadline,
        &as,
        is_validated]() mutable {
-          return do_add_segments(
+          return do_add_segments_with_suspend(
             std::move(s),
             clean_offset,
             highest_pid,
             deadline,
             as,
-            is_validated);
+            is_validated,
+            std::move(can_resume));
       });
 }
 
@@ -905,6 +932,24 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as,
   segment_validated is_validated) {
+    return do_add_segments_with_suspend(
+      std::move(add_segments),
+      clean_offset,
+      highest_pid,
+      deadline,
+      as,
+      is_validated,
+      ss::now());
+}
+
+ss::future<std::error_code> archival_metadata_stm::do_add_segments_with_suspend(
+  std::vector<cloud_storage::segment_meta> add_segments,
+  std::optional<model::offset> clean_offset,
+  model::producer_id highest_pid,
+  ss::lowres_clock::time_point deadline,
+  ss::abort_source& as,
+  segment_validated is_validated,
+  ss::future<> can_resume) {
     {
         auto now = ss::lowres_clock::now();
         auto timeout = now < deadline ? deadline - now : 0ms;
@@ -947,6 +992,9 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     }
 
     auto batch = std::move(b).build();
+    vlog(_logger.warn, "!! suspend do_add_segments");
+    co_await std::move(can_resume);
+    vlog(_logger.warn, "!! resume do_add_segments");
     auto ec = co_await do_replicate_commands(std::move(batch), as);
     if (ec) {
         co_return ec;

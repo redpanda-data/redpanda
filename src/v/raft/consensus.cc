@@ -824,9 +824,13 @@ replicate_stages consensus::do_replicate(
         return replicate_stages(errc::shutting_down);
     }
 
+    vlog(_ctxlog.warn, "!! do_replicate before leader check");
+
     if (!is_elected_leader() || unlikely(_transferring_leadership)) {
         return replicate_stages(errc::not_leader);
     }
+
+    vlog(_ctxlog.warn, "!! do_replicate before gate");
 
     switch (opts.consistency) {
     case consistency_level::no_ack:

@@ -188,6 +188,7 @@ replicate_batcher::do_cache_with_backpressure(
 
 ss::future<> replicate_batcher::flush(
   ssx::semaphore_units batcher_units, bool const transfer_flush) {
+    vlog(_ptr->_ctxlog.warn, "!! flush");
     auto item_cache = std::exchange(_item_cache, {});
     // this function should not throw, nor return exceptional futures,
     // since it is usually invoked in the background and there is
@@ -216,6 +217,7 @@ ss::future<> replicate_batcher::flush(
         // this problem caused truncation failure.
 
         if (!_ptr->is_elected_leader()) {
+            vlog(_ptr->_ctxlog.warn, "!! not elected leader");
             for (auto& n : item_cache) {
                 n->set_value(errc::not_leader);
             }
@@ -245,6 +247,11 @@ ss::future<> replicate_batcher::flush(
                 }
                 notifications.push_back(std::move(n));
             } else {
+                vlog(
+                  _ptr->_ctxlog.warn,
+                  "!! Term issues {} vs {}",
+                  n->get_expected_term().value(),
+                  term);
                 n->set_value(errc::not_leader);
             }
         }

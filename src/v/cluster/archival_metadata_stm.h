@@ -122,6 +122,15 @@ public:
       ss::abort_source&,
       segment_validated is_validated);
 
+    ss::future<std::error_code> add_segments_with_suspend(
+      std::vector<cloud_storage::segment_meta>,
+      std::optional<model::offset> clean_offset,
+      model::producer_id highest_pid,
+      ss::lowres_clock::time_point deadline,
+      ss::abort_source&,
+      segment_validated is_validated,
+      ss::future<> can_resume);
+
     /// Truncate local snapshot by moving start_offset forward
     ///
     /// This method doesn't actually delete the entries from the snapshot
@@ -258,84 +267,92 @@ private:
       ss::abort_source&,
       segment_validated is_validated);
 
-    // Replicate commands in a batch and wait for their application.
-    // Should be called under _lock to ensure linearisability
-    ss::future<std::error_code>
-    do_replicate_commands(model::record_batch, ss::abort_source&);
+  ss::future<std::error_code> do_add_segments_with_suspend(
+    std::vector<cloud_storage::segment_meta>,
+    std::optional<model::offset> clean_offset,
+    model::producer_id highest_pid,
+    ss::lowres_clock::time_point deadline,
+    ss::abort_source&,
+    segment_validated is_validated,
+    ss::future<> can_resume);
 
-    ss::future<> apply(const model::record_batch& batch) override;
-    ss::future<> apply_raft_snapshot(const iobuf&) override;
+  // Replicate commands in a batch and wait for their application.
+  // Should be called under _lock to ensure linearisability
+  ss::future<std::error_code>
+  do_replicate_commands(model::record_batch, ss::abort_source&);
 
-    ss::future<>
-    apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
-    ss::future<raft::stm_snapshot> take_local_snapshot() override;
+  ss::future<> apply(const model::record_batch& batch) override;
+  ss::future<> apply_raft_snapshot(const iobuf&) override;
 
-    struct segment;
-    struct start_offset;
-    struct start_offset_with_delta;
-    struct add_segment_cmd;
-    struct truncate_cmd;
-    struct update_start_offset_cmd;
-    struct update_start_kafka_offset_cmd;
-    struct cleanup_metadata_cmd;
-    struct mark_clean_cmd;
-    struct truncate_archive_init_cmd;
-    struct truncate_archive_commit_cmd;
-    struct reset_metadata_cmd;
-    struct spillover_cmd;
-    struct replace_manifest_cmd;
-    struct process_anomalies_cmd;
-    struct reset_scrubbing_metadata;
-    struct update_highest_producer_id_cmd;
-    struct snapshot;
+  ss::future<>
+  apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
+  ss::future<raft::stm_snapshot> take_local_snapshot() override;
 
-    friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
+  struct segment;
+  struct start_offset;
+  struct start_offset_with_delta;
+  struct add_segment_cmd;
+  struct truncate_cmd;
+  struct update_start_offset_cmd;
+  struct update_start_kafka_offset_cmd;
+  struct cleanup_metadata_cmd;
+  struct mark_clean_cmd;
+  struct truncate_archive_init_cmd;
+  struct truncate_archive_commit_cmd;
+  struct reset_metadata_cmd;
+  struct spillover_cmd;
+  struct replace_manifest_cmd;
+  struct process_anomalies_cmd;
+  struct reset_scrubbing_metadata;
+  struct update_highest_producer_id_cmd;
+  struct snapshot;
 
-    static fragmented_vector<segment>
-    segments_from_manifest(const cloud_storage::partition_manifest& manifest);
+  friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
 
-    static fragmented_vector<segment> replaced_segments_from_manifest(
-      const cloud_storage::partition_manifest& manifest);
+  static fragmented_vector<segment>
+  segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
-    static fragmented_vector<segment>
-    spillover_from_manifest(const cloud_storage::partition_manifest& manifest);
+  static fragmented_vector<segment> replaced_segments_from_manifest(
+    const cloud_storage::partition_manifest& manifest);
 
-    void apply_add_segment(const segment& segment);
-    void apply_truncate(const start_offset& so);
-    void apply_cleanup_metadata();
-    void apply_mark_clean(model::offset);
-    void apply_update_start_offset(const start_offset& so);
-    void apply_truncate_archive_init(const start_offset_with_delta& so);
-    void
-    apply_truncate_archive_commit(model::offset co, uint64_t bytes_removed);
-    void apply_update_start_kafka_offset(kafka::offset so);
-    void apply_reset_metadata();
-    void apply_spillover(const spillover_cmd& so);
-    void apply_replace_manifest(iobuf);
-    void apply_process_anomalies(iobuf);
-    void apply_reset_scrubbing_metadata();
-    void apply_update_highest_producer_id(model::producer_id pid);
+  static fragmented_vector<segment>
+  spillover_from_manifest(const cloud_storage::partition_manifest& manifest);
 
-private:
-    prefix_logger _logger;
+  void apply_add_segment(const segment& segment);
+  void apply_truncate(const start_offset& so);
+  void apply_cleanup_metadata();
+  void apply_mark_clean(model::offset);
+  void apply_update_start_offset(const start_offset& so);
+  void apply_truncate_archive_init(const start_offset_with_delta& so);
+  void apply_truncate_archive_commit(model::offset co, uint64_t bytes_removed);
+  void apply_update_start_kafka_offset(kafka::offset so);
+  void apply_reset_metadata();
+  void apply_spillover(const spillover_cmd& so);
+  void apply_replace_manifest(iobuf);
+  void apply_process_anomalies(iobuf);
+  void apply_reset_scrubbing_metadata();
+  void apply_update_highest_producer_id(model::producer_id pid);
 
-    mutex _lock;
+  private:
+  prefix_logger _logger;
 
-    ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
+  mutex _lock;
 
-    // The offset of the last mark_clean_cmd applied: if the manifest is
-    // clean, this will equal last_applied_offset.
-    model::offset _last_clean_at;
+  ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 
-    // The offset of the last record that modified this stm
-    model::offset _last_dirty_at;
+  // The offset of the last mark_clean_cmd applied: if the manifest is
+  // clean, this will equal last_applied_offset.
+  model::offset _last_clean_at;
 
-    // The last replication future
-    std::optional<ss::future<result<raft::replicate_result>>> _last_replicate;
+  // The offset of the last record that modified this stm
+  model::offset _last_dirty_at;
 
-    cloud_storage::remote& _cloud_storage_api;
-    features::feature_table& _feature_table;
-    ss::abort_source _download_as;
+  // The last replication future
+  std::optional<ss::future<result<raft::replicate_result>>> _last_replicate;
+
+  cloud_storage::remote& _cloud_storage_api;
+  features::feature_table& _feature_table;
+  ss::abort_source _download_as;
 };
 
 } // namespace cluster
