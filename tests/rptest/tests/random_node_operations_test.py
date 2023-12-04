@@ -286,8 +286,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
             initial_version = self.redpanda._installer.highest_from_prior_feature_version(
                 RedpandaInstaller.HEAD)
-            supported_by_prev = initial_version[0] >= 22 and initial_version[
-                1] >= 3
+            supported_by_prev = (initial_version[0] > 23) or \
+                                     (initial_version[0] == 23
+                                           and initial_version[1] > 2)
             # do not enable fast partition movement with
             # upgrades as the feature is not enabled
             return supported_by_prev
