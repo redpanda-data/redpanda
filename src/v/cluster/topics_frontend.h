@@ -67,6 +67,12 @@ public:
     ss::future<std::vector<topic_result>> delete_topics(
       std::vector<model::topic_namespace>, model::timeout_clock::time_point);
 
+    /**
+     * In contrast to simple delete topics this method may use RPC to forward
+     * delete topics request to controller.
+     */
+    ss::future<std::vector<topic_result>> dispatch_delete_topics(
+      std::vector<model::topic_namespace>, std::chrono::milliseconds);
     // May be called on any node
     ss::future<topic_result>
       purged_topic(nt_revision, model::timeout_clock::duration);

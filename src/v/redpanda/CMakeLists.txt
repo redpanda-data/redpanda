@@ -13,7 +13,8 @@ set(swags
   debug
   usage
   shadow_indexing
-  transform)
+  transform 
+  recovery)
 
 set(swag_files)
 foreach(swag ${swags})
@@ -45,6 +46,7 @@ v_cc_library(
     admin/debug.cc
     admin/transform.cc
     admin/security.cc
+    admin/recovery.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc

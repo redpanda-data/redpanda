@@ -46,6 +46,7 @@
 #include <absl/hash/hash.h>
 #include <fmt/format.h>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -4474,6 +4475,37 @@ struct topic_disabled_partitions_set
     void add(model::partition_id id);
     void remove(model::partition_id id, const assignments_set& all_partitions);
     void set_fully_disabled() { partitions = std::nullopt; }
+};
+
+struct delete_topics_request
+  : serde::envelope<
+      delete_topics_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    std::vector<model::topic_namespace> topics_to_delete;
+    std::chrono::milliseconds timeout;
+
+    friend bool
+    operator==(const delete_topics_request&, const delete_topics_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(topics_to_delete, timeout); }
+};
+
+struct delete_topics_reply
+  : serde::envelope<
+      delete_topics_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    std::vector<topic_result> results;
+
+    friend bool
+    operator==(const delete_topics_reply&, const delete_topics_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 } // namespace cluster

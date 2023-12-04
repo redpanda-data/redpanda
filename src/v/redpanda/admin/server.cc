@@ -33,6 +33,7 @@
 #include "cluster/members_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/migrations/tx_manager_migrator.h"
 #include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_backend.h"
 #include "cluster/partition_balancer_rpc_service.h"
@@ -301,7 +302,8 @@ admin_server::admin_server(
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::sharded<resources::cpu_profiler>& cpu_profiler,
   ss::sharded<transform::service>* transform_service,
-  ss::sharded<security::audit::audit_log_manager>& audit_mgr)
+  ss::sharded<security::audit::audit_log_manager>& audit_mgr,
+  std::unique_ptr<cluster::tx_manager_migrator>& tx_manager_migrator)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -329,6 +331,7 @@ admin_server::admin_server(
   , _cpu_profiler(cpu_profiler)
   , _transform_service(transform_service)
   , _audit_mgr(audit_mgr)
+  , _tx_manager_migrator(tx_manager_migrator)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
@@ -409,6 +412,12 @@ void admin_server::configure_admin_routes() {
     register_cluster_routes();
     register_shadow_indexing_routes();
     register_wasm_transform_routes();
+    /**
+     * Special REST apis active only in recovery mode
+     */
+    if (config::node().recovery_mode_enabled) {
+        register_recovery_mode_routes();
+    }
 }
 
 namespace {
@@ -4787,7 +4796,7 @@ void admin_server::register_cluster_routes() {
             = _controller->get_storage().local().get_cluster_uuid();
           if (cluster_uuid) {
               ss::httpd::cluster_json::uuid ret;
-              ret.cluster_uuid = fmt::format("{}", cluster_uuid);
+              ret.cluster_uuid = ssx::sformat("{}", cluster_uuid);
               return ss::json::json_return_type(std::move(ret));
           }
           return ss::json::json_return_type(ss::json::json_void());

@@ -33,7 +33,7 @@ namespace detail {
 
 template<typename T, typename Fn>
 std::vector<cluster::topic_result>
-create_topic_results(const std::vector<T>& topics, Fn fn) {
+make_error_topic_results(const std::vector<T>& topics, Fn fn) {
     std::vector<cluster::topic_result> results;
     results.reserve(topics.size());
     std::transform(
@@ -61,24 +61,24 @@ requires requires(const T& req) {
     { req.tp_ns } -> std::convertible_to<const model::topic_namespace&>;
 }
 std::vector<topic_result>
-create_topic_results(const std::vector<T>& requests, errc error_code) {
-    return detail::create_topic_results(requests, [error_code](const T& r) {
+make_error_topic_results(const std::vector<T>& requests, errc error_code) {
+    return detail::make_error_topic_results(requests, [error_code](const T& r) {
         return topic_result(r.tp_ns, error_code);
     });
 }
 
-inline std::vector<topic_result> create_topic_results(
+inline std::vector<topic_result> make_error_topic_results(
   const std::vector<model::topic_namespace>& topics, errc error_code) {
-    return detail::create_topic_results(
+    return detail::make_error_topic_results(
       topics, [error_code](const model::topic_namespace& t) {
           return topic_result(t, error_code);
       });
 }
 
-inline std::vector<topic_result> create_topic_results(
+inline std::vector<topic_result> make_error_topic_results(
   const std::vector<custom_assignable_topic_configuration>& requests,
   errc error_code) {
-    return detail::create_topic_results(
+    return detail::make_error_topic_results(
       requests, [error_code](const custom_assignable_topic_configuration& r) {
           return topic_result(r.cfg.tp_ns, error_code);
       });

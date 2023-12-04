@@ -15,6 +15,10 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "model/fundamental.h"
 
+#include <seastar/core/shared_ptr.hh>
+
+#include <absl/container/flat_hash_map.h>
+
 #include <optional>
 
 namespace cluster {
@@ -24,25 +28,23 @@ namespace cluster {
  */
 class tm_stm_cache_manager {
 public:
-    tm_stm_cache_manager(int32_t tm_stm_partitions) {
-        for (int32_t i = 0; i < tm_stm_partitions; ++i) {
-            auto tm_stm_cache = ss::make_lw_shared<cluster::tm_stm_cache>();
-            tm_stm_caches.push_back(tm_stm_cache);
-        }
-    }
+    tm_stm_cache_manager() = default;
 
     ss::lw_shared_ptr<cluster::tm_stm_cache>
     get(model::partition_id partition) {
-        vassert(
-          partition >= 0 && size_t(partition) < tm_stm_caches.size(),
-          "Invalid tm stm cache partition {}. Current partitions amount: {}",
-          partition,
-          tm_stm_caches.size());
-        return tm_stm_caches[partition];
+        auto it = tm_stm_caches.lazy_emplace(
+          partition, [partition](const cache_t::constructor& ctor) {
+              ctor(partition, ss::make_lw_shared<cluster::tm_stm_cache>());
+          });
+
+        return it->second;
     }
 
 private:
-    std::vector<ss::lw_shared_ptr<cluster::tm_stm_cache>> tm_stm_caches;
+    using cache_t = absl::flat_hash_map<
+      model::partition_id,
+      ss::lw_shared_ptr<cluster::tm_stm_cache>>;
+    cache_t tm_stm_caches;
 };
 
 } // namespace cluster

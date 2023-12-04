@@ -16,6 +16,7 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "cluster/migrations/tx_manager_migrator.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/node_status_backend.h"
 #include "cluster/node_status_table.h"
@@ -320,6 +321,9 @@ private:
     deferred_actions _deferred;
 
     ss::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
+
+    // instantiated only in recovery mode
+    std::unique_ptr<cluster::tx_manager_migrator> _tx_manager_migrator;
 
     ss::sharded<ss::abort_source> _as;
 };

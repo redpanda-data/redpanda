@@ -134,7 +134,7 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
               result<model::offset> result) mutable {
           if (!result) {
               return ss::make_ready_future<std::vector<topic_result>>(
-                create_topic_results(topics, errc::not_leader_controller));
+                make_error_topic_results(topics, errc::not_leader_controller));
           }
           std::vector<ss::future<topic_result>> futures;
           futures.reserve(topics.size());
@@ -201,7 +201,7 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
 
     // no leader available
     if (!cluster_leader) {
-        co_return create_topic_results(updates, errc::no_leader_controller);
+        co_return make_error_topic_results(updates, errc::no_leader_controller);
     }
 
     if (!_features.local().is_active(features::feature::cloud_retention)) {
@@ -213,7 +213,7 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
           clusterlog.info,
           "Refusing to update topics as not all cluster nodes are running "
           "v22.3");
-        co_return create_topic_results(updates, errc::feature_disabled);
+        co_return make_error_topic_results(updates, errc::feature_disabled);
     }
 
     // current node is a leader, just replicate
@@ -221,7 +221,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         // replicate empty batch to make sure leader local state is up to date.
         auto result = co_await stm_linearizable_barrier(timeout);
         if (!result) {
-            co_return create_topic_results(updates, map_errc(result.error()));
+            co_return make_error_topic_results(
+              updates, map_errc(result.error()));
         }
 
         auto results = co_await ssx::parallel_transform(
@@ -255,7 +256,7 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         })
       .then([updates](result<update_topic_properties_reply> r) {
           if (r.has_error()) {
-              return create_topic_results(updates, map_errc(r.error()));
+              return make_error_topic_results(updates, map_errc(r.error()));
           }
           return std::move(r.value().results);
       });
@@ -525,6 +526,50 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
       });
 }
 
+ss::future<std::vector<topic_result>> topics_frontend::dispatch_delete_topics(
+  std::vector<model::topic_namespace> topics,
+  std::chrono::milliseconds timeout) {
+    auto controller_leader = _leaders.local().get_leader(model::controller_ntp);
+    if (controller_leader == _self) {
+        co_return co_await delete_topics(
+          std::move(topics), timeout + model::timeout_clock::now());
+    }
+
+    if (controller_leader) {
+        vlog(
+          clusterlog.debug,
+          "dispatching delete topics request to {}",
+          controller_leader);
+        auto reply
+          = co_await _connections.local()
+              .with_node_client<cluster::controller_client_protocol>(
+                _self,
+                ss::this_shard_id(),
+                *controller_leader,
+                timeout,
+                [topics, timeout](controller_client_protocol cp) mutable {
+                    return cp.delete_topics(
+                      delete_topics_request{
+                        .topics_to_delete = std::move(topics),
+                        .timeout = timeout},
+                      rpc::client_opts(model::timeout_clock::now() + timeout));
+                })
+              .then(&rpc::get_ctx_data<delete_topics_reply>);
+
+        if (reply.has_error()) {
+            vlog(
+              clusterlog.warn,
+              "delete topics failed with an error - {}",
+              reply.error().message());
+            co_return make_error_topic_results(
+              topics, errc::topic_operation_error);
+        }
+        co_return std::move(reply.value().results);
+    }
+
+    co_return make_error_topic_results(topics, errc::no_leader_controller);
+}
+
 ss::future<std::vector<topic_result>> topics_frontend::delete_topics(
   std::vector<model::topic_namespace> topics,
   model::timeout_clock::time_point timeout) {
@@ -718,7 +763,7 @@ ss::future<std::vector<topic_result>> topics_frontend::autocreate_topics(
     // no leader available
     if (!leader) {
         return ss::make_ready_future<std::vector<topic_result>>(
-          create_topic_results(topics, errc::no_leader_controller));
+          make_error_topic_results(topics, errc::no_leader_controller));
     }
     // current node is a leader controller
     if (leader == _self) {
@@ -751,7 +796,7 @@ topics_frontend::dispatch_create_to_leader(
                  })
                .then(&rpc::get_ctx_data<create_topics_reply>);
     if (r.has_error()) {
-        co_return create_topic_results(topics, map_errc(r.error()));
+        co_return make_error_topic_results(topics, map_errc(r.error()));
     }
     co_return std::move(r.value().results);
 }
