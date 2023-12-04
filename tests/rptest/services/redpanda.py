@@ -824,6 +824,7 @@ class RedpandaServiceBase(Service):
     TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
     TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
     TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
+    SYSTEM_TLS_CA_CRT_FILE = "/usr/local/share/ca-certificates/ca.crt"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
@@ -2090,6 +2091,13 @@ class RedpandaService(RedpandaServiceBase):
             node.account.mkdirs(
                 os.path.dirname(RedpandaService.TLS_CA_CRT_FILE))
             node.account.copy_to(ca.crt, RedpandaService.TLS_CA_CRT_FILE)
+            node.account.ssh(f"chmod 755 {RedpandaService.TLS_CA_CRT_FILE}")
+
+            node.account.copy_to(ca.crt,
+                                 RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
+            node.account.ssh(
+                f"chmod 755 {RedpandaService.SYSTEM_TLS_CA_CRT_FILE}")
+            node.account.ssh(f"update-ca-certificates")
 
             if self._pandaproxy_config is not None:
                 self._pandaproxy_config.maybe_write_client_certs(
@@ -3010,6 +3018,10 @@ class RedpandaService(RedpandaServiceBase):
         if not preserve_logs and node.account.exists(
                 self.EXECUTABLE_SAVE_PATH):
             node.account.remove(self.EXECUTABLE_SAVE_PATH)
+
+        if node.account.exists(RedpandaService.SYSTEM_TLS_CA_CRT_FILE):
+            node.account.remove(RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
+            node.account.ssh(f"update-ca-certificates")
 
         if not preserve_current_install or not self._installer._started:
             # Reset the binaries to use the original binaries.
