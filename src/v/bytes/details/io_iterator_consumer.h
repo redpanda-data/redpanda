@@ -65,8 +65,8 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            details::throw_out_of_range(
-              "Invalid skip(n). Expected:{}, but skipped:{}", n, c);
+            ss::throw_with_backtrace<std::out_of_range>(fmt::format(
+              "Invalid skip(n). Expected:{}, but skipped:{}", n, c));
         }
     }
     template<typename Output>
@@ -77,8 +77,10 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            details::throw_out_of_range(
-              "Invalid consume_to(n, out), expected:{}, but consumed:{}", n, c);
+            ss::throw_with_backtrace<std::out_of_range>(fmt::format(
+              "Invalid consume_to(n, out), expected:{}, but consumed:{}",
+              n,
+              c));
         }
     }
 
@@ -102,11 +104,11 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            details::throw_out_of_range(
+            ss::throw_with_backtrace<std::out_of_range>(fmt::format(
               "Invalid consume_to(n, placeholder), expected:{}, but "
               "consumed:{}",
               n,
-              c);
+              c));
         }
     }
 
