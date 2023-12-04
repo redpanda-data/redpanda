@@ -859,7 +859,6 @@ class HighThroughputTest(PreallocNodesTest):
                 f"Low throughput while preparing for the test: {_throughput}: {e}"
             )
 
-    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
         """Decommission and add while under load.
