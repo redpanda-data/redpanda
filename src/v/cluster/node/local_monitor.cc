@@ -46,11 +46,9 @@ constexpr ss::lowres_clock::duration tick_period = 1s;
 local_monitor::local_monitor(
   config::binding<size_t> alert_bytes,
   config::binding<unsigned> alert_percent,
-  config::binding<size_t> min_bytes,
   ss::sharded<storage::node>& node_api)
   : _free_bytes_alert_threshold(std::move(alert_bytes))
   , _free_percent_alert_threshold(std::move(alert_percent))
-  , _min_free_bytes(std::move(min_bytes))
   , _storage_node_api(node_api) {}
 
 ss::future<> local_monitor::_update_loop() {
