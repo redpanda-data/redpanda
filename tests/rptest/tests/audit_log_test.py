@@ -671,11 +671,24 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
 
         self._modify_cluster_config({'audit_enabled': False})
 
+        self.stop_per_node = set({})
+
+        # Ensure that one erraneous node returning many stop events doesn't allow the test
+        # to pass by filtering only by unique events. Use the node id provided in the record
+        # payload to do so.
+        def filter_unique_stop_events(record):
+            is_match = AuditLogTestsAppLifecycle.is_lifecycle_match(
+                "Audit System", False, record)
+            if is_match:
+                nodeid = record['app']['uid']
+                if nodeid not in self.stop_per_node:
+                    self.stop_per_node.add(nodeid)
+                    return True
+            return False
+
         _ = self.find_matching_record(
-            partial(AuditLogTestsAppLifecycle.is_lifecycle_match,
-                    "Audit System", False),
-            lambda record_count: record_count == 3,
-            "One stop event observed for shutdown node")
+            filter_unique_stop_events, lambda record_count: record_count == 3,
+            "Three more stop events observed per node")
 
     @cluster(num_nodes=5)
     def test_recovery_mode(self):
