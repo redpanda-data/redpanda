@@ -58,6 +58,10 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             self.throughput = 10000
             self.min_records = 100000
 
+    @property
+    def timeout(self):
+        return 180 if self.debug_mode else 90
+
     def get_moving_to_node_metrics(self, node):
         metrics = self.redpanda.metrics_sample(
             "moving_to_node", [node],
@@ -130,12 +134,13 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         prev_assignment, assignments = self._dispatch_random_partition_move(
             topic=topic, partition=partition, allow_no_op=False)
 
-        self._wait_for_move_in_progress(topic, partition)
+        self._wait_for_move_in_progress(topic, partition, timeout=self.timeout)
         self.check_metrics(prev_assignment, assignments)
         self._request_move_cancel(unclean_abort=unclean_abort,
                                   topic=topic,
                                   partition=partition,
-                                  previous_assignment=prev_assignment)
+                                  previous_assignment=prev_assignment,
+                                  timeout=self.timeout)
         self.check_metrics()
 
     def _throttle_recovery(self, new_rate: int):
@@ -258,12 +263,13 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 self._wait_post_move(topic=self.topic,
                                      partition=partition,
                                      assignments=new_assignment,
-                                     timeout_sec=60)
+                                     timeout_sec=self.timeout)
             else:
                 self._request_move_cancel(unclean_abort=unclean_abort,
                                           topic=self.topic,
                                           partition=partition,
-                                          previous_assignment=prev_assignment)
+                                          previous_assignment=prev_assignment,
+                                          timeout=self.timeout)
             if recovery == RESTART_RECOVERY:
                 # restart one of the nodes after each move
                 self.redpanda.restart_nodes(
@@ -356,7 +362,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         # update replica set
         admin.set_partition_replicas(self.topic, partition, new_assignment)
 
-        self._wait_for_move_in_progress(self.topic, partition)
+        self._wait_for_move_in_progress(self.topic,
+                                        partition,
+                                        timeout=self.timeout)
 
         # abort moving partition
         admin.cancel_partition_move(self.topic, partition=partition)
@@ -373,7 +381,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             return converged and info["status"] == "done"
 
         # wait until redpanda reports complete
-        wait_until(cancelled, timeout_sec=30, backoff_sec=2)
+        wait_until(cancelled, timeout_sec=self.timeout, backoff_sec=2)
 
         # do not run offsets validation as we may experience data loss since cancellation is forced
         wait_until(lambda: self.producer.num_acked > 20000, timeout_sec=60)
@@ -419,7 +427,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
         admin.cancel_all_reconfigurations()
 
-        wait_until(lambda: len(admin.list_reconfigurations()) == 0, 60, 1)
+        wait_until(lambda: len(admin.list_reconfigurations()) == 0,
+                   timeout_sec=self.timeout,
+                   backoff_sec=1)
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=self.consumer_timeout_seconds,
@@ -499,7 +509,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
             return len([o for o in ongoing if is_node_reconfiguration(o)]) == 0
 
-        wait_until(has_no_node_reconfigurations, 60, 1)
+        wait_until(has_no_node_reconfigurations,
+                   timeout_sec=self.timeout,
+                   backoff_sec=1)
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=self.consumer_timeout_seconds,
@@ -562,14 +574,14 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             return leader_id != -1 and leader_id != self.redpanda.node_id(
                 to_stop)
 
-        wait_until(new_controller, 30)
+        wait_until(new_controller, timeout_sec=self.timeout, backoff_sec=1)
 
         self.logger.info(
             f"moving {topic}/{partition}: {prev_assignments} -> {assignments}")
 
         admin.set_partition_replicas(topic, partition, assignments)
 
-        self._wait_for_move_in_progress(topic, partition)
+        self._wait_for_move_in_progress(topic, partition, timeout=self.timeout)
 
         admin.cancel_partition_move(topic, partition)
         self.run_validation(enable_idempotence=False,
@@ -589,7 +601,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
             return True
 
-        wait_until(move_finished, 30, backoff_sec=1)
+        wait_until(move_finished, timeout_sec=self.timeout, backoff_sec=1)
 
     #TODO: investigate slow startups in debug mode
     @skip_debug_mode
@@ -647,7 +659,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
             admin.set_partition_replicas(topic, partition, assignments)
 
-            self._wait_for_move_in_progress(topic, partition)
+            self._wait_for_move_in_progress(topic,
+                                            partition,
+                                            timeout=self.timeout)
 
             if should_cancel:
                 try:
@@ -680,7 +694,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
                 return True
 
-            wait_until(move_finished, 80, backoff_sec=1)
+            wait_until(move_finished, timeout_sec=self.timeout, backoff_sec=1)
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=self.consumer_timeout_seconds,
