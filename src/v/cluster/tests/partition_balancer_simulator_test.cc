@@ -39,14 +39,18 @@ static size_t add_sqrt_jitter(size_t mean, size_t item_size) {
 
 class partition_balancer_sim_fixture {
 public:
-    void add_node(model::node_id id, size_t total_size, uint32_t n_cores = 4) {
+    void add_node(
+      model::node_id id,
+      size_t total_size,
+      uint32_t n_cores = 4,
+      std::optional<model::rack_id> rack = std::nullopt) {
         vassert(!_nodes.contains(id), "duplicate node id: {}", id);
 
         model::broker broker(
           id,
           net::unresolved_address{},
           net::unresolved_address{},
-          std::nullopt,
+          rack,
           model::broker_properties{
             .cores = n_cores,
             .available_memory_gb = 2,
@@ -118,6 +122,31 @@ public:
 
     size_t cur_tick() const { return _cur_tick; }
 
+    // returns true if all partition movements stopped
+    bool run_to_completion(
+      size_t max_balancer_actions, std::function<void()> tick_cb = [] {}) {
+        print_state();
+
+        size_t num_actions = 0;
+        while (num_actions < max_balancer_actions) {
+            tick();
+            tick_cb();
+
+            if (should_schedule_balancer_run()) {
+                num_actions += run_balancer();
+                print_state();
+
+                if (last_run_in_progress_updates() == 0) {
+                    logger.info("finished after {} ticks", cur_tick());
+                    return true;
+                }
+            }
+        }
+
+        print_state();
+        return false;
+    }
+
     void tick() {
         // refill the bandwidth
         for (auto& [id, node] : _nodes) {
@@ -181,7 +210,8 @@ public:
         _cur_tick += 1;
     }
 
-    void run_balancer() {
+    // return the number of scheduled actions
+    size_t run_balancer() {
         auto hr = create_health_report();
         populate_node_status_table();
 
@@ -198,10 +228,12 @@ public:
               plan_data.cancellations.size(),
               plan_data.failed_actions_count);
 
+            size_t actions_count = plan_data.reassignments.size()
+                                   + plan_data.cancellations.size();
+
             _last_run_in_progress_updates
               = _workers.table.local().updates_in_progress().size()
-                + plan_data.reassignments.size()
-                + plan_data.cancellations.size();
+                + actions_count;
 
             for (const auto& reassignment : plan_data.reassignments) {
                 dispatch_move(
@@ -210,6 +242,8 @@ public:
             for (const auto& ntp : plan_data.cancellations) {
                 dispatch_cancel(ntp);
             }
+
+            return actions_count;
         }
     }
 
@@ -606,23 +640,7 @@ FIXTURE_TEST(test_decommission, partition_balancer_sim_fixture) {
     add_topic("mytopic", 100, 3, 100_MiB);
     set_decommissioning(model::node_id{0});
 
-    print_state();
-    for (size_t i = 0; i < 10000; ++i) {
-        if (nodes().at(model::node_id{0}).replicas.empty()) {
-            logger.info("finished in {} ticks", i);
-            break;
-        }
-
-        tick();
-        if (should_schedule_balancer_run()) {
-            print_state();
-            run_balancer();
-        }
-    }
-
-    logger.info("finished after {} ticks", cur_tick());
-    print_state();
-
+    BOOST_REQUIRE(run_to_completion(100));
     BOOST_REQUIRE_EQUAL(
       allocation_nodes().at(model::node_id{0})->allocated_partitions()(), 0);
 }
@@ -636,15 +654,7 @@ FIXTURE_TEST(test_two_decommissions, partition_balancer_sim_fixture) {
 
     size_t start_node_0_replicas
       = nodes().at(model::node_id{0}).replicas.size();
-
-    print_state();
-    for (size_t i = 0; i < 20000; ++i) {
-        if (
-          nodes().at(model::node_id{0}).replicas.empty()
-          && nodes().at(model::node_id{1}).replicas.empty()) {
-            break;
-        }
-
+    auto tick_cb = [&] {
         if (
           !allocation_nodes().at(model::node_id{1})->is_decommissioned()
           && allocation_nodes().at(model::node_id{0})->final_partitions()()
@@ -654,17 +664,9 @@ FIXTURE_TEST(test_two_decommissions, partition_balancer_sim_fixture) {
             set_decommissioning(model::node_id{1});
             print_state();
         }
+    };
 
-        tick();
-        if (should_schedule_balancer_run()) {
-            print_state();
-            run_balancer();
-        }
-    }
-
-    logger.info("finished after {} ticks", cur_tick());
-    print_state();
-
+    BOOST_REQUIRE(run_to_completion(500, tick_cb));
     BOOST_REQUIRE_EQUAL(
       allocation_nodes().at(model::node_id{0})->allocated_partitions()(), 0);
     BOOST_REQUIRE_EQUAL(
@@ -689,21 +691,30 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
     add_node(model::node_id{4}, 1000_GiB, 8);
     add_node_to_rebalance(model::node_id{4});
 
-    print_state();
-
-    for (size_t i = 0; i < 100000; ++i) {
-        tick();
-        if (should_schedule_balancer_run()) {
-            print_state();
-            run_balancer();
-
-            if (last_run_in_progress_updates() == 0) {
-                break;
-            }
-        }
-    }
-
-    print_state();
+    BOOST_REQUIRE(run_to_completion(1000));
     validate_even_replica_distribution();
     validate_even_topic_distribution();
+}
+
+FIXTURE_TEST(
+  test_heterogeneous_racks_full_disk, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 3; ++i) {
+        add_node(
+          model::node_id{i},
+          1000_GiB,
+          4,
+          model::rack_id{ssx::sformat("rack_{}", i)});
+    }
+    add_node(model::node_id{3}, 1000_GiB, 4, model::rack_id{"rack_0"});
+
+    add_topic("topic_1", 50, 3, 18_GiB);
+
+    // Nodes 0 and 3 are in rack_0 and 1 and 2 are each in racks of their own.
+    // We expect 1 and 2 to go over 80% disk limit and the balancer to fix this
+    // (even though some rack constraint violations are introduced).
+
+    BOOST_REQUIRE(run_to_completion(100));
+    for (const auto& [id, node] : nodes()) {
+        BOOST_REQUIRE(double(node.used) / node.total < 0.8);
+    }
 }
