@@ -183,6 +183,9 @@ ss::future<> state_machine::apply() {
             "State machine for ntp={} caught exception {}",
             _raft->ntp(),
             e);
+
+          return ss::sleep_abortable(1s, _as).handle_exception_type(
+            [](const ss::sleep_aborted&) {});
       });
 }
 
