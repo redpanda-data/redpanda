@@ -179,14 +179,23 @@ cluster_discovery::dispatch_node_uuid_registration_to_seeds() {
               r.error().message());
             continue;
         }
-        if (!r.has_value() || !r.value().success) {
+        if (!r.has_value()) {
             vlog(
               clusterlog.debug,
-              "Error registering node UUID {}, retrying",
-              _node_uuid);
+              "Error registering node UUID {} - {}, retrying",
+              _node_uuid,
+              r.error().message());
             continue;
         }
         auto& reply = r.value();
+        if (!reply.success) {
+            vlog(
+              clusterlog.debug,
+              "Error registering node UUID {} received failure response, "
+              "retrying",
+              _node_uuid);
+            continue;
+        }
         if (reply.id < 0) {
             // Something else went wrong. Maybe duplicate UUID?
             vlog(clusterlog.debug, "Negative node ID {}", reply.id);
