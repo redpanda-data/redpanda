@@ -68,6 +68,9 @@ public:
     using time_point_type = clock_type::time_point;
     using duration_type = clock_type::duration;
 
+    using producers_t = mt::
+      map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>;
+
     static constexpr const int8_t abort_snapshot_version = 0;
     using tx_range = model::tx_range;
 
@@ -261,6 +264,8 @@ public:
     std::string_view get_name() const final { return "rm_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
+    const producers_t& get_producers() const { return _producers; }
+
 protected:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
@@ -371,9 +376,8 @@ private:
     ss::future<> apply(const model::record_batch&) override;
     void apply_fence(model::record_batch&&);
     void apply_prepare(rm_stm::prepare_marker);
-    ss::future<>
-      apply_control(model::producer_identity, model::control_record_type);
-    void apply_data(model::batch_identity, model::offset);
+    void apply_control(model::producer_identity, model::control_record_type);
+    void apply_data(model::batch_identity, const model::record_batch_header&);
 
     ss::future<> reduce_aborted_list();
     ss::future<> offload_aborted_txns();
@@ -640,8 +644,7 @@ private:
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
     ss::sharded<producer_state_manager>& _producer_state_manager;
-    using producers_t = mt::
-      map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>;
+
     producers_t _producers;
     metrics::internal_metric_groups _metrics;
     ss::abort_source _as;

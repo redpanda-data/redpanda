@@ -15,11 +15,13 @@
 #include "cluster/shard_table.h"
 #include "kafka/protocol/describe_producers.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/describe_producers_response.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
 
@@ -34,73 +36,64 @@ namespace {
 
 using ret_res = checked<cluster::rm_stm::transaction_set, kafka::error_code>;
 
-static int64_t
-convert_rm_stm_time_to_ts_ms(cluster::rm_stm::time_point_type time) {
-    auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(
-                  cluster::rm_stm::clock_type::now() - time)
-                  .count();
-    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                 ss::lowres_system_clock::now().time_since_epoch())
-                 .count();
-    return now - diff;
+partition_response
+make_error_response(model::partition_id id, kafka::error_code ec) {
+    return partition_response{.partition_index = id, .error_code = ec};
 }
 
-ss::future<checked<cluster::rm_stm::transaction_set, kafka::error_code>>
-get_producers_for_partition(request_context& ctx, model::ntp ntp) {
+partition_response
+do_get_producers_for_partition(cluster::partition_manager& pm, model::ktp ntp) {
+    auto partition = pm.get(ntp);
+    if (!partition || !partition->is_leader()) {
+        return make_error_response(
+          ntp.get_partition(), kafka::error_code::not_leader_for_partition);
+    }
+
+    auto rm_stm_ptr = partition->rm_stm();
+
+    if (!rm_stm_ptr) {
+        vlog(
+          klog.error,
+          "Can not get rm_stm for ntp: {}. Looks like transaction are "
+          "disabled",
+          ntp);
+        return make_error_response(
+          ntp.get_partition(), kafka::error_code::unknown_server_error);
+    }
+    const auto& producers = rm_stm_ptr->get_producers();
+    partition_response resp;
+    resp.error_code = error_code::none;
+    resp.partition_index = ntp.get_partition();
+    resp.active_producers.reserve(producers.size());
+    for (const auto& [pid, state] : producers) {
+        resp.active_producers.push_back(producer_state{
+          .producer_id = pid.get_id(),
+          .producer_epoch = pid.get_epoch(),
+          .last_sequence = state->last_sequence_number().value_or(-1),
+          .last_timestamp = state->last_update_timestamp().value(),
+          .coordinator_epoch = -1,
+          .current_txn_start_offset
+          = state->current_txn_start_offset().value_or(kafka::offset(-1)),
+        });
+    }
+    return resp;
+}
+
+ss::future<partition_response>
+get_producers_for_partition(request_context& ctx, model::ktp ntp) {
     auto shard = ctx.shards().shard_for(ntp);
     if (!shard) {
         vlog(
           klog.debug,
           "Can not find shard for ntp({}) to get info about producers",
           ntp);
-        return ss::make_ready_future<ret_res>(
-          kafka::error_code::not_leader_for_partition);
+        co_return make_error_response(
+          ntp.get_partition(), kafka::error_code::not_leader_for_partition);
     }
 
-    return ctx.partition_manager().invoke_on(
-      *shard, [ntp](cluster::partition_manager& pm) -> ss::future<ret_res> {
-          auto partition = pm.get(ntp);
-          if (!partition) {
-              return ss::make_ready_future<ret_res>(
-                kafka::error_code::unknown_topic_or_partition);
-          }
-
-          if (!partition->is_leader()) {
-              return ss::make_ready_future<ret_res>(
-                kafka::error_code::not_leader_for_partition);
-          }
-
-          auto rm_stm_ptr = partition->rm_stm();
-
-          if (!rm_stm_ptr) {
-              vlog(
-                klog.error,
-                "Can not get rm_stm for ntp({}). Looks like transaction are "
-                "disabled",
-                ntp);
-
-              return ss::make_ready_future<ret_res>(
-                kafka::error_code::unknown_server_error);
-          }
-
-          return rm_stm_ptr->get_transactions().then(
-            [ntp](auto tx) -> ss::future<ret_res> {
-                if (!tx.has_value()) {
-                    if (tx.error() == cluster::errc::not_leader) {
-                        return ss::make_ready_future<ret_res>(
-                          kafka::error_code::not_leader_for_partition);
-                    }
-
-                    vlog(
-                      klog.warn,
-                      "get_transactions returned unexpected error: {}",
-                      tx.error());
-                    return ss::make_ready_future<ret_res>(
-                      kafka::error_code::unknown_server_error);
-                }
-
-                return ss::make_ready_future<ret_res>(tx.value());
-            });
+    co_return co_await ctx.partition_manager().invoke_on(
+      *shard, [ntp = std::move(ntp)](cluster::partition_manager& pm) mutable {
+          return do_get_producers_for_partition(pm, std::move(ntp));
       });
 }
 
@@ -157,34 +150,9 @@ describe_producers_handler::handle(request_context ctx, ss::smp_service_group) {
         topic_response topic_resp;
         topic_resp.name = topic.name;
         for (const auto& partition : topic.partition_indexes) {
-            partition_response partition_resp;
-            partition_resp.partition_index = partition;
-            model::ntp ntp(model::kafka_namespace, topic.name, partition);
-            auto txs = co_await get_producers_for_partition(ctx, ntp);
-            if (txs.has_value()) {
-                for (const auto& tx : txs.value()) {
-                    producer_state producer_info;
-                    producer_info.producer_epoch = tx.first.epoch;
-                    producer_info.producer_id = tx.first.id;
+            auto partition_resp = co_await get_producers_for_partition(
+              ctx, model::ktp(topic.name, partition));
 
-                    if (tx.second.info) {
-                        producer_info.last_timestamp
-                          = convert_rm_stm_time_to_ts_ms(
-                            tx.second.info->last_update);
-                    }
-
-                    // TODO: We do not store coordinator epoch
-                    producer_info.coordinator_epoch = -1;
-                    producer_info.current_txn_start_offset
-                      = tx.second.lso_bound;
-                    producer_info.last_sequence = tx.second.seq.value_or(-1);
-
-                    partition_resp.active_producers.push_back(
-                      std::move(producer_info));
-                }
-            } else {
-                partition_resp.error_code = txs.error();
-            }
             topic_resp.partitions.push_back(std::move(partition_resp));
         }
         response.data.topics.push_back(std::move(topic_resp));

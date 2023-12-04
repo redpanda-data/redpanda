@@ -1806,8 +1806,6 @@ void rm_stm::apply_fence(model::record_batch&& b) {
 }
 
 ss::future<> rm_stm::apply(const model::record_batch& b) {
-    auto last_offset = b.last_offset();
-
     const auto& hdr = b.header();
 
     if (hdr.type == model::record_batch_type::tx_fence) {
@@ -1817,15 +1815,16 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
     } else if (hdr.type == model::record_batch_type::raft_data) {
         auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
-            co_await apply_control(bid.pid, parse_control_batch(b));
+            apply_control(bid.pid, parse_control_batch(b));
         } else {
-            apply_data(bid, last_offset);
+            apply_data(bid, hdr);
         }
     }
 
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
     }
+    co_return;
 }
 
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
@@ -1836,12 +1835,25 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     _mem_state.preparing.erase(pid);
 }
 
-ss::future<> rm_stm::apply_control(
+void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
+    vlog(
+      _ctx_log.trace, "applying control batch of type {}, pid: {}", crt, pid);
     // either epoch is the same as fencing or it's lesser in the latter
     // case we don't fence off aborts and commits because transactional
     // manager already decided a tx's outcome and acked it to the client
+    auto producer = maybe_create_producer(pid);
 
+    if (likely(
+          crt == model::control_record_type::tx_abort
+          || crt == model::control_record_type::tx_commit)) {
+        /**
+         * Transaction is finished, update producer tx start offset
+         */
+        producer->update_current_txn_start_offset(std::nullopt);
+    }
+
+    // there are only two types of control batches
     if (crt == model::control_record_type::tx_abort) {
         _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
         _log_state.prepared.erase(pid);
@@ -1876,8 +1888,6 @@ ss::future<> rm_stm::apply_control(
         _mem_state.forget(pid);
         _log_state.expiration.erase(pid);
     }
-
-    co_return;
 }
 
 ss::future<> rm_stm::reduce_aborted_list() {
@@ -1892,39 +1902,51 @@ ss::future<> rm_stm::reduce_aborted_list() {
       [this] { _is_abort_idx_reduction_requested = false; });
 }
 
-void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
+void rm_stm::apply_data(
+  model::batch_identity bid, const model::record_batch_header& header) {
     if (bid.has_idempotent()) {
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
-        auto kafka_offset = from_log_offset(last_offset);
+        const auto last_offset = header.last_offset();
+        const auto last_kafka_offset = from_log_offset(header.last_offset());
         auto producer = maybe_create_producer(bid.pid);
-        producer->update(bid, kafka_offset);
-    }
+        producer->update(bid, last_kafka_offset);
 
-    if (bid.is_transactional) {
-        if (_log_state.prepared.contains(bid.pid)) {
+        if (bid.is_transactional) {
             vlog(
-              _ctx_log.error,
-              "Adding a record with pid:{} to a tx after it was prepared",
-              bid.pid);
-            return;
-        }
-
-        auto ongoing_it = _log_state.ongoing_map.find(bid.pid);
-        if (ongoing_it != _log_state.ongoing_map.end()) {
-            if (ongoing_it->second.last < last_offset) {
-                ongoing_it->second.last = last_offset;
+              _ctx_log.trace,
+              "Applying tx data batch with identity: {} and offset range: "
+              "[{},{}]",
+              bid,
+              header.base_offset,
+              last_offset);
+            if (_log_state.prepared.contains(bid.pid)) {
+                vlog(
+                  _ctx_log.error,
+                  "Adding a record with pid:{} to a tx after it was prepared",
+                  bid.pid);
+                return;
             }
-        } else {
-            auto base_offset = model::offset(
-              last_offset() - (bid.record_count - 1));
-            _log_state.ongoing_map.emplace(
-              bid.pid,
-              tx_range{
-                .pid = bid.pid,
-                .first = base_offset,
-                .last = model::offset(last_offset)});
-            _log_state.ongoing_set.insert(base_offset);
-            _mem_state.estimated.erase(bid.pid);
+
+            auto ongoing_it = _log_state.ongoing_map.find(bid.pid);
+            if (ongoing_it != _log_state.ongoing_map.end()) {
+                if (ongoing_it->second.last < last_offset) {
+                    ongoing_it->second.last = last_offset;
+                }
+            } else {
+                // we do no have to check if the value is empty as it is already
+                // done with ongoing map
+                producer->update_current_txn_start_offset(
+                  from_log_offset(header.base_offset));
+
+                _log_state.ongoing_map.emplace(
+                  bid.pid,
+                  tx_range{
+                    .pid = bid.pid,
+                    .first = header.base_offset,
+                    .last = last_offset});
+                _log_state.ongoing_set.insert(header.base_offset);
+                _mem_state.estimated.erase(bid.pid);
+            }
         }
     }
 }

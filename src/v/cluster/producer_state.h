@@ -212,6 +212,18 @@ public:
 
     producer_state_snapshot snapshot(kafka::offset log_start_offset) const;
 
+    model::timestamp last_update_timestamp() const {
+        return model::timestamp(_last_updated_ts.time_since_epoch() / 1ms);
+    }
+
+    std::optional<kafka::offset> current_txn_start_offset() const {
+        return _current_txn_start_offset;
+    }
+
+    void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
+        _current_txn_start_offset = offset;
+    }
+
 private:
     // Register/deregister with manager.
     void register_self();
@@ -244,6 +256,7 @@ private:
     bool _evicted = false;
     size_t _ops_in_progress = 0;
     ss::noncopyable_function<void()> _post_eviction_hook;
+    std::optional<kafka::offset> _current_txn_start_offset;
     friend class producer_state_manager;
     friend struct ::test_fixture;
 };
