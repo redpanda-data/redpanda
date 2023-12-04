@@ -31,6 +31,7 @@
 #include "storage/logger.h"
 #include "storage/ntp_config.h"
 #include "storage/parser_utils.h"
+#include "storage/scoped_file_tracker.h"
 #include "storage/segment.h"
 #include "storage/types.h"
 #include "units.h"
@@ -275,28 +276,15 @@ static ss::future<> do_write_clean_compacted_index(
   storage_resources& resources) {
     const auto tmpname = std::filesystem::path(
       fmt::format("{}.staging", reader.path()));
-    return natural_index_of_entries_to_keep(reader)
-      .then(
-        [reader, cfg, tmpname, &resources](
-          roaring::Roaring bitmap) -> ss::future<> {
-            auto truncating_writer = make_file_backed_compacted_index(
-              tmpname.string(),
-              cfg.iopc,
-              true,
-              resources,
-              cfg.sanitizer_config);
-
-            return copy_filtered_entries(
-              reader, std::move(bitmap), std::move(truncating_writer));
-        })
-      .then(
-        [old_name = tmpname,
-         new_name = ss::sstring(reader.path())]() -> ss::future<> {
-            // from glibc: If oldname is not a directory, then any
-            // existing file named newname is removed during the
-            // renaming operation
-            return ss::rename_file(std::string(old_name), new_name);
-        });
+    auto bitmap = co_await natural_index_of_entries_to_keep(reader);
+    auto staging_to_clean = scoped_file_tracker{
+      cfg.files_to_cleanup, {tmpname}};
+    auto truncating_writer = make_file_backed_compacted_index(
+      tmpname.string(), cfg.iopc, true, resources, cfg.sanitizer_config);
+    co_await copy_filtered_entries(
+      reader, std::move(bitmap), std::move(truncating_writer));
+    co_await ss::rename_file(std::string(tmpname), ss::sstring(reader.path()));
+    staging_to_clean.clear();
 };
 
 ss::future<> write_clean_compacted_index(
@@ -524,6 +512,9 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     co_await do_compact_segment_index(s, cfg, resources);
     // copy the bytes after segment is good - note that we
     // need to do it with the READ-lock, not the write lock
+    auto staging_file = s->reader().path().to_staging();
+    auto staging_to_clean = scoped_file_tracker{
+      cfg.files_to_cleanup, {staging_file}};
     auto idx = co_await do_copy_segment_data(
       s, cfg, pb, std::move(read_holder), resources, apply_offset);
 
@@ -537,10 +528,6 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
           "generation: {}, skipping compaction",
           s->get_generation_id(),
           segment_generation);
-        const ss::sstring staging_file = s->reader().path().to_staging();
-        if (co_await ss::file_exists(staging_file)) {
-            co_await ss::remove_file(staging_file);
-        }
         co_return std::nullopt;
     }
 
@@ -552,6 +539,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 
     auto compacted_file = s->reader().path().to_staging();
     co_await do_swap_data_file_handles(compacted_file, s, cfg, pb);
+    staging_to_clean.clear();
 
     s->index().swap_index_state(std::move(idx));
     s->force_set_commit_offset_from_index();
@@ -633,6 +621,9 @@ ss::future<> rebuild_compaction_index(
     vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
     pb.corrupted_compaction_index();
     auto h = co_await s->read_lock();
+    if (s->is_closed()) {
+        throw segment_closed_exception();
+    }
     // TODO: Improve memory management here, eg: ton of aborted txs?
     auto aborted_txs = co_await stm_manager->aborted_tx_ranges(
       s->offsets().base_offset, s->offsets().stable_offset);
@@ -668,6 +659,7 @@ ss::future<compaction_result> self_compact_segment(
 
     auto read_holder = co_await s->read_lock();
     compacted_index::recovery_state state;
+    std::optional<scoped_file_tracker> to_clean;
     while (true) {
         if (s->is_closed()) {
             throw segment_closed_exception();
@@ -681,11 +673,24 @@ ss::future<compaction_result> self_compact_segment(
         // Rebuilding the compaction index will take the read lock again,
         // so release here.
         read_holder.return_all();
+
+        // It's possible that while the lock isn't held, the segment is closed
+        // and removed. In case that happens, track the new compacted index for
+        // removal until we check under lock that the segment is still alive.
+        // Otherwise, we may end up with a stray compacted index.
+        if (!to_clean.has_value()) {
+            to_clean.emplace(
+              scoped_file_tracker{cfg.files_to_cleanup, {idx_path}});
+        }
+
         co_await rebuild_compaction_index(s, stm_manager, cfg, pb, resources);
 
         // Take the lock again before proceeding so we're guaranteed the index
         // will survive until it's used in self compaction below.
         read_holder = co_await s->read_lock();
+    }
+    if (to_clean.has_value()) {
+        to_clean->clear();
     }
     if (state == compacted_index::recovery_state::already_compacted) {
         vlog(gclog.debug, "detected {} is already compacted", idx_path);

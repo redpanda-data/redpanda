@@ -19,6 +19,7 @@
 #include "storage/file_sanitizer_types.h"
 #include "storage/fwd.h"
 #include "storage/key_offset_map.h"
+#include "storage/scoped_file_tracker.h"
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
 
@@ -397,12 +398,14 @@ struct compaction_config {
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
-      hash_key_offset_map* key_map = nullptr)
+      hash_key_offset_map* key_map = nullptr,
+      scoped_file_tracker::set_t* to_clean = nullptr)
       : max_collectible_offset(max_collect_offset)
       , iopc(p)
       , sanitizer_config(std::move(san_cfg))
       , key_offset_map_max_keys(max_keys)
       , hash_key_map(key_map)
+      , files_to_cleanup(to_clean)
       , asrc(&as) {}
 
     // Cannot delete or compact past this offset (i.e. for unresolved txn
@@ -418,6 +421,10 @@ struct compaction_config {
 
     // Hash key-offset map to reuse across compactions.
     hash_key_offset_map* hash_key_map;
+
+    // Set of intermediary files added by compactions that need to be removed,
+    // e.g. because they were leftover from an aborted compaction.
+    scoped_file_tracker::set_t* files_to_cleanup;
 
     // abort source for compaction task
     ss::abort_source* asrc;
