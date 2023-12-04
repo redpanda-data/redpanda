@@ -9,6 +9,7 @@
 
 import math
 from time import sleep
+from typing import Any
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -103,16 +104,25 @@ class OMBValidationTest(RedpandaTest):
             config_profile['machine_type'])
         self.rpk = RpkTool(self.redpanda)
 
-        self.base_validator = {
+    @staticmethod
+    def base_validator(multiplier: float = 1):
+        """Return a default validator object with reasonable latency targets for
+        healthy systems. Optionally accepts a multiplier value which will adjust
+        all the latencies by the given value, which might be used to accept higher
+        latencies in cases we know this is reasonable (e.g., a system running at
+        its maximum partition count."""
+        ret: dict[str, Any] = {
             OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(20)],
+            [OMBSampleConfigurations.lte(20 * multiplier)],
             OMBSampleConfigurations.E2E_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(25)],
+            [OMBSampleConfigurations.lte(25 * multiplier)],
             OMBSampleConfigurations.E2E_LATENCY_99PCT:
-            [OMBSampleConfigurations.lte(50)],
+            [OMBSampleConfigurations.lte(50 * multiplier)],
             OMBSampleConfigurations.E2E_LATENCY_999PCT:
-            [OMBSampleConfigurations.lte(100)],
+            [OMBSampleConfigurations.lte(100 * multiplier)],
         }
+
+        return ret
 
     def _partition_count(self) -> int:
         machine_config = self.tier_machine_info
@@ -179,7 +189,7 @@ class OMBValidationTest(RedpandaTest):
             },
         }
 
-        validator = self.base_validator | {
+        validator = self.base_validator() | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(producer_rate // (1 * MB))),
@@ -296,7 +306,9 @@ class OMBValidationTest(RedpandaTest):
             "producer_rate": producer_rate / (1 * KiB),
         }
 
-        validator = self.base_validator | {
+        # we allow latencies to be 50% higher in the max partitions test as we
+        # expect poorer performance when we max out one dimensions
+        validator = self.base_validator(1.5) | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(producer_rate // (1 * MB))),
@@ -324,7 +336,7 @@ class OMBValidationTest(RedpandaTest):
         partitions = self._partition_count()
         total_producers = self._producer_count(tier_limits.max_ingress)
         total_consumers = self._consumer_count(tier_limits.max_egress)
-        validator = self.base_validator | {
+        validator = self.base_validator() | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(tier_limits.max_ingress // (1 * MB))),
@@ -417,7 +429,7 @@ class OMBValidationTest(RedpandaTest):
             },
         }
 
-        validator = self.base_validator | {
+        validator = self.base_validator() | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(producer_rate // (1 * MB))),
