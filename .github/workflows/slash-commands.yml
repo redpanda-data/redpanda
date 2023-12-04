@@ -19,6 +19,7 @@ jobs:
             cdt
             test-release-pipeline
             test-arm64
+            dt
           static-args: |
             org=redpanda-data
             repo=redpanda

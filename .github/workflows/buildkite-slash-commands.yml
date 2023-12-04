@@ -8,6 +8,7 @@ on:
       - cdt-command
       - test-release-pipeline-command
       - test-arm64-command
+      - dt-command
 
 jobs:
   run-build:
