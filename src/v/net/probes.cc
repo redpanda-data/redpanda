@@ -145,6 +145,21 @@ void server_probe::setup_public_metrics(
           sm::description("Count of currently active connections"),
           {server_label(proto)})
           .aggregate({sm::shard_label}),
+        sm::make_total_bytes(
+          "received_bytes",
+          [this] { return _in_bytes; },
+          sm::description(ssx::sformat(
+            "{}: Number of bytes received from the clients in valid requests",
+            proto)),
+          {server_label(proto)})
+          .aggregate({sm::shard_label}),
+        sm::make_total_bytes(
+          "sent_bytes",
+          [this] { return _out_bytes; },
+          sm::description(
+            ssx::sformat("{}: Number of bytes sent to clients", proto)),
+          {server_label(proto)})
+          .aggregate({sm::shard_label}),
       });
 }
 
