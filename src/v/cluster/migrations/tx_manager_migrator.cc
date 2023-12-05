@@ -291,6 +291,7 @@ tx_manager_migrator::tx_manager_migrator(
 std::chrono::milliseconds tx_manager_migrator::default_timeout = 30s;
 
 ss::future<std::error_code> tx_manager_migrator::migrate() {
+    auto units = co_await _migration_mutex.get_units();
     // snapshot partition count for current migration
     _requested_partition_count = _manager_partition_count();
     migration_step current_step = migration_step::create_new_temp_topic;
@@ -458,7 +459,7 @@ ss::future<std::error_code> tx_manager_migrator::migrate() {
                   results);
                 co_return errc::partition_operation_failed;
             }
-            current_step = migration_step::finished;
+            current_step = migration_step::delete_temp_topic;
             break;
         }
         case migration_step::delete_temp_topic: {
@@ -479,6 +480,34 @@ ss::future<std::error_code> tx_manager_migrator::migrate() {
         }
     }
     co_return errc::success;
+}
+tx_manager_migrator::status tx_manager_migrator::get_status() const {
+    return {
+      .migration_in_progress = !_migration_mutex.ready(),
+      .migration_required = is_migration_required(),
+    };
+}
+
+bool tx_manager_migrator::is_migration_required() const {
+    const auto current_topic_md = _topics.local().get_topic_metadata_ref(
+      model::tx_manager_nt);
+
+    auto temp_topic_md = _topics.local().get_topic_metadata_ref(
+      temporary_tx_manager_topic);
+
+    // temp topic should not exists after migration
+    if (temp_topic_md) {
+        return true;
+    }
+    // partition count in tx manager topic differs
+    if (
+      current_topic_md
+      && current_topic_md.value().get().get_assignments().size()
+           != static_cast<size_t>(_manager_partition_count())) {
+        return true;
+    }
+
+    return false;
 }
 
 // create new temporary topic with updated number of partitions

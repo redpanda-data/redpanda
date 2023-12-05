@@ -157,6 +157,10 @@ private:
 
 class tx_manager_migrator {
 public:
+    struct status {
+        bool migration_in_progress;
+        bool migration_required;
+    };
     static std::chrono::milliseconds default_timeout;
     tx_manager_migrator(
       ss::sharded<topics_frontend>& topics_frontend,
@@ -173,7 +177,7 @@ public:
 
     ss::future<std::error_code> migrate();
 
-    ss::future<std::error_code> migrate(uint32_t new_partition_count);
+    status get_status() const;
 
     ss::future<> stop();
 
@@ -205,6 +209,8 @@ private:
         return default_timeout + model::timeout_clock::now();
     }
 
+    bool is_migration_required() const;
+
     friend std::ostream& operator<<(std::ostream&, migration_step);
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<controller_api>& _controller_api;
@@ -215,6 +221,8 @@ private:
     int16_t _internal_topic_replication_factor;
     config::binding<int> _manager_partition_count;
     int32_t _requested_partition_count;
+    mutex _migration_mutex;
+
     ss::abort_source _as;
 };
 } // namespace cluster
