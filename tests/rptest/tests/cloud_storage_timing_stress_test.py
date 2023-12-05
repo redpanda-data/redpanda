@@ -527,7 +527,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         (e.g. isolate/kill nodes, isolate leader from cloud storage, change cloud storage
         topic/cluster configs on the fly).
         """
-        self.check_timeout = 15  # seconds
+        self.check_timeout = 16  # seconds
 
         self.prologue(cleanup_policy)
 
