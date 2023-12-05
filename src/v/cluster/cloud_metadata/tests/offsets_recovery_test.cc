@@ -23,8 +23,12 @@
 #include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/cloud_metadata/offsets_uploader.h"
+#include "cluster/cloud_metadata/tests/cluster_metadata_utils.h"
+#include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/cloud_metadata/uploader.h"
+#include "cluster/commands.h"
 #include "cluster/controller.h"
+#include "cluster/types.h"
 #include "config/node_config.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
@@ -37,8 +41,10 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/types.h"
 #include "test_utils/async.h"
 
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/util/later.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -739,4 +745,72 @@ FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
         return err == kafka::error_code::none;
     });
     validate_group_counts_exactly(num_groups_per_ntp).get();
+}
+
+FIXTURE_TEST(test_cluster_recovery_with_offsets, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+    // Create a bunch of groups.
+    constexpr int num_groups = 30;
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto num_groups_per_ntp = snap_num_group_per_offsets_ntp();
+    client.stop().get();
+    stop_client.cancel();
+
+    // Upload a controller snapshot from which we will restore.
+    auto& controller_stm = app.controller->get_controller_stm().local();
+    RPTEST_REQUIRE_EVENTUALLY(
+      5s, [&controller_stm] { return controller_stm.maybe_write_snapshot(); });
+    auto raft0
+      = app.partition_manager.local().get(model::controller_ntp)->raft();
+    auto& uploader = app.controller->metadata_uploader();
+    retry_chain_node retry_node(never_abort, 30s, 1s);
+    cluster_metadata_manifest manifest;
+    manifest.cluster_uuid = cluster_uuid;
+    uploader.upload_next_metadata(raft0->confirmed_term(), manifest, retry_node)
+      .get();
+    BOOST_REQUIRE_EQUAL(manifest.metadata_id, cluster_metadata_id(0));
+    BOOST_REQUIRE(!manifest.controller_snapshot_path.empty());
+    BOOST_REQUIRE_EQUAL(16, manifest.offsets_snapshots_by_partition.size());
+
+    // Clear the cluster and restore.
+    raft0 = nullptr;
+    restart(wipe::yes);
+    RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+        return app.storage.local().get_cluster_uuid().has_value();
+    });
+
+    auto recover_err = app.controller->get_cluster_recovery_manager()
+                         .local()
+                         .initialize_recovery(bucket)
+                         .get();
+    BOOST_REQUIRE(recover_err.has_value());
+    BOOST_REQUIRE_EQUAL(recover_err.value(), cluster::errc::success);
+    RPTEST_REQUIRE_EVENTUALLY(30s, [this] {
+        auto latest_recovery = app.controller->get_cluster_recovery_table()
+                                 .local()
+                                 .current_recovery();
+        return latest_recovery.has_value()
+               && latest_recovery.value().get().stage
+                    == cluster::recovery_stage::complete;
+    });
+    auto controller_prt = app.partition_manager.local().get(
+      model::controller_ntp);
+    raft0 = controller_prt->raft();
+    validate_group_counts_exactly(num_groups_per_ntp).get();
+
+    auto stages = read_recovery_stages(*controller_prt).get();
+    auto expected_stages = std::vector<cluster::recovery_stage>{
+      cluster::recovery_stage::initialized,
+      cluster::recovery_stage::recovered_cluster_config,
+      cluster::recovery_stage::recovered_remote_topic_data,
+      cluster::recovery_stage::recovered_controller_snapshot,
+      cluster::recovery_stage::recovered_offsets_topic,
+      cluster::recovery_stage::recovered_tx_coordinator,
+      cluster::recovery_stage::complete};
+    BOOST_REQUIRE_EQUAL(stages, expected_stages);
 }

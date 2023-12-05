@@ -553,6 +553,11 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
                 err));
             co_return;
         }
+        auto errc = co_await _recovery_manager.replicate_update(
+          synced_term, recovery_stage::recovered_offsets_topic);
+        if (errc != cluster::errc::success) {
+            co_return;
+        }
     }
 
     if (!co_await sync_in_term(term_as, synced_term)) {
