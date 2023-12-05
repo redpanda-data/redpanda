@@ -534,6 +534,7 @@ private:
 
     voter_priority next_target_priority();
     voter_priority get_node_priority(vnode) const;
+    void maybe_update_leader(vnode request_node);
 
     /**
      * Return true if there is no state backing this consensus group i.e. there
