@@ -100,6 +100,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
@@ -1747,6 +1748,11 @@ admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
 
     auto username = security::credential_user(doc["username"].GetString());
 
+    if (!security::validate_scram_username(username())) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Invalid SCRAM username {{{}}}", username()));
+    }
+
     if (is_no_op_user_write(
           _controller->get_credential_store().local(), username, credential)) {
         vlog(
@@ -1786,7 +1792,12 @@ admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    auto user = security::credential_user(req->param["user"]);
+    ss::sstring user_v;
+    if (!ss::httpd::connection::url_decode(req->param["user"], user_v)) {
+        throw ss::httpd::bad_param_exception{fmt::format(
+          "Invalid parameter 'user' got {{{}}}", req->param["user"])};
+    }
+    auto user = security::credential_user(user_v);
 
     if (!_controller->get_credential_store().local().contains(user)) {
         vlog(logger.debug, "User '{}' already gone during deletion", user);
@@ -1813,7 +1824,12 @@ admin_server::update_user_handler(std::unique_ptr<ss::httpd::request> req) {
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    auto user = security::credential_user(req->param["user"]);
+    ss::sstring user_v;
+    if (!ss::httpd::connection::url_decode(req->param["user"], user_v)) {
+        throw ss::httpd::bad_param_exception{fmt::format(
+          "Invalid parameter 'user' got {{{}}}", req->param["user"])};
+    }
+    auto user = security::credential_user(user_v);
 
     auto doc = parse_json_body(*req);
 
