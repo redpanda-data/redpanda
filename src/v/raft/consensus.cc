@@ -1894,19 +1894,22 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (request_metadata.term > _term) {
         vlog(
           _ctxlog.debug,
-          "Append entries request term:{} is greater than current: {}. "
-          "Setting "
-          "new term",
+          "Append entries request term: {} is greater than current: {}. "
+          "Setting new term",
           request_metadata.term,
           _term);
         _term = request_metadata.term;
         _voted_for = {};
+        if (unlikely(_leader_id != r.source_node())) {
+            _leader_id = r.source_node();
+            _follower_reply.broadcast();
+            trigger_leadership_notification();
+        }
+
         return do_append_entries(std::move(r));
     }
-
     // raft.pdf:If AppendEntries RPC received from new leader: convert to
     // follower (§5.2)
-    _vstate = vote_state::follower;
     if (unlikely(_leader_id != r.source_node())) {
         _leader_id = r.source_node();
         _follower_reply.broadcast();
@@ -2299,6 +2302,11 @@ consensus::do_install_snapshot(install_snapshot_request r) {
     if (r.term > _term) {
         _term = r.term;
         _voted_for = {};
+        if (unlikely(_leader_id != r.source_node())) {
+            _leader_id = r.source_node();
+            _follower_reply.broadcast();
+            trigger_leadership_notification();
+        }
         do_step_down("install_snapshot_term_greater");
         co_return co_await do_install_snapshot(std::move(r));
     }
