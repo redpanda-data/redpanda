@@ -16,6 +16,7 @@
 #include "cluster/tx_coordinator_mapper.h"
 #include "cluster/tx_hash_ranges.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -263,7 +264,7 @@ tx_manager_migrator::tx_manager_migrator(
   ss::sharded<partition_leaders_table>& leaders,
   model::node_id self,
   int16_t internal_topic_replication_factor,
-  int32_t requested_partition_count)
+  config::binding<int> requested_partition_count)
   : _topics_frontend(topics_frontend)
   , _controller_api(controller_api)
   , _topics(topics)
@@ -283,11 +284,13 @@ tx_manager_migrator::tx_manager_migrator(
       leaders,
       self)
   , _internal_topic_replication_factor(internal_topic_replication_factor)
-  , _requested_partition_count(requested_partition_count) {}
+  , _manager_partition_count(std::move(requested_partition_count)) {}
 
 std::chrono::milliseconds tx_manager_migrator::default_timeout = 30s;
 
 ss::future<std::error_code> tx_manager_migrator::migrate() {
+    // snapshot partition count for current migration
+    _requested_partition_count = _manager_partition_count();
     migration_step current_step = migration_step::create_new_temp_topic;
 
     const auto current_topic_md = _topics.local().get_topic_metadata_ref(

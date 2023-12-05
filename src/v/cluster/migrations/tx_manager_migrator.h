@@ -12,6 +12,7 @@
 #include "cluster/migrations/tx_manager_migrator_types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/tx_manager_migrator_service.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -168,7 +169,7 @@ public:
       ss::sharded<partition_leaders_table>& leaders,
       model::node_id self,
       int16_t internal_topic_replication_factor,
-      int32_t requested_partition_count);
+      config::binding<int> requested_partition_count);
 
     ss::future<std::error_code> migrate();
 
@@ -212,6 +213,7 @@ private:
     tx_manager_read_router _read_router;
     tx_manager_replicate_router _replicate_router;
     int16_t _internal_topic_replication_factor;
+    config::binding<int> _manager_partition_count;
     int32_t _requested_partition_count;
     ss::abort_source _as;
 };
