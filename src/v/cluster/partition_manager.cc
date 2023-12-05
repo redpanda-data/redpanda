@@ -351,7 +351,8 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
               return ss::now();
           }
       })
-      .finally([partition] {}); // in the end remove partition
+      .finally([partition, gate_guard = std::move(guard)] {
+      }); // in the end remove partition
 }
 
 ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
@@ -370,7 +371,7 @@ ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
     _ntp_table.erase(ntp);
     _raft_table.erase(partition->group());
 
-    return do_shutdown(partition);
+    return do_shutdown(partition).finally([gate_guard = std::move(guard)] {});
 }
 
 uint64_t partition_manager::upload_backlog_size() const {
