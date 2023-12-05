@@ -181,6 +181,20 @@ void partition_leaders_table::update_partition_leader(
             return;
         }
 
+        if (
+          it->second.update_term == term
+          && it->second.current_leader.has_value() && leader_id.has_value()
+          && it->second.current_leader != leader_id) {
+            vlog(
+              clusterlog.error,
+              "invalid leadership update for {}, current term: {} "
+              "current_leader: {}, reported leader: {}",
+              ntp,
+              it->second.current_leader,
+              leader_id);
+            return;
+        }
+
         // if current leader has value, store it as a previous leader
         if (it->second.current_leader) {
             it->second.previous_leader = it->second.current_leader;
