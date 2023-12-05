@@ -99,6 +99,7 @@ ss::future<std::error_code> transform_batches(
               source_ntp,
               read_result.ec);
             co_await ss::sleep_abortable(1s, as);
+            continue;
         }
         if (read_result.batches.empty()) {
             vlog(
@@ -117,6 +118,7 @@ ss::future<std::error_code> transform_batches(
                 co_return errc::success;
             }
             co_await ss::sleep_abortable(1s, as);
+            continue;
         }
         const auto batch_last_offset = read_result.batches.back().last_offset();
         vlog(
