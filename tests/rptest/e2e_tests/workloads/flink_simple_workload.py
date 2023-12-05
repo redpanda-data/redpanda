@@ -19,35 +19,32 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Dict, Union, List
 
-from pyflink.common import Types, Time
+from pyflink.common import Types, Configuration
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors.kafka import FlinkKafkaProducer, \
     FlinkKafkaConsumer, DeserializationSchema
 from pyflink.datastream.formats.json import JsonRowSerializationSchema, \
     JsonRowDeserializationSchema
-from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext
-from pyflink.datastream.state import ValueStateDescriptor, StateTtlConfig
 
 
-@ dataclass(kw_only=True)
+@dataclass(kw_only=True)
 class WorkloadConfig:
     # Default values are set for CDT run inside EC2 instance
-    connector_path: str = "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar",
-    logger_path: str = "/opt/flink/log",
-    log_level: str = "DEBUG",
-    producer_group: str = "flink_produce_group",
-    consumer_group: str = "flink_consume_group",
-    topic_name: str = "flink_workload_topic",
-    msg_size: int = 4096,
+    connector_path: str = "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
+    logger_path: str = "/workloads"
+    log_level: str = "DEBUG"
+    producer_group: str = "flink_group"
+    consumer_group: str = "flink_group"
+    topic_name: str = "flink_workload_topic"
+    msg_size: int = 4096
     count: int = 1000
     # This should be updated to value from self.redpanda.brokers()
-    brokers: str = "localhost:9092",
+    brokers: str = "localhost:9092"
 
 
-def setup_logger(path, level):
+def setup_logger(logfilepath, level):
     # Simple file logger
-    filename = f"{os.path.basename(__file__).split('.')[0]}.log"
-    handler = logging.FileHandler(os.path.join(path, filename))
+    handler = logging.FileHandler(logfilepath)
     handler.setFormatter(
         logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
@@ -59,50 +56,35 @@ def setup_logger(path, level):
     return logger
 
 
-class MessageConsumer(KeyedProcessFunction):
+class MessageConsumer:
     """
         Simple consumer based on Apache example.
         Receives a message and counts characters
     """
     def __init__(self, logger):
         self.logger = logger
-        self.state = None
+        self.count = 0
         self._message_count = 0
         self.last_message_time = time.time()
 
-    def open(self, runtime_context: RuntimeContext):
-        self.logger.info("MessageConsumer process started")
-        # Create descriptor for the saved state
-        state_descriptor = ValueStateDescriptor("character_count", Types.INT())
-        state_ttl_config = StateTtlConfig \
-            .new_builder(Time.seconds(1)) \
-            .set_update_type(StateTtlConfig.UpdateType.OnReadAndWrite) \
-            .disable_cleanup_in_background() \
-            .build()
-        state_descriptor.enable_time_to_live(state_ttl_config)
-        self.state = runtime_context.get_state(state_descriptor)
-
-    def process_element(self, value, ctx: 'KeyedProcessFunction.Context'):
-        # retrieve the current character count
-        current = self.state.value()
-        if current is None:
-            current = 0
-
+    def process_element(self, value, ctx):
         # update and save
         # Count chars and add it to total
-        chars = len(value[1])
-        current += chars
-        # save it
-        self.state.update(current)
-        # Log and save time received
-        self.logger.debug(f"...received {chars} chars, total: {current}")
-        self.time = time.time()
+        _dict = value.as_dict()
+        # The default field name will be f0
+        chars = len(_dict['f0'])
+        self.count += chars
 
         # increment message count
         self._message_count += 1
 
-        # return
-        yield value[0], current
+        # Log and save time received
+        self.logger.debug(f"...received {chars} chars, "
+                          f"total: {self.count}, "
+                          f"total messages: {self._message_count}")
+        self.last_message_time = time.time()
+
+        return value, ctx
 
     def get_message_count(self):
         return self._message_count
@@ -116,15 +98,15 @@ class MyKafkaConsumer(FlinkKafkaConsumer):
     """
     def __init__(self,
                  logger,
-                 topics: Union[str, List[str]] = "test_topic",
+                 topics: Union[str, List[str]] = "flink_workload_topic",
                  deserialization_schema: DeserializationSchema = None,
                  properties: Dict = {},
                  message_count: int = 0,
                  timeout: int = 120):
-        super(MyKafkaConsumer, self).__init__(
-            topics=topics,
-            deserialization_schema=deserialization_schema,
-            properties=properties)
+        super(MyKafkaConsumer,
+              self).__init__(topics=topics,
+                             deserialization_schema=deserialization_schema,
+                             properties=properties)
         self.message_count = message_count
         self.timeout = timeout
         self.logger = logger
@@ -144,26 +126,36 @@ class MyKafkaConsumer(FlinkKafkaConsumer):
                                                args=None,
                                                kwargs=None)
             self.run_thread.start()
+            self.logger.info("Consumer thread started")
 
         # check if message count or timeout in consumer is reached
         _now = time.time()
-        if self.message_count <= self.consumer.get_message_count() or \
+        _count = self.consumer.get_message_count()
+        if self.message_count <= _count or \
                 _now - self.consumer.last_message_time > self.timeout:
             self.run_thread.get_java_function().cancel()
-            self.run_thread.join()
-
+        else:
+            self.logger.info(
+                f"Still running. Message total: {self.message_count}")
         return
 
 
 class FlinkWorkload:
     def __init__(self, config_override):
+        # Serialize config
         self.config = WorkloadConfig(**config_override)
-        self.logger = setup_logger(self.config.logger_path,
-                                   self.config.log_level)
+        # Create logger
+        filename = f"{os.path.basename(__file__).split('.')[0]}.log"
+        logfile = os.path.join(self.config.logger_path, filename)
+        self.logger = setup_logger(logfile, self.config.log_level)
 
     def setup(self):
         # Initialize
-        self.env = StreamExecutionEnvironment.get_execution_environment()
+        config = Configuration()
+        # This is required for ducktape EC2 run
+        config.set_string("python.client.executable", "python3")
+        config.set_string("python.executable", "python3")
+        self.env = StreamExecutionEnvironment.get_execution_environment(config)
         self.env.add_jars(self.config.connector_path)
         self._basic_properties = {
             'bootstrap.servers': self.config.brokers,
@@ -173,8 +165,9 @@ class FlinkWorkload:
         self.messages = []
 
     def _generate_message(self):
-        return ''.join(random.choices(
-            string.ascii_letters + string.digits, k=self.config.msg_size))
+        return ''.join(
+            random.choices(string.ascii_letters + string.digits,
+                           k=self.config.msg_size))
 
     def task_produce(self):
         """
@@ -187,7 +180,7 @@ class FlinkWorkload:
             - execute producer
         """
         # Prepare data to be sent
-        _messages = [(self._generate_message(),)
+        _messages = [(self._generate_message(), )
                      for i in range(self.config.count)]
         ds = self.env.from_collection(_messages, type_info=self.type_info)
 
@@ -203,8 +196,7 @@ class FlinkWorkload:
         kafka_producer = FlinkKafkaProducer(
             topic=self.config.topic_name,
             serialization_schema=serialization_schema,
-            producer_config=_properties
-        )
+            producer_config=_properties)
 
         # Output type of ds must be RowTypeInfo
         ds.add_sink(kafka_producer)
@@ -231,10 +223,10 @@ class FlinkWorkload:
 
         # Create my consumer
         my_consumer = MyKafkaConsumer(
-            self.config.topic_name,
+            self.logger,
+            topics=self.config.topic_name,
             deserialization_schema=deserialization_schema,
-            properties=properties
-        )
+            properties=properties)
         # Add source and link message consumer
         self.env.add_source(my_consumer).process(
             my_consumer.get_message_consumer(), self.type_info)
@@ -282,10 +274,6 @@ class FlinkWorkload:
 
 
 if __name__ == '__main__':
-    # Temp log that prints to stdout
-    log = logging.basicConfig(stream=sys.stdout,
-                              level=logging.INFO,
-                              format="%(message)s")
     # Load config if specified
     if len(sys.argv) > 1:
         # Validate arguments in a quick and dirty way.
@@ -293,10 +281,10 @@ if __name__ == '__main__':
         # there is more than one argument
         try:
             [filename] = sys.argv[1:]
-        except Exception:
-            log.error("Wrong number of arguments."
-                      "Should be one with path to flink_workload_conf.json")
-            sys.exit(1)
+        except Exception as e:
+            raise RuntimeError("Wrong number of arguments."
+                               "Should be one with path to "
+                               "flink_workload_conf.json") from e
     else:
         # No config path provided, just use defaults
         filename = "/workloads/flink_workload_config.json"
@@ -321,9 +309,8 @@ if __name__ == '__main__':
         # Or just all of the tasks
         workload.run_all_tasks()
 
-    except Exception:
+    except Exception as e:
         # Do not re-throw not to cause a commoution
-        log.error("Workload run failed")
-        sys.exit(1)
+        raise RuntimeError("Workload run failed") from e
     finally:
         workload.cleanup()

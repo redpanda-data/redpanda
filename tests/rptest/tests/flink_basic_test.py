@@ -9,6 +9,7 @@
 from ducktape.mark import ignore
 
 from rptest.clients.types import TopicSpec
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.flink import FlinkService
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -19,27 +20,42 @@ class FlinkBasicTests(RedpandaTest):
         super(FlinkBasicTests, self).__init__(test_context, log_level="trace")
 
         # Prepare FlinkService
-        self.topics = [TopicSpec()]
+        self.topic_name = "flink_workload_topic"
+        self.topics = [TopicSpec(name=self.topic_name)]
         self.flink = FlinkService(test_context, self.redpanda, self.topic)
-
+        # Prepare client
+        config = self.redpanda.security_config()
+        user = config.get("sasl_plain_username")
+        passwd = config.get("sasl_plain_password")
+        protocol = config.get("security_protocol", "SASL_PLAINTEXT")
+        self.kafkacli = KafkaCliTools(self.redpanda,
+                                      user=user,
+                                      passwd=passwd,
+                                      protocol=protocol)
         return
+
+    def tearDown(self):
+        self.kafkacli.delete_topic(self.topic)
+        return super().tearDown()
 
     @ignore
     def test_basic_workload(self):
+        # Currently test is failed on data processing
+
         # Start Flink
         self.flink.start()
 
         # Load python workload to target node
         # Hardcoded file
-        # TODO: Implement simple workload
-        _workload = "/home/ubuntu/tests/rptests/e2e_tests/workloads/" \
+        # TODO: Workload manager with workload config management
+        _workload = "/home/ubuntu/tests/rptest/e2e_tests/workloads/" \
                     "flink_simple_workload.py"
         _workload_config = {
             "log_level": "DEBUG",
             "brokers": self.redpanda.brokers(),
             "producer_group": "flink_produce_group",
             "consumer_group": "flink_consume_group",
-            "topic_name": "flink_workload_topic",
+            "topic_name": self.topic_name,
             "msg_size": 4096,
             "count": 10
         }
