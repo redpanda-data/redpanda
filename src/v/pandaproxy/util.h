@@ -34,7 +34,9 @@ public:
       : _func{std::move(func)} {}
     ss::future<> operator()() {
         if (likely(_started_sem.available_units() != 0)) {
-            return _started_sem.wait();
+            // Ensure we can get a unit that the oneshot has completed
+            // then return the units.w:
+            return ss::get_units(_started_sem, 1).discard_result();
         }
         auto units = ss::consume_units(_started_sem, 1);
         return _func().then_wrapped(
