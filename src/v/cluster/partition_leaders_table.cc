@@ -184,12 +184,14 @@ void partition_leaders_table::update_partition_leader(
         if (
           it->second.update_term == term
           && it->second.current_leader.has_value() && leader_id.has_value()
-          && it->second.current_leader != leader_id) {
+          && it->second.current_leader != leader_id
+          && term > model::term_id{1}) {
             vlog(
               clusterlog.error,
               "invalid leadership update for {}, current term: {} "
               "current_leader: {}, reported leader: {}",
               ntp,
+              term,
               it->second.current_leader,
               leader_id);
             return;
