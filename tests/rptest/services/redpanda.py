@@ -1076,9 +1076,6 @@ class RedpandaServiceBase(Service):
                         counts[idx] += int(sample.value)
         return all(map(lambda count: count == 0, counts.values()))
 
-    def node_id(self, node, force_refresh=False, timeout_sec=30):
-        pass
-
     def partitions(self, topic_name=None):
         """
         Return partition metadata for the topic.
