@@ -167,7 +167,10 @@ public:
       ss::sharded<rpc::connection_cache>& connection_cache,
       ss::sharded<partition_leaders_table>& leaders,
       model::node_id self,
-      int16_t internal_topic_replication_factor);
+      int16_t internal_topic_replication_factor,
+      int32_t requested_partition_count);
+
+    ss::future<std::error_code> migrate();
 
     ss::future<std::error_code> migrate(uint32_t new_partition_count);
 
@@ -184,14 +187,12 @@ private:
         finished,
     };
 
-    ss::future<std::error_code>
-    create_topic(model::topic_namespace_view topic, uint32_t partition_count);
+    ss::future<std::error_code> create_topic(model::topic_namespace_view topic);
 
-    ss::future<std::error_code> rehash_and_write_partition_data(
-      uint32_t target_partition_count, model::partition_id source_partition_id);
+    ss::future<std::error_code>
+    rehash_and_write_partition_data(model::partition_id source_partition_id);
     ss::future<std::error_code> rehash_chunk(
       model::partition_id source_partition_id,
-      uint32_t target_partition_count,
       fragmented_vector<model::record_batch> batches);
 
     ss::future<std::error_code>
@@ -211,6 +212,7 @@ private:
     tx_manager_read_router _read_router;
     tx_manager_replicate_router _replicate_router;
     int16_t _internal_topic_replication_factor;
+    int32_t _requested_partition_count;
     ss::abort_source _as;
 };
 } // namespace cluster

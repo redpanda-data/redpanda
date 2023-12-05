@@ -262,7 +262,8 @@ tx_manager_migrator::tx_manager_migrator(
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<partition_leaders_table>& leaders,
   model::node_id self,
-  int16_t internal_topic_replication_factor)
+  int16_t internal_topic_replication_factor,
+  int32_t requested_partition_count)
   : _topics_frontend(topics_frontend)
   , _controller_api(controller_api)
   , _topics(topics)
@@ -281,12 +282,12 @@ tx_manager_migrator::tx_manager_migrator(
       connection_cache,
       leaders,
       self)
-  , _internal_topic_replication_factor(internal_topic_replication_factor) {}
+  , _internal_topic_replication_factor(internal_topic_replication_factor)
+  , _requested_partition_count(requested_partition_count) {}
 
 std::chrono::milliseconds tx_manager_migrator::default_timeout = 30s;
 
-ss::future<std::error_code>
-tx_manager_migrator::migrate(uint32_t new_partition_count) {
+ss::future<std::error_code> tx_manager_migrator::migrate() {
     migration_step current_step = migration_step::create_new_temp_topic;
 
     const auto current_topic_md = _topics.local().get_topic_metadata_ref(
@@ -307,9 +308,8 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
               "skipping tx manager topic migration, no previous tx manager "
               "topic "
               "is present",
-              new_partition_count);
-            co_return co_await create_topic(
-              model::tx_manager_nt, new_partition_count);
+              _requested_partition_count);
+            co_return co_await create_topic(model::tx_manager_nt);
         }
         /**
          * Temporary topic exists but tx_manager topic was deleted, migration
@@ -342,13 +342,15 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
     } else {
         // no temp topic exists, and we have a tx manager topic already, this
         // should initiate a migration if there is anything to migrate
-        if (current_partition_count == new_partition_count) {
+        if (
+          current_partition_count
+          == static_cast<size_t>(_requested_partition_count)) {
             vlog(
               logger.info,
               "current partition count {} is equal to desired partition count "
               "{}, doing nothing",
               current_partition_count,
-              new_partition_count);
+              _requested_partition_count);
 
             co_return errc::success;
         }
@@ -358,7 +360,7 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
       logger.info,
       "starting tx manager topic migration from {} to {} partitions",
       current_partition_count,
-      new_partition_count);
+      _requested_partition_count);
 
     while (current_step != migration_step::finished) {
         vlog(
@@ -368,8 +370,7 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
             if (_topics.local().contains(temporary_tx_manager_topic)) {
                 co_await delete_topic(temporary_tx_manager_topic);
             }
-            co_await create_topic(
-              temporary_tx_manager_topic, new_partition_count);
+            co_await create_topic(temporary_tx_manager_topic);
             current_step = migration_step::rehash_tx_manager_topic;
             break;
         }
@@ -378,9 +379,8 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
               boost::irange<model::partition_id>(
                 model::partition_id(0),
                 model::partition_id(current_partition_count)),
-              [this, new_partition_count](model::partition_id p_id) {
-                  return rehash_and_write_partition_data(
-                    new_partition_count, p_id);
+              [this](model::partition_id p_id) {
+                  return rehash_and_write_partition_data(p_id);
               });
 
             auto success = std::all_of(
@@ -415,8 +415,7 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
             break;
         }
         case migration_step::create_new_tx_manager_topic: {
-            auto ec = co_await create_topic(
-              model::tx_manager_nt, new_partition_count);
+            auto ec = co_await create_topic(model::tx_manager_nt);
             if (ec) {
                 co_return ec;
             }
@@ -428,13 +427,13 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
               temporary_tx_manager_topic);
             if (
               temp_topic_md.value().get().get_assignments().size()
-              != new_partition_count) {
+              != static_cast<size_t>(_requested_partition_count)) {
                 co_return errc::topic_invalid_partitions;
             }
             auto results = co_await ssx::parallel_transform(
               boost::irange<model::partition_id>(
                 model::partition_id(0),
-                model::partition_id(new_partition_count)),
+                model::partition_id(_requested_partition_count)),
               [this](model::partition_id p_id) {
                   return copy_from_temporary_to_tx_manager_topic(p_id);
               });
@@ -479,17 +478,17 @@ tx_manager_migrator::migrate(uint32_t new_partition_count) {
 
 // create new temporary topic with updated number of partitions
 
-ss::future<std::error_code> tx_manager_migrator::create_topic(
-  model::topic_namespace_view tp_ns, uint32_t partition_count) {
+ss::future<std::error_code>
+tx_manager_migrator::create_topic(model::topic_namespace_view tp_ns) {
     vlog(
       logger.info,
       "Creating topic {} with {} partitions",
       tp_ns,
-      partition_count);
+      _requested_partition_count);
 
     auto result = co_await _topics_frontend.local().autocreate_topics(
       {create_topic_configuration(
-        tp_ns, partition_count, _internal_topic_replication_factor)},
+        tp_ns, _requested_partition_count, _internal_topic_replication_factor)},
       default_timeout);
     vassert(
       result.size() == 1,
@@ -507,7 +506,7 @@ ss::future<std::error_code> tx_manager_migrator::create_topic(
 
 ss::future<std::error_code>
 tx_manager_migrator::rehash_and_write_partition_data(
-  uint32_t new_partition_count, model::partition_id source_partition_id) {
+  model::partition_id source_partition_id) {
     model::ntp source_ntp(
       model::kafka_internal_namespace,
       model::tx_manager_nt.tp,
@@ -518,21 +517,19 @@ tx_manager_migrator::rehash_and_write_partition_data(
       std::move(source_ntp),
       default_timeout,
       _as,
-      [this, source_partition_id, new_partition_count](
-        fragmented_vector<model::record_batch> batches) {
-          return rehash_chunk(
-            source_partition_id, new_partition_count, std::move(batches));
+      [this,
+       source_partition_id](fragmented_vector<model::record_batch> batches) {
+          return rehash_chunk(source_partition_id, std::move(batches));
       });
 }
 
 ss::future<std::error_code> tx_manager_migrator::rehash_chunk(
   model::partition_id source_partition_id,
-  uint32_t target_partition_count,
   fragmented_vector<model::record_batch> batches) {
     absl::
       flat_hash_map<model::partition_id, fragmented_vector<model::record_batch>>
         target_partition_batches;
-    target_partition_batches.reserve(target_partition_count);
+    target_partition_batches.reserve(_requested_partition_count);
     for (auto& b : batches) {
         // we are not interested in batches not related with tx coordinator
         // stm
@@ -541,7 +538,7 @@ ss::future<std::error_code> tx_manager_migrator::rehash_chunk(
         }
         auto tx_id = read_transactional_id(b);
         auto target_partition_id = get_tx_coordinator_partition(
-          get_tx_id_hash(tx_id), target_partition_count);
+          get_tx_id_hash(tx_id), _requested_partition_count);
         vlog(
           logger.trace,
           "Moving {} transactional id from partition {} to partition {}",

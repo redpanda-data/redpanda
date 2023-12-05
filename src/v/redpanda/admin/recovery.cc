@@ -26,10 +26,8 @@ void admin_server::register_recovery_mode_routes() {
     register_route<superuser>(
       ss::httpd::recovery_json::migrate_tx_manager,
       [this](std::unique_ptr<ss::http::request>) {
-          return _tx_manager_migrator.get()
-            ->migrate(
-              config::shard_local_cfg().transaction_coordinator_partitions())
-            .then([](std::error_code ec) {
+          return _tx_manager_migrator.get()->migrate().then(
+            [](std::error_code ec) {
                 if (ec) {
                     throw ss::httpd::base_exception(
                       fmt::format("Migration error: {}", ec.message()),
