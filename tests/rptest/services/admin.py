@@ -1193,3 +1193,7 @@ class Admin:
 
     def migrate_tx_manager_in_recovery(self, node):
         return self._request("POST", "recovery/migrate_tx_manager", node=node)
+
+    def get_tx_manager_recovery_status(self,
+                                       node: Optional[ClusterNode] = None):
+        return self._request("GET", "recovery/migrate_tx_manager", node=node)
