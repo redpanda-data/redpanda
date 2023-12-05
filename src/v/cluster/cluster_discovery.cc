@@ -165,7 +165,7 @@ cluster_discovery::dispatch_node_uuid_registration_to_seeds() {
               });
         } catch (...) {
             vlog(
-              clusterlog.debug,
+              clusterlog.warn,
               "Error registering node UUID {}, retrying: {}",
               _node_uuid,
               std::current_exception());
@@ -173,7 +173,7 @@ cluster_discovery::dispatch_node_uuid_registration_to_seeds() {
         }
         if (r.has_error()) {
             vlog(
-              clusterlog.debug,
+              clusterlog.warn,
               "Error registering UUID {}: {}, retrying",
               _node_uuid,
               r.error().message());
@@ -181,7 +181,7 @@ cluster_discovery::dispatch_node_uuid_registration_to_seeds() {
         }
         if (!r.has_value()) {
             vlog(
-              clusterlog.debug,
+              clusterlog.warn,
               "Error registering node UUID {} - {}, retrying",
               _node_uuid,
               r.error().message());
@@ -190,7 +190,7 @@ cluster_discovery::dispatch_node_uuid_registration_to_seeds() {
         auto& reply = r.value();
         if (!reply.success) {
             vlog(
-              clusterlog.debug,
+              clusterlog.warn,
               "Error registering node UUID {} received failure response, "
               "retrying",
               _node_uuid);
@@ -250,7 +250,7 @@ cluster_discovery::request_cluster_bootstrap_info_single(
                 co_return std::move(reply_result.value());
             }
             vlog(
-              clusterlog.debug,
+              clusterlog.warn,
               "Cluster bootstrap info failed from {} with {}",
               addr,
               reply_result.error());
