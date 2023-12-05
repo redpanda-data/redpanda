@@ -57,7 +57,7 @@ class KgoRepeaterSelfTest(RedpandaTest):
         super().__init__(*args, num_brokers=3, **kwargs)
 
     @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=5)
     def test_kgo_repeater(self):
         topic = 'test'
         self.client().create_topic(
@@ -67,6 +67,7 @@ class KgoRepeaterSelfTest(RedpandaTest):
                       segment_bytes=1024 * 1024))
         with repeater_traffic(context=self.test_context,
                               redpanda=self.redpanda,
+                              num_nodes=2,
                               topic=topic,
                               msg_size=4096,
                               workers=1) as repeater:
