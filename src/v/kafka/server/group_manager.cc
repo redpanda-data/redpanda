@@ -717,6 +717,20 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
         kafka_r.ntp = offsets_ntp;
         auto& kafka_data = kafka_r.data;
         kafka_data.group_id = kafka::group_id(g.group_id);
+        auto group = get_group(kafka_data.group_id);
+        if (group) {
+            // The group already exists. Assume that means someone has already
+            // begun using ths group, and we can't overwrite the commits since
+            // this is a destructive operation.
+            vlog(
+              klog.info,
+              "Skipping restore of group {} from snapshot on {}, already "
+              "exists in state {}",
+              kafka_r.data.group_id,
+              offsets_ntp,
+              group->state());
+            continue;
+        }
 
         auto& kafka_topics = kafka_data.topics;
         for (auto& t : g.offsets) {

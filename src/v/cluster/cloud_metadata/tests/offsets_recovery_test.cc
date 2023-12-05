@@ -506,6 +506,75 @@ FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
     BOOST_REQUIRE_EQUAL(num_groups_total, num_groups);
 }
 
+FIXTURE_TEST(
+  test_offsets_recoverer_skips_existing_groups, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    constexpr const auto num_groups = 30;
+    auto [groups_per_ntp, committed_offsets] = create_groups_and_commit(
+      num_groups);
+    auto remote_paths = upload_offsets().get();
+    BOOST_REQUIRE_EQUAL(16, remote_paths.size());
+
+    // Wipe the cluster and restore the groups from the snapshot.
+    restart(should_wipe::yes);
+    make_partitions(1).get();
+    BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
+                    app.coordinator_ntp_mapper.local(),
+                    app.controller->get_topics_frontend().local(),
+                    1)
+                    .get());
+
+    // Wait for the group_manager to report healthy (but empty).
+    absl::flat_hash_map<model::ntp, size_t> empty_group_map;
+    for (const auto& ntp : offset_ntps) {
+        wait_for_leader(ntp).get();
+        empty_group_map[ntp] = 0;
+    }
+    validate_group_counts_eventually(empty_group_map).get();
+
+    // Create the same set of groups without committing any offsets.
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    validate_group_counts_eventually(groups_per_ntp).get();
+
+    // Now run recovery across the partitions using the snapshots.
+    offsets_recoverer recoverer(
+      config::node().node_id().value(),
+      app.cloud_storage_api,
+      app.shadow_index_cache,
+      app.offsets_lookup,
+      app.controller->get_partition_leaders(),
+      app._connection_cache,
+      app._group_manager);
+    auto cleanup = ss::defer([&] { recoverer.stop().get(); });
+    for (int i = 0; i < remote_paths.size(); i++) {
+        offsets_recovery_request req;
+        req.offsets_ntp = {
+          model::kafka_consumer_offsets_nt.ns,
+          model::kafka_consumer_offsets_nt.tp,
+          model::partition_id(i),
+        };
+        req.bucket = bucket;
+        BOOST_REQUIRE_EQUAL(remote_paths[i].size(), 1);
+        req.offsets_snapshot_paths.emplace_back(remote_paths[i][0]());
+        auto reply = recoverer.recover(std::move(req)).get();
+        BOOST_REQUIRE_EQUAL(reply.ec, cluster::errc::success);
+    }
+
+    // Because the groups already existed at recovery time, the offsets
+    // shouldn't be restored.
+    for (const auto& ntp : offset_ntps) {
+        auto snapshot_res
+          = app._group_manager.local().snapshot_groups(ntp).get();
+        BOOST_REQUIRE(snapshot_res.has_value());
+        for (const auto& group : snapshot_res.value().groups) {
+            BOOST_REQUIRE(group.offsets.empty());
+        }
+    }
+}
+
 FIXTURE_TEST(test_upload_dispatch_to_leaders, offsets_recovery_fixture) {
     make_partitions(1).get();
 
