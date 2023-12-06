@@ -165,11 +165,19 @@ class KubectlTool:
         cmd = _kubectl + _kcmd
         return self._cmd(cmd)
 
-    def exec(self, remote_cmd):
+    def exec(self, remote_cmd, pod_name=None):
+        """Execute a command inside of a redpanda pod container.
+
+        :param remote_cmd: string of bash command to run inside of pod container
+        :param pod_name: name of the pod, e.g. 'rp-clo88krkqkrfamptsst0-5', defaults to pod 0
+        """
+
         self._install()
+        if pod_name is None:
+            pod_name = f'rp-{self._cluster_id}-0'
         cmd = [
-            'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
-            f'rp-{self._cluster_id}-0', '--', 'bash', '-c'
+            'kubectl', 'exec', pod_name, f'-n={self._namespace}',
+            '-c=redpanda', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
         return self._cmd(cmd)
 
