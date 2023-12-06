@@ -65,7 +65,7 @@ public:
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<std::vector<ss::sstring>>(
               std::vector<ss::sstring>{
-                {"__audit", "__consumer_offsets", "_schemas"}}),
+                {"__audit_log", "__consumer_offsets", "_schemas"}}),
             config::mock_binding<bool>(true))
           .get();
         // use node status that is not used in test as self is always available
