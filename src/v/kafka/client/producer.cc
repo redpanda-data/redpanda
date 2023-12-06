@@ -105,6 +105,7 @@ ss::future<> producer::stop() {
     co_await _gate.close();
     exit.request_abort();
     co_await std::move(abort);
+    vlog(kclog.debug, "Producer stopped");
 }
 
 ss::future<produce_response::partition>
@@ -137,7 +138,6 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
 
 ss::future<>
 producer::send(model::topic_partition tp, model::record_batch&& batch) {
-    auto gh = _gate.hold();
     auto record_count = batch.record_count();
     vlog(
       kclog.debug,
@@ -148,35 +148,38 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
     return ss::do_with(
              std::move(batch),
              [this, tp](model::record_batch& batch) mutable {
-                 return retry_with_mitigation(
-                   _config.retries(),
-                   _config.retry_base_backoff(),
-                   [this, tp{std::move(tp)}, &batch]() {
-                       return do_send(tp, batch.share());
-                   },
-                   [this](std::exception_ptr ex) {
-                       return _error_handler(std::move(ex))
-                         .handle_exception([](std::exception_ptr ex) {
-                             vlog(
-                               kclog.trace, "Error during mitigation: {}", ex);
-                             // ignore failed mitigation
-                         });
-                   },
-                   _as);
+                 return ss::with_gate(_gate, [this, tp, &batch]() {
+                     return retry_with_mitigation(
+                       _config.retries(),
+                       _config.retry_base_backoff(),
+                       [this, tp{std::move(tp)}, &batch]() {
+                           return do_send(tp, batch.share());
+                       },
+                       [this](std::exception_ptr ex) {
+                           return _error_handler(std::move(ex))
+                             .handle_exception([](std::exception_ptr ex) {
+                                 vlog(
+                                   kclog.trace,
+                                   "Error during mitigation: {}",
+                                   ex);
+                                 // ignore failed mitigation
+                             });
+                       },
+                       _as);
+                 });
              })
       .handle_exception([p_id](std::exception_ptr ex) {
           return make_produce_response(p_id, std::move(ex));
       })
-      .then(
-        [this, tp, record_count, gh](produce_response::partition res) mutable {
-            vlog(
-              kclog.debug,
-              "sent record_batch: {}, {{record_count: {}}}, {}",
-              tp,
-              record_count,
-              res.error_code);
-            get_context(std::move(tp))->handle_response(std::move(res));
-        });
+      .then([this, tp, record_count](produce_response::partition res) mutable {
+          vlog(
+            kclog.debug,
+            "sent record_batch: {}, {{record_count: {}}}, {}",
+            tp,
+            record_count,
+            res.error_code);
+          get_context(std::move(tp))->handle_response(std::move(res));
+      });
 }
 
 } // namespace kafka::client
