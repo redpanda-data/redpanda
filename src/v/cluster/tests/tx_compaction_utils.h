@@ -18,6 +18,20 @@
 namespace cluster {
 
 static ss::logger logger{"random_tx_generator"};
+auto log_manager_housekeeping(ss::shared_ptr<storage::log> log)
+  -> ss::future<> {
+    constexpr auto ret_duration = 10s;
+    auto dummy_as = ss::abort_source{};
+    co_await log->apply_segment_ms();
+    co_await log->housekeeping(storage::housekeeping_config{
+      model::timestamp(model::timestamp::now().value() - ret_duration.count()),
+      std::nullopt,
+      log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      dummy_as,
+      std::nullopt,
+    });
+}
 
 class random_tx_generator {
 public:
@@ -105,10 +119,13 @@ public:
 
         //----- Step 2: Execute ops
         while (!ops.empty()) {
+            auto housekeeping_fut = log_manager_housekeeping(log);
+            ss::yield().get();
             auto op = ops.top();
             op->execute();
             vlog(logger.info, "Executed op: {}", op->debug());
             ops.pop();
+            housekeeping_fut.get();
         }
 
         //---- Step 3: Force a roll and compact the log.
