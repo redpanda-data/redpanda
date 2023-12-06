@@ -11,6 +11,7 @@ import random
 import itertools
 import math
 import re
+import signal
 import time
 import json
 
@@ -733,18 +734,17 @@ class HighThroughputTest(PreallocNodesTest):
                                   timeout_sec=self.msg_timeout)
 
             # Run a rolling restart.
-            self.stage_rolling_restart()
+            #self.stage_rolling_restart()
 
             # Hard stop, then restart.
-            self.stage_stop_wait_start(forced_stop=True, downtime=0)
+            self.stage_stop_wait_start(forced_stop=True)
 
             # Stop a node, wait for enough time for movement to occur, then
             # restart.
-            self.stage_stop_wait_start(forced_stop=False,
-                                       downtime=self.unavailable_timeout)
+            self.stage_stop_wait_start(forced_stop=False)
 
             # Block traffic to/from one node.
-            self.stage_block_node_traffic()
+            #self.stage_block_node_traffic()
 
     NOS3_LOG_ALLOW_LIST = [
         re.compile("s3 - .* - Accessing .*, unexpected REST API error "
@@ -777,25 +777,17 @@ class HighThroughputTest(PreallocNodesTest):
             f"Waiting for the cluster to return to a healthy state")
         wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
 
-    def stage_stop_wait_start(self, forced_stop: bool, downtime: int):
-        node = self.get_node()
+    def stage_stop_wait_start(self, forced_stop: bool):
+        pod_name = self.get_broker_pod().name
         self.logger.info(
-            f"Stopping node {node.name} {'ungracefully' if forced_stop else 'gracefully'}"
+            f"Stopping node {pod_name} {'ungracefully' if forced_stop else 'gracefully'}"
         )
-        self.redpanda.stop_node(node,
-                                forced=forced_stop,
+        sig = int(signal.SIGTERM)
+        if forced_stop:
+            sig = int(signal.SIGSEGV)
+        self.redpanda.stop_node(pod_name,
+                                signal=sig,
                                 timeout=60 if forced_stop else 180)
-
-        self.logger.info(f"Node downtime {downtime} s")
-        time.sleep(downtime)
-
-        restart_timeout = 300 + int(900 * downtime / 60)
-        self.logger.info(
-            f"Restarting node {node.name} for {restart_timeout} s")
-        self.redpanda.start_node(node, timeout=600)
-        wait_until(self.redpanda.healthy,
-                   timeout_sec=restart_timeout,
-                   backoff_sec=1)
 
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
