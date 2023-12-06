@@ -1104,11 +1104,12 @@ class NodeDecommissionSpaceManagementTest(RedpandaTest):
 
         totals = self._kafka_usage()
         self.logger.info(f"totals: {hmb(totals)}")
-
-        to_decommission_id = self.redpanda.node_id(self.redpanda.nodes[3])
+        to_decommission = self.redpanda.nodes[3]
+        to_decommission_id = self.redpanda.node_id(to_decommission)
         Admin(self.redpanda).decommission_broker(to_decommission_id)
         waiter = NodeDecommissionWaiter(self.redpanda,
                                         to_decommission_id,
                                         self.logger,
                                         progress_timeout=60)
         waiter.wait_for_removal()
+        self.redpanda.stop_node(to_decommission)
