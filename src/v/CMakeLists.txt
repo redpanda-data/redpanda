@@ -10,7 +10,7 @@ add_compile_options(-Wall)
 option(REDPANDA_RUN_CLANG_TIDY "Enable clang-tidy checks" OFF)
 if(REDPANDA_RUN_CLANG_TIDY)
     find_program(CLANG_TIDY_COMMAND clang-tidy
-        PATHS ${PROJECT_SOURCE_DIR}/vbuild/llvm/install/bin)
+        HINTS ${PROJECT_SOURCE_DIR}/vbuild/llvm/install/bin)
     if(NOT CLANG_TIDY_COMMAND)
         message(FATAL_ERROR "Could not find clang-tidy program")
     endif()

@@ -57,12 +57,9 @@ set(Redpanda_ENABLE_CLANG_TIDY "ON" CACHE STRING
 
 if(NOT Redpanda_ENABLE_CLANG_TIDY STREQUAL OFF)
   if(Redpanda_ENABLE_CLANG_TIDY STREQUAL FORCE_ON)
-    find_program(CLANG_TIDY_COMMAND clang-tidy
-      PATHS ${PROJECT_SOURCE_DIR}/vbuild/llvm/install/bin
-      REQUIRED)
+    find_program(CLANG_TIDY_COMMAND clang-tidy REQUIRED)
   else()
-    find_program(CLANG_TIDY_COMMAND clang-tidy
-      PATHS ${PROJECT_SOURCE_DIR}/vbuild/llvm/install/bin)
+    find_program(CLANG_TIDY_COMMAND clang-tidy)
   endif()
   if(CLANG_TIDY_COMMAND)
     set(Redpanda_ENABLE_CLANG_TIDY ON)
