@@ -27,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/serde"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sr"
 )
@@ -231,6 +232,9 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					r.Value = record
 				}
 				cl.Produce(context.Background(), r, func(r *kgo.Record, err error) {
+					if isTooLarge := errors.Is(err, kerr.MessageTooLarge); isTooLarge {
+						err = fmt.Errorf("%w Check --max-message-bytes flag or your cluster property 'kafka_batch_max_bytes'", err)
+					}
 					out.MaybeDie(err, "unable to produce record: %v", err)
 					if outf != nil {
 						outfBuf = outf.AppendRecord(outfBuf[:0], r)
