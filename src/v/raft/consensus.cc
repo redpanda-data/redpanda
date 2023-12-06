@@ -1894,24 +1894,19 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (request_metadata.term > _term) {
         vlog(
           _ctxlog.debug,
-          "Append entries request term:{} is greater than current: {}. "
-          "Setting "
-          "new term",
+          "Append entries request term: {} is greater than current: {}. "
+          "Setting new term",
           request_metadata.term,
           _term);
         _term = request_metadata.term;
         _voted_for = {};
+        maybe_update_leader(r.source_node());
+
         return do_append_entries(std::move(r));
     }
-
     // raft.pdf:If AppendEntries RPC received from new leader: convert to
     // follower (§5.2)
-    _vstate = vote_state::follower;
-    if (unlikely(_leader_id != r.source_node())) {
-        _leader_id = r.source_node();
-        _follower_reply.broadcast();
-        trigger_leadership_notification();
-    }
+    maybe_update_leader(r.source_node());
 
     // raft.pdf: Reply false if log doesn’t contain an entry at
     // prevLogIndex whose term matches prevLogTerm (§5.3)
@@ -2151,6 +2146,14 @@ consensus::do_append_entries(append_entries_request&& r) {
       });
 }
 
+void consensus::maybe_update_leader(vnode request_node) {
+    if (unlikely(_leader_id != request_node)) {
+        _leader_id = request_node;
+        _follower_reply.broadcast();
+        trigger_leadership_notification();
+    }
+}
+
 ss::future<install_snapshot_reply>
 consensus::install_snapshot(install_snapshot_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
@@ -2300,8 +2303,10 @@ consensus::do_install_snapshot(install_snapshot_request r) {
         _term = r.term;
         _voted_for = {};
         do_step_down("install_snapshot_term_greater");
+        maybe_update_leader(r.source_node());
         co_return co_await do_install_snapshot(std::move(r));
     }
+    maybe_update_leader(r.source_node());
 
     // Create new snapshot file if first chunk (offset is 0) (§7.2)
     if (r.file_offset == 0) {

@@ -516,6 +516,8 @@ public:
      */
     ss::future<> maybe_flush_log(size_t threshold_bytes);
 
+    inline void maybe_update_leader(vnode request_node);
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
