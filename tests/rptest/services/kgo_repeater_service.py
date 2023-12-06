@@ -21,7 +21,7 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, SaslCredentials
 from rptest.clients.rpk import RpkTool
 
 
@@ -35,6 +35,7 @@ class KgoRepeaterService(Service):
                  context: TestContext,
                  redpanda: RedpandaService,
                  *,
+                 sasl_options: Optional[SaslCredentials] = None,
                  nodes: Optional[list[ClusterNode]] = None,
                  num_nodes: Optional[int] = None,
                  topics: list[str],
@@ -68,6 +69,7 @@ class KgoRepeaterService(Service):
         self.msg_size = msg_size
         self.workers = workers
         self.group_name = group_name
+        self.sasl_options = sasl_options
 
         self.rate_limit_bps_per_node = rate_limit_bps // len(
             self.nodes) if rate_limit_bps else None
@@ -111,6 +113,9 @@ class KgoRepeaterService(Service):
             f"-workers {self.workers} -initial-data-mb {initial_data_mb} "
             f"-group {self.group_name} -remote -remote-port {self.remote_port} "
         )
+
+        if self.sasl_options is not None:
+            cmd += f" -username {self.sasl_options.username} -password {self.sasl_options.password}"
 
         if self.msg_size is not None:
             cmd += f" -payload-size={self.msg_size}"
@@ -246,6 +251,12 @@ class KgoRepeaterService(Service):
 
         def group_ready():
             rpk = RpkTool(self.redpanda)
+
+            if self.sasl_options is not None:
+                rpk = RpkTool(self.redpanda,
+                              username=self.sasl_options.username,
+                              password=self.sasl_options.password,
+                              sasl_mechanism=self.sasl_options.algorithm)
             try:
                 group = rpk.group_describe(self.group_name, summary=True)
             except Exception as e:
