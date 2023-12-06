@@ -418,7 +418,7 @@ read_result::memory_units_t reserve_memory_units(
 static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
-  std::vector<op_context::response_placeholder_ptr> responses,
+  const std::vector<op_context::response_placeholder_ptr>& responses,
   op_context::latency_point start_time) {
     auto range = boost::irange<size_t>(0, results.size());
     if (unlikely(results.size() != responses.size())) {
@@ -439,7 +439,7 @@ static void fill_fetch_responses(
 
     for (auto idx : range) {
         auto& res = results[idx];
-        auto& resp_it = responses[idx];
+        const auto& resp_it = responses[idx];
 
         // error case
         if (unlikely(res.error != error_code::none)) {
@@ -647,8 +647,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
       .then([responses = std::move(fetch.responses),
              start_time = fetch.start_time,
              &octx](std::vector<read_result> results) mutable {
-          fill_fetch_responses(
-            octx, std::move(results), std::move(responses), start_time);
+          fill_fetch_responses(octx, std::move(results), responses, start_time);
       });
 }
 
