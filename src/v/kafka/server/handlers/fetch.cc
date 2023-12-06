@@ -30,6 +30,7 @@
 #include "model/namespace.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
+#include "net/connection.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/semaphore.h"
@@ -41,6 +42,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/when_any.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/util/log.hh>
 
@@ -48,6 +50,7 @@
 #include <fmt/ostream.h>
 
 #include <chrono>
+#include <ranges>
 #include <string_view>
 
 namespace kafka {
@@ -671,6 +674,511 @@ class parallel_fetch_plan_executor final : public fetch_plan_executor::impl {
     }
 };
 
+class fetch_worker {
+public:
+    // Passed from the coordinator shard to fetch workers.
+    // Contains either references to objects local to the fetch worker shard or
+    // copies of data from the coordinator shard.
+    struct shard_local_fetch_context {
+        // True if the results of this fetch will be read on a foreign shard.
+        bool foreign_read;
+        size_t bytes_left;
+        // Specifies the minimum number of bytes this sub-fetch should read
+        // before returning.
+        size_t min_bytes;
+        // If set then the sub-fetch should return by the specified time_point .
+        std::optional<model::timeout_clock::time_point> deadline;
+        // The fetch sub-requests of partitions local to the shard this worker
+        // is running on.
+        std::vector<ntp_fetch_config> requests;
+
+        // References to services local to the shard this worker is running on.
+        // They are protected from deletion by the coordinator.
+        server& srv;
+        cluster::partition_manager& mgr;
+        ss::abort_source& as;
+    };
+
+    explicit fetch_worker(shard_local_fetch_context ctx)
+      : _ctx(std::move(ctx)) {}
+
+    struct worker_result {
+        std::vector<read_result> read_results;
+        // The total amount of bytes read across all results in `read_results`.
+        size_t total_size;
+    };
+
+    ss::future<worker_result> run() {
+        // Set the worker's abort source to be a child of the orchestrator's
+        // abort_source.
+        auto sub_opt = _ctx.as.subscribe([this]() noexcept {
+            _as.request_abort();
+            _completed_waiter_count.signal();
+        });
+
+        if (!sub_opt) {
+            // `_ctx.as` must've already been aborted. Query partitions once
+            // then return.
+            _as.request_abort();
+        }
+
+        co_return co_await do_run().finally([this] {
+            // Ensure all offset waiters have been removed before returning.
+            _as.request_abort();
+            return _waiter_gate.close();
+        });
+    }
+
+private:
+    shard_local_fetch_context _ctx;
+    ss::gate _waiter_gate;
+    ss::abort_source _as;
+
+    // This should roughly correspond to `_request_indexes.size()`. It's used to
+    // wait for partitions to have an offset change so that it's corresponding
+    // request in the fetch can be re-queried.
+    ssx::semaphore _completed_waiter_count{
+      0, "fetch_worker._completed_waiter_count"};
+    // This contains indexes into `_ctx.requests` and is populated by raft
+    // consensus waiters when an offset increases for a partition.
+    std::vector<size_t> _request_indexes;
+    // Contains the last observed value of `consensus->last_visible_index()` for
+    // every request in `_ctx.requests`. Its used to register waiters with
+    // `consensus->visible_offset_monitor()`.
+    std::vector<model::offset> _last_visible_indexes;
+
+    struct query_results {
+        std::vector<model::offset> last_visible_indexes;
+        // Indicates if any `read_result` in `results` has an error.
+        bool has_error;
+        std::vector<read_result> results;
+        size_t total_size;
+    };
+
+    ss::future<query_results>
+    query_requests(std::vector<ntp_fetch_config> requests) {
+        // The last visible indexes need to be populated before partitions
+        // are read. If they are populated afterwards then the
+        // last_visible_index could be updated after the partition is read,
+        // but before the index is queried. This leads to a race condition
+        // where we're waiting for the last_visible_index to change even
+        // though the partition has data we haven't read.
+        //
+        // Note that `last_visible_index` is used instead of the
+        // `commit_offset` as the commit offset won't change when partitions
+        // are produced to without acks=all. The `last_visible_index` more
+        // closely corresponds to the Kafka high watermark as well.
+        std::vector<model::offset> last_visible_indexes(requests.size());
+        std::vector<std::tuple<size_t, model::partition_id>> errored_partitions;
+        size_t total_size{0};
+        bool has_error{false};
+
+        for (size_t i = 0; i < requests.size(); i++) {
+            const auto& req = requests[i];
+            auto part = _ctx.mgr.get(req.ktp());
+            if (!part) {
+                errored_partitions.emplace_back(i, req.ktp().get_partition());
+                continue;
+            }
+            auto consensus = part->raft();
+            if (!consensus) {
+                errored_partitions.emplace_back(i, req.ktp().get_partition());
+                continue;
+            }
+            last_visible_indexes[i] = consensus->last_visible_index();
+        }
+
+        // A read_result needs to be returned for every partition. Hence,
+        // the function can't return before calling
+        // `fetch_ntps_in_parallel`.
+        std::vector<read_result> results = co_await fetch_ntps_in_parallel(
+          _ctx.mgr,
+          _ctx.srv.get_replica_selector(),
+          std::move(requests),
+          _ctx.foreign_read,
+          _ctx.deadline,
+          _ctx.bytes_left,
+          _ctx.srv.memory(),
+          _ctx.srv.memory_fetch_sem());
+
+        // If we weren't able to read the last_visible_index for a partition
+        // before calling `fetch_ntps_in_parallel` then we need to
+        // return with an error for that partition.
+        for (auto [i, partition] : errored_partitions) {
+            results[i] = read_result(error_code::not_leader_for_partition);
+            results[i].partition = partition;
+        }
+
+        for (const auto& r : results) {
+            total_size += r.data_size_bytes();
+            if (r.error != error_code::none) {
+                has_error = true;
+            }
+        }
+
+        co_return query_results{
+          .last_visible_indexes = std::move(last_visible_indexes),
+          .has_error = has_error,
+          .results = std::move(results),
+          .total_size = total_size,
+        };
+    }
+
+    // Registers a `visible_offset_monitor` waiter for every index in
+    // `request_indexes`
+    //
+    // `request_indexes` should contain valid indexes into `_ctx.requests`
+    //
+    // If a registration fails for a given index then the function immediately
+    // returns with that index without registering any further waiters.
+    // Otherwise the function returns std::nullopt to indicate success.
+    std::optional<size_t> register_waiters(const auto& request_indexes) {
+        for (size_t i : request_indexes) {
+            auto part = _ctx.mgr.get(_ctx.requests[i].ktp());
+            // If the partition can't be found then it's since been moved
+            if (!part) {
+                return {i};
+            }
+
+            auto consensus = part->raft();
+            if (!consensus) {
+                return {i};
+            }
+
+            auto offset = model::next_offset(_last_visible_indexes[i]);
+            auto waiter = consensus->visible_offset_monitor()
+                            .wait(offset, model::no_timeout, _as)
+                            // All exceptions are ignored here as this is only
+                            // used to signal the worker that another attempt to
+                            // read the partition should be made.
+                            .handle_exception([](const std::exception_ptr&) {});
+
+            ssx::spawn_with_gate(
+              _waiter_gate, [this, w = std::move(waiter), i]() mutable {
+                  return w.finally([this, i] {
+                      _request_indexes.push_back(i);
+                      _completed_waiter_count.signal();
+                  });
+              });
+        }
+
+        return {};
+    }
+
+    ss::future<worker_result> do_run() {
+        bool first_run{true};
+        // A map of indexes in `requests` to their corresponding index in
+        // `_ctx.requests`.
+        std::vector<size_t> requests_map;
+
+        std::vector<read_result> results;
+        size_t total_size{0};
+
+        for (;;) {
+            std::vector<ntp_fetch_config> requests;
+
+            if (first_run) {
+                requests = _ctx.requests;
+            } else {
+                requests_map.clear();
+
+                for (auto i : _request_indexes) {
+                    requests.push_back(_ctx.requests[i]);
+                    requests_map.push_back(i);
+                }
+
+                _request_indexes.clear();
+                // All `_request_indexes` have been read. Reset counter
+                _completed_waiter_count.consume(
+                  _completed_waiter_count.current());
+            }
+
+            auto q_results = co_await query_requests(std::move(requests));
+            if (first_run) {
+                results = std::move(q_results.results);
+                total_size = q_results.total_size;
+
+                _last_visible_indexes = std::move(
+                  q_results.last_visible_indexes);
+            } else {
+                // Override the older results of the partitions with the newly
+                // queried results.
+                for (size_t i = 0; i < requests_map.size(); i++) {
+                    auto r_i = requests_map[i];
+                    auto& r = results[r_i];
+                    total_size -= r.data_size_bytes();
+                    r = std::move(q_results.results[i]);
+                    total_size += r.data_size_bytes();
+
+                    _last_visible_indexes[r_i]
+                      = q_results.last_visible_indexes[i];
+                }
+            }
+
+            if (
+              total_size >= _ctx.min_bytes || q_results.has_error
+              || _as.abort_requested()) {
+                co_return worker_result{
+                  .read_results = std::move(results),
+                  .total_size = total_size,
+                };
+            }
+
+            std::optional<size_t> has_errored_request;
+            if (first_run) {
+                has_errored_request = register_waiters(
+                  std::ranges::iota_view{0ull, _ctx.requests.size()});
+            } else {
+                has_errored_request = register_waiters(requests_map);
+            }
+
+            if (has_errored_request) {
+                auto r_i = has_errored_request.value();
+                total_size -= results[r_i].data_size_bytes();
+                results[r_i] = read_result(
+                  error_code::not_leader_for_partition);
+                results[r_i].partition
+                  = _ctx.requests[r_i].ktp().get_partition();
+                co_return worker_result{
+                  .read_results = std::move(results),
+                  .total_size = total_size,
+                };
+            }
+
+            co_await _completed_waiter_count.wait();
+
+            if (_as.abort_requested()) {
+                co_return worker_result{
+                  .read_results = std::move(results),
+                  .total_size = total_size,
+                };
+            }
+
+            first_run = false;
+        }
+    }
+};
+
+/*
+ * A fetch exeutor that relies on notifications from raft to determine when to
+ * query partitions rather than querying all partitions at a set polling
+ * interval like the `parallel_fetch_plan_executor`.
+ */
+class nonpolling_fetch_plan_executor final : public fetch_plan_executor::impl {
+public:
+    nonpolling_fetch_plan_executor()
+      : _last_result_size(ss::smp::count, 0) {}
+
+    /**
+     * Executes the supplied `plan` until `octx.should_stop_fetch` returns true.
+     */
+    ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
+        start_worker_aborts(plan);
+
+        co_await log_exceptions(do_execute_plan(octx, std::move(plan)));
+
+        // Send abort signal to workers and wait for all workers to end before
+        // returning.
+        co_await abort_workers().finally(
+          [this] { return _workers_gate.close(); });
+    }
+
+private:
+    ss::future<> do_execute_plan(op_context& octx, fetch_plan plan) {
+        // start fetching from a random shard to make sure that we fetch data
+        // from all the partitions even if we reach fetch message size limit
+        const ss::shard_id start_shard_idx = random_generators::get_int(
+          ss::smp::count - 1);
+        for (size_t i = 0; i < ss::smp::count; ++i) {
+            auto shard = (start_shard_idx + i) % ss::smp::count;
+
+            ssx::spawn_with_gate(_workers_gate, [&]() mutable {
+                return log_exceptions(start_shard_fetch_worker(
+                  octx, std::move(plan.fetches_per_shard[shard]), 0));
+            });
+        }
+
+        for (;;) {
+            co_await progress_conditions(octx);
+
+            if (octx.should_stop_fetch()) {
+                co_return;
+            }
+
+            std::vector<shard_fetch> completed_shard_fetches = std::move(
+              _completed_shard_fetches);
+            _completed_shard_fetches.clear();
+
+            for (auto& sf : completed_shard_fetches) {
+                ssx::spawn_with_gate(
+                  _workers_gate, [this, &octx, sf = std::move(sf)]() mutable {
+                      auto shard = sf.shard;
+                      return log_exceptions(start_shard_fetch_worker(
+                        octx,
+                        std::move(sf),
+                        // Require that a worker returns more data than before.
+                        // Otherwise it'll return right away with the previous
+                        // result.
+                        _last_result_size[shard] + 1));
+                  });
+            }
+        }
+    }
+
+    /**
+     * Creates abort sources for shards with non-empty sub-fetches
+     */
+    void start_worker_aborts(const fetch_plan& plan) {
+        for (const auto& fetch : plan.fetches_per_shard) {
+            if (!fetch.empty()) {
+                _worker_aborts[fetch.shard];
+            }
+        }
+    }
+
+    ss::future<> abort_workers() {
+        return seastar::parallel_for_each(_worker_aborts, [](auto& wa) {
+            auto& [shard, as] = wa;
+            return ss::smp::submit_to(shard, [&as] { as.request_abort(); });
+        });
+    }
+
+    /**
+     * Determines if the should_stop_fetch() condition should be checked again.
+     * The return future is set if;
+     * - octx.deadline has been reached.
+     * - _as has been aborted.
+     * - one of the shard workers has returned results.
+     */
+    ss::future<> progress_conditions(op_context& octx) {
+        ss::promise<> timeout_pr, abort_pr;
+
+        // A connection can close and stop the sharded abort source before we
+        // can subscribe to it. So we check here if that is the case and return
+        // if so.
+        if (!octx.rctx.abort_source().local_is_initialized()) {
+            co_return;
+        }
+
+        auto abort_sub_opt = octx.rctx.abort_source().subscribe(
+          [&abort_pr]() noexcept { abort_pr.set_value(); });
+
+        if (!abort_sub_opt) {
+            abort_pr.set_value();
+        }
+
+        ss::timer<model::timeout_clock> s{
+          [&timeout_pr] { timeout_pr.set_value(); }};
+
+        if (octx.deadline) {
+            s.arm(octx.deadline.value());
+        }
+
+        // Ignoring any exceptions from these futures is fine since they are
+        // only used to signal the coordinator that it should check if the fetch
+        // request should end or not.
+        co_await ss::when_any(
+          ignore_exceptions(_has_completed_shard_fetches.wait()),
+          ignore_exceptions(timeout_pr.get_future()),
+          ignore_exceptions(abort_pr.get_future()));
+    }
+
+    /*
+     * `start_shard_fetch_worker` executes on the coordinator shard. It builds
+     * the `shard_local_fetch_context` struct needed to start the
+     * shard_fetch_worker then makes a cross shard call to the shard fetch
+     * worker if needed.
+     *
+     * It then waits until the shard_fetch_worker completes
+     * and then notifies the fetch coordinator.
+     */
+    ss::future<> start_shard_fetch_worker(
+      op_context& octx, shard_fetch fetch, size_t min_fetch_bytes) {
+        // if over budget skip the fetch.
+        if (octx.bytes_left <= 0) {
+            co_return;
+        }
+        // no requests for this shard, do nothing
+        if (fetch.empty()) {
+            co_return;
+        }
+
+        const bool foreign_read = fetch.shard != ss::this_shard_id();
+
+        fetch_worker::worker_result results
+          = co_await octx.rctx.partition_manager().invoke_on(
+            fetch.shard,
+            [this,
+             shard = fetch.shard,
+             min_fetch_bytes,
+             foreign_read,
+             configs = fetch.requests,
+             &octx](cluster::partition_manager& mgr) mutable
+            -> ss::future<fetch_worker::worker_result> {
+                // Although this and octx are captured by reference across
+                // shards it is safe since they are not modified by any shard
+                // for the duration of the capture and they are protected from
+                // deletion for the duration of the capture by a gate. Both are
+                // used immediately on the foreign shard to access data local to
+                // that shard. This is meant to help avoiding unintended cross
+                // shard access.
+                return ss::do_with(
+                  fetch_worker(fetch_worker::shard_local_fetch_context{
+                    .foreign_read = foreign_read,
+                    .bytes_left = octx.bytes_left,
+                    .min_bytes = min_fetch_bytes,
+                    .deadline = octx.deadline,
+                    .requests = std::move(configs),
+                    .srv = octx.rctx.server().local(),
+                    .mgr = mgr,
+                    .as = _worker_aborts[shard],
+                  }),
+                  [](auto& worker) { return worker.run(); });
+            });
+
+        fill_fetch_responses(
+          octx,
+          std::move(results.read_results),
+          fetch.responses,
+          fetch.start_time);
+
+        _last_result_size[fetch.shard] = results.total_size;
+        _completed_shard_fetches.push_back(std::move(fetch));
+        _has_completed_shard_fetches.signal();
+    }
+
+    static ss::future<> ignore_exceptions(ss::future<> fut) {
+        return fut.handle_exception([](const std::exception_ptr&) {});
+    }
+
+    static ss::future<> log_exceptions(ss::future<> f) {
+        try {
+            co_await std::move(f);
+        } catch (const seastar::timed_out_error& e) {
+            vlog(klog.info, "timed out error: {}", e);
+        } catch (const std::system_error& e) {
+            if (net::is_reconnect_error(e)) {
+                vlog(klog.info, "reconnect error: {}", e);
+            } else {
+                vlog(klog.error, "unknown system error: {}", e);
+            }
+        } catch (const seastar::named_semaphore_aborted& e) {
+            vlog(klog.info, "semaphore aborted error: {}", e);
+        } catch (...) {
+            vlog(
+              klog.error,
+              "unknown exception thrown: {}",
+              std::current_exception());
+        }
+    }
+
+    ss::gate _workers_gate;
+    std::unordered_map<ss::shard_id, ss::abort_source> _worker_aborts;
+    ss::condition_variable _has_completed_shard_fetches;
+    std::vector<shard_fetch> _completed_shard_fetches;
+    std::vector<size_t> _last_result_size;
+};
+
 size_t op_context::fetch_partition_count() const {
     if (
       session_ctx.is_sessionless()
@@ -853,7 +1361,6 @@ class simple_fetch_planner final : public fetch_planner::impl {
  * response must be reassembled such that the responses appear in these
  * order as the partitions in the request.
  */
-
 static ss::future<> fetch_topic_partitions(op_context& octx) {
     auto bytes_left_before = octx.bytes_left;
 
@@ -892,6 +1399,31 @@ kafka::fetch_plan make_simple_fetch_plan(op_context& octx) {
 }
 } // namespace testing
 
+namespace {
+ss::future<> do_fetch(op_context& octx) {
+    switch (config::shard_local_cfg().fetch_read_strategy) {
+    case model::fetch_read_strategy::polling: {
+        // first fetch, do not wait
+        co_await fetch_topic_partitions(octx).then([&octx] {
+            return ss::do_until(
+              [&octx] { return octx.should_stop_fetch(); },
+              [&octx] { return fetch_topic_partitions(octx); });
+        });
+    } break;
+    case model::fetch_read_strategy::non_polling: {
+        auto planner = make_fetch_planner<simple_fetch_planner>();
+        auto fetch_plan = planner.create_plan(octx);
+
+        nonpolling_fetch_plan_executor executor;
+        co_await executor.execute_plan(octx, std::move(fetch_plan));
+    } break;
+    default: {
+        vassert(false, "not implemented");
+    } break;
+    }
+}
+} // namespace
+
 template<>
 ss::future<response_ptr>
 fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
@@ -914,23 +1446,16 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
                   return std::move(octx).send_response();
               }
               octx.response.data.error_code = error_code::none;
-              // first fetch, do not wait
-              return fetch_topic_partitions(octx)
-                .then([&octx] {
-                    return ss::do_until(
-                      [&octx] { return octx.should_stop_fetch(); },
-                      [&octx] { return fetch_topic_partitions(octx); });
-                })
-                .then([&octx] {
-                    // NOTE: Audit call doesn't happen until _after_ the fetch
-                    // is done. This was done for the sake of simplicity and
-                    // because fetch doesn't alter the state of the broker
-                    if (!octx.rctx.audit()) {
-                        return std::move(octx).send_error_response(
-                          error_code::broker_not_available);
-                    }
-                    return std::move(octx).send_response();
-                });
+              return do_fetch(octx).then([&octx] {
+                  // NOTE: Audit call doesn't happen until _after_ the fetch
+                  // is done. This was done for the sake of simplicity and
+                  // because fetch doesn't alter the state of the broker
+                  if (!octx.rctx.audit()) {
+                      return std::move(octx).send_error_response(
+                        error_code::broker_not_available);
+                  }
+                  return std::move(octx).send_response();
+              });
           });
       });
 }
