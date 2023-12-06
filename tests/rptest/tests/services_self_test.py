@@ -73,6 +73,17 @@ class KgoRepeaterSelfTest(RedpandaTest):
             repeater.await_group_ready()
             repeater.await_progress(1024, timeout_sec=75)
 
+        # Assert clean service stop.
+        for service in self.test_context.services:
+            for node in service.nodes:
+                cmd = """ps ax | grep -i kgo-repeater | grep -v grep | awk '{print $1}'"""
+                pids = [
+                    pid
+                    for pid in node.account.ssh_capture(cmd, allow_fail=True)
+                ]
+                self.logger.debug(f"Running kgo-repeater: {pids}")
+                assert len(pids) == 0
+
 
 class KgoVerifierSelfTest(PreallocNodesTest):
     def __init__(self, test_context, *args, **kwargs):
