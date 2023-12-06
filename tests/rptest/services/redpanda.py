@@ -1605,8 +1605,38 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 return p
         return None
 
-    def stop_node(self, node, **kwargs):
-        pass
+    def stop_node(self,
+                  pod_name,
+                  signal=int(signal.SIGTERM),
+                  timeout=60,
+                  **kwargs):
+        """Stop a specific pod by name
+
+        Send a signal to the redpanda process running in k8s pod container.
+        The list of pod names can be found in self.pods property.
+
+        :param pod_name: string of pod name, e.g. 'rp-clo88krkqkrfamptsst0-5'
+        :param signal: int signal number
+        :param timeout: number of seconds to wait_until timeout
+        """
+
+        kill_cmd = f'kill -n {signal} 1'  # assume redpanda is pid 1 in the pod's container
+        # kubectl exec rp-clo88krkqkrfamptsst0-0 -n=redpanda -c=redpanda -- /bin/bash -c 'kill 1'
+        self._kubectl.exec(kill_cmd, pod_name=pod_name)
+
+        def pod_container_ready(pod_name):
+            # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].ready}'
+            return self._kubectl.cmd([
+                'get', 'pod', pod_name, '-n=redpanda',
+                "-o=jsonpath='{.status.containerStatuses[0].ready}'"
+            ]).decode()
+
+        wait_until(
+            lambda: pod_container_ready(pod_name) == 'true',
+            timeout_sec=timeout,
+            err_msg=
+            f'pod {pod_name} sent signal {signal} failed to stop in {timeout} seconds'
+        )
 
     def stop(self, **kwargs):
         if self._cloud_cluster.config.delete_cluster:
