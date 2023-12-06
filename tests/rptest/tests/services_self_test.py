@@ -57,7 +57,7 @@ class KgoRepeaterSelfTest(RedpandaTest):
         super().__init__(*args, num_brokers=3, **kwargs)
 
     @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=5)
     def test_kgo_repeater(self):
         topic = 'test'
         self.client().create_topic(
@@ -67,11 +67,23 @@ class KgoRepeaterSelfTest(RedpandaTest):
                       segment_bytes=1024 * 1024))
         with repeater_traffic(context=self.test_context,
                               redpanda=self.redpanda,
+                              num_nodes=2,
                               topic=topic,
                               msg_size=4096,
                               workers=1) as repeater:
             repeater.await_group_ready()
             repeater.await_progress(1024, timeout_sec=75)
+
+        # Assert clean service stop.
+        for service in self.test_context.services:
+            for node in service.nodes:
+                cmd = """ps ax | grep -i kgo-repeater | grep -v grep | awk '{print $1}'"""
+                pids = [
+                    pid
+                    for pid in node.account.ssh_capture(cmd, allow_fail=True)
+                ]
+                self.logger.debug(f"Running kgo-repeater: {pids}")
+                assert len(pids) == 0
 
 
 class KgoVerifierSelfTest(PreallocNodesTest):

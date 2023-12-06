@@ -92,7 +92,7 @@ class KgoRepeaterService(Service):
         self.compression_type = compression_type
         self.compressible_payload = compressible_payload
 
-        self._pid = None
+        self._pid_by_node = {}
         self._stopped = False
 
     def clean_node(self, node):
@@ -145,7 +145,7 @@ class KgoRepeaterService(Service):
         self.logger.debug(
             f"spawned {self.who_am_i()} node={node.name} pid={pid_str} port={self.remote_port}"
         )
-        self._pid = int(pid_str.strip())
+        self._pid_by_node[node.name] = int(pid_str.strip())
 
         # Wait for status endpoint to respond.
         self._await_ready(node)
@@ -182,7 +182,9 @@ class KgoRepeaterService(Service):
             return r.status_code == 200
 
     def _assert_running(self, node):
-        node.account.ssh_output(f"ps -p {self._pid}", allow_fail=False)
+        assert node.name in self._pid_by_node
+        node.account.ssh_output(f"ps -p {self._pid_by_node[node.name]}",
+                                allow_fail=False)
 
     def stop(self, *args, **kwargs):
         # On first call to stop, log status from the workers.
@@ -205,13 +207,15 @@ class KgoRepeaterService(Service):
         super().stop(*args, **kwargs)
 
     def stop_node(self, node):
-        if self._pid is None:
-            return
+        if node.name not in self._pid_by_node:
+            return  # we never started
+
+        pid = self._pid_by_node[node.name]
 
         self.redpanda.logger.info(f"{self.__class__.__name__}.stop")
-        self.logger.debug("Killing pid %s" % {self._pid})
+        self.logger.debug("Killing pid %s" % {pid})
         try:
-            node.account.signal(self._pid, signal.SIGKILL, allow_fail=False)
+            node.account.signal(pid, signal.SIGKILL, allow_fail=False)
         except RemoteCommandError as e:
             if b"No such process" not in e.msg:
                 raise
