@@ -38,7 +38,6 @@ class FlinkBasicTests(RedpandaTest):
         self.kafkacli.delete_topic(self.topic)
         return super().tearDown()
 
-    @ignore
     def test_basic_workload(self):
         # Currently test is failed on data processing
 
