@@ -15,9 +15,11 @@
 #include "utils/delta_for.h"
 
 #include <seastar/testing/perf_tests.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/container/btree_map.h>
 
+#include <ranges>
 #include <vector>
 
 using namespace cloud_storage;
@@ -435,6 +437,10 @@ void cs_scan_test(StoreT& store, size_t sz) {
     perf_tests::stop_measuring_time();
 }
 
+auto last_n(size_t n) {
+    return std::views::reverse | std::views::take(n) | std::views::reverse;
+}
+
 template<class StoreT>
 void cs_find_test(StoreT& store, size_t sz) {
     auto manifest = generate_metadata(sz);
@@ -443,10 +449,12 @@ void cs_find_test(StoreT& store, size_t sz) {
         store.insert(s);
     }
 
-    perf_tests::start_measuring_time();
-    auto i = store.find(manifest.back().base_offset);
-    perf_tests::do_not_optimize(i);
-    perf_tests::stop_measuring_time();
+    for (auto& e : manifest | last_n(20)) {
+        perf_tests::start_measuring_time();
+        auto i = store.find(e.base_offset);
+        perf_tests::do_not_optimize(i);
+        perf_tests::stop_measuring_time();
+    }
 }
 
 template<class StoreT>
@@ -457,10 +465,12 @@ void cs_lower_bound_test(StoreT& store, size_t sz) {
         store.insert(s);
     }
 
-    perf_tests::start_measuring_time();
-    auto i = store.lower_bound(manifest.back().base_offset);
-    perf_tests::do_not_optimize(i);
-    perf_tests::stop_measuring_time();
+    for (auto& e : manifest | last_n(20)) {
+        perf_tests::start_measuring_time();
+        auto i = store.lower_bound(e.base_offset + model::offset(1));
+        perf_tests::do_not_optimize(i);
+        perf_tests::stop_measuring_time();
+    }
 }
 
 template<class StoreT>
@@ -471,10 +481,12 @@ void cs_upper_bound_test(StoreT& store, size_t sz) {
         store.insert(s);
     }
 
-    perf_tests::start_measuring_time();
-    auto i = store.upper_bound(manifest.back().base_offset);
-    perf_tests::do_not_optimize(i);
-    perf_tests::stop_measuring_time();
+    for (auto& e : manifest | last_n(20)) {
+        perf_tests::start_measuring_time();
+        auto i = store.upper_bound(e.base_offset + model::offset(1));
+        perf_tests::do_not_optimize(i);
+        perf_tests::stop_measuring_time();
+    }
 }
 
 template<class StoreT>
@@ -539,6 +551,15 @@ PERF_TEST(cstore_bench, column_store_find_baseline) {
 
 PERF_TEST(cstore_bench, column_store_find_result) {
     segment_meta_cstore store;
+    cs_find_test(store, 10000);
+}
+
+PERF_TEST(cstore_bench, column_store_find_no_hints) {
+    segment_meta_cstore store;
+    config::shard_local_cfg().storage_ignore_cstore_hints.set_value(true);
+    auto _ = ss::defer([] {
+        config::shard_local_cfg().storage_ignore_cstore_hints.set_value(false);
+    });
     cs_find_test(store, 10000);
 }
 
