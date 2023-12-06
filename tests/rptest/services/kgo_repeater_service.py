@@ -37,7 +37,7 @@ class KgoRepeaterService(Service):
                  *,
                  nodes: Optional[list[ClusterNode]] = None,
                  num_nodes: Optional[int] = None,
-                 topic: str,
+                 topics: list[str],
                  msg_size: Optional[int],
                  workers: int,
                  key_count: Optional[int] = None,
@@ -64,7 +64,7 @@ class KgoRepeaterService(Service):
             self.nodes = nodes
 
         self.redpanda = redpanda
-        self.topic = topic
+        self.topics = topics
         self.msg_size = msg_size
         self.workers = workers
         self.group_name = group_name
@@ -104,9 +104,10 @@ class KgoRepeaterService(Service):
     def start_node(self, node, clean=None):
         initial_data_mb = self.mb_per_worker * self.workers
 
+        topics = ",".join(self.topics)
         cmd = (
             "/opt/kgo-verifier/kgo-repeater "
-            f"-topic {self.topic} -brokers {self.redpanda.brokers()} "
+            f"-topics {topics} -brokers {self.redpanda.brokers()} "
             f"-workers {self.workers} -initial-data-mb {initial_data_mb} "
             f"-group {self.group_name} -remote -remote-port {self.remote_port} "
         )
