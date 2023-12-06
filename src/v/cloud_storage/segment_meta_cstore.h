@@ -241,6 +241,31 @@ public:
         return it;
     }
 
+    bool is_applicable(const hint_t& hint) const {
+        if (!_tail) {
+            return false;
+        }
+
+        if constexpr (std::
+                        is_same_v<delta_alg, details::delta_delta<value_t>>) {
+            // check possible only with a monotonic frame
+            if (!(_tail->get_initial_value() <= hint.initial
+                  && hint.initial <= _tail->get_last_value())) {
+                // ensure the value is in range
+                return false;
+            }
+        }
+
+        if (_tail->get_position().offset < hint.offset) {
+            // ensure enough data in the buffer to apply the hint
+            return false;
+        }
+
+        // has an encoded buffer, (if monotonic) data is in range, there are
+        // enough bytes in the encoded buffer
+        return true;
+    }
+
     size_t size() const { return _size; }
 
     size_t mem_use() const {
@@ -784,7 +809,7 @@ public:
     }
 
 protected:
-    auto get_frame_iterator_by_element_index(size_t ix) {
+    auto get_frame_iterator_by_element_index(size_t ix) const {
         return std::find_if(
           _frames.begin(), _frames.end(), [ix](frame_t const& f) mutable {
               if (f.size() > ix) {
