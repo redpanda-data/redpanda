@@ -12,17 +12,38 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
+
+/**
+ * Configurations to reserve memory for compaction.
+ */
+struct compaction_memory_reservation {
+    /**
+     * Computes the compaction memory to reserve, based on configs and amount
+     * of reservable memory (i.e. not use by other subsystems like WASM).
+     */
+    size_t reserved_bytes(size_t total_memory) const;
+
+    // Maximum amount of memory in bytes to reserve for compaction.
+    size_t max_bytes{0};
+
+    // Limit on compaction memory expressed as percent of total system memory.
+    double max_limit_pct{100.0};
+};
 
 /**
  * Centralized unit for memory management.
  *
  * Works via a share system. First we subtract the amount of memory the user
- * decides to use for their WebAssembly functions. The remaining subsystems
- * are distributed memory via a share system.
+ * decides to reserve for their WebAssembly functions and for compaction
+ * buffers. The remaining subsystems are distributed memory via a share system.
  */
 class system_memory_groups {
 public:
-    system_memory_groups(size_t total_system_memory, bool wasm_enabled);
+    system_memory_groups(
+      size_t total_available_memory,
+      compaction_memory_reservation compaction,
+      bool wasm_enabled);
 
     size_t kafka_total_memory() const;
 
@@ -51,9 +72,14 @@ public:
     /// Max memory that data transform subsystem should use.
     size_t data_transforms_max_memory() const;
 
+    size_t compaction_reserved_memory() const {
+        return _compaction_reserved_memory;
+    }
+
 private:
     /**
-     * Total memory for a core after the user's Wasm reservation.
+     * Total memory for a core after the user's Wasm and compaction
+     * reservations.
      */
     size_t total_memory() const;
     /**
@@ -63,6 +89,7 @@ private:
     template<size_t shares>
     size_t subsystem_memory() const;
 
+    size_t _compaction_reserved_memory;
     size_t _total_system_memory;
     bool _wasm_enabled;
 };

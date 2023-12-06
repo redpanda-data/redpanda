@@ -1051,13 +1051,27 @@ configuration::configuration()
   , storage_compaction_key_map_memory(
       *this,
       "storage_compaction_key_map_memory",
-      "Maximum number of bytes that may be used on each shard by compaction"
-      "key-offset maps",
-      {.needs_restart = needs_restart::no,
+      "Maximum number of bytes that may be used on each shard by compaction "
+      "key-offset maps. Only respected when "
+      "`log_compaction_use_sliding_window` is true.",
+      {.needs_restart = needs_restart::yes,
        .example = "1073741824",
        .visibility = visibility::tunable},
       128_MiB,
       {.min = 16_MiB, .max = 100_GiB})
+  , storage_compaction_key_map_memory_limit_percent(
+      *this,
+      "storage_compaction_key_map_memory_limit_percent",
+      "Limit on `storage_compaction_key_map_memory`, expressed as a percentage "
+      "of memory per shard, that bounds the amount of memory used by "
+      "compaction key-offset maps. NOTE: Memory per shard is computed after "
+      "`wasm_per_core_memory_reservation`. Only respected when "
+      "`log_compaction_use_sliding_window` is true.",
+      {.needs_restart = needs_restart::yes,
+       .example = "12.0",
+       .visibility = visibility::tunable},
+      12.0,
+      {.min = 1.0, .max = 100.0})
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",

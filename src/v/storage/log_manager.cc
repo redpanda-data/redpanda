@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/io_priority.h"
+#include "resource_mgmt/memory_groups.h"
 #include "ssx/async-clear.h"
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
@@ -245,10 +246,10 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
       config::shard_local_cfg().log_compaction_use_sliding_window.value()
       && !_compaction_hash_key_map && !_logs_list.empty()
       && is_not_set(_logs_list.front().flags, bflags::compacted)) {
+        auto compaction_mem_bytes
+          = memory_groups().compaction_reserved_memory();
         auto compaction_map = std::make_unique<hash_key_offset_map>();
-        auto size_bytes
-          = config::shard_local_cfg().storage_compaction_key_map_memory.value();
-        co_await compaction_map->initialize(size_bytes);
+        co_await compaction_map->initialize(compaction_mem_bytes);
         _compaction_hash_key_map = std::move(compaction_map);
     }
     while (!_logs_list.empty()

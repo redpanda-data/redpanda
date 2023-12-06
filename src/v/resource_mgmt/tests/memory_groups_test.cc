@@ -17,7 +17,8 @@
 #include <gtest/gtest.h>
 
 TEST(MemoryGroups, HasCompatibility) {
-    class system_memory_groups groups(2_GiB, /*wasm_enabled=*/false);
+    class system_memory_groups groups(
+      2_GiB, /*compaction_memory_reservation=*/{}, /*wasm_enabled=*/false);
     EXPECT_THAT(groups.chunk_cache_min_memory(), 2_GiB * .1);
     EXPECT_THAT(groups.tiered_storage_max_memory(), 2_GiB * .1);
     EXPECT_THAT(groups.recovery_max_memory(), 2_GiB * .1);
@@ -26,6 +27,8 @@ TEST(MemoryGroups, HasCompatibility) {
     EXPECT_THAT(groups.kafka_total_memory(), (2_GiB * .3) - 2);
     EXPECT_THAT(groups.rpc_total_memory(), (2_GiB * .2) - 1);
     EXPECT_THAT(groups.data_transforms_max_memory(), 0);
+
+    EXPECT_EQ(0, groups.compaction_reserved_memory());
 }
 
 // It's not really useful to know the exact byte values for each of these
@@ -41,7 +44,9 @@ MATCHER_P(IsApprox, n, "") {
 TEST(MemoryGroups, DividesSharesWithWasm) {
     constexpr size_t user_wasm_reservation = 20_MiB;
     class system_memory_groups groups(
-      2_GiB - user_wasm_reservation, /*wasm_enabled=*/true);
+      2_GiB - user_wasm_reservation,
+      /*compaction_memory_reservation=*/{},
+      /*wasm_enabled=*/true);
     EXPECT_THAT(groups.chunk_cache_min_memory(), IsApprox(184_MiB));
     EXPECT_THAT(groups.chunk_cache_max_memory(), IsApprox(553_MiB));
     EXPECT_THAT(groups.tiered_storage_max_memory(), IsApprox(184_MiB));
@@ -54,4 +59,60 @@ TEST(MemoryGroups, DividesSharesWithWasm) {
         + groups.kafka_total_memory() + groups.recovery_max_memory()
         + groups.rpc_total_memory() + groups.tiered_storage_max_memory(),
       2_GiB - user_wasm_reservation);
+
+    EXPECT_EQ(0, groups.compaction_reserved_memory());
+}
+
+TEST(MemoryGroups, DividesSharesWithCompaction) {
+    constexpr size_t compaction_reserved_memory = 20_MiB;
+    class system_memory_groups groups(
+      2_GiB,
+      /*compaction_memory_reservation=*/
+      {.max_bytes = compaction_reserved_memory, .max_limit_pct = 100.0},
+      /*wasm_enabled=*/true);
+    EXPECT_THAT(groups.chunk_cache_min_memory(), IsApprox(184_MiB));
+    EXPECT_THAT(groups.chunk_cache_max_memory(), IsApprox(553_MiB));
+    EXPECT_THAT(groups.tiered_storage_max_memory(), IsApprox(184_MiB));
+    EXPECT_THAT(groups.recovery_max_memory(), IsApprox(184_MiB));
+    EXPECT_THAT(groups.kafka_total_memory(), IsApprox(553_MiB));
+    EXPECT_THAT(groups.rpc_total_memory(), IsApprox(368_MiB));
+    EXPECT_THAT(groups.data_transforms_max_memory(), IsApprox(184_MiB));
+    EXPECT_LT(
+      groups.data_transforms_max_memory() + groups.chunk_cache_max_memory()
+        + groups.kafka_total_memory() + groups.recovery_max_memory()
+        + groups.rpc_total_memory() + groups.tiered_storage_max_memory(),
+      2_GiB - compaction_reserved_memory);
+
+    EXPECT_EQ(compaction_reserved_memory, groups.compaction_reserved_memory());
+}
+
+TEST(MemoryGroups, CompactionMemoryBytes) {
+    constexpr size_t total_memory = 2_GiB;
+    constexpr size_t compaction_max_bytes = 1_GiB;
+    for (auto pct = 50; pct <= 100; pct++) {
+        // Configure the percent limit just above the bytes-configured value.
+        // We should be capped.
+        system_memory_groups groups(
+          total_memory,
+          /*compaction_memory_reservation=*/
+          {
+            .max_bytes = compaction_max_bytes,
+            .max_limit_pct = double(pct),
+          },
+          /*wasm_enabled=*/false);
+        EXPECT_EQ(1_GiB, groups.compaction_reserved_memory());
+    }
+    for (auto pct = 1; pct <= 49; pct++) {
+        // Below we shouldn't be capped.
+        system_memory_groups groups(
+          total_memory,
+          /*compaction_memory_reservation=*/
+          {
+            .max_bytes = compaction_max_bytes,
+            .max_limit_pct = double(pct),
+          },
+          /*wasm_enabled=*/false);
+        EXPECT_EQ(
+          total_memory * pct / 100, groups.compaction_reserved_memory());
+    }
 }

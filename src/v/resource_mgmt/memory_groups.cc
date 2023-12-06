@@ -45,9 +45,19 @@ struct memory_shares {
 
 } // namespace
 
+size_t
+compaction_memory_reservation::reserved_bytes(size_t total_memory) const {
+    size_t bytes_limit = total_memory * (max_limit_pct / 100.0);
+    return std::min(max_bytes, bytes_limit);
+}
+
 system_memory_groups::system_memory_groups(
-  size_t total_system_memory, bool wasm_enabled)
-  : _total_system_memory(total_system_memory)
+  size_t total_available_memory,
+  compaction_memory_reservation compaction,
+  bool wasm_enabled)
+  : _compaction_reserved_memory(
+    compaction.reserved_bytes(total_available_memory))
+  , _total_system_memory(total_available_memory - _compaction_reserved_memory)
   , _wasm_enabled(wasm_enabled) {}
 
 size_t system_memory_groups::chunk_cache_min_memory() const {
@@ -94,16 +104,23 @@ size_t system_memory_groups::total_memory() const {
 
 system_memory_groups& memory_groups() {
     static thread_local std::optional<system_memory_groups> groups;
-    if (!groups) {
-        size_t total = ss::memory::stats().total_memory();
-        bool wasm = wasm_enabled();
-        if (wasm) {
-            size_t wasm_memory_reservation
-              = config::shard_local_cfg()
-                  .wasm_per_core_memory_reservation.value();
-            total -= wasm_memory_reservation;
-        }
-        groups.emplace(total, wasm);
+    if (groups) {
+        return *groups;
     }
+    size_t total = ss::memory::stats().total_memory();
+    bool wasm = wasm_enabled();
+    const auto& cfg = config::shard_local_cfg();
+    if (wasm) {
+        size_t wasm_memory_reservation
+          = cfg.wasm_per_core_memory_reservation.value();
+        total -= wasm_memory_reservation;
+    }
+    compaction_memory_reservation compaction;
+    if (cfg.log_compaction_use_sliding_window.value()) {
+        compaction.max_bytes = cfg.storage_compaction_key_map_memory.value();
+        compaction.max_limit_pct
+          = cfg.storage_compaction_key_map_memory_limit_percent.value();
+    }
+    groups.emplace(total, compaction, wasm);
     return *groups;
 }
