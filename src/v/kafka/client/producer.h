@@ -58,10 +58,7 @@ private:
 
     auto make_consumer(model::topic_partition tp) {
         return [this, tp](model::record_batch&& batch) {
-            (void)send(tp, std::move(batch))
-              .handle_exception_type([](const ss::gate_closed_exception&) {
-                  vlog(kclog.debug, "Failed to call send() shutting down");
-              });
+            (void)send(tp, std::move(batch));
         };
     }
 
