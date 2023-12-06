@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "config/property.h"
 #include "kafka/server/usage_aggregator.h"
+#include "model/namespace.h"
 #include "oncore.h"
 #include "storage/fwd.h"
 #include "utils/fragmented_vector.h"
@@ -129,7 +130,7 @@ private:
 /// consideration data batches via produce/fetch requests to these topics
 static const auto usage_excluded_topics = std::to_array(
   {model::topic("_schemas"),
-   model::topic("__audit"),
+   model::kafka_audit_logging_topic,
    model::topic("__redpanda_e2e_probe")});
 
 } // namespace kafka
