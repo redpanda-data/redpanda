@@ -3,6 +3,7 @@
 #include "config/config_store.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "test_utils/scoped_config.h"
 #include "tx_compaction_utils.h"
 
 #include <seastar/util/defer.hh>
@@ -12,7 +13,9 @@ static ss::logger test_logger{"tx_compaction_tests"};
 using cluster::random_tx_generator;
 
 #define STM_BOOTSTRAP()                                                        \
-    storage::ntp_config::default_overrides o;                                  \
+    storage::ntp_config::default_overrides o{                                  \
+      .retention_time = tristate<std::chrono::milliseconds>(10s),              \
+      .segment_ms = tristate<std::chrono::milliseconds>(1s)};                  \
     o.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;    \
                                                                                \
     create_stm_and_start_raft(o);                                              \
@@ -36,6 +39,9 @@ FIXTURE_TEST(test_tx_compaction_combinations, rm_stm_test_fixture) {
     // batches and tx control batches removed.
     // Each workload execution can fully be backtracked from the test log
     // (in case of failures) and re-executed manually.
+    scoped_config cfg;
+    cfg.get("log_disable_housekeeping_for_tests").set_value(true);
+    cfg.get("log_segment_ms_min").set_value(1ms);
     for (auto num_tx : {10, 20, 30}) {
         for (auto num_rolls : {0, 1, 2, 3, 5}) {
             for (auto type :
