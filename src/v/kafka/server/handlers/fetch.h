@@ -361,7 +361,11 @@ struct fetch_plan {
     explicit fetch_plan(
       size_t shards,
       op_context::latency_point start_time = op_context::latency_clock::now())
-      : fetches_per_shard(shards, shard_fetch(start_time)) {}
+      : fetches_per_shard(shards, shard_fetch(start_time)) {
+        for (size_t i = 0; i < fetches_per_shard.size(); i++) {
+            fetches_per_shard[i].shard = i;
+        }
+    }
 
     std::vector<shard_fetch> fetches_per_shard;
 
