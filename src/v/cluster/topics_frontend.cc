@@ -448,25 +448,33 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         auto cfg_source = remote_topic_configuration_source(
           _cloud_storage_api.local());
 
-        errc download_res = co_await cfg_source.set_recovered_topic_properties(
-          assignable_config,
-          cloud_storage_clients::bucket_name(bucket.value()),
-          _as.local());
+        // If the caller is supplying the remote topic properties, presumably
+        // the correct remote properties are already known (e.g. because this
+        // is a part of a cluster recovery and the topic config is already
+        // known).
+        if (!assignable_config.cfg.properties.remote_topic_properties
+               .has_value()) {
+            errc download_res
+              = co_await cfg_source.set_recovered_topic_properties(
+                assignable_config,
+                cloud_storage_clients::bucket_name(bucket.value()),
+                _as.local());
 
-        if (download_res != errc::success) {
-            vlog(
-              clusterlog.error,
-              "Can't run topic recovery for the topic {}",
-              assignable_config.cfg.tp_ns);
-            co_return make_error_result(
-              assignable_config.cfg.tp_ns, errc::topic_invalid_config);
+            if (download_res != errc::success) {
+                vlog(
+                  clusterlog.error,
+                  "Can't run topic recovery for the topic {}",
+                  assignable_config.cfg.tp_ns);
+                co_return make_error_result(
+                  assignable_config.cfg.tp_ns, errc::topic_invalid_config);
+            }
+            vassert(
+              static_cast<bool>(
+                assignable_config.cfg.properties.remote_topic_properties),
+              "remote_topic_properties not set after successful download of "
+              "valid "
+              "topic manifest");
         }
-
-        vassert(
-          static_cast<bool>(
-            assignable_config.cfg.properties.remote_topic_properties),
-          "remote_topic_properties not set after successful download of valid "
-          "topic manifest");
 
         vlog(
           clusterlog.info,

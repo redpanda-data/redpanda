@@ -238,8 +238,9 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
             topics.emplace_back(std::move(topic_cfg));
             vlog(
               clusterlog.debug,
-              "Creating recovery topic {}",
-              topics.back().tp_ns);
+              "Creating recovery topic {}: {}",
+              topics.back().tp_ns,
+              topics.back());
         }
         auto results = co_await _topics_frontend.autocreate_topics(
           std::move(topics), topics_retry.get_timeout());

@@ -315,56 +315,97 @@ INSTANTIATE_TEST_SUITE_P(
   ClusterRecoveryBackendLeadershipParamTest,
   ::testing::Bool());
 
-TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedAction) {
+TEST_F(ClusterRecoveryBackendTest, TestRecoverMissingTopicManifest) {
     // Create a remote topic, but don't upload any of its manifests or anything.
     scoped_config task_local_cfg;
     task_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
       .set_value(true);
     model::topic_namespace remote_tp_ns{
       model::kafka_namespace, model::topic{"remote_foo"}};
+    auto ntp = model::ntp{remote_tp_ns.ns, remote_tp_ns.tp, 0};
     add_topic(remote_tp_ns, 1, uploadable_topic_properties()).get();
+    const auto& orig_tp_meta
+      = app.controller->get_topics_state().local().get_topic_metadata(
+        remote_tp_ns);
+    auto orig_tp_revision = orig_tp_meta.value().get_revision();
 
-    // Upload the controller snapshot to set up a failure to create the table.
-    RPTEST_REQUIRE_EVENTUALLY(
-      5s, [this] { return controller_stm.maybe_write_snapshot(); });
-    auto& uploader = app.controller->metadata_uploader();
-    retry_chain_node retry_node(never_abort, 30s, 1s);
-    cluster_metadata_manifest manifest;
-    manifest.cluster_uuid = cluster_uuid;
-    uploader.upload_next_metadata(raft0->confirmed_term(), manifest, retry_node)
-      .get();
-    ASSERT_EQ(manifest.metadata_id, cluster_metadata_id(0));
-    ASSERT_TRUE(!manifest.controller_snapshot_path.empty());
+    for (int i = 0; i < 2; i++) {
+        // Upload the controller snapshot to set up a recovery.
+        RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+            return app.controller->get_controller_stm()
+              .local()
+              .maybe_write_snapshot();
+        });
+        auto& uploader = app.controller->metadata_uploader();
+        retry_chain_node retry_node(never_abort, 30s, 1s);
+        cluster_metadata_manifest manifest;
+        manifest.cluster_uuid = cluster_uuid;
+        uploader
+          .upload_next_metadata(raft0->confirmed_term(), manifest, retry_node)
+          .get();
+        ASSERT_EQ(manifest.metadata_id, cluster_metadata_id(0));
+        ASSERT_TRUE(!manifest.controller_snapshot_path.empty());
 
-    // Create a new cluster.
-    raft0 = nullptr;
-    restart(should_wipe::yes);
-    RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
-        return app.storage.local().get_cluster_uuid().has_value();
-    });
+        // Create a new cluster.
+        raft0 = nullptr;
+        restart(should_wipe::yes);
+        RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
+            return app.storage.local().get_cluster_uuid().has_value();
+        });
+        raft0
+          = app.partition_manager.local().get(model::controller_ntp)->raft();
 
-    // Attempt a recovery.
-    auto recover_err = app.controller->get_cluster_recovery_manager()
-                         .local()
-                         .initialize_recovery(bucket)
-                         .get();
-    BOOST_REQUIRE(recover_err.has_value());
-    BOOST_REQUIRE_EQUAL(recover_err.value(), cluster::errc::success);
-    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
-        return !app.controller->get_cluster_recovery_table()
-                  .local()
-                  .is_recovery_active();
-    });
-    auto& latest_recovery = app.controller->get_cluster_recovery_table()
-                              .local()
-                              .current_recovery()
-                              .value()
-                              .get();
-    ASSERT_EQ(latest_recovery.stage, cluster::recovery_stage::failed);
-    ASSERT_TRUE(latest_recovery.error_msg.has_value());
-    ASSERT_TRUE(latest_recovery.error_msg.value().contains(
-      "Failed to apply action for "
-      "recovery_stage::recovered_remote_topic_data"));
+        // Attempt a recovery.
+        auto recover_err = app.controller->get_cluster_recovery_manager()
+                             .local()
+                             .initialize_recovery(bucket)
+                             .get();
+        ASSERT_TRUE(recover_err.has_value());
+        ASSERT_EQ(recover_err.value(), cluster::errc::success);
+        RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+            return !app.controller->get_cluster_recovery_table()
+                      .local()
+                      .is_recovery_active();
+        });
+        // The recovery should have completed, and our topic should be restored.
+        // Even without the topic manifest, it should be restored.
+        auto& latest_recovery = app.controller->get_cluster_recovery_table()
+                                  .local()
+                                  .current_recovery()
+                                  .value()
+                                  .get();
+        ASSERT_EQ(latest_recovery.stage, cluster::recovery_stage::complete);
+
+        const auto& tp_meta
+          = app.controller->get_topics_state().local().get_topic_metadata(
+            remote_tp_ns);
+        ASSERT_TRUE(tp_meta.has_value());
+        const auto& tp_cfg = tp_meta->get_configuration();
+        ASSERT_EQ(1, tp_cfg.partition_count);
+        ASSERT_TRUE(tp_cfg.is_recovery_enabled());
+
+        // The restored cluster has a different history recorded in its
+        // controller than the original cluster; the revision id assigned to
+        // the topic should be different.
+        ASSERT_NE(tp_meta->get_revision(), orig_tp_revision);
+
+        // The remove properties, however, should be the same as the original.
+        ASSERT_TRUE(tp_cfg.properties.remote_topic_properties.has_value());
+        ASSERT_EQ(
+          orig_tp_revision,
+          tp_cfg.properties.remote_topic_properties->remote_revision());
+        ASSERT_EQ(
+          1, tp_cfg.properties.remote_topic_properties->remote_partition_count);
+
+        // Even though we didn't upload any partition manifests, the restored
+        // partitions should exist and have appropriate remote properties.
+        auto* partition = app.partition_manager.local().get(ntp).get();
+        ASSERT_TRUE(partition);
+        ASSERT_TRUE(partition->archival_meta_stm());
+        ASSERT_EQ(
+          orig_tp_revision(),
+          partition->archival_meta_stm()->manifest().get_revision_id()());
+    }
 }
 
 TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedDownload) {
