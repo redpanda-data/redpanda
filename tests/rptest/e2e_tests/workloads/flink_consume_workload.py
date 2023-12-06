@@ -9,8 +9,6 @@
 import json
 import logging
 import os
-import random
-import string
 import sys
 import threading
 import time
@@ -21,10 +19,9 @@ from typing import Dict, Union, List
 
 from pyflink.common import Types, Configuration
 from pyflink.datastream import StreamExecutionEnvironment
-from pyflink.datastream.connectors.kafka import FlinkKafkaProducer, \
-    FlinkKafkaConsumer, DeserializationSchema
-from pyflink.datastream.formats.json import JsonRowSerializationSchema, \
-    JsonRowDeserializationSchema
+from pyflink.datastream.connectors.kafka import FlinkKafkaConsumer, \
+    DeserializationSchema
+from pyflink.datastream.formats.json import JsonRowDeserializationSchema
 
 
 @dataclass(kw_only=True)
@@ -40,6 +37,7 @@ class WorkloadConfig:
     count: int = 1000
     # This should be updated to value from self.redpanda.brokers()
     brokers: str = "localhost:9092"
+    python_requirements_file: str = "/worklods/requirements.txt"
 
 
 def setup_logger(logfilepath, level):
@@ -140,7 +138,17 @@ class MyKafkaConsumer(FlinkKafkaConsumer):
         return
 
 
-class FlinkWorkload:
+class FlinkWorkloadConsume:
+    """
+        Simple Consume workload
+        Goal is to consume all messages from target topic
+
+        This workload requires apache-flink to be available as a python system
+        wide dependency and not properly working without it.
+
+        Also, there is an additional work required to stop Consumer
+        when messages exhausted
+    """
     def __init__(self, config_override):
         # Serialize config
         self.config = WorkloadConfig(**config_override)
@@ -150,59 +158,27 @@ class FlinkWorkload:
         self.logger = setup_logger(logfile, self.config.log_level)
 
     def setup(self):
+        self.logger.info("Initializing consumer workload")
         # Initialize
         config = Configuration()
         # This is required for ducktape EC2 run
         config.set_string("python.client.executable", "python3")
         config.set_string("python.executable", "python3")
+
+        # Create environment
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
+        # Add kafka connector
         self.env.add_jars(self.config.connector_path)
+        # Brokers
         self._basic_properties = {
             'bootstrap.servers': self.config.brokers,
         }
+        self.logger.info(f"Brokers set to '{self.config.brokers}'")
         self.type_info = Types.ROW([Types.STRING()])
 
         self.messages = []
 
-    def _generate_message(self):
-        return ''.join(
-            random.choices(string.ascii_letters + string.digits,
-                           k=self.config.msg_size))
-
-    def task_produce(self):
-        """
-            Example of a produce task
-
-            Steps:
-            - generate messages using configured size and random.choices() func
-            - create simple serializer
-            - create Producer with topic name and group
-            - execute producer
-        """
-        # Prepare data to be sent
-        _messages = [(self._generate_message(), )
-                     for i in range(self.config.count)]
-        ds = self.env.from_collection(_messages, type_info=self.type_info)
-
-        # Serializer
-        serialization_schema = JsonRowSerializationSchema.Builder() \
-            .with_type_info(self.type_info) \
-            .build()
-
-        # Producer creation
-        _properties = deepcopy(self._basic_properties)
-        _properties['group.id'] = self.config.producer_group
-
-        kafka_producer = FlinkKafkaProducer(
-            topic=self.config.topic_name,
-            serialization_schema=serialization_schema,
-            producer_config=_properties)
-
-        # Output type of ds must be RowTypeInfo
-        ds.add_sink(kafka_producer)
-        self.env.execute()
-
-    def task_consume(self):
+    def run(self):
         """
             Example consume task
 
@@ -221,6 +197,8 @@ class FlinkWorkload:
         properties = deepcopy(self._basic_properties)
         properties['group.id'] = self.config.consumer_group
 
+        self.logger.info("Creating consumer with target topic of "
+                         f"'{self.config.topic_name}'")
         # Create my consumer
         my_consumer = MyKafkaConsumer(
             self.logger,
@@ -231,42 +209,9 @@ class FlinkWorkload:
         self.env.add_source(my_consumer).process(
             my_consumer.get_message_consumer(), self.type_info)
         # Run
+        self.logger.info("Runnig consumer")
         self.env.execute()
-
-    def run_tasks(self, tasks):
-        # No tag or keyword checking as in run_all_tasks
-        # Validation is ommitted at this point in time
-        for task in tasks:
-            self.logger.info(f"Running task '{task}'")
-            try:
-                task()
-            except Exception as e:
-                # Just log error and return
-                self.logger.error(f"Task '{task}' failed: {e}")
-
-        return
-
-    def run_all_tasks(self):
-        # Prepare tasks
-        _producing = []
-        _consuming = []
-        _other = []
-        # Dynamic method loading
-        for method in dir(self):
-            if method.startswith("task_"):
-                if "produce" in method:
-                    _producing.append(getattr(self, method))
-                elif "consume" in method:
-                    _consuming.append(getattr(self, method))
-                else:
-                    _other.append(getattr(self, method))
-
-        # methods with keyword 'produce' goes first
-        self.run_tasks(_producing)
-        # all other goes in between
-        self.run_tasks(_other)
-        # keyword 'consume' goes last
-        self.run_tasks(_consuming)
+        self.logger.info("Done")
 
     def cleanup(self):
         # Nothing to cleanup as of right now
@@ -293,22 +238,15 @@ if __name__ == '__main__':
     with open(filename, 'r+t') as f:
         input_config = json.load(f)
 
-    # No stdout messages from this point forward. Only errors.
-    # Main reason, stdout should stay as clean as possible as this is to be
-    # caught by ducktape and parsed for JobIds
-    workload = FlinkWorkload(input_config)
+    # All messages past this point is intercepted by task manager
+    # and will be seen in its log
+    workload = FlinkWorkloadConsume(input_config)
     try:
+        # TODO: Continue work on this workload in another PR
+        raise RuntimeError("This workload is not yet ready")
+
         workload.setup()
-        # Specific scenario run example
-        # tasks = [
-        #     workload.task_produce,
-        #     workload.task_consume
-        # ]
-        # workload.run(tasks)
-
-        # Or just all of the tasks
-        workload.run_all_tasks()
-
+        workload.run()
     except Exception as e:
         # Do not re-throw not to cause a commoution
         raise RuntimeError("Workload run failed") from e

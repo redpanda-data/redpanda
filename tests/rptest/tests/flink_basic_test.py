@@ -49,7 +49,7 @@ class FlinkBasicTests(RedpandaTest):
         # Hardcoded file
         # TODO: Workload manager with workload config management
         _workload = "/home/ubuntu/tests/rptest/e2e_tests/workloads/" \
-                    "flink_simple_workload.py"
+                    "flink_produce_workload.py"
         _workload_config = {
             "log_level": "DEBUG",
             "brokers": self.redpanda.brokers(),

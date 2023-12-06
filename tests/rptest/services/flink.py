@@ -180,15 +180,15 @@ class FlinkService(Service):
                                            *args,
                                            **kwargs)
 
-        self._port = flink_config["rest.port"]
-        self._baseurl = \
-            f"http://{self.nodes[0].account.hostname}:{self._port}"
+        self.flink_rest_port = flink_config["rest.port"]
+        self.flink_baseurl = \
+            f"http://{self.nodes[0].account.hostname}:{self.flink_rest_port}"
         # Map statuses
-        self._active_statuses = [
+        self.job_active_statuses = [
             self.STATE_INIT, self.STATE_RECONCILING, self.STATE_RUNNING,
             self.STATE_CANCELING, self.STATE_DEPLOYING
         ]
-        self._inactive_statuses = [
+        self.job_inactive_statuses = [
             self.STATE_CREATED, self.STATE_SCHEDULED, self.STATE_FAILED,
             self.STATE_FINISHED, self.STATE_CANCELED
         ]
@@ -227,10 +227,11 @@ class FlinkService(Service):
                                    self.FLINK_WORKLOAD_CONFIG_FILENAME)
         n.account.create_file(config_path, json.dumps(workload_config))
 
-        # Start job
+        # Extract the workload script filename
         script = os.path.split(workload_path)[-1]
-        run_path = os.path.join(self.FLINK_WORKLOADS_FOLDER, script)
 
+        # Start job
+        run_path = os.path.join(self.FLINK_WORKLOADS_FOLDER, script)
         cmd = f"sudo {self.FLINK_BIN}flink run"
         if script.endswith(".jar"):
             cmd += f" {run_path}"
@@ -268,7 +269,7 @@ class FlinkService(Service):
             More here:
             https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/ops/rest_api/
         """
-        url = f"{self._baseurl}{rest_handle}"
+        url = f"{self.flink_baseurl}{rest_handle}"
         try:
             r = requests.get(url)
         except Exception as e:
@@ -322,7 +323,7 @@ class FlinkService(Service):
         jobs = self.list_jobs()
         active = [
             job for job in jobs['jobs']
-            if job['status'] in self._active_statuses
+            if job['status'] in self.job_active_statuses
         ]
         return active
 
@@ -347,7 +348,7 @@ class FlinkService(Service):
 
         return len(jobs) > 0
 
-    def wait_node(self, node, timeout_sec=1800):
+    def wait_node(self, node, timeout_sec=120):
         """
             Wait for all jobs to finish, default timeout is half an hour
         """
@@ -368,6 +369,10 @@ class FlinkService(Service):
             self.node = None
             self.hostname = None
 
+            # Clean workloads folder
+            node.account.ssh_output(
+                f"sudo rm -rf {self.FLINK_WORKLOADS_FOLDER}")
+
         return
 
     @property
@@ -381,12 +386,27 @@ class FlinkService(Service):
         files = self.nodes[0].account.ssh_output(
             f"ls -1 {self.FLINK_LOGS}").decode()
         # Filter out only ones from this node
+        # Collect only those from this node as the flink service binded to
+        # localhost and no requests or other service should be able to
+        # access it from any other node
+        # TODO: Update this in case of creating HA version
         logfiles = [fn for fn in files.splitlines() if self.hostname in fn]
         # Build log map for ducktape copy
         # There might be multiple log files for the same keyword and this is
         # the reason index is used. Goal is to enumerate all that is generated
+        # Include any workload configuratin jsons
+        log_map = {
+            "workload_cfg": {
+                "path":
+                os.path.join(self.FLINK_WORKLOADS_FOLDER,
+                             self.FLINK_WORKLOAD_CONFIG_FILENAME),
+                "collect_default":
+                True
+            }
+        }
+        # all files will look like this:
+        # flink-root-<keyword>-<internal_index>-<source-hostname>.<log|out>
         keywords = ["client", "standalonesession", "taskexecutor"]
-        log_map = {}
         for keyword in keywords:
             targetfiles = [
                 logfile for logfile in logfiles if keyword in logfile
