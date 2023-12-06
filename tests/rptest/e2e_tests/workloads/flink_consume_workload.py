@@ -10,18 +10,15 @@ import json
 import logging
 import os
 import sys
-import threading
-import time
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, Union, List
 
-from pyflink.common import Types, Configuration
+from pyflink.common import Types, Configuration, SimpleStringSchema, \
+    WatermarkStrategy
 from pyflink.datastream import StreamExecutionEnvironment
-from pyflink.datastream.connectors.kafka import FlinkKafkaConsumer, \
-    DeserializationSchema
-from pyflink.datastream.formats.json import JsonRowDeserializationSchema
+from pyflink.datastream.connectors.kafka import KafkaSource, \
+    KafkaOffsetsInitializer
 
 
 @dataclass(kw_only=True)
@@ -37,7 +34,6 @@ class WorkloadConfig:
     count: int = 1000
     # This should be updated to value from self.redpanda.brokers()
     brokers: str = "localhost:9092"
-    python_requirements_file: str = "/worklods/requirements.txt"
 
 
 def setup_logger(logfilepath, level):
@@ -52,90 +48,6 @@ def setup_logger(logfilepath, level):
     logger.addHandler(handler)
 
     return logger
-
-
-class MessageConsumer:
-    """
-        Simple consumer based on Apache example.
-        Receives a message and counts characters
-    """
-    def __init__(self, logger):
-        self.logger = logger
-        self.count = 0
-        self._message_count = 0
-        self.last_message_time = time.time()
-
-    def process_element(self, value, ctx):
-        # update and save
-        # Count chars and add it to total
-        _dict = value.as_dict()
-        # The default field name will be f0
-        chars = len(_dict['f0'])
-        self.count += chars
-
-        # increment message count
-        self._message_count += 1
-
-        # Log and save time received
-        self.logger.debug(f"...received {chars} chars, "
-                          f"total: {self.count}, "
-                          f"total messages: {self._message_count}")
-        self.last_message_time = time.time()
-
-        return value, ctx
-
-    def get_message_count(self):
-        return self._message_count
-
-
-class MyKafkaConsumer(FlinkKafkaConsumer):
-    """
-        Wrapper class for FlinkKafkaConsumer.
-        Has additional methods to hold message consumer
-        and a wrapped 'run' method
-    """
-    def __init__(self,
-                 logger,
-                 topics: Union[str, List[str]] = "flink_workload_topic",
-                 deserialization_schema: DeserializationSchema = None,
-                 properties: Dict = {},
-                 message_count: int = 0,
-                 timeout: int = 120):
-        super(MyKafkaConsumer,
-              self).__init__(topics=topics,
-                             deserialization_schema=deserialization_schema,
-                             properties=properties)
-        self.message_count = message_count
-        self.timeout = timeout
-        self.logger = logger
-        # Initialize MessageConsumer internally
-        self.consumer = MessageConsumer(logger)
-        # Do some initialization
-        self.set_start_from_earliest()
-        self.run_thread = None
-
-    def get_message_consumer(self):
-        return self.consumer
-
-    def run(self):
-        # Instead of calling base function 'run', wrap it
-        if self.run_thread is not None:
-            self.run_thread = threading.Thread(target=self.run,
-                                               args=None,
-                                               kwargs=None)
-            self.run_thread.start()
-            self.logger.info("Consumer thread started")
-
-        # check if message count or timeout in consumer is reached
-        _now = time.time()
-        _count = self.consumer.get_message_count()
-        if self.message_count <= _count or \
-                _now - self.consumer.last_message_time > self.timeout:
-            self.run_thread.get_java_function().cancel()
-        else:
-            self.logger.info(
-                f"Still running. Message total: {self.message_count}")
-        return
 
 
 class FlinkWorkloadConsume:
@@ -189,10 +101,6 @@ class FlinkWorkloadConsume:
             - assign source and add callback class
             - execute
         """
-        # Deserialization schema
-        deserialization_schema = JsonRowDeserializationSchema.Builder() \
-            .type_info(self.type_info) \
-            .build()
         # Consumer creation
         properties = deepcopy(self._basic_properties)
         properties['group.id'] = self.config.consumer_group
@@ -200,14 +108,21 @@ class FlinkWorkloadConsume:
         self.logger.info("Creating consumer with target topic of "
                          f"'{self.config.topic_name}'")
         # Create my consumer
-        my_consumer = MyKafkaConsumer(
-            self.logger,
-            topics=self.config.topic_name,
-            deserialization_schema=deserialization_schema,
-            properties=properties)
-        # Add source and link message consumer
-        self.env.add_source(my_consumer).process(
-            my_consumer.get_message_consumer(), self.type_info)
+        source = KafkaSource \
+            .builder() \
+            .set_bootstrap_servers(self.config.brokers) \
+            .set_group_id(self.config.producer_group) \
+            .set_topics(self.config.topic_name) \
+            .set_value_only_deserializer(SimpleStringSchema()) \
+            .set_starting_offsets(KafkaOffsetsInitializer.earliest()) \
+            .set_bounded(KafkaOffsetsInitializer.latest()) \
+            .build()
+
+        ds = self.env.from_source(source, WatermarkStrategy.no_watermarks(),
+                                  "Kafka Source")
+        # Just print received message
+        ds.print()
+
         # Run
         self.logger.info("Runnig consumer")
         self.env.execute()
@@ -242,9 +157,6 @@ if __name__ == '__main__':
     # and will be seen in its log
     workload = FlinkWorkloadConsume(input_config)
     try:
-        # TODO: Continue work on this workload in another PR
-        raise RuntimeError("This workload is not yet ready")
-
         workload.setup()
         workload.run()
     except Exception as e:
