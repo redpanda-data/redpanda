@@ -29,18 +29,18 @@ namespace {
 
 // Produces to the given fixture's partition for 10 seconds.
 ss::future<> produce_to_fixture(
-  storage_e2e_fixture* fix, model::topic topic_name, int* incomplete) {
+  storage_e2e_fixture* fix, model::topic topic_name, int* complete) {
     tests::kafka_produce_transport producer(co_await fix->make_kafka_client());
     co_await producer.start();
-    const int cardinality = 10;
+    const int cardinality = 1;
     auto now = ss::lowres_clock::now();
-    while (ss::lowres_clock::now() < now + 5s) {
+    while (ss::lowres_clock::now() < now + 30s) {
         for (int i = 0; i < cardinality; i++) {
             co_await producer.produce_to_partition(
               topic_name, model::partition_id(0), tests::kv_t::sequence(i, 1));
         }
     }
-    *incomplete -= 1;
+    *complete += 1;
 }
 } // namespace
 
@@ -50,36 +50,52 @@ FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     const auto topic_name = model::topic("tapioca");
     const auto ntp = model::ntp(model::kafka_namespace, topic_name, 0);
 
-    cluster::topic_properties props;
-    props.retention_duration = tristate<std::chrono::milliseconds>(
-      tristate<std::chrono::milliseconds>{});
+    auto props = cluster::topic_properties{};
+    props.retention_duration = tristate<std::chrono::milliseconds>(10s);
+    props.retention_local_target_ms = tristate<std::chrono::milliseconds>(10s);
     props.segment_ms = tristate<std::chrono::milliseconds>(1s);
+
     add_topic({model::kafka_namespace, topic_name}, 1, props).get();
     wait_for_leader(ntp).get();
 
-    stress_config cfg;
-    cfg.min_spins_per_scheduling_point = 100;
-    cfg.max_spins_per_scheduling_point = 10000;
-    cfg.num_fibers = 100;
-    BOOST_REQUIRE(app.stress_fiber_manager.local().start(cfg));
+    BOOST_REQUIRE(app.stress_fiber_manager.local().start(
+      {.min_spins_per_scheduling_point = 100,
+       .max_spins_per_scheduling_point = 10000,
+       .num_fibers = 100}));
 
+    constexpr auto concurrent_producers = 5;
     std::vector<ss::future<>> produces;
-    produces.reserve(5);
-    int incomplete = 5;
-    for (int i = 0; i < 5; i++) {
-        auto fut = produce_to_fixture(this, topic_name, &incomplete);
-        produces.emplace_back(std::move(fut));
+    produces.reserve(concurrent_producers);
+    auto complete = 0;
+    for (int i = 0; i < concurrent_producers; i++) {
+        produces.emplace_back(produce_to_fixture(this, topic_name, &complete));
     }
     auto partition = app.partition_manager.local().get(ntp);
     auto* log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
 
-    while (incomplete > 0) {
+    auto dummy_as = ss::abort_source{};
+    auto hash_key_offset_map = storage::hash_key_offset_map{};
+    hash_key_offset_map.initialize(10_MiB).get();
+    while (complete < concurrent_producers) {
         log->apply_segment_ms().get();
+        log
+          ->housekeeping(storage::housekeeping_config{
+            model::timestamp(
+              model::timestamp::now().value()
+              - props.retention_duration.value().count()),
+            std::nullopt,
+            log->stm_manager()->max_collectible_offset(),
+            ss::default_priority_class(),
+            dummy_as,
+            std::nullopt,
+            &hash_key_offset_map,
+          })
+          .get();
         ss::sleep(500ms).get();
     }
 
-    for (auto&& p : produces) {
-        std::move(p).get();
+    for (auto& p : produces) {
+        p.get();
     }
     app.stress_fiber_manager.local().stop().get();
 }
