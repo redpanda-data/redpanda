@@ -398,7 +398,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # admin day 2 operations executed during the test
         self.admin_fuzz = AdminOperationsFuzzer(self.redpanda,
                                                 min_replication=3,
-                                                operations_interval=3)
+                                                operations_interval=3,
+                                                retries_interval=10,
+                                                retries=10)
 
         self.admin_fuzz.start()
         self.active_node_idxs = set(
