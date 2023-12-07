@@ -296,8 +296,14 @@ TEST_F(CompactionFixtureTest, TestRecompactWithNewData) {
       std::nullopt,
       cardinality);
     disk_log.sliding_window_compact(new_cfg).get();
+
+    // Most segments have already compacted their segments away entirely,
+    // except their last record. Such segments shouldn't be compacted. Three
+    // segments should be compacted:
+    // - the new segment is compacted twice (self + windowed)
+    // - the segment that previously had the latest keys should be compacted
     auto segments_compacted_3 = disk_log.get_probe().get_segments_compacted();
-    ASSERT_LT(segments_compacted, segments_compacted_3);
+    ASSERT_EQ(segments_compacted + 3, segments_compacted_3);
 }
 
 // Regression test for a bug when compacting when the last segment is all

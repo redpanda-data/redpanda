@@ -620,6 +620,25 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
               seg->filename());
             continue;
         }
+        if (auto first_data_offset = seg->index().first_data_offset();
+            !first_data_offset.is_disabled()) {
+            auto has_data_batches = first_data_offset.has_optional_value();
+            if (
+              !has_data_batches
+              || first_data_offset.get_optional()
+                   == seg->index().max_offset()) {
+                // All data records are already compacted away. Skip to avoid a
+                // needless rewrite.
+                seg->mark_as_finished_windowed_compaction();
+                vlog(
+                  gclog.trace,
+                  "[{}] treating segment as compacted, either all non-data "
+                  "records or the only record is a data record: {}",
+                  config().ntp(),
+                  seg->filename());
+                continue;
+            }
+        }
         // TODO: implement a segment replacement strategy such that each term
         // tries to write only one segment (or more if the term had a large
         // amount of data), rather than replacing N segments with N segments.

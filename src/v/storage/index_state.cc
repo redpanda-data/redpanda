@@ -98,6 +98,9 @@ bool index_state::maybe_index(
         if (new_broker_timestamp.has_value()) {
             broker_timestamp = *new_broker_timestamp;
         }
+        if (!first_data_offset.has_optional_value()) {
+            first_data_offset = tristate<model::offset>{batch_base_offset};
+        }
     }
     // always saving the first batch simplifies a lot of book keeping
     if ((accumulator >= step && user_data) || retval) {
@@ -122,7 +125,8 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << s.batch_timestamps_are_monotonic
              << ", with_offset:" << s.with_offset
              << ", non_data_timestamps:" << s.non_data_timestamps
-             << ", broker_timestamp:" << s.broker_timestamp << ", index("
+             << ", broker_timestamp:" << s.broker_timestamp
+             << ", first_data_offset:" << s.first_data_offset << ", index("
              << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
              << ")}";
@@ -144,6 +148,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, with_offset);
     write(tmp, non_data_timestamps);
     write(tmp, broker_timestamp);
+    write(tmp, first_data_offset);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -234,6 +239,11 @@ void read_nested(
 
     if (hdr._version >= index_state::broker_timestamp_version) {
         read_nested(p, st.broker_timestamp, 0U);
+    }
+    if (hdr._version >= index_state::first_data_offset_version) {
+        read_nested(p, st.first_data_offset, 0U);
+    } else {
+        st.first_data_offset = tristate<model::offset>{};
     }
 }
 
