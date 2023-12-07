@@ -89,7 +89,7 @@ public:
      * According to Kafka protocol semantics a log_end_offset is an offset that
      * is assigned to the next record produced to a log
      */
-    model::offset log_end_offset() const final {
+    model::offset log_end_offset() const {
         if (_partition->is_read_replica_mode_enabled()) {
             if (_partition->cloud_data_available()) {
                 return model::next_offset(_partition->next_cloud_offset());
