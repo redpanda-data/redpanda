@@ -72,6 +72,8 @@ public:
     ss::future<> apply_segment_ms() final;
     ss::future<> gc(gc_config) final;
 
+    static ss::future<> remove_kvstore_state(kvstore&, model::ntp);
+
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
