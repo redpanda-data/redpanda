@@ -6,12 +6,18 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from ducktape.mark import ignore
+import os
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.services.cluster import cluster
 from rptest.services.flink import FlinkService
 from rptest.tests.redpanda_test import RedpandaTest
+
+# Temporary solution before workload manager is built
+workloads_path = os.path.abspath('.')
+workloads_path = os.path.join(os.path.abspath('.'),
+                              "tests/rptest/e2e_tests/workloads/")
 
 
 class FlinkBasicTests(RedpandaTest):
@@ -38,6 +44,7 @@ class FlinkBasicTests(RedpandaTest):
         self.kafkacli.delete_topic(self.topic)
         return super().tearDown()
 
+    @cluster(num_nodes=4)
     def test_basic_workload(self):
         # Currently test is failed on data processing
 
@@ -47,8 +54,9 @@ class FlinkBasicTests(RedpandaTest):
         # Load python workload to target node
         # Hardcoded file
         # TODO: Workload manager with workload config management
-        _workload = "/home/ubuntu/tests/rptest/e2e_tests/workloads/" \
-                    "flink_produce_workload.py"
+        self.logger.debug(f"Current path is: {os.path.abspath('.')}")
+        self.logger.debug(f"Workload folder set as: '{workloads_path}'")
+        _workload = os.path.join(workloads_path, "flink_produce_workload.py")
         _workload_config = {
             "log_level": "DEBUG",
             "brokers": self.redpanda.brokers(),
