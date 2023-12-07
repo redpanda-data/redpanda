@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -196,10 +197,15 @@ func HandleShardError(name string, err error) {
 
 	case errors.As(err, &se):
 		if se.AllFailed {
-			fmt.Printf("all %d %s request failures, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
+			fmt.Printf("all %d %s requests failed, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
 			os.Exit(1)
 		}
-		fmt.Printf("%d %s request failures, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
+		var bs []int32
+		for _, e := range se.Errs {
+			bs = append(bs, e.Broker.NodeID)
+		}
+		sort.Slice(bs, func(i, j int) bool { return bs[i] < bs[j] })
+		fmt.Printf("%s request failed to broker IDs %v, first error: %s\n", se.Name, bs, se.Errs[0].Err)
 
 	case errors.As(err, &ae):
 		fmt.Printf("%s authorization problem: %s\n", name, err)
@@ -274,13 +280,15 @@ func (t *TabWriter) PrintStrings(args ...string) {
 	fmt.Fprint(t.Writer, strings.Join(args, "\t")+"\n")
 }
 
-// PrintStructFields prints the values stored in fields in a struct.
+// StructFields returns the fields in an input struct s.
 //
-// This is a function meant to allow users to define helper structs that have
-// defined field types. Rather than passing arguments blindly to Print, you can
-// put those arguments in your helper struct to *ensure* there are no breaking
-// output changes if any field changes types.
-func (t *TabWriter) PrintStructFields(s interface{}) {
+// This is the logic for the PrintStructFields function, and its purpose is the
+// same: rather than passing type-blind arguments, you can ensure compile-time
+// type checking with StructFields, and then receive all fields as a slice.
+//
+// The purpose of this function is for progressive building of output arguments
+// while still ensuring type checking.
+func StructFields(s interface{}) []interface{} {
 	v := reflect.ValueOf(s)
 	if v.Kind() == reflect.Ptr {
 		v = reflect.Indirect(v)
@@ -296,7 +304,17 @@ func (t *TabWriter) PrintStructFields(s interface{}) {
 		}
 		fields = append(fields, v.Field(i).Interface())
 	}
-	t.Print(fields...)
+	return fields
+}
+
+// PrintStructFields prints the values stored in fields in a struct.
+//
+// This is a function meant to allow users to define helper structs that have
+// defined field types. Rather than passing arguments blindly to Print, you can
+// put those arguments in your helper struct to *ensure* there are no breaking
+// output changes if any field changes types.
+func (t *TabWriter) PrintStructFields(s interface{}) {
+	t.Print(StructFields(s)...)
 }
 
 // PrintColumn is the same as Print, but prints header uppercased as the first

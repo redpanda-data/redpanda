@@ -1659,3 +1659,38 @@ class RpkTool:
             )
 
         return [transform_from_json(o) for o in loaded]
+
+    def describe_txn_producers(self, topics, partitions, all=False):
+        cmd = [
+            "describe-producers", "--topics", ",".join(topics), "--partitions",
+            ",".join([str(x) for x in partitions])
+        ]
+
+        if all:
+            cmd += ["--all"]
+
+        return self._run_txn(cmd)
+
+    def describe_txn(self, txn_id, print_partitions=False):
+        cmd = ["describe", txn_id]
+
+        if print_partitions:
+            cmd += ["--print-partitions"]
+
+        return self._run_txn(cmd)
+
+    def list_txn(self):
+        return self._run_txn(["list"])
+
+    def _run_txn(self, cmd, stdin=None, timeout=None, output_format="json"):
+        cmd = [
+            self._rpk_binary(),
+            "cluster",
+            "txn",
+            "--format",
+            output_format,
+        ] + self._kafka_conn_settings() + cmd
+
+        out = self._execute(cmd, stdin=stdin, timeout=timeout)
+
+        return json.loads(out) if output_format == "json" else out
