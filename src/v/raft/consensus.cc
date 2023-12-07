@@ -3488,10 +3488,16 @@ void consensus::maybe_update_last_visible_index(model::offset offset) {
     _visibility_upper_bound_index = std::max(
       _visibility_upper_bound_index, offset);
     _majority_replicated_index = std::max(_majority_replicated_index, offset);
+    if (is_elected_leader()) {
+        _last_leader_visible_offset = std::max(
+          _last_leader_visible_offset, last_visible_index());
+    }
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
 void consensus::maybe_update_majority_replicated_index() {
+    // Expected to be called on the leader
+
     auto majority_match = config().quorum_match([this](vnode id) {
         if (id == _self) {
             return _log->offsets().dirty_offset;
@@ -3501,9 +3507,11 @@ void consensus::maybe_update_majority_replicated_index() {
         }
         return model::offset{};
     });
-
     _majority_replicated_index = std::max(
       _majority_replicated_index, majority_match);
+
+    _last_leader_visible_offset = std::max(
+      _last_leader_visible_offset, last_visible_index());
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
