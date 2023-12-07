@@ -445,6 +445,7 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       {.visibility = visibility::user},
       10s)
+  , tx_registry_sync_timeout_ms(*this, "tx_registry_sync_timeout_ms")
   , tm_violation_recovery_policy(*this, "tm_violation_recovery_policy")
   , rm_sync_timeout_ms(
       *this,
@@ -996,11 +997,12 @@ configuration::configuration()
        .visibility = visibility::tunable},
       2,
       {.min = 1})
+  , tx_registry_log_capacity(*this, "tx_registry_log_capacity")
   , id_allocator_log_capacity(
       *this,
       "id_allocator_log_capacity",
-      "Capacity of the id_allocator log in number of messages. "
-      "Once it reached id_allocator_stm should compact the log.",
+      "Capacity of the id_allocator log in number of batches. "
+      "Once it reached id_allocator_stm truncates log's prefix.",
       {.visibility = visibility::tunable},
       100)
   , id_allocator_batch_size(

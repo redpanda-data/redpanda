@@ -19,6 +19,7 @@
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/io_priority_class.hh>
 
@@ -45,11 +46,13 @@ public:
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
     }
+
+    scoped_config test_local_cfg;
 };
 
 FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
-    config::shard_local_cfg()
-      .cloud_storage_disable_upload_loop_for_tests.set_value(true);
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, 0);
     cluster::topic_properties props;
@@ -105,16 +108,15 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
 
 FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
 #ifndef _NDEBUG
-    config::shard_local_cfg()
-      .cloud_storage_disable_upload_loop_for_tests.set_value(true);
-    config::shard_local_cfg().cloud_storage_spillover_manifest_size.set_value(
-      std::make_optional((size_t)0x1000));
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+    test_local_cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::make_optional((size_t)0x1000));
 
-    config::shard_local_cfg().cloud_storage_enable_segment_merging.set_value(
-      false);
+    test_local_cfg.get("cloud_storage_enable_segment_merging").set_value(false);
 
-    config::shard_local_cfg().enable_metrics_reporter.set_value(false);
-    config::shard_local_cfg().retention_local_strict.set_value(true);
+    test_local_cfg.get("enable_metrics_reporter").set_value(false);
+    test_local_cfg.get("retention_local_strict").set_value(true);
 
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, 0);
@@ -349,22 +351,20 @@ public:
         wait_for_controller_leadership().get();
 
         // Apply local retention frequently.
-        config::shard_local_cfg().log_compaction_interval_ms.set_value(
-          std::chrono::duration_cast<std::chrono::milliseconds>(1s));
+        test_local_cfg.get("log_compaction_interval_ms")
+          .set_value(std::chrono::duration_cast<std::chrono::milliseconds>(1s));
         // We'll control uploads ourselves.
-        config::shard_local_cfg()
-          .cloud_storage_enable_segment_merging.set_value(false);
-        config::shard_local_cfg()
-          .cloud_storage_disable_upload_loop_for_tests.set_value(true);
+        test_local_cfg.get("cloud_storage_enable_segment_merging")
+          .set_value(false);
+        test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+          .set_value(true);
         // Disable metrics to speed things up.
-        config::shard_local_cfg().enable_metrics_reporter.set_value(false);
+        test_local_cfg.get("enable_metrics_reporter").set_value(false);
         // Encourage spilling over.
-        config::shard_local_cfg()
-          .cloud_storage_spillover_manifest_max_segments.set_value(
-            std::make_optional<size_t>(segs_per_spill));
-        config::shard_local_cfg()
-          .cloud_storage_spillover_manifest_size.set_value(
-            std::optional<size_t>{});
+        test_local_cfg.get("cloud_storage_spillover_manifest_max_segments")
+          .set_value(std::make_optional<size_t>(segs_per_spill));
+        test_local_cfg.get("cloud_storage_spillover_manifest_size")
+          .set_value(std::optional<size_t>{});
 
         topic_name = model::topic("tapioca");
         ntp = model::ntp(model::kafka_namespace, topic_name, 0);
@@ -382,6 +382,7 @@ public:
         archiver = &partition->archiver()->get();
     }
 
+    scoped_config test_local_cfg;
     model::topic topic_name;
     model::ntp ntp;
     cluster::partition* partition;
@@ -422,7 +423,7 @@ ss::future<bool> check_consume_from_beginning(
 } // namespace
 
 FIXTURE_TEST(test_consume_during_spillover, cloud_storage_manual_e2e_test) {
-    config::shard_local_cfg().fetch_max_bytes.set_value(size_t{10});
+    test_local_cfg.get("fetch_max_bytes").set_value(size_t{10});
     const auto records_per_seg = 5;
     const auto num_segs = 40;
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
@@ -470,8 +471,8 @@ FIXTURE_TEST(test_consume_during_spillover, cloud_storage_manual_e2e_test) {
 FIXTURE_TEST(
   reclaimable_reported_in_health_report,
   cloud_storage_manual_multinode_test_base) {
-    config::shard_local_cfg().retention_local_trim_interval.set_value(
-      std::chrono::milliseconds(2000));
+    test_local_cfg.get("retention_local_trim_interval")
+      .set_value(std::chrono::milliseconds(2000));
 
     // start a second fixutre and wait for stable setup
     auto fx2 = start_second_fixture();

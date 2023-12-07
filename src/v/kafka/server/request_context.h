@@ -231,10 +231,6 @@ public:
         return _conn->server().coordinator_mapper();
     }
 
-    cluster::tx_registry_frontend& tx_registry_frontend() {
-        return _conn->server().tx_registry_frontend();
-    }
-
     const ss::sstring& listener() const { return _conn->listener(); }
     std::optional<security::sasl_server>& sasl() { return _conn->sasl(); }
     security::credential_store& credentials() {

@@ -175,10 +175,6 @@ ss::future<> health_manager::do_tick() {
         }
 
         if (ok) {
-            ok = co_await ensure_topic_replication(model::tx_registry_nt);
-        }
-
-        if (ok) {
             const model::topic_namespace schema_registry_nt{
               model::kafka_namespace, model::schema_registry_internal_tp.topic};
             ok = co_await ensure_topic_replication(schema_registry_nt);

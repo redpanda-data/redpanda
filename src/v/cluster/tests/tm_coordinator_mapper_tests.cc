@@ -8,26 +8,28 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/tm_stm.h"
-#include "cluster/tm_tx_hash_ranges.h"
 #include "cluster/tx_coordinator_mapper.h"
+#include "cluster/tx_hash_ranges.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 #include <cstdint>
 
 void check_hash_range_distribuiton(int32_t partitions_amount) {
-    cluster::tm_hash_ranges_set hash_ranges{};
+    cluster::tx_hash_ranges_set hash_ranges{};
     for (int i = 0; i < partitions_amount; ++i) {
-        hash_ranges.ranges.push_back(cluster::default_tm_hash_range(
+        hash_ranges.ranges.push_back(cluster::default_hash_range(
           model::partition_id(i), partitions_amount));
     }
-    BOOST_REQUIRE_EQUAL(hash_ranges.ranges[0].first, 0);
+    BOOST_REQUIRE_EQUAL(hash_ranges.ranges[0].first, cluster::tx_id_hash(0));
     for (int i = 0; i < partitions_amount - 1; ++i) {
         BOOST_REQUIRE_EQUAL(
-          hash_ranges.ranges[i].last + 1, hash_ranges.ranges[i + 1].first);
+          hash_ranges.ranges[i].last + cluster::tx_id_hash(1),
+          hash_ranges.ranges[i + 1].first);
     }
     BOOST_REQUIRE_EQUAL(
-      hash_ranges.ranges[partitions_amount - 1].last, cluster::tx_tm_hash_max);
+      hash_ranges.ranges[partitions_amount - 1].last,
+      cluster::tx_id_hash::max());
 
     // Next checks not applicable to 1 partition
     if (partitions_amount == 1) {
@@ -57,34 +59,35 @@ SEASTAR_THREAD_TEST_CASE(tm_hash_range_test) {
 
 void check_get_partition_from_default_distribution(int32_t partitions_amount) {
     BOOST_REQUIRE_EQUAL(
-      cluster::get_partition_from_default_distribution(0, partitions_amount),
+      cluster::get_tx_coordinator_partition(
+        cluster::tx_id_hash(0), partitions_amount),
       model::partition_id(0));
 
     BOOST_REQUIRE_EQUAL(
-      cluster::get_partition_from_default_distribution(
-        cluster::tx_tm_hash_max, partitions_amount),
+      cluster::get_tx_coordinator_partition(
+        cluster::tx_id_hash::max(), partitions_amount),
       model::partition_id(partitions_amount - 1));
 
-    cluster::tm_hash_ranges_set hash_ranges{};
+    cluster::tx_hash_ranges_set hash_ranges{};
     for (int i = 0; i < partitions_amount; ++i) {
-        hash_ranges.ranges.push_back(cluster::default_tm_hash_range(
+        hash_ranges.ranges.push_back(cluster::default_hash_range(
           model::partition_id(i), partitions_amount));
     }
 
     for (int i = 0; i < partitions_amount; ++i) {
         BOOST_REQUIRE_EQUAL(
-          cluster::get_partition_from_default_distribution(
+          cluster::get_tx_coordinator_partition(
             hash_ranges.ranges[i].first, partitions_amount),
           model::partition_id(i));
 
         BOOST_REQUIRE_EQUAL(
-          cluster::get_partition_from_default_distribution(
+          cluster::get_tx_coordinator_partition(
             hash_ranges.ranges[i].last, partitions_amount),
           model::partition_id(i));
 
         BOOST_REQUIRE_EQUAL(
-          cluster::get_partition_from_default_distribution(
-            cluster::tm_tx_hash_type(
+          cluster::get_tx_coordinator_partition(
+            cluster::tx_id_hash(
               (uint64_t(hash_ranges.ranges[i].first)
                + uint64_t(hash_ranges.ranges[i].last))
               / 2),

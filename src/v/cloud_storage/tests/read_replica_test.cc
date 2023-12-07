@@ -21,6 +21,7 @@
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
+#include "test_utils/scoped_config.h"
 
 using tests::kafka_consume_transport;
 
@@ -38,17 +39,17 @@ public:
         wait_for_controller_leadership().get();
 
         // Disable metrics to speed things up.
-        config::shard_local_cfg().enable_metrics_reporter.set_value(false);
-        config::shard_local_cfg().disable_metrics.set_value(true);
-        config::shard_local_cfg().disable_public_metrics.set_value(true);
+        test_local_cfg.get("enable_metrics_reporter").set_value(false);
+        test_local_cfg.get("disable_metrics").set_value(true);
+        test_local_cfg.get("disable_public_metrics").set_value(true);
 
         // Avoid background work since we'll control uploads ourselves.
-        config::shard_local_cfg()
-          .cloud_storage_enable_segment_merging.set_value(false);
-        config::shard_local_cfg()
-          .cloud_storage_disable_upload_loop_for_tests.set_value(true);
-        config::shard_local_cfg()
-          .cloud_storage_disable_read_replica_loop_for_tests.set_value(true);
+        test_local_cfg.get("cloud_storage_enable_segment_merging")
+          .set_value(false);
+        test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+          .set_value(true);
+        test_local_cfg.get("cloud_storage_disable_read_replica_loop_for_tests")
+          .set_value(true);
     }
 
     std::unique_ptr<redpanda_thread_fixture> start_read_replica_fixture() {
@@ -66,6 +67,7 @@ public:
           get_archival_config(),
           get_cloud_config(httpd_port_number()));
     }
+    scoped_config test_local_cfg;
 };
 
 FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {

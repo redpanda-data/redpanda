@@ -263,7 +263,7 @@ public:
         return _raft->get_latest_configuration_offset();
     }
 
-    ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() {
+    ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() const {
         return _id_allocator_stm;
     }
 

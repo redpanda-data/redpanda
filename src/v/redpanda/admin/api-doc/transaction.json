@@ -95,6 +95,34 @@
         }
     ],
     "models": {
+        "hash_range": {
+            "id": "hash_range",
+            "description": "Hash range",
+            "properties": {
+                "first": {
+                    "type": "long",
+                    "description": "first"
+                },
+                "last": {
+                    "type": "long",
+                    "description": "last"
+                }
+            }
+        },
+        "tx_mapping_entry": {
+            "id": "tx_mapping_entry",
+            "description": "tx_mapping_entry",
+            "properties": {
+                "partition_id": {
+                    "type": "int",
+                    "description": "partition_id"
+                },
+                "hosted_txs": {
+                    "type": "hosted_txs",
+                    "description": "hosted transactions"
+                }
+            }
+        },
         "ntp": {
             "id": "ntp",
             "description": "NTP",
@@ -226,6 +254,30 @@
                         "type": "group"
                     },
                     "description": "Consumer groups for transaction"
+                }
+            }
+        },
+        "hosted_txs": {
+            "id": "hosted_txs",
+            "description": "hosted_txs",
+            "properties": {
+                "excluded_transactions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "included_transactions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "hash_ranges": {
+                    "type": "array",
+                    "items": {
+                        "type": "hash_range"
+                    }
                 }
             }
         }

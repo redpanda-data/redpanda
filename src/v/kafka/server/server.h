@@ -62,7 +62,6 @@ public:
       ss::sharded<cluster::security_frontend>&,
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
-      ss::sharded<cluster::tx_registry_frontend>&,
       std::optional<qdc_monitor::config>,
       ssx::thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
@@ -107,9 +106,7 @@ public:
     cluster::tx_gateway_frontend& tx_gateway_frontend() {
         return _tx_gateway_frontend.local();
     }
-    cluster::tx_registry_frontend& tx_registry_frontend() {
-        return _tx_registry_frontend.local();
-    }
+
     kafka::group_router& group_router() { return _group_router.local(); }
     cluster::shard_table& shard_table() { return _shard_table.local(); }
     ss::sharded<cluster::partition_manager>& partition_manager() {
@@ -209,7 +206,6 @@ private:
     ss::sharded<cluster::security_frontend>& _security_frontend;
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
-    ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;

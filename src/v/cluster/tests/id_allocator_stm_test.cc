@@ -21,6 +21,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -37,14 +38,19 @@ using namespace std::chrono_literals;
 
 ss::logger idstmlog{"idstm-test"};
 
-FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
-    start_raft();
+struct id_allocator_test_fixture : mux_state_machine_fixture {
+    void start_fixture() {
+        start_raft();
+        test_local_cfg.get("id_allocator_batch_size").set_value(int16_t(1));
+        test_local_cfg.get("id_allocator_log_capacity").set_value(int16_t(2));
+    }
+    scoped_config test_local_cfg;
+};
 
-    config::configuration cfg;
-    cfg.id_allocator_batch_size.set_value(int16_t(1));
-    cfg.id_allocator_log_capacity.set_value(int16_t(2));
+FIXTURE_TEST(stm_monotonicity_test, id_allocator_test_fixture) {
+    start_fixture();
 
-    cluster::id_allocator_stm stm(idstmlog, _raft.get(), cfg);
+    cluster::id_allocator_stm stm(idstmlog, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -63,14 +69,10 @@ FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
     }
 }
 
-FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
-    start_raft();
+FIXTURE_TEST(stm_restart_test, id_allocator_test_fixture) {
+    start_fixture();
 
-    config::configuration cfg;
-    cfg.id_allocator_batch_size.set_value(int16_t(1));
-    cfg.id_allocator_log_capacity.set_value(int16_t(2));
-
-    cluster::id_allocator_stm stm1(idstmlog, _raft.get(), cfg);
+    cluster::id_allocator_stm stm1(idstmlog, _raft.get());
     stm1.start().get0();
     wait_for_confirmed_leader();
 
@@ -86,7 +88,7 @@ FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
     }
     stm1.stop().get0();
 
-    cluster::id_allocator_stm stm2(idstmlog, _raft.get(), cfg);
+    cluster::id_allocator_stm stm2(idstmlog, _raft.get());
     stm2.start().get0();
     for (int i = 0; i < 5; i++) {
         auto result = stm2.allocate_id(1s).get0();

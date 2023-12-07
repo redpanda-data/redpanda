@@ -83,7 +83,6 @@ v_cc_library(
     id_allocator.cc
     id_allocator_frontend.cc
     rm_partition_frontend.cc
-    tx_registry_frontend.cc
     tx_gateway_frontend.cc
     tx_gateway.cc
     service.cc

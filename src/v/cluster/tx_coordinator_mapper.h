@@ -12,7 +12,7 @@
 #pragma once
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
-#include "cluster/tm_tx_hash_ranges.h"
+#include "cluster/tx_hash_ranges.h"
 #include "hashing/murmur.h"
 #include "kafka/protocol/types.h"
 #include "kafka/types.h"
@@ -25,17 +25,26 @@
 
 namespace cluster {
 
-inline model::partition_id get_partition_from_default_distribution(
-  tm_tx_hash_type tx_id_hash, int32_t partitions_amount) {
-    tm_tx_hash_type default_partition_range_size = get_default_range_size(
-      partitions_amount);
-    int32_t partition = int32_t(tx_id_hash / default_partition_range_size);
+inline model::partition_id
+get_tx_coordinator_partition(tx_id_hash tx_id_hash, int32_t partition_cnt) {
+    auto default_partition_range_size = get_default_tx_hash_range_size(
+      partition_cnt);
+
+    auto partition = int32_t(tx_id_hash / default_partition_range_size);
 
     // Last partition in default distibuiton can have bigger range
-    if (partition >= partitions_amount) {
-        return model::partition_id(partitions_amount - 1);
+    if (partition >= partition_cnt) {
+        return model::partition_id(partition_cnt - 1);
     }
     return model::partition_id(partition);
+}
+
+inline model::ntp get_tx_coordinator_ntp(
+  const kafka::transactional_id& tx_id, int32_t partition_count) {
+    return {
+      model::tx_manager_nt.ns,
+      model::tx_manager_nt.tp,
+      get_tx_coordinator_partition(get_tx_id_hash(tx_id), partition_count)};
 }
 
 /**
@@ -57,15 +66,12 @@ inline model::partition_id get_partition_from_default_distribution(
 
 class tx_coordinator_mapper {
 public:
-    explicit tx_coordinator_mapper(
-      ss::sharded<cluster::metadata_cache>& md,
-      model::topic_namespace tx_coordinator_topic)
-      : _md(md)
-      , _tp_ns(std::move(tx_coordinator_topic)) {}
+    explicit tx_coordinator_mapper(ss::sharded<cluster::metadata_cache>& md)
+      : _md(md) {}
 
     ss::future<std::optional<model::ntp>>
     ntp_for(kafka::transactional_id tx_id) const {
-        auto cfg = _md.local().get_topic_cfg(_tp_ns);
+        auto cfg = _md.local().get_topic_cfg(model::tx_manager_nt);
         if (!cfg) {
             // Transaction coordinator topic not exist in cache
             // should be catched by caller (find_coordinator)
@@ -74,18 +80,18 @@ public:
         }
         int32_t partitions_amount = cfg->partition_count;
 
-        tm_tx_hash_type tx_id_hash = get_tx_id_hash(tx_id);
-        auto partition = get_partition_from_default_distribution(
+        tx_id_hash tx_id_hash = get_tx_id_hash(tx_id);
+        auto partition = get_tx_coordinator_partition(
           tx_id_hash, partitions_amount);
-        co_return model::ntp(_tp_ns.ns, _tp_ns.tp, partition);
+        co_return model::ntp(
+          model::tx_manager_nt.ns, model::tx_manager_nt.tp, partition);
     }
 
-    const model::ns& ns() const { return _tp_ns.ns; }
-    const model::topic& topic() const { return _tp_ns.tp; }
+    const model::ns& ns() const { return model::tx_manager_nt.ns; }
+    const model::topic& topic() const { return model::tx_manager_nt.tp; }
 
 private:
     ss::sharded<cluster::metadata_cache>& _md;
-    model::topic_namespace _tp_ns;
 };
 
 } // namespace cluster
