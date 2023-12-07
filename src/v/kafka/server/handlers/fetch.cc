@@ -331,18 +331,6 @@ static ss::future<read_result> do_read_from_ntp(
     }
 
     if (offset_ec != error_code::none) {
-        vlog(
-          klog.warn,
-          "fetch offset out of range for {}, requested offset: {}, "
-          "partition start offset: {}, high watermark: {}, log end offset: {} "
-          "ec: {}",
-          ntp_config.ktp(),
-          ntp_config.cfg.start_offset,
-          kafka_partition->start_offset(),
-          kafka_partition->high_watermark(),
-          kafka_partition->log_end_offset(),
-          offset_ec);
-
         co_return read_result(
           offset_ec,
           kafka_partition->start_offset(),
