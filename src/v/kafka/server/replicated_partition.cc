@@ -471,18 +471,33 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
 
     // offset validation logic on follower
     if (reading_from_follower && !_partition->is_leader()) {
+        auto ec = error_code::none;
         if (fetch_offset < start_offset()) {
-            co_return error_code::offset_out_of_range;
-        }
-        if (
+            ec = error_code::offset_out_of_range;
+        } else if (
           fetch_offset > high_watermark()
           && fetch_offset <= leader_high_watermark()) {
-            co_return error_code::offset_not_available;
+            ec = error_code::offset_not_available;
+        } else if (fetch_offset > leader_high_watermark()) {
+            ec = error_code::offset_out_of_range;
         }
-        if (fetch_offset > leader_high_watermark()) {
-            co_return error_code::offset_out_of_range;
+
+        if (ec != error_code::none) {
+            vlog(
+              klog.warn,
+              "ntp {}: fetch offset out of range on follower, requested: {}, "
+              "partition start offset: {}, high watermark: {}, leader high "
+              "watermark: {}, log end offset: {}, ec: {}",
+              ntp(),
+              fetch_offset,
+              start_offset(),
+              high_watermark(),
+              leader_high_watermark(),
+              log_end_offset(),
+              ec);
         }
-        co_return error_code::none;
+
+        co_return ec;
     }
 
     // Grab the up to date start offset
@@ -491,15 +506,27 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
     if (!start_offset) {
         vlog(
           klog.warn,
-          "error obtaining latest start offset - {}",
+          "ntp {}: error obtaining latest start offset - {}",
+          ntp(),
           start_offset.error());
         co_return start_offset.error();
     }
 
-    co_return fetch_offset >= start_offset.value()
-        && fetch_offset <= log_end_offset()
-      ? error_code::none
-      : error_code::offset_out_of_range;
+    if (
+      fetch_offset < start_offset.value() || fetch_offset > log_end_offset()) {
+        vlog(
+          klog.warn,
+          "ntp {}: fetch offset_out_of_range on leader, requested: {}, "
+          "partition start offset: {}, high watermark: {}, log end offset: {}",
+          ntp(),
+          fetch_offset,
+          start_offset.value(),
+          high_watermark(),
+          log_end_offset());
+        co_return error_code::offset_out_of_range;
+    }
+
+    co_return error_code::none;
 }
 
 result<partition_info> replicated_partition::get_partition_info() const {

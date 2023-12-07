@@ -94,8 +94,12 @@ class KafkaCliConsumer(BackgroundThreadService):
         finally:
             self._done = True
 
+    def message_cnt(self):
+        with self._lock:
+            return self._message_cnt
+
     def wait_for_messages(self, messages, timeout=30):
-        wait_until(lambda: self._message_cnt >= messages,
+        wait_until(lambda: self.message_cnt() >= messages,
                    timeout,
                    backoff_sec=2)
 

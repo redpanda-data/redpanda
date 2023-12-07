@@ -441,9 +441,6 @@ private:
         model::offset high_watermark() const final {
             throw std::runtime_error("unimplemented");
         }
-        model::offset log_end_offset() const final {
-            throw std::runtime_error("unimplemented");
-        }
         checked<model::offset, kafka::error_code>
         last_stable_offset() const final {
             throw std::runtime_error("unimplemented");

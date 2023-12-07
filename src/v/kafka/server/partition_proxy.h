@@ -37,7 +37,6 @@ public:
           sync_effective_start(model::timeout_clock::duration) = 0;
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
-        virtual model::offset log_end_offset() const = 0;
         virtual checked<model::offset, error_code>
         last_stable_offset() const = 0;
         virtual kafka::leader_epoch leader_epoch() const = 0;
@@ -89,7 +88,6 @@ public:
     model::offset start_offset() const { return _impl->start_offset(); }
 
     model::offset high_watermark() const { return _impl->high_watermark(); }
-    model::offset log_end_offset() const { return _impl->log_end_offset(); }
 
     checked<model::offset, error_code> last_stable_offset() const {
         return _impl->last_stable_offset();
