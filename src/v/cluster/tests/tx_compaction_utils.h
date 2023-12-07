@@ -18,9 +18,8 @@
 namespace cluster {
 
 static ss::logger logger{"random_tx_generator"};
-auto log_manager_housekeeping(
-  storage::hash_key_offset_map* hash_key_offset_map,
-  ss::shared_ptr<storage::log> log) -> ss::future<> {
+auto log_manager_housekeeping(ss::shared_ptr<storage::log> log)
+  -> ss::future<> {
     constexpr auto ret_duration = 10s;
     auto dummy_as = ss::abort_source{};
     co_await log->apply_segment_ms();
@@ -31,7 +30,6 @@ auto log_manager_housekeeping(
       ss::default_priority_class(),
       dummy_as,
       std::nullopt,
-      hash_key_offset_map,
     });
 }
 
@@ -119,12 +117,9 @@ public:
               random_generators::get_int(1, num_ops)}));
         }
 
-        auto hash_key_offset_map = storage::hash_key_offset_map{};
-        hash_key_offset_map.initialize(10_MiB).get();
         //----- Step 2: Execute ops
         while (!ops.empty()) {
-            auto housekeeping_fut = log_manager_housekeeping(
-              &hash_key_offset_map, log);
+            auto housekeeping_fut = log_manager_housekeeping(log);
             ss::yield().get();
             auto op = ops.top();
             op->execute();
