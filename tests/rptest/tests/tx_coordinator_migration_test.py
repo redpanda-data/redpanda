@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from concurrent.futures import ThreadPoolExecutor
+import json
 import time
 import requests
 from rptest.services.cluster import cluster
@@ -102,12 +103,24 @@ class TxCoordinatorMigrationTest(RedpandaTest):
         return {(p['partition_id'], p['raft_group_id']) for p in metadata}
 
     def _migrate_until_success(self):
-        admin = Admin(self.redpanda)
+        migrator = self._random_node()
+
+        def _is_finished():
+            try:
+                status = json.loads(
+                    admin.get_tx_manager_recovery_status(migrator).text)
+                self.logger.info(f"Migration status: {status}")
+                return status['required'] == False and status[
+                    'in_progress'] == False
+            except Exception as e:
+                return False
+
+        admin = Admin(self.redpanda, retries_amount=0)
         finished = False
         cnt = 0
         max_failures = 5
         fi = FailureInjector(self.redpanda)
-        migrator = self._random_node()
+
         with ThreadPoolExecutor(max_workers=1) as executor:
             start = time.time()
             while not finished:
@@ -122,10 +135,13 @@ class TxCoordinatorMigrationTest(RedpandaTest):
                 try:
                     if cnt < max_failures:
                         executor.submit(lambda: fi.inject_failure(
-                            FailureSpec(FailureSpec.FAILURE_KILL, self.redpanda
-                                        .nodes[0], 0)))
+                            FailureSpec(FailureSpec.FAILURE_KILL, migrator, 0))
+                                        )
                     admin.migrate_tx_manager_in_recovery(migrator)
-                    finished = True
+                    finished = _is_finished()
+                    if not finished:
+                        time.sleep(0.5)
+
                 except Exception as e:
                     self.logger.info(f"Migration error: {e}")
                     time.sleep(0.5)

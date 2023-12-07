@@ -1462,7 +1462,8 @@ void application::wire_up_redpanda_services(
           std::ref(_connection_cache),
           std::ref(controller->get_partition_leaders()),
           config::node().node_id().value(),
-          config::shard_local_cfg().internal_topic_replication_factor());
+          config::shard_local_cfg().internal_topic_replication_factor(),
+          config::shard_local_cfg().transaction_coordinator_partitions.bind());
     }
 
     if (archival_storage_enabled() && !config::node().recovery_mode_enabled()) {

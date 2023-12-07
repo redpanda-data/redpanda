@@ -12,6 +12,7 @@
 #include "cluster/migrations/tx_manager_migrator_types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/tx_manager_migrator_service.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -156,6 +157,10 @@ private:
 
 class tx_manager_migrator {
 public:
+    struct status {
+        bool migration_in_progress;
+        bool migration_required;
+    };
     static std::chrono::milliseconds default_timeout;
     tx_manager_migrator(
       ss::sharded<topics_frontend>& topics_frontend,
@@ -167,9 +172,12 @@ public:
       ss::sharded<rpc::connection_cache>& connection_cache,
       ss::sharded<partition_leaders_table>& leaders,
       model::node_id self,
-      int16_t internal_topic_replication_factor);
+      int16_t internal_topic_replication_factor,
+      config::binding<int> requested_partition_count);
 
-    ss::future<std::error_code> migrate(uint32_t new_partition_count);
+    ss::future<std::error_code> migrate();
+
+    status get_status() const;
 
     ss::future<> stop();
 
@@ -184,14 +192,12 @@ private:
         finished,
     };
 
-    ss::future<std::error_code>
-    create_topic(model::topic_namespace_view topic, uint32_t partition_count);
+    ss::future<std::error_code> create_topic(model::topic_namespace_view topic);
 
-    ss::future<std::error_code> rehash_and_write_partition_data(
-      uint32_t target_partition_count, model::partition_id source_partition_id);
+    ss::future<std::error_code>
+    rehash_and_write_partition_data(model::partition_id source_partition_id);
     ss::future<std::error_code> rehash_chunk(
       model::partition_id source_partition_id,
-      uint32_t target_partition_count,
       fragmented_vector<model::record_batch> batches);
 
     ss::future<std::error_code>
@@ -203,6 +209,8 @@ private:
         return default_timeout + model::timeout_clock::now();
     }
 
+    bool is_migration_required() const;
+
     friend std::ostream& operator<<(std::ostream&, migration_step);
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<controller_api>& _controller_api;
@@ -211,6 +219,10 @@ private:
     tx_manager_read_router _read_router;
     tx_manager_replicate_router _replicate_router;
     int16_t _internal_topic_replication_factor;
+    config::binding<int> _manager_partition_count;
+    int32_t _requested_partition_count;
+    mutex _migration_mutex;
+
     ss::abort_source _as;
 };
 } // namespace cluster
