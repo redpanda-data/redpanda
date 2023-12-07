@@ -300,22 +300,6 @@ public:
         BOOST_REQUIRE_EQUAL(committed_offsets, downloaded_offsets);
     }
 
-    using wipe = ss::bool_class<struct wipe_on_restart_tag>;
-    void restart(wipe should_wipe = wipe::no) {
-        shutdown();
-        if (should_wipe) {
-            std::filesystem::remove_all(data_dir);
-        }
-        app_signal = std::make_unique<::stop_signal>();
-        ss::smp::invoke_on_all([] {
-            auto& config = config::shard_local_cfg();
-            config.get("disable_metrics").set_value(false);
-        }).get0();
-        app.initialize(proxy_config(), proxy_client_config());
-        app.check_environment();
-        app.wire_up_and_start(*app_signal, true);
-    }
-
 protected:
     const cloud_storage_clients::bucket_name bucket;
     model::cluster_uuid cluster_uuid;
@@ -490,7 +474,7 @@ FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
 
     // Wipe the cluster and restore the groups from the snapshot.
     info("Clearing cluster...");
-    redpanda_thread_fixture::restart(should_wipe::yes);
+    restart(should_wipe::yes);
     make_partitions(1).get();
     BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
                     app.coordinator_ntp_mapper.local(),
@@ -681,7 +665,7 @@ FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
     stop_client.cancel();
 
     // Restart empty.
-    restart(wipe::yes);
+    restart(should_wipe::yes);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
         return app.storage.local().get_cluster_uuid().has_value();
     });
@@ -739,7 +723,7 @@ FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
         }
     }
 
-    restart(wipe::no);
+    restart(should_wipe::no);
     RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
         const auto [err, l] = app._group_manager.local().list_groups();
         return err == kafka::error_code::none;
@@ -779,7 +763,7 @@ FIXTURE_TEST(test_cluster_recovery_with_offsets, offsets_recovery_fixture) {
 
     // Clear the cluster and restore.
     raft0 = nullptr;
-    restart(wipe::yes);
+    restart(should_wipe::yes);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
         return app.storage.local().get_cluster_uuid().has_value();
     });
