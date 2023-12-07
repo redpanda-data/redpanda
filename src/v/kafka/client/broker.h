@@ -62,7 +62,7 @@ public:
         return _gated_mutex
           .with([this, r{std::move(r)}]() mutable {
               vlog(
-                kclog.debug,
+                kcwire.debug,
                 "{}Dispatch to node {}: {} req: {}",
                 *this,
                 _node_id,
@@ -70,7 +70,7 @@ public:
                 r);
               return _client.dispatch(std::move(r)).then([this](Ret res) {
                   vlog(
-                    kclog.debug,
+                    kcwire.debug,
                     "{}Dispatch from node {}: {} res: {}",
                     *this,
                     _node_id,
