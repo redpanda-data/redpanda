@@ -194,6 +194,20 @@ public:
         return groups_per_ntp;
     }
 
+    // Creates the specified number of groups and commits one offset per group,
+    // returning maps containing the underlying offsets topic partition,
+    // committed offsets, and associated groups.
+    auto create_groups_and_commit(size_t num_groups) {
+        auto client = make_connected_client();
+        auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+        auto groups = group_ids("test_group", num_groups);
+        auto members = create_groups(client, groups).get();
+        auto committed_offsets = commit_random_offsets(client, members).get();
+        auto num_groups_per_ntp = snap_num_group_per_offsets_ntp();
+        return std::make_tuple(num_groups_per_ntp, committed_offsets);
+    }
+
     // Repeatedly checks that each offsets NTP manages the exact count of
     // groups as in `groups_per_ntp`, verifying that all reported errors are in
     // `allowed_errors`.
@@ -352,19 +366,9 @@ FIXTURE_TEST(test_snapshot_basic, offsets_recovery_fixture) {
 
 FIXTURE_TEST(test_snapshot_leadership_change, offsets_recovery_fixture) {
     make_partitions(1).get();
-
-    // Create a client and a bunch of groups.
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
-    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto [groups_per_ntp, _] = create_groups_and_commit(30);
 
     // Repeatedly snapshot while we undergo some leadership changes.
-    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
-
     ss::gate g;
     auto validate_fut = validate_group_counts_in_loop(
       groups_per_ntp, {cluster::cloud_metadata::error_outcome::not_ready}, g);
@@ -430,16 +434,7 @@ FIXTURE_TEST(test_snapshot_group_removal, offsets_recovery_fixture) {
 
 FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
     make_partitions(1).get();
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
-
-    // Commit a bunch of offsets.
-    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto [_, committed_offsets] = create_groups_and_commit(30);
 
     // Upload the offsets.
     auto paths_per_pid = upload_offsets().get();
@@ -455,22 +450,11 @@ FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
 
 FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
     make_partitions(1).get();
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
-
-    // Commit a bunch of offsets.
-    auto committed_offsets = commit_random_offsets(client, members).get();
+    constexpr const auto num_groups = 30;
+    auto [groups_per_ntp, committed_offsets] = create_groups_and_commit(
+      num_groups);
     auto remote_paths = upload_offsets().get();
     BOOST_REQUIRE_EQUAL(16, remote_paths.size());
-    info("Stopping client...");
-    client.stop().get();
-    stop_client.cancel();
-    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
 
     // Wipe the cluster and restore the groups from the snapshot.
     info("Clearing cluster...");
@@ -573,20 +557,12 @@ FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
     test_local_cfg.get("cloud_storage_cluster_metadata_upload_interval_ms")
       .set_value(5000ms);
 
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+    const auto [_, committed_offsets] = create_groups_and_commit(30);
 
     // Set up some metadata: a controller snapshot and some offsets.
     auto& controller_stm = app.controller->get_controller_stm().local();
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [&] { return controller_stm.maybe_write_snapshot(); });
-    auto committed_offsets = commit_random_offsets(client, members).get();
-    client.stop().get();
-    stop_client.cancel();
 
     // Now begin uploading metadata.
     auto& uploader = app.controller->metadata_uploader();
@@ -650,19 +626,10 @@ FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
 FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
     // Test that from an offset snapshot, we're able to recover.
     make_partitions(1).get();
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    auto committed_offsets = commit_random_offsets(client, members).get();
-    auto num_groups_per_ntp = snap_num_group_per_offsets_ntp();
+    auto [num_groups_per_ntp, committed_offsets] = create_groups_and_commit(30);
 
     auto paths_per_pid = upload_offsets().get();
     BOOST_REQUIRE_EQUAL(paths_per_pid.size(), 16);
-    client.stop().get();
-    stop_client.cancel();
 
     // Restart empty.
     restart(should_wipe::yes);
