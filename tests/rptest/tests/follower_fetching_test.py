@@ -18,6 +18,7 @@ from rptest.services.cluster import cluster
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import SISettings
+from rptest.services.admin import Admin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_for_local_storage_truncate
 
@@ -167,6 +168,61 @@ class FollowerFetchingTest(PreallocNodesTest):
                     assert current_bytes_fetched > 0
                 else:
                     assert current_bytes_fetched == 0
+
+    @cluster(num_nodes=5)
+    def test_with_leadership_transfers(self):
+        """
+        Test consuming from a single node while leadership is randomly transfered.
+        """
+
+        rack_layout = [str(i) for i in "ABC"]
+        for ix, node in enumerate(self.redpanda.nodes):
+            extra_node_conf = {
+                'rack': rack_layout[ix],
+                'enable_rack_awareness': True,
+            }
+            self.redpanda.set_extra_node_conf(node, extra_node_conf)
+        self.redpanda.start()
+
+        topic = TopicSpec(name="mytopic",
+                          partition_count=1,
+                          replication_factor=3)
+        self.client().create_topic(topic)
+
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            msg_size=512,
+            # some large number to get produce load till the end of test
+            msg_count=2**30,
+            rate_limit_bps=2**20)
+        producer.start()
+
+        # consume from the same rack as node 0
+        consumer = self.create_consumer(topic.name, rack=rack_layout[0])
+        consumer.start()
+
+        admin = Admin(self.redpanda)
+        prev_consumed = 0
+        for _ in range(10):
+            # do a random leadership transfer
+            admin.partition_transfer_leadership("kafka",
+                                                topic.name,
+                                                partition=0)
+
+            # ensure continuous consumer progress
+            consumer.wait_for_messages(prev_consumed + 1000)
+            prev_consumed = consumer.message_cnt()
+            self.logger.info(f"consumed {prev_consumed} msgs")
+
+        consumer.stop()
+        producer.stop()
+
+        # check that there were no consumer group resets caused by offset_out_of_range error
+        self.logger.info(f"produced {producer.produce_status.sent}, "
+                         f"consumed {consumer.message_cnt()} msgs")
+        assert consumer.message_cnt() <= producer.produce_status.sent
 
     @cluster(num_nodes=5)
     def test_follower_fetching_with_maintenance_mode(self):
