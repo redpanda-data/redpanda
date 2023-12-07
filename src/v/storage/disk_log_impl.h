@@ -165,6 +165,8 @@ public:
       const compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
+    const auto& compaction_ratio() const { return _compaction_ratio; }
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests

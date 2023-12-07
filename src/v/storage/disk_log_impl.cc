@@ -708,6 +708,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         if (seg->is_closed()) {
             throw segment_closed_exception();
         }
+        const auto size_before = seg->size_bytes();
+        const auto size_after = appender->file_byte_offset();
 
         // Clear our indexes before swapping the data files (note, the new
         // compaction index was opened with the truncate option above).
@@ -727,6 +729,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
         seg->mark_as_finished_windowed_compaction();
         _probe->segment_compacted();
+        compaction_result res(size_before, size_after);
+        _compaction_ratio.update(res.compaction_ratio());
         seg->advance_generation();
         staging_to_clean.clear();
         vlog(
