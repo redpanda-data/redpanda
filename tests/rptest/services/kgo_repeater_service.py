@@ -409,6 +409,12 @@ class KgoRepeaterService(Service):
                                  backoff_sec=1,
                                  err_msg=err_msg)
 
+    def reset(self):
+        """Internally resets the metrics accumulated within the kgo-repeater"""
+        for node in self.nodes:
+            r = requests.get(self._remote_url(node, "reset"), timeout=10)
+            r.raise_for_status()
+
 
 @contextmanager
 def repeater_traffic(context,
