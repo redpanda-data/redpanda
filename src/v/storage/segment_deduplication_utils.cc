@@ -109,7 +109,7 @@ ss::future<model::offset> build_offset_map(
             cfg.asrc->check();
         }
         const auto& seg = iter->get();
-        vlog(gclog.debug, "Adding segment to offset map: {}", seg->filename());
+        vlog(gclog.trace, "Adding segment to offset map: {}", seg->filename());
         auto read_lock = co_await seg->read_lock();
         segment_full_path idx_path = seg->path().to_compacted_index();
         std::optional<scoped_file_tracker> to_clean;

@@ -591,11 +591,12 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     }
     vlog(
       gclog.debug,
-      "[{}] built offset map with {} keys (max allowed {}), max indexed "
-      "key offset: {}",
+      "[{}] built offset map with {} keys (max allowed {}), min segment fully "
+      "indexed base offset: {}, max indexed key offset: {}",
       config().ntp(),
       map.size(),
       map.capacity(),
+      idx_start_offset,
       map.max_offset());
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
