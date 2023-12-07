@@ -70,6 +70,11 @@ cluster_recovery_manager::sync_leader(ss::abort_source& as) {
     if (!_raft0->is_leader() || synced_term != _raft0->term()) {
         co_return std::nullopt;
     }
+    vlog(
+      clusterlog.debug,
+      "Recovery manager synced up to offset {} in term {}",
+      committed_offset,
+      synced_term);
     co_return synced_term;
 }
 
@@ -139,6 +144,11 @@ ss::future<cluster::errc> cluster_recovery_manager::replicate_update(
     cluster_recovery_update_cmd_data data;
     data.stage = next_stage;
     data.error_msg = std::move(error_msg);
+    vlog(
+      clusterlog.debug,
+      "Replicating recovery update command in term {}: {}",
+      term,
+      next_stage);
     auto errc = co_await replicate_and_wait(
       _controller_stm,
       _sharded_as,
