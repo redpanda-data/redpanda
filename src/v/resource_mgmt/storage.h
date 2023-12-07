@@ -50,6 +50,9 @@ public:
         raft::group_id group;
         reclaimable_offsets offsets;
 
+        // estimated partitions ize
+        size_t size;
+
         /*
          * used when applying policies to the schedule.
          *

@@ -218,6 +218,18 @@ ss::future<eviction_policy::schedule> eviction_policy::create_new_schedule() {
          * sharded<partition_manager>.
          */
         return collect_reclaimable_offsets().then([](auto partitions) {
+            /*
+             * try to avoid bias towards partitions that show up early in
+             * partition listings by reclaiming in size order rather than
+             * listing order.
+             */
+            std::sort(
+              partitions.begin(),
+              partitions.end(),
+              [](const partition& a, const partition& b) {
+                  return a.size > b.size;
+              });
+
             return shard_partitions{
               .shard = ss::this_shard_id(),
               .partitions = std::move(partitions),
@@ -280,11 +292,13 @@ eviction_policy::collect_reclaimable_offsets() {
     co_await ss::max_concurrent_for_each(
       partitions.begin(), partitions.end(), 20, [&res, cfg](const auto& p) {
           auto log = p->log();
+          auto size = log->size_bytes();
           return log->get_reclaimable_offsets(cfg)
-            .then([&res, group = p->group()](auto offsets) {
+            .then([&res, group = p->group(), size](auto offsets) {
                 res.push_back({
                   .group = group,
                   .offsets = std::move(offsets),
+                  .size = size,
                 });
             })
             .handle_exception_type([](const ss::gate_closed_exception&) {})
@@ -296,14 +310,6 @@ eviction_policy::collect_reclaimable_offsets() {
                   e);
             });
       });
-
-    /*
-     * sorting by raft::group_id would provide a more stable round-robin
-     * evaluation of partitions in later processing of the result, but on small
-     * timescales we don't expect enough churn to make a difference, nor with a
-     * large number of partitions on the system would the non-determinism
-     * in the parallelism above in max_concurrent_for_each be problematic.
-     */
 
     vlog(rlog.trace, "Reporting reclaim offsets for {} partitions", res.size());
     co_return res;
