@@ -2270,7 +2270,7 @@ class redpanda_heapprof(gdb.Command):
                 n = root
                 n.size += size
                 n.count += count
-                bt = site['backtrace']['_main']
+                bt = site['backtrace']
                 addresses = list(
                     int(f['addr'])
                     for f in seastar_static_vector(bt['_frames']))
