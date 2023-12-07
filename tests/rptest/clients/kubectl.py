@@ -18,7 +18,6 @@ class KubectlTool:
     Wrapper around kubectl for operating on a redpanda cluster.
     """
 
-    KUBECTL_VERSION = '1.24.10'
     TELEPORT_DEST_DIR = '/tmp/machine-id'
     TELEPORT_IDENT_FILE = f'{TELEPORT_DEST_DIR}/identity'
 
@@ -120,60 +119,47 @@ class KubectlTool:
         '''
         if not self._kubectl_installed and self._remote_uri is not None:
             ssh_prefix = self._ssh_prefix()
-            download_cmd = ssh_prefix + [
-                'wget', '-q',
-                f'https://dl.k8s.io/release/v{self.KUBECTL_VERSION}/bin/linux/amd64/kubectl',
-                '-O', '/tmp/kubectl'
-            ]
-            install_cmd = ssh_prefix + [
-                'sudo', 'install', '-m', '0755', '/tmp/kubectl',
-                '/usr/local/bin/kubectl'
-            ]
-            cleanup_cmd = ssh_prefix + ['rm', '-f', '/tmp/kubectl']
+            bg_cmd = ssh_prefix + ['./breakglass-tools.sh']
 
             if self._provider == 'aws':
                 config_cmd = ssh_prefix + self._aws_config_cmd()
             elif self._provider == 'gcp':
                 config_cmd = ssh_prefix + self._gcp_config_cmd()
 
-            self._redpanda.logger.info(download_cmd)
-            res = subprocess.check_output(download_cmd)
-            self._redpanda.logger.info(install_cmd)
-            res = subprocess.check_output(install_cmd)
-            self._redpanda.logger.info(cleanup_cmd)
-            res = subprocess.check_output(cleanup_cmd)
+            self._redpanda.logger.info(bg_cmd)
+            res = subprocess.check_output(bg_cmd)
             self._redpanda.logger.info(config_cmd)
             res = subprocess.check_output(config_cmd)
             self._kubectl_installed = True
         return
 
-    def _run(self, cmd):
+    def _cmd(self, cmd):
         # Log and run
-        self._redpanda.logger.info(cmd)
-        res = subprocess.check_output(cmd)
-        return res
+        ssh_prefix = self._ssh_prefix()
+        remote_cmd = ssh_prefix + cmd
+        self._redpanda.logger.info(remote_cmd)
+        return subprocess.check_output(remote_cmd)
 
-    def run_kube_command(self, kcmd):
+    def cmd(self, kcmd):
+        """Execute a kubectl command on the agent node.
+        """
         # prepare
         self._install()
-        _ssh_prefix = self._ssh_prefix()
-        _kubectl = ["kubectl", '-n', self._namespace]
+        _kubectl = ['kubectl']
 
         # Make it universal for str/list
         _kcmd = kcmd if isinstance(kcmd, list) else kcmd.split()
         # Format command
-        cmd = _ssh_prefix + _kubectl + _kcmd
-        # Log and run
-        return self._run(cmd)
+        cmd = _kubectl + _kcmd
+        return self._cmd(cmd)
 
     def exec(self, remote_cmd):
         self._install()
-        ssh_prefix = self._ssh_prefix()
-        cmd = ssh_prefix + [
+        cmd = [
             'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
             f'rp-{self._cluster_id}-0', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
-        return self._run(cmd)
+        return self._cmd(cmd)
 
     def exists(self, remote_path):
         self._install()

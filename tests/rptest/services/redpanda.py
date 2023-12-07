@@ -1512,6 +1512,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             'ResourceSettings: setting dedicated_nodes=True because serving from redpanda cloud'
         )
 
+    @property
+    def kubectl(self):
+        return self._kubectl
+
     def start_node(self, node, **kwargs):
         pass
 
@@ -1540,7 +1544,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         # Get pods and form node list
         self.pods = []
-        _r = self._kubectl.run_kube_command("get pods -o json")
+        _r = self._kubectl.cmd('get pods -n redpanda -o json')
         _pods = json.loads(_r.decode())
         for p in _pods['items']:
             if not p['metadata']['name'].startswith(
@@ -1643,6 +1647,13 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         # Load install pack and check profile
         return install_pack_client.getInstallPack(install_pack_version)
+
+    def cloud_agent_ssh(self, remote_cmd):
+        """Run the given command on the redpanda agent node of the cluster.
+
+        :param remote_cmd: The command to run on the agent node.
+        """
+        return self._kubectl._cmd(remote_cmd)
 
 
 class RedpandaService(RedpandaServiceBase):
