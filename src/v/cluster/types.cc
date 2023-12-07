@@ -1274,6 +1274,23 @@ defunct_node_cmd_data::operator=(const defunct_node_cmd_data& other) {
     return *this;
 }
 
+bulk_force_reconfiguration_cmd_data&
+bulk_force_reconfiguration_cmd_data::operator=(
+  const bulk_force_reconfiguration_cmd_data& other) {
+    if (this != &other) {
+        from_nodes = other.from_nodes;
+        user_approved_force_recovery_partitions
+          = other.user_approved_force_recovery_partitions.copy();
+    }
+    return *this;
+}
+
+bulk_force_reconfiguration_cmd_data::bulk_force_reconfiguration_cmd_data(
+  const bulk_force_reconfiguration_cmd_data& other)
+  : from_nodes(other.from_nodes) {
+    user_approved_force_recovery_partitions
+      = other.user_approved_force_recovery_partitions.copy();
+}
 } // namespace cluster
 
 namespace reflection {

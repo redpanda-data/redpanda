@@ -3211,6 +3211,38 @@ struct defunct_node_cmd_data
     }
 };
 
+struct bulk_force_reconfiguration_cmd_data
+  : serde::envelope<
+      bulk_force_reconfiguration_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    bulk_force_reconfiguration_cmd_data() = default;
+    ~bulk_force_reconfiguration_cmd_data() noexcept = default;
+    bulk_force_reconfiguration_cmd_data(bulk_force_reconfiguration_cmd_data&&)
+      = default;
+    bulk_force_reconfiguration_cmd_data(
+      const bulk_force_reconfiguration_cmd_data&);
+    bulk_force_reconfiguration_cmd_data&
+    operator=(bulk_force_reconfiguration_cmd_data&&)
+      = default;
+    bulk_force_reconfiguration_cmd_data&
+    operator=(const bulk_force_reconfiguration_cmd_data&);
+    friend bool operator==(
+      const bulk_force_reconfiguration_cmd_data&,
+      const bulk_force_reconfiguration_cmd_data&)
+      = default;
+
+    std::vector<model::node_id> from_nodes;
+    fragmented_vector<ntp_with_majority_loss>
+      user_approved_force_recovery_partitions;
+
+    auto serde_fields() {
+        return std::tie(from_nodes, user_approved_force_recovery_partitions);
+    }
+};
+
 struct reconciliation_state_reply
   : serde::envelope<
       reconciliation_state_reply,

@@ -99,6 +99,7 @@ static constexpr int8_t topic_lifecycle_transition_cmd_type = 10;
 static constexpr int8_t force_partition_reconfiguration_type = 11;
 static constexpr int8_t update_partition_replicas_cmd_type = 12;
 static constexpr int8_t set_topic_partitions_disabled_cmd_type = 13;
+static constexpr int8_t bulk_force_reconfiguration_cmd_type = 14;
 
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
@@ -230,6 +231,16 @@ using update_partition_replicas_cmd = controller_command<
   int8_t, // unused
   update_partition_replicas_cmd_data,
   update_partition_replicas_cmd_type,
+  model::record_batch_type::topic_management_cmd,
+  serde_opts::serde_only>;
+
+/**
+ * Used to force recover multiple partitions at once.
+ */
+using bulk_force_reconfiguration_cmd = controller_command<
+  int8_t, // unused
+  bulk_force_reconfiguration_cmd_data,
+  bulk_force_reconfiguration_cmd_type,
   model::record_batch_type::topic_management_cmd,
   serde_opts::serde_only>;
 
