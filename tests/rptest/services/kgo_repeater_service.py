@@ -11,6 +11,8 @@ import signal
 import time
 import requests
 import json
+import operator
+from functools import reduce, partial
 from typing import Optional, Callable
 from contextlib import contextmanager
 from collections import defaultdict
@@ -329,21 +331,52 @@ class KgoRepeaterService(Service):
         self.logger.debug(
             f"Group {self.group_name} became ready in {time.time() - t1}s")
 
+    def _get_status_reports(self):
+        for node in self.nodes:
+            r = requests.get(self._remote_url(node, "status"), timeout=10)
+            r.raise_for_status()
+            node_status = r.json()
+            for worker_status in node_status:
+                yield worker_status
+
     def total_messages(self):
         """
         :return: 2-tuple of produced, consumed
         """
         produced = 0
         consumed = 0
-        for node in self.nodes:
-            r = requests.get(self._remote_url(node, "status"), timeout=10)
-            r.raise_for_status()
-            node_status = r.json()
-            for worker_status in node_status:
-                produced += worker_status['produced']
-                consumed += worker_status['consumed']
+        for worker_status in self._get_status_reports():
+            produced += worker_status['produced']
+            consumed += worker_status['consumed']
 
         return produced, consumed
+
+    def latency_reports(self, report_type='e2e'):
+        """
+        :return: 3-tuple of average p50, p90, and p99 latencies
+        """
+        report_types = ['e2e', 'ack']
+        if report_type not in report_types:
+            raise RuntimeError(
+                f'Invalid report_type {report_type} passed, possible values are {report_types}'
+            )
+        latencies = []
+        for worker_status in self._get_status_reports():
+            histogram = worker_status['latency'][report_type]
+            latencies.append(
+                (histogram['p50'], histogram['p90'], histogram['p99']))
+
+        def tuple_op(binary_op, a, b):
+            """Perform binary_op() across all fields of tuple a and b"""
+            assert len(a) == len(b)
+            return tuple(binary_op(v[0], v[1]) for v in zip(a, b))
+
+        # Return average of all values
+        n = len(latencies)
+        if n == 0:
+            return ()
+        summed = reduce(partial(tuple_op, operator.add), latencies, (0, 0, 0))
+        return tuple_op(operator.truediv, summed, (n, n, n))
 
     def await_progress(self, msg_count, timeout_sec, err_msg=None):
         """
