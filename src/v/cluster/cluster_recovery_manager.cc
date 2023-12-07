@@ -65,8 +65,12 @@ cluster_recovery_manager::sync_leader(ss::abort_source& as) {
     }
     // Make sure we catch up to the committed offset.
     const auto committed_offset = _raft0->committed_offset();
-    co_await _controller_stm.local().wait(
-      committed_offset, model::timeout_clock::time_point::max(), as);
+    try {
+        co_await _controller_stm.local().wait(
+          committed_offset, model::timeout_clock::time_point::max(), as);
+    } catch (ss::abort_requested_exception&) {
+        co_return std::nullopt;
+    }
     if (!_raft0->is_leader() || synced_term != _raft0->term()) {
         co_return std::nullopt;
     }
