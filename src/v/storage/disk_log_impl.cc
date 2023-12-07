@@ -541,6 +541,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         if (cfg.asrc) {
             cfg.asrc->check();
         }
+        if (seg->finished_self_compaction()) {
+            continue;
+        }
         auto result = co_await storage::internal::self_compact_segment(
           seg,
           _stm_manager,
