@@ -662,10 +662,11 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
         vlog(
           gclog.debug,
-          "[{}] Deduplicating data from segment {} to {}",
+          "[{}] Deduplicating data from segment {} to {}: {}",
           config().ntp(),
           seg->path(),
-          tmpname);
+          tmpname,
+          seg);
         auto initial_generation_id = seg->get_generation_id();
         std::exception_ptr eptr;
         index_state new_idx;
@@ -2090,7 +2091,7 @@ ss::future<> disk_log_impl::do_truncate(
           initial_size,
           *this));
     }
-    auto [prev_last_offset, file_position, new_max_timestamp] = phs.value();
+    auto [new_max_offset, file_position, new_max_timestamp] = phs.value();
 
     if (file_position == 0) {
         _segs.pop_back();
@@ -2102,14 +2103,14 @@ ss::future<> disk_log_impl::do_truncate(
 
     try {
         co_return co_await last_ptr->truncate(
-          prev_last_offset, file_position, new_max_timestamp);
+          new_max_offset, file_position, new_max_timestamp);
     } catch (...) {
         vassert(
           false,
           "Could not truncate:{} logical max:{}, physical "
           "offset:{}, new max timestamp:{} on segment:{} - log:{}",
           std::current_exception(),
-          prev_last_offset,
+          new_max_offset,
           file_position,
           new_max_timestamp,
           last,

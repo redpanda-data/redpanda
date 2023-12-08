@@ -183,12 +183,12 @@ segment_index::find_nearest(model::offset o) {
     return std::nullopt;
 }
 
-ss::future<>
-segment_index::truncate(model::offset o, model::timestamp new_max_timestamp) {
-    if (o < _state.base_offset) {
+ss::future<> segment_index::truncate(
+  model::offset new_max_offset, model::timestamp new_max_timestamp) {
+    if (new_max_offset < _state.base_offset) {
         co_return;
     }
-    const uint32_t i = o() - _state.base_offset();
+    const uint32_t i = new_max_offset() - _state.base_offset();
     auto it = std::lower_bound(
       std::begin(_state.relative_offset_index),
       std::end(_state.relative_offset_index),
@@ -204,14 +204,14 @@ segment_index::truncate(model::offset o, model::timestamp new_max_timestamp) {
         }
     }
 
-    if (o < _state.max_offset) {
+    if (new_max_offset < _state.max_offset) {
         _needs_persistence = true;
         if (_state.empty()) {
             _state.max_timestamp = _state.base_timestamp;
             _state.max_offset = _state.base_offset;
         } else {
             _state.max_timestamp = new_max_timestamp;
-            _state.max_offset = o;
+            _state.max_offset = new_max_offset;
         }
     }
 

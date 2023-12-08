@@ -54,11 +54,12 @@ public:
         /// `batch.base_offset()` which might be confusing at first,
         /// but allow us to keep track of the actual last logical offset
 
-        // Offset of last message fsync'd to disk
+        // Offset of last message fsynced to disk.
         model::offset committed_offset;
-        // Offset of last message written to this log
+        // Offset of last message written to this log, may not yet be stable.
         model::offset dirty_offset;
-        // Offset of last message written to disk
+        // Offset of last message written to disk, may not yet have been
+        // fsynced.
         model::offset stable_offset;
         friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
     };

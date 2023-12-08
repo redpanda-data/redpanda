@@ -436,12 +436,18 @@ struct record_batch_header
     // -- below the CRC are checksummed by the kafka crc. see @crc field
 
     record_batch_attributes attrs;
+
+    // The difference in offset between the first and last offset in the batch.
     int32_t last_offset_delta{0};
     timestamp first_timestamp;
     timestamp max_timestamp;
     int64_t producer_id{0};
     int16_t producer_epoch{0};
     int32_t base_sequence{0};
+
+    // The number of records in the batch. Note, this may not necessarily be
+    // the same as last_offset_delta, which is preserved across compaction,
+    // unlike record_count.
     int32_t record_count{0};
 
     auto serde_fields() {
