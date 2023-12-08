@@ -734,7 +734,7 @@ class HighThroughputTest(PreallocNodesTest):
                                   timeout_sec=self.msg_timeout)
 
             # Run a rolling restart.
-            #self.stage_rolling_restart()
+            self.stage_rolling_restart()
 
             # Hard stop, then restart.
             self.stage_stop_wait_start(forced_stop=True)
@@ -754,11 +754,34 @@ class HighThroughputTest(PreallocNodesTest):
 
     # Stages for the "test_restarts"
 
-    def stage_rolling_restart(self):
-        self.logger.info(f"Rolling restarting nodes")
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                            start_timeout=600,
-                                            stop_timeout=600)
+    def stage_rolling_restart(self, timeout_sec=180):
+        """Sequentially restart each pod in the redpanda cluster.
+
+        Using `kubectl delete pod`.
+
+        :param timeout_sec: seconds to wait for a restarted node to be ready before raising timeout exception
+        """
+        def pod_container_ready(pod_name):
+            # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].ready}'
+            return self.redpanda.kubectl.cmd([
+                'get', 'pod', pod_name, '-n=redpanda',
+                "-o=jsonpath='{.status.containerStatuses[0].ready}'"
+            ]).decode()
+
+        for pod in self.redpanda.pods:
+            pod_name = pod.name
+            self.redpanda.stop_node(pod_name)
+            delete_cmd = ['delete', 'pod', pod_name, '-n=redpanda']
+            self.logger.info(f'deleting pod {pod_name}')
+            # kubectl delete pod rp-clo88krkqkrfamptsst0-0 -n=redpanda'
+            self.redpanda.kubectl.cmd(delete_cmd)
+
+            wait_until(
+                lambda: pod_container_ready(pod_name) == 'true',
+                timeout_sec=timeout_sec,
+                err_msg=
+                f'pod {pod_name} sent signal {signal} failed to stop in {timeout_sec} seconds'
+            )
 
     def stage_block_node_traffic(self):
         wait_time = 120
