@@ -1255,15 +1255,25 @@ void admin_server::register_config_routes() {
 
     register_route_raw_sync<superuser>(
       ss::httpd::config_json::get_loggers,
-      [](ss::httpd::const_req, ss::http::reply& reply) {
+      [](ss::httpd::const_req req, ss::http::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
+          bool include_levels = false;
+          auto include_levels_str = req.get_query_param("include-levels");
+          if (!include_levels_str.empty()) {
+              include_levels = str_to_bool(include_levels_str);
+          }
           writer.StartArray();
           for (const auto& name :
                ss::global_logger_registry().get_all_logger_names()) {
               writer.StartObject();
               writer.Key("name");
               writer.String(name);
+              if (include_levels) {
+                  writer.Key("level");
+                  writer.String(fmt::to_string(
+                    ss::global_logger_registry().get_logger_level(name)));
+              }
               writer.EndObject();
           }
           writer.EndArray();
