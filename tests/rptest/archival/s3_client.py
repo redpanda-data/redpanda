@@ -261,6 +261,13 @@ class S3Client:
                 all_deleted_count += dc
                 all_failed_keys.extend(fk)
 
+        # In parallel mode we delete using hash prefixes at it doesn't cover
+        # cluster manifest.
+        if len(prefixes) > 1:
+            dc, fk = empty_bucket_prefix("")
+            all_deleted_count += dc
+            all_failed_keys.extend(fk)
+
         self.logger.debug(
             f"empty_bucket: deleted {all_deleted_count} keys (all prefixes)")
 
