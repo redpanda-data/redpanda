@@ -422,10 +422,10 @@ ss::future<> disk_log_impl::do_compact(
           storage::internal::should_apply_delta_time_offset(_feature_table));
 
         vlog(
-          gclog.debug,
+          gclog.info,
           "[{}] segment {} compaction result: {}",
           config().ntp(),
-          segment->reader().filename(),
+          segment,
           result);
         if (result.did_compact()) {
             segment->clear_cached_disk_usage();
@@ -437,7 +437,7 @@ ss::future<> disk_log_impl::do_compact(
     if (auto range = find_compaction_range(cfg); range) {
         auto r = co_await compact_adjacent_segments(std::move(*range), cfg);
         vlog(
-          stlog.debug,
+          gclog.info,
           "Adjacent segments of {}, compaction result: {}",
           config().ntp(),
           r);
