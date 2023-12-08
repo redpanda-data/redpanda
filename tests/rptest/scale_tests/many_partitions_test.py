@@ -118,6 +118,12 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # to pad out tiered storage metadata, we don't want them to
                 # get merged together.
                 'cloud_storage_enable_segment_merging': False,
+
+                # We don't scrub tiered storage in this test because it is slow
+                # (on purpose) and takes unreasonable amount of time for a CI
+                # job. We should figure out how to make it faster for this
+                # use-case.
+                'cloud_storage_enable_scrubbing': False,
             },
             # Configure logging the same way a user would when they have
             # very many partitions: set logs with per-partition messages

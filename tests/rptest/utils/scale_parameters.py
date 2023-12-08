@@ -131,6 +131,7 @@ class ScaleParameters:
                 cloud_storage_housekeeping_interval_ms=
                 cloud_storage_housekeeping_interval_ms,
                 use_bucket_cleanup_policy=True,
+                skip_end_of_test_scrubbing=True,
             )
         else:
             self.si_settings = None
