@@ -30,6 +30,15 @@
   "get": {
     "summary": "List all logger names",
     "operationId": "get_loggers",
+    "parameters": [
+      {
+        "name": "include-levels",
+        "in": "query",
+        "required": false,
+        "type": "boolean",
+        "allow_multiple": "false"
+      }
+    ],
     "produces": [
       "application/json"
     ],
