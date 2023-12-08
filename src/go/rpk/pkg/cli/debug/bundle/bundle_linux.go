@@ -138,6 +138,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveIP(ctx, ps),
 		saveInterrupts(ps),
 		saveKafkaMetadata(ctx, ps, bp.cl),
+		saveKernelSymbols(ps),
 		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
 		saveLspci(ctx, ps),
 		saveMdstat(ps),
@@ -581,6 +582,17 @@ func saveMdstat(ps *stepParams) step {
 			return err
 		}
 		return writeFileToZip(ps, "proc/mdstat", bs)
+	}
+}
+
+// Saves the contents of '/proc/kallsyms'.
+func saveKernelSymbols(ps *stepParams) step {
+	return func() error {
+		bs, err := afero.ReadFile(ps.fs, "/proc/kallsyms")
+		if err != nil {
+			return err
+		}
+		return writeFileToZip(ps, "proc/kallsyms", bs)
 	}
 }
 

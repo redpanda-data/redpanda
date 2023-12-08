@@ -73,6 +73,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes, bp.labelSelector),
 		saveK8SResources(ctx, ps, bp.namespace, bp.labelSelector),
 		saveKafkaMetadata(ctx, ps, bp.cl),
+		saveKernelSymbols(ps),
 		saveMdstat(ps),
 		saveMountedFilesystems(ps),
 		saveNTPDrift(ps),
