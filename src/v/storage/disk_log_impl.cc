@@ -422,10 +422,10 @@ ss::future<> disk_log_impl::do_compact(
           storage::internal::should_apply_delta_time_offset(_feature_table));
 
         vlog(
-          gclog.debug,
+          gclog.info,
           "[{}] segment {} compaction result: {}",
           config().ntp(),
-          segment->reader().filename(),
+          segment,
           result);
         if (result.did_compact()) {
             segment->clear_cached_disk_usage();
@@ -437,7 +437,7 @@ ss::future<> disk_log_impl::do_compact(
     if (auto range = find_compaction_range(cfg); range) {
         auto r = co_await compact_adjacent_segments(std::move(*range), cfg);
         vlog(
-          stlog.debug,
+          gclog.info,
           "Adjacent segments of {}, compaction result: {}",
           config().ntp(),
           r);
@@ -507,9 +507,15 @@ disk_log_impl::find_compaction_range(const compaction_config& cfg) {
     // the chosen segments all need to be stable.
     // Each participating segment should individually pass the compactible
     // offset check for the compacted segment to be stable.
+    // Additionally each segment should have finished self compaction. This
+    // is needed by transactions because the compaction index of segments
+    // with transactional batches is only populated during self compaction.
+    // Not having this check would result in concatenating with an empty
+    // compaction index and a data loss.
     const auto unstable = std::any_of(
       range.first, range.second, [&cfg](ss::lw_shared_ptr<segment>& seg) {
-          return seg->has_appender() || !seg->has_compactible_offsets(cfg);
+          return !seg->finished_self_compaction() || seg->has_appender()
+                 || !seg->has_compactible_offsets(cfg);
       });
     if (unstable) {
         return std::nullopt;
@@ -526,6 +532,22 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // for example, a concurrent truncate may erase an element from the range.
     std::vector<ss::lw_shared_ptr<segment>> segments;
     std::copy(range.first, range.second, std::back_inserter(segments));
+
+    bool all_segments_self_compacted = std::all_of(
+      segments.begin(), segments.end(), [](ss::lw_shared_ptr<segment> segment) {
+          return segment->finished_self_compaction();
+      });
+
+    if (!all_segments_self_compacted) {
+        const auto total_size = std::accumulate(
+          segments.begin(),
+          segments.end(),
+          size_t(0),
+          [](size_t acc, ss::lw_shared_ptr<segment>& seg) {
+              return acc + seg->size_bytes();
+          });
+        co_return compaction_result{total_size};
+    }
 
     if (gclog.is_enabled(ss::log_level::debug)) {
         std::stringstream segments_str;
