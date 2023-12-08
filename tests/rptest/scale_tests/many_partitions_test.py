@@ -105,10 +105,6 @@ class ManyPartitionsTest(PreallocNodesTest):
                 'kafka_connection_rate_limit': 10000,
                 'kafka_connections_max': 50000,
 
-                # Enable segment size jitter as this is a stress test and does not
-                # rely on exact segment counts.
-                'log_segment_size_jitter_percent': 5,
-
                 # In testing tiered storage, we care about creating as many
                 # cloud segments as possible. To that end, bounding the segment
                 # size isn't productive.
