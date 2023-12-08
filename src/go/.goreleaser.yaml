@@ -78,6 +78,8 @@ brews:
     skip_upload: auto
     ids:
       - rpk
+    extra_install: |
+      generate_completions_from_executable(bin/"rpk", "generate", "shell-completion", base_name: "rpk")
     caveats: |
         Redpanda Keeper (rpk) is Redpanda's command line interface (CLI)
         utility. The rpk commands let you configure, manage, and tune
