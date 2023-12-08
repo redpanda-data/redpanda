@@ -178,3 +178,7 @@ class ABSClient:
                 key=blob_props.name,
                 etag=blob_props.content_settings.content_md5.hex(),
                 content_length=blob_props.size)
+
+    def create_expiration_policy(self, bucket: str, days: int):
+        raise Exception(
+            "create_expiration_policy not implemented for ABSClient")

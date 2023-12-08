@@ -130,6 +130,7 @@ class ScaleParameters:
                 cloud_storage_segment_max_upload_interval_sec,
                 cloud_storage_housekeeping_interval_ms=
                 cloud_storage_housekeeping_interval_ms,
+                use_bucket_cleanup_policy=True,
             )
         else:
             self.si_settings = None
