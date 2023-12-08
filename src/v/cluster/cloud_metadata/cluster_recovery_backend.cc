@@ -135,13 +135,14 @@ ss::future<bool> cluster_recovery_backend::sync_in_term(
 
 ss::future<cluster::errc>
 cluster_recovery_backend::apply_controller_actions_in_term(
+  ss::abort_source& term_as,
   model::term_id term,
   cloud_metadata::controller_snapshot_reconciler::controller_actions actions) {
-    if (actions.empty()) {
-        co_return cluster::errc::success;
-    }
     for (const auto next_stage : actions.stages) {
-        auto errc = co_await do_action(next_stage, actions);
+        if (!co_await sync_in_term(term_as, term)) {
+            co_return cluster::errc::not_leader_controller;
+        }
+        auto errc = co_await do_action(term_as, next_stage, actions);
         if (errc != cluster::errc::success) {
             co_return co_await _recovery_manager.replicate_update(
               term,
@@ -158,9 +159,10 @@ cluster_recovery_backend::apply_controller_actions_in_term(
 }
 
 ss::future<cluster::errc> cluster_recovery_backend::do_action(
+  ss::abort_source& term_as,
   recovery_stage next_stage,
   controller_snapshot_reconciler::controller_actions& actions) {
-    retry_chain_node parent_retry(_as, 3600s, 1s);
+    retry_chain_node parent_retry(term_as, 3600s, 1s);
     switch (next_stage) {
     case recovery_stage::initialized:
     case recovery_stage::starting:
@@ -319,8 +321,8 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
 
 ss::future<std::optional<cluster::controller_snapshot>>
 cluster_recovery_backend::find_controller_snapshot_in_bucket(
-  cloud_storage_clients::bucket_name bucket) {
-    auto fib = retry_chain_node{_as, 30s, 1s};
+  ss::abort_source& term_as, cloud_storage_clients::bucket_name bucket) {
+    auto fib = retry_chain_node{term_as, 30s, 1s};
     if (!_recovery_table.local().is_recovery_active()) {
         co_return std::nullopt;
     }
@@ -440,7 +442,7 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
       = _recovery_table.local().current_recovery().value().get();
     if (may_require_controller_recovery(recovery_state.stage)) {
         auto controller_snap = co_await find_controller_snapshot_in_bucket(
-          recovery_state.bucket);
+          term_as, recovery_state.bucket);
         if (!controller_snap.has_value()) {
             vlog(
               clusterlog.error,
@@ -495,6 +497,9 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
               _members_table.node_count(),
               nodes.size());
         }
+        if (!co_await sync_in_term(term_as, synced_term)) {
+            co_return;
+        }
 
         // We may need to restore state from the controller snapshot.
         cloud_metadata::controller_snapshot_reconciler reconciler(
@@ -511,7 +516,7 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
           "Controller recovery will proceed in {} stages",
           controller_actions.stages.size());
         auto err = co_await apply_controller_actions_in_term(
-          synced_term, std::move(controller_actions));
+          term_as, synced_term, std::move(controller_actions));
         if (err != cluster::errc::success) {
             co_return;
         }
@@ -532,7 +537,7 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
               std::back_inserter(offsets_snapshot_paths[i]),
               [](auto& p) { return cloud_storage::remote_segment_path{p}; });
         }
-        retry_chain_node parent_retry(_as, 3600s, 1s);
+        retry_chain_node parent_retry(term_as, 3600s, 1s);
         auto err = co_await _offsets_recovery->recover(
           parent_retry,
           recovery_state.bucket,
@@ -549,6 +554,11 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
               ssx::sformat(
                 "Failed to apply action for consumer offsets recovery: {}",
                 err));
+            co_return;
+        }
+        auto errc = co_await _recovery_manager.replicate_update(
+          synced_term, recovery_stage::recovered_offsets_topic);
+        if (errc != cluster::errc::success) {
             co_return;
         }
     }

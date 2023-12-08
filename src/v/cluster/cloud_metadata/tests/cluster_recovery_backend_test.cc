@@ -292,6 +292,39 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     });
     validate_post_recovery();
 
+    // Validate the order of events in the log.
+    auto stages = read_recovery_stages(
+                    *app.partition_manager.local().get(model::controller_ntp))
+                    .get();
+    auto expected_stages = std::vector<cluster::recovery_stage>{
+      cluster::recovery_stage::initialized,
+      cluster::recovery_stage::recovered_license,
+      cluster::recovery_stage::recovered_cluster_config,
+      cluster::recovery_stage::recovered_users,
+      cluster::recovery_stage::recovered_acls,
+      cluster::recovery_stage::recovered_remote_topic_data,
+      cluster::recovery_stage::recovered_topic_data,
+      cluster::recovery_stage::recovered_controller_snapshot,
+      cluster::recovery_stage::recovered_offsets_topic,
+      cluster::recovery_stage::recovered_tx_coordinator,
+      cluster::recovery_stage::complete};
+    if (with_leadership_changes) {
+        // With leadership changes, it's possible we skip stages because the
+        // action was applied in one term, leadership changed, and the next
+        // leader didn't perform the action again. That said, it should still
+        // progress in order.
+        ASSERT_EQ(stages.front(), cluster::recovery_stage::initialized);
+        ASSERT_EQ(stages.back(), cluster::recovery_stage::complete);
+        auto prev_stage = stages.front();
+        for (const auto& stage : stages) {
+            ASSERT_GE(stage, prev_stage);
+            prev_stage = stage;
+        }
+    } else {
+        // We should expect a specific order under happy path operation.
+        ASSERT_EQ(stages, expected_stages);
+    }
+
     // Do one more validation when reading from the controller snapshot.
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
         return app.controller->get_controller_stm()
@@ -375,6 +408,18 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverMissingTopicManifest) {
                                   .value()
                                   .get();
         ASSERT_EQ(latest_recovery.stage, cluster::recovery_stage::complete);
+        auto stages = read_recovery_stages(*app.partition_manager.local().get(
+                                             model::controller_ntp))
+                        .get();
+        auto expected_stages = std::vector<cluster::recovery_stage>{
+          cluster::recovery_stage::initialized,
+          cluster::recovery_stage::recovered_cluster_config,
+          cluster::recovery_stage::recovered_remote_topic_data,
+          cluster::recovery_stage::recovered_controller_snapshot,
+          cluster::recovery_stage::recovered_offsets_topic,
+          cluster::recovery_stage::recovered_tx_coordinator,
+          cluster::recovery_stage::complete};
+        ASSERT_EQ(stages, expected_stages);
 
         const auto& tp_meta
           = app.controller->get_topics_state().local().get_topic_metadata(
@@ -463,4 +508,10 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedDownload) {
     ASSERT_TRUE(latest_recovery.error_msg.has_value());
     ASSERT_TRUE(latest_recovery.error_msg.value().contains(
       "Failed to download controller snapshot"));
+    auto stages = read_recovery_stages(
+                    *app.partition_manager.local().get(model::controller_ntp))
+                    .get();
+    auto expected_stages = std::vector<cluster::recovery_stage>{
+      cluster::recovery_stage::initialized, cluster::recovery_stage::failed};
+    ASSERT_EQ(stages, expected_stages);
 }

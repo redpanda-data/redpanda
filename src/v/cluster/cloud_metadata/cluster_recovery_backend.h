@@ -68,11 +68,13 @@ private:
     ss::future<bool> sync_in_term(ss::abort_source& term_as, model::term_id);
 
     ss::future<cluster::errc> apply_controller_actions_in_term(
+      ss::abort_source& term_as,
       model::term_id,
       cloud_metadata::controller_snapshot_reconciler::controller_actions);
 
     // Runs the action to get to the given stage.
     ss::future<cluster::errc> do_action(
+      ss::abort_source& term_as,
       recovery_stage next_stage,
       controller_snapshot_reconciler::controller_actions& actions);
 
@@ -80,7 +82,8 @@ private:
     // controller snapshot, parsing it if one exists. Returns std::nullopt if
     // none exists or if there was an error along the way.
     ss::future<std::optional<cluster::controller_snapshot>>
-      find_controller_snapshot_in_bucket(cloud_storage_clients::bucket_name);
+    find_controller_snapshot_in_bucket(
+      ss::abort_source& term_as, cloud_storage_clients::bucket_name);
 
     ss::abort_source _as;
     ss::gate _gate;
