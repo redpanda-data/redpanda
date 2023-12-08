@@ -178,11 +178,12 @@ class ManyPartitionsTest(PreallocNodesTest):
                 continue
 
             assert len(partitions) == p_per_topic
-            for p in partitions:
-                if p.leader == node_id:
-                    self.logger.info(
-                        f"partition {tn}/{p.id} still on node {node_id}")
-                    any_incomplete = True
+            remaining = sum(1 for p in partitions if p.leader == node_id)
+            if remaining > 0:
+                self.logger.info(
+                    f"{tn} still has {remaining} partition(s) on node {node_id}"
+                )
+                any_incomplete = True
 
         return not any_incomplete
 
@@ -233,7 +234,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         balanced = error < threshold
         self.logger.info(
-            f"leadership balanced={balanced} (stddev: {stddev}, error {error})"
+            f"leadership balanced={balanced} (stddev: {stddev:.2f}; want error {error:.2f} < {threshold})"
         )
         return balanced
 
@@ -285,7 +286,8 @@ class ManyPartitionsTest(PreallocNodesTest):
             return list(
                 executor.map(
                     lambda n: tuple(
-                        [n, sum(1 for _ in self.redpanda.lsof_node(n))]),
+                        [n.name,
+                         sum(1 for _ in self.redpanda.lsof_node(n))]),
                     self.redpanda.nodes))
 
     def _concurrent_restart(self):
@@ -327,7 +329,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Wait for leaderships to stabilize on the surviving nodes
         wait_until(
             lambda: self._node_leadership_evacuated(topic_names, n_partitions,
-                                                    node_id), 30, 1)
+                                                    node_id), 30, 5)
 
         self.redpanda.start_node(node, timeout=self.EXPECT_START_TIME)
 
@@ -338,6 +340,9 @@ class ManyPartitionsTest(PreallocNodesTest):
         expect_leader_transfer_time = 2 * (
             n_partitions / len(self.redpanda.nodes)) / transfers_per_sec + (
                 self.LEADER_BALANCER_PERIOD_MS / 1000) * 2
+        self.logger.info(
+            f"Waiting {expect_leader_transfer_time}s for leadership balance after restart"
+        )
 
         # Wait for leaderships to achieve balance.  This is bounded by:
         #  - Time for leader_balancer to issue+await all the transfers
@@ -518,6 +523,9 @@ class ManyPartitionsTest(PreallocNodesTest):
         expect_transmit_time = max(expect_transmit_time, 30)
 
         for tn in topic_names:
+            self.logger.info(
+                f"Writing {write_bytes_per_topic} bytes to {tn} with a deadline of {expect_transmit_time}s"
+            )
             t1 = time.time()
             producer = KgoVerifierProducer(
                 self.test_context,
@@ -981,6 +989,6 @@ class ManyPartitionsTest(PreallocNodesTest):
                 expect_mbps = scale.expect_bandwidth / (1024 * 1024.0)
                 actual_mbps = (bytes_sent / (t2 - t1)) / (1024 * 1024.0)
                 self.logger.error(
-                    f"Expected throughput {expect_mbps:.2f}, got throughput {actual_mbps:.2f}MB/s"
+                    f"Expected throughput {expect_mbps:.2f}MiB/s, got throughput {actual_mbps:.2f}MiB/s"
                 )
                 raise
