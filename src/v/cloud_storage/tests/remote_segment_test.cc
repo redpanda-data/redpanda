@@ -32,6 +32,7 @@
 #include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
@@ -581,6 +582,7 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
       probe,
       ts_probe);
 
+    ss::abort_source as{};
     // The offset data stream uses an implementation which will iterate over all
     // chunks in the segment.
     auto stream = segment
@@ -590,7 +592,8 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
                       // over the entire segment in chunks.
                       kafka::offset{100000000},
                       std::nullopt,
-                      ss::default_priority_class())
+                      ss::default_priority_class(),
+                      as)
                     .get()
                     .stream;
 
@@ -645,12 +648,14 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
       probe,
       ts_probe);
 
+    ss::abort_source as;
     auto stream = segment
                     .offset_data_stream(
                       m.get(key)->base_kafka_offset(),
                       kafka::offset{100000000},
                       std::nullopt,
-                      ss::default_priority_class())
+                      ss::default_priority_class(),
+                      as)
                     .get()
                     .stream;
 
@@ -1151,4 +1156,76 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
         BOOST_REQUIRE(prefetched_chunk.current_state == chunk_state::hydrated);
         BOOST_REQUIRE(prefetched_chunk.handle.has_value());
     }
+}
+
+FIXTURE_TEST(test_abort_hydration_timeout, cloud_storage_fixture) {
+    scoped_config reset;
+    reset.get("cloud_storage_hydration_timeout_ms").set_value(0ms);
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    auto meta = *m.get(key);
+    partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib,
+      probe,
+      ts_probe);
+
+    auto stop_segment = ss::defer([&segment] { segment.stop().get(); });
+    ss::abort_source as;
+    BOOST_REQUIRE_THROW(
+      segment
+        .offset_data_stream(
+          m.get(key)->base_kafka_offset(),
+          kafka::offset{100000000},
+          std::nullopt,
+          ss::default_priority_class(),
+          as)
+        .get(),
+      ss::timed_out_error);
+}
+
+FIXTURE_TEST(test_abort_hydration_triggered_externally, cloud_storage_fixture) {
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    auto meta = *m.get(key);
+    partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib,
+      probe,
+      ts_probe);
+
+    auto stop_segment = ss::defer([&segment] { segment.stop().get(); });
+    ss::abort_source as;
+    as.request_abort();
+    BOOST_REQUIRE_THROW(
+      segment
+        .offset_data_stream(
+          m.get(key)->base_kafka_offset(),
+          kafka::offset{100000000},
+          std::nullopt,
+          ss::default_priority_class(),
+          as)
+        .get(),
+      ss::abort_requested_exception);
 }
