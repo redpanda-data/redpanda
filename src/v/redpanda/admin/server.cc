@@ -56,7 +56,6 @@
 #include "json/stringbuffer.h"
 #include "json/validator.h"
 #include "json/writer.h"
-#include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
@@ -85,7 +84,6 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
 #include "redpanda/admin/api-doc/transform.json.hh"
-#include "redpanda/admin/api-doc/usage.json.hh"
 #include "redpanda/cluster_config_schema_util.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -1280,7 +1278,7 @@ admin_server::cancel_node_partition_moves(
       co_await map_partition_results(std::move(res.value())));
 }
 
-bool str_to_bool(std::string_view s) {
+bool admin_server::str_to_bool(std::string_view s) {
     if (s == "0" || s == "false" || s == "False") {
         return false;
     } else {
@@ -3999,65 +3997,6 @@ void admin_server::register_self_test_routes() {
       ss::httpd::debug_json::self_test_status,
       [this](std::unique_ptr<ss::http::request> req) {
           return self_test_get_results_handler(std::move(req));
-      });
-}
-
-namespace {
-ss::json::json_return_type raw_data_to_usage_response(
-  const std::vector<kafka::usage_window>& total_usage, bool include_open) {
-    std::vector<ss::httpd::usage_json::usage_response> resp;
-    resp.reserve(total_usage.size());
-    for (size_t i = (include_open ? 0 : 1); i < total_usage.size(); ++i) {
-        resp.emplace_back();
-        const auto& e = total_usage[i];
-        resp.back().begin_timestamp = e.begin;
-        resp.back().end_timestamp = e.end;
-        resp.back().open = e.is_open();
-        resp.back().kafka_bytes_received_count = e.u.bytes_received;
-        resp.back().kafka_bytes_sent_count = e.u.bytes_sent;
-        if (e.u.bytes_cloud_storage) {
-            resp.back().cloud_storage_bytes_gauge = *e.u.bytes_cloud_storage;
-        } else {
-            resp.back().cloud_storage_bytes_gauge = -1;
-        }
-    }
-    if (include_open && !resp.empty()) {
-        /// Handle case where client does not want to observe
-        /// value of 0 for open buckets end timestamp
-        auto& e = resp.at(0);
-        vassert(e.open(), "Bucket not open when expecting to be");
-        e.end_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                            ss::lowres_system_clock::now().time_since_epoch())
-                            .count();
-    }
-    return resp;
-}
-} // namespace
-
-void admin_server::register_usage_routes() {
-    register_route<user>(
-      ss::httpd::usage_json::get_usage,
-      [this](std::unique_ptr<ss::http::request> req) {
-          if (!config::shard_local_cfg().enable_usage()) {
-              throw ss::httpd::bad_request_exception(
-                "Usage tracking is not enabled");
-          }
-          bool include_open = false;
-          auto include_open_str = req->get_query_param("include_open_bucket");
-          vlog(
-            adminlog.info,
-            "Request to observe usage info, include_open_bucket={}",
-            include_open_str);
-          if (!include_open_str.empty()) {
-              include_open = str_to_bool(include_open_str);
-          }
-          return _usage_manager
-            .invoke_on(
-              kafka::usage_manager::usage_manager_main_shard,
-              [](kafka::usage_manager& um) { return um.get_usage_stats(); })
-            .then([include_open](auto total_usage) {
-                return raw_data_to_usage_response(total_usage, include_open);
-            });
       });
 }
 

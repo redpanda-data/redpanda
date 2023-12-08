@@ -48,6 +48,7 @@ v_cc_library(
     admin/security.cc
     admin/recovery.cc
     admin/transaction.cc
+    admin/usage.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc

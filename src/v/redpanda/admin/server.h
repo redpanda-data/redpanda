@@ -208,6 +208,8 @@ private:
 
     static model::node_id parse_broker_id(const ss::http::request& req);
 
+    static bool str_to_bool(std::string_view s);
+
     /**
      * Helper for binding handlers to routes, which also adds in
      * authentication step and common request logging.  Expects
