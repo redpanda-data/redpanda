@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import math
 import time
 import concurrent.futures
 from collections import Counter
@@ -401,13 +402,17 @@ class ManyPartitionsTest(PreallocNodesTest):
         number of segments.
         """
 
-        warmup_segment_size = 32 * 1024
-        warmup_message_size = 32 * 1024
+        warmup_segment_size = scale.segment_size
+        # Because segments are rolled after a write we need to size messages
+        # such that actual segment size is as close as possible to the desired
+        # size. In default configuration we run with `log_segment_size_jitter_percent=5`
+        # adjust the messages size to always be larger than that.
+        warmup_message_size = math.ceil(scale.segment_size * 0.06)
         target_cloud_segments = 24 * 7 * scale.partition_limit
 
-        # Be somewhat lenient in generating the desired number of segments.
-        warmup_total_size = int(1.5 * target_cloud_segments *
-                                warmup_segment_size)
+        # Enough data to generate the desired number of segments plus few more
+        # per partition that will be kept open (and not uploaded).
+        warmup_total_size = (1.1 * target_cloud_segments) * warmup_segment_size
 
         # Uploads of tiny segments usually progress at a few thousand
         # per second.  This is dominated by the S3 PUT latency combined
@@ -429,7 +434,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             self.logger.info(
                 f"Tiered storage warmup: waiting {expect_runtime}s for {target_cloud_segments} to be created"
             )
-            msg_count = int(warmup_total_size / warmup_message_size)
+            msg_count = math.ceil(warmup_total_size / warmup_message_size)
             producer = None
             try:
                 producer = KgoVerifierProducer(
@@ -594,7 +599,17 @@ class ManyPartitionsTest(PreallocNodesTest):
             nodes=[self.preallocated_nodes[2]])
         seq_consumer.start(clean=False)
 
-        seq_consumer.wait()
+        expect_transmit_time = max(
+            60,
+            int(1.5 * max_msgs * stress_msg_size /
+                scale.expect_single_bandwidth))
+        if scale.tiered_storage_enabled:
+            # Add extra 10 minutes in case S3 decides to scale during the test.
+            # It was observed for the bucket to go down between 5 and 10
+            # minutes during these events.
+            expect_transmit_time += 600
+
+        seq_consumer.wait(timeout_sec=expect_transmit_time)
         assert seq_consumer.consumer_status.validator.invalid_reads == 0
         if not scale.tiered_storage_enabled:
             assert seq_consumer.consumer_status.validator.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic, \
@@ -804,13 +819,18 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         # Enable large node-wide throughput limits to verify they work at scale
         # To avoid affecting the result of the test with the limit, set them
-        # somewhat above expect_bandwidth value per node
-        self.redpanda.add_extra_rp_conf({
-            'kafka_throughput_limit_node_in_bps':
-            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
-            'kafka_throughput_limit_node_out_bps':
-            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
-        })
+        # somewhat above expect_bandwidth value per node.
+        #
+        # We skip setting them on tiered storage where `expect_bandwidth` is
+        # calculated for the worst case scenario and we don't want to limit the
+        # best case one.
+        if not scale.tiered_storage_enabled:
+            self.redpanda.add_extra_rp_conf({
+                'kafka_throughput_limit_node_in_bps':
+                int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
+                'kafka_throughput_limit_node_out_bps':
+                int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
+            })
 
         self.redpanda.add_extra_rp_conf({
             'topic_partitions_per_shard':

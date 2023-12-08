@@ -149,15 +149,23 @@ class ScaleParameters:
             # Single-producer tests are slower, bottlenecked on the
             # client side.
             self.expect_single_bandwidth = 200E6
+
+            if tiered_storage_enabled:
+                # We read very tiny segments 32KiB over high latency link
+                # (10ms to 100ms) with a concurrency limit of cloud_storage_max_connections=20`.
+                # Using Little's Law we can derive the arrival rate as `20/0.1`
+                # which is to say 200 segments per second. 200 * 32KiB = 6.25MiB
+                # per node. This is if we ignore all other sources of latency,
+                # contention, and S3 rate limiting or instabilities.
+                self.expect_bandwidth = node_count * 6 * 1E6
+                # Minimum of server and client bottlenecks.
+                self.expect_single_bandwidth = min(
+                    self.expect_bandwidth, self.expect_single_bandwidth)
         else:
             # Docker environment: curb your expectations.  Not only is storage
             # liable to be slow, we have many nodes sharing the same drive.
             self.expect_bandwidth = 5 * 1024 * 1024
             self.expect_single_bandwidth = 10E6
-
-        if tiered_storage_enabled:
-            self.expect_bandwidth /= 2
-            self.expect_single_bandwidth /= 2
 
         # Clamp the node memory to exercise the partition limit.
         # Not all internal partitions have rf=replication_factor so this
