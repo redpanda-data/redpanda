@@ -80,7 +80,8 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
         // TODO: populate or remote etc_props, mount_paths
         .cores = ss::smp::count,
         .available_memory_gb = total_mem_gb,
-        .available_disk_gb = disk_gb});
+        .available_disk_gb = disk_gb,
+        .available_memory_bytes = total_mem});
 }
 
 bool has_local_replicas(

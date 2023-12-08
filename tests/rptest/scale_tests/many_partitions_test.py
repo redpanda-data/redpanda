@@ -90,9 +90,13 @@ class ScaleParameters:
         if self.node_cpus >= 8:
             shard0_reserve = PARTITIONS_PER_SHARD / 2
 
-        # Reserve a few slots for internal partitions, do not be
-        # super specific about how many because we may add some in
-        # future for e.g. audit logging.
+        # Reserve a few slots for internal partitions. This is a count of
+        # partitions and we assume the replication factor is 'replication_factor'
+        # in order to calculate the associated number of partition replicas.
+        #
+        # The way we calculate internal partitions in practice is complicated
+        # and this value is an over-simplification. See generate-tiers.py for
+        # additional details on internal partition calculations.
         internal_partition_slack = 32
 
         # Calculate how many partitions we will aim to create, based
@@ -116,12 +120,12 @@ class ScaleParameters:
         reserved_memory = max(1536, int(0.07 * node_memory) + 1)
         effective_node_memory = node_memory - reserved_memory
 
+        partition_replicas_per_node = int(self.partition_limit *
+                                          replication_factor // node_count)
+
         # Aim to use about half the disk space: set retention limits
         # to enforce that.  This enables traffic tests to run as long
         # as they like without risking filling the disk.
-        partition_replicas_per_node = int(
-            (self.partition_limit * replication_factor) / node_count)
-
         self.retention_bytes = int(
             (node_disk_free / 2) / partition_replicas_per_node)
         self.local_retention_bytes = None
@@ -199,31 +203,32 @@ class ScaleParameters:
             self.expect_bandwidth /= 2
             self.expect_single_bandwidth /= 2
 
-        mb_per_partition = 1
+        # Clamp the node memory to exercise the partition limit.
+        mb_per_partition = 4
+        # Not all internal partitions have rf=replication_factor so this
+        # over-allocates but making it more accurate would be complicated.
+        per_node_slack = internal_partition_slack * replication_factor / node_count
+        partition_mem_total_per_node = mb_per_partition * (
+            partition_replicas_per_node + per_node_slack)
+
+        resource_settings_args = {}
         if not self.redpanda.dedicated_nodes:
             # In docker, assume we're on a laptop drive and not doing
             # real testing, so disable fsync to make test run faster.
-            resource_settings_args = {'bypass_fsync': True}
+            resource_settings_args['bypass_fsync'] = True
 
-            # In docker, make the test a bit more realistic by clamping
-            # memory if nodes have more memory than should be required
-            # to exercise the partition limit.
-            if effective_node_memory > partition_replicas_per_node / mb_per_partition:
-                clamp_memory = mb_per_partition * (
-                    (partition_replicas_per_node + internal_partition_slack) +
-                    reserved_memory)
-
-                # Handy if hacking HARD_PARTITION_LIMIT to something low to run on a workstation
-                clamp_memory = max(clamp_memory, 500)
-                resource_settings_args['memory_mb'] = clamp_memory
-
-            self.redpanda.set_resource_settings(
-                ResourceSettings(**resource_settings_args))
+            # Handy if hacking HARD_PARTITION_LIMIT to something low to run on a workstation
+            partition_mem_total_per_node = max(partition_mem_total_per_node,
+                                               500)
         else:
             # On dedicated nodes we will use an explicit reactor stall threshold
             # as a success condition.
-            self.redpanda.set_resource_settings(
-                ResourceSettings(reactor_stall_threshold=100))
+            resource_settings_args['reactor_stall_threshold'] = 100
+
+        resource_settings_args['memory_mb'] = int(partition_mem_total_per_node)
+
+        self.redpanda.set_resource_settings(
+            ResourceSettings(**resource_settings_args))
 
         self.logger.info(
             f"Selected retention.bytes={self.retention_bytes}, retention.local.target.bytes={self.local_retention_bytes}, segment.bytes={self.segment_size}"
@@ -231,7 +236,7 @@ class ScaleParameters:
 
         # Should not happen on the expected EC2 instance types where
         # the cores-RAM ratio is sufficient to meet our shards-per-core
-        if effective_node_memory < partition_replicas_per_node / mb_per_partition:
+        if effective_node_memory < partition_mem_total_per_node:
             raise RuntimeError(
                 f"Node memory is too small ({node_memory}MB - {reserved_memory}MB)"
             )
@@ -1064,7 +1069,10 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"Waiting for {repeater_await_msgs} messages in {t} seconds"
                 )
                 t1 = time.time()
-                repeater.await_progress(repeater_await_msgs, t)
+                repeater.await_progress(
+                    repeater_await_msgs,
+                    t,
+                    err_msg=f"Waiting for repeater messages")
                 t2 = time.time()
 
                 # This is approximate, because await_progress isn't returning the very
@@ -1099,7 +1107,9 @@ class ManyPartitionsTest(PreallocNodesTest):
             t1 = time.time()
             initial_p, _ = repeater.total_messages()
             try:
-                repeater.await_progress(soak_await_msgs, soak_timeout)
+                repeater.await_progress(soak_await_msgs,
+                                        soak_timeout,
+                                        err_msg="Waiting for traffic soak")
             except TimeoutError:
                 t2 = time.time()
                 final_p, _ = repeater.total_messages()

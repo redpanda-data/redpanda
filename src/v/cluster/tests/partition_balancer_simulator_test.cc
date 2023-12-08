@@ -54,7 +54,8 @@ public:
           model::broker_properties{
             .cores = n_cores,
             .available_memory_gb = 2,
-            .available_disk_gb = uint32_t(total_size / 1_GiB)});
+            .available_disk_gb = uint32_t(total_size / 1_GiB),
+            .available_memory_bytes = 2 * 1_GiB});
 
         _workers.members.local().apply(
           model::offset{}, cluster::add_node_cmd(id, broker));

@@ -270,12 +270,15 @@ class KgoRepeaterService(Service):
             else:
                 return True
 
-        self.logger.debug(f"Waiting for group {self.group_name} to be ready")
+        what = f"Waiting for group {self.group_name} to be ready"
+        self.logger.debug(what)
+
         t1 = time.time()
         try:
             self.redpanda.wait_until(group_ready,
                                      timeout_sec=120,
-                                     backoff_sec=10)
+                                     backoff_sec=10,
+                                     err_msg=what)
         except:
             # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
             for node in self.nodes:
@@ -330,7 +333,7 @@ class KgoRepeaterService(Service):
 
         return produced, consumed
 
-    def await_progress(self, msg_count, timeout_sec):
+    def await_progress(self, msg_count, timeout_sec, err_msg=None):
         """
         Call this in places you want to assert some progress
         is really being made: say how many messages should be
@@ -356,7 +359,10 @@ class KgoRepeaterService(Service):
         # the system isn't at peak throughput (e.g. when it's just warming up)
         timeout_sec = max(timeout_sec, 60)
 
-        self.redpanda.wait_until(check, timeout_sec=timeout_sec, backoff_sec=1)
+        self.redpanda.wait_until(check,
+                                 timeout_sec=timeout_sec,
+                                 backoff_sec=1,
+                                 err_msg=err_msg)
 
 
 @contextmanager

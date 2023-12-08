@@ -345,6 +345,8 @@ inline void rjson_serialize(
     rjson_serialize(w, b.mount_paths);
     w.Key("etc_props");
     rjson_serialize(w, b.etc_props);
+    w.Key("available_memory_bytes");
+    rjson_serialize(w, b.available_memory_bytes);
     w.EndObject();
 }
 
@@ -354,6 +356,7 @@ inline void read_value(json::Value const& rd, model::broker_properties& obj) {
     read_member(rd, "available_disk_gb", obj.available_disk_gb);
     read_member(rd, "mount_paths", obj.mount_paths);
     read_member(rd, "etc_props", obj.etc_props);
+    read_member(rd, "available_memory_bytes", obj.available_memory_bytes);
 }
 
 inline void

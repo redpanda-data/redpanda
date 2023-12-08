@@ -15,6 +15,7 @@
 #include "net/unresolved_address.h"
 #include "seastarx.h"
 #include "serde/envelope.h"
+#include "units.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -59,21 +60,16 @@ using initial_revision_id
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
 struct broker_properties
   : serde::
-      envelope<broker_properties, serde::version<0>, serde::compat_version<0>> {
+      envelope<broker_properties, serde::version<1>, serde::compat_version<0>> {
     uint32_t cores;
     uint32_t available_memory_gb;
     uint32_t available_disk_gb;
     std::vector<ss::sstring> mount_paths;
     // key=value properties in /etc/redpanda/machine_properties.yaml
     std::unordered_map<ss::sstring, ss::sstring> etc_props;
+    uint64_t available_memory_bytes = 0;
 
-    bool operator==(const broker_properties& other) const {
-        return cores == other.cores
-               && available_memory_gb == other.available_memory_gb
-               && available_disk_gb == other.available_disk_gb
-               && mount_paths == other.mount_paths
-               && etc_props == other.etc_props;
-    }
+    bool operator==(const broker_properties& other) const = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const model::broker_properties&);
@@ -84,7 +80,8 @@ struct broker_properties
           available_memory_gb,
           available_disk_gb,
           mount_paths,
-          etc_props);
+          etc_props,
+          available_memory_bytes);
     }
 };
 
@@ -240,6 +237,17 @@ public:
     }
     const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<rack_id>& rack() const { return _rack; }
+
+    /// Returns the memory for this broker in bytes.
+    uint64_t memory_bytes() const {
+        // For redpanda < 23.3, available_memory_bytes is not populated and
+        // will be zero. Fallback to available_memory_gb in that case.
+        if (_properties.available_memory_bytes > 0) {
+            return _properties.available_memory_bytes;
+        }
+
+        return _properties.available_memory_gb * 1_GiB;
+    }
 
     void replace_unassigned_node_id(const node_id id) {
         vassert(
