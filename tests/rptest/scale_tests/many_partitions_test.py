@@ -47,7 +47,7 @@ PARTITIONS_PER_SHARD = 1000
 # amount of RAM or CPU that the nodes claim to have, because
 # we know they are liable to be oversubscribed.
 # This is _not_ for running on oversubscribed CI environments: it's for
-# runnig on a reasonably powerful developer machine while they work
+# running on a reasonably powerful developer machine while they work
 # on the test.
 DOCKER_PARTITION_LIMIT = 128
 
@@ -279,9 +279,9 @@ class ManyPartitionsTest(PreallocNodesTest):
                 "leader_balancer_idle_timeout": self.LEADER_BALANCER_PERIOD_MS,
                 "leader_balancer_mute_timeout": self.LEADER_BALANCER_PERIOD_MS,
 
-                # TODO: ensure that the systme works well _without_ these non-default
+                # TODO: ensure that the system works well _without_ these non-default
                 # properties, or if they are necessary and we choose not to make them
-                # the defaults, then that they are reflected propertly in cloud config profiles
+                # the defaults, then that they are reflected properly in cloud config profiles
                 'reclaim_batch_cache_min_free': 256000000,
                 'storage_read_buffer_size': 32768,
                 'storage_read_readahead_count': 2,
@@ -857,7 +857,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         # TODO: remove these overrides once the cause of latency
         # spikes in OMB is found and mitigated. For now these
-        # numbers are dervived from the outliers found in the
+        # numbers are derived from the outliers found in the
         # cloud benchmarking effort.
         # Tracking issue: https://github.com/redpanda-data/redpanda/issues/6334
         validator_overrides = {
@@ -891,7 +891,7 @@ class ManyPartitionsTest(PreallocNodesTest):
     def test_many_partitions(self):
         self._test_many_partitions(compacted=False)
 
-    # TODO: re-enable once infra has stabilitized
+    # TODO: re-enable once infra has stabilized
     # https://github.com/redpanda-data/redpanda/issues/9569
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -961,7 +961,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         if scale.si_settings:
             self.redpanda.set_si_settings(scale.si_settings)
 
-        # Enable large node-wide thoughput limits to verify they work at scale
+        # Enable large node-wide throughput limits to verify they work at scale
         # To avoid affecting the result of the test with the limit, set them
         # somewhat above expect_bandwidth value per node
         self.redpanda.add_extra_rp_conf({
@@ -1024,7 +1024,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         repeater_kwargs = {}
         if compacted:
-            # Each parititon gets roughly 10 unique keys, after which
+            # Each partition gets roughly 10 unique keys, after which
             # compaction should kick in.
             repeater_kwargs['key_count'] = int(scale.partition_limit * 10)
         else:
