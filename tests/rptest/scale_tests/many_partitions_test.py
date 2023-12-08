@@ -73,6 +73,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             *args,
             num_brokers=9,
             node_prealloc_count=3,
+            disable_cloud_storage_diagnostics=True,
             extra_rp_conf={
                 # Disable leader balancer initially, to enable us to check for
                 # stable leadership during initial elections and post-restart
