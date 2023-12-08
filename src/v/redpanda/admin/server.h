@@ -395,6 +395,9 @@ private:
     static bool need_redirect_to_leader(
       model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache);
 
+    static model::ntp
+    parse_ntp_from_query_param(const std::unique_ptr<ss::http::request>& req);
+
     void log_request(
       const ss::http::request& req,
       const request_auth_result& auth_state) const;
