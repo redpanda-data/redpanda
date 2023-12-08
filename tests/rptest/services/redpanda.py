@@ -439,6 +439,7 @@ class SISettings:
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False,
+                 use_bucket_cleanup_policy: bool = False,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None,
                  cloud_storage_spillover_manifest_max_segments: Optional[
                      int] = None,
@@ -494,6 +495,7 @@ class SISettings:
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
+        self.use_bucket_cleanup_policy = use_bucket_cleanup_policy
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
         self.cloud_storage_spillover_manifest_max_segments = cloud_storage_spillover_manifest_max_segments
         self.retention_local_strict = retention_local_strict
@@ -2707,8 +2709,24 @@ class RedpandaService(RedpandaServiceBase):
             self.cloud_storage_client.create_bucket(
                 self._si_settings.cloud_storage_bucket)
 
+        # If the test has requested to use a bucket cleanup policy then we
+        # attempt to create one which will remove everything from the bucket
+        # after one day.
+        # This is a time optimization to avoid waiting hours cleaning up tiny
+        # objects created by scale tests.
+        if self._si_settings.use_bucket_cleanup_policy:
+            self.cloud_storage_client.create_expiration_policy(
+                bucket=self._si_settings.cloud_storage_bucket, days=1)
+
     def delete_bucket_from_si(self):
         assert self._si_settings, "start_si() called but SI not configured"
+
+        if self._si_settings.use_bucket_cleanup_policy:
+            self.logger.info(
+                f"Skipping deletion of bucket/container: {self._si_settings.cloud_storage_bucket}."
+                "Using a cleanup policy instead. Please delete it manually")
+            return
+
         self.logger.debug(
             f"Deleting bucket/container: {self._si_settings.cloud_storage_bucket}"
         )
