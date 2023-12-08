@@ -103,12 +103,14 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("invalid --delivery-timeout less than 1s")
 			default:
 				opts = append(opts, kgo.RecordDeliveryTimeout(timeout))
+				opts = append(opts, kgo.ProduceRequestTimeout(timeout+5*time.Second))
 			}
 			if partition >= 0 {
 				opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
 			}
 			if maxMessageBytes >= 0 {
 				opts = append(opts, kgo.ProducerBatchMaxBytes(maxMessageBytes))
+				opts = append(opts, kgo.BrokerMaxWriteBytes(2*maxMessageBytes))
 			}
 			var defaultTopic string
 			if len(args) == 1 {
