@@ -551,7 +551,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           gclog.debug,
           "[{}] segment {} self compaction result: {}",
           config().ntp(),
-          seg->reader().filename(),
+          seg,
           result);
         has_self_compacted = true;
     }
