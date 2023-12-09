@@ -40,7 +40,8 @@ fn main() -> Result<()> {
           ]
         }"#,
     )?;
-    Ok(on_record_written(|evt| my_transform(&schema, evt)))
+    on_record_written(|evt| my_transform(&schema, evt));
+    Ok(())
 }
 
 fn my_transform(schema: &apache_avro::Schema, event: WriteEvent) -> Result<Vec<Record>> {
@@ -77,11 +78,11 @@ fn json2avro(v: JsonValue) -> Result<AvroValue> {
     Ok(match v {
         JsonValue::Null => AvroValue::Null,
         JsonValue::Bool(b) => AvroValue::Boolean(b),
-        JsonValue::Number(n) => match n.as_i64().map(|i| AvroValue::Long(i)) {
+        JsonValue::Number(n) => match n.as_i64().map(AvroValue::Long) {
             Some(v) => v,
             None => n
                 .as_f64()
-                .map(|f| AvroValue::Double(f))
+                .map(AvroValue::Double)
                 .ok_or(anyhow::anyhow!("unrepresentable avro value: {}", n))?,
         },
         JsonValue::String(s) => AvroValue::String(s),

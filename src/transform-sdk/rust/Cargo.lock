@@ -176,6 +176,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af150ab688ff2122fcef229be89cb50dd66af9e01a4ff320cc137eecc9bacc38"
 
 [[package]]
+name = "json2avro"
+version = "0.0.0-dev"
+dependencies = [
+ "anyhow",
+ "apache-avro",
+ "redpanda-transform-sdk",
+ "serde_json",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -335,12 +345,10 @@ name = "redpanda-transform-sdk"
 version = "0.0.0-dev"
 dependencies = [
  "anyhow",
- "apache-avro",
  "quickcheck",
  "rand",
  "redpanda-transform-sdk-sys",
  "redpanda-transform-sdk-types",
- "serde_json",
 ]
 
 [[package]]

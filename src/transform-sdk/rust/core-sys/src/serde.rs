@@ -135,8 +135,7 @@ mod tests {
     }
 
     fn random_bytes(n: usize) -> Vec<u8> {
-        let mut v = Vec::new();
-        v.resize(n, 0);
+        let mut v = vec![0; n];
         rand::thread_rng().fill(&mut v[..]);
         v
     }
