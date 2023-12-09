@@ -196,6 +196,12 @@ ss::future<> segment_index::truncate(
       i,
       std::less<uint32_t>{});
 
+    if (
+      _state.first_compactible_offset.has_optional_value()
+      && _state.first_compactible_offset.value() > new_max_offset) {
+        _state.first_compactible_offset = tristate<model::offset>{std::nullopt};
+    }
+
     if (it != _state.relative_offset_index.end()) {
         _needs_persistence = true;
         int remove_back_elems = std::distance(

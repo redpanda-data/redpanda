@@ -140,10 +140,18 @@ FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
       modify_get(model::offset{948}, 1667),
       std::nullopt,
       727007); // not indexed
+    BOOST_REQUIRE_EQUAL(
+      _idx->first_compactible_offset().get_optional().value_or(
+        model::offset(0)),
+      model::offset(824));
+
     // test range truncation next
     _idx->truncate(model::offset(926), model::timestamp{100}).get();
     index_entry_expect(879, 323968);
     index_entry_expect(901, 458048);
+    BOOST_REQUIRE(_idx->first_compactible_offset().has_optional_value());
+    BOOST_REQUIRE_EQUAL(
+      _idx->first_compactible_offset().get_optional(), model::offset(824));
     {
         auto p = _idx->find_nearest(model::offset(926));
         BOOST_REQUIRE(bool(p));
@@ -158,4 +166,22 @@ FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
     }
 
     BOOST_REQUIRE(_idx->max_timestamp() == model::timestamp{100});
+
+    _idx->truncate(model::offset(824), model::timestamp{100}).get();
+    BOOST_REQUIRE(_idx->first_compactible_offset().has_optional_value());
+    BOOST_REQUIRE_EQUAL(
+      _idx->first_compactible_offset().get_optional().value_or(
+        model::offset(0)),
+      model::offset(824));
+    {
+        auto p = _idx->find_nearest(model::offset(824));
+        BOOST_REQUIRE(bool(!p));
+    }
+
+    _idx->truncate(model::offset(823), model::timestamp{100}).get();
+    BOOST_REQUIRE(!_idx->first_compactible_offset().has_optional_value());
+    {
+        auto p = _idx->find_nearest(model::offset(824));
+        BOOST_REQUIRE(bool(!p));
+    }
 }
