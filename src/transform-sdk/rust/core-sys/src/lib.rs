@@ -42,7 +42,7 @@ extern crate quickcheck;
 #[cfg(test)]
 extern crate rand;
 
-pub fn process<E, F>(cb: F)
+pub fn process<E, F>(cb: F) -> !
 where
     E: Debug,
     F: Fn(WriteEvent) -> Result<Vec<Record>, E>,

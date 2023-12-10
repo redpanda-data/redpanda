@@ -62,7 +62,7 @@ pub use redpanda_transform_sdk_types::*;
 ///   ])
 /// }
 /// ```
-pub fn on_record_written<E, F>(cb: F)
+pub fn on_record_written<E, F>(cb: F) -> !
 where
     E: Debug,
     F: Fn(WriteEvent) -> Result<Vec<Record>, E>,

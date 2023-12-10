@@ -41,7 +41,6 @@ fn main() -> Result<()> {
         }"#,
     )?;
     on_record_written(|evt| my_transform(&schema, evt));
-    Ok(())
 }
 
 fn my_transform(schema: &apache_avro::Schema, event: WriteEvent) -> Result<Vec<Record>> {

@@ -31,7 +31,6 @@ fn main() -> Result<()> {
     let f = defs.compile(f.unwrap());
     ensure!(defs.errs.is_empty(), "filter {filter} is invalid");
     on_record_written(|event| jaq_transform(&f, event));
-    Ok(())
 }
 
 fn jaq_transform(filter: &Filter, event: WriteEvent) -> Result<Vec<Record>> {
