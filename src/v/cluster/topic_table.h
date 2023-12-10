@@ -302,16 +302,6 @@ public:
                == model::record_batch_type::topic_management_cmd;
     }
 
-    // list of commands that this table is able to apply, the list is used to
-    // automatically deserialize batch into command
-    static constexpr auto accepted_commands = make_commands_list<
-      create_topic_cmd,
-      delete_topic_cmd,
-      move_partition_replicas_cmd,
-      finish_moving_partition_replicas_cmd,
-      update_topic_properties_cmd,
-      create_partition_cmd>{};
-
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
     ss::future<std::error_code> apply(delete_topic_cmd, model::offset);
