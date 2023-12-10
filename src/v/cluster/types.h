@@ -3243,6 +3243,9 @@ struct bulk_force_reconfiguration_cmd_data
     }
 };
 
+using force_recoverable_partitions_t
+  = absl::btree_map<model::ntp, std::vector<ntp_with_majority_loss>>;
+
 struct reconciliation_state_reply
   : serde::envelope<
       reconciliation_state_reply,
