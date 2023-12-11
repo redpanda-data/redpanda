@@ -83,6 +83,7 @@
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
+#include "redpanda/admin/validation.h"
 #include "redpanda/cluster_config_schema_util.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -158,6 +159,8 @@
 #include <unordered_map>
 
 using namespace std::chrono_literals;
+
+using admin::apply_validator;
 
 ss::logger adminlog{"admin_api_server"};
 
@@ -482,21 +485,6 @@ admin_server::parse_json_body(ss::http::request* req) {
 }
 
 namespace {
-/**
- * A helper to apply a schema validator to a request and on error,
- * string-ize any schema errors in the 400 response to help
- * caller see what went wrong.
- */
-void apply_validator(
-  json::validator& validator, json::Document::ValueType const& doc) {
-    try {
-        json::validate(validator, doc);
-    } catch (json::json_validation_error& err) {
-        throw ss::httpd::bad_request_exception(fmt::format(
-          "JSON request body does not conform to schema: {}", err.what()));
-    }
-}
-
 ss::future<std::vector<model::broker_shard>> validate_set_replicas(
   const json::Document& doc, const cluster::topics_frontend& topic_fe) {
     static thread_local json::validator set_replicas_validator(
