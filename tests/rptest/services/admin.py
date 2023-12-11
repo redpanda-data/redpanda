@@ -749,11 +749,12 @@ class Admin:
 
     def get_majority_lost_partitions_from_nodes(self,
                                                 dead_brokers: list[int],
-                                                node=None):
+                                                node=None,
+                                                **kwargs):
         assert dead_brokers
         brokers_csv = ','.join(str(b) for b in dead_brokers)
         path = f"partitions/majority_lost?dead_nodes={brokers_csv}"
-        return self._request('get', path, node).json()
+        return self._request('get', path, node, **kwargs).json()
 
     def force_recover_partitions_from_nodes(self, payload: dict, node=None):
         assert payload
