@@ -332,6 +332,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
 ss::future<ss::stop_iteration>
 copy_data_segment_reducer::operator()(model::record_batch b) {
     const auto comp = b.header().attrs.compression();
+    vlog(
+      gclog.info, "AWONG reading {} to {}", b.base_offset(), b.last_offset());
     if (!b.compressed()) {
         co_return co_await do_compaction(comp, std::move(b));
     }

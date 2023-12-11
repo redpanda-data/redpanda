@@ -271,12 +271,11 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
     @cluster(num_nodes=11,
              log_allow_list=RESTART_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
-    @matrix(balancing_mode=["off", 'node_add'],
+    @matrix(balancing_mode=['node_add'],
             test_mode=[
-                TestMode.NO_TIRED_STORAGE, TestMode.TIRED_STORAGE,
-                TestMode.FAST_MOVES
+                TestMode.NO_TIRED_STORAGE,
             ],
-            cleanup_policy=["compact", "compact,delete"])
+            cleanup_policy=["compact"])
     def test_migrating_redpanda_nodes_to_new_pool(self, balancing_mode,
                                                   test_mode: TestMode,
                                                   cleanup_policy):

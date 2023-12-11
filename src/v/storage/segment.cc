@@ -336,6 +336,7 @@ ss::future<> segment::do_flush() {
     auto o = _tracker.dirty_offset;
     auto fsize = _appender->file_byte_offset();
     return _appender->flush().then([this, o, fsize] {
+        vlog(gclog.info, "AWONG flushed {}, pos {}: {}", o, fsize, path());
         // never move committed offset backward, there may be multiple
         // outstanding flushes once the one executed later in terms of offset
         // finishes we guarantee that all previous flushes finished.

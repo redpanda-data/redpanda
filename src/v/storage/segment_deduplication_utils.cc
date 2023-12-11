@@ -50,11 +50,14 @@ ss::future<bool> should_keep(
     // If the map hasn't indexed the given key, we should keep the
     // key.
     if (!latest_offset_indexed.has_value()) {
+        vlog(gclog.info, "AWONG {}: {}", o, true);
         co_return true;
     }
     // We should only keep the record if its offset is equal or higher than
     // that indexed.
-    co_return o >= latest_offset_indexed.value();
+    auto ret = o >= latest_offset_indexed.value();
+    vlog(gclog.info, "AWONG {}: {}", o, ret);
+    co_return ret;
 }
 } // anonymous namespace
 

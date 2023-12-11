@@ -120,6 +120,11 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
                 co_return r.error();
             }
             _header = r.value();
+            vlog(
+              stlog.info,
+              "AWONG read header {} to {}",
+              _header->base_offset,
+              _header->last_offset());
         }
 
         auto ret = _consumer->accept_batch_start(*_header);

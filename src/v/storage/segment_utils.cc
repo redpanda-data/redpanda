@@ -408,10 +408,12 @@ ss::future<storage::index_state> do_copy_segment_data(
       seg->reader().filename(),
       tmpname);
 
-    auto should_keep = [compacted_list = std::move(compacted_offsets)](
+    auto should_keep = [&seg, compacted_list = std::move(compacted_offsets)](
                          const model::record_batch& b, const model::record& r) {
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-        return ss::make_ready_future<bool>(compacted_list.contains(o));
+        auto ret = compacted_list.contains(o);
+        vlog(gclog.info, "AWONG self keeping {}: {} ({})", o, ret, seg->path());
+        return ss::make_ready_future<bool>(ret);
     };
 
     auto copy_reducer = copy_data_segment_reducer(
@@ -448,6 +450,7 @@ model::record_batch_reader create_segment_full_reader(
     auto reader_cfg = log_reader_config(
       o.base_offset, o.dirty_offset, cfg.iopc);
     reader_cfg.skip_batch_cache = true;
+    vlog(gclog.info, "AWONG reading with config {}", reader_cfg);
     segment_set::underlying_t set;
     set.reserve(1);
     set.push_back(s);
