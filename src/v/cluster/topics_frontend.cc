@@ -959,7 +959,11 @@ topics_frontend::partitions_with_lost_majority(
                 it.check();
             }
         }
-        // todo (next commit): add validation.
+        auto validation_err
+          = _topics.local().validate_force_reconfigurable_partitions(result);
+        if (validation_err) {
+            co_return errc::concurrent_modification_error;
+        }
         co_return result;
     } catch (const topic_table::concurrent_modification_error& e) {
         // state changed while generating the plan, force caller to retry;
@@ -981,9 +985,6 @@ topics_frontend::force_recover_partitions_from_nodes(
     if (!result) {
         co_return result.error();
     }
-
-    // todo (next commit): add validation
-
     // check if the state of partitions to recover tallies with their
     // current state.
     const auto& topics = _topics.local();
@@ -1014,8 +1015,18 @@ topics_frontend::force_recover_partitions_from_nodes(
     if (reject) {
         co_return errc::invalid_request;
     }
-    // todo (next commit) replicate bulk force reconfiguration command
-    co_return errc::success;
+    auto validation_err
+      = _topics.local().validate_force_reconfigurable_partitions(
+        user_approved_force_recovery_partitions);
+    if (validation_err) {
+        co_return validation_err;
+    }
+    bulk_force_reconfiguration_cmd_data data;
+    data.from_nodes = std::move(nodes);
+    data.user_approved_force_recovery_partitions = std::move(
+      user_approved_force_recovery_partitions);
+    co_return co_await replicate_and_wait(
+      _stm, _as, bulk_force_reconfiguration_cmd{0, std::move(data)}, timeout);
 }
 
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
