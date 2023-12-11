@@ -45,7 +45,6 @@
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topic_recovery_status_rpc_handler.h"
 #include "cluster/topics_frontend.h"
-#include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
@@ -57,7 +56,6 @@
 #include "json/stringbuffer.h"
 #include "json/validator.h"
 #include "json/writer.h"
-#include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
@@ -85,9 +83,6 @@
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
-#include "redpanda/admin/api-doc/transaction.json.hh"
-#include "redpanda/admin/api-doc/transform.json.hh"
-#include "redpanda/admin/api-doc/usage.json.hh"
 #include "redpanda/cluster_config_schema_util.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -256,9 +251,8 @@ model::ntp admin_server::parse_ntp_from_request(ss::httpd::parameters& param) {
     return parse_ntp_from_request(param, model::ns(param["namespace"]));
 }
 
-namespace {
-model::ntp
-parse_ntp_from_query_param(const std::unique_ptr<ss::http::request>& req) {
+model::ntp admin_server::parse_ntp_from_query_param(
+  const std::unique_ptr<ss::http::request>& req) {
     auto ns = req->get_query_param("namespace");
     auto topic = req->get_query_param("topic");
     auto partition_str = req->get_query_param("partition_id");
@@ -277,8 +271,6 @@ parse_ntp_from_query_param(const std::unique_ptr<ss::http::request>& req) {
 
     return {std::move(ns), std::move(topic), partition};
 }
-
-} // namespace
 
 admin_server::admin_server(
   admin_server_cfg cfg,
@@ -1285,7 +1277,7 @@ admin_server::cancel_node_partition_moves(
       co_await map_partition_results(std::move(res.value())));
 }
 
-bool str_to_bool(std::string_view s) {
+bool admin_server::str_to_bool(std::string_view s) {
     if (s == "0" || s == "false" || s == "False") {
         return false;
     } else {
@@ -3822,201 +3814,6 @@ void admin_server::register_hbadger_routes() {
       });
 }
 
-ss::future<ss::json::json_return_type>
-admin_server::get_all_transactions_handler(
-  std::unique_ptr<ss::http::request> req) {
-    if (!config::shard_local_cfg().enable_transactions) {
-        throw ss::httpd::bad_request_exception("Transaction are disabled");
-    }
-
-    auto coordinator_partition_str = req->get_query_param(
-      "coordinator_partition_id");
-    int64_t coordinator_partition;
-    try {
-        coordinator_partition = std::stoi(coordinator_partition_str);
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt::format(
-          "Partition must be an integer: {}", coordinator_partition_str));
-    }
-
-    if (coordinator_partition < 0) {
-        throw ss::httpd::bad_param_exception(fmt::format(
-          "Invalid coordinator partition {}", coordinator_partition));
-    }
-
-    model::ntp tx_ntp(
-      model::tx_manager_nt.ns,
-      model::tx_manager_nt.tp,
-      model::partition_id(coordinator_partition));
-
-    if (need_redirect_to_leader(tx_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, tx_ntp);
-    }
-
-    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-    if (!tx_frontend.local_is_initialized()) {
-        throw ss::httpd::bad_request_exception("Can not get tx_frontend");
-    }
-
-    auto res = co_await tx_frontend.local()
-                 .get_all_transactions_for_one_tx_partition(tx_ntp);
-    if (!res.has_value()) {
-        co_await throw_on_error(*req, res.error(), tx_ntp);
-    }
-
-    using tx_info = ss::httpd::transaction_json::transaction_summary;
-    std::vector<tx_info> ans;
-    ans.reserve(res.value().size());
-
-    for (auto& tx : res.value()) {
-        if (tx.status == cluster::tm_transaction::tx_status::tombstone) {
-            continue;
-        }
-
-        tx_info new_tx;
-
-        new_tx.transactional_id = tx.id;
-
-        ss::httpd::transaction_json::producer_identity pid;
-        pid.id = tx.pid.id;
-        pid.epoch = tx.pid.epoch;
-        new_tx.pid = pid;
-
-        new_tx.tx_seq = tx.tx_seq;
-        new_tx.etag = tx.etag;
-
-        // The motivation behind mapping killed to aborting is to make
-        // user not to think about the subtle differences between both
-        // statuses
-        if (tx.status == cluster::tm_transaction::tx_status::killed) {
-            tx.status = cluster::tm_transaction::tx_status::aborting;
-        }
-        new_tx.status = ss::sstring(tx.get_status());
-
-        new_tx.timeout_ms = tx.get_timeout().count();
-        new_tx.staleness_ms = tx.get_staleness().count();
-
-        for (auto& partition : tx.partitions) {
-            ss::httpd::transaction_json::partition partition_info;
-            partition_info.ns = partition.ntp.ns;
-            partition_info.topic = partition.ntp.tp.topic;
-            partition_info.partition_id = partition.ntp.tp.partition;
-            partition_info.etag = partition.etag;
-
-            new_tx.partitions.push(partition_info);
-        }
-
-        for (auto& group : tx.groups) {
-            ss::httpd::transaction_json::group group_info;
-            group_info.group_id = group.group_id;
-            group_info.etag = group.etag;
-
-            new_tx.groups.push(group_info);
-        }
-
-        ans.push_back(std::move(new_tx));
-    }
-
-    co_return ss::json::json_return_type(ans);
-}
-
-ss::future<ss::json::json_return_type>
-admin_server::find_tx_coordinator_handler(
-  std::unique_ptr<ss::http::request> req) {
-    auto transaction_id = req->param["transactional_id"];
-    kafka::transactional_id tid(transaction_id);
-    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-    auto r = co_await tx_frontend.local().find_coordinator(tid);
-
-    ss::httpd::transaction_json::find_coordinator_reply reply;
-    if (r.coordinator) {
-        reply.coordinator = r.coordinator.value()();
-    }
-    if (r.ntp) {
-        ss::httpd::transaction_json::ntp ntp;
-        ntp.ns = r.ntp->ns();
-        ntp.topic = r.ntp->tp.topic();
-        ntp.partition = r.ntp->tp.partition();
-        reply.ntp = ntp;
-    }
-    reply.ec = static_cast<int>(r.ec);
-
-    co_return ss::json::json_return_type(std::move(reply));
-}
-
-ss::future<ss::json::json_return_type>
-admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
-    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-    if (!tx_frontend.local_is_initialized()) {
-        throw ss::httpd::bad_request_exception("Transaction are disabled");
-    }
-    auto transaction_id = req->param["transactional_id"];
-    kafka::transactional_id tid(transaction_id);
-
-    auto r = co_await tx_frontend.local().find_coordinator(tid);
-    if (!r.ntp) {
-        throw ss::httpd::bad_request_exception("Coordinator not available");
-    }
-    if (need_redirect_to_leader(*r.ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, *r.ntp);
-    }
-
-    auto tx_ntp = tx_frontend.local().ntp_for_tx_id(tid);
-    if (!tx_ntp) {
-        throw ss::httpd::bad_request_exception("Coordinator not available");
-    }
-
-    auto ntp = parse_ntp_from_query_param(req);
-
-    auto etag_str = req->get_query_param("etag");
-    int64_t etag;
-    try {
-        etag = std::stoi(etag_str);
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Etag must be an integer: {}", etag_str));
-    }
-
-    if (etag < 0) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Invalid etag {}", etag));
-    }
-
-    cluster::tm_transaction::tx_partition partition_for_delete{
-      .ntp = ntp, .etag = model::term_id(etag)};
-
-    vlog(
-      adminlog.info,
-      "Delete partition(ntp: {}, etag: {}) from transaction({})",
-      ntp,
-      etag,
-      tid);
-
-    auto res = co_await tx_frontend.local().delete_partition_from_tx(
-      tid, partition_for_delete);
-    co_await throw_on_error(*req, res, ntp);
-    co_return ss::json::json_return_type(ss::json::json_void());
-}
-void admin_server::register_transaction_routes() {
-    register_route<user>(
-      ss::httpd::transaction_json::get_all_transactions,
-      [this](std::unique_ptr<ss::http::request> req) {
-          return get_all_transactions_handler(std::move(req));
-      });
-
-    register_route<user>(
-      ss::httpd::transaction_json::delete_partition,
-      [this](std::unique_ptr<ss::http::request> req) {
-          return delete_partition_handler(std::move(req));
-      });
-
-    register_route<user>(
-      ss::httpd::transaction_json::find_coordinator,
-      [this](std::unique_ptr<ss::http::request> req) {
-          return find_tx_coordinator_handler(std::move(req));
-      });
-}
-
 namespace {
 json::validator make_self_test_start_validator() {
     const std::string schema = R"(
@@ -4199,65 +3996,6 @@ void admin_server::register_self_test_routes() {
       ss::httpd::debug_json::self_test_status,
       [this](std::unique_ptr<ss::http::request> req) {
           return self_test_get_results_handler(std::move(req));
-      });
-}
-
-namespace {
-ss::json::json_return_type raw_data_to_usage_response(
-  const std::vector<kafka::usage_window>& total_usage, bool include_open) {
-    std::vector<ss::httpd::usage_json::usage_response> resp;
-    resp.reserve(total_usage.size());
-    for (size_t i = (include_open ? 0 : 1); i < total_usage.size(); ++i) {
-        resp.emplace_back();
-        const auto& e = total_usage[i];
-        resp.back().begin_timestamp = e.begin;
-        resp.back().end_timestamp = e.end;
-        resp.back().open = e.is_open();
-        resp.back().kafka_bytes_received_count = e.u.bytes_received;
-        resp.back().kafka_bytes_sent_count = e.u.bytes_sent;
-        if (e.u.bytes_cloud_storage) {
-            resp.back().cloud_storage_bytes_gauge = *e.u.bytes_cloud_storage;
-        } else {
-            resp.back().cloud_storage_bytes_gauge = -1;
-        }
-    }
-    if (include_open && !resp.empty()) {
-        /// Handle case where client does not want to observe
-        /// value of 0 for open buckets end timestamp
-        auto& e = resp.at(0);
-        vassert(e.open(), "Bucket not open when expecting to be");
-        e.end_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                            ss::lowres_system_clock::now().time_since_epoch())
-                            .count();
-    }
-    return resp;
-}
-} // namespace
-
-void admin_server::register_usage_routes() {
-    register_route<user>(
-      ss::httpd::usage_json::get_usage,
-      [this](std::unique_ptr<ss::http::request> req) {
-          if (!config::shard_local_cfg().enable_usage()) {
-              throw ss::httpd::bad_request_exception(
-                "Usage tracking is not enabled");
-          }
-          bool include_open = false;
-          auto include_open_str = req->get_query_param("include_open_bucket");
-          vlog(
-            adminlog.info,
-            "Request to observe usage info, include_open_bucket={}",
-            include_open_str);
-          if (!include_open_str.empty()) {
-              include_open = str_to_bool(include_open_str);
-          }
-          return _usage_manager
-            .invoke_on(
-              kafka::usage_manager::usage_manager_main_shard,
-              [](kafka::usage_manager& um) { return um.get_usage_stats(); })
-            .then([include_open](auto total_usage) {
-                return raw_data_to_usage_response(total_usage, include_open);
-            });
       });
 }
 
