@@ -43,7 +43,7 @@ impl<'a> BorrowedHeader<'a> {
         Self { key, value }
     }
 
-    /// Returns the header's key or `None` if there is no key.
+    /// Returns the header's key.
     pub fn key(&self) -> &[u8] {
         self.key
     }
@@ -140,7 +140,7 @@ impl RecordHeader {
         Self { key, value }
     }
 
-    /// Returns the header's key or `None` if there is no key.
+    /// Returns the header's key.
     pub fn key(&self) -> &[u8] {
         &self.key[..]
     }

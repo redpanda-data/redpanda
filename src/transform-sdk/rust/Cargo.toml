@@ -16,7 +16,7 @@ redpanda-transform-sdk-sys = { path = "./core-sys", version = "=0.0.0-dev" }
 
 [dev-dependencies]
 quickcheck = { workspace = true }
-rand = { workspace = true}
+rand = { workspace = true }
 anyhow = { workspace = true }
 
 [workspace]
