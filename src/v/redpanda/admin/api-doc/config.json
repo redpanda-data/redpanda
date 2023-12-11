@@ -84,7 +84,13 @@
     ],
     "responses": {
       "200": {
-        "description": "Log level"
+        "description": "Updated logging level",
+        "schema": {
+          "$ref": "#/definitions/set_log_level_response"
+        }
+      },
+      "400": {
+        "description": "Bad request"
       }
     }
   }
