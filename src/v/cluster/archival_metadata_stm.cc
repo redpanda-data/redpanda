@@ -599,6 +599,15 @@ archival_metadata_stm::archival_metadata_stm(
   , _cloud_storage_api(remote)
   , _feature_table(ft) {}
 
+archival_metadata_stm::~archival_metadata_stm() {
+    // Last replicate future is an internal barrier for sync operations. Ignore
+    // its value if we're shutting down to prevent seastar logging warnings for
+    // unhandled exception.
+    if (_last_replicate.has_value()) {
+        _last_replicate->ignore_ready_future();
+    }
+}
+
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
   ss::lowres_clock::time_point deadline,
