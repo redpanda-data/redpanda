@@ -159,6 +159,7 @@ public:
     std::optional<model::timestamp>
       find_highest_timestamp_before(model::timestamp) const;
 
+    auto first_data_offset() const { return _state.first_data_offset; }
     model::offset base_offset() const { return _state.base_offset; }
     model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }

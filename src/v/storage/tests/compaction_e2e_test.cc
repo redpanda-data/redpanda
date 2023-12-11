@@ -281,11 +281,14 @@ TEST_F(CompactionFixtureTest, TestRecompactWithNewData) {
       cardinality);
     disk_log.sliding_window_compact(cfg).get();
     auto segments_compacted = disk_log.get_probe().get_segments_compacted();
+    auto compaction_ratio = disk_log.compaction_ratio().get();
 
     // Subsequent compaction doesn't do anything.
     disk_log.sliding_window_compact(cfg).get();
     auto segments_compacted_2 = disk_log.get_probe().get_segments_compacted();
+    auto compaction_ratio_2 = disk_log.compaction_ratio().get();
     ASSERT_EQ(segments_compacted, segments_compacted_2);
+    ASSERT_EQ(compaction_ratio, compaction_ratio_2);
 
     // But once we add more data, we become eligible for compaction again.
     generate_data(1, cardinality, records_per_segment).get();
@@ -296,8 +299,23 @@ TEST_F(CompactionFixtureTest, TestRecompactWithNewData) {
       std::nullopt,
       cardinality);
     disk_log.sliding_window_compact(new_cfg).get();
+
+    // Most segments have already compacted their segments away entirely,
+    // except their last record. Such segments shouldn't be compacted. Three
+    // segments should be compacted:
+    // - the new segment is compacted twice (self + windowed)
+    // - the segment that previously had the latest keys should be compacted
     auto segments_compacted_3 = disk_log.get_probe().get_segments_compacted();
-    ASSERT_LT(segments_compacted, segments_compacted_3);
+    auto compaction_ratio_3 = disk_log.compaction_ratio().get();
+    ASSERT_EQ(segments_compacted + 3, segments_compacted_3);
+
+    // Check for a reasonable compaction ratio.
+    ASSERT_LT(compaction_ratio_3, 0.5);
+
+    // Compared to our first compaction ratio that windowed compacted many
+    // segments in a row, one self-compaction + windowed compaction will have a
+    // worse compaction ratio.
+    ASSERT_LT(compaction_ratio, compaction_ratio_3);
 }
 
 // Regression test for a bug when compacting when the last segment is all

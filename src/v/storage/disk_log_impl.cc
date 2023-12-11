@@ -541,6 +541,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         if (cfg.asrc) {
             cfg.asrc->check();
         }
+        if (seg->finished_self_compaction()) {
+            continue;
+        }
         auto result = co_await storage::internal::self_compact_segment(
           seg,
           _stm_manager,
@@ -588,11 +591,12 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     }
     vlog(
       gclog.debug,
-      "[{}] built offset map with {} keys (max allowed {}), max indexed "
-      "key offset: {}",
+      "[{}] built offset map with {} keys (max allowed {}), min segment fully "
+      "indexed base offset: {}, max indexed key offset: {}",
       config().ntp(),
       map.size(),
       map.capacity(),
+      idx_start_offset,
       map.max_offset());
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
@@ -615,6 +619,25 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
               map.max_offset(),
               seg->filename());
             continue;
+        }
+        if (auto first_data_offset = seg->index().first_data_offset();
+            !first_data_offset.is_disabled()) {
+            auto has_data_batches = first_data_offset.has_optional_value();
+            if (
+              !has_data_batches
+              || first_data_offset.get_optional()
+                   == seg->index().max_offset()) {
+                // All data records are already compacted away. Skip to avoid a
+                // needless rewrite.
+                seg->mark_as_finished_windowed_compaction();
+                vlog(
+                  gclog.trace,
+                  "[{}] treating segment as compacted, either all non-data "
+                  "records or the only record is a data record: {}",
+                  config().ntp(),
+                  seg->filename());
+                continue;
+            }
         }
         // TODO: implement a segment replacement strategy such that each term
         // tries to write only one segment (or more if the term had a large
@@ -685,6 +708,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         if (seg->is_closed()) {
             throw segment_closed_exception();
         }
+        const auto size_before = seg->size_bytes();
+        const auto size_after = appender->file_byte_offset();
 
         // Clear our indexes before swapping the data files (note, the new
         // compaction index was opened with the truncate option above).
@@ -704,6 +729,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
         seg->mark_as_finished_windowed_compaction();
         _probe->segment_compacted();
+        compaction_result res(size_before, size_after);
+        _compaction_ratio.update(res.compaction_ratio());
         seg->advance_generation();
         staging_to_clean.clear();
         vlog(

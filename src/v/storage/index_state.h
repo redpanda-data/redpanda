@@ -91,9 +91,10 @@ private:
    1 byte  - non_data_timestamps
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<6>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<7>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
     static constexpr auto broker_timestamp_version = 6;
+    static constexpr auto first_data_offset_version = 7;
 
     static index_state make_empty_index(offset_delta_time with_offset);
 
@@ -137,6 +138,15 @@ struct index_state
     // used for retention. std::optional to allow upgrading without rewriting
     // the index.
     std::optional<model::timestamp> broker_timestamp{std::nullopt};
+
+    // The offset of the first data record in the segment. This may not
+    // necessarily correspond to one of the values in the indexing vectors.
+    //
+    // Special values:
+    // - nullopt: indicates no data batches are in the segment.
+    // - disabled: indicates this index was written in a version that didn't
+    //             support this field, and we can't conclude anything.
+    tristate<model::offset> first_data_offset{std::nullopt};
 
     size_t size() const { return relative_offset_index.size(); }
 
@@ -231,7 +241,8 @@ private:
       , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic)
       , with_offset(o.with_offset)
       , non_data_timestamps(o.non_data_timestamps)
-      , broker_timestamp(o.broker_timestamp) {}
+      , broker_timestamp(o.broker_timestamp)
+      , first_data_offset(o.first_data_offset) {}
 };
 
 } // namespace storage
