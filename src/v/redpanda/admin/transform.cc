@@ -17,6 +17,15 @@
 #include "redpanda/admin/server.h"
 #include "transform/api.h"
 
+namespace {
+
+ss::httpd::bad_request_exception transforms_not_enabled() {
+    return {"data transforms disabled - use `rpk cluster config set "
+            "data_transforms_enabled true` to enable"};
+}
+
+} // namespace
+
 void admin_server::register_wasm_transform_routes() {
     register_route<superuser>(
       ss::httpd::transform_json::deploy_transform,
@@ -32,9 +41,7 @@ void admin_server::register_wasm_transform_routes() {
 ss::future<ss::json::json_return_type>
 admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
     if (!_transform_service->local_is_initialized()) {
-        throw ss::httpd::bad_request_exception(
-          "data transforms disabled - use `rpk cluster config "
-          "data_transforms_enabled true` to enable");
+        throw transforms_not_enabled();
     }
     auto name = model::transform_name(req->param["name"]);
     auto ec = co_await _transform_service->local().delete_transform(
@@ -69,9 +76,7 @@ ss::httpd::transform_json::partition_transform_status::
 ss::future<ss::json::json_return_type>
 admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
     if (!_transform_service->local_is_initialized()) {
-        throw ss::httpd::bad_request_exception(
-          "data transforms disabled - use `rpk cluster config "
-          "data_transforms_enabled true` to enable");
+        throw transforms_not_enabled();
     }
     auto report = co_await _transform_service->local().list_transforms();
     ss::json::json_list<ss::httpd::transform_json::transform_metadata>
@@ -159,9 +164,7 @@ void validate_transform_deploy_document(const json::Document& doc) {
 ss::future<ss::json::json_return_type>
 admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
     if (!_transform_service->local_is_initialized()) {
-        throw ss::httpd::bad_request_exception(
-          "data transforms disabled - use `rpk cluster config "
-          "data_transforms_enabled true` to enable");
+        throw transforms_not_enabled();
     }
     // The request body could be large here, so stream it into an iobuf.
     iobuf body;
