@@ -1371,6 +1371,7 @@ void admin_server::register_config_routes() {
     register_route<superuser>(
       ss::httpd::config_json::set_log_level,
       [this](std::unique_ptr<ss::http::request> req) {
+          ss::httpd::config_json::set_log_level_response rsp{};
           ss::sstring name;
           if (!ss::http::internal::url_decode(req->param["name"], name)) {
               throw ss::httpd::bad_param_exception(fmt::format(
@@ -1387,6 +1388,9 @@ void admin_server::register_config_routes() {
                 "Cannot set log level: unknown logger {{{}}}", name));
           }
 
+          rsp.name = name;
+          rsp.previous_level = ss::to_sstring(cur_level);
+
           // decode new level
           ss::log_level new_level;
           try {
@@ -1398,6 +1402,8 @@ void admin_server::register_config_routes() {
                 name,
                 req->get_query_param("level")));
           }
+
+          rsp.new_level = ss::to_sstring(new_level);
 
           // how long should the new log level be active
           std::optional<std::chrono::seconds> expires;
@@ -1442,10 +1448,11 @@ void admin_server::register_config_routes() {
               _log_level_resets.erase(name);
           }
 
+          rsp.expiration = expires->count();
+
           rearm_log_level_timer();
 
-          return ss::make_ready_future<ss::json::json_return_type>(
-            ss::json::json_void());
+          return ss::make_ready_future<ss::json::json_return_type>(rsp);
       });
 }
 
