@@ -50,6 +50,29 @@
   }
 },
 "/v1/config/log_level/{name}": {
+  "get": {
+    "summary": "Get log level",
+    "operationId": "get_log_level",
+    "parameters": [
+      {
+        "name": "name",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Returned logger info",
+        "schema": {
+          "$ref": "#/definitions/get_log_level_response"
+        }
+      },
+      "400": {
+        "description": "error getting log level"
+      }
+    }
+  },
   "put": {
     "summary": "Set log level",
     "operationId": "set_log_level",

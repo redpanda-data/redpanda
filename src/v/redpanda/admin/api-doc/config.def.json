@@ -1,5 +1,24 @@
-"set_log_level_response": {
+"get_log_level_response": {
     "description": "Response to get loggers",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "Name of the logger"
+        },
+        "level": {
+            "type": "string",
+            "description": "Name of the logger"
+        },
+        "expiration": {
+            "type": "long",
+            "description": "How long until this level expires, 0 if default"
+        }
+    },
+    "required": ["name","level","expiration"]
+},
+"set_log_level_response": {
+    "description": "Response to set log level",
     "type": "object",
     "properties": {
         "name": {
