@@ -1667,14 +1667,14 @@ configuration::configuration()
       "Number of attempts metadata operations may be retried.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       5)
-  , cloud_storage_attempt_cluster_recovery_on_bootstrap(
+  , cloud_storage_attempt_cluster_restore_on_bootstrap(
       *this,
-      "cloud_storage_attempt_cluster_recovery_on_bootstrap",
+      "cloud_storage_attempt_cluster_restore_on_bootstrap",
       "If set to `true`, when a cluster is started for the first time and "
       "there is cluster metadata in the configured cloud storage bucket, "
-      "Redpanda automatically starts a cluster recovery from that metadata. If "
+      "Redpanda automatically starts a cluster restore from that metadata. If "
       "using an automated method for deployment where it's not easy to "
-      "predictably determine that a recovery is needed, we recommend setting "
+      "predictably determine that a restore is needed, we recommend setting "
       "to `true`. Take care to ensure that in such deployments, a cluster "
       "bootstrap with a given bucket means that any previous cluster using "
       "that bucket is fully destroyed; otherwise tiered storage subsystems may "

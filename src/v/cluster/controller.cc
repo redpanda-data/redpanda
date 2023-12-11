@@ -796,7 +796,7 @@ ss::future<> controller::create_cluster(bootstrap_cluster_cmd_data cmd_data) {
         if (
           bucket_opt.has_value()
           && config::shard_local_cfg()
-               .cloud_storage_attempt_cluster_recovery_on_bootstrap.value()) {
+               .cloud_storage_attempt_cluster_restore_on_bootstrap.value()) {
             retry_chain_node retry_node(_as.local(), 300s, 5s);
             auto res
               = co_await cloud_metadata::download_highest_manifest_in_bucket(
