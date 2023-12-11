@@ -1,0 +1,44 @@
+[package]
+name = "redpanda-transform-sdk"
+description = "A Rust library for authoring Redpanda Data Transforms."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+redpanda-transform-sdk-types = { path = "./core-types", version = "=0.0.0-dev" }
+redpanda-transform-sdk-sys = { path = "./core-sys", version = "=0.0.0-dev" }
+
+[dev-dependencies]
+quickcheck = { workspace = true }
+rand = { workspace = true }
+anyhow = { workspace = true }
+
+[workspace]
+resolver = "2"
+members = [
+  "core-sys",
+  "core-types",
+  "examples/*",
+]
+
+[workspace.package]
+version = "0.0.0-dev"
+edition = "2021"
+rust-version = "1.72.0"
+authors = ["Redpanda Data Transforms Team"]
+homepage = "https://redpanda.com"
+repository = "https://github.com/redpanda-data/redpanda"
+license = "Apache-2.0"
+keywords = ["redpanda", "wasm", "kafka", "data-transform"]
+categories = ["wasm"]
+
+[workspace.dependencies]
+quickcheck = "1.0"
+rand = "0.8"
+anyhow = "1.0"

@@ -26,8 +26,8 @@ on:
       - '.github/workflows/transform-sdk-build.yml'
 
 jobs:
-  test:
-    name: Test golang transform-sdk
+  test-golang:
+    name: Test Golang Transform SDK
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -48,3 +48,25 @@ jobs:
           version: latest
           args: --timeout 5m
           working-directory: src/transform-sdk/go/transform
+
+  test-rust:
+    name: Test Rust Transform SDK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        run: rustup update stable --no-self-update && rustup default stable
+
+      - name: Run tests
+        working-directory: src/transform-sdk/rust
+        run: cargo test --workspace
+
+      - name: Check format
+        working-directory: src/transform-sdk/rust
+        run: cargo fmt --check --all
+
+      - name: Run clippy
+        working-directory: src/transform-sdk/rust
+        run: cargo clippy --all
