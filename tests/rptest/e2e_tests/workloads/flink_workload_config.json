@@ -1,0 +1,11 @@
+{
+    "connector_path": "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar",
+    "logger_path": "/workloads",
+    "log_level": "DEBUG",
+    "brokers": "localhost:9092",
+    "producer_group": "flink_produce_group",
+    "consumer_group": "flink_consume_group",
+    "topic_name": "flink_workload_topic",
+    "msg_size": 4096,
+    "count": 10
+}
