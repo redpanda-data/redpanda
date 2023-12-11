@@ -1282,6 +1282,42 @@ void admin_server::register_config_routes() {
       });
 
     register_route<superuser>(
+      ss::httpd::config_json::get_log_level,
+      [this](std::unique_ptr<ss::http::request> req) {
+          ss::httpd::config_json::get_log_level_response rsp{};
+          ss::sstring name;
+          if (!ss::http::internal::url_decode(req->param["name"], name)) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'name' got {{{}}}", req->param["name"]));
+          }
+          validate_no_control(name, string_conversion_exception{name});
+
+          ss::log_level cur_level;
+          try {
+              cur_level = ss::global_logger_registry().get_logger_level(name);
+          } catch (std::out_of_range&) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Cannot set log level: unknown logger {{{}}}", name));
+          }
+
+          rsp.name = name;
+          rsp.level = ss::to_sstring(cur_level);
+
+          auto find_iter = _log_level_resets.find(name);
+          if (find_iter == _log_level_resets.end()) {
+              rsp.expiration = 0;
+          } else {
+              auto remaining_dur = find_iter->second.expires
+                                   - ss::timer<>::clock::now();
+              rsp.expiration = std::chrono::duration_cast<std::chrono::seconds>(
+                                 remaining_dur)
+                                 .count();
+          }
+
+          return ss::make_ready_future<ss::json::json_return_type>(rsp);
+      });
+
+    register_route<superuser>(
       ss::httpd::config_json::set_log_level,
       [this](std::unique_ptr<ss::http::request> req) {
           ss::httpd::config_json::set_log_level_response rsp{};
