@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -187,20 +188,31 @@ type genFile struct {
 }
 
 func generateManifest(p transformProject) (map[string][]genFile, error) {
+	rpConfig, err := project.MarshalConfig(project.Config{Name: p.Name, Language: p.Lang})
+	if err != nil {
+		return nil, err
+	}
 	switch p.Lang {
 	case project.WasmLangTinygoNoGoroutines:
 		fallthrough
 	case project.WasmLangTinygoWithGoroutines:
-		rpConfig, err := project.MarshalConfig(project.Config{Name: p.Name, Language: p.Lang})
-		if err != nil {
-			return nil, err
-		}
 		return map[string][]genFile{
 			p.Path: {
 				genFile{name: project.ConfigFileName, content: string(rpConfig)},
 				genFile{name: "transform.go", content: template.WasmGoMain()},
 				genFile{name: "go.mod", content: template.WasmGoModule(p.Name)},
 				genFile{name: "README.md", content: template.WasmGoReadme()},
+			},
+		}, nil
+	case project.WasmLangRust:
+		return map[string][]genFile{
+			p.Path: {
+				genFile{name: project.ConfigFileName, content: string(rpConfig)},
+				genFile{name: "Cargo.toml", content: template.WasmRustCargoConfig(p.Name)},
+				genFile{name: "README.md", content: template.WasmRustReadme()},
+			},
+			path.Join(p.Path, "src"): {
+				genFile{name: "main.rs", content: template.WasmRustMain()},
 			},
 		}, nil
 	}
@@ -227,6 +239,14 @@ func executeGenerate(fs afero.Fs, p transformProject) error {
 }
 
 func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
+	runCli := func(cmd string, args ...string) error {
+		c := exec.CommandContext(ctx, cmd, args...)
+		c.Stderr = os.Stderr
+		c.Stdin = os.Stdin
+		c.Stdout = os.Stdout
+		c.Dir = p.Path
+		return c.Run()
+	}
 	switch p.Lang {
 	case project.WasmLangTinygoNoGoroutines:
 		fallthrough
@@ -236,12 +256,7 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 			return fmt.Errorf("go is not available on $PATH, please download and install it: https://go.dev/doc/install")
 		}
 		runGoCli := func(args ...string) error {
-			c := exec.CommandContext(ctx, g, args...)
-			c.Stderr = os.Stderr
-			c.Stdin = os.Stdin
-			c.Stdout = os.Stdout
-			c.Dir = p.Path
-			return c.Run()
+			return runCli(g, args...)
 		}
 		if err := runGoCli("get", "github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"); err != nil {
 			return fmt.Errorf("unable to go get redpanda transform-sdk: %v", err)
@@ -251,6 +266,22 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		}
 		if _, err := buildpack.Tinygo.Install(ctx, fs); err != nil {
 			return fmt.Errorf("unable to install tinygo buildpack: %v", err)
+		}
+		return nil
+	case project.WasmLangRust:
+		rustup, err := exec.LookPath("rustup")
+		if err != nil {
+			return fmt.Errorf("rustup is not available on $PATH, please download and install it: https://rustup.rs/")
+		}
+		if err := runCli(rustup, "target", "add", "wasm32-wasi"); err != nil {
+			return fmt.Errorf("unable to install wasm toolchain: %v", err)
+		}
+		cargo, err := exec.LookPath("cargo")
+		if err != nil {
+			return fmt.Errorf("cargo is not available on $PATH, please download and install it: https://rustup.rs/")
+		}
+		if err := runCli(cargo, "add", "redpanda-transform-sdk"); err != nil {
+			return fmt.Errorf("unable to add redpanda-transform-sdk crate: %v", err)
 		}
 		return nil
 	}
