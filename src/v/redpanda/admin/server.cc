@@ -1035,8 +1035,6 @@ get_brokers(cluster::controller* const controller) {
               }
               b.membership_status = fmt::format(
                 "{}", nm.state.get_membership_state());
-              b.liveness_status = fmt::format(
-                "{}", nm.state.get_liveness_state());
 
               // These fields are defaults that will be overwritten with
               // data from the health report.
@@ -3381,21 +3379,21 @@ admin_server::get_majority_lost_partitions(
         throw co_await redirect_to_leader(*request, model::controller_ntp);
     }
 
-    auto input = request->get_query_param("defunct_nodes");
+    auto input = request->get_query_param("dead_nodes");
     if (input.length() <= 0) {
         throw ss::httpd::bad_param_exception(
-          "Query parameter defunct_nodes not set, expecting a csv of integers "
+          "Query parameter dead_nodes not set, expecting a csv of integers "
           "(broker_ids)");
     }
 
     std::vector<ss::sstring> tokens;
     boost::split(tokens, input, boost::is_any_of(","));
 
-    std::vector<model::node_id> defunct_nodes;
-    defunct_nodes.reserve(tokens.size());
+    std::vector<model::node_id> dead_nodes;
+    dead_nodes.reserve(tokens.size());
     for (auto& token : tokens) {
         try {
-            defunct_nodes.emplace_back(std::stoi(token));
+            dead_nodes.emplace_back(std::stoi(token));
         } catch (...) {
             throw ss::httpd::bad_param_exception(fmt::format(
               "Token {} doesn't parse to an integer in input: {}, expecting a "
@@ -3405,7 +3403,7 @@ admin_server::get_majority_lost_partitions(
         }
     }
 
-    if (defunct_nodes.size() == 0) {
+    if (dead_nodes.size() == 0) {
         throw ss::httpd::bad_param_exception(fmt::format(
           "Malformed input query parameter: {}, expecting a csv of "
           "integers (broker_ids)",
@@ -3415,11 +3413,11 @@ admin_server::get_majority_lost_partitions(
     vlog(
       adminlog.info,
       "Request for majority loss partitions from input defunct nodes: {}",
-      defunct_nodes);
+      dead_nodes);
 
     auto result = co_await _controller->get_topics_frontend()
                     .local()
-                    .partitions_with_lost_majority(std::move(defunct_nodes));
+                    .partitions_with_lost_majority(std::move(dead_nodes));
     if (!result) {
         if (
           result.error().category() == cluster::error_category()
@@ -3458,8 +3456,8 @@ admin_server::get_majority_lost_partitions(
               assignment.core = replica.shard;
               result.replicas.push(assignment);
           }
-          for (auto& node : ntp.defunct_nodes) {
-              result.defunct_nodes.push(node());
+          for (auto& node : ntp.dead_nodes) {
+              result.dead_nodes.push(node());
           }
           return result;
       }));
@@ -3496,7 +3494,7 @@ json::validator make_force_recover_partitions_validator() {
 {
   "type": "object",
   "properties": {
-    "defunct_nodes": {
+    "dead_nodes": {
       "type": "array",
       "items": {
         "type": "number"
@@ -3547,7 +3545,7 @@ json::validator make_force_recover_partitions_validator() {
               ]
             }
           },
-          "defunct_nodes": {
+          "dead_nodes": {
             "type": "array",
             "items": {
               "type": "number"
@@ -3558,13 +3556,13 @@ json::validator make_force_recover_partitions_validator() {
           "ntp",
           "topic_revision",
           "replicas",
-          "defunct_nodes"
+          "dead_nodes"
         ]
       }
     }
   },
   "required": [
-    "defunct_nodes",
+    "dead_nodes",
     "partitions_to_force_recover"
   ]
 }
@@ -3669,7 +3667,7 @@ admin_server::force_recover_partitions_from_nodes(
 
     // parse the json body into a controller command.
     std::vector<model::node_id> dead_nodes = parse_node_ids_from_json(
-      doc["defunct_nodes"]);
+      doc["dead_nodes"]);
     fragmented_vector<cluster::ntp_with_majority_loss>
       partitions_to_force_recover;
     for (auto& r : doc["partitions_to_force_recover"].GetArray()) {
@@ -3677,13 +3675,13 @@ admin_server::force_recover_partitions_from_nodes(
         auto replicas = parse_replicas_from_json(r["replicas"]);
         auto topic_revision = model::revision_id(
           r["topic_revision"].GetInt64());
-        auto dead_replicas = parse_node_ids_from_json(r["defunct_nodes"]);
+        auto dead_replicas = parse_node_ids_from_json(r["dead_nodes"]);
 
         cluster::ntp_with_majority_loss ntp_entry;
         ntp_entry.ntp = std::move(ntp);
         ntp_entry.assignment = std::move(replicas);
         ntp_entry.topic_revision = topic_revision;
-        ntp_entry.defunct_nodes = std::move(dead_replicas);
+        ntp_entry.dead_nodes = std::move(dead_replicas);
         partitions_to_force_recover.push_back(std::move(ntp_entry));
     }
 

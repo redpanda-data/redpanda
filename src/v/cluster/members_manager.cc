@@ -484,17 +484,6 @@ members_manager::apply_update(model::record_batch b) {
           vlog(
             clusterlog.info, "Node UUID {} has node ID {}", node_uuid, node_id);
           return ss::make_ready_future<std::error_code>(errc::success);
-      },
-      [this, update_offset](defunct_nodes_cmd cmd) {
-          vlog(
-            clusterlog.info,
-            "processing defunct nodes, ntps to force reconfigure: {}, offset: "
-            "{}",
-            cmd.value.user_approved_force_recovery_partitions.size(),
-            update_offset);
-          _first_node_operation_command_offset = std::min(
-            update_offset, _first_node_operation_command_offset);
-          return dispatch_updates_to_cores(update_offset, cmd);
       });
 }
 

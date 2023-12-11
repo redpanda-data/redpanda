@@ -574,7 +574,7 @@ public:
         return _original_assignment.replicas;
     };
 
-    void force_move_defunct_replicas(double max_disk_usage_ratio);
+    void force_move_dead_replicas(double max_disk_usage_ratio);
 
 private:
     friend class request_context;
@@ -902,7 +902,7 @@ auto partition_balancer_planner::request_context::do_with_partition(
                 sizes = size_it->second;
             }
             partition part{force_reassignable_partition{
-              ntp, sizes, assignment, it->defunct_nodes, *this}};
+              ntp, sizes, assignment, it->dead_nodes, *this}};
 
             auto deferred = ss::defer([&] {
                 auto& force_reassignable
@@ -1239,7 +1239,7 @@ partition_balancer_planner::force_reassignable_partition::
 }
 
 void partition_balancer_planner::force_reassignable_partition::
-  force_move_defunct_replicas(double max_disk_usage_ratio) {
+  force_move_dead_replicas(double max_disk_usage_ratio) {
     const auto& replicas = _original_assignment.replicas;
     std::vector<model::node_id> replicas_to_remove;
     replicas_to_remove.reserve(replicas.size());
@@ -1826,7 +1826,7 @@ partition_balancer_planner::get_force_repair_actions(request_context& ctx) {
         co_await ctx.with_partition(it->first, [&](partition& part) {
             part.match_variant(
               [&](force_reassignable_partition& part) {
-                  part.force_move_defunct_replicas(
+                  part.force_move_dead_replicas(
                     ctx.config().hard_max_disk_usage_ratio);
               },
               [&](reassignable_partition&) {},

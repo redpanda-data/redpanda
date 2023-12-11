@@ -82,8 +82,7 @@ public:
       register_node_uuid_cmd,
       add_node_cmd,
       remove_node_cmd,
-      update_node_cfg_cmd,
-      defunct_nodes_cmd>{};
+      update_node_cfg_cmd>{};
     static constexpr ss::shard_id shard = 0;
     static constexpr size_t max_updates_queue_size = 100;
 

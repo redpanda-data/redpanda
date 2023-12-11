@@ -700,7 +700,7 @@ topic_table::apply(bulk_force_reconfiguration_cmd cmd, model::offset o) {
 
 std::error_code topic_table::validate_force_reconfigurable_partition(
   const ntp_with_majority_loss& entry) const {
-    if (entry.defunct_nodes.size() <= 0) {
+    if (entry.dead_nodes.size() <= 0) {
         return errc::invalid_request;
     }
     const auto& ntp = entry.ntp;
@@ -1687,15 +1687,15 @@ void topic_table::on_partition_move_finish(
     }
     auto& entries = it->second;
     auto num_erased = std::erase_if(entries, [&replicas](const auto& entry) {
-        // check if the new replica set contains any defunct nodes that were
+        // check if the new replica set contains any dead nodes that were
         // intended to be removed.
-        bool has_defunct_nodes = std::any_of(
-          entry.defunct_nodes.begin(),
-          entry.defunct_nodes.end(),
+        bool has_dead_nodes = std::any_of(
+          entry.dead_nodes.begin(),
+          entry.dead_nodes.end(),
           [&replicas](const model::node_id& id) {
               return contains_node(replicas, id);
           });
-        return !has_defunct_nodes;
+        return !has_dead_nodes;
     });
     if (num_erased > 0) {
         _partitions_to_force_reconfigure_revision++;

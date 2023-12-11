@@ -177,14 +177,6 @@ struct broker_endpoint final
  */
 enum class membership_state : int8_t { active, draining, removed };
 
-/**
- * Indicates the liveness state of a broker. A broker is always functional
- * by default unless explicitly marked as defunct by the user. Marking a
- * node as defunct is currently irreversible. This should only be done if
- * a node and its data is permanently irrecoverable.
- */
-enum class liveness_state : int8_t { functional, defunct };
-
 /*
  * Broker maintenance mode
  */
@@ -192,7 +184,6 @@ enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
 std::ostream& operator<<(std::ostream&, maintenance_state);
-std::ostream& operator<<(std::ostream&, liveness_state);
 
 class broker
   : public serde::

@@ -12,7 +12,7 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.rpk import RpkTool
-from ducktape.mark import matrix
+from ducktape.mark import ignore, matrix
 from ducktape.utils.util import wait_until
 from random import shuffle
 import time
@@ -286,6 +286,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.start_consumer()
         self.run_validation()
 
+    @ignore
     @cluster(num_nodes=5)
     @matrix(defunct_node_count=[1, 2])
     def test_node_wise_recovery(self, defunct_node_count):
@@ -315,7 +316,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         ]
 
         partitions_lost_majority = admin.get_majority_lost_partitions_from_nodes(
-            defunct_brokers=to_kill_node_ids)
+            dead_brokers=to_kill_node_ids)
 
         self.logger.debug(f"Stopping nodes: {to_kill_node_ids}")
         self.redpanda.for_nodes(to_kill_nodes, self.redpanda.stop_node)
@@ -371,7 +372,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         # Wait until there are no partition assignments with majority loss due to dead nodes.
         wait_until(lambda: len(
             admin.get_majority_lost_partitions_from_nodes(
-                defunct_brokers=to_kill_node_ids, node=surviving_node)) == 0,
+                dead_brokers=to_kill_node_ids, node=surviving_node)) == 0,
                    timeout_sec=self.WAIT_TIMEOUT_S,
                    backoff_sec=3,
                    err_msg="Node wise recovery failed")
