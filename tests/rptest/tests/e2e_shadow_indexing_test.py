@@ -12,13 +12,15 @@ import re
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
-from requests.exceptions import HTTPError
+from typing import Optional
 
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkException
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
@@ -1389,3 +1391,108 @@ class EndToEndThrottlingTest(RedpandaTest):
         times_throttled = self.get_throttling_metric()
         self.logger.info(f"Consumer was throttled {times_throttled} times")
         assert times_throttled > 0, f"Expected consumer to be throttled, metric value: {times_throttled}"
+
+
+class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
+    segment_size = 1048576 * 32
+
+    def setup(self):
+        assert self.redpanda is not None
+
+    def _start_redpanda(self, override_cfg_params: Optional[dict] = None):
+        if override_cfg_params:
+            self.redpanda.add_extra_rp_conf(override_cfg_params)
+        self.redpanda.start()
+        for topic in self.topics:
+            self.kafka_tools.create_topic(topic)
+
+    def _all_kafka_connections_closed(self):
+        count = 0
+        for n in self.redpanda.nodes:
+            for family in self.redpanda.metrics(
+                    n, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS):
+                for sample in family.samples:
+                    if sample.name == "redpanda_rpc_active_connections" and sample.labels[
+                            "redpanda_server"] == "kafka":
+                        connections = int(sample.value)
+                        self.logger.debug(
+                            f"open connections: {connections} on node {n.account.hostname}"
+                        )
+                        count += connections
+        return count == 0
+
+    def workload(self):
+        msg_count = 5 * (self.segment_size // 2048)
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.s3_topic_name,
+                                       msg_size=2048,
+                                       msg_count=msg_count)
+        producer.start()
+        producer.wait(timeout_sec=300)
+        producer.free()
+
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+
+        for node, node_segments in original_snapshot.items():
+            assert len(
+                node_segments
+            ) >= 5, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                self.segment_size,
+            },
+        )
+
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=2,
+                                       original_snapshot=original_snapshot)
+
+        def segments_downloaded():
+            downloads = self.redpanda.metric_sum(
+                'vectorized_cloud_storage_successful_downloads_total')
+            self.logger.debug(f'downloads: {downloads}')
+            return downloads > 0
+
+        assert not segments_downloaded()
+
+        try:
+            # The rpk process is killed after one second, due to the relatively larger segment
+            # size, this should ensure that the client is disconnected during hydrate.
+            self.rpk.consume(self.topic, timeout=1)
+        except RpkException as e:
+            assert 'timed out' in e.msg
+
+        # All connections should close very quickly once wait for hydration aborts.
+        wait_until(self._all_kafka_connections_closed,
+                   timeout_sec=5,
+                   err_msg="Kafka connections are still open")
+
+        # Even when the consumer disconnects or times out, the download should still complete.
+        # TODO assert that if we have multiple consumers and one disconnects, the others should
+        #  be able to consume.
+        wait_until(segments_downloaded,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Segment downloads did not complete")
+
+    @cluster(num_nodes=4)
+    def test_hydration_completes_on_timeout(self):
+        # The short hydration timeout should cause hydrate to abort early
+        self._start_redpanda({
+            'cloud_storage_hydration_timeout_ms': 1,
+            'cloud_storage_disable_chunk_reads': True
+        })
+        self.workload()
+
+    @cluster(num_nodes=4)
+    def test_hydration_completes_when_consumer_killed(self):
+        # Disable chunk reads so that hydration downloads full segments and takes longer.
+        self._start_redpanda({'cloud_storage_disable_chunk_reads': True})
+        self.workload()
