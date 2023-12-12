@@ -311,17 +311,25 @@ class FailureInjectorCloud(FailureInjectorBase):
     def __init__(self, redpanda):
         super(FailureInjectorCloud, self).__init__(redpanda)
         remote_uri = f'redpanda@{redpanda._cloud_cluster.cluster_id}-agent'
-        self._kubectl = KubectlTool(
-            redpanda,
-            remote_uri=remote_uri,
-            cluster_id=redpanda._cloud_cluster.cluster_id)
+        self._kubectl = redpanda.kubectl
+        self._kubectl.exec_privileged('apt update;apt install -y iptables')
 
-    def _isolate(self, node):
-        self.redpanda.logger.info(f'isolating node with privilaged pod')
-        cmd = 'apt update;apt install -y iptables;iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP'
-        self._kubectl.exec_privileged(cmd)
-        cmd = 'apt update;apt install -y iptables;iptables -A INPUT -p tcp --destination-port 33145 -j DROP'
-        self._kubectl.exec_privileged(cmd)
+    def _heal_all(self):
+        for pod in self.redpanda.pods:
+            self.redpanda.logger.info(f'flushing iptables in pod {pod.name}')
+            self._kubectl.exec_privileged('iptables -L', pod.name)
+            self._kubectl.exec_privileged('iptables -F', pod.name)
+
+        self._in_flight.clear()
+
+    def isolate(self, pod_name=None):
+        self.redpanda.logger.info(f'isolating {pod_name} with privilaged pod')
+        self._kubectl.exec_privileged(
+            'iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP',
+            pod_name)
+        self._kubectl.exec_privileged(
+            'iptables -A INPUT -p tcp --destination-port 33145 -j DROP',
+            pod_name)
 
 
 def make_failure_injector(redpanda):
