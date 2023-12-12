@@ -160,9 +160,8 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
             _lifecycle_markers.erase(soft_del.topic);
             return ss::make_ready_future<std::error_code>(errc::success);
         } else {
-            // This is harmless but should not happen and indicates a bug.
             vlog(
-              clusterlog.error,
+              clusterlog.info,
               "Unexpected record at offset {} to drop non-existent lifecycle "
               "marker {} {}",
               offset,
