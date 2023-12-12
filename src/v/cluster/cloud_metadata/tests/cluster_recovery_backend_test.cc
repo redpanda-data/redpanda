@@ -155,13 +155,13 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     auto* remote_p = app.partition_manager.local()
                        .get(model::ntp{remote_tp_ns.ns, remote_tp_ns.tp, 0})
                        .get();
-    cluster::random_tx_generator::spec spec{
+    cluster::tx_executor::spec spec{
       ._num_txes = num_txns,
       ._num_rolls = 3,
-      ._types = cluster::random_tx_generator::mixed,
+      ._types = cluster::tx_executor::mixed,
       ._interleave = true,
       ._compact = false};
-    cluster::random_tx_generator{}.run_workload(
+    cluster::tx_executor{}.run_random_workload(
       spec, remote_p->raft()->term(), remote_p->rm_stm(), remote_p->log());
 
     for (const auto& [ntp, p] : app.partition_manager.local().partitions()) {

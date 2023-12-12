@@ -10,7 +10,7 @@
 
 static ss::logger test_logger{"tx_compaction_tests"};
 
-using cluster::random_tx_generator;
+using cluster::tx_executor;
 
 #define STM_BOOTSTRAP()                                                        \
     storage::ntp_config::default_overrides o{                                  \
@@ -45,19 +45,19 @@ FIXTURE_TEST(test_tx_compaction_combinations, rm_stm_test_fixture) {
     for (auto num_tx : {10, 20, 30}) {
         for (auto num_rolls : {0, 1, 2, 3, 5}) {
             for (auto type :
-                 {random_tx_generator::tx_types::commit_only,
-                  random_tx_generator::tx_types::abort_only,
-                  random_tx_generator::mixed}) {
+                 {tx_executor::tx_types::commit_only,
+                  tx_executor::tx_types::abort_only,
+                  tx_executor::mixed}) {
                 for (auto interleave : {true, false}) {
                     {
-                        random_tx_generator::spec spec{
+                        tx_executor::spec spec{
                           ._num_txes = num_tx,
                           ._num_rolls = num_rolls,
                           ._types = type,
                           ._interleave = interleave};
                         STM_BOOTSTRAP();
                         vlog(test_logger.info, "Running spec: {}", spec);
-                        random_tx_generator{}.run_workload(
+                        tx_executor{}.run_random_workload(
                           spec, _raft->term(), stm, log);
                         vlog(test_logger.info, "Finished spec: {}", spec);
                     }

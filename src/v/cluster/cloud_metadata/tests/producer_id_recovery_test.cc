@@ -39,13 +39,13 @@ public:
     }
 
     void generate_txn_data(int num_txns) {
-        cluster::random_tx_generator::spec spec{
+        cluster::tx_executor::spec spec{
           ._num_txes = num_txns,
           ._num_rolls = 3,
-          ._types = cluster::random_tx_generator::mixed,
+          ._types = cluster::tx_executor::mixed,
           ._interleave = true,
           ._compact = false};
-        cluster::random_tx_generator{}.run_workload(
+        cluster::tx_executor{}.run_random_workload(
           spec, partition->raft()->term(), partition->rm_stm(), log);
     }
 

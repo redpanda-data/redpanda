@@ -21,7 +21,7 @@
 
 namespace cluster {
 
-class random_tx_generator {
+class tx_executor {
 public:
     constexpr static const auto tx_timeout = std::chrono::milliseconds(
       std::numeric_limits<int32_t>::max());
@@ -124,7 +124,7 @@ public:
         }
     }
 
-    void run_workload(
+    void run_random_workload(
       spec s,
       model::term_id term,
       ss::shared_ptr<cluster::rm_stm> stm,
