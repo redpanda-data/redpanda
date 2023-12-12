@@ -20,7 +20,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import SISettings
 from rptest.services.admin import Admin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.util import wait_for_local_storage_truncate
+from rptest.util import wait_for_local_storage_truncate, wait_until_result
 
 from ducktape.utils.util import wait_until
 
@@ -219,10 +219,24 @@ class FollowerFetchingTest(PreallocNodesTest):
         consumer.stop()
         producer.stop()
 
+        rpk = RpkTool(self.redpanda)
+
+        def get_hwm():
+            partitions = list(rpk.describe_topic(topic.name))
+            if len(partitions) > 0:
+                return True, partitions[0].high_watermark
+            else:
+                return False
+
+        hwm = wait_until_result(get_hwm,
+                                timeout_sec=30,
+                                backoff_sec=1,
+                                err_msg="couldn't get high watermark")
+
         # check that there were no consumer group resets caused by offset_out_of_range error
-        self.logger.info(f"produced {producer.produce_status.sent}, "
-                         f"consumed {consumer.message_cnt()} msgs")
-        assert consumer.message_cnt() <= producer.produce_status.sent
+        self.logger.info(
+            f"produced {hwm}, consumed {consumer.message_cnt()} msgs")
+        assert consumer.message_cnt() <= hwm
 
     @cluster(num_nodes=5)
     def test_follower_fetching_with_maintenance_mode(self):
