@@ -583,7 +583,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
 }
 
 ss::future<append_result> segment::append(const model::record_batch& b) {
-    if (has_compaction_index() && b.header().attrs.is_transactional()) {
+    if (has_compaction_index() && b.contains_transactional_data()) {
         // With transactional batches, we do not know ahead of time whether the
         // batch will be committed or aborted. We may not have this information
         // during the lifetime of this segment as the batch may be aborted in
