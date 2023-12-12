@@ -734,9 +734,6 @@ class ManyPartitionsTest(PreallocNodesTest):
             mib_per_partition=mib_per_partition,
             topic_partitions_per_shard=topic_partitions_per_shard)
 
-    # TODO: re-enable once infra has stabilized
-    # https://github.com/redpanda-data/redpanda/issues/9569
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     # FIXME: run with compaction
     @parametrize(compacted=False,
