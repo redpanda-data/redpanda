@@ -581,7 +581,7 @@ struct batch_identity {
     timestamp max_timestamp;
     bool is_transactional{false};
 
-    bool has_idempotent() { return pid.id >= 0; }
+    bool is_idempotent() const { return pid.id >= 0; }
 
     friend std::ostream& operator<<(std::ostream&, const batch_identity&);
 };

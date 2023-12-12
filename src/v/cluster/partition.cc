@@ -395,7 +395,7 @@ kafka_stages partition::replicate_in_stages(
         }
     }
 
-    if (bid.has_idempotent()) {
+    if (bid.is_idempotent()) {
         if (!_is_idempotence_enabled) {
             vlog(
               clusterlog.error,
