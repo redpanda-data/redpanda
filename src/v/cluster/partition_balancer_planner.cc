@@ -1439,7 +1439,10 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
     auto scaled_count =
       [&](model::node_id id, partition_allocation_domain domain) {
           auto it = ctx.allocation_nodes().find(id);
-          vassert(it != ctx.allocation_nodes().end(), "node {} not found", id);
+          if (it == ctx.allocation_nodes().end()) {
+              throw balancer_tick_aborted_exception{
+                fmt::format("node id: {} disappeared", id)};
+          }
           return double(it->second->domain_final_partitions(domain))
                  / it->second->max_capacity();
       };
