@@ -194,13 +194,13 @@ class KubectlTool:
         except subprocess.CalledProcessError as e:
             return False
 
-    def _get_privileged_pod(self):
+    def _get_privileged_pod(self, pod_name=None):
         # kubectl get pod -l name=privileged-pod --no-headers -o custom-columns=NODE:.spec.nodeName,NAME:.metadata.name
         # ip-10-1-1-26.us-west-2.compute.internal    everything-allowed-exec-pod-bkj4m
         # ip-10-1-1-139.us-west-2.compute.internal   everything-allowed-exec-pod-jxk9j
         # ip-10-1-1-101.us-west-2.compute.internal   everything-allowed-exec-pod-pl8sc
         ssh_prefix = self._ssh_prefix()
-        cmd = prefx + [
+        cmd = ssh_prefix + [
             'kubectl',
             'get',
             'pod',
@@ -222,7 +222,6 @@ class KubectlTool:
         # ip-10-1-1-139.us-west-2.compute.internal   rp-ci0motok30vsi89l501g-0
         # ip-10-1-1-101.us-west-2.compute.internal   rp-ci0motok30vsi89l501g-1
         # ip-10-1-1-26.us-west-2.compute.internal    rp-ci0motok30vsi89l501g-2
-        ssh_prefix = self._ssh_prefix()
         cmd = ssh_prefix + [
             'kubectl',
             '-n',
@@ -248,8 +247,9 @@ class KubectlTool:
             redpanda_to_priv_pods[redpanda_pod] = ip_to_priv_pods[ip]
 
         self._redpanda.logger.info(redpanda_to_priv_pods)
-        redpanda_pod = f'rp-{self._cluster_id}-0'
-        return redpanda_to_priv_pods[redpanda_pod]
+        if pod_name is None:
+            pod_name = f'rp-{self._cluster_id}-0'
+        return redpanda_to_priv_pods[pod_name]
 
     def _setup_tbot(self):
         if self._tp_proxy is None or self._tp_token is None:
@@ -286,9 +286,9 @@ class KubectlTool:
             res = subprocess.check_output(apply_cmd)
             self._privileged_pod_installed = True
 
-    def exec_privileged(self, remote_cmd):
+    def exec_privileged(self, remote_cmd, pod_name=None):
         self._setup_privileged_pod()
-        priv_pod = self._get_privileged_pod()
+        priv_pod = self._get_privileged_pod(pod_name)
         ssh_prefix = self._ssh_prefix()
         cmd = ssh_prefix + ['kubectl', 'exec', priv_pod, '--', 'bash', '-c'
                             ] + ['"' + remote_cmd + '"']
