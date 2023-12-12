@@ -140,7 +140,7 @@ class ClusterRecoveryTest(RedpandaTest):
         """
         rpk = RpkTool(self.redpanda)
         rpk.cluster_config_set(
-            "cloud_storage_attempt_cluster_recovery_on_bootstrap", True)
+            "cloud_storage_attempt_cluster_restore_on_bootstrap", True)
         for t in self.topics:
             KgoVerifierProducer.oneshot(self.test_context,
                                         self.redpanda,
@@ -159,7 +159,7 @@ class ClusterRecoveryTest(RedpandaTest):
 
         # Restart the nodes, overriding the recovery bootstrap config.
         extra_rp_conf = dict(
-            cloud_storage_attempt_cluster_recovery_on_bootstrap=True)
+            cloud_storage_attempt_cluster_restore_on_bootstrap=True)
         self.redpanda.set_extra_rp_conf(extra_rp_conf)
         self.redpanda.write_bootstrap_cluster_config()
         self.redpanda.restart_nodes(self.redpanda.nodes,
