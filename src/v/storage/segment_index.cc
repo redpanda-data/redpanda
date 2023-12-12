@@ -134,7 +134,8 @@ void segment_index::maybe_track(
           hdr.max_timestamp,
           to_optional_model_timestamp(new_broker_ts),
           path().is_internal_topic()
-            || hdr.type == model::record_batch_type::raft_data)) {
+            || hdr.type == model::record_batch_type::raft_data,
+          internal::is_compactible(hdr))) {
         _acc = 0;
     }
     _needs_persistence = true;

@@ -139,14 +139,14 @@ struct index_state
     // the index.
     std::optional<model::timestamp> broker_timestamp{std::nullopt};
 
-    // The offset of the first data record in the segment. This may not
+    // The offset of the first compactible record in the segment. This may not
     // necessarily correspond to one of the values in the indexing vectors.
     //
     // Special values:
-    // - nullopt: indicates no data batches are in the segment.
+    // - nullopt: indicates no compactible batches are in the segment.
     // - disabled: indicates this index was written in a version that didn't
     //             support this field, and we can't conclude anything.
-    tristate<model::offset> first_data_offset{std::nullopt};
+    tristate<model::offset> first_compactible_offset{std::nullopt};
 
     size_t size() const { return relative_offset_index.size(); }
 
@@ -215,7 +215,8 @@ struct index_state
       model::timestamp first_timestamp,
       model::timestamp last_timestamp,
       std::optional<model::timestamp> new_broker_timestamp,
-      bool user_data);
+      bool user_data,
+      bool compactible);
 
     void update_batch_timestamps_are_monotonic(bool pred) {
         batch_timestamps_are_monotonic = batch_timestamps_are_monotonic && pred;
@@ -242,7 +243,7 @@ private:
       , with_offset(o.with_offset)
       , non_data_timestamps(o.non_data_timestamps)
       , broker_timestamp(o.broker_timestamp)
-      , first_data_offset(o.first_data_offset) {}
+      , first_compactible_offset(o.first_compactible_offset) {}
 };
 
 } // namespace storage

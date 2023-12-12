@@ -44,7 +44,8 @@ bool index_state::maybe_index(
   model::timestamp first_timestamp,
   model::timestamp last_timestamp,
   std::optional<model::timestamp> new_broker_timestamp,
-  bool user_data) {
+  bool user_data,
+  bool compactible) {
     vassert(
       batch_base_offset >= base_offset,
       "cannot track offsets that are lower than our base, o:{}, "
@@ -98,8 +99,11 @@ bool index_state::maybe_index(
         if (new_broker_timestamp.has_value()) {
             broker_timestamp = *new_broker_timestamp;
         }
-        if (!first_data_offset.has_optional_value()) {
-            first_data_offset = tristate<model::offset>{batch_base_offset};
+    }
+    if (compactible) {
+        if (!first_compactible_offset.has_optional_value()) {
+            first_compactible_offset = tristate<model::offset>{
+              batch_base_offset};
         }
     }
     // always saving the first batch simplifies a lot of book keeping
@@ -126,8 +130,8 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ", with_offset:" << s.with_offset
              << ", non_data_timestamps:" << s.non_data_timestamps
              << ", broker_timestamp:" << s.broker_timestamp
-             << ", first_data_offset:" << s.first_data_offset << ", index("
-             << s.relative_offset_index.size() << ","
+             << ", first_compactible_offset:" << s.first_compactible_offset
+             << ", index(" << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
              << ")}";
 }
@@ -148,7 +152,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, with_offset);
     write(tmp, non_data_timestamps);
     write(tmp, broker_timestamp);
-    write(tmp, first_data_offset);
+    write(tmp, first_compactible_offset);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -241,9 +245,9 @@ void read_nested(
         read_nested(p, st.broker_timestamp, 0U);
     }
     if (hdr._version >= index_state::first_data_offset_version) {
-        read_nested(p, st.first_data_offset, 0U);
+        read_nested(p, st.first_compactible_offset, 0U);
     } else {
-        st.first_data_offset = tristate<model::offset>{};
+        st.first_compactible_offset = tristate<model::offset>{};
     }
 }
 

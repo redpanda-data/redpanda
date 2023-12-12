@@ -211,11 +211,14 @@ struct clean_segment_value
     ss::sstring segment_name;
 };
 
-inline bool is_compactible(const model::record_batch& b) {
+inline bool is_compactible(const model::record_batch_header& h) {
     static const auto filtered_types = model::offset_translator_batch_types();
-    auto n = std::count(
-      filtered_types.begin(), filtered_types.end(), b.header().type);
+    auto n = std::count(filtered_types.begin(), filtered_types.end(), h.type);
     return n == 0;
+}
+
+inline bool is_compactible(const model::record_batch& b) {
+    return is_compactible(b.header());
 }
 
 offset_delta_time should_apply_delta_time_offset(

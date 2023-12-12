@@ -620,12 +620,14 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
               seg->filename());
             continue;
         }
-        if (auto first_data_offset = seg->index().first_data_offset();
-            !first_data_offset.is_disabled()) {
-            auto has_data_batches = first_data_offset.has_optional_value();
+        if (auto first_compactible_offset
+            = seg->index().first_compactible_offset();
+            !first_compactible_offset.is_disabled()) {
+            auto has_compactible_batches
+              = first_compactible_offset.has_optional_value();
             if (
-              !has_data_batches
-              || first_data_offset.get_optional()
+              !has_compactible_batches
+              || first_compactible_offset.get_optional()
                    == seg->index().max_offset()) {
                 // All data records are already compacted away. Skip to avoid a
                 // needless rewrite.

@@ -287,7 +287,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
     if (to_copy == std::nullopt) {
         co_return stop_t::no;
     }
-    if (_compacted_idx && is_compactible(to_copy.value())) {
+    bool compactible_batch = is_compactible(to_copy.value());
+    if (_compacted_idx && compactible_batch) {
         co_await model::for_each_record(
           to_copy.value(),
           [&batch = to_copy.value(), this](const model::record& r) {
@@ -316,7 +317,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
           batch.header().max_timestamp,
           std::nullopt,
           _internal_topic
-            || batch.header().type == model::record_batch_type::raft_data)) {
+            || batch.header().type == model::record_batch_type::raft_data,
+          compactible_batch)) {
         _acc = 0;
     }
     co_await _appender->append(batch);
