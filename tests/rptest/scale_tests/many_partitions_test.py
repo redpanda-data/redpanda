@@ -11,7 +11,7 @@ import time
 import concurrent.futures
 from collections import Counter
 
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix, ok_to_fail, parametrize
 from ducktape.utils.util import wait_until, TimeoutError
 import numpy
 
@@ -38,9 +38,13 @@ BIG_FETCH = 104857600
 # functions.
 HARD_PARTITION_LIMIT = 50000
 
+# How much memory to assign to redpanda per partition. Redpanda will be started
+# with MIB_PER_PARTITION * PARTITIONS_PER_SHARD * CORE_COUNT memory
+DEFAULT_MIB_PER_PARTITION = 4
+
 # How many partitions we will create per shard: this is the primary scaling
 # factor that controls how many partitions a given cluster will get.
-PARTITIONS_PER_SHARD = 1000
+DEFAULT_PARTITIONS_PER_SHARD = 1000
 
 # Number of partitions to create when running in docker (i.e.
 # when dedicated_nodes=false).  This is independent of the
@@ -65,6 +69,8 @@ class ScaleParameters:
     def __init__(self,
                  redpanda,
                  replication_factor,
+                 mib_per_partition,
+                 topic_partitions_per_shard,
                  tiered_storage_enabled=False):
         self.redpanda = redpanda
         self.tiered_storage_enabled = tiered_storage_enabled
@@ -88,7 +94,7 @@ class ScaleParameters:
         # very large.
         shard0_reserve = None
         if self.node_cpus >= 8:
-            shard0_reserve = PARTITIONS_PER_SHARD / 2
+            shard0_reserve = topic_partitions_per_shard / 2
 
         # Reserve a few slots for internal partitions. This is a count of
         # partitions and we assume the replication factor is 'replication_factor'
@@ -103,7 +109,7 @@ class ScaleParameters:
         # on the size & count of nodes.  This enables running the
         # test on various instance sizes without explicitly adjusting.
         self.partition_limit = int(
-            (node_count * self.node_cpus * PARTITIONS_PER_SHARD) /
+            (node_count * self.node_cpus * topic_partitions_per_shard) /
             replication_factor - internal_partition_slack)
         if shard0_reserve:
             self.partition_limit -= node_count * shard0_reserve
@@ -204,11 +210,10 @@ class ScaleParameters:
             self.expect_single_bandwidth /= 2
 
         # Clamp the node memory to exercise the partition limit.
-        mb_per_partition = 4
         # Not all internal partitions have rf=replication_factor so this
         # over-allocates but making it more accurate would be complicated.
         per_node_slack = internal_partition_slack * replication_factor / node_count
-        partition_mem_total_per_node = mb_per_partition * (
+        partition_mem_total_per_node = mib_per_partition * (
             partition_replicas_per_node + per_node_slack)
 
         resource_settings_args = {}
@@ -884,21 +889,40 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.free_preallocated_nodes()
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_many_partitions_compacted(self):
-        self._test_many_partitions(compacted=True)
+    @parametrize(mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+                 topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD)
+    def test_many_partitions_compacted(self, mib_per_partition,
+                                       topic_partitions_per_shard):
+        self._test_many_partitions(
+            compacted=True,
+            mib_per_partition=mib_per_partition,
+            topic_partitions_per_shard=topic_partitions_per_shard)
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_many_partitions(self):
-        self._test_many_partitions(compacted=False)
+    @parametrize(mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+                 topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD)
+    def test_many_partitions(self, mib_per_partition,
+                             topic_partitions_per_shard):
+        self._test_many_partitions(
+            compacted=False,
+            mib_per_partition=mib_per_partition,
+            topic_partitions_per_shard=topic_partitions_per_shard)
 
     # TODO: re-enable once infra has stabilized
     # https://github.com/redpanda-data/redpanda/issues/9569
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(compacted=[False])  # FIXME: run with compaction
-    def test_many_partitions_tiered_storage(self, compacted):
-        self._test_many_partitions(compacted=compacted,
-                                   tiered_storage_enabled=True)
+    # FIXME: run with compaction
+    @parametrize(compacted=False,
+                 mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+                 topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD)
+    def test_many_partitions_tiered_storage(self, compacted, mib_per_partition,
+                                            topic_partitions_per_shard):
+        self._test_many_partitions(
+            compacted=compacted,
+            tiered_storage_enabled=True,
+            mib_per_partition=mib_per_partition,
+            topic_partitions_per_shard=topic_partitions_per_shard)
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_omb(self):
@@ -909,7 +933,11 @@ class ManyPartitionsTest(PreallocNodesTest):
         # peak partition count.
         self._run_omb(scale)
 
-    def _test_many_partitions(self, compacted, tiered_storage_enabled=False):
+    def _test_many_partitions(self,
+                              compacted,
+                              mib_per_partition,
+                              topic_partitions_per_shard,
+                              tiered_storage_enabled=False):
         """
         Validate that redpanda works with partition counts close to its resource
         limits.
@@ -944,6 +972,8 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         scale = ScaleParameters(self.redpanda,
                                 replication_factor,
+                                mib_per_partition,
+                                topic_partitions_per_shard,
                                 tiered_storage_enabled=tiered_storage_enabled)
 
         # Run with one huge topic: it is more stressful for redpanda when clients
@@ -969,6 +999,13 @@ class ManyPartitionsTest(PreallocNodesTest):
             int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
             'kafka_throughput_limit_node_out_bps':
             int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
+        })
+
+        self.redpanda.add_extra_rp_conf({
+            'topic_partitions_per_shard':
+            topic_partitions_per_shard,
+            'topic_memory_per_partition':
+            mib_per_partition * 1024 * 1024,
         })
 
         self.redpanda.start()
