@@ -16,9 +16,21 @@
 
 #define RPTEST_FAIL(m) BOOST_FAIL(m)
 #define RPTEST_FAIL_CORO(m) BOOST_FAIL(m)
+#define RPTEST_REQUIRE(m) BOOST_REQUIRE(m)
+#define RPTEST_REQUIRE_CORO(m) BOOST_REQUIRE(m)
+#define RPTEST_REQUIRE_EQ(m, n) BOOST_REQUIRE_EQUAL(m, n)
+#define RPTEST_REQUIRE_EQ_CORO(m, n) BOOST_REQUIRE_EQUAL(m, n)
+#define RPTEST_REQUIRE_NE(m, n) BOOST_REQUIRE_NE(m, n)
+#define RPTEST_REQUIRE_NE_CORO(m, n) BOOST_REQUIRE_NE(m, n)
 #else
 #include "test_utils/test.h"
 
 #define RPTEST_FAIL(m) FAIL() << (m)
 #define RPTEST_FAIL_CORO(m) ASSERT_TRUE_CORO(false) << (m)
+#define RPTEST_REQUIRE(m) ASSERT_TRUE(m)
+#define RPTEST_REQUIRE_CORO(m) ASSERT_TRUE_CORO(m)
+#define RPTEST_REQUIRE_EQ(m, n) ASSERT_EQ(m, n)
+#define RPTEST_REQUIRE_EQ_CORO(m, n) ASSERT_EQ_CORO(m, n)
+#define RPTEST_REQUIRE_NE(m, n) ASSERT_NE(m, n)
+#define RPTEST_REQUIRE_NE_CORO(m, n) ASSERT_NE_CORO(m, n)
 #endif
