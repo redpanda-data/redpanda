@@ -1,3 +1,11 @@
+v_cc_library(NAME segment_meta
+  HDRS segment_meta.h
+  SRCS segment_meta.cc
+  DEPS
+    v::serde
+    v::model
+)
+
 v_cc_library(
   NAME segment_meta_cstore
   SRCS
@@ -7,6 +15,7 @@ v_cc_library(
     v::model
     absl::btree
     v::config
+    v::segment_meta
 )
 
 v_cc_library(
