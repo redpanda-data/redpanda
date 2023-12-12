@@ -2660,6 +2660,21 @@ ss::future<> ntp_archiver::garbage_collect() {
         co_return;
     }
 
+    auto check_precondition = [&] {
+        if (!stm_retention_needed()) {
+            std::ostringstream json;
+            _parent.archival_meta_stm()->manifest().serialize_json(json);
+            vassert(
+              false,
+              "invariant: {} can be called only when there are no spillovers "
+              "manifest: {}",
+              __PRETTY_FUNCTION__,
+              json.str());
+        }
+    };
+
+    check_precondition();
+    auto _ = ss::defer([&] { check_precondition(); });
     const auto to_remove
       = _parent.archival_meta_stm()->get_segments_to_cleanup();
 
