@@ -32,12 +32,6 @@ from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurati
 # franz-go default maxBrokerReadBytes -- --fetch-max-bytes may not exceed this
 BIG_FETCH = 104857600
 
-# The maximum total number of partitions in a Redpanda cluster.  No matter
-# how big the nodes or how many of them, the test does not exceed this.
-# This limit represents bottlenecks in central controller/health
-# functions.
-HARD_PARTITION_LIMIT = 50000
-
 # How much memory to assign to redpanda per partition. Redpanda will be started
 # with MIB_PER_PARTITION * PARTITIONS_PER_SHARD * CORE_COUNT memory
 DEFAULT_MIB_PER_PARTITION = 4
@@ -77,10 +71,6 @@ class ScaleParameters:
 
         node_count = len(self.redpanda.nodes)
 
-        # If we run on nodes with more memory than our HARD_PARTITION_LIMIT, then
-        # artificially throttle the nodes' memory to avoid the test being too easy.
-        # We are validating that the system works up to the limit, and that it works
-        # up to the limit within the default per-partition memory footprint.
         node_memory = self.redpanda.get_node_memory_mb()
         self.node_cpus = self.redpanda.get_node_cpu_count()
         node_disk_free = self.redpanda.get_node_disk_free()
@@ -113,8 +103,6 @@ class ScaleParameters:
             replication_factor - internal_partition_slack)
         if shard0_reserve:
             self.partition_limit -= node_count * shard0_reserve
-
-        self.partition_limit = min(HARD_PARTITION_LIMIT, self.partition_limit)
 
         if not self.redpanda.dedicated_nodes:
             self.partition_limit = min(DOCKER_PARTITION_LIMIT,
@@ -222,7 +210,6 @@ class ScaleParameters:
             # real testing, so disable fsync to make test run faster.
             resource_settings_args['bypass_fsync'] = True
 
-            # Handy if hacking HARD_PARTITION_LIMIT to something low to run on a workstation
             partition_mem_total_per_node = max(partition_mem_total_per_node,
                                                500)
         else:
