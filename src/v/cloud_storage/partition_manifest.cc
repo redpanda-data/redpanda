@@ -53,29 +53,6 @@
 #include <type_traits>
 #include <utility>
 
-namespace fmt {
-template<>
-struct fmt::formatter<cloud_storage::partition_manifest::segment_meta> {
-    using segment_meta = cloud_storage::partition_manifest::segment_meta;
-
-    template<typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) {
-        return ctx.begin();
-    }
-
-    template<typename FormatContext>
-    auto format(segment_meta const& m, FormatContext& ctx) {
-        return fmt::format_to(
-          ctx.out(),
-          "{{o={}-{} t={}-{}}}",
-          m.base_offset,
-          m.committed_offset,
-          m.base_timestamp,
-          m.max_timestamp);
-    }
-};
-} // namespace fmt
-
 namespace cloud_storage {
 std::ostream&
 operator<<(std::ostream& s, const partition_manifest_path_components& c) {
@@ -895,7 +872,7 @@ std::optional<size_t> partition_manifest::move_aligned_offset_range(
             // same segment twice leads to data loss.
             vlog(
               cst_log.warn,
-              "{} segment is already added {}",
+              "{} segment is already added {:s}",
               _ntp,
               replacing_segment);
             return std::nullopt;
@@ -977,7 +954,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                   cst_log.error,
                   "[{}] New segment does not line up with last offset of empty "
                   "log: "
-                  "last_offset: {}, new_segment: {}",
+                  "last_offset: {}, new_segment: {:s}",
                   get_manifest_path(),
                   subst.last_offset,
                   m);
@@ -1000,8 +977,8 @@ size_t partition_manifest::safe_segment_meta_to_add(
                   }
 
                   return ssx::sformat(
-                    "{{anomaly_types: {}, new_segment: {}, previous_segment: "
-                    "{}}}",
+                    "{{anomaly_types: {}, new_segment: {:s}, previous_segment: "
+                    "{:s}}}",
                     types,
                     smas.begin()->at,
                     smas.begin()->previous);
@@ -1063,7 +1040,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                           cst_log.error,
                           "[{}] New replacement segment has the same size as "
                           "replaced "
-                          "segment: new_segment: {}, replaced_segment: {}",
+                          "segment: new_segment: {:s}, replaced_segment: {:s}",
                           get_manifest_path(),
                           m,
                           *it);
@@ -1093,7 +1070,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                       "[{}] New replacement segment does not match the "
                       "committed "
                       "offset of "
-                      "any previous segment: new_segment: {}",
+                      "any previous segment: new_segment: {:s}",
                       get_manifest_path(),
                       m);
                     break;
@@ -1257,7 +1234,8 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
     if (!so.has_value()) {
         vlog(
           cst_log.warn,
-          "{} Can't apply spillover manifest because the manifest is empty, {}",
+          "{} Can't apply spillover manifest because the manifest is empty, "
+          "{:s}",
           _ntp,
           meta);
         return false;
@@ -1267,7 +1245,7 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
         vlog(
           cst_log.warn,
           "{} Can't apply spillover manifest because the start offsets are not "
-          "aligned: {} vs {}, {}",
+          "aligned: {} vs {}, {:s}",
           _ntp,
           so.value(),
           meta.base_offset,
@@ -1282,7 +1260,7 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
         vlog(
           cst_log.warn,
           "{} Can't apply spillover manifest because the end of the manifest "
-          "is not aligned, {}",
+          "is not aligned, {:s}",
           _ntp,
           meta);
         return false;
@@ -1301,7 +1279,7 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
       cst_log.warn,
       "{} Can't apply spillover manifest because the end of the previous "
       "manifest {} "
-      "is not aligned with the new one {}",
+      "is not aligned with the new one {:s}",
       _ntp,
       _spillover_manifests.last_segment(),
       meta);
