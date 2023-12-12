@@ -217,8 +217,14 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
     const auto local_log_offsets = local_log->offsets();
     status.local_log_start_offset = wrap_model_offset(
       local_log_offsets.start_offset);
-    status.local_log_last_offset = wrap_model_offset(
-      local_log_offsets.committed_offset);
+    /**
+     * If committed offset is smaller than the log start offset it indicates
+     * that committed offset wasn't yet established (log is empty)
+     */
+    if (local_log_offsets.committed_offset >= local_log_offsets.start_offset) {
+        status.local_log_last_offset = wrap_model_offset(
+          local_log_offsets.committed_offset);
+    }
 
     if (status.mode != cloud_storage_mode::disabled && _archival_meta_stm) {
         const auto& manifest = _archival_meta_stm->manifest();
