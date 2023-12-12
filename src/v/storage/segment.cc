@@ -363,33 +363,33 @@ ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
 }
 
 ss::future<> segment::truncate(
-  model::offset prev_last_offset,
+  model::offset new_max_offset,
   size_t physical,
   model::timestamp new_max_timestamp) {
     check_segment_not_closed("truncate()");
     return write_lock().then(
-      [this, prev_last_offset, physical, new_max_timestamp](
+      [this, new_max_offset, physical, new_max_timestamp](
         ss::rwlock::holder h) {
-          return do_truncate(prev_last_offset, physical, new_max_timestamp)
+          return do_truncate(new_max_offset, physical, new_max_timestamp)
             .finally([this, h = std::move(h)] { clear_cached_disk_usage(); });
       });
 }
 
 ss::future<> segment::do_truncate(
-  model::offset prev_last_offset,
+  model::offset new_max_offset,
   size_t physical,
   model::timestamp new_max_timestamp) {
-    _tracker.committed_offset = prev_last_offset;
-    _tracker.stable_offset = prev_last_offset;
-    _tracker.dirty_offset = prev_last_offset;
+    _tracker.committed_offset = new_max_offset;
+    _tracker.stable_offset = new_max_offset;
+    _tracker.dirty_offset = new_max_offset;
     _reader->set_file_size(physical);
     vlog(
       stlog.trace,
       "truncating segment {} at {}",
       _reader->filename(),
-      prev_last_offset);
+      new_max_offset);
     _generation_id++;
-    cache_truncate(prev_last_offset + model::offset(1));
+    cache_truncate(new_max_offset + model::offset(1));
     auto f = ss::now();
     if (is_compacted_segment()) {
         // if compaction index is opened close it
@@ -404,8 +404,8 @@ ss::future<> segment::do_truncate(
         f = f.then([this] { return remove_compacted_index(_reader->path()); });
     }
 
-    f = f.then([this, prev_last_offset, new_max_timestamp] {
-        return _idx.truncate(prev_last_offset, new_max_timestamp);
+    f = f.then([this, new_max_offset, new_max_timestamp] {
+        return _idx.truncate(new_max_offset, new_max_timestamp);
     });
 
     // physical file only needs *one* truncation call
@@ -626,17 +626,17 @@ segment::offset_data_stream(model::offset o, ss::io_priority_class iopc) {
     return _reader->data_stream(position, iopc);
 }
 
-void segment::advance_stable_offset(size_t offset) {
+void segment::advance_stable_offset(size_t filepos) {
     if (_inflight.empty()) {
         return;
     }
 
-    auto it = _inflight.upper_bound(offset);
+    auto it = _inflight.upper_bound(filepos);
     if (it != _inflight.begin()) {
         --it;
     }
 
-    if (it->first > offset) {
+    if (it->first > filepos) {
         return;
     }
 
@@ -839,6 +839,27 @@ ss::future<model::timestamp> segment::get_file_timestamp() const {
       std::chrono::duration_cast<std::chrono::milliseconds>(
         stat.time_modified.time_since_epoch())
         .count());
+}
+
+bool segment::has_compactible_data_records() const {
+    auto first_compactible_offset = index().first_compactible_offset();
+    if (first_compactible_offset.is_disabled()) {
+        // Segment was written in a version that didn't have the
+        // `first_data_offset` field. We can't definitively say no.
+        return true;
+    }
+    auto has_compactible_batches
+      = first_compactible_offset.has_optional_value();
+    if (!has_compactible_batches) {
+        // No data records were recorded in the index. Compaction will not
+        // remove anyting.
+        return false;
+    }
+    // Compaction will not remove anything if the first data offset is the last
+    // record, because compaction will retain the last record in each segment.
+    auto only_one_compactible_record = first_compactible_offset.get_optional()
+                                       == index().max_offset();
+    return !only_one_compactible_record;
 }
 
 } // namespace storage

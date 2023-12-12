@@ -480,15 +480,26 @@ segment_set disk_log_impl::find_sliding_range(
     // Collect all segments that have stable data.
     segment_set::underlying_t buf;
     for (const auto& seg : _segs) {
+        if (seg->has_appender() || !seg->has_compactible_offsets(cfg)) {
+            // Stop once we get to an unstable segment.
+            break;
+        }
         if (
           new_start_offset
           && seg->offsets().base_offset < new_start_offset.value()) {
             // Skip over segments that are being truncated.
             continue;
         }
-        if (seg->has_appender() || !seg->has_compactible_offsets(cfg)) {
-            // Stop once we get to an unstable segment.
-            break;
+        if (buf.empty() && !seg->has_compactible_data_records()) {
+            // To find the start of the sliding range, skip over segments that
+            // have been effectively entirely compacted away, i.e. who no
+            // longer have data or have only their last batch remaining.
+            //
+            // NOTE: We don't do this past the beginning of the sliding range
+            // so that the rest of the segments are contiguous.
+            seg->mark_as_finished_self_compaction();
+            seg->mark_as_finished_windowed_compaction();
+            continue;
         }
         buf.emplace_back(seg);
     }
@@ -620,24 +631,17 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
               seg->filename());
             continue;
         }
-        if (auto first_data_offset = seg->index().first_data_offset();
-            !first_data_offset.is_disabled()) {
-            auto has_data_batches = first_data_offset.has_optional_value();
-            if (
-              !has_data_batches
-              || first_data_offset.get_optional()
-                   == seg->index().max_offset()) {
-                // All data records are already compacted away. Skip to avoid a
-                // needless rewrite.
-                seg->mark_as_finished_windowed_compaction();
-                vlog(
-                  gclog.trace,
-                  "[{}] treating segment as compacted, either all non-data "
-                  "records or the only record is a data record: {}",
-                  config().ntp(),
-                  seg->filename());
-                continue;
-            }
+        if (!seg->has_compactible_data_records()) {
+            // All data records are already compacted away. Skip to avoid a
+            // needless rewrite.
+            seg->mark_as_finished_windowed_compaction();
+            vlog(
+              gclog.trace,
+              "[{}] treating segment as compacted, either all non-data "
+              "records or the only record is a data record: {}",
+              config().ntp(),
+              seg->filename());
+            continue;
         }
         // TODO: implement a segment replacement strategy such that each term
         // tries to write only one segment (or more if the term had a large
@@ -662,10 +666,11 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
         vlog(
           gclog.debug,
-          "[{}] Deduplicating data from segment {} to {}",
+          "[{}] Deduplicating data from segment {} to {}: {}",
           config().ntp(),
           seg->path(),
-          tmpname);
+          tmpname,
+          seg);
         auto initial_generation_id = seg->get_generation_id();
         std::exception_ptr eptr;
         index_state new_idx;
@@ -2090,7 +2095,7 @@ ss::future<> disk_log_impl::do_truncate(
           initial_size,
           *this));
     }
-    auto [prev_last_offset, file_position, new_max_timestamp] = phs.value();
+    auto [new_max_offset, file_position, new_max_timestamp] = phs.value();
 
     if (file_position == 0) {
         _segs.pop_back();
@@ -2102,14 +2107,14 @@ ss::future<> disk_log_impl::do_truncate(
 
     try {
         co_return co_await last_ptr->truncate(
-          prev_last_offset, file_position, new_max_timestamp);
+          new_max_offset, file_position, new_max_timestamp);
     } catch (...) {
         vassert(
           false,
           "Could not truncate:{} logical max:{}, physical "
           "offset:{}, new max timestamp:{} on segment:{} - log:{}",
           std::current_exception(),
-          prev_last_offset,
+          new_max_offset,
           file_position,
           new_max_timestamp,
           last,

@@ -138,7 +138,7 @@ public:
 
 private:
     ss::future<ss::stop_iteration>
-      do_compaction(model::compression, model::record_batch);
+      filter_and_append(model::compression, model::record_batch);
 
     ss::future<> maybe_keep_offset(
       const model::record_batch&, const model::record&, std::vector<int32_t>&);

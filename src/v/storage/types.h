@@ -263,6 +263,7 @@ struct truncate_config {
     truncate_config(model::offset o, ss::io_priority_class p)
       : base_offset(o)
       , prio(p) {}
+    // Lowest offset to remove.
     model::offset base_offset;
     ss::io_priority_class prio;
     friend std::ostream& operator<<(std::ostream&, const truncate_config&);

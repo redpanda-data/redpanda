@@ -42,6 +42,8 @@ public:
 
     ss::future<ss::stop_iteration> operator()(::model::record_batch batch);
 
+    // Returns the offsets corresponding to the batch end offset strictly below
+    // the target offset.
     type end_of_stream();
 
 private:
@@ -49,8 +51,7 @@ private:
     model::offset _target_last_offset;
     model::offset _prev_batch_last_offset;
     model::timestamp _prev_batch_max_timestamp;
-    size_t _accumulator;
-    size_t _prev;
+    size_t _prev_end_pos;
 };
 
 } // namespace internal

@@ -134,7 +134,8 @@ void segment_index::maybe_track(
           hdr.max_timestamp,
           to_optional_model_timestamp(new_broker_ts),
           path().is_internal_topic()
-            || hdr.type == model::record_batch_type::raft_data)) {
+            || hdr.type == model::record_batch_type::raft_data,
+          internal::is_compactible(hdr))) {
         _acc = 0;
     }
     _needs_persistence = true;
@@ -183,17 +184,23 @@ segment_index::find_nearest(model::offset o) {
     return std::nullopt;
 }
 
-ss::future<>
-segment_index::truncate(model::offset o, model::timestamp new_max_timestamp) {
-    if (o < _state.base_offset) {
+ss::future<> segment_index::truncate(
+  model::offset new_max_offset, model::timestamp new_max_timestamp) {
+    if (new_max_offset < _state.base_offset) {
         co_return;
     }
-    const uint32_t i = o() - _state.base_offset();
+    const uint32_t i = new_max_offset() - _state.base_offset();
     auto it = std::lower_bound(
       std::begin(_state.relative_offset_index),
       std::end(_state.relative_offset_index),
       i,
       std::less<uint32_t>{});
+
+    if (
+      _state.first_compactible_offset.has_optional_value()
+      && _state.first_compactible_offset.value() > new_max_offset) {
+        _state.first_compactible_offset = tristate<model::offset>{std::nullopt};
+    }
 
     if (it != _state.relative_offset_index.end()) {
         _needs_persistence = true;
@@ -204,14 +211,14 @@ segment_index::truncate(model::offset o, model::timestamp new_max_timestamp) {
         }
     }
 
-    if (o < _state.max_offset) {
+    if (new_max_offset < _state.max_offset) {
         _needs_persistence = true;
         if (_state.empty()) {
             _state.max_timestamp = _state.base_timestamp;
             _state.max_offset = _state.base_offset;
         } else {
             _state.max_timestamp = new_max_timestamp;
-            _state.max_offset = o;
+            _state.max_offset = new_max_offset;
         }
     }
 

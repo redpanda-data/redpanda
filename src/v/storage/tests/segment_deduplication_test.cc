@@ -31,23 +31,39 @@ ss::abort_source never_abort;
 
 // Builds a segment layout:
 // [0    9][10   19][20    29]...
-void build_segments(storage::disk_log_builder& b, int num_segs) {
-    b | start();
+void add_segments(
+  storage::disk_log_builder& b,
+  int num_segs,
+  int records_per_seg = 10,
+  int start_offset = 0,
+  bool mark_compacted = true) {
     auto& disk_log = b.get_disk_log_impl();
-    auto records_per_seg = 10;
     for (int i = 0; i < num_segs; i++) {
-        auto offset = i * records_per_seg;
+        auto offset = start_offset + i * records_per_seg;
         b | add_segment(offset)
           | add_random_batch(
             offset, records_per_seg, maybe_compress_batches::yes);
     }
     for (auto& seg : disk_log.segments()) {
-        seg->mark_as_finished_windowed_compaction();
+        if (mark_compacted) {
+            seg->mark_as_finished_self_compaction();
+            seg->mark_as_finished_windowed_compaction();
+        }
         if (seg->has_appender()) {
             seg->appender().close().get();
             seg->release_appender();
         }
     }
+}
+
+void build_segments(
+  storage::disk_log_builder& b,
+  int num_segs,
+  int records_per_seg = 10,
+  int start_offset = 0,
+  bool mark_compacted = true) {
+    b | start();
+    add_segments(b, num_segs, records_per_seg, start_offset, mark_compacted);
 }
 
 TEST(FindSlidingRangeTest, TestCollectSegments) {
@@ -96,6 +112,59 @@ TEST(FindSlidingRangeTest, TestCollectExcludesPrevious) {
     segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(1, segs.size());
     ASSERT_EQ(segs.front()->offsets().base_offset(), 0);
+}
+
+TEST(FindSlidingRangeTest, TestCollectExcludesOneRecordSegments) {
+    storage::disk_log_builder b;
+    build_segments(
+      b,
+      /*num_segs=*/5,
+      /*records_per_seg=*/1,
+      /*start_offset=*/0,
+      /*mark_compacted=*/false);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+    compaction_config cfg(
+      model::offset{30}, ss::default_priority_class(), never_abort);
+    auto segs = disk_log.find_sliding_range(cfg);
+    // All segments so far have only one record and shouldn't be eligible for
+    // compaction.
+    ASSERT_EQ(0, segs.size());
+    for (int i = 0; i < 5; i++) {
+        auto& seg = disk_log.segments()[i];
+        ASSERT_TRUE(seg->finished_self_compaction());
+        ASSERT_TRUE(seg->finished_windowed_compaction());
+    }
+
+    // Add some segments with multiple records. They should be eligible for
+    // compaction and are included in the range.
+    add_segments(
+      b,
+      /*num_segs=*/3,
+      /*records_per_seg=*/2,
+      /*start_offset=*/6,
+      /*mark_compacted=*/false);
+    segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(3, segs.size());
+    for (const auto& seg : segs) {
+        ASSERT_FALSE(seg->finished_self_compaction()) << seg;
+        ASSERT_FALSE(seg->finished_windowed_compaction()) << seg;
+    }
+
+    // Adding more segments with one record, the range should include them
+    // since they're not at the beginning of the log.
+    add_segments(
+      b,
+      /*num_segs=*/4,
+      /*records_per_seg=*/1,
+      /*start_offset=*/13,
+      /*mark_compacted=*/false);
+    segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(7, segs.size());
+    for (const auto& seg : segs) {
+        ASSERT_FALSE(seg->finished_self_compaction());
+        ASSERT_FALSE(seg->finished_windowed_compaction());
+    }
 }
 
 TEST(BuildOffsetMap, TestBuildSimpleMap) {

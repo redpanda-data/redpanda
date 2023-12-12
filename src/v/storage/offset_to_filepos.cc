@@ -56,16 +56,13 @@ offset_to_filepos_consumer::offset_to_filepos_consumer(
   : _target_last_offset(target)
   , _prev_batch_last_offset(model::prev_offset(log_start_offset))
   , _prev_batch_max_timestamp(initial_timestamp)
-  , _accumulator(initial)
-  , _prev(initial) {}
+  , _prev_end_pos(initial) {}
 
 ss::future<ss::stop_iteration>
 offset_to_filepos_consumer::operator()(::model::record_batch batch) {
-    _prev = _accumulator;
-    _accumulator += batch.size_bytes();
-
-    if (_target_last_offset <= batch.base_offset()) {
-        _filepos = {_prev_batch_last_offset, _prev, _prev_batch_max_timestamp};
+    if (batch.base_offset() >= _target_last_offset) {
+        _filepos = {
+          _prev_batch_last_offset, _prev_end_pos, _prev_batch_max_timestamp};
         co_return ss::stop_iteration::yes;
     }
     if (
@@ -83,6 +80,7 @@ offset_to_filepos_consumer::operator()(::model::record_batch batch) {
     _prev_batch_last_offset = batch.last_offset();
     _prev_batch_max_timestamp = std::max(
       batch.header().first_timestamp, batch.header().max_timestamp);
+    _prev_end_pos += batch.size_bytes();
     co_return ss::stop_iteration::no;
 }
 

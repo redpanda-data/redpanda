@@ -280,14 +280,15 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     co_return new_batch;
 }
 
-ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
+ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
   model::compression original, model::record_batch b) {
     using stop_t = ss::stop_iteration;
     auto to_copy = co_await filter(std::move(b));
     if (to_copy == std::nullopt) {
         co_return stop_t::no;
     }
-    if (_compacted_idx && is_compactible(to_copy.value())) {
+    bool compactible_batch = is_compactible(to_copy.value());
+    if (_compacted_idx && compactible_batch) {
         co_await model::for_each_record(
           to_copy.value(),
           [&batch = to_copy.value(), this](const model::record& r) {
@@ -301,7 +302,7 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
           });
     }
     auto batch = co_await compress_batch(original, std::move(to_copy.value()));
-    auto const start_offset = _appender->file_byte_offset();
+    auto const start_pos = _appender->file_byte_offset();
     auto const header_size = batch.header().size_bytes;
     _acc += header_size;
     // do not set broker_timestamp in this index, leave the operation to the
@@ -309,22 +310,23 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
     if (_idx.maybe_index(
           _acc,
           32_KiB,
-          start_offset,
+          start_pos,
           batch.base_offset(),
           batch.last_offset(),
           batch.header().first_timestamp,
           batch.header().max_timestamp,
           std::nullopt,
           _internal_topic
-            || batch.header().type == model::record_batch_type::raft_data)) {
+            || batch.header().type == model::record_batch_type::raft_data,
+          compactible_batch)) {
         _acc = 0;
     }
     co_await _appender->append(batch);
     vassert(
-      _appender->file_byte_offset() == start_offset + header_size,
+      _appender->file_byte_offset() == start_pos + header_size,
       "Size must be deterministic. Expected:{} == {}",
       _appender->file_byte_offset(),
-      start_offset + header_size);
+      start_pos + header_size);
 
     co_return stop_t::no;
 }
@@ -333,11 +335,11 @@ ss::future<ss::stop_iteration>
 copy_data_segment_reducer::operator()(model::record_batch b) {
     const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
-        co_return co_await do_compaction(comp, std::move(b));
+        co_return co_await filter_and_append(comp, std::move(b));
     }
     auto batch = co_await decompress_batch(std::move(b));
 
-    co_return co_await do_compaction(comp, std::move(batch));
+    co_return co_await filter_and_append(comp, std::move(batch));
 }
 
 ss::future<ss::stop_iteration>
