@@ -125,6 +125,13 @@ public:
     bool finished_windowed_compaction() const;
     /// \brief used for compaction, to reset the tracker from index
     void force_set_commit_offset_from_index();
+
+    /// \brief Returns whether the underlying segment has data records that
+    /// might be removed if compaction were to run. May return false positives,
+    /// e.g. if the underlying index was written in a version with insufficient
+    /// metadata.
+    bool has_compactible_data_records() const;
+
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
