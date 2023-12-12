@@ -26,7 +26,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from contextlib import contextmanager
-from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.failure_injector import FailureInjectorCloud
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
     KgoVerifierRandomConsumer)
@@ -164,6 +164,14 @@ class HighThroughputTestTrafficGenerator:
                 'egress_throughput': consumer_bytes_read / consumer_total_time
             }
         }
+
+
+def pod_container_ready(kubectl, pod_name):
+    # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].ready}'
+    return kubectl.cmd([
+        'get', 'pod', pod_name, '-n=redpanda',
+        "-o=jsonpath='{.status.containerStatuses[0].ready}'"
+    ]).decode()
 
 
 @contextmanager
@@ -744,7 +752,7 @@ class HighThroughputTest(PreallocNodesTest):
             self.stage_stop_wait_start(forced_stop=False)
 
             # Block traffic to/from one node.
-            #self.stage_block_node_traffic()
+            self.stage_block_node_traffic()
 
     NOS3_LOG_ALLOW_LIST = [
         re.compile("s3 - .* - Accessing .*, unexpected REST API error "
@@ -761,12 +769,6 @@ class HighThroughputTest(PreallocNodesTest):
 
         :param timeout_sec: seconds to wait for a restarted node to be ready before raising timeout exception
         """
-        def pod_container_ready(pod_name):
-            # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].ready}'
-            return self.redpanda.kubectl.cmd([
-                'get', 'pod', pod_name, '-n=redpanda',
-                "-o=jsonpath='{.status.containerStatuses[0].ready}'"
-            ]).decode()
 
         for pod in self.redpanda.pods:
             pod_name = pod.name
@@ -777,28 +779,31 @@ class HighThroughputTest(PreallocNodesTest):
             self.redpanda.kubectl.cmd(delete_cmd)
 
             wait_until(
-                lambda: pod_container_ready(pod_name) == 'true',
+                lambda: pod_container_ready(self.redpanda.kubectl, pod_name
+                                            ) == 'true',
                 timeout_sec=timeout_sec,
                 err_msg=
                 f'pod {pod_name} sent signal {signal} failed to stop in {timeout_sec} seconds'
             )
 
-    def stage_block_node_traffic(self):
+    def stage_block_node_traffic(self, timeout_sec=180):
         wait_time = 120
-        node = self.get_node()
-        self.logger.info(f"Isolating node {node.name}")
-        with FailureInjector(self.redpanda) as fi:
-            fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
-            self.logger.info(
-                f"Running for {wait_time}s while failure injected")
+        pod_name = self.get_broker_pod().name
+        self.logger.info(f'isolating pod {pod_name}')
+        with FailureInjectorCloud(self.redpanda) as fi:
+            fi.isolate(pod_name)
+            self.logger.info(f'waiting for {wait_time}s after pod is isolated')
             time.sleep(wait_time)
 
         self.logger.info(
-            f"Running for {wait_time}s after injected failure removed")
-        time.sleep(wait_time)
-        self.logger.info(
-            f"Waiting for the cluster to return to a healthy state")
-        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+            f'waiting for the cluster to return to a healthy state')
+        wait_until(
+            lambda: pod_container_ready(self.redpanda.kubectl, pod_name
+                                        ) == 'true',
+            timeout_sec=timeout_sec,
+            err_msg=
+            f'pod {pod_name} sent signal {signal} failed to stop in {timeout_sec} seconds'
+        )
 
     def stage_stop_wait_start(self, forced_stop: bool):
         pod_name = self.get_broker_pod().name
