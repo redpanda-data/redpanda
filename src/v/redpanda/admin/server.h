@@ -89,7 +89,8 @@ public:
       ss::sharded<resources::cpu_profiler>&,
       ss::sharded<transform::service>*,
       ss::sharded<security::audit::audit_log_manager>&,
-      std::unique_ptr<cluster::tx_manager_migrator>&);
+      std::unique_ptr<cluster::tx_manager_migrator>&,
+      ss::sharded<kafka::server>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -447,6 +448,8 @@ private:
       oidc_whoami_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
     oidc_keys_cache_invalidate_handler(std::unique_ptr<ss::http::request> req);
+    ss::future<ss::json::json_return_type>
+    oidc_revoke_handler(std::unique_ptr<ss::http::request> req);
 
     /// Kafka routes
     ss::future<ss::json::json_return_type>
@@ -660,6 +663,7 @@ private:
     ss::sharded<transform::service>* _transform_service;
     ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
     std::unique_ptr<cluster::tx_manager_migrator>& _tx_manager_migrator;
+    ss::sharded<kafka::server>& _kafka_server;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

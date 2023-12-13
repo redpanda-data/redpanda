@@ -320,6 +320,7 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
     }
 
     auto ctx = ss::make_lw_shared<connection_context>(
+      _connections,
       *this,
       conn,
       std::move(sasl),
@@ -434,6 +435,14 @@ ss::future<response_ptr> heartbeat_handler::handle(
 
     auto resp = co_await ctx.groups().heartbeat(std::move(request));
     co_return co_await ctx.respond(resp);
+}
+
+ss::future<> server::revoke_credentials(std::string_view name) {
+    constexpr size_t max_concurrency{100};
+    return ss::max_concurrent_for_each(
+      _connections, max_concurrency, [name = ss::sstring{name}](auto& ctx) {
+          return ctx.revoke_credentials(name);
+      });
 }
 
 template<>

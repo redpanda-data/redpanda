@@ -95,4 +95,21 @@
             }
         }
     }
+},
+"/v1/security/oidc/revoke": {
+    "post": {
+        "summary": "Reload the keys from the Identity Provider and disconnect clients",
+        "operationId": "oidc_revoke",
+        "responses": {
+            "200": {
+                "description": "Successful response"
+            },
+            "500": {
+                "description": "Keys failed to reload",
+                "schema": {
+                    "$ref": "#/definitions/oidc_keys_cache_invalidate_error_response"
+                }
+            }
+        }
+    }
 }

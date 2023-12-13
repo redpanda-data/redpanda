@@ -29,7 +29,6 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
-#include "kafka/server/server.h"
 #include "metrics/aggregate_metrics_watcher.h"
 #include "metrics/metrics.h"
 #include "net/conn_quota.h"
@@ -40,7 +39,6 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
-#include "redpanda/admin/server.h"
 #include "redpanda/monitor_unsafe_log_flag.h"
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -51,6 +49,7 @@
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
 #include "seastarx.h"
+#include "security/fwd.h"
 #include "ssx/fwd.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
@@ -64,6 +63,8 @@
 #include <seastar/util/defer.hh>
 
 namespace po = boost::program_options; // NOLINT
+
+class admin_server;
 
 namespace cluster {
 class cluster_discovery;

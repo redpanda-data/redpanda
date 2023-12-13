@@ -17,6 +17,7 @@
 #include "kafka/latency_probe.h"
 #include "kafka/protocol/types.h"
 #include "kafka/sasl_probe.h"
+#include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/fwd.h"
@@ -198,6 +199,8 @@ public:
 
     ssx::semaphore& memory_fetch_sem() noexcept { return _memory_fetch_sem; }
 
+    ss::future<> revoke_credentials(std::string_view name);
+
 private:
     void setup_metrics();
 
@@ -239,6 +242,7 @@ private:
     ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
+    boost::intrusive::list<connection_context> _connections;
 };
 
 } // namespace kafka
