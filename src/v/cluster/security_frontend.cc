@@ -13,6 +13,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller.h"
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
@@ -75,6 +76,7 @@ static inline cluster::errc map_errc(std::error_code ec) {
 
 security_frontend::security_frontend(
   model::node_id self,
+  controller* controller,
   ss::sharded<controller_stm>& s,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
@@ -82,6 +84,7 @@ security_frontend::security_frontend(
   ss::sharded<ss::abort_source>& as,
   ss::sharded<security::authorizer>& authorizer)
   : _self(self)
+  , _controller(controller)
   , _stm(s)
   , _connections(connections)
   , _leaders(leaders)
@@ -337,6 +340,85 @@ security_frontend::get_bootstrap_user_creds_from_env() {
       password, security::scram_sha256::min_iterations);
     return std::optional<user_and_credential>(
       std::in_place, std::move(username), std::move(credentials));
+}
+
+ss::future<result<model::offset>> security_frontend::get_leader_committed(
+  model::timeout_clock::duration timeout) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        return ss::make_ready_future<result<model::offset>>(
+          make_error_code(errc::no_leader_controller));
+    }
+
+    if (leader == _self) {
+        return ss::smp::submit_to(controller_stm_shard, [this, timeout]() {
+            return ss::with_timeout(
+                     model::timeout_clock::now() + timeout,
+                     _controller->linearizable_barrier())
+              .handle_exception_type([](const ss::timed_out_error&) {
+                  return result<model::offset>(errc::timeout);
+              });
+        });
+    }
+
+    return _connections.local()
+      .with_node_client<cluster::controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *leader,
+        timeout,
+        [timeout](controller_client_protocol cp) mutable {
+            return cp.get_controller_committed_offset(
+              controller_committed_offset_request{},
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<controller_committed_offset_reply>)
+      .then([](result<controller_committed_offset_reply> r) {
+          if (r.has_error()) {
+              return result<model::offset>(r.error());
+          } else if (r.value().result != errc::success) {
+              return result<model::offset>(r.value().result);
+          }
+          return result<model::offset>(r.value().last_committed);
+      });
+}
+
+ss::future<std::error_code> security_frontend::wait_until_caughtup_with_leader(
+  model::timeout_clock::duration timeout) {
+    /// Grab the leader committed offset - the leader may be this node or
+    /// another
+    const auto start = model::timeout_clock::now();
+    const auto leader_committed = co_await get_leader_committed(timeout);
+    if (leader_committed.has_error()) {
+        co_return leader_committed.error();
+    }
+
+    /// Subtract the difference of the time already spent waiting
+    const auto elapsed = model::timeout_clock::now() - start;
+    if (elapsed > timeout) {
+        co_return make_error_code(errc::timeout);
+    }
+    timeout -= elapsed;
+
+    /// Waiting up until the leader committed offset means its possible that
+    /// waiting on an offset higher then neccessary is performed but the
+    /// alternative of waiting on the last_applied isn't a complete solution
+    /// as its possible that this offset is behind the actual last_applied
+    /// of a previously elected leader, resulting in a stale response being
+    /// returned.
+    co_return co_await _stm.invoke_on(
+      controller_stm_shard,
+      [timeout, leader_committed = leader_committed.value()](auto& stm) {
+          return stm
+            .wait(leader_committed, model::timeout_clock::now() + timeout)
+            .then([] { return make_error_code(errc::success); })
+            .handle_exception_type([](ss::abort_requested_exception) {
+                return make_error_code(errc::shutting_down);
+            })
+            .handle_exception_type([](ss::timed_out_error) {
+                return make_error_code(errc::timeout);
+            });
+      });
 }
 
 } // namespace cluster
