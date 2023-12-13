@@ -121,6 +121,7 @@ topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
             _partition_count--;
             auto ntp = model::ntp(nt.ns, nt.tp, p_as.id);
             _updates_in_progress.erase(ntp);
+            on_partition_deletion(ntp);
             _pending_deltas.emplace_back(
               std::move(ntp),
               model::revision_id(offset),
@@ -357,6 +358,8 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     p_meta_it->second.last_update_finished_revision = model::revision_id{o};
 
     _updates_in_progress.erase(it);
+
+    on_partition_move_finish(cmd.key, cmd.value);
 
     // notify backend about finished update
     _pending_deltas.emplace_back(
@@ -681,6 +684,70 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
     co_return errc::success;
 }
 
+ss::future<std::error_code>
+topic_table::apply(bulk_force_reconfiguration_cmd cmd, model::offset o) {
+    _last_applied_revision_id = model::revision_id(o);
+    auto validation_ec = validate_force_reconfigurable_partitions(
+      cmd.value.user_approved_force_recovery_partitions);
+    if (validation_ec) {
+        co_return validation_ec;
+    }
+    for (auto& entry : cmd.value.user_approved_force_recovery_partitions) {
+        add_partition_to_force_reconfigure(std::move(entry));
+    }
+    co_return errc::success;
+}
+
+std::error_code topic_table::validate_force_reconfigurable_partition(
+  const ntp_with_majority_loss& entry) const {
+    if (entry.dead_nodes.size() <= 0) {
+        return errc::invalid_request;
+    }
+    const auto& ntp = entry.ntp;
+    const auto& topic_md = get_topic_metadata_ref({ntp.ns, ntp.tp.topic});
+    if (!topic_md || topic_md->get().get_revision() != entry.topic_revision) {
+        return errc::topic_not_exists;
+    }
+    if (is_update_in_progress(ntp)) {
+        return errc::update_in_progress;
+    }
+    const auto& current_assignment = get_partition_assignment(ntp);
+    if (!current_assignment) {
+        return errc::no_partition_assignments;
+    }
+    if (!are_replica_sets_equal(
+          current_assignment->replicas, entry.assignment)) {
+        return errc::partition_configuration_differs;
+    }
+    // check if the entry is already in progress
+    auto it = _partitions_to_force_reconfigure.find(ntp);
+    if (it != _partitions_to_force_reconfigure.end()) {
+        const auto& entries = it->second;
+        auto match_it = std::find(entries.begin(), entries.end(), entry);
+        if (match_it != entries.end()) {
+            return errc::partition_already_exists;
+        }
+    }
+    return errc::success;
+}
+
+std::error_code topic_table::validate_force_reconfigurable_partitions(
+  const fragmented_vector<ntp_with_majority_loss>& partitions) const {
+    std::error_code result = errc::success;
+    for (const auto& entry : partitions) {
+        auto error = validate_force_reconfigurable_partition(entry);
+        if (error) {
+            result = error;
+        }
+        vlog(
+          clusterlog.debug,
+          "Processed force reconfiguration entry {}, result: {}",
+          entry,
+          error);
+    }
+    return result;
+}
+
 template<typename T>
 void incremental_update(
   std::optional<T>& property, property_update<std::optional<T>> override) {
@@ -925,6 +992,8 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
     for (const auto& [ntr, lm] : _lifecycle_markers) {
         snap.lifecycle_markers.emplace(ntr, lm);
     }
+
+    snap.partitions_to_force_recover = _partitions_to_force_reconfigure;
 }
 
 // helper class to hold context needed for adding/deleting ntps when applying a
@@ -1239,6 +1308,9 @@ ss::future<> topic_table::apply_snapshot(
     // etc, so we can just copy directly into place.
     _lifecycle_markers = controller_snap.topics.lifecycle_markers;
 
+    reset_partitions_to_force_reconfigure(
+      controller_snap.topics.partitions_to_force_recover);
+
     // 2. re-calculate derived state
 
     _partition_count = 0;
@@ -1251,6 +1323,20 @@ ss::future<> topic_table::apply_snapshot(
     notify_waiters();
 
     _last_applied_revision_id = snap_revision;
+}
+
+void topic_table::add_partition_to_force_reconfigure(
+  ntp_with_majority_loss entry) {
+    const auto& [it, _] = _partitions_to_force_reconfigure.try_emplace(
+      entry.ntp);
+    it->second.push_back(std::move(entry));
+    _partitions_to_force_reconfigure_revision++;
+}
+
+void topic_table::reset_partitions_to_force_reconfigure(
+  const force_recoverable_partitions_t& other) {
+    _partitions_to_force_reconfigure = other;
+    _partitions_to_force_reconfigure_revision++;
 }
 
 void topic_table::notify_waiters() {
@@ -1591,6 +1677,71 @@ size_t topic_table::get_node_partition_count(model::node_id id) const {
           });
     }
     return cnt;
+}
+
+void topic_table::on_partition_move_finish(
+  const model::ntp& ntp, const std::vector<model::broker_shard>& replicas) {
+    auto it = _partitions_to_force_reconfigure.find(ntp);
+    if (it == _partitions_to_force_reconfigure.end()) {
+        return;
+    }
+    auto& entries = it->second;
+    auto num_erased = std::erase_if(entries, [&replicas](const auto& entry) {
+        // check if the new replica set contains any dead nodes that were
+        // intended to be removed.
+        bool has_dead_nodes = std::any_of(
+          entry.dead_nodes.begin(),
+          entry.dead_nodes.end(),
+          [&replicas](const model::node_id& id) {
+              return contains_node(replicas, id);
+          });
+        return !has_dead_nodes;
+    });
+    if (num_erased > 0) {
+        _partitions_to_force_reconfigure_revision++;
+    }
+    if (entries.size() == 0) {
+        _partitions_to_force_reconfigure.erase(it);
+        _partitions_to_force_reconfigure_revision++;
+    }
+}
+
+void topic_table::on_partition_deletion(const model::ntp& ntp) {
+    auto it = _partitions_to_force_reconfigure.find(ntp);
+    if (it == _partitions_to_force_reconfigure.end()) {
+        return;
+    }
+    auto topic_md = get_topic_metadata_ref({ntp.ns, ntp.tp.topic});
+    if (!topic_md) {
+        // topic no longer exists
+        _partitions_to_force_reconfigure.erase(it);
+        _partitions_to_force_reconfigure_revision++;
+        vlog(
+          clusterlog.debug,
+          "marking force repair action as finished for partition: {} because "
+          "the topic was deleted.",
+          it->first);
+        return;
+    }
+    // A newer version of the topic exists.
+    // delete all entries for older revision of the topic.
+    auto& entries = it->second;
+    auto new_topic_revision = topic_md.value().get().get_revision();
+    auto num_erased = std::erase_if(entries, [&](const auto& entry) {
+        return entry.topic_revision < new_topic_revision;
+    });
+    if (num_erased > 0) {
+        _partitions_to_force_reconfigure_revision++;
+    }
+    if (entries.size() == 0) {
+        _partitions_to_force_reconfigure.erase(it);
+        _partitions_to_force_reconfigure_revision++;
+        vlog(
+          clusterlog.debug,
+          "marking force repair action as finished for partition: {} because "
+          "the topic was deleted.",
+          it->first);
+    }
 }
 
 std::ostream&

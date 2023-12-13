@@ -12,13 +12,14 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.rpk import RpkTool
-from ducktape.mark import matrix
+from ducktape.mark import ignore, matrix
 from ducktape.utils.util import wait_until
 from random import shuffle
 import time
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.admin import Replica
 from rptest.clients.kcl import KCL
+from threading import Thread
 
 
 class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
@@ -287,8 +288,8 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.run_validation()
 
     @cluster(num_nodes=5)
-    @matrix(defunct_node_count=[1, 2])
-    def test_node_wise_recovery(self, defunct_node_count):
+    @matrix(dead_node_count=[1, 2])
+    def test_node_wise_recovery(self, dead_node_count):
         self.start_redpanda(num_nodes=5,
                             extra_rp_conf={
                                 "partition_autobalancing_mode": "continuous",
@@ -309,13 +310,13 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         admin = self.redpanda._admin
 
         to_kill_nodes = random.sample(self.redpanda.started_nodes(),
-                                      defunct_node_count)
+                                      dead_node_count)
         to_kill_node_ids = [
             int(self.redpanda.node_id(n)) for n in to_kill_nodes
         ]
 
         partitions_lost_majority = admin.get_majority_lost_partitions_from_nodes(
-            defunct_brokers=to_kill_node_ids)
+            dead_brokers=to_kill_node_ids)
 
         self.logger.debug(f"Stopping nodes: {to_kill_node_ids}")
         self.redpanda.for_nodes(to_kill_nodes, self.redpanda.stop_node)
@@ -333,7 +334,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         def make_recovery_payload(defunct_nodes: list[int],
                                   partitions_lost_majority: dict):
             return {
-                "defunct_nodes": defunct_nodes,
+                "dead_nodes": defunct_nodes,
                 "partitions_to_force_recover": partitions_lost_majority
             }
 
@@ -346,75 +347,82 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             if self.redpanda.node_id(n) not in to_kill_node_ids
         ])
 
+        stop_leadership_transfer = False
+
+        def inject_controller_leadership_transfer():
+            while not stop_leadership_transfer:
+                try:
+                    controller = self.redpanda.controller()
+                    assert controller, "No controller available"
+                    controller_id = self.redpanda.node_id(controller)
+                    candidates = []
+                    for n in self.redpanda.started_nodes():
+                        id = self.redpanda.node_id(n)
+                        if id != controller_id and id not in to_kill_node_ids:
+                            candidates.append(id)
+                    new_controller = random.choice(candidates)
+                    admin.partition_transfer_leadership(
+                        namespace="redpanda",
+                        topic="controller",
+                        partition="0",
+                        target_id=new_controller)
+                except:
+                    pass
+                time.sleep(2)
+
         # issue a node wise recovery
         self.redpanda._admin.force_recover_partitions_from_nodes(
             payload=make_recovery_payload(to_kill_node_ids,
                                           partitions_lost_majority),
             node=surviving_node)
 
-        # Ensure the brokers are marked defunct.
-        def brokers_are_defunct():
-            brokers = admin.get_brokers(node=surviving_node)
-            for broker in brokers:
-                expected_liveness_state = "defunct" if broker[
-                    "node_id"] in to_kill_node_ids else "functional"
-                assert "liveness_status" in broker.keys()
-                if expected_liveness_state != broker["liveness_status"]:
-                    return False
-            return len(brokers) == len(self.redpanda.nodes)
+        leadership_transfer = Thread(
+            target=inject_controller_leadership_transfer)
+        leadership_transfer.start()
 
-        wait_until(brokers_are_defunct,
-                   timeout_sec=self.WAIT_TIMEOUT_S,
-                   backoff_sec=2,
-                   err_msg="Brokers are not designated defunct")
-
-        # Wait until there are no partition assignments with majority loss due to dead nodes.
-        wait_until(lambda: len(
-            admin.get_majority_lost_partitions_from_nodes(
-                defunct_brokers=to_kill_node_ids, node=surviving_node)) == 0,
-                   timeout_sec=self.WAIT_TIMEOUT_S,
-                   backoff_sec=3,
-                   err_msg="Node wise recovery failed")
-
-        def pending_force_reconfigurations():
+        def no_majority_lost_partitions():
             try:
-                return admin.get_partition_balancer_status(
-                )["partitions_pending_force_recovery_count"]
-            except:
-                return -1
+                lost_majority = admin.get_majority_lost_partitions_from_nodes(
+                    dead_brokers=to_kill_node_ids,
+                    node=surviving_node,
+                    timeout=3)
+                self.logger.debug(
+                    f"Partitions with lost majority: {lost_majority}")
+                return len(lost_majority) == 0
+            except requests.exceptions.RequestException as e:
+                self.logger.debug(e, exc_info=True)
+                # may happen with controller leadership transfer.
+                pass
+            return False
 
-        wait_until(lambda: pending_force_reconfigurations() == 0,
-                   timeout_sec=self.WAIT_TIMEOUT_S,
-                   backoff_sec=2,
-                   err_msg="reported force recovery count is non zero")
+        try:
+            # Wait until there are no partition assignments with majority loss due to dead nodes.
+            wait_until(no_majority_lost_partitions,
+                       timeout_sec=self.WAIT_TIMEOUT_S,
+                       backoff_sec=3,
+                       err_msg="Node wise recovery failed")
 
-        # Ensure every partition has a stable leader.
-        for topic in topics:
-            for part in range(0, topic.partition_count):
-                self.redpanda._admin.await_stable_leader(
-                    topic=topic.name,
-                    partition=part,
-                    timeout_s=self.WAIT_TIMEOUT_S,
-                    backoff_s=2,
-                    hosts=self._alive_nodes())
+            def pending_force_reconfigurations():
+                try:
+                    return admin.get_partition_balancer_status(
+                    )["partitions_pending_force_recovery_count"]
+                except:
+                    return -1
 
-        def nodes_have_no_replicas(nodes: list[int]):
-            """Returns True if there are no replicas of user ntps on input set of nodes."""
-            node_set = set(nodes)
-            partitions = []
+            wait_until(lambda: pending_force_reconfigurations() == 0,
+                       timeout_sec=self.WAIT_TIMEOUT_S,
+                       backoff_sec=2,
+                       err_msg="reported force recovery count is non zero")
+
+            # Ensure every partition has a stable leader.
             for topic in topics:
-                p_list = self.redpanda._admin.get_partitions(topic=topic.name)
-                for partition in p_list:
-                    replicas = set(
-                        [r['node_id'] for r in partition["replicas"]])
-                    if any([r in node_set for r in replicas]):
-                        partitions.append(partition)
-            self.logger.debug(
-                f"partition with replicas on: {nodes} list: {partitions}")
-            return len(partitions) == 0
-
-        # Ensure the partition balancer drains all replicas from defunct nodes.
-        wait_until(lambda: nodes_have_no_replicas(to_kill_node_ids),
-                   timeout_sec=self.WAIT_TIMEOUT_S,
-                   backoff_sec=3,
-                   err_msg="Not all replicas are drained from defunct nodes")
+                for part in range(0, topic.partition_count):
+                    self.redpanda._admin.await_stable_leader(
+                        topic=topic.name,
+                        partition=part,
+                        timeout_s=self.WAIT_TIMEOUT_S,
+                        backoff_s=2,
+                        hosts=self._alive_nodes())
+        finally:
+            stop_leadership_transfer = True
+            leadership_transfer.join(timeout=30)

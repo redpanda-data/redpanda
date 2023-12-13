@@ -919,20 +919,9 @@ ss::future<std::error_code> topics_frontend::force_update_partition_replicas(
 
 ss::future<result<fragmented_vector<ntp_with_majority_loss>>>
 topics_frontend::partitions_with_lost_majority(
-  std::vector<model::node_id> defunct_nodes) {
+  std::vector<model::node_id> dead_nodes) {
     try {
         fragmented_vector<ntp_with_majority_loss> result;
-        auto validation_error = _members_table.local().validate_defunct_nodes(
-          defunct_nodes, true);
-        if (validation_error) {
-            co_return validation_error;
-        }
-        auto all_defunct_nodes = union_vectors(
-          defunct_nodes, _members_table.local().defunct_nodes());
-        vlog(
-          clusterlog.info,
-          "computing partitions with lost majority from nodes: {}",
-          all_defunct_nodes);
         const auto& topics = _topics.local();
         for (auto it = topics.topics_iterator_begin();
              it != topics.topics_iterator_end();
@@ -943,7 +932,7 @@ topics_frontend::partitions_with_lost_majority(
             for (const auto& assignment : assignments) {
                 const auto& current = assignment.replicas;
                 auto remaining = subtract_replica_sets_by_node_id(
-                  current, all_defunct_nodes);
+                  current, dead_nodes);
                 auto lost_majority = remaining.size()
                                      < (current.size() / 2) + 1;
                 if (!lost_majority) {
@@ -965,9 +954,15 @@ topics_frontend::partitions_with_lost_majority(
                   std::move(ntp),
                   topic_revision,
                   assignment.replicas,
-                  all_defunct_nodes);
+                  dead_nodes);
                 co_await ss::coroutine::maybe_yield();
+                it.check();
             }
+        }
+        auto validation_err
+          = _topics.local().validate_force_reconfigurable_partitions(result);
+        if (validation_err) {
+            co_return errc::concurrent_modification_error;
         }
         co_return result;
     } catch (const topic_table::concurrent_modification_error& e) {
@@ -989,11 +984,6 @@ topics_frontend::force_recover_partitions_from_nodes(
     auto result = co_await stm_linearizable_barrier(timeout);
     if (!result) {
         co_return result.error();
-    }
-    auto validation_error = _members_table.local().validate_defunct_nodes(
-      nodes, false);
-    if (validation_error) {
-        co_return validation_error;
     }
     // check if the state of partitions to recover tallies with their
     // current state.
@@ -1025,12 +1015,18 @@ topics_frontend::force_recover_partitions_from_nodes(
     if (reject) {
         co_return errc::invalid_request;
     }
-    defunct_node_cmd_data data;
-    data.defunct_nodes = std::move(nodes);
+    auto validation_err
+      = _topics.local().validate_force_reconfigurable_partitions(
+        user_approved_force_recovery_partitions);
+    if (validation_err) {
+        co_return validation_err;
+    }
+    bulk_force_reconfiguration_cmd_data data;
+    data.from_nodes = std::move(nodes);
     data.user_approved_force_recovery_partitions = std::move(
       user_approved_force_recovery_partitions);
-    defunct_nodes_cmd cmd(0, defunct_node_cmd_data(std::move(data)));
-    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+    co_return co_await replicate_and_wait(
+      _stm, _as, bulk_force_reconfiguration_cmd{0, std::move(data)}, timeout);
 }
 
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(

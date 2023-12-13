@@ -1250,30 +1250,31 @@ operator<<(std::ostream& o, const add_paritions_tx_request::topic& t) {
 std::ostream& operator<<(std::ostream& o, const ntp_with_majority_loss& entry) {
     fmt::print(
       o,
-      "{{ ntp: {}, topic_revision: {}, replicas: {}, defunct nodes: {} }}",
+      "{{ ntp: {}, topic_revision: {}, replicas: {}, dead nodes: {} }}",
       entry.ntp,
       entry.topic_revision,
       entry.assignment,
-      entry.defunct_nodes);
+      entry.dead_nodes);
     return o;
 }
 
-defunct_node_cmd_data::defunct_node_cmd_data(const defunct_node_cmd_data& other)
-  : defunct_nodes(other.defunct_nodes) {
-    user_approved_force_recovery_partitions
-      = other.user_approved_force_recovery_partitions.copy();
-}
-
-defunct_node_cmd_data&
-defunct_node_cmd_data::operator=(const defunct_node_cmd_data& other) {
+bulk_force_reconfiguration_cmd_data&
+bulk_force_reconfiguration_cmd_data::operator=(
+  const bulk_force_reconfiguration_cmd_data& other) {
     if (this != &other) {
-        defunct_nodes = other.defunct_nodes;
+        from_nodes = other.from_nodes;
         user_approved_force_recovery_partitions
           = other.user_approved_force_recovery_partitions.copy();
     }
     return *this;
 }
 
+bulk_force_reconfiguration_cmd_data::bulk_force_reconfiguration_cmd_data(
+  const bulk_force_reconfiguration_cmd_data& other)
+  : from_nodes(other.from_nodes) {
+    user_approved_force_recovery_partitions
+      = other.user_approved_force_recovery_partitions.copy();
+}
 } // namespace cluster
 
 namespace reflection {

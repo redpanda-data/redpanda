@@ -96,7 +96,6 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::trackable_keys_limit_exceeded:
     case cluster::errc::invalid_partition_operation:
     case cluster::errc::concurrent_modification_error:
-    case cluster::errc::nodes_already_defunct:
         break;
     }
     return error_code::unknown_server_error;

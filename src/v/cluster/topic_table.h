@@ -302,16 +302,6 @@ public:
                == model::record_batch_type::topic_management_cmd;
     }
 
-    // list of commands that this table is able to apply, the list is used to
-    // automatically deserialize batch into command
-    static constexpr auto accepted_commands = make_commands_list<
-      create_topic_cmd,
-      delete_topic_cmd,
-      move_partition_replicas_cmd,
-      finish_moving_partition_replicas_cmd,
-      update_topic_properties_cmd,
-      create_partition_cmd>{};
-
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
     ss::future<std::error_code> apply(delete_topic_cmd, model::offset);
@@ -335,6 +325,8 @@ public:
       apply(update_partition_replicas_cmd, model::offset);
     ss::future<std::error_code>
       apply(set_topic_partitions_disabled_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(bulk_force_reconfiguration_cmd, model::offset);
 
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<>
@@ -564,6 +556,29 @@ public:
           [this] { return _topics_map_revision; }, _topics.end());
     }
 
+    const force_recoverable_partitions_t& partitions_to_force_recover() const {
+        return _partitions_to_force_reconfigure;
+    }
+
+    std::error_code validate_force_reconfigurable_partitions(
+      const fragmented_vector<ntp_with_majority_loss>&) const;
+
+    auto partitions_to_force_recover_it_begin() const {
+        return stable_iterator<
+          force_recoverable_partitions_t::const_iterator,
+          model::revision_id>(
+          [this]() { return _partitions_to_force_reconfigure_revision; },
+          _partitions_to_force_reconfigure.begin());
+    }
+
+    auto partitions_to_force_recover_it_end() const {
+        return stable_iterator<
+          force_recoverable_partitions_t::const_iterator,
+          model::revision_id>(
+          [this]() { return _partitions_to_force_reconfigure_revision; },
+          _partitions_to_force_reconfigure.end());
+    }
+
 private:
     friend topic_table_probe;
 
@@ -596,6 +611,16 @@ private:
     ss::future<std::error_code>
       do_apply(update_partition_replicas_cmd_data, model::offset);
 
+    void add_partition_to_force_reconfigure(ntp_with_majority_loss);
+    void reset_partitions_to_force_reconfigure(
+      const force_recoverable_partitions_t&);
+
+    void on_partition_deletion(const model::ntp&);
+    void on_partition_move_finish(
+      const model::ntp&, const std::vector<model::broker_shard>& replicas);
+    std::error_code validate_force_reconfigurable_partition(
+      const ntp_with_majority_loss&) const;
+
     underlying_t _topics;
     lifecycle_markers_t _lifecycle_markers;
     disabled_partitions_t _disabled_partitions;
@@ -619,6 +644,8 @@ private:
     uint64_t _waiter_id{0};
     std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;
+    force_recoverable_partitions_t _partitions_to_force_reconfigure;
+    model::revision_id _partitions_to_force_reconfigure_revision{0};
 
     friend class topic_table_partition_generator;
 };

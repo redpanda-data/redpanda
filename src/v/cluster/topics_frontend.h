@@ -102,7 +102,7 @@ public:
      * majority due to unavailability of the nodes.
      */
     ss::future<result<fragmented_vector<ntp_with_majority_loss>>>
-    partitions_with_lost_majority(std::vector<model::node_id> defunct_nodes);
+    partitions_with_lost_majority(std::vector<model::node_id> dead_nodes);
 
     ss::future<std::error_code> force_recover_partitions_from_nodes(
       std::vector<model::node_id> nodes,

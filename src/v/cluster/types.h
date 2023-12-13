@@ -3165,51 +3165,60 @@ struct ntp_with_majority_loss
       : ntp(std::move(n))
       , topic_revision(r)
       , assignment(std::move(replicas))
-      , defunct_nodes(std::move(dead_nodes)) {}
+      , dead_nodes(std::move(dead_nodes)) {}
     model::ntp ntp;
     model::revision_id topic_revision;
     std::vector<model::broker_shard> assignment;
-    std::vector<model::node_id> defunct_nodes;
+    std::vector<model::node_id> dead_nodes;
 
     template<typename H>
     friend H AbslHashValue(H h, const ntp_with_majority_loss& s) {
         return H::combine(
-          std::move(h), s.ntp, s.topic_revision, s.assignment, s.defunct_nodes);
+          std::move(h), s.ntp, s.topic_revision, s.assignment, s.dead_nodes);
     }
 
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_with_majority_loss&);
     bool operator==(const ntp_with_majority_loss& other) const = default;
     auto serde_fields() {
-        return std::tie(ntp, topic_revision, assignment, defunct_nodes);
+        return std::tie(ntp, topic_revision, assignment, dead_nodes);
     }
 };
 
-struct defunct_node_cmd_data
+struct bulk_force_reconfiguration_cmd_data
   : serde::envelope<
-      defunct_node_cmd_data,
+      bulk_force_reconfiguration_cmd_data,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    defunct_node_cmd_data() = default;
-    ~defunct_node_cmd_data() noexcept = default;
-    defunct_node_cmd_data(defunct_node_cmd_data&&) = default;
-    defunct_node_cmd_data(const defunct_node_cmd_data&);
-    defunct_node_cmd_data& operator=(defunct_node_cmd_data&&) = default;
-    defunct_node_cmd_data& operator=(const defunct_node_cmd_data&);
-    friend bool
-    operator==(const defunct_node_cmd_data&, const defunct_node_cmd_data&)
+    bulk_force_reconfiguration_cmd_data() = default;
+    ~bulk_force_reconfiguration_cmd_data() noexcept = default;
+    bulk_force_reconfiguration_cmd_data(bulk_force_reconfiguration_cmd_data&&)
+      = default;
+    bulk_force_reconfiguration_cmd_data(
+      const bulk_force_reconfiguration_cmd_data&);
+    bulk_force_reconfiguration_cmd_data&
+    operator=(bulk_force_reconfiguration_cmd_data&&)
+      = default;
+    bulk_force_reconfiguration_cmd_data&
+    operator=(const bulk_force_reconfiguration_cmd_data&);
+    friend bool operator==(
+      const bulk_force_reconfiguration_cmd_data&,
+      const bulk_force_reconfiguration_cmd_data&)
       = default;
 
-    std::vector<model::node_id> defunct_nodes;
+    std::vector<model::node_id> from_nodes;
     fragmented_vector<ntp_with_majority_loss>
       user_approved_force_recovery_partitions;
 
     auto serde_fields() {
-        return std::tie(defunct_nodes, user_approved_force_recovery_partitions);
+        return std::tie(from_nodes, user_approved_force_recovery_partitions);
     }
 };
+
+using force_recoverable_partitions_t
+  = absl::btree_map<model::ntp, std::vector<ntp_with_majority_loss>>;
 
 struct reconciliation_state_reply
   : serde::envelope<
@@ -4123,22 +4132,18 @@ public:
         _maintenance_state = st;
     }
 
-    model::liveness_state get_liveness_state() const { return _liveness_state; }
-    void set_liveness_state(model::liveness_state st) { _liveness_state = st; }
-
     friend bool operator==(const broker_state&, const broker_state&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const broker_state&);
 
     auto serde_fields() {
-        return std::tie(_membership_state, _maintenance_state, _liveness_state);
+        return std::tie(_membership_state, _maintenance_state);
     }
 
 private:
     model::membership_state _membership_state = model::membership_state::active;
     model::maintenance_state _maintenance_state
       = model::maintenance_state::inactive;
-    model::liveness_state _liveness_state = model::liveness_state::functional;
 };
 
 /**

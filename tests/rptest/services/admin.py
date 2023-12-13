@@ -748,12 +748,13 @@ class Admin:
         return self._request('post', path, node=node)
 
     def get_majority_lost_partitions_from_nodes(self,
-                                                defunct_brokers: list[int],
-                                                node=None):
-        assert defunct_brokers
-        brokers_csv = ','.join(str(b) for b in defunct_brokers)
-        path = f"partitions/majority_lost?defunct_nodes={brokers_csv}"
-        return self._request('get', path, node).json()
+                                                dead_brokers: list[int],
+                                                node=None,
+                                                **kwargs):
+        assert dead_brokers
+        brokers_csv = ','.join(str(b) for b in dead_brokers)
+        path = f"partitions/majority_lost?dead_nodes={brokers_csv}"
+        return self._request('get', path, node, **kwargs).json()
 
     def force_recover_partitions_from_nodes(self, payload: dict, node=None):
         assert payload

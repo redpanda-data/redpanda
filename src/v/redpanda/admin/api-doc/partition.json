@@ -362,7 +362,7 @@
             "operations": [
                 {
                     "method": "GET",
-                    "summary": "List of partitions with lost majority given an input set of defunct nodes.",
+                    "summary": "List of partitions with lost majority given an input set of dead nodes.",
                     "type": "void",
                     "nickname": "majority_lost",
                     "produces": [
@@ -370,7 +370,7 @@
                     ],
                     "parameters": [
                         {
-                            "name": "defunct_nodes",
+                            "name": "dead_nodes",
                             "in": "query",
                             "required": true,
                             "type": "string"
@@ -384,7 +384,7 @@
             "operations": [
                 {
                     "method": "POST",
-                    "summary": "Force recovers partitions from input list of nodes, the nodes are marked defunct and all partitions are moved away from them.",
+                    "summary": "Force recovers partitions from input list of nodes.",
                     "type": "void",
                     "nickname": "force_recover_from_nodes",
                     "produces": [
@@ -702,7 +702,7 @@
         },
         "ntp_with_majority_loss": {
             "id": "ntp_with_majority_loss",
-            "description": "ntp instance with lost majority due to defunct nodes.",
+            "description": "ntp instance with lost majority due to dead nodes.",
             "properties": {
                 "ntp": {
                     "type": "ntp",
@@ -719,12 +719,12 @@
                     },
                     "description": "Replica assignments"
                 },
-                "defunct_nodes" : {
+                "dead_nodes" : {
                     "type": "array",
                     "items": {
                         "type": "int"
                     },
-                    "description:": "Nodes that are no longer functional and irrecoverable. Such nodes are explicitly marked defunct by the user."
+                    "description:": "List of nodes that are dead and contributing to majority loss of partitions."
                 }
             }
         }

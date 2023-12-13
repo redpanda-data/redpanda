@@ -93,8 +93,6 @@ ss::future<std::error_code> topic_updates_dispatcher::do_topic_delete(
                   _partition_balancer_state.local()
                     .handle_ntp_move_begin_or_cancel(
                       tp_ns.ns, tp_ns.tp, p_as.id, p_as.replicas, {});
-                  _partition_balancer_state.local().handle_ntp_delete(
-                    {tp_ns.ns, tp_ns.tp, p_as.id});
               }
           }
 
@@ -315,9 +313,6 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
           _partition_allocator.local().remove_allocations(
             to_delete, get_allocation_domain(ntp));
 
-          _partition_balancer_state.local().handle_ntp_move_finish(
-            ntp, command_replicas);
-
           return ec;
       });
 }
@@ -474,6 +469,11 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   set_topic_partitions_disabled_cmd cmd, model::offset base_offset) {
     co_return co_await dispatch_updates_to_cores(cmd, base_offset);
+}
+
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  bulk_force_reconfiguration_cmd cmd, model::offset base_offset) {
+    co_return co_await dispatch_updates_to_cores(std::move(cmd), base_offset);
 }
 
 topic_updates_dispatcher::in_progress_map

@@ -84,40 +84,6 @@ public:
         _nodes_to_rebalance.erase(id);
     }
 
-    void add_partition_to_force_reconfigure(ntp_with_majority_loss entry) {
-        const auto& [it, _] = _ntps_to_force_reconfigure.try_emplace(entry.ntp);
-        it->second.push_back(std::move(entry));
-        _ntps_to_force_reconfigure_revision++;
-    }
-
-    using force_recoverable_partitions_t
-      = absl::btree_map<model::ntp, std::vector<ntp_with_majority_loss>>;
-    force_recoverable_partitions_t& partitions_to_force_reconfigure() {
-        return _ntps_to_force_reconfigure;
-    }
-
-    void reset_partitions_to_force_reconfigure(
-      const force_recoverable_partitions_t& other) {
-        _ntps_to_force_reconfigure = other;
-        _ntps_to_force_reconfigure_revision++;
-    }
-
-    auto ntps_to_force_recover_it_begin() const {
-        return stable_iterator<
-          force_recoverable_partitions_t::const_iterator,
-          model::revision_id>(
-          [&]() { return _ntps_to_force_reconfigure_revision; },
-          _ntps_to_force_reconfigure.begin());
-    }
-
-    auto ntps_to_force_recover_it_end() const {
-        return stable_iterator<
-          force_recoverable_partitions_t::const_iterator,
-          model::revision_id>(
-          [&]() { return _ntps_to_force_reconfigure_revision; },
-          _ntps_to_force_reconfigure.end());
-    }
-
     const auto& nodes_to_rebalance() const { return _nodes_to_rebalance; }
 
     ss::future<> apply_snapshot(const controller_snapshot&);
@@ -143,10 +109,6 @@ private:
     // _ntps_with_broken_rack_constraint set. Relied upon by the iterator.
     model::revision_id _ntps_with_broken_rack_constraint_revision;
     absl::flat_hash_set<model::node_id> _nodes_to_rebalance;
-    // A user approved list of ntps that should be force recovered.
-    // Set as part of designating brokers as defunct.
-    force_recoverable_partitions_t _ntps_to_force_reconfigure;
-    model::revision_id _ntps_to_force_reconfigure_revision;
     probe _probe;
 };
 
