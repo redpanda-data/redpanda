@@ -129,7 +129,10 @@ public:
     class validator {
     public:
         validator(
-          topic_table*, plugin_table*, absl::flat_hash_set<model::topic>);
+          topic_table*,
+          plugin_table*,
+          absl::flat_hash_set<model::topic>,
+          size_t max_transforms);
 
         // Ensures that the mutation is valid.
         //
@@ -147,6 +150,7 @@ public:
         topic_table* _topics;
         plugin_table* _table;
         absl::flat_hash_set<model::topic> _no_sink_topics;
+        size_t _max_transforms;
     };
 
 private:
