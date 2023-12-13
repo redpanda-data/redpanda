@@ -24,6 +24,7 @@ namespace kafka::client {
 fetch_request make_fetch_request(
   const model::topic_partition& tp,
   model::offset offset,
+  int32_t min_bytes,
   int32_t max_bytes,
   std::chrono::milliseconds timeout) {
     std::vector<fetch_request::partition> partitions;
@@ -41,7 +42,7 @@ fetch_request make_fetch_request(
       .data = {
         .replica_id{consumer_replica_id},
         .max_wait_ms{timeout},
-        .min_bytes = 0,
+        .min_bytes = min_bytes,
         .max_bytes = max_bytes,
         .isolation_level = model::isolation_level::read_uncommitted,
         .topics{std::move(topics)}}};
