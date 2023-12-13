@@ -41,7 +41,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "List partitions in the cluster",
 		Long: `List partitions in the cluster
 
-This command lists the cluster-level metadata of all partitions in the cluster.
+This command lists the cluster-level metadata of partitions in the cluster.
 It shows the current replica assignments on both brokers and CPU cores for given
 topics. By default, it assumes the "kafka" namespace, but you can specify an
 internal namespace using the "{namespace}/" prefix.
@@ -54,14 +54,9 @@ command against a cluster that does not support the underlying API.
 
 EXAMPLES
 
-List all partitions in the cluster.
-  rpk cluster partitions list --all
-
 List all partitions in the cluster, filtering for topic foo and bar.
   rpk cluster partitions list foo bar
 
-List only the disabled partitions.
-  rpk cluster partitions list -a --disabled-only
 `,
 		Run: func(cmd *cobra.Command, topics []string) {
 			if len(topics) == 0 && !all {
@@ -135,7 +130,9 @@ List only the disabled partitions.
 		},
 	}
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, list all partitions in the cluster")
+	cmd.Flags().MarkHidden("all")
 	cmd.Flags().BoolVar(&disabledOnly, "disabled-only", false, "If true, list disabled partitions only")
+	cmd.Flags().MarkHidden("disabled-only")
 	cmd.Flags().IntSliceVarP(&partitions, "partition", "p", nil, "List of comma-separated partitions IDs that you wish to filter the results with")
 
 	return cmd
