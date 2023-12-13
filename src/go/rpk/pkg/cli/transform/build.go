@@ -10,7 +10,14 @@
 package transform
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/buildpack"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
@@ -83,10 +90,49 @@ Tinygo - By default tinygo are release builds (-opt=2) for maximum performance.
 				// Output using the project name, deploy expects this format.
 				args = append(args, "-o", fmt.Sprintf("%s.wasm", cfg.Name))
 				out.MaybeDieErr(execFn(tinygo, args))
+			case project.WasmLangRust:
+				out.MaybeDieErr(buildRust(cmd.Context(), fs, cfg, extraArgs))
 			default:
 				out.Die("unknown language: %q", cfg.Language)
 			}
 		},
 	}
 	return cmd
+}
+
+type cargoMetadata struct {
+	TargetDir string `json:"target_directory"`
+}
+
+func buildRust(ctx context.Context, fs afero.Fs, cfg project.Config, extraArgs []string) error {
+	cargo, err := exec.LookPath("cargo")
+	if err != nil {
+		return errors.New("cargo is not available on $PATH, please download and install it: https://rustup.rs/")
+	}
+	cmd := exec.CommandContext(ctx, cargo, "metadata", "--format-version=1")
+	var b bytes.Buffer
+	cmd.Stdout = &b
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("unable to query cargo metadata: %v", err)
+	}
+	var meta cargoMetadata
+	if err := json.Unmarshal(b.Bytes(), &meta); err != nil {
+		return fmt.Errorf("unable to query cargo metadata: %v", err)
+	}
+	// Cargo does not support named outputs for building, so we have to do the mv ourselves.
+	buildArgs := []string{"build", "--release", "--target=wasm32-wasi"}
+	buildArgs = append(buildArgs, extraArgs...)
+	cmd = exec.CommandContext(ctx, cargo, buildArgs...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("build failed %v", err)
+	}
+	fileName := fmt.Sprintf("%s.wasm", cfg.Name)
+	buildArtifact := path.Join(meta.TargetDir, "wasm32-wasi", "release", fileName)
+	if err = fs.Rename(buildArtifact, fileName); err != nil {
+		return fmt.Errorf("unable to move build artifact: %v", err)
+	}
+	return nil
 }
