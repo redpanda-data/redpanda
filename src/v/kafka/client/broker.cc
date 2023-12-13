@@ -58,9 +58,13 @@ ss::future<shared_broker_t> make_broker(
           return ss::make_exception_future<shared_broker_t>(ex);
       })
       .then([&config](shared_broker_t broker) {
-          return do_authenticate(broker, config).then([broker]() {
-              return broker;
-          });
+          return do_authenticate(broker, config)
+            .then([broker]() { return broker; })
+            .handle_exception([broker](std::exception_ptr ex) {
+                return broker->stop().then([ex]() {
+                    return ss::make_exception_future<shared_broker_t>(ex);
+                });
+            });
       });
 }
 
