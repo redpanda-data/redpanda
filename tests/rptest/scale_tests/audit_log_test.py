@@ -9,6 +9,7 @@
 
 import time
 import threading
+from ducktape.mark import ok_to_fail
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
@@ -290,6 +291,10 @@ class AuditLogTest(RedpandaTest):
             # to me able to assert on other properties of the test run.
             return make_result_set(t1, repeater)
 
+    # Temporarily marking as ok_to_fail so we can observe in CI how full
+    # the audit queues are during the scale test so we can appropriately
+    # set the audit configuration parameters listed above
+    @ok_to_fail
     @cluster(num_nodes=5)
     def test_audit_log(self):
         """
