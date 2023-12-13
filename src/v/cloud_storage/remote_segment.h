@@ -96,6 +96,9 @@ public:
     /// Get base offset of the segment (kafka offset)
     const kafka::offset get_base_kafka_offset() const;
 
+    /// Get segment size
+    size_t get_segment_size() const;
+
     ss::future<> stop();
 
     /// create an input stream _sharing_ the underlying file handle
