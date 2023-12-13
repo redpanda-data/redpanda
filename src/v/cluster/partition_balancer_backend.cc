@@ -38,12 +38,6 @@ namespace cluster {
 static constexpr std::chrono::seconds controller_stm_sync_timeout = 10s;
 static constexpr std::chrono::seconds add_move_cmd_timeout = 10s;
 
-class balancer_tick_aborted_exception final : public std::runtime_error {
-public:
-    explicit balancer_tick_aborted_exception(const std::string& msg)
-      : std::runtime_error(msg) {}
-};
-
 partition_balancer_backend::partition_balancer_backend(
   consensus_ptr raft0,
   ss::sharded<controller_stm>& controller_stm,
