@@ -37,11 +37,13 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/shared_future.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/defer.hh>
 
 #include <algorithm>
+#include <optional>
 
 namespace cluster {
 
@@ -599,15 +601,6 @@ archival_metadata_stm::archival_metadata_stm(
   , _cloud_storage_api(remote)
   , _feature_table(ft) {}
 
-archival_metadata_stm::~archival_metadata_stm() {
-    // Last replicate future is an internal barrier for sync operations. Ignore
-    // its value if we're shutting down to prevent seastar logging warnings for
-    // unhandled exception.
-    if (_last_replicate.has_value()) {
-        _last_replicate->ignore_ready_future();
-    }
-}
-
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
   ss::lowres_clock::time_point deadline,
@@ -696,9 +689,7 @@ archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
     // below. If replication failed, exit unsuccessfully.
 
     if (_last_replicate) {
-        auto fut = std::exchange(_last_replicate, std::nullopt).value();
-
-        if (!fut.available()) {
+        if (!_last_replicate->result.available()) {
             vlog(
               _logger.debug, "Waiting for ongoing replication before syncing");
         }
@@ -706,8 +697,8 @@ archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
         try {
             const auto before = model::timeout_clock::now();
 
-            const auto res = co_await ss::with_timeout(
-              before + timeout, std::move(fut));
+            const auto res = co_await _last_replicate->result.get_future(
+              before + timeout);
 
             const auto after = model::timeout_clock::now();
             // Update the timeout whille accounting for under/overflow.
@@ -721,11 +712,23 @@ archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
 
             timeout -= duration;
 
+            // If we've got this far it means that the _last_replicate future
+            // was resolved. If it resolved successfully, then we can continue.
+            // If it failed for any reason, it is safe to "forget" about it in
+            // only if the term changed. Otherwise we can't make any assumptions
+            // about its state.
+            // Stepping down (liveness) is guaranteed by the logic in the
+            // `do_replicate_commands` method.
+            if (res || _last_replicate->term < _raft->term()) {
+                _last_replicate = std::nullopt;
+            }
+
             if (!res) {
                 vlog(
                   _logger.warn,
                   "Replication failed for archival STM command: {}",
                   res.error());
+
                 co_return false;
             }
         } catch (const ss::timed_out_error&) {
@@ -806,8 +809,9 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
 
     const auto current_term = _insync_term;
 
-    ss::promise<result<raft::replicate_result>> replication_promise;
-    _last_replicate = replication_promise.get_future();
+    ss::shared_promise<result<raft::replicate_result>> replication_promise;
+    _last_replicate = last_replicate{
+      .term = current_term, .result = replication_promise.get_shared_future()};
 
     auto fut
       = _raft
