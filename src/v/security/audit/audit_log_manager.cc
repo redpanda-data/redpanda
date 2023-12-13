@@ -754,8 +754,8 @@ ss::future<> audit_log_manager::start() {
     }
     _probe = std::make_unique<audit_probe>();
     _probe->setup_metrics([this] {
-        return static_cast<double>(pending_events())
-               / static_cast<double>(_max_queue_size_bytes);
+        return 1.0
+               - (static_cast<double>(_queue_bytes_sem.available_units()) / static_cast<double>(_max_queue_size_bytes));
     });
     if (ss::this_shard_id() != client_shard_id) {
         co_return;
