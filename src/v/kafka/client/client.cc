@@ -150,7 +150,7 @@ ss::future<> client::apply(metadata_response res) {
         co_await _topic_cache.apply(std::move(res.data.topics));
         _controller = res.data.controller_id;
     } catch (const std::exception& ex) {
-        vlog(kclog.debug, "{}Failed to apply metadata request", *this);
+        vlog(kclog.debug, "{}Failed to apply metadata request: {}", *this, ex);
         throw;
     }
 }
