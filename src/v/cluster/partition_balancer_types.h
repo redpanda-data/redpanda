@@ -255,4 +255,10 @@ struct partition_balancer_overview_reply
     }
 };
 
+class balancer_tick_aborted_exception final : public std::runtime_error {
+public:
+    explicit balancer_tick_aborted_exception(const std::string& msg)
+      : std::runtime_error(msg) {}
+};
+
 } // namespace cluster
