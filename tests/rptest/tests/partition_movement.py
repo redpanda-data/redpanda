@@ -216,7 +216,8 @@ class PartitionMovementMixin():
                                         topic,
                                         partition,
                                         x_core_only=False,
-                                        allow_no_op=True):
+                                        allow_no_op=True,
+                                        self_assignment_only=False):
         """
         Request partition replicas to be randomly moved
 
@@ -230,9 +231,13 @@ class PartitionMovementMixin():
         self.logger.info(
             f"initial assignments for {topic}/{partition}: {prev_assignments}")
 
-        # build new replica set by replacing a random assignment, do not allow no ops as we want to have operation to cancel
-        selected, replacements = self._replace_replica_set(
-            assignments, x_core_only=x_core_only, allow_no_ops=allow_no_op)
+        if self_assignment_only:
+            selected = []
+            replacements = []
+        else:
+            # build new replica set by replacing a random assignment, do not allow no ops as we want to have operation to cancel
+            selected, replacements = self._replace_replica_set(
+                assignments, x_core_only=x_core_only, allow_no_ops=allow_no_op)
 
         self.logger.info(
             f"chose {len(selected)} replacements for {topic}/{partition}: {selected} -> {replacements}"

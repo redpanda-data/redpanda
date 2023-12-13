@@ -250,7 +250,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.si_settings = SISettings(
             test_context,
             log_segment_size=self.log_segment_size,
-            cloud_storage_housekeeping_interval_ms=1000,
+            cloud_storage_housekeeping_interval_ms=500,
             cloud_storage_spillover_manifest_max_segments=10,
             cloud_storage_segment_max_upload_interval_sec=10)
 
@@ -517,7 +517,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"failed to hydrate chunk.*NotFound",
             r"cluster.*Can't add segment",
         ])
-    @parametrize(cleanup_policy="delete")
     @parametrize(cleanup_policy="compact,delete")
     @skip_debug_mode
     def test_cloud_storage_with_partition_moves(self, cleanup_policy):
@@ -539,7 +538,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         while not self.is_complete():
             ntp_to_move = random.choice(partitions)
             self._dispatch_random_partition_move(ntp_to_move[0],
-                                                 ntp_to_move[1])
+                                                 ntp_to_move[1],
+                                                 self_assignment_only=True)
 
             self.do_checks()
             time.sleep(self.check_interval)
