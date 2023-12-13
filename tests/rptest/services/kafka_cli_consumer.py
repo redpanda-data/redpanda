@@ -82,9 +82,12 @@ class KafkaCliConsumer(BackgroundThreadService):
 
             for l in node.account.ssh_capture(' '.join(cmd)):
                 self._redpanda.logger.debug(l)
-                with self._lock:
-                    self._message_cnt += 1
-                    self._last_consumed = time.time()
+                # last line does not correspond to a consumed message and looks like
+                # "Processed a total of N messages"
+                if not l.startswith("Processed a total of "):
+                    with self._lock:
+                        self._message_cnt += 1
+                        self._last_consumed = time.time()
         except:
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown
