@@ -108,7 +108,7 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
             break;
         }
         if (run.maybe_add_segment(*it, max_segment_size)) {
-            // We have found a run whith the size close to max_segment_size
+            // We have found a run with the size close to max_segment_size
             // and can proceed early.
             break;
         }

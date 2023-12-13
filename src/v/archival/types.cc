@@ -146,10 +146,14 @@ bool adjacent_segment_run::maybe_add_segment(
                 ntp, s));
         }
     } else {
-        if (meta.size_bytes + s.size_bytes <= max_size) {
+        if (
+          meta.segment_term == s.segment_term
+          && meta.size_bytes + s.size_bytes <= max_size) {
+            // Cross term merging is disallowed. Because of that we need to stop
+            // if the term doesn't match the previous term.
             if (model::next_offset(meta.committed_offset) != s.base_offset) {
-                // In case if we're dealing with one of the old manifests with
-                // inconsistencies (overlapping offsets, etc).
+                // In case if we're dealing with one of the old manifests
+                // with inconsistencies (overlapping offsets, etc).
                 num_segments = 0;
                 meta = {};
                 segments.clear();
