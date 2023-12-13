@@ -187,4 +187,11 @@ void reupload_compacted_segments(
   const std::vector<in_memory_segment>& segments,
   bool truncate_segments = false);
 
+std::vector<in_memory_segment> replace_segments(
+  cloud_storage_fixture& fixture,
+  cloud_storage::partition_manifest& manifest,
+  model::offset base_offset,
+  model::offset_delta base_delta,
+  const std::vector<std::vector<batch_t>>& batches);
+
 } // namespace cloud_storage

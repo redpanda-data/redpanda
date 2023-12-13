@@ -55,20 +55,27 @@ public:
         bool slowdown = false;
     };
 
-    /// Set expectaitions on REST API calls that supposed to be made
+    /// Set expectations on REST API calls that supposed to be made
     /// Only the requests that described in this call will be possible
     /// to make. This method can only be called once per test run.
     ///
     /// \param expectations is a collection of access points that allow GET,
     /// PUT, and DELETE requests, each expectation has url and body. The body
     /// will be returned by GET call if it's set or trigger error if its null.
-    /// The expectations are statefull. If the body of the expectation was set
+    /// The expectations are stateful. If the body of the expectation was set
     /// to null but there was PUT call that sent some data, subsequent GET call
     /// will retrieve this data.
     void set_expectations_and_listen(
       const std::vector<expectation>& expectations,
       std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
       = std::nullopt);
+
+    /// Update expectations for the REST API.
+    void add_expectations(const std::vector<expectation>& expectations);
+    void remove_expectations(const std::vector<ss::sstring>& urls);
+
+    /// Get object from S3 or nullopt if it doesn't exist
+    std::optional<ss::sstring> get_object(const ss::sstring& url) const;
 
     /// Access all http requests ordered by time
     const std::vector<http_test_utils::request_info>& get_requests() const;
@@ -98,6 +105,9 @@ private:
     ss::socket_address _server_addr;
     ss::shared_ptr<ss::httpd::http_server_control> _server;
 
+    struct content_handler;
+    friend struct content_handler;
+    ss::shared_ptr<content_handler> _content_handler;
     std::unique_ptr<ss::httpd::handler_base> _handler;
     /// Contains saved requests
     std::vector<http_test_utils::request_info> _requests;
