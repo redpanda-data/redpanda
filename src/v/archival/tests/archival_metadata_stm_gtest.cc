@@ -266,6 +266,17 @@ TEST_F_CORO(
       });
     ASSERT_FALSE_CORO(sync_result_before_replication);
 
+    // Subsequent calls to sync should fail too.
+    auto second_sync_result_before_replication = co_await with_leader(
+      10s, [this, &plagued_node](raft::raft_node_instance& node) mutable {
+          if (node.get_vnode() != plagued_node) {
+              throw std::runtime_error{"Leadership moved"};
+          }
+
+          return get_leader_stm().sync(10ms);
+      });
+    ASSERT_FALSE_CORO(second_sync_result_before_replication);
+
     // Allow replication to progress.
     may_resume_append.set_value();
 
