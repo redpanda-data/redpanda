@@ -1130,7 +1130,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                             "resource_type": "topic",
                             "resource_name": "test",
                             "pattern_type": "literal",
-                            "acl_principal": "{type user name test}",
+                            "acl_principal": "type {user} name {test}",
                             "acl_host": "{{any_host}}",
                             "acl_operation": "all",
                             "acl_permission": "allow"
@@ -1149,7 +1149,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                         "data": {
                             "resource_type": "topic",
                             "resource_name": "test",
-                            "acl_principal": "{type user name test}",
+                            "acl_principal": "type {user} name {test}",
                             "acl_operation": "all",
                             "acl_permission": "allow"
                         }
