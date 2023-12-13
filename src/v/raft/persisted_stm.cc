@@ -298,6 +298,7 @@ kvstore_backed_stm_snapshot::load_snapshot() {
     }
     auto thin_snapshot = serde::from_iobuf<stm_thin_snapshot>(
       std::move(*snapshot_blob));
+    vlog(_log.info, "AAA LOAD SNAP {} o:{}", _ntp, thin_snapshot.offset);
     stm_snapshot snapshot;
     snapshot.header = raft::stm_snapshot_header{
       .version = stm_snapshot_version,
@@ -571,6 +572,7 @@ ss::future<bool> persisted_stm<T>::wait_no_throw(
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::start() {
+    vlog(_log.info, "AAA PSTM START do:{}", _raft->dirty_offset());
     if (_raft->dirty_offset() == model::offset{}) {
         co_await _snapshot_backend.perform_initial_cleanup();
     }
