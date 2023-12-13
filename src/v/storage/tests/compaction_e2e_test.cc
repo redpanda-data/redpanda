@@ -113,7 +113,10 @@ public:
     }
 
     ss::future<> generate_data(
-      size_t num_segments, size_t cardinality, size_t records_per_segment) {
+      size_t num_segments,
+      size_t cardinality,
+      size_t batches_per_segment,
+      size_t records_per_batch = 1) {
         tests::kafka_produce_transport producer(co_await make_kafka_client());
         co_await producer.start();
 
@@ -121,15 +124,15 @@ public:
         size_t val_count = 0;
         absl::btree_map<ss::sstring, ss::sstring> latest_kv;
         for (size_t i = 0; i < num_segments; i++) {
-            for (int r = 0; r < records_per_segment; r++) {
+            for (int r = 0; r < batches_per_segment; r++) {
                 auto kvs = tests::kv_t::sequence(
-                  val_count % cardinality, 1, val_count);
+                  val_count, records_per_batch, val_count, cardinality);
                 for (const auto& [k, v] : kvs) {
                     latest_kv[k] = v;
                 }
                 co_await producer.produce_to_partition(
                   topic_name, model::partition_id(0), std::move(kvs));
-                val_count++;
+                val_count += records_per_batch;
             }
             co_await log->flush();
             co_await log->force_roll(ss::default_priority_class());
