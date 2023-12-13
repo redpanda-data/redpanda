@@ -52,7 +52,7 @@ std::optional<raft::stm_snapshot_header> read_snapshot_header(
 }
 
 ss::sstring
-stm_snapshot_key(const ss::sstring& snapshot_name, const model::ntp& ntp) {
+stm_snapshot_key(std::string_view snapshot_name, const model::ntp& ntp) {
     return ssx::sformat("{}/{}", snapshot_name, ntp);
 }
 
@@ -320,6 +320,13 @@ kvstore_backed_stm_snapshot::persist_local_snapshot(stm_snapshot&& snapshot) {
 
 ss::future<> kvstore_backed_stm_snapshot::remove_persistent_state() {
     co_await _kvstore.remove(storage::kvstore::key_space::stms, snapshot_key());
+}
+
+ss::future<> kvstore_backed_stm_snapshot::remove_persistent_state(
+  storage::kvstore& kvs, std::string_view name, const model::ntp& ntp) {
+    auto key_str = stm_snapshot_key(name, ntp);
+    co_await kvs.remove(
+      storage::kvstore::key_space::stms, bytes{key_str.begin(), key_str.end()});
 }
 
 size_t kvstore_backed_stm_snapshot::get_snapshot_size() const {

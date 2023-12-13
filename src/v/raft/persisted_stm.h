@@ -114,6 +114,9 @@ public:
     ss::future<> remove_persistent_state();
     size_t get_snapshot_size() const;
 
+    static ss::future<> remove_persistent_state(
+      storage::kvstore&, std::string_view name, const model::ntp&);
+
 private:
     bytes snapshot_key() const;
 
