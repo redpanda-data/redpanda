@@ -239,8 +239,10 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
         no_sink_topics.emplace(topic);
     }
     const size_t max_transforms
-      = config::shard_local_cfg().wasm_per_core_memory_reservation.value()
-        / config::shard_local_cfg().wasm_per_function_memory_limit.value();
+      = config::shard_local_cfg()
+          .data_transforms_per_core_memory_reservation.value()
+        / config::shard_local_cfg()
+            .data_transforms_per_function_memory_limit.value();
 
     validator v(_topics, _table, std::move(no_sink_topics), max_transforms);
     return v.validate_mutation(cmd);

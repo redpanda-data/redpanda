@@ -1182,15 +1182,15 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::transform_count_limit_exceeded: {
             const size_t max_transforms
               = config::shard_local_cfg()
-                  .wasm_per_core_memory_reservation.value()
+                  .data_transforms_per_core_memory_reservation.value()
                 / config::shard_local_cfg()
-                    .wasm_per_function_memory_limit.value();
+                    .data_transforms_per_function_memory_limit.value();
             throw ss::httpd::bad_request_exception(ss::format(
               "The limit of transforms has been reached ({}), more "
               "memory must be configured via {}",
               max_transforms,
               config::shard_local_cfg()
-                .wasm_per_core_memory_reservation.name()));
+                .data_transforms_per_core_memory_reservation.name()));
         }
         default:
             throw ss::httpd::server_error_exception(

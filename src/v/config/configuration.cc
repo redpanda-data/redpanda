@@ -159,33 +159,35 @@ configuration::configuration()
       "The interval at which Data Transforms commits progress.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       3s)
-  , wasm_per_core_memory_reservation(
+  , data_transforms_per_core_memory_reservation(
       *this,
-      "wasm_per_core_memory_reservation",
-      "The amount of memory to reserve per core for all WebAssembly Virtual "
-      "Machines. Memory is reserved on boot. The maximum number of functions "
-      "that can be deployed to a cluster is equal to "
-      "wasm_per_core_memory_reservation / "
-      "wasm_per_function_memory_limit",
+      "data_transforms_per_core_memory_reservation",
+      "The amount of memory to reserve per core for Data Transform WebAssembly "
+      "Virtual Machines. Memory is reserved on boot. The maximum number of "
+      "functions that can be deployed to a cluster is equal to "
+      "data_transforms_per_core_memory_reservation / "
+      "data_transforms_per_function_memory_limit",
       {
         .needs_restart = needs_restart::yes,
         .example = std::to_string(25_MiB),
         .visibility = visibility::user,
+        .aliases = {"wasm_per_core_memory_reservation"},
       },
       20_MiB,
       {.min = 64_KiB, .max = 100_GiB})
-  , wasm_per_function_memory_limit(
+  , data_transforms_per_function_memory_limit(
       *this,
-      "wasm_per_function_memory_limit",
-      "The amount of memory to give an instance of a WebAssembly Virtual "
-      "Machine. The maximum number of functions "
+      "data_transforms_per_function_memory_limit",
+      "The amount of memory to give an instance of a Data Transform "
+      "WebAssembly Virtual Machine. The maximum number of functions "
       "that can be deployed to a cluster is equal to "
-      "wasm_per_core_memory_reservation / "
-      "wasm_per_function_memory_limit",
+      "data_transforms_per_core_memory_reservation / "
+      "data_transforms_per_function_memory_limit",
       {
         .needs_restart = needs_restart::yes,
         .example = std::to_string(5_MiB),
         .visibility = visibility::user,
+        .aliases = {"wasm_per_function_memory_limit"},
       },
       2_MiB,
       // WebAssembly uses 64KiB pages and has a 32bit address space
