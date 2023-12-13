@@ -937,7 +937,7 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
             s3_snapshot = BucketView(self.redpanda, topics=self.topics)
             manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name,
                                                     0)
-            return "segments" in manifest
+            return len(manifest.get("segments", {})) > 0
 
         wait_until(manifest_has_segments, timeout_sec=10, backoff_sec=1)
 
