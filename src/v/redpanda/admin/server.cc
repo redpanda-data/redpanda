@@ -225,6 +225,26 @@ security::audit::authentication_event_options make_authn_event_options(
       = {.name = username, .type_id = security::audit::user::type::unknown},
       .error_reason = reason};
 }
+
+bool escape_hatch_request(ss::httpd::const_req req) {
+    /// The following "break glass" mechanism allows the cluster config
+    /// API to be hit in the case the user desires to disable auditing
+    /// so the cluster can continue to make progress in the event auditing
+    /// is not working as expected.
+    static const auto allowed_requests = std::to_array(
+      {ss::httpd::cluster_config_json::get_cluster_config_status,
+       ss::httpd::cluster_config_json::get_cluster_config_schema,
+       ss::httpd::cluster_config_json::patch_cluster_config});
+
+    return std::any_of(
+      allowed_requests.cbegin(),
+      allowed_requests.cend(),
+      [method = req._method,
+       url = req.get_url()](const ss::httpd::path_description& d) {
+          return d.path == url
+                 && d.operations.method == ss::httpd::str2type(method);
+      });
+}
 } // namespace
 
 model::ntp admin_server::parse_ntp_from_request(
@@ -658,24 +678,7 @@ void admin_server::audit_authz(
       bool(authorized),
       reason);
     if (!success) {
-        ///
-        /// The following "break glass" mechanism allows the cluster config
-        /// API to be hit in the case the user desires to disable auditing
-        /// so the cluster can continue to make progress in the event auditing
-        /// is not working as expected.
-        static const auto allowed_requests = std::to_array(
-          {ss::httpd::cluster_config_json::get_cluster_config_status,
-           ss::httpd::cluster_config_json::get_cluster_config_schema,
-           ss::httpd::cluster_config_json::patch_cluster_config});
-
-        bool is_allowed = std::any_of(
-          allowed_requests.cbegin(),
-          allowed_requests.cend(),
-          [method = req._method,
-           url = req.get_url()](const ss::httpd::path_description& d) {
-              return d.path == url
-                     && d.operations.method == ss::httpd::str2type(method);
-          });
+        bool is_allowed = escape_hatch_request(req);
 
         if (!is_allowed) {
             vlog(
@@ -689,7 +692,8 @@ void admin_server::audit_authz(
 
         vlog(
           adminlog.error,
-          "Request to modify or view cluster configuration was not audited due "
+          "Request to authorize user to modify or view cluster configuration "
+          "was not audited due "
           "to audit queues being full");
     }
 }
@@ -713,13 +717,23 @@ void admin_server::do_audit_authn(
     auto success = _audit_mgr.local().enqueue_authn_event(std::move(options));
 
     if (!success) {
+        bool is_allowed = escape_hatch_request(req);
+
+        if (!is_allowed) {
+            vlog(
+              adminlog.error,
+              "Failed to audit authentication request for endpoint: {}",
+              req.format_url());
+            throw ss::httpd::base_exception(
+              "Failed to audit authentication request",
+              ss::http::reply::status_type::service_unavailable);
+        }
+
         vlog(
           adminlog.error,
-          "Failed to audit authentication request for endpoint: {}",
-          req.format_url());
-        throw ss::httpd::base_exception(
-          "Failed to audit authentication request",
-          ss::http::reply::status_type::service_unavailable);
+          "Request authenticate user to modify or view cluster configuration "
+          "was not audited due "
+          "to audit queues being full");
     }
 }
 
