@@ -14,6 +14,7 @@ package factory
 
 import (
 	"runtime"
+	"sort"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
@@ -120,6 +121,7 @@ func AvailableTuners() []string {
 	for key := range allTuners {
 		keys = append(keys, key)
 	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	return keys
 }
 
