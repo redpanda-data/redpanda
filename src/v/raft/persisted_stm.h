@@ -201,6 +201,14 @@ public:
         return raft::state_machine_base::last_applied_offset();
     }
 
+    size_t get_local_state_size() const final {
+        return get_local_snapshot_size();
+    }
+
+    ss::future<> remove_local_state() final {
+        return remove_persistent_state();
+    }
+
     ss::future<bool> wait_no_throw(
       model::offset offset,
       model::timeout_clock::time_point,

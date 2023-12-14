@@ -107,6 +107,9 @@ struct simple_kv : public raft::state_machine_base {
         co_return;
     };
 
+    size_t get_local_state_size() const final { return 0; }
+    ss::future<> remove_local_state() final { co_return; }
+
     ss::future<iobuf>
     take_snapshot(model::offset last_included_offset) override {
         state_t inc_state;

@@ -73,6 +73,18 @@ public:
         return model::prev_offset(_next);
     }
 
+    /**
+     * Some of the state machines may persist additional local state, to account
+     * for it we provide a method that should return size of local state in
+     * bytes.
+     */
+    virtual size_t get_local_state_size() const = 0;
+    /**
+     * Some of the state machines may persist additional local state. This
+     * method is used by stm manager to clean the persistent state of the stm
+     */
+    virtual ss::future<> remove_local_state() = 0;
+
 protected:
     /**
      *  Lifecycle is managed by state_machine_manager
