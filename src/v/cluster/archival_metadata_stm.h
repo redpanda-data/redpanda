@@ -111,8 +111,7 @@ public:
       raft::consensus*,
       cloud_storage::remote& remote,
       features::feature_table&,
-      ss::logger& logger,
-      ss::shared_ptr<util::mem_tracker> partition_mem_tracker = nullptr);
+      ss::logger& logger);
 
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
@@ -322,6 +321,7 @@ private:
 
     mutex _lock;
 
+    ss::shared_ptr<util::mem_tracker> _mem_tracker;
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 
     // The offset of the last mark_clean_cmd applied: if the manifest is

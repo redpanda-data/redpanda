@@ -502,7 +502,6 @@ private:
       local_timequery(storage::timequery_config);
 
     consensus_ptr _raft;
-    ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;

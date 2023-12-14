@@ -48,8 +48,6 @@ partition::partition(
   storage::kvstore& kvstore,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(std::move(r))
-  , _partition_mem_tracker(
-      ss::make_shared<util::mem_tracker>(_raft->ntp().path()))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _feature_table(feature_table)
@@ -435,8 +433,7 @@ ss::future<> partition::start(
           _raft.get(),
           _cloud_storage_api.local(),
           _feature_table.local(),
-          clusterlog,
-          _partition_mem_tracker);
+          clusterlog);
         _raft->log()->stm_manager()->add_stm(_archival_meta_stm);
 
         if (_cloud_storage_cache.local_is_initialized()) {

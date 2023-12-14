@@ -590,14 +590,12 @@ archival_metadata_stm::archival_metadata_stm(
   raft::consensus* raft,
   cloud_storage::remote& remote,
   features::feature_table& ft,
-  ss::logger& logger,
-  ss::shared_ptr<util::mem_tracker> partition_mem_tracker)
+  ss::logger& logger)
   : raft::persisted_stm<>(archival_stm_snapshot, logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
+  , _mem_tracker(ss::make_shared<util::mem_tracker>(raft->ntp().path()))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
-      raft->ntp(),
-      raft->log_config().get_initial_revision(),
-      partition_mem_tracker))
+      raft->ntp(), raft->log_config().get_initial_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft) {}
 
