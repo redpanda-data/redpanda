@@ -14,6 +14,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/state_machine_registry.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -24,6 +25,7 @@
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -104,7 +106,7 @@ class archival_metadata_stm final : public raft::persisted_stm<> {
     friend class details::archival_metadata_stm_accessor;
 
 public:
-    static constexpr const char* name = "archival_metadata_stm";
+    static constexpr std::string_view name = "archival_metadata_stm";
     friend class command_batch_builder;
 
     explicit archival_metadata_stm(
@@ -341,6 +343,22 @@ private:
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
     ss::abort_source _download_as;
+};
+
+class archival_metadata_stm_factory : public state_machine_factory {
+public:
+    archival_metadata_stm_factory(
+      bool cloud_storage_enabled,
+      ss::sharded<cloud_storage::remote>&,
+      ss::sharded<features::feature_table>&);
+
+    bool is_applicable_for(const storage::ntp_config&) const final;
+    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+
+private:
+    bool _cloud_storage_enabled;
+    ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 } // namespace cluster

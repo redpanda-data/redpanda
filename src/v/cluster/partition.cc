@@ -424,60 +424,55 @@ ss::future<> partition::start(
     raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
       _raft.get());
 
-    // Construct cloud_storage read path (remote_partition)
-    if (
-      config::shard_local_cfg().cloud_storage_enabled()
-      && _cloud_storage_api.local_is_initialized()
-      && _raft->ntp().ns == model::kafka_namespace) {
-        _archival_meta_stm = builder.create_stm<cluster::archival_metadata_stm>(
-          _raft.get(),
-          _cloud_storage_api.local(),
-          _feature_table.local(),
-          clusterlog);
-        _raft->log()->stm_manager()->add_stm(_archival_meta_stm);
+    co_await _raft->start(std::move(builder));
+    // store rm_stm pointer in partition as this is commonly used stm
+    _rm_stm = _raft->stm_manager()->get<cluster::rm_stm>();
+    _log_eviction_stm = _raft->stm_manager()->get<cluster::log_eviction_stm>();
+    // store _archival_meta_stm pointer in partition as this is commonly used
+    // stm (in future we may decide to remove it from partition)
+    _archival_meta_stm
+      = _raft->stm_manager()->get<cluster::archival_metadata_stm>();
 
-        if (_cloud_storage_cache.local_is_initialized()) {
-            const auto& bucket_config
-              = cloud_storage::configuration::get_bucket_config();
-            auto bucket = bucket_config.value();
-            if (
-              _read_replica_bucket
-              && _raft->log_config().is_read_replica_mode_enabled()) {
-                vlog(
-                  clusterlog.info,
-                  "{} Remote topic bucket is {}",
-                  _raft->ntp(),
-                  _read_replica_bucket);
-                // Override the bucket for read replicas
-                bucket = _read_replica_bucket;
-            }
-            if (!bucket) {
-                throw std::runtime_error{fmt::format(
-                  "configuration property {} is not set",
-                  bucket_config.name())};
-            }
-
-            _cloud_storage_manifest_view
-              = ss::make_shared<cloud_storage::async_manifest_view>(
-                _cloud_storage_api,
-                _cloud_storage_cache,
-                _archival_meta_stm->manifest(),
-                cloud_storage_clients::bucket_name{*bucket});
-
-            _cloud_storage_partition
-              = ss::make_shared<cloud_storage::remote_partition>(
-                _cloud_storage_manifest_view,
-                _cloud_storage_api.local(),
-                _cloud_storage_cache.local(),
-                cloud_storage_clients::bucket_name{*bucket},
-                *_cloud_storage_probe);
-        }
-    }
-
-    // Start the probe after the partition is fully initialised, but before
-    // starting everything.
+    // Start the probe after the partition is fully initialised
     _probe.setup_metrics(ntp);
 
+    // Construct cloud_storage read path (remote_partition)
+
+    if (_archival_meta_stm && _cloud_storage_cache.local_is_initialized()) {
+        const auto& bucket_config
+          = cloud_storage::configuration::get_bucket_config();
+        auto bucket = bucket_config.value();
+        if (
+          _read_replica_bucket
+          && _raft->log_config().is_read_replica_mode_enabled()) {
+            vlog(
+              clusterlog.info,
+              "{} Remote topic bucket is {}",
+              _raft->ntp(),
+              _read_replica_bucket);
+            // Override the bucket for read replicas
+            bucket = _read_replica_bucket;
+        }
+        if (!bucket) {
+            throw std::runtime_error{fmt::format(
+              "configuration property {} is not set", bucket_config.name())};
+        }
+
+        _cloud_storage_manifest_view
+          = ss::make_shared<cloud_storage::async_manifest_view>(
+            _cloud_storage_api,
+            _cloud_storage_cache,
+            _archival_meta_stm->manifest(),
+            cloud_storage_clients::bucket_name{*bucket});
+
+        _cloud_storage_partition
+          = ss::make_shared<cloud_storage::remote_partition>(
+            _cloud_storage_manifest_view,
+            _cloud_storage_api.local(),
+            _cloud_storage_cache.local(),
+            cloud_storage_clients::bucket_name{*bucket},
+            *_cloud_storage_probe);
+    }
     if (_cloud_storage_manifest_view) {
         co_await _cloud_storage_manifest_view->start();
     }
@@ -498,13 +493,6 @@ ss::future<> partition::start(
             co_await _archiver->start();
         }
     }
-
-    co_await _raft->start(std::move(builder));
-    // store rm_stm pointer in partition as this is commonly used stm
-    _rm_stm = _raft->stm_manager()->get<cluster::rm_stm>(
-      rm_stm_factory::stm_name);
-    _raft->stm_manager()->get<cluster::log_eviction_stm>(
-      cluster::log_eviction_stm_factory::stm_name);
 }
 
 ss::future<> partition::stop() {

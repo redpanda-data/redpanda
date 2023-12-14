@@ -2471,6 +2471,10 @@ void application::start_runtime_services(
             feature_table);
           pm.register_factory<cluster::log_eviction_stm_factory>(
             storage.local().kvs());
+          pm.register_factory<cluster::archival_metadata_stm_factory>(
+            config::shard_local_cfg().cloud_storage_enabled(),
+            cloud_storage_api,
+            feature_table);
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
