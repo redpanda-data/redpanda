@@ -91,7 +91,7 @@ parse_rules(const std::vector<ss::sstring>& unparsed_rules) {
             if (conv_rc.ec != std::errc()) {
                 throw std::runtime_error(
                   "Invalid rule - Invalid value for number of components: "
-                  + num_components_str.as_string());
+                  + std::string(num_components_str));
             }
             gssapi_rule::case_change_operation case_change
               = gssapi_rule::case_change_operation::noop;
