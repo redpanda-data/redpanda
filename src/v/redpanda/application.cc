@@ -54,6 +54,7 @@
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
+#include "cluster/tm_stm.h"
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topic_recovery_service.h"
 #include "cluster/topic_recovery_status_frontend.h"
@@ -2452,6 +2453,12 @@ void application::start_runtime_services(
     node_status_backend.invoke_on_all(&cluster::node_status_backend::start)
       .get();
     syschecks::systemd_message("Starting the partition manager").get();
+    partition_manager
+      .invoke_on_all([this](cluster::partition_manager& pm) {
+          pm.register_factory<cluster::tm_stm_factory>(
+            tm_stm_cache_manager, feature_table);
+      })
+      .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
 
     syschecks::systemd_message("Starting Raft group manager").get();

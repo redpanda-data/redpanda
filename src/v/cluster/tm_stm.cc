@@ -9,6 +9,7 @@
 
 #include "cluster/tm_stm.h"
 
+#include "cluster/tm_stm_cache_manager.h"
 #include "cluster/types.h"
 #include "model/record.h"
 #include "raft/errc.h"
@@ -1061,6 +1062,28 @@ ss::future<> tm_stm::apply_raft_snapshot(const iobuf&) {
           _pid_tx_id.clear();
           return ss::now();
       });
+}
+
+tm_stm_factory::tm_stm_factory(
+  ss::sharded<tm_stm_cache_manager>& tm_stm_cache_manager,
+  ss::sharded<features::feature_table>& feature_table)
+  : _tm_stm_cache_manager(tm_stm_cache_manager)
+  , _feature_table(feature_table) {}
+
+bool tm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
+    auto const& ntp = cfg.ntp();
+    return ntp.ns == model::kafka_internal_namespace
+           && ntp.tp.topic == model::tx_manager_topic;
+}
+
+void tm_stm_factory::create(
+  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+    auto tm_stm = builder.create_stm<cluster::tm_stm>(
+      clusterlog,
+      raft,
+      _feature_table,
+      _tm_stm_cache_manager.local().get(raft->ntp().tp.partition));
+    raft->log()->stm_manager()->add_stm(tm_stm);
 }
 
 } // namespace cluster

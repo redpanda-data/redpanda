@@ -23,6 +23,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
 
@@ -35,11 +36,6 @@ namespace {
 bool is_id_allocator_topic(model::ntp ntp) {
     return ntp.ns == model::kafka_internal_namespace
            && ntp.tp.topic == model::id_allocator_topic;
-}
-
-bool is_tx_manager_topic(const model::ntp& ntp) {
-    return ntp.ns == model::kafka_internal_namespace
-           && ntp.tp.topic == model::tx_manager_topic;
 }
 
 bool is_transform_offsets_topic(const model::ntp& ntp) {
@@ -443,17 +439,6 @@ ss::future<> partition::start(
     if (is_id_allocator_topic(ntp)) {
         _id_allocator_stm = builder.create_stm<cluster::id_allocator_stm>(
           clusterlog, _raft.get());
-        co_return co_await _raft->start(std::move(builder));
-    }
-
-    if (is_tx_manager_topic(_raft->ntp()) && _is_tx_enabled) {
-        _tm_stm = builder.create_stm<cluster::tm_stm>(
-          ss::sstring(tm_stm_name),
-          clusterlog,
-          _raft.get(),
-          _feature_table,
-          _tm_stm_cache_manager.local().get(_raft->ntp().tp.partition));
-        _raft->log()->stm_manager()->add_stm(_tm_stm);
         co_return co_await _raft->start(std::move(builder));
     }
 
@@ -1083,8 +1068,8 @@ partition::transfer_leadership(transfer_leadership_request req) {
     ss::basic_rwlock<>::holder stm_prepare_lock;
     if (_rm_stm) {
         stm_prepare_lock = co_await _rm_stm->prepare_transfer_leadership();
-    } else if (_tm_stm) {
-        stm_prepare_lock = co_await _tm_stm->prepare_transfer_leadership();
+    } else if (auto stm = tm_stm(); stm) {
+        stm_prepare_lock = co_await stm->prepare_transfer_leadership();
     }
 
     co_return co_await _raft->do_transfer_leadership(req);

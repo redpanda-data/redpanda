@@ -11,7 +11,9 @@
 
 #pragma once
 
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/state_machine_registry.h"
 #include "cluster/tm_stm_cache.h"
 #include "cluster/tx_hash_ranges.h"
 #include "config/configuration.h"
@@ -19,6 +21,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "raft/consensus.h"
@@ -27,16 +30,20 @@
 #include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
+#include "storage/ntp_config.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
 #include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
+
+#include <seastar/core/sharded.hh>
 
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <compare>
 #include <cstdint>
+#include <string_view>
 
 namespace cluster {
 
@@ -115,7 +122,7 @@ public:
  */
 class tm_stm final : public raft::persisted_stm<> {
 public:
-    static constexpr const char* name = "tm_stm";
+    static constexpr std::string_view name = "tm_stm";
     using clock_type = ss::lowres_system_clock;
 
     enum op_status {
@@ -426,6 +433,22 @@ inline txlock_unit::~txlock_unit() noexcept {
         _stm = nullptr;
     }
 }
+
+class tm_stm_factory : public state_machine_factory {
+public:
+    tm_stm_factory(
+      ss::sharded<tm_stm_cache_manager>&,
+      ss::sharded<features::feature_table>&);
+    bool is_applicable_for(const storage::ntp_config& raft) const final;
+
+    void create(
+      raft::state_machine_manager_builder& builder,
+      raft::consensus* raft) final;
+
+private:
+    ss::sharded<tm_stm_cache_manager>& _tm_stm_cache_manager;
+    ss::sharded<features::feature_table>& _feature_table;
+};
 
 } // namespace cluster
 

@@ -310,7 +310,9 @@ public:
         return _raft->log()->config();
     }
 
-    ss::shared_ptr<cluster::tm_stm> tm_stm() { return _tm_stm; }
+    ss::shared_ptr<cluster::tm_stm> tm_stm() {
+        return _raft->stm_manager()->get<cluster::tm_stm>();
+    }
 
     ss::future<fragmented_vector<rm_stm::tx_range>>
     aborted_transactions(model::offset from, model::offset to) {
@@ -513,7 +515,6 @@ private:
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
-    ss::shared_ptr<cluster::tm_stm> _tm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::shared_ptr<transform_offsets_stm_t> _transform_offsets_stm;
     ss::abort_source _as;
