@@ -10,6 +10,7 @@
 #include "cluster/log_eviction_stm.h"
 
 #include "bytes/iostream.h"
+#include "cluster/logger.h"
 #include "cluster/prefix_truncate_record.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
@@ -414,6 +415,20 @@ ss::future<> log_eviction_stm::ensure_local_snapshot_exists(model::offset) {
     /// This class drives eviction, therefore it cannot wait until its own
     /// snapshot exists until writing a snapshot
     return ss::now();
+}
+
+log_eviction_stm_factory::log_eviction_stm_factory(storage::kvstore& kvstore)
+  : _kvstore(kvstore) {}
+
+bool log_eviction_stm_factory::is_applicable_for(
+  const storage::ntp_config& cfg) const {
+    return !storage::deletion_exempt(cfg.ntp());
+}
+
+void log_eviction_stm_factory::create(
+  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+    auto stm = builder.create_stm<log_eviction_stm>(raft, clusterlog, _kvstore);
+    raft->log()->stm_manager()->add_stm(stm);
 }
 
 } // namespace cluster

@@ -10,12 +10,14 @@
  */
 
 #pragma once
+#include "cluster/state_machine_registry.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "outcome.h"
 #include "raft/fwd.h"
 #include "raft/persisted_stm.h"
 #include "seastarx.h"
+#include "storage/kvstore.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
 
@@ -46,7 +48,7 @@ class consensus;
 class log_eviction_stm
   : public raft::persisted_stm<raft::kvstore_backed_stm_snapshot> {
 public:
-    static constexpr const char* name = "log_eviction_stm";
+    static constexpr std::string_view name = "log_eviction_stm";
 
     using offset_result = result<model::offset, std::error_code>;
     log_eviction_stm(raft::consensus*, ss::logger&, storage::kvstore&);
@@ -145,6 +147,20 @@ private:
 
     // Should be signaled every time either of the above offsets are updated.
     ss::condition_variable _has_pending_truncation;
+};
+
+class log_eviction_stm_factory : public state_machine_factory {
+public:
+    explicit log_eviction_stm_factory(storage::kvstore&);
+
+    bool is_applicable_for(const storage::ntp_config& cfg) const final;
+
+    void create(
+      raft::state_machine_manager_builder& builder,
+      raft::consensus* raft) final;
+
+private:
+    storage::kvstore& _kvstore;
 };
 
 } // namespace cluster

@@ -506,6 +506,8 @@ ss::future<> partition::start(
     // store rm_stm pointer in partition as this is commonly used stm
     _rm_stm = _raft->stm_manager()->get<cluster::rm_stm>(
       rm_stm_factory::stm_name);
+    _raft->stm_manager()->get<cluster::log_eviction_stm>(
+      cluster::log_eviction_stm_factory::stm_name);
 }
 
 ss::future<> partition::stop() {

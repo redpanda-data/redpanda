@@ -2469,6 +2469,8 @@ void application::start_runtime_services(
             tx_gateway_frontend,
             producer_manager,
             feature_table);
+          pm.register_factory<cluster::log_eviction_stm_factory>(
+            storage.local().kvs());
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
