@@ -105,12 +105,20 @@ configuration::configuration()
       "Interval (in milliseconds) for consumer request timeout",
       {},
       100ms)
+  , consumer_request_min_bytes(
+      *this,
+      "consumer_request_min_bytes",
+      "Min bytes to fetch per request",
+      {},
+      1,
+      {.min = 0})
   , consumer_request_max_bytes(
       *this,
       "consumer_request_max_bytes",
       "Max bytes to fetch per request",
       {},
-      1_MiB)
+      1_MiB,
+      {.min = 0})
   , consumer_session_timeout(
       *this,
       "consumer_session_timeout_ms",

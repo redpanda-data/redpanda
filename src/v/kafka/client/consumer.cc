@@ -443,7 +443,7 @@ ss::future<fetch_response> consumer::fetch(
                               .data = {
                               .replica_id = consumer_replica_id,
                               .max_wait_ms = timeout,
-                              .min_bytes = 1,
+                              .min_bytes = _config.consumer_request_min_bytes,
                               .max_bytes = max_bytes.value_or(
                                 _config.consumer_request_max_bytes),
                               .isolation_level = model::isolation_level::

@@ -150,7 +150,7 @@ ss::future<> client::apply(metadata_response res) {
         co_await _topic_cache.apply(std::move(res.data.topics));
         _controller = res.data.controller_id;
     } catch (const std::exception& ex) {
-        vlog(kclog.debug, "{}Failed to apply metadata request", *this);
+        vlog(kclog.debug, "{}Failed to apply metadata request: {}", *this, ex);
         throw;
     }
 }
@@ -386,9 +386,10 @@ ss::future<fetch_response> client::fetch_partition(
   model::offset offset,
   int32_t max_bytes,
   std::chrono::milliseconds timeout) {
+    const auto min_bytes = _config.consumer_request_min_bytes();
     auto build_request =
-      [offset, max_bytes, timeout](model::topic_partition& tp) {
-          return make_fetch_request(tp, offset, max_bytes, timeout);
+      [offset, min_bytes, max_bytes, timeout](model::topic_partition& tp) {
+          return make_fetch_request(tp, offset, min_bytes, max_bytes, timeout);
       };
 
     return ss::do_with(
