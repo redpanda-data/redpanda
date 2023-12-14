@@ -16,6 +16,9 @@
 
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/util/defer.hh>
+
+#include <boost/test/unit_test.hpp>
 
 #include <optional>
 
@@ -36,6 +39,59 @@ FIXTURE_TEST(kitchen_sink, log_builder_fixture) {
     BOOST_TEST(stats.seg_count == 3);
     BOOST_TEST(stats.batch_count == 7);
     BOOST_TEST(stats.record_count >= 105);
+}
+
+FIXTURE_TEST(size_bytes_after_offset, log_builder_fixture) {
+    using namespace storage;
+    // see issues/15417, this test segfaults on the first block and returns
+    // wrong results on the rest
+
+    BOOST_TEST_CONTEXT("empty log (sanity check)") {
+        b | start();
+        auto _ = ss::defer([&] { b | stop(); });
+        BOOST_CHECK_EQUAL(get_stats().get().seg_count, 0);
+        BOOST_CHECK_EQUAL(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset::min()),
+          0);
+        BOOST_CHECK_EQUAL(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset{0}), 0);
+        BOOST_CHECK_EQUAL(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset::max()),
+          0);
+    }
+
+    BOOST_TEST_CONTEXT("one segment") {
+        b | start() | add_segment(0) | add_random_batch(0, 100);
+        auto _ = ss::defer([&] { b | stop(); });
+
+        BOOST_CHECK_EQUAL(get_stats().get().seg_count, 1);
+        BOOST_CHECK_GT(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset::min()),
+          0);
+        BOOST_CHECK_GT(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset{0}), 0);
+        BOOST_CHECK_EQUAL(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset::max()),
+          0);
+    }
+
+    BOOST_TEST_CONTEXT("more than one segment") {
+        b | start() | add_segment(0) | add_random_batch(0, 100)
+          | add_segment(100) | add_random_batch(100, 100);
+        auto _ = ss::defer([&] { b | stop(); });
+
+        BOOST_CHECK_EQUAL(get_stats().get().seg_count, 2);
+        BOOST_CHECK_GT(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset::min()),
+          0);
+        BOOST_CHECK_GT(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset{0}), 0);
+        BOOST_CHECK_GT(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset{100}), 0);
+        BOOST_CHECK_EQUAL(
+          b.get_disk_log_impl().size_bytes_after_offset(model::offset::max()),
+          0);
+    }
 }
 
 static void do_write_zeroes(ss::sstring name) {
