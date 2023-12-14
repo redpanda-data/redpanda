@@ -37,6 +37,7 @@
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/id_allocator_stm.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
@@ -2457,6 +2458,7 @@ void application::start_runtime_services(
       .invoke_on_all([this](cluster::partition_manager& pm) {
           pm.register_factory<cluster::tm_stm_factory>(
             tm_stm_cache_manager, feature_table);
+          pm.register_factory<cluster::id_allocator_stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

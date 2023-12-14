@@ -435,13 +435,6 @@ ss::future<> partition::start(
     const auto& ntp = _raft->ntp();
     raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
       _raft.get());
-    // special cases for id_allocator and transaction coordinator partitions
-    if (is_id_allocator_topic(ntp)) {
-        _id_allocator_stm = builder.create_stm<cluster::id_allocator_stm>(
-          clusterlog, _raft.get());
-        co_return co_await _raft->start(std::move(builder));
-    }
-
     if (is_transform_offsets_topic(_raft->ntp())) {
         vassert(
           topic_cfg.has_value(),

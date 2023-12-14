@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/state_machine_registry.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -34,7 +35,7 @@ namespace cluster {
 
 class id_allocator_stm final : public raft::persisted_stm<> {
 public:
-    static constexpr const char* name = "id_allocator_stm";
+    static constexpr std::string_view name = "id_allocator_stm";
 
     struct stm_allocation_result {
         int64_t id;
@@ -142,6 +143,16 @@ private:
     int64_t _state{0};
 
     bool _is_writing_snapshot{false};
+};
+
+class id_allocator_stm_factory : public state_machine_factory {
+public:
+    id_allocator_stm_factory() = default;
+    bool is_applicable_for(const storage::ntp_config& cfg) const final;
+
+    void create(
+      raft::state_machine_manager_builder& builder,
+      raft::consensus* raft) final;
 };
 
 } // namespace cluster

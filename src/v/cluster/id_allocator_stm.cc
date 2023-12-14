@@ -13,9 +13,11 @@
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/namespace.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/coroutine.hh>
@@ -234,6 +236,16 @@ ss::future<> id_allocator_stm::apply_raft_snapshot(const iobuf&) {
     _next_snapshot = _raft->start_offset();
     _processed = 0;
     return ss::now();
+}
+
+bool id_allocator_stm_factory::is_applicable_for(
+  const storage::ntp_config& cfg) const {
+    return cfg.ntp() == model::id_allocator_ntp;
+}
+
+void id_allocator_stm_factory::create(
+  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+    builder.create_stm<id_allocator_stm>(clusterlog, raft);
 }
 
 } // namespace cluster

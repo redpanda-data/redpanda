@@ -282,11 +282,7 @@ public:
     }
 
     ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() const {
-        return _id_allocator_stm;
-    }
-
-    ss::shared_ptr<transform_offsets_stm_t> transform_offsets_stm() const {
-        return _transform_offsets_stm;
+        return _raft->stm_manager()->get<cluster::id_allocator_stm>();
     }
 
     ss::lw_shared_ptr<const storage::offset_translator_state>
@@ -513,7 +509,6 @@ private:
     consensus_ptr _raft;
     ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
-    ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::shared_ptr<transform_offsets_stm_t> _transform_offsets_stm;
