@@ -175,9 +175,13 @@ ss::future<> state_machine::apply() {
             "Timeout in state_machine::apply on ntp {}",
             _raft->ntp());
       })
-      .handle_exception_type([](const ss::abort_requested_exception&) {})
-      .handle_exception_type([](const ss::gate_closed_exception&) {})
       .handle_exception([this](const std::exception_ptr& e) {
+          // do not log shutdown exceptions not to pollute logs with irrelevant
+          // errors
+          if (ssx::is_shutdown_exception(e)) {
+              return;
+          }
+
           vlog(
             _log.error,
             "State machine for ntp={} caught exception {}",
