@@ -809,8 +809,8 @@ class ManyPartitionsTest(PreallocNodesTest):
         # causes OMB to start failing internally with 500s when it backs up,
         # or when it runs through, to fail because it didn't hit its latency
         # target.
-        if PARTITIONS_PER_SHARD > 1000:
-            producer_rate *= (1000.0 / PARTITIONS_PER_SHARD)
+        if scale.partition_limit > 1000:
+            producer_rate *= (1000.0 / scale.partition_limit)
 
         # on 12x i3en.3xlarge
         # it is stable driving 1159.661 MB/s
@@ -913,7 +913,11 @@ class ManyPartitionsTest(PreallocNodesTest):
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_omb(self):
-        scale = ScaleParameters(self.redpanda, replication_factor=3)
+        scale = ScaleParameters(
+            self.redpanda,
+            replication_factor=3,
+            mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+            topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD)
         self.redpanda.start()
 
         # We have other OMB benchmark tests, but this one runs at the
