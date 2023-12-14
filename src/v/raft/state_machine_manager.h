@@ -82,6 +82,24 @@ public:
     ss::future<> stop();
 
     model::offset last_applied() const { return model::prev_offset(_next); }
+    /**
+     * Returns a pointer to specific type of state machine.
+     *
+     * This API provides basic runtime validation verifying if requested STM
+     * type matches the name passed. It returns a nullptr if state machine with
+     * requested name is not registered in manager.
+     */
+    template<ManagableStateMachine T>
+    ss::shared_ptr<T> get() {
+        auto it = _machines.find(T::name);
+        if (it == _machines.end()) {
+            return nullptr;
+        }
+        auto ptr = ss::dynamic_pointer_cast<T>(it->second->stm);
+        vassert(
+          ptr != nullptr, "Incorrect STM type requested for STM {}", T::name);
+        return ptr;
+    }
 
     template<StateMachineIterateFunc Func>
     void for_each_stm(Func&& func) const {
