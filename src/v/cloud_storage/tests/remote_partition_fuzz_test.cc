@@ -16,6 +16,8 @@
 
 #include <seastar/core/lowres_clock.hh>
 
+#include <fmt/chrono.h>
+
 #include <random>
 
 using namespace cloud_storage;
@@ -371,19 +373,25 @@ FIXTURE_TEST(
 namespace {
 
 ss::future<> scan_until_close(
-  remote_partition& partition,
-  const storage::log_reader_config& reader_config,
+  ss::shared_ptr<remote_partition> partition,
+  storage::log_reader_config reader_config,
   ss::gate& g) {
-    gate_guard guard{g};
+    test_log.info("starting scan_until_close");
+    auto _ = ss::defer([] { test_log.info("exiting scan_until_close"); });
+    auto guard = g.hold();
+    auto counter = size_t{0};
     while (!g.is_closed()) {
         try {
-            auto translating_reader = co_await partition.make_reader(
+            test_log.info("running scan loop nr {}", counter);
+            auto translating_reader = co_await partition->make_reader(
               reader_config);
             auto reader = std::move(translating_reader.reader);
             auto headers_read = co_await reader.consume(
               test_consumer(), model::no_timeout);
+            test_log.info("done scan loop {}", counter);
+            ++counter;
         } catch (...) {
-            test_log.info("Error scanning: {}", std::current_exception());
+            test_log.warn("Error scanning: {}", std::current_exception());
         }
     }
 }
@@ -403,8 +411,6 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    storage::log_reader_config reader_config(
-      base, model::offset::max(), ss::default_priority_class());
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     auto manifest = hydrate_manifest(api.local(), bucket);
@@ -416,18 +422,37 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     partition->start().get();
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
+    test_log.info("starting scan op");
     ss::gate g;
-    ssx::background = scan_until_close(*partition, reader_config, g);
-    auto close_fut = ss::maybe_yield()
-                       .then([] { return ss::maybe_yield(); })
-                       .then([] { return ss::maybe_yield(); })
-                       .then([] {
-                           return ss::sleep(std::chrono::milliseconds(10));
-                       })
-                       .then([this, &g]() mutable {
-                           pool.local().shutdown_connections();
-                           return g.close();
-                       });
-    ss::with_timeout(model::timeout_clock::now() + 60s, std::move(close_fut))
-      .get();
+    auto scan_future = scan_until_close(
+      partition,
+      storage::log_reader_config(
+        base, model::offset::max(), ss::default_priority_class()),
+      g);
+    auto close_fut
+      = ss::maybe_yield()
+          .then([] { return ss::maybe_yield(); })
+          .then([] { return ss::maybe_yield(); })
+          .then([] { return ss::sleep(10ms); })
+          .then([this, &g]() mutable {
+              auto begin_shutdown = std::chrono::steady_clock::now();
+              test_log.info("shutting down connections");
+              pool.local().shutdown_connections();
+              test_log.info("closing gate");
+              return g.close().then([begin_shutdown] {
+                  auto end_shutdown = std::chrono::steady_clock::now();
+                  test_log.info("gate closed");
+                  return end_shutdown - begin_shutdown;
+              });
+          });
+    // NOTE: see issues/11271
+    BOOST_TEST_CONTEXT("scan_unit_close should terminate in a finite amount of "
+                       "time at shutdown") {
+        test_log.info("waiting on close future with timeout");
+        BOOST_CHECK_LE(close_fut.get(), 60s);
+        test_log.info(
+          "waiting on scan_future, this should be immediately available");
+        BOOST_CHECK(scan_future.available());
+        scan_future.get();
+    }
 }
