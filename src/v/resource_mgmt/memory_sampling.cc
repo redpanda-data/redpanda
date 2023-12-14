@@ -27,9 +27,7 @@
 #include <limits>
 #include <vector>
 
-constexpr std::string_view diagnostics_header() {
-    return "Top-N alloc sites - size count stack:";
-}
+constexpr std::string_view diagnostics_header() { return "Top-N alloc sites:"; }
 
 constexpr std::string_view confluence_reference() {
     return "If you work at Redpanda please refer to "
@@ -39,7 +37,11 @@ constexpr std::string_view confluence_reference() {
 fmt::appender fmt::formatter<seastar::memory::allocation_site>::format(
   const seastar::memory::allocation_site& site, fmt::format_context& ctx) {
     return fmt::format_to(
-      ctx.out(), "{} {} {}", site.size, site.count, site.backtrace);
+      ctx.out(),
+      "size: {} count: {} at: {}",
+      site.size,
+      site.count,
+      site.backtrace);
 }
 
 /// Put `top_n` allocation sites into the front of `allocation_sites`
@@ -66,6 +68,12 @@ memory_sampling::get_oom_diagnostics_callback() {
         const size_t top_n = std::min(size_t(10), num_sites);
         top_n_allocation_sites(allocation_sites, top_n);
 
+        writer("Alloc sites legend:\n"
+               "    size: the estimated total size of all allocations at this "
+               "stack (i.e., adjusted up from observed samples)\n"
+               "    count: the number of live samples at this "
+               "stack (i.e., NOT adjusted up from observed samples)\n"
+               "    at: the backtrace for this allocation site\n");
         writer(diagnostics_header());
         writer("\n");
 
