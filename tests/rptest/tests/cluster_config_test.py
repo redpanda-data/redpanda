@@ -1890,7 +1890,10 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self._check_value_everywhere(self.key, self.legacy_default)
 
         self._upgrade(wipe_cache)
+        self._check_value_everywhere(self.key, self.legacy_default)
         expected = self.new_default + 1
         self.redpanda.set_cluster_config({self.key: expected})
 
+        self._check_value_everywhere(self.key, expected)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere(self.key, expected)
