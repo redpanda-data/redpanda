@@ -6,18 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import os
-
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.e2e_tests.workload_manager import WorkloadManager
 from rptest.services.cluster import cluster
 from rptest.services.flink import FlinkService
 from rptest.tests.redpanda_test import RedpandaTest
-
-# Temporary solution before workload manager is built
-workloads_path = os.path.abspath('.')
-workloads_path = os.path.join(os.path.abspath('.'),
-                              "tests/rptest/e2e_tests/workloads/")
 
 
 class FlinkBasicTests(RedpandaTest):
@@ -38,6 +32,9 @@ class FlinkBasicTests(RedpandaTest):
                                       user=user,
                                       passwd=passwd,
                                       protocol=protocol)
+        # Prepare Workloads
+        self.workload_manager = WorkloadManager(self.logger)
+
         return
 
     def tearDown(self):
@@ -53,10 +50,12 @@ class FlinkBasicTests(RedpandaTest):
 
         # Load python workload to target node
         # Hardcoded file
-        # TODO: Workload manager with workload config management
-        self.logger.debug(f"Current path is: {os.path.abspath('.')}")
-        self.logger.debug(f"Workload folder set as: '{workloads_path}'")
-        _workload = os.path.join(workloads_path, "flink_produce_workload.py")
+        # TODO: Add workload config management
+        tags = ['flink', 'produce', 'basic']
+        workloads = self.workload_manager.get_workloads(tags)
+        if len(workloads) < 1:
+            raise RuntimeError("No workloads found "
+                               f"with tags: {', '.join(tags)}")
         _workload_config = {
             "log_level": "DEBUG",
             "brokers": self.redpanda.brokers(),
@@ -66,14 +65,17 @@ class FlinkBasicTests(RedpandaTest):
             "msg_size": 4096,
             "count": 10
         }
+        for workload in workloads:
+            # Add script as a job
+            self.logger.info(f"Adding {workload['name']} to flink")
+            _ids = self.flink.run_flink_job(workload['path'], _workload_config)
+            if _ids is None:
+                raise RuntimeError("Failed to run job on flink for "
+                                   f"workload: {workload['name']}")
 
-        # Add script as a job
-        _ids = self.flink.run_flink_job(_workload, _workload_config)
-        if _ids is None:
-            raise RuntimeError(f"Failed to run job on flink: {_workload}")
-
-        self.logger.debug(f"Workload '{_workload}' generated {len(_ids)} "
-                          f"jobs: {', '.join(_ids)}")
+            self.logger.debug(f"Workload '{workload['name']}' "
+                              f"generated {len(_ids)} "
+                              f"jobs: {', '.join(_ids)}")
 
         # Wait for jobs to finish
         self.flink.wait(timeout_sec=3600)
