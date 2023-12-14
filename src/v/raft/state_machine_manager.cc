@@ -487,4 +487,10 @@ state_machine_manager::acquire_background_apply_mutexes() {
     return ss::when_all_succeed(futures.begin(), futures.end());
 }
 
+ss::future<> state_machine_manager::remove_local_state() {
+    co_await ss::coroutine::parallel_for_each(_machines, [](auto entry_pair) {
+        return entry_pair.second->stm->remove_local_state();
+    });
+}
+
 } // namespace raft

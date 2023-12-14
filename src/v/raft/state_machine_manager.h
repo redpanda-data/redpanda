@@ -108,6 +108,8 @@ public:
         }
     }
 
+    ss::future<> remove_local_state();
+
 private:
     using stm_ptr = ss::shared_ptr<state_machine_base>;
     struct named_stm {
