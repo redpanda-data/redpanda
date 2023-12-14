@@ -313,11 +313,10 @@ result<request_ptr> producer_state::try_emplace_request(
     }
     vlog(
       clusterlog.trace,
-      "new request from producer: {}, first_seq: {}, last_seq: {}, term: {}, "
+      "new request from producer: {}, batch meta: {}, term: {}, "
       "reset: {}, request_state: {}",
       *this,
-      bid.first_seq,
-      bid.last_seq,
+      bid,
       current_term,
       reset,
       _requests);
@@ -333,11 +332,10 @@ void producer_state::update(
     bool relink_producer = _requests.stm_apply(bid, offset);
     vlog(
       clusterlog.trace,
-      "applied stm update for pid: {}, first: {}, last: {}, relink_producer: "
+      "applied stm update for pid: {}, batch meta: {}, relink_producer: "
       "{}",
       *this,
-      bid.first_seq,
-      bid.last_seq,
+      bid,
       relink_producer);
     if (relink_producer) {
         // relink for LRU tracking on followers.

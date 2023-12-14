@@ -542,6 +542,7 @@ struct tx_range {
     model::offset last;
 
     auto operator<=>(const tx_range&) const = default;
+    friend std::ostream& operator<<(std::ostream&, const tx_range&);
 };
 
 // Comparator that sorts in ascending order by first offset.

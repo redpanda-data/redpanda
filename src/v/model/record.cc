@@ -38,4 +38,10 @@ record_batch_iterator::create(const model::record_batch& b) {
 record_batch_iterator::record_batch_iterator(int32_t rc, iobuf_const_parser p)
   : _record_count(rc)
   , _parser(std::move(p)) {}
+
+std::ostream& operator<<(std::ostream& os, const tx_range& range) {
+    fmt::print(
+      os, "pid: {}, range: [{}, {}]", range.pid, range.first, range.last);
+    return os;
+}
 } // namespace model
