@@ -52,6 +52,7 @@
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/producer_state_manager.h"
 #include "cluster/rm_partition_frontend.h"
+#include "cluster/rm_stm.h"
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
@@ -2462,6 +2463,12 @@ void application::start_runtime_services(
           pm.register_factory<cluster::id_allocator_stm_factory>();
           pm.register_factory<transform::transform_offsets_stm_factory>(
             controller->get_topics_state());
+          pm.register_factory<cluster::rm_stm_factory>(
+            config::shard_local_cfg().enable_transactions.value(),
+            config::shard_local_cfg().enable_idempotence.value(),
+            tx_gateway_frontend,
+            producer_manager,
+            feature_table);
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

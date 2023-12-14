@@ -32,6 +32,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <filesystem>
@@ -2529,4 +2530,38 @@ void rm_stm::log_tx_stats() {
                           });
                       }).handle_exception([](const std::exception_ptr&) {});
 }
+
+rm_stm_factory::rm_stm_factory(
+  bool enable_transactions,
+  bool enable_idempotence,
+  ss::sharded<tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<cluster::producer_state_manager>& producer_state_manager,
+  ss::sharded<features::feature_table>& feature_table)
+  : _enable_transactions(enable_transactions)
+  , _enable_idempotence(enable_idempotence)
+  , _tx_gateway_frontend(tx_gateway_frontend)
+  , _producer_state_manager(producer_state_manager)
+  , _feature_table(feature_table) {}
+
+bool rm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
+    const auto& ntp = cfg.ntp();
+    const auto enabled = _enable_transactions || _enable_idempotence;
+
+    return enabled && cfg.ntp().ns == model::kafka_namespace
+           && ntp.tp.topic != model::kafka_consumer_offsets_nt.tp;
+}
+
+void rm_stm_factory::create(
+
+  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+    auto stm = builder.create_stm<cluster::rm_stm>(
+      clusterlog,
+      raft,
+      _tx_gateway_frontend,
+      _feature_table,
+      _producer_state_manager);
+
+    raft->log()->stm_manager()->add_stm(stm);
+}
+
 } // namespace cluster

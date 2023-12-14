@@ -15,6 +15,7 @@
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
+#include "cluster/rm_stm.h"
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -425,30 +426,6 @@ ss::future<> partition::start(
     raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
       _raft.get());
 
-    /**
-     * Data partitions
-     */
-    if (!storage::deletion_exempt(_raft->ntp())) {
-        _log_eviction_stm = builder.create_stm<cluster::log_eviction_stm>(
-          _raft.get(), clusterlog, _kvstore);
-        _raft->log()->stm_manager()->add_stm(_log_eviction_stm);
-    }
-    const model::topic_namespace_view tp_ns(_raft->ntp());
-    const bool is_group_ntp = tp_ns == model::kafka_consumer_offsets_nt;
-    const bool has_rm_stm = (_is_tx_enabled || _is_idempotence_enabled)
-                            && model::controller_ntp != _raft->ntp()
-                            && !is_group_ntp;
-
-    if (has_rm_stm) {
-        _rm_stm = builder.create_stm<cluster::rm_stm>(
-          clusterlog,
-          _raft.get(),
-          _tx_gateway_frontend,
-          _feature_table,
-          _producer_state_manager);
-        _raft->log()->stm_manager()->add_stm(_rm_stm);
-    }
-
     // Construct cloud_storage read path (remote_partition)
     if (
       config::shard_local_cfg().cloud_storage_enabled()
@@ -525,7 +502,10 @@ ss::future<> partition::start(
         }
     }
 
-    co_return co_await _raft->start(std::move(builder));
+    co_await _raft->start(std::move(builder));
+    // store rm_stm pointer in partition as this is commonly used stm
+    _rm_stm = _raft->stm_manager()->get<cluster::rm_stm>(
+      rm_stm_factory::stm_name);
 }
 
 ss::future<> partition::stop() {

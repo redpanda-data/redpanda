@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/producer_state.h"
+#include "cluster/state_machine_registry.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -43,6 +44,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
+#include <string_view>
 #include <system_error>
 
 namespace mt = util::mem_tracked;
@@ -64,7 +66,7 @@ namespace cluster {
  */
 class rm_stm final : public raft::persisted_stm<> {
 public:
-    static constexpr const char* name = "rm_stm";
+    static constexpr std::string_view name = "rm_stm";
     using clock_type = ss::lowres_clock;
     using time_point_type = clock_type::time_point;
     using duration_type = clock_type::duration;
@@ -660,6 +662,25 @@ struct fence_batch_data {
     std::optional<model::tx_seq> tx_seq;
     std::optional<std::chrono::milliseconds> transaction_timeout_ms;
     model::partition_id tm;
+};
+
+class rm_stm_factory : public state_machine_factory {
+public:
+    rm_stm_factory(
+      bool enable_transactions,
+      bool enable_idempotence,
+      ss::sharded<tx_gateway_frontend>&,
+      ss::sharded<cluster::producer_state_manager>&,
+      ss::sharded<features::feature_table>&);
+    bool is_applicable_for(const storage::ntp_config&) const final;
+    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+
+private:
+    bool _enable_transactions;
+    bool _enable_idempotence;
+    ss::sharded<tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<cluster::producer_state_manager>& _producer_state_manager;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 model::record_batch make_fence_batch_v1(
