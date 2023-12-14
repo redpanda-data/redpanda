@@ -83,7 +83,7 @@
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
-#include "redpanda/admin/validation.h"
+#include "redpanda/admin/util.h"
 #include "redpanda/cluster_config_schema_util.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -161,29 +161,13 @@
 using namespace std::chrono_literals;
 
 using admin::apply_validator;
+using admin::lw_shared_container;
 
 ss::logger adminlog{"admin_api_server"};
 
 static constexpr auto audit_svc_name = "Redpanda Admin HTTP Server";
 
-// Helpers for partition routes
 namespace {
-
-template<typename C>
-class lw_shared_container {
-public:
-    using iterator = C::iterator;
-    using value_type = C::value_type;
-
-    explicit lw_shared_container(C&& c)
-      : c_{ss::make_lw_shared<C>(std::move(c))} {}
-
-    iterator begin() const { return c_->begin(); }
-    iterator end() const { return c_->end(); }
-
-private:
-    ss::lw_shared_ptr<C> c_;
-};
 
 inline net::unresolved_address from_ss_sa(const ss::socket_address& sa) {
     return {fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family()};

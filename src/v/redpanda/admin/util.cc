@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "redpanda/admin/validation.h"
+#include "redpanda/admin/util.h"
 
 #include <seastar/http/exception.hh>
 
