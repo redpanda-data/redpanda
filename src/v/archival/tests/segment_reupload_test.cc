@@ -8,10 +8,12 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "archival/adjacent_segment_merger.h"
 #include "archival/segment_reupload.h"
 #include "archival/tests/service_fixture.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "model/metadata.h"
 #include "storage/log_manager.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/archival.h"
@@ -19,6 +21,8 @@
 
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
+
+#include <boost/test/tools/old/interface.hpp>
 
 using namespace archival;
 
@@ -1243,4 +1247,160 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
     BOOST_REQUIRE_EQUAL(
       candidate.candidate.starting_offset, model::offset{104});
     BOOST_REQUIRE_EQUAL(candidate.candidate.final_offset, model::offset{115});
+}
+
+static constexpr std::string_view cross_term_reupload_manifest = R"json({
+  "version": 2,
+  "namespace": "test-ns",
+  "topic": "test-topic",
+  "partition": 1,
+  "revision": 21,
+  "last_offset": 211,
+  "segments": {
+    "0-1-v1.log": {
+      "base_offset": 0,
+      "committed_offset": 100,
+      "is_compacted": false,
+      "size_bytes": 1000,
+      "archiver_term": 1,
+      "delta_offset": 0,
+      "base_timestamp": 1686389191244,
+      "max_timestamp": 1686389191244,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 1,
+      "delta_offset_end": 0
+    },
+    "101-1-v1.log": {
+      "base_offset": 101,
+      "committed_offset": 200,
+      "is_compacted": false,
+      "size_bytes": 1000,
+      "archiver_term": 1,
+      "delta_offset": 0,
+      "base_timestamp": 1686389202577,
+      "max_timestamp": 1686389230060,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 1,
+      "delta_offset_end": 0
+    },
+    "201-1-v1.log": {
+      "base_offset": 201,
+      "committed_offset": 300,
+      "is_compacted": false,
+      "size_bytes": 1000,
+      "archiver_term": 1,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 1,
+      "delta_offset_end": 0
+    },
+    "301-2-v1.log": {
+      "base_offset": 301,
+      "committed_offset": 400,
+      "is_compacted": false,
+      "size_bytes": 1000,
+      "archiver_term": 1,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 1,
+      "delta_offset_end": 0
+    },
+    "401-2-v1.log": {
+      "base_offset": 401,
+      "committed_offset": 500,
+      "is_compacted": false,
+      "size_bytes": 1000000,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    }
+  }
+})json";
+
+SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
+    // The test validates that the segments from different terms are
+    // not merged.
+
+    auto ntp = model::ntp{"test_ns", "test_tpc", 0};
+
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json,
+       make_manifest_stream(cross_term_reupload_manifest))
+      .get();
+
+    auto run = adjacent_segment_run(ntp);
+
+    // This covers three segments with total size of 3000
+    BOOST_REQUIRE(!run.maybe_add_segment(
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = 100,
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(300),
+        .base_timestamp = model::timestamp(1686389191244),
+        .max_timestamp = model::timestamp(1686389233222),
+        .delta_offset = model::offset_delta(0),
+        .ntp_revision = model::initial_revision_id(21),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .delta_offset_end = model::offset_delta(0),
+        .sname_format = cloud_storage::segment_name_format::v3,
+      },
+      5000));
+
+    BOOST_REQUIRE(!run.maybe_add_segment(
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = 100,
+        .base_offset = model::offset(301),
+        .committed_offset = model::offset(400),
+        .base_timestamp = model::timestamp(1686389191244),
+        .max_timestamp = model::timestamp(1686389233222),
+        .delta_offset = model::offset_delta(0),
+        .ntp_revision = model::initial_revision_id(21),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .delta_offset_end = model::offset_delta(0),
+        .sname_format = cloud_storage::segment_name_format::v3,
+      },
+      5000));
+
+    // The extra segment fits in by size but can't be added because it
+    // has different term. The method should return 'true' because
+    // we were able to add a segment to the run and we can't extend it
+    // further.
+    BOOST_REQUIRE(run.maybe_add_segment(
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = 100,
+        .base_offset = model::offset(401),
+        .committed_offset = model::offset(500),
+        .base_timestamp = model::timestamp(1686389191244),
+        .max_timestamp = model::timestamp(1686389233222),
+        .delta_offset = model::offset_delta(0),
+        .ntp_revision = model::initial_revision_id(21),
+        .archiver_term = model::term_id(2),
+        .segment_term = model::term_id(2),
+        .delta_offset_end = model::offset_delta(0),
+        .sname_format = cloud_storage::segment_name_format::v3,
+      },
+      5000));
+
+    BOOST_REQUIRE_EQUAL(run.num_segments, 2);
+    BOOST_REQUIRE_EQUAL(run.meta.base_offset(), 0);
+    BOOST_REQUIRE_EQUAL(run.meta.committed_offset(), 400);
 }

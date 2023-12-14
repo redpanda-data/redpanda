@@ -193,7 +193,8 @@ struct adjacent_segment_run {
     /// of the run is below the threshold. The object keeps track
     /// of all segment names.
     ///
-    /// \return true if the segment is added, false otherwise
+    /// \return true if the run is assembled, false if more segments can be
+    ///         added to the run
     bool
     maybe_add_segment(const cloud_storage::segment_meta& s, size_t max_size);
 };
