@@ -140,6 +140,164 @@ uint64_t string_view_to_ul(std::string_view sv) {
 
 } // anonymous namespace
 
+struct s3_imposter_fixture::content_handler {
+    content_handler(
+      const std::vector<s3_imposter_fixture::expectation>& exp,
+      s3_imposter_fixture& imp,
+      std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
+      = std::nullopt)
+      : fixture(imp)
+      , headers(std::move(headers_to_store)) {
+        for (const auto& e : exp) {
+            expectations[e.url] = e;
+        }
+    }
+
+    void insert(const std::vector<s3_imposter_fixture::expectation>& list) {
+        for (const auto& exp : list) {
+            expectations.insert(std::make_pair(exp.url, exp));
+        }
+    }
+
+    void remove(const std::vector<ss::sstring>& urls) {
+        for (const auto& u : urls) {
+            expectations.erase(u);
+        }
+    }
+
+    using const_req = const ss::http::request&;
+    using reply = ss::http::reply;
+
+    ss::sstring handle(const_req request, reply& repl) {
+        static constexpr auto error_payload
+          = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+                        <Error>
+                            <Code>NoSuchKey</Code>
+                            <Message>Object not found</Message>
+                            <Resource>resource</Resource>
+                            <RequestId>requestid</RequestId>
+                        </Error>)xml";
+        static constexpr auto slow_down_response
+          = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+                            <Error>
+                                <Code>SlowDown</Code>
+                                <Message>Object not found</Message>
+                                <Resource>resource</Resource>
+                                <RequestId>requestid</RequestId>
+                            </Error>)xml";
+        http_test_utils::request_info ri(request);
+
+        if (headers) {
+            for (const auto& h : headers.value()) {
+                ri.headers[h] = request.get_header(h);
+            }
+        }
+
+        fixture._requests.push_back(ri);
+        fixture._targets.insert(std::make_pair(ri.url, ri));
+        vlog(
+          fixt_log.trace,
+          "S3 imposter request {} - {} - {}",
+          request._url,
+          request.content_length,
+          request._method);
+
+        auto expect_iter = expectations.find(request._url);
+        if (expect_iter != expectations.end() && expect_iter->second.slowdown) {
+            repl.set_status(reply::status_type::service_unavailable);
+            return slow_down_response;
+        }
+
+        if (request._method == "GET") {
+            if (
+              fixture._search_on_get_list
+              && request.get_query_param("list-type") == "2") {
+                auto prefix = request.get_header("prefix");
+                auto delimiter = request.get_header("delimiter");
+                vlog(
+                  fixt_log.trace,
+                  "S3 imposter list request {} - {} - {}",
+                  prefix,
+                  delimiter,
+                  request._method);
+                return list_objects_resp(expectations, prefix, delimiter);
+            }
+            if (
+              expect_iter == expectations.end()
+              || !expect_iter->second.body.has_value()) {
+                vlog(fixt_log.trace, "Reply GET request with error");
+                repl.set_status(reply::status_type::not_found);
+                return error_payload;
+            }
+
+            auto bytes_requested = request.get_header("Range");
+            const auto& body = expect_iter->second.body.value();
+            if (!bytes_requested.empty()) {
+                auto byte_range = parse_byte_header(bytes_requested);
+                return body.substr(
+                  byte_range.first, byte_range.second - byte_range.first + 1);
+            }
+            return body;
+        } else if (request._method == "PUT") {
+            vlog(fixt_log.trace, "Received PUT request to {}", request._url);
+            expectations[request._url] = {
+              .url = request._url, .body = request.content};
+            return "";
+        } else if (request._method == "DELETE") {
+            // TODO (abhijat) - enable conditionally failing requests
+            // instead of this hardcoding
+            if (request._url == "/failme") {
+                repl.set_status(reply::status_type::internal_server_error);
+                return "";
+            }
+
+            if (
+              expect_iter == expectations.end()
+              || !expect_iter->second.body.has_value()) {
+                vlog(fixt_log.trace, "Reply DELETE request with error");
+                repl.set_status(reply::status_type::not_found);
+                return error_payload;
+            }
+
+            repl.set_status(reply::status_type::no_content);
+            expect_iter->second.body = std::nullopt;
+            return "";
+        } else if (request._method == "HEAD") {
+            if (
+              expect_iter == expectations.end()
+              || !expect_iter->second.body.has_value()) {
+                vlog(fixt_log.trace, "Reply HEAD request with error");
+                repl.add_header("x-amz-request-id", "placeholder-id");
+                repl.set_status(reply::status_type::not_found);
+            } else {
+                repl.add_header("ETag", "placeholder-etag");
+                repl.add_header(
+                  "Content-Length",
+                  ssx::sformat("{}", expect_iter->second.body->size()));
+                repl.set_status(reply::status_type::ok);
+            }
+            vlog(
+              fixt_log.trace, "S3 imposter response: {}", repl.response_line());
+            return "";
+        } else if (
+          request._method == "POST"
+          && request.query_parameters.contains("delete")) {
+            // Delete objects
+            if (
+              expect_iter != expectations.end()
+              && expect_iter->second.body.has_value()) {
+                return expect_iter->second.body.value();
+            }
+            return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
+        }
+        RPTEST_FAIL("Unexpected request");
+        return "";
+    }
+    std::map<ss::sstring, s3_imposter_fixture::expectation> expectations;
+    s3_imposter_fixture& fixture;
+    std::optional<absl::flat_hash_set<ss::sstring>> headers = std::nullopt;
+};
+
 cloud_storage_clients::s3_configuration
 s3_imposter_fixture::get_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number());
@@ -205,164 +363,39 @@ void s3_imposter_fixture::set_expectations_and_listen(
     _server->listen(_server_addr).get();
 }
 
+void s3_imposter_fixture::add_expectations(
+  const std::vector<s3_imposter_fixture::expectation>& expectations) {
+    vassert(_content_handler != nullptr, "Imposter is not initialized");
+    _content_handler->insert(expectations);
+}
+
+void s3_imposter_fixture::remove_expectations(
+  const std::vector<ss::sstring>& urls) {
+    vassert(_content_handler != nullptr, "Imposter is not initialized");
+    _content_handler->remove(urls);
+}
+
+std::optional<ss::sstring>
+s3_imposter_fixture::get_object(const ss::sstring& url) const {
+    auto it = _content_handler->expectations.find(url);
+    if (it == _content_handler->expectations.end()) {
+        return std::nullopt;
+    }
+    return it->second.body;
+}
+
 void s3_imposter_fixture::set_routes(
   ss::httpd::routes& r,
   const std::vector<s3_imposter_fixture::expectation>& expectations,
   std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
     using namespace ss::httpd;
     using reply = ss::http::reply;
-    struct content_handler {
-        content_handler(
-          const std::vector<expectation>& exp,
-          s3_imposter_fixture& imp,
-          std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
-          = std::nullopt)
-          : fixture(imp)
-          , headers(std::move(headers_to_store)) {
-            for (const auto& e : exp) {
-                expectations[e.url] = e;
-            }
-        }
-
-        ss::sstring handle(const_req request, reply& repl) {
-            static constexpr auto error_payload
-              = R"xml(<?xml version="1.0" encoding="UTF-8"?>
-                        <Error>
-                            <Code>NoSuchKey</Code>
-                            <Message>Object not found</Message>
-                            <Resource>resource</Resource>
-                            <RequestId>requestid</RequestId>
-                        </Error>)xml";
-            static constexpr auto slow_down_response
-              = R"xml(<?xml version="1.0" encoding="UTF-8"?>
-                            <Error>
-                                <Code>SlowDown</Code>
-                                <Message>Object not found</Message>
-                                <Resource>resource</Resource>
-                                <RequestId>requestid</RequestId>
-                            </Error>)xml";
-            http_test_utils::request_info ri(request);
-
-            if (headers) {
-                for (const auto& h : headers.value()) {
-                    ri.headers[h] = request.get_header(h);
-                }
-            }
-
-            fixture._requests.push_back(ri);
-            fixture._targets.insert(std::make_pair(ri.url, ri));
-            vlog(
-              fixt_log.trace,
-              "S3 imposter request {} - {} - {}",
-              request._url,
-              request.content_length,
-              request._method);
-
-            auto expect_iter = expectations.find(request._url);
-            if (
-              expect_iter != expectations.end()
-              && expect_iter->second.slowdown) {
-                repl.set_status(reply::status_type::service_unavailable);
-                return slow_down_response;
-            }
-
-            if (request._method == "GET") {
-                if (
-                  fixture._search_on_get_list
-                  && request.get_query_param("list-type") == "2") {
-                    auto prefix = request.get_header("prefix");
-                    auto delimiter = request.get_header("delimiter");
-                    vlog(
-                      fixt_log.trace,
-                      "S3 imposter list request {} - {} - {}",
-                      prefix,
-                      delimiter,
-                      request._method);
-                    return list_objects_resp(expectations, prefix, delimiter);
-                }
-                if (
-                  expect_iter == expectations.end()
-                  || !expect_iter->second.body.has_value()) {
-                    vlog(fixt_log.trace, "Reply GET request with error");
-                    repl.set_status(reply::status_type::not_found);
-                    return error_payload;
-                }
-
-                auto bytes_requested = request.get_header("Range");
-                const auto& body = expect_iter->second.body.value();
-                if (!bytes_requested.empty()) {
-                    auto byte_range = parse_byte_header(bytes_requested);
-                    return body.substr(
-                      byte_range.first,
-                      byte_range.second - byte_range.first + 1);
-                }
-                return body;
-            } else if (request._method == "PUT") {
-                vlog(
-                  fixt_log.trace, "Received PUT request to {}", request._url);
-                expectations[request._url] = {
-                  .url = request._url, .body = request.content};
-                return "";
-            } else if (request._method == "DELETE") {
-                // TODO (abhijat) - enable conditionally failing requests
-                // instead of this hardcoding
-                if (request._url == "/failme") {
-                    repl.set_status(reply::status_type::internal_server_error);
-                    return "";
-                }
-
-                if (
-                  expect_iter == expectations.end()
-                  || !expect_iter->second.body.has_value()) {
-                    vlog(fixt_log.trace, "Reply DELETE request with error");
-                    repl.set_status(reply::status_type::not_found);
-                    return error_payload;
-                }
-
-                repl.set_status(reply::status_type::no_content);
-                expect_iter->second.body = std::nullopt;
-                return "";
-            } else if (request._method == "HEAD") {
-                if (
-                  expect_iter == expectations.end()
-                  || !expect_iter->second.body.has_value()) {
-                    vlog(fixt_log.trace, "Reply HEAD request with error");
-                    repl.add_header("x-amz-request-id", "placeholder-id");
-                    repl.set_status(reply::status_type::not_found);
-                } else {
-                    repl.add_header("ETag", "placeholder-etag");
-                    repl.add_header(
-                      "Content-Length",
-                      ssx::sformat("{}", expect_iter->second.body->size()));
-                    repl.set_status(reply::status_type::ok);
-                }
-                vlog(
-                  fixt_log.trace,
-                  "S3 imposter response: {}",
-                  repl.response_line());
-                return "";
-            } else if (
-              request._method == "POST"
-              && request.query_parameters.contains("delete")) {
-                // Delete objects
-                if (
-                  expect_iter != expectations.end()
-                  && expect_iter->second.body.has_value()) {
-                    return expect_iter->second.body.value();
-                }
-                return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
-            }
-            RPTEST_FAIL("Unexpected request");
-            return "";
-        }
-        std::map<ss::sstring, expectation> expectations;
-        s3_imposter_fixture& fixture;
-        std::optional<absl::flat_hash_set<ss::sstring>> headers = std::nullopt;
-    };
-    auto hd = ss::make_shared<content_handler>(
+    _content_handler = ss::make_shared<content_handler>(
       expectations, *this, std::move(headers_to_store));
     _handler = std::make_unique<function_handler>(
-      [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
+      [this](const_req req, reply& repl) {
+          return _content_handler->handle(req, repl);
+      },
       "txt");
     r.add_default_handler(_handler.get());
 }

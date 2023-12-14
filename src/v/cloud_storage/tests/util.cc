@@ -534,6 +534,52 @@ std::vector<in_memory_segment> setup_s3_imposter(
     return segments;
 }
 
+/// Generate segments and replace the original ones.
+/// The batches should describe updated offset range.
+std::vector<in_memory_segment> replace_segments(
+  cloud_storage_fixture& fixture,
+  cloud_storage::partition_manifest& manifest,
+  model::offset base_offset,
+  model::offset_delta base_delta,
+  const std::vector<std::vector<batch_t>>& batches) {
+    // the batches are supposed to replace the ones which are already
+    // in the manifest
+    auto segments = make_segments(batches, base_offset);
+
+    // remove old segments
+    std::vector<ss::sstring> segments_to_remove;
+    for (const auto& s : segments) {
+        auto bo = s.base_offset;
+        auto it = manifest.find(bo);
+        BOOST_REQUIRE(it != manifest.end());
+        BOOST_REQUIRE(it->size_bytes != s.bytes.size());
+        auto path = manifest.generate_segment_path(*it);
+        segments_to_remove.push_back(ss::sstring("/") + path().native());
+    }
+    fixture.remove_expectations(segments_to_remove);
+
+    // remove manifest from the list
+    auto manifest_url = ss::sstring("/")
+                        + manifest.get_manifest_path()().string();
+
+    auto expectations = make_imposter_expectations(
+      manifest, segments, false, base_delta);
+
+    auto it = std::find_if(
+      expectations.begin(),
+      expectations.end(),
+      [manifest_url](const cloud_storage_fixture::expectation& e) {
+          return e.url == manifest_url;
+      });
+
+    vassert(it != expectations.end(), "Can't find manifest URL");
+    expectations.erase(it);
+
+    // add re-generated segments to the impostor
+    fixture.add_expectations(expectations);
+    return segments;
+}
+
 std::vector<in_memory_segment> setup_s3_imposter(
   cloud_storage_fixture& fixture,
   std::vector<std::vector<batch_t>> batches,

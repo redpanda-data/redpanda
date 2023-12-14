@@ -233,6 +233,8 @@ const kafka::offset remote_segment::get_base_kafka_offset() const {
     return _base_rp_offset - _base_offset_delta;
 }
 
+size_t remote_segment::get_segment_size() const { return _size; }
+
 const model::term_id remote_segment::get_term() const { return _term; }
 
 ss::future<> remote_segment::stop() {

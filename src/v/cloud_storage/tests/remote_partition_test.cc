@@ -12,6 +12,7 @@
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/async_manifest_view.h"
+#include "cloud_storage/download_exception.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -1869,4 +1870,136 @@ FIXTURE_TEST(
     auto headers_read = scan_remote_partition(*this, base, max);
     BOOST_REQUIRE_EQUAL(
       headers_read.size(), total_batches - num_configs - num_holes);
+}
+
+std::vector<model::record_batch_header> scan_remote_partition_with_replacements(
+  cloud_storage_fixture& imposter,
+  model::offset base,
+  model::offset max,
+  std::vector<std::vector<batch_t>> segments,
+  size_t maybe_max_segments,
+  size_t maybe_max_readers) {
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    ss::lowres_clock::update();
+    auto conf = imposter.get_configuration();
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    if (maybe_max_segments) {
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard(
+            maybe_max_segments);
+    }
+    if (maybe_max_readers) {
+        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
+          maybe_max_readers);
+    }
+    storage::log_reader_config read_one(
+      base, model::next_offset(base), ss::default_priority_class());
+    storage::log_reader_config read_all(
+      base, max, ss::default_priority_class());
+
+    // 1. Hydrate the manifest and create the remote partition.
+    // 2. Make a reader.
+    // 3. Replace the segment in the cloud storage.
+    // 4. Create another reader to consume the offset range.
+    // 5. Make sure that the reuploaded segment is hydrated, not the replaced
+    // one.
+
+    auto manifest = hydrate_manifest(imposter.api.local(), bucket);
+    partition_probe probe(manifest.get_ntp());
+
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      imposter.api, imposter.cache, manifest, bucket);
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view,
+      imposter.api.local(),
+      imposter.cache.local(),
+      bucket,
+      probe);
+
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    vlog(
+      test_log.debug,
+      "Start remote_partition reader, reader config: {}",
+      read_one);
+    auto reader_1 = partition->make_reader(read_one).get().reader;
+
+    auto to_json = [](const partition_manifest& m) {
+        std::stringstream s;
+        m.serialize_json(s);
+        return s.str();
+    };
+
+    // Replace offset range
+    vlog(
+      test_log.debug,
+      "Replace segments called, original manifest: {}",
+      to_json(manifest));
+    replace_segments(
+      imposter, manifest, base, model::offset_delta(0), segments);
+    vlog(
+      test_log.debug,
+      "Replace segments completed, updated manifest: {}",
+      to_json(manifest));
+
+    bool first_reader_failed = false;
+    try {
+        reader_1.consume(test_consumer(), model::no_timeout).get();
+    } catch (const download_exception&) {
+        // We expect the first reader to fail because it was created
+        // before the segment was deleted. The 'consume' call will
+        // trigger hydration because the 'remote_segment' is created
+        // with the reader but the segment hydration is delayed until
+        // the reader starts consuming.
+        first_reader_failed = true;
+        vlog(
+          test_log.error,
+          "Can't consume from the reader: {}",
+          std::current_exception());
+    }
+    std::move(reader_1).release();
+    BOOST_REQUIRE(first_reader_failed);
+
+    vlog(
+      test_log.debug,
+      "Start remote_partition reader, reader config: {}",
+      read_all);
+
+    // The 'remote_partition' stores one 'remote_segment' that references
+    // the deleted segment in the cloud storage. If the reader will pick it
+    // up it won't be able to consume anything. If it functions properly it
+    // should be able to detect the fact that the offset range that the
+    // 'remote_segment' covers was replaced and to discard the stale
+    // 'remote_segment'.
+    auto reader_2 = partition->make_reader(read_all).get().reader;
+    auto all_headers
+      = reader_2.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader_2).release();
+
+    return all_headers;
+}
+
+FIXTURE_TEST(test_stale_reader, cloud_storage_fixture) {
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+
+    // offsets 0-29
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+
+    print_segments(segments);
+
+    auto headers_read = scan_remote_partition_with_replacements(
+      *this, model::offset(0), model::offset(29), batch_types, 0, 0);
+
+    BOOST_REQUIRE_EQUAL(headers_read.size(), 30);
 }

@@ -174,7 +174,11 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
     auto iter = _segments.find(mit->base_offset);
     if (iter != _segments.end()) {
         if (
-          iter->second->segment->get_max_rp_offset() != mit->committed_offset) {
+          iter->second->segment->get_segment_path()
+          != manifest.generate_segment_path(*mit)) {
+            // The segment was replaced and doesn't match metadata anymore. We
+            // want to avoid picking it up because otherwise we won't be able to
+            // make any progress.
             offload_segment(iter->first);
             iter = _segments.end();
         }
