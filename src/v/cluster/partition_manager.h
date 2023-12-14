@@ -208,6 +208,11 @@ public:
     ss::future<cloud_storage::cache_usage_target>
     get_cloud_cache_disk_usage_target() const;
 
+    template<typename T, typename... Args>
+    void register_factory(Args&&... args) {
+        _stm_registry.register_factory<T>(std::forward<Args>(args)...);
+    }
+
 private:
     /// Download log if partition_recovery_manager is initialized.
     ///
@@ -252,6 +257,8 @@ private:
 
     // Our handle from registering for leadership notifications on group_manager
     std::optional<cluster::notification_id_type> _leader_notify_handle;
+
+    state_machine_registry _stm_registry;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };
