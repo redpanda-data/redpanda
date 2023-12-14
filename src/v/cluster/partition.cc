@@ -808,38 +808,27 @@ void partition::maybe_construct_archiver() {
 
 uint64_t partition::non_log_disk_size_bytes() const {
     uint64_t raft_size = _raft->get_snapshot_size();
-
-    std::optional<uint64_t> rm_size;
-    if (_rm_stm) {
-        rm_size = _rm_stm->get_local_snapshot_size();
-    }
-
-    std::optional<uint64_t> tm_size;
-    if (_tm_stm) {
-        tm_size = _tm_stm->get_local_snapshot_size();
-    }
-
-    std::optional<uint64_t> archival_size;
-    if (_archival_meta_stm) {
-        archival_size = _archival_meta_stm->get_local_snapshot_size();
-    }
-
-    std::optional<uint64_t> idalloc_size;
-    if (_id_allocator_stm) {
-        idalloc_size = _id_allocator_stm->get_local_snapshot_size();
-    }
+    uint64_t stm_local_size = 0;
+    _raft->stm_manager()->for_each_stm(
+      [this, &stm_local_size](
+        const ss::sstring& name, const raft::state_machine_base& stm) {
+          auto const sz = stm.get_local_state_size();
+          vlog(
+            clusterlog.trace,
+            "local non-log disk size of {} stm {} = {} bytes",
+            _raft->ntp(),
+            name,
+            sz);
+          stm_local_size += sz;
+      });
 
     vlog(
       clusterlog.trace,
-      "non-log disk size: raft {} rm {} tm {} archival {} idalloc {}",
-      raft_size,
-      rm_size,
-      tm_size,
-      archival_size,
-      idalloc_size);
+      "local non-log disk size of {}: {}",
+      _raft->ntp(),
+      raft_size + stm_local_size);
 
-    return raft_size + rm_size.value_or(0) + tm_size.value_or(0)
-           + archival_size.value_or(0) + idalloc_size.value_or(0);
+    return raft_size + stm_local_size;
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
@@ -941,21 +930,7 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
 }
 
 ss::future<> partition::remove_persistent_state() {
-    if (_rm_stm) {
-        co_await _rm_stm->remove_persistent_state();
-    }
-    if (_tm_stm) {
-        co_await _tm_stm->remove_persistent_state();
-    }
-    if (_archival_meta_stm) {
-        co_await _archival_meta_stm->remove_persistent_state();
-    }
-    if (_id_allocator_stm) {
-        co_await _id_allocator_stm->remove_persistent_state();
-    }
-    if (_log_eviction_stm) {
-        co_await _log_eviction_stm->remove_persistent_state();
-    }
+    co_await _raft->stm_manager()->remove_local_state();
 }
 
 /**
