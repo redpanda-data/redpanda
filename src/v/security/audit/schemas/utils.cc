@@ -429,7 +429,8 @@ std::ostream& operator<<(std::ostream& os, const class_uid& uid) {
 std::ostream& operator<<(std::ostream& os, const ocsf_base_impl& impl) {
     return os << "{category: " << impl.get_category_uid()
               << ", class: " << impl.get_class_uid()
-              << ", type_uid: " << impl.get_type_uid()() << "}";
+              << ", type_uid: " << impl.get_type_uid()()
+              << ", detail: " << impl.api_info() << "}";
 }
 
 event_type kafka_api_to_event_type(kafka::api_key key) {

@@ -46,6 +46,7 @@ public:
     ocsf_base_impl& operator=(const ocsf_base_impl&) = delete;
     virtual ~ocsf_base_impl() = default;
 
+    virtual ss::sstring api_info() const = 0;
     virtual ss::sstring to_json() const = 0;
     virtual size_t key() const noexcept = 0;
     virtual size_t estimated_size() const noexcept = 0;
@@ -70,6 +71,8 @@ public:
         return sizeof(*this)
                + estimated_ocsf_size(*static_cast<const Derived*>(this));
     }
+
+    ss::sstring api_info() const override { return ""; }
 
     size_t key() const noexcept final {
         size_t h = 0;

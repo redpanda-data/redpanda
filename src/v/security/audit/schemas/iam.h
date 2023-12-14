@@ -123,6 +123,8 @@ private:
     std::optional<ss::sstring> _status_detail;
     user _user;
 
+    ss::sstring api_info() const final { return _user.name; }
+
     size_t hash() const final { return std::hash<authentication>()(*this); }
 
     friend inline void rjson_serialize(
