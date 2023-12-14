@@ -45,7 +45,7 @@ bool index_state::maybe_index(
   model::timestamp last_timestamp,
   std::optional<model::timestamp> new_broker_timestamp,
   bool user_data,
-  bool compactible) {
+  size_t compactible_records) {
     vassert(
       batch_base_offset >= base_offset,
       "cannot track offsets that are lower than our base, o:{}, "
@@ -100,11 +100,9 @@ bool index_state::maybe_index(
             broker_timestamp = *new_broker_timestamp;
         }
     }
-    if (compactible) {
-        if (!first_compactible_offset.has_optional_value()) {
-            first_compactible_offset = tristate<model::offset>{
-              batch_base_offset};
-        }
+    if (compactible_records > 0) {
+        num_compactible_records_appended
+          = num_compactible_records_appended.value_or(0) + compactible_records;
     }
     // always saving the first batch simplifies a lot of book keeping
     if ((accumulator >= step && user_data) || retval) {
@@ -130,8 +128,9 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ", with_offset:" << s.with_offset
              << ", non_data_timestamps:" << s.non_data_timestamps
              << ", broker_timestamp:" << s.broker_timestamp
-             << ", first_compactible_offset:" << s.first_compactible_offset
-             << ", index(" << s.relative_offset_index.size() << ","
+             << ", num_compactible_records_appended:"
+             << s.num_compactible_records_appended << ", index("
+             << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
              << ")}";
 }
@@ -152,7 +151,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, with_offset);
     write(tmp, non_data_timestamps);
     write(tmp, broker_timestamp);
-    write(tmp, first_compactible_offset);
+    write(tmp, num_compactible_records_appended);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -244,10 +243,10 @@ void read_nested(
     if (hdr._version >= index_state::broker_timestamp_version) {
         read_nested(p, st.broker_timestamp, 0U);
     }
-    if (hdr._version >= index_state::first_data_offset_version) {
-        read_nested(p, st.first_compactible_offset, 0U);
+    if (hdr._version >= index_state::num_compactible_records_version) {
+        read_nested(p, st.num_compactible_records_appended, 0U);
     } else {
-        st.first_compactible_offset = tristate<model::offset>{};
+        st.num_compactible_records_appended = std::nullopt;
     }
 }
 

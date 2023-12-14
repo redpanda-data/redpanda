@@ -558,7 +558,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     // Remove any of the beginning segments that may only have one or no
     // compactible records. They would be no-ops to compact.
     while (!segs.empty()) {
-        if (segs.front()->has_compactible_data_records()) {
+        if (segs.front()->may_have_compactible_records()) {
             break;
         }
         // For all intents and purposes, these segments are already compacted.
@@ -637,7 +637,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
               seg->filename());
             continue;
         }
-        if (!seg->has_compactible_data_records()) {
+        if (!seg->may_have_compactible_records()) {
             // All data records are already compacted away. Skip to avoid a
             // needless rewrite.
             seg->mark_as_finished_windowed_compaction();

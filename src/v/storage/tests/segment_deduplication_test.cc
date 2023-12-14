@@ -134,7 +134,7 @@ TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
     // indexes if necessary, etc.
     ASSERT_EQ(5, segs.size());
     for (const auto& seg : segs) {
-        ASSERT_FALSE(seg->has_compactible_data_records());
+        ASSERT_FALSE(seg->may_have_compactible_records());
     }
 
     // Add some segments with multiple records. They should be eligible for
@@ -150,7 +150,7 @@ TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
     int i = 0;
     for (const auto& seg : segs) {
         bool should_have_records = i >= 5;
-        ASSERT_EQ(should_have_records, seg->has_compactible_data_records());
+        ASSERT_EQ(should_have_records, seg->may_have_compactible_records());
         i++;
     }
 }

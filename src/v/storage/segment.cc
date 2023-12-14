@@ -841,25 +841,15 @@ ss::future<model::timestamp> segment::get_file_timestamp() const {
         .count());
 }
 
-bool segment::has_compactible_data_records() const {
-    auto first_compactible_offset = index().first_compactible_offset();
-    if (first_compactible_offset.is_disabled()) {
+bool segment::may_have_compactible_records() const {
+    auto num_compactible_records = index().num_compactible_records_appended();
+    if (!num_compactible_records.has_value()) {
         // Segment was written in a version that didn't have the
-        // `first_data_offset` field. We can't definitively say no.
+        // `num_compactible_records_appended` field. We can't definitively say
+        // that there were no data records, so err on the side of caution.
         return true;
     }
-    auto has_compactible_batches
-      = first_compactible_offset.has_optional_value();
-    if (!has_compactible_batches) {
-        // No data records were recorded in the index. Compaction will not
-        // remove anyting.
-        return false;
-    }
-    // Compaction will not remove anything if the first data offset is the last
-    // record, because compaction will retain the last record in each segment.
-    auto only_one_compactible_record = first_compactible_offset.get_optional()
-                                       == index().max_offset();
-    return !only_one_compactible_record;
+    return num_compactible_records.value() > 1;
 }
 
 } // namespace storage

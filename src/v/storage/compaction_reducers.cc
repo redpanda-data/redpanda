@@ -318,7 +318,7 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
           std::nullopt,
           _internal_topic
             || batch.header().type == model::record_batch_type::raft_data,
-          compactible_batch)) {
+          compactible_batch ? batch.header().record_count : 0)) {
         _acc = 0;
     }
     co_await _appender->append(batch);

@@ -265,13 +265,21 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     ASSERT_NO_FATAL_FAILURE(check_records(cardinality, num_segments - 1).get());
 }
 
-TEST_F(CompactionFixtureTest, TestRecompactWithNewData) {
+class CompactionFixtureBatchSizeParamTest
+  : public CompactionFixtureTest
+  , public ::testing::WithParamInterface<size_t> {};
+
+TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
+    auto records_per_batch = GetParam();
     constexpr auto duplicates_per_key = 10;
     constexpr auto num_segments = 10;
     constexpr auto total_records = 100;
     constexpr auto cardinality = total_records / duplicates_per_key; // 10
     size_t records_per_segment = total_records / num_segments;       // 10
-    generate_data(num_segments, cardinality, records_per_segment).get();
+    size_t batches_per_segment = records_per_segment / records_per_batch;
+    generate_data(
+      num_segments, cardinality, batches_per_segment, records_per_batch)
+      .get();
 
     // Compact everything in one go.
     ss::abort_source never_abort;
@@ -313,13 +321,17 @@ TEST_F(CompactionFixtureTest, TestRecompactWithNewData) {
     ASSERT_EQ(segments_compacted + 3, segments_compacted_3);
 
     // Check for a reasonable compaction ratio.
-    ASSERT_LT(compaction_ratio_3, 0.5);
+    ASSERT_LT(compaction_ratio_3, 0.65);
 
     // Compared to our first compaction ratio that windowed compacted many
     // segments in a row, one self-compaction + windowed compaction will have a
     // worse compaction ratio.
     ASSERT_LT(compaction_ratio, compaction_ratio_3);
 }
+INSTANTIATE_TEST_SUITE_P(
+  RecordsPerBatch,
+  CompactionFixtureBatchSizeParamTest,
+  ::testing::Values(1, 5, 10));
 
 // Regression test for a bug when compacting when the last segment is all
 // non-data batches. Previously such segments would appear uncompacted, and

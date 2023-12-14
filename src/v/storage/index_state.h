@@ -94,7 +94,7 @@ struct index_state
   : serde::envelope<index_state, serde::version<7>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
     static constexpr auto broker_timestamp_version = 6;
-    static constexpr auto first_data_offset_version = 7;
+    static constexpr auto num_compactible_records_version = 7;
 
     static index_state make_empty_index(offset_delta_time with_offset);
 
@@ -139,14 +139,14 @@ struct index_state
     // the index.
     std::optional<model::timestamp> broker_timestamp{std::nullopt};
 
-    // The offset of the first compactible record in the segment. This may not
-    // necessarily correspond to one of the values in the indexing vectors.
+    // The number of compactible records appended to the segment. This may not
+    // necessarily indicate the exact number of compactible records, e.g. if
+    // the segment was truncated, the count will remain the same. As such, this
+    // value may be an overestimate of the exact number of compactible records.
     //
-    // Special values:
-    // - nullopt: indicates no compactible batches are in the segment.
-    // - disabled: indicates this index was written in a version that didn't
-    //             support this field, and we can't conclude anything.
-    tristate<model::offset> first_compactible_offset{std::nullopt};
+    // Returns std::nullopt if this index was written in a version that didn't
+    // support this field, and we can't conclude anything.
+    std::optional<size_t> num_compactible_records_appended{0};
 
     size_t size() const { return relative_offset_index.size(); }
 
@@ -216,7 +216,7 @@ struct index_state
       model::timestamp last_timestamp,
       std::optional<model::timestamp> new_broker_timestamp,
       bool user_data,
-      bool compactible);
+      size_t compactible_records);
 
     void update_batch_timestamps_are_monotonic(bool pred) {
         batch_timestamps_are_monotonic = batch_timestamps_are_monotonic && pred;
@@ -243,7 +243,7 @@ private:
       , with_offset(o.with_offset)
       , non_data_timestamps(o.non_data_timestamps)
       , broker_timestamp(o.broker_timestamp)
-      , first_compactible_offset(o.first_compactible_offset) {}
+      , num_compactible_records_appended(o.num_compactible_records_appended) {}
 };
 
 } // namespace storage

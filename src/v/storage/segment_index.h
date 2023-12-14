@@ -159,8 +159,8 @@ public:
     std::optional<model::timestamp>
       find_highest_timestamp_before(model::timestamp) const;
 
-    auto first_compactible_offset() const {
-        return _state.first_compactible_offset;
+    auto num_compactible_records_appended() const {
+        return _state.num_compactible_records_appended;
     }
     model::offset base_offset() const { return _state.base_offset; }
     model::offset max_offset() const { return _state.max_offset; }
