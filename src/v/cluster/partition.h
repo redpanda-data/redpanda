@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/distributed_kv_stm.h"
+#include "cluster/fwd.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
 #include "cluster/partition_probe.h"
@@ -67,7 +68,8 @@ public:
     ~partition();
 
     raft::group_id group() const { return _raft->group(); }
-    ss::future<> start(std::optional<topic_configuration>);
+    ss::future<>
+    start(std::optional<topic_configuration>, state_machine_registry&);
     ss::future<> stop();
 
     bool should_construct_archiver();

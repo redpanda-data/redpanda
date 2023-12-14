@@ -258,7 +258,7 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     _manage_watchers.notify(p->ntp(), p);
 
-    co_await p->start(std::move(topic_cfg));
+    co_await p->start(std::move(topic_cfg), _stm_registry);
 
     co_return c;
 }
