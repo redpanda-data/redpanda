@@ -6,9 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
 import re
 import time
+from collections import defaultdict
+from dataclasses import astuple, dataclass
+
+from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -16,10 +19,23 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.services.redpanda import SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.utils.si_utils import quiesce_uploads
-from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 from rptest.utils.si_utils import BucketView
+from rptest.utils.si_utils import quiesce_uploads
+
+
+@dataclass(frozen=True)
+class TopicPartitionOffset:
+    topic: str
+    partition: int
+    offset: int
+
+    def __iter__(self):
+        return iter(astuple(self))
+
+    def prev(self):
+        return TopicPartitionOffset(self.topic, self.partition,
+                                    self.offset - 1)
 
 
 class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
@@ -45,9 +61,11 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
             node_prealloc_count=1,
             si_settings=self.si_settings)
 
-    def describe_all_groups(self, num_groups: int = 1):
+    def describe_all_groups(self,
+                            num_groups: int = 1
+                            ) -> dict[str, set[TopicPartitionOffset]]:
         rpk = RpkTool(self.redpanda)
-        all_groups = {}
+        all_groups = defaultdict(lambda: set())
 
         # The one consumer group in this test comes from KgoVerifierConsumerGroupConsumer
         # for example, kgo-verifier-1691097745-347-0
@@ -76,10 +94,11 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
 
         for g in group_list_res:
             gd = rpk.group_describe(g)
-            all_groups[gd.name] = {}
             for p in gd.partitions:
-                all_groups[
-                    gd.name][f"{p.topic}/{p.partition}"] = p.current_offset
+                all_groups[gd.name].add(
+                    TopicPartitionOffset(topic=p.topic,
+                                         partition=p.partition,
+                                         offset=p.current_offset))
 
         return all_groups
 
@@ -96,7 +115,9 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
 
     @cluster(num_nodes=4)
     def test_consumer_offsets_partition_recovery(self):
-        topic = TopicSpec(partition_count=16, replication_factor=3)
+        partition_count = 16
+        topic = TopicSpec(partition_count=partition_count,
+                          replication_factor=3)
         self.client().create_topic([topic])
         msg_size = 1024
         msg_cnt = 10000
@@ -161,3 +182,45 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
         groups_post_restore = self.describe_all_groups()
         self.logger.debug(f"Groups post-restore {groups_post_restore}")
         assert groups_post_restore == groups_pre_restore, f"{groups_post_restore} vs {groups_pre_restore}"
+
+        self.run_workload_after_restore(groups_pre_restore, partition_count,
+                                        topic)
+
+    def run_workload_after_restore(self, groups, partition_count, topic):
+        rpk = RpkTool(self.redpanda)
+        group = next((k for k in groups.keys() if k.startswith('kgo-')), None)
+        assert group is not None, f'Missing kgo group in group description'
+
+        tp_offsets = groups[group]
+        for (t, part, _) in tp_offsets:
+            # Produce one message per partition, so we can consume n=partition_count messages later
+            # and verify the offset per partition
+            produce_result = rpk.produce(t,
+                                         key=f'{part}',
+                                         msg=f'{part}',
+                                         partition=part)
+            self.logger.debug(f'{produce_result=}')
+
+        # Use the same group as the original `kgo-` group, so we start reading from wherever __consumer_offsets
+        # points to per partition for our group.
+        for line in rpk.consume(topic.name,
+                                n=partition_count,
+                                group=group,
+                                format='%t,%p,%o\n').strip().splitlines():
+            tokens = line.split(',')
+            # The offset we read for our group+partition should match the group description pre-restore
+            assert TopicPartitionOffset(
+                topic=tokens[0],
+                partition=int(tokens[1]),
+                offset=int(tokens[2])
+            ) in tp_offsets, f'Topic, partition and offset {line} missing from committed offsets: {tp_offsets}'
+
+        groups_desc = self.describe_all_groups()
+        assert group in groups_desc
+        for latest_tp_offset in groups_desc[group]:
+            assert latest_tp_offset not in tp_offsets, (
+                f'{latest_tp_offset} found in {tp_offsets} '
+                f'after consuming more records for partition')
+            # After new consume for the group, the offsets should have been incremented
+            assert latest_tp_offset.prev(
+            ) in tp_offsets, f'partition offset did not increment correctly after consume: {latest_tp_offset}'
