@@ -138,6 +138,8 @@ public:
         return _bg_gate.get_count() > 0;
     }
 
+    bool has_waiters() const noexcept { return _cvar.has_waiters(); }
+
 private:
     ss::future<>
     client_self_configure(std::optional<std::reference_wrapper<stop_signal>>
