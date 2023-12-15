@@ -522,6 +522,7 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
     if (!_cur_term || _raft0->term() != _cur_term->id) {
         // we haven't done a single tick in this term yet, return empty response
         ret.status = partition_balancer_status::starting;
+        ret.partitions_pending_force_recovery_count = -1;
         ret.error = errc::success;
         return ret;
     }

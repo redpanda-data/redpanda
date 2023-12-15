@@ -19,7 +19,78 @@ import time
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.admin import Replica
 from rptest.clients.kcl import KCL
-from threading import Thread
+from threading import Thread, Condition
+from rptest.services.redpanda import RedpandaService
+
+
+class ControllerLeadershipTransferInjector():
+    """
+    Utility that injects a controller leadership change contiuously with
+    a given time frequency. Provides the ability to pause/resume transfers.
+    """
+    def __init__(self, redpanda: RedpandaService, frequency_s: int = 5):
+        self.redpanda = redpanda
+        self.frequency_s = frequency_s
+        self.admin = self.redpanda._admin
+        self.logger = self.redpanda.logger
+        self.stop_leadership_transfer = False
+        self.pause_leadership_transfer = False
+        self.num_successful_transfers = 0
+
+        self.resume_leadership_transfer = Condition()
+        self.leadership_transfer_paused = Condition()
+
+        self.thread = Thread(target=self._transfer_loop)
+        self.thread.start()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.stop_leadership_transfer = True
+        self.resume()
+        self.thread.join(timeout=30)
+        assert self.num_successful_transfers, "Not a single successful controller leadership transfer"
+
+    def pause(self):
+        self.logger.debug("Pausing controller leadership transfers")
+        self.pause_leadership_transfer = True
+        with self.leadership_transfer_paused:
+            self.leadership_transfer_paused.wait()
+
+    def resume(self):
+        self.logger.debug("Resuming controller leadership transfers")
+        self.pause_leadership_transfer = False
+        with self.resume_leadership_transfer:
+            self.resume_leadership_transfer.notify()
+
+    def _transfer_loop(self):
+        while not self.stop_leadership_transfer:
+            try:
+                controller = self.redpanda.controller()
+                assert controller, "No controller available"
+                controller_id = self.redpanda.node_id(controller)
+                candidates = []
+                for n in self.redpanda.started_nodes():
+                    id = self.redpanda.node_id(n)
+                    if id != controller_id:
+                        candidates.append(id)
+                new_controller = random.choice(candidates)
+                self.admin.partition_transfer_leadership(
+                    namespace="redpanda",
+                    topic="controller",
+                    partition="0",
+                    target_id=new_controller)
+                self.num_successful_transfers += 1
+            except Exception as e:
+                self.logger.debug(e, exc_info=True)
+                pass
+            if self.pause_leadership_transfer:
+                with self.leadership_transfer_paused:
+                    self.leadership_transfer_paused.notify()
+                with self.resume_leadership_transfer:
+                    self.resume_leadership_transfer.wait()
+            time.sleep(self.frequency_s)
 
 
 class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
@@ -346,72 +417,72 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             n for n in self.redpanda.started_nodes()
             if self.redpanda.node_id(n) not in to_kill_node_ids
         ])
-
-        stop_leadership_transfer = False
-
-        def inject_controller_leadership_transfer():
-            while not stop_leadership_transfer:
-                try:
-                    controller = self.redpanda.controller()
-                    assert controller, "No controller available"
-                    controller_id = self.redpanda.node_id(controller)
-                    candidates = []
-                    for n in self.redpanda.started_nodes():
-                        id = self.redpanda.node_id(n)
-                        if id != controller_id and id not in to_kill_node_ids:
-                            candidates.append(id)
-                    new_controller = random.choice(candidates)
-                    admin.partition_transfer_leadership(
-                        namespace="redpanda",
-                        topic="controller",
-                        partition="0",
-                        target_id=new_controller)
-                except:
-                    pass
-                time.sleep(2)
-
+        payload = make_recovery_payload(to_kill_node_ids,
+                                        partitions_lost_majority)
         # issue a node wise recovery
         self.redpanda._admin.force_recover_partitions_from_nodes(
-            payload=make_recovery_payload(to_kill_node_ids,
-                                          partitions_lost_majority),
-            node=surviving_node)
+            payload, surviving_node)
 
-        leadership_transfer = Thread(
-            target=inject_controller_leadership_transfer)
-        leadership_transfer.start()
+        with ControllerLeadershipTransferInjector(self.redpanda) as transfers:
 
-        def no_majority_lost_partitions():
-            try:
-                lost_majority = admin.get_majority_lost_partitions_from_nodes(
-                    dead_brokers=to_kill_node_ids,
-                    node=surviving_node,
-                    timeout=3)
-                self.logger.debug(
-                    f"Partitions with lost majority: {lost_majority}")
-                return len(lost_majority) == 0
-            except requests.exceptions.RequestException as e:
-                self.logger.debug(e, exc_info=True)
-                # may happen with controller leadership transfer.
-                pass
-            return False
+            def no_majority_lost_partitions():
+                try:
+                    transfers.pause()
+                    wait_until(controller_available,
+                               timeout_sec=self.WAIT_TIMEOUT_S,
+                               backoff_sec=3,
+                               err_msg="Controller not available")
+                    lost_majority = admin.get_majority_lost_partitions_from_nodes(
+                        dead_brokers=to_kill_node_ids,
+                        node=surviving_node,
+                        timeout=3)
+                    self.logger.debug(
+                        f"Partitions with lost majority: {lost_majority}")
+                    return len(lost_majority) == 0
+                except Exception as e:
+                    self.logger.debug(e, exc_info=True)
+                    return False
+                finally:
+                    transfers.resume()
 
-        try:
             # Wait until there are no partition assignments with majority loss due to dead nodes.
             wait_until(no_majority_lost_partitions,
                        timeout_sec=self.WAIT_TIMEOUT_S,
                        backoff_sec=3,
                        err_msg="Node wise recovery failed")
 
-            def pending_force_reconfigurations():
+            def get_partition_balancer_status(predicate):
                 try:
-                    return admin.get_partition_balancer_status(
-                    )["partitions_pending_force_recovery_count"]
-                except:
-                    return -1
+                    status = admin.get_partition_balancer_status()
+                    return predicate(status)
+                except Exception as e:
+                    self.logger.debug(e, exc_info=True)
+                    return None
 
-            wait_until(lambda: pending_force_reconfigurations() == 0,
+            def no_pending_force_reconfigurations():
+                try:
+                    transfers.pause()
+                    wait_until(controller_available,
+                               timeout_sec=self.WAIT_TIMEOUT_S,
+                               backoff_sec=3,
+                               err_msg="Controller not available")
+                    # Wait for balancer tick to run so the data is populated.
+                    wait_until(lambda: get_partition_balancer_status(
+                        lambda s: s["status"] != "starting"),
+                               timeout_sec=self.WAIT_TIMEOUT_S,
+                               backoff_sec=3,
+                               err_msg="Balancer tick did not run in time")
+                    return get_partition_balancer_status(lambda s: s[
+                        "partitions_pending_force_recovery_count"] == 0)
+                except Exception as e:
+                    self.logger.debug(e, exc_info=True)
+                    return -1
+                finally:
+                    transfers.resume()
+
+            wait_until(no_pending_force_reconfigurations,
                        timeout_sec=self.WAIT_TIMEOUT_S,
-                       backoff_sec=2,
+                       backoff_sec=3,
                        err_msg="reported force recovery count is non zero")
 
             # Ensure every partition has a stable leader.
@@ -423,6 +494,3 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
                         timeout_s=self.WAIT_TIMEOUT_S,
                         backoff_s=2,
                         hosts=self._alive_nodes())
-        finally:
-            stop_leadership_transfer = True
-            leadership_transfer.join(timeout=30)
