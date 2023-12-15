@@ -137,21 +137,22 @@ public:
         //---- Step 3: Force a roll and compact the log.
         log->flush().get0();
         log->force_roll(ss::default_priority_class()).get0();
-        if (s._compact) {
-            ss::abort_source as{};
-            storage::housekeeping_config ccfg(
-              model::timestamp::min(),
-              std::nullopt,
-              model::offset::max(),
-              ss::default_priority_class(),
-              as);
-            // Compacts until a single sealed segment remains, other than the
-            // currently active one.
-            tests::cooperative_spin_wait_with_timeout(30s, [log, ccfg]() {
-                return log->housekeeping(ccfg).then(
-                  [log]() { return log->segment_count() == 2; });
-            }).get();
+        if (!s._compact) {
+            return;
         }
+        ss::abort_source as{};
+        storage::housekeeping_config ccfg(
+          model::timestamp::min(),
+          std::nullopt,
+          model::offset::max(),
+          ss::default_priority_class(),
+          as);
+        // Compacts until a single sealed segment remains, other than the
+        // currently active one.
+        tests::cooperative_spin_wait_with_timeout(30s, [log, ccfg]() {
+            return log->housekeeping(ccfg).then(
+              [log]() { return log->segment_count() == 2; });
+        }).get();
 
         //--- Step 4: Read the log and validate the batches.
 
