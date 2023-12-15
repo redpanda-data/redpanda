@@ -11,4 +11,5 @@
 
 namespace kafka {
 ss::logger klog("kafka");
+truncating_logger kwire(klog, 1048576);
 } // namespace kafka

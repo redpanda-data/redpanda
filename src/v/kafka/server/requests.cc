@@ -47,7 +47,7 @@ requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
 process_result_stages
 do_process(request_context&& ctx, ss::smp_service_group g) {
     vlog(
-      klog.trace,
+      kwire.trace,
       "[{}:{}] processing name:{}, key:{}, version:{} for {}",
       ctx.connection()->client_host(),
       ctx.connection()->client_port(),
@@ -83,7 +83,7 @@ process_result_stages process_generic(
   ss::smp_service_group g,
   const session_resources& sres) {
     vlog(
-      klog.trace,
+      kwire.trace,
       "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}, "
       "ctx_size: {}",
       ctx.connection()->client_host(),
