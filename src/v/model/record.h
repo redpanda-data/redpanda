@@ -581,7 +581,7 @@ struct batch_identity {
     timestamp max_timestamp;
     bool is_transactional{false};
 
-    bool has_idempotent() { return pid.id >= 0; }
+    bool is_idempotent() const { return pid.id >= 0; }
 
     friend std::ostream& operator<<(std::ostream&, const batch_identity&);
 };
@@ -709,6 +709,14 @@ public:
     void set_term(model::term_id i) { _header.ctx.term = i; }
     // Size in bytes of the header plus records.
     int32_t size_bytes() const { return _header.size_bytes; }
+    bool contains_transactional_data() const {
+        // A transactional batch can be a
+        // 1. transactional data batch - transactional bit set
+        // 2. transactional control batch (fence, abort etc) - control batch
+        // and pid >= 0
+        return _header.attrs.is_transactional()
+               || (_header.attrs.is_control() && _header.producer_id >= 0);
+    }
 
     int32_t memory_usage() const {
         return sizeof(*this) + _records.size_bytes();

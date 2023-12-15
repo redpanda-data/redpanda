@@ -551,7 +551,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           gclog.debug,
           "[{}] segment {} self compaction result: {}",
           config().ntp(),
-          seg->reader().filename(),
+          seg,
           result);
         has_self_compacted = true;
     }
@@ -811,9 +811,15 @@ disk_log_impl::find_compaction_range(const compaction_config& cfg) {
     // the chosen segments all need to be stable.
     // Each participating segment should individually pass the compactible
     // offset check for the compacted segment to be stable.
+    // Additionally each segment should have finished self compaction. This
+    // is needed by transactions because the compaction index of segments
+    // with transactional batches is only populated during self compaction.
+    // Not having this check would result in concatenating with an empty
+    // compaction index and a data loss.
     const auto unstable = std::any_of(
       range.first, range.second, [&cfg](ss::lw_shared_ptr<segment>& seg) {
-          return seg->has_appender() || !seg->has_compactible_offsets(cfg);
+          return !seg->finished_self_compaction() || seg->has_appender()
+                 || !seg->has_compactible_offsets(cfg);
       });
     if (unstable) {
         return std::nullopt;
@@ -837,6 +843,20 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
             all_window_compacted = false;
             break;
         }
+    }
+
+    auto all_segments_self_compacted = std::ranges::all_of(
+      segments, &segment::finished_self_compaction);
+
+    if (unlikely(!all_segments_self_compacted)) {
+        const auto total_size = std::accumulate(
+          segments.begin(),
+          segments.end(),
+          size_t(0),
+          [](size_t acc, ss::lw_shared_ptr<segment>& seg) {
+              return acc + seg->size_bytes();
+          });
+        co_return compaction_result{total_size};
     }
 
     if (gclog.is_enabled(ss::log_level::debug)) {

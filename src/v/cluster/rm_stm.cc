@@ -979,7 +979,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
         auto pid = bid.pid.get_id();
         auto tx_units = co_await get_tx_lock(pid)->get_units();
         co_return co_await transactional_replicate(bid, std::move(b));
-    } else if (bid.has_idempotent()) {
+    } else if (bid.is_idempotent()) {
         co_return co_await idempotent_replicate(
           bid, std::move(b), opts, enqueued);
     }
@@ -1910,7 +1910,7 @@ ss::future<> rm_stm::reduce_aborted_list() {
 
 void rm_stm::apply_data(
   model::batch_identity bid, const model::record_batch_header& header) {
-    if (bid.has_idempotent()) {
+    if (bid.is_idempotent()) {
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
         const auto last_offset = header.last_offset();
         const auto last_kafka_offset = from_log_offset(header.last_offset());

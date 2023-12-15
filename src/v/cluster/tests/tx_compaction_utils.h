@@ -105,12 +105,33 @@ public:
               random_generators::get_int(1, num_ops)}));
         }
 
+        auto dummy_as = ss::abort_source{};
+        constexpr auto ret_duration = 10s;
+        auto housekeeping = [&]() {
+            return log->apply_segment_ms().then([&] {
+                return log
+                  ->housekeeping(storage::housekeeping_config{
+                    model::timestamp(
+                      model::timestamp::now().value() - ret_duration.count()),
+                    std::nullopt,
+                    log->stm_manager()->max_collectible_offset(),
+                    ss::default_priority_class(),
+                    dummy_as,
+                  })
+                  .handle_exception_type(
+                    [](const storage::segment_closed_exception&) {});
+            });
+        };
+
         //----- Step 2: Execute ops
         while (!ops.empty()) {
+            auto housekeeping_fut = housekeeping();
+            ss::yield().get();
             auto op = ops.top();
             op->execute();
             vlog(clusterlog.info, "Executed op: {}", op->debug());
             ops.pop();
+            housekeeping_fut.get();
         }
 
         //---- Step 3: Force a roll and compact the log.
