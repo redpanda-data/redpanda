@@ -550,6 +550,13 @@ ss::future<bool> persisted_stm<T>::wait_no_throw(
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::start() {
+    if (_raft->dirty_offset() == model::offset{}) {
+        // If the log was just (re-)created, we remove any persistent state that
+        // could remain from previous partition incarnation (e.g. in the
+        // kvstore).
+        co_await remove_persistent_state();
+    }
+
     std::optional<stm_snapshot> maybe_snapshot;
     try {
         maybe_snapshot = co_await load_local_snapshot();
