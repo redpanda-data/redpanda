@@ -9,10 +9,12 @@
 
 #include "cluster/members_frontend.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "cluster/tests/tx_compaction_utils.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "model/timestamp.h"
 #include "storage/tests/manual_mixin.h"
 #include "test_utils/async.h"
@@ -134,4 +136,97 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
           seg->offsets().base_offset, model::next_offset(prev_last));
         prev_last = seg->offsets().committed_offset;
     }
+}
+
+FIXTURE_TEST(compact_transactions_and_replicate, compaction_multinode_test) {
+    const model::topic topic{"mocha"};
+    model::node_id id{0};
+    auto* app = create_node_application(id);
+    auto* rp = instance(id);
+    wait_for_controller_leadership(id).get();
+
+    cluster::topic_properties props;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    rp->add_topic({model::kafka_namespace, topic}, 1, props).get();
+    model::partition_id pid{0};
+    auto ntp = model::ntp(model::kafka_namespace, topic, pid);
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&] {
+        auto [_, prt] = get_leader(ntp);
+        return prt != nullptr;
+    });
+    auto [_, first_partition] = get_leader(ntp);
+    auto first_log = first_partition->log();
+    using cluster::tx_executor;
+    tx_executor exec;
+    auto make_ctx = [&](int64_t id, model::term_id term) {
+        model::producer_identity pid{id, 0};
+        return tx_executor::tx_op_ctx{
+          exec.data_gen(), first_partition->rm_stm(), first_log, pid, term};
+    };
+    // Produce transactional records.
+    tx_executor::sorted_tx_ops_t ops;
+    auto term = first_partition->raft()->term();
+
+    int weight = 1;
+    ops.emplace(
+      ss::make_shared(tx_executor::begin_op(make_ctx(1, term), weight++)));
+    ops.emplace(
+      ss::make_shared(tx_executor::roll_op(make_ctx(1, term), weight++)));
+    ops.emplace(
+      ss::make_shared(tx_executor::data_op(make_ctx(1, term), weight++, 1)));
+    ops.emplace(
+      ss::make_shared(tx_executor::roll_op(make_ctx(1, term), weight++)));
+
+    ops.emplace(
+      ss::make_shared(tx_executor::abort_op(make_ctx(1, term), weight++)));
+    ops.emplace(
+      ss::make_shared(tx_executor::begin_op(make_ctx(2, term), weight++)));
+    ops.emplace(
+      ss::make_shared(tx_executor::data_op(make_ctx(2, term), weight++, 1)));
+    ops.emplace(
+      ss::make_shared(tx_executor::abort_op(make_ctx(2, term), weight++)));
+
+    exec.execute(std::move(ops)).get();
+    first_partition->log()->flush().get();
+    first_partition->log()->force_roll(ss::default_priority_class()).get();
+
+    first_log->flush().get();
+    first_log->force_roll(ss::default_priority_class()).get();
+    ss::abort_source as;
+    storage::housekeeping_config conf(
+      model::timestamp::min(),
+      std::nullopt,
+      first_log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    first_log->housekeeping(conf).get();
+
+    // Decommission the first node, forcing replication to the new node.
+    auto* app2 = create_node_application(model::node_id(1));
+    wait_for_all_members(10s).get();
+    auto err = app->controller->get_members_frontend()
+                 .local()
+                 .decommission_node(model::node_id(0))
+                 .get();
+    BOOST_REQUIRE(!err);
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        auto partition = app->partition_manager.local().get(ntp);
+        return partition == nullptr;
+    });
+    auto [new_rp, new_partition] = get_leader(ntp);
+    BOOST_REQUIRE(new_rp);
+    BOOST_REQUIRE(app2 == &new_rp->app);
+
+    auto new_log = new_partition->log();
+    new_log->flush().get();
+    new_log->force_roll(ss::default_priority_class()).get();
+
+    storage::housekeeping_config conf2(
+      model::timestamp::min(),
+      std::nullopt,
+      new_log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    new_log->housekeeping(conf2).get();
+    exec.validate(new_log, 2).get();
 }
