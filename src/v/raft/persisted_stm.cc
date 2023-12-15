@@ -134,6 +134,14 @@ file_backed_stm_snapshot::file_backed_stm_snapshot(
       std::move(snapshot_name),
       ss::default_priority_class()) {}
 
+ss::future<> file_backed_stm_snapshot::perform_initial_cleanup() {
+    // Do nothing as the log directory name contains the partition revision,
+    // therefore any snapshots that we'll find there for a newly created log are
+    // not coming from the previous incarnation of this ntp (and were likely put
+    // there deliberately).
+    return ss::now();
+}
+
 ss::future<> file_backed_stm_snapshot::remove_persistent_state() {
     _snapshot_size = 0;
     co_await _snapshot_mgr.remove_snapshot();
@@ -274,6 +282,12 @@ struct stm_thin_snapshot
 
     auto serde_fields() { return std::tie(offset, data); }
 };
+
+ss::future<> kvstore_backed_stm_snapshot::perform_initial_cleanup() {
+    // Persistent state in the kvstore is keyed by ntp without revision and
+    // therefore could come from the previous partition incarnation. Remove it.
+    return remove_persistent_state();
+}
 
 ss::future<std::optional<stm_snapshot>>
 kvstore_backed_stm_snapshot::load_snapshot() {
@@ -551,10 +565,7 @@ ss::future<bool> persisted_stm<T>::wait_no_throw(
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::start() {
     if (_raft->dirty_offset() == model::offset{}) {
-        // If the log was just (re-)created, we remove any persistent state that
-        // could remain from previous partition incarnation (e.g. in the
-        // kvstore).
-        co_await remove_persistent_state();
+        co_await _snapshot_backend.perform_initial_cleanup();
     }
 
     std::optional<stm_snapshot> maybe_snapshot;
