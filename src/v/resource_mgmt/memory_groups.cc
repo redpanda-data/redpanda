@@ -112,7 +112,7 @@ system_memory_groups& memory_groups() {
     const auto& cfg = config::shard_local_cfg();
     if (wasm) {
         size_t wasm_memory_reservation
-          = cfg.wasm_per_core_memory_reservation.value();
+          = cfg.data_transforms_per_core_memory_reservation.value();
         total -= wasm_memory_reservation;
     }
     compaction_memory_reservation compaction;

@@ -238,17 +238,25 @@ errc plugin_frontend::validate_mutation(const transform_cmd& cmd) {
     for (const auto& topic : noproduce) {
         no_sink_topics.emplace(topic);
     }
-    validator v(_topics, _table, std::move(no_sink_topics));
+    const size_t max_transforms
+      = config::shard_local_cfg()
+          .data_transforms_per_core_memory_reservation.value()
+        / config::shard_local_cfg()
+            .data_transforms_per_function_memory_limit.value();
+
+    validator v(_topics, _table, std::move(no_sink_topics), max_transforms);
     return v.validate_mutation(cmd);
 }
 
 plugin_frontend::validator::validator(
   topic_table* topic_table,
   plugin_table* plugin_table,
-  absl::flat_hash_set<model::topic> no_sink_topics)
+  absl::flat_hash_set<model::topic> no_sink_topics,
+  size_t max)
   : _topics(topic_table)
   , _table(plugin_table)
-  , _no_sink_topics(std::move(no_sink_topics)) {}
+  , _no_sink_topics(std::move(no_sink_topics))
+  , _max_transforms(max) {}
 
 errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
     return ss::visit(
@@ -391,6 +399,13 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
           }
 
           // create!
+
+          if (_table->all_transforms().size() >= _max_transforms) {
+              vlog(
+                clusterlog.info, "too many transforms, more memory required");
+              return errc::transform_count_limit_exceeded;
+          }
+
           if (cmd.value.name().empty()) {
               vlog(
                 clusterlog.info,

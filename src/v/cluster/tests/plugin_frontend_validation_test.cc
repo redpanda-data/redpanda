@@ -36,6 +36,7 @@ namespace {
 using id = model::transform_id;
 using name = model::transform_name;
 using meta = model::transform_metadata;
+constexpr size_t max_transforms = 5;
 
 struct topic_config {
     int partition_count = 1;
@@ -73,7 +74,10 @@ public:
     plugin_table _plugin_table;
     topic_table _topic_table;
     plugin_frontend::validator _validator{
-      &_topic_table, &_plugin_table, {model::topic("__internal_topic")}};
+      &_topic_table,
+      &_plugin_table,
+      {model::topic("__internal_topic")},
+      max_transforms};
 
     std::error_code
     create_topic(std::string_view name, topic_config config = {}) {
@@ -408,6 +412,27 @@ TEST_F(PluginValidationTest, NoDisabledTopics) {
         .sinks = {"bar"},
       }),
       errc::success);
+}
+
+TEST_F(PluginValidationTest, TotalTransformsLimited) {
+    EXPECT_EQ(create_topic("foo"), errc::success);
+    EXPECT_EQ(create_topic("bar"), errc::success);
+    for (size_t i = 0; i < max_transforms; ++i) {
+        EXPECT_EQ(
+          upsert_transform({
+            .name = ss::format("baz_{}", i),
+            .src = "foo",
+            .sinks = {"bar"},
+          }),
+          errc::success);
+    }
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "over-the-limit",
+        .src = "foo",
+        .sinks = {"bar"},
+      }),
+      errc::transform_count_limit_exceeded);
 }
 
 } // namespace cluster

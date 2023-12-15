@@ -70,10 +70,8 @@ struct configuration final : public config_store {
     // Data Transforms
     property<bool> data_transforms_enabled;
     property<std::chrono::milliseconds> data_transforms_commit_interval_ms;
-
-    // Wasm
-    bounded_property<size_t> wasm_per_core_memory_reservation;
-    bounded_property<size_t> wasm_per_function_memory_limit;
+    bounded_property<size_t> data_transforms_per_core_memory_reservation;
+    bounded_property<size_t> data_transforms_per_function_memory_limit;
 
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;

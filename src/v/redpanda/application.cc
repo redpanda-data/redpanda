@@ -2395,8 +2395,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         const auto& cluster = config::shard_local_cfg();
         wasm::runtime::config config = {
           .heap_memory = {
-            .per_core_pool_size_bytes = cluster.wasm_per_core_memory_reservation.value(),
-            .per_engine_memory_limit = cluster.wasm_per_function_memory_limit.value(),
+            .per_core_pool_size_bytes = cluster.data_transforms_per_core_memory_reservation.value(),
+            .per_engine_memory_limit = cluster.data_transforms_per_function_memory_limit.value(),
           },
           .stack_memory = {
             .debug_host_stack_usage = false,

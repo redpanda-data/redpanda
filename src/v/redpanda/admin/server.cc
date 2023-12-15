@@ -1179,6 +1179,19 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::invalid_partition_operation:
             throw ss::httpd::bad_request_exception(
               fmt::format("{}", ec.message()));
+        case cluster::errc::transform_count_limit_exceeded: {
+            const size_t max_transforms
+              = config::shard_local_cfg()
+                  .data_transforms_per_core_memory_reservation.value()
+                / config::shard_local_cfg()
+                    .data_transforms_per_function_memory_limit.value();
+            throw ss::httpd::bad_request_exception(ss::format(
+              "The limit of transforms has been reached ({}), more "
+              "memory must be configured via {}",
+              max_transforms,
+              config::shard_local_cfg()
+                .data_transforms_per_core_memory_reservation.name()));
+        }
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));

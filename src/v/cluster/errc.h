@@ -78,6 +78,7 @@ enum class errc : int16_t {
     partition_disabled,
     invalid_partition_operation,
     concurrent_modification_error,
+    transform_count_limit_exceeded,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -217,7 +218,7 @@ struct errc_category final : public std::error_category {
         case errc::transform_invalid_environment:
             return "Invalid transform environment";
         case errc::trackable_keys_limit_exceeded:
-            return "Too many keys are currently tracked, no space for more.";
+            return "Too many keys are currently tracked, no space for more";
         case errc::topic_disabled:
             return "Topic disabled by user";
         case errc::partition_disabled:
@@ -226,6 +227,8 @@ struct errc_category final : public std::error_category {
             return "Invalid partition operation";
         case errc::concurrent_modification_error:
             return "Concurrent modification error";
+        case errc::transform_count_limit_exceeded:
+            return "Too many transforms deployed";
         }
         return "cluster::errc::unknown";
     }
