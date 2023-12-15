@@ -18,6 +18,7 @@
 #include <seastar/core/smp.hh>
 
 #include <algorithm>
+#include <optional>
 #include <random>
 
 namespace {
@@ -240,7 +241,10 @@ std::tuple<unsigned int, unsigned int> pick_two_random_shards() {
 ss::future<client_pool::client_lease>
 client_pool::acquire(ss::abort_source& as) {
     auto guard = _gate.hold();
+
     std::optional<unsigned int> source_sid;
+    std::optional<http_client_ptr> client;
+
     try {
         // If credentials have not yet been acquired, wait for them. It is
         // possible that credentials are not initialized right after remote
@@ -253,9 +257,12 @@ client_pool::acquire(ss::abort_source& as) {
             u = co_await ss::get_units(_self_config_barrier, 1);
         }
 
-        while (unlikely(
-          _pool.empty() && !_gate.is_closed() && !_as.abort_requested())) {
-            if (
+        while (!client.has_value() && !_gate.is_closed()
+               && !_as.abort_requested()) {
+            if (likely(!_pool.empty())) {
+                client = _pool.back();
+                _pool.pop_back();
+            } else if (
               ss::smp::count == 1
               || _policy == client_pool_overdraft_policy::wait_if_empty
               || _leased.size() >= _capacity * 2) {
@@ -268,14 +275,14 @@ client_pool::acquire(ss::abort_source& as) {
                   "cvar triggered, pool size: {}",
                   _pool.size());
             } else {
+                // Try borrowing from peer shard.
                 auto clients_in_use = [](client_pool& other) {
                     return std::clamp(
                       other._capacity - other._pool.size(),
                       0UL,
                       other._capacity);
                 };
-                // Borrow from random shard. Use 2-random approach. Pick 2
-                // random shards
+                // Use 2-random approach. Pick 2 random shards
                 auto [sid1, sid2] = pick_two_random_shards();
                 auto cnt1 = co_await container().invoke_on(
                   sid1, clients_in_use);
@@ -301,12 +308,12 @@ client_pool::acquire(ss::abort_source& as) {
                 }
                 // Depending on the result either wait or create new connection
                 if (success) {
-                    vlog(pool_log.debug, "successfuly borrowed from {}", sid);
+                    vlog(pool_log.debug, "successfully borrowed from {}", sid);
                     if (_probe) {
                         _probe->register_borrow();
                     }
                     source_sid = sid;
-                    _pool.emplace_back(make_client());
+                    client = make_client();
                 } else {
                     vlog(pool_log.debug, "can't borrow connection, waiting");
                     co_await _cvar.wait();
@@ -322,9 +329,7 @@ client_pool::acquire(ss::abort_source& as) {
     if (_gate.is_closed() || _as.abort_requested()) {
         throw ss::gate_closed_exception();
     }
-    vassert(!_pool.empty(), "'acquire' invariant is broken");
-    auto client = _pool.back();
-    _pool.pop_back();
+    vassert(client.has_value(), "'acquire' invariant is broken");
 
     update_usage_stats();
     vlog(
@@ -339,10 +344,10 @@ client_pool::acquire(ss::abort_source& as) {
     }
 
     client_lease lease(
-      client,
+      client.value(),
       as,
       ss::make_deleter([pool = weak_from_this(),
-                        client,
+                        client = client.value(),
                         g = std::move(guard),
                         source_sid]() mutable {
           if (pool) {
@@ -416,18 +421,17 @@ bool client_pool::borrow_one(unsigned other) {
 
 void client_pool::return_one(unsigned other) {
     vlog(pool_log.debug, "shard {} returns a client", other);
-    if (_pool.size() + _leased.size() < _capacity) {
-        // The _pool has fewer elements than it should have because it was
-        // borrowed from previously.
-        _pool.emplace_back(make_client());
-        update_usage_stats();
-        vlog(
-          pool_log.debug,
-          "creating new client, current usage is {}/{}",
-          normalized_num_clients_in_use(),
-          _capacity);
-        _cvar.signal();
-    }
+    vassert(
+      _pool.size() < _capacity,
+      "tried to return a borrowed client but the pool is full");
+    _pool.emplace_back(make_client());
+    update_usage_stats();
+    vlog(
+      pool_log.debug,
+      "creating new client, current usage is {}/{}",
+      normalized_num_clients_in_use(),
+      _capacity);
+    _cvar.signal();
 }
 
 size_t client_pool::size() const noexcept { return _pool.size(); }
@@ -463,9 +467,10 @@ void client_pool::release(http_client_ptr leased) {
       "releasing a client, pool size: {}, capacity: {}",
       _pool.size(),
       _capacity);
-    if (_pool.size() < _capacity) {
-        _pool.emplace_back(std::move(leased));
-    }
+    vassert(
+      _pool.size() < _capacity,
+      "tried to release a client but the pool is at capacity");
+    _pool.emplace_back(std::move(leased));
     _cvar.signal();
 }
 
