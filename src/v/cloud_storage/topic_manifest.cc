@@ -119,7 +119,8 @@ struct topic_manifest_handler
                 // Just leave them empty.
                 _properties.segment_size = std::nullopt;
             } else if (_key == "retention_bytes") {
-                _properties.retention_bytes = tristate<size_t>{};
+                _properties.retention_bytes = tristate<size_t>{
+                  disable_tristate};
             } else if (_key == "retention_duration") {
                 _properties.retention_duration
                   = tristate<std::chrono::milliseconds>(
