@@ -357,6 +357,7 @@ struct configuration final : public config_store {
       cloud_storage_topic_purge_grace_period_ms;
     property<bool> cloud_storage_disable_upload_consistency_checks;
     property<bool> cloud_storage_disable_metadata_consistency_checks;
+    property<std::chrono::milliseconds> cloud_storage_hydration_timeout_ms;
 
     // Azure Blob Storage
     property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;

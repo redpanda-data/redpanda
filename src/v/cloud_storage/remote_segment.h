@@ -31,6 +31,7 @@
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/expiring_fifo.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/shared_future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -117,14 +118,22 @@ public:
       kafka::offset start,
       kafka::offset end,
       std::optional<model::timestamp>,
-      ss::io_priority_class);
+      ss::io_priority_class,
+      storage::opt_abort_source_t as);
+
+    /// Hydrates the segment, index or tx-range depending on segment meta
+    /// version, returning a future that the caller can use to wait for the
+    /// download to finish. If the abort source is triggered or the deadline is
+    /// reached before the download finishes, the wait is aborted. The download
+    /// will still complete but the caller will need to handle the exception.
+    ss::future<> do_hydrate(ss::abort_source&, ss::lowres_clock::time_point);
 
     /// Hydrate the segment for segment meta version v2 or lower. For v3 or
     /// higher, only hydrate the index. If the index hydration fails, fall back
     /// to old mode where the full segment is hydrated. For v3 or higher
     /// versions, the actual segment data is hydrated by the data source
     /// implementation, but the index is still required to be present first.
-    ss::future<> hydrate();
+    ss::future<> hydrate(storage::opt_abort_source_t as = std::nullopt);
 
     /// Hydrate a part of a segment, identified by the given range. The range
     /// can contain data for multiple contiguous chunks, in which case multiple

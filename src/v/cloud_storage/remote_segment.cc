@@ -280,10 +280,12 @@ remote_segment::offset_data_stream(
   kafka::offset start,
   kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  storage::opt_abort_source_t as) {
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
-    co_await hydrate();
+
+    co_await hydrate(as);
 
     std::optional<offset_index::find_result> indexed_pos;
     std::optional<uint16_t> prefetch_override = std::nullopt;
@@ -874,7 +876,73 @@ ss::future<> remote_segment::run_hydrate_bg() {
     _hydration_loop_running = false;
 }
 
-ss::future<> remote_segment::hydrate() {
+namespace {
+
+void log_hydration_abort_cause(
+  const retry_chain_logger& logger,
+  const ss::lowres_clock::time_point& deadline,
+  storage::opt_abort_source_t as) {
+    if (ss::lowres_clock::now() > deadline) {
+        vlog(logger.warn, "timed out while waiting for hydration");
+    } else if (as.has_value() && as->get().abort_requested()) {
+        // TODO it might be useful to be able to log the client info here from
+        // log reader config.
+        vlog(logger.debug, "consumer disconnected during hydration");
+    }
+}
+
+} // namespace
+
+ss::future<> remote_segment::do_hydrate(
+  ss::abort_source& as, ss::lowres_clock::time_point deadline) {
+    ss::promise<ss::file> p;
+    auto fut = ssx::with_timeout_abortable(p.get_future(), deadline, as);
+
+    _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
+    _bg_cvar.signal();
+
+    return fut
+      .handle_exception_type(
+        [this, deadline, &as](const ss::timed_out_error& ex) {
+            log_hydration_abort_cause(_ctxlog, deadline, as);
+            return ss::make_exception_future<ss::file>(ex);
+        })
+      .handle_exception_type(
+        [this, deadline, &as](const ss::abort_requested_exception& ex) {
+            log_hydration_abort_cause(_ctxlog, deadline, as);
+            return ss::make_exception_future<ss::file>(ex);
+        })
+      .handle_exception_type(
+        [this, deadline, &as](const download_exception& ex) {
+            // If we are working with an index-only format, and index
+            // download failed, we may not be able to progress. So we
+            // fallback to old format where the full segment was downloaded,
+            // and try to hydrate again.
+            if (ex.path == _index_path && !_fallback_mode) {
+                vlog(
+                  _ctxlog.info,
+                  "failed to download index with error [{}], switching to "
+                  "fallback mode and retrying hydration.",
+                  ex);
+                _fallback_mode = fallback_mode::yes;
+                return do_hydrate(as, deadline).then([] {
+                    // This is an empty file to match the type returned by
+                    // `fut`. The result is discarded immediately so it is
+                    // unused.
+                    return ss::file{};
+                });
+            }
+
+            // If the download failure was something other than the index,
+            // OR if we are in the fallback mode already or if we are
+            // working with old format, rethrow the exception and let the
+            // upper layer handle it.
+            return ss::make_exception_future<ss::file>(ex);
+        })
+      .discard_result();
+}
+
+ss::future<> remote_segment::hydrate(storage::opt_abort_source_t as) {
     if (!_hydration_loop_running) {
         vlog(
           _ctxlog.error,
@@ -888,37 +956,15 @@ ss::future<> remote_segment::hydrate() {
 
     auto g = _gate.hold();
     vlog(_ctxlog.debug, "segment {} hydration requested", _path);
-    ss::promise<ss::file> p;
-    auto fut = p.get_future();
-    _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
-    _bg_cvar.signal();
-    return fut
-      .handle_exception_type([this](const download_exception& ex) {
-          // If we are working with an index-only format, and index download
-          // failed, we may not be able to progress. So we fallback to old
-          // format where the full segment was downloaded, and try to hydrate
-          // again.
-          if (ex.path == _index_path && !_fallback_mode) {
-              vlog(
-                _ctxlog.info,
-                "failed to download index with error [{}], switching to "
-                "fallback mode and retrying hydration.",
-                ex);
-              _fallback_mode = fallback_mode::yes;
-              return hydrate().then([] {
-                  // This is an empty file to match the type returned by `fut`.
-                  // The result is discarded immediately so it is unused.
-                  return ss::file{};
-              });
-          }
 
-          // If the download failure was something other than the index, OR
-          // if we are in the fallback mode already or if we are working
-          // with old format, rethrow the exception and let the upper layer
-          // handle it.
-          throw;
-      })
-      .discard_result();
+    // A no-op abort source is created on heap so that `do_hydrate` can call
+    // `with_timeout_abortable` if we do not have an input abort source.
+    return ss::do_with(ss::abort_source{}, [this, as](ss::abort_source& noop) {
+        return do_hydrate(
+          as.value_or(noop),
+          ss::lowres_clock::now()
+            + config::shard_local_cfg().cloud_storage_hydration_timeout_ms());
+    });
 }
 
 ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
@@ -1373,7 +1419,8 @@ remote_segment_batch_reader::init_parser() {
       model::offset_cast(_config.start_offset),
       model::offset_cast(_config.max_offset),
       _config.first_timestamp,
-      priority_manager::local().shadow_indexing_priority());
+      priority_manager::local().shadow_indexing_priority(),
+      _config.abort_source);
 
     vlog(
       _ctxlog.debug,

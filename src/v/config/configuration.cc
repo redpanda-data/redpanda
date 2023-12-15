@@ -1924,6 +1924,14 @@ configuration::configuration()
       "option should be disabled.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_hydration_timeout_ms(
+      *this,
+      "cloud_storage_hydration_timeout_ms",
+      "Duration to wait for a hydration request to be fulfilled, if hydration "
+      "is not completed within this time, the consumer will be notified with a "
+      "timeout error.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      600s)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
