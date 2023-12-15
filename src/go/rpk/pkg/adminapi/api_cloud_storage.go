@@ -17,9 +17,8 @@ import (
 
 // RecoveryRequestParams represents the request body schema for the automated recovery API endpoint.
 type RecoveryRequestParams struct {
-	TopicNamesPattern string `json:"topic_names_pattern"`
-	RetentionBytes    *int   `json:"retention_bytes,omitempty"`
-	RetentionMs       *int   `json:"retention_ms,omitempty"`
+	RetentionBytes *int `json:"retention_bytes,omitempty"`
+	RetentionMs    *int `json:"retention_ms,omitempty"`
 }
 
 type RecoveryStartResponse struct {
@@ -80,10 +79,8 @@ type (
 )
 
 // StartAutomatedRecovery starts the automated recovery process by sending a request to the automated recovery API endpoint.
-func (a *AdminAPI) StartAutomatedRecovery(ctx context.Context, topicNamesPattern string) (RecoveryStartResponse, error) {
-	requestParams := &RecoveryRequestParams{
-		TopicNamesPattern: topicNamesPattern,
-	}
+func (a *AdminAPI) StartAutomatedRecovery(ctx context.Context) (RecoveryStartResponse, error) {
+	requestParams := &RecoveryRequestParams{}
 	var response RecoveryStartResponse
 
 	return response, a.sendAny(ctx, http.MethodPost, "/v1/cloud_storage/automated_recovery", requestParams, &response)

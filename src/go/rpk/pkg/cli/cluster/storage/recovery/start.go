@@ -23,9 +23,8 @@ import (
 
 func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		topicNamePattern string
-		wait             bool
-		pollingInterval  time.Duration
+		wait            bool
+		pollingInterval time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -46,7 +45,7 @@ recovery process until it's finished.`,
 
 			ctx := cmd.Context()
 
-			_, err = client.StartAutomatedRecovery(ctx, topicNamePattern)
+			_, err = client.StartAutomatedRecovery(ctx)
 			var he *adminapi.HTTPResponseError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
@@ -109,7 +108,7 @@ recovery process until it's finished.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&topicNamePattern, "topic-name-pattern", ".*", "A regex pattern that restores any matching topics")
+	cmd.Flags().MarkDeprecated("topic-name-pattern", "Not supported")
 	cmd.Flags().BoolVarP(&wait, "wait", "w", false, "Wait until auto-restore is complete")
 	cmd.Flags().DurationVar(&pollingInterval, "polling-interval", 5*time.Second, "The status check interval (e.g. '30s', '1.5m'); ignored if --wait is not used")
 

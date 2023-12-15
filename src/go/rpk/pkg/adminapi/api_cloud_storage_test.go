@@ -38,7 +38,7 @@ func TestStartAutomatedRecovery(t *testing.T) {
 		client, err := NewAdminAPI([]string{server.URL}, new(NopAuth), nil)
 		assert.NoError(t, err)
 
-		response, err := client.StartAutomatedRecovery(context.Background(), ".*")
+		response, err := client.StartAutomatedRecovery(context.Background())
 
 		assert.NoError(t, err)
 		assert.Equal(t, test.exp, response)
@@ -97,9 +97,7 @@ func TestPollAutomatedRecoveryStatus(t *testing.T) {
 				FailedDownloads:     0,
 			},
 		},
-		RecoveryRequest: RecoveryRequestParams{
-			TopicNamesPattern: ".*",
-		},
+		RecoveryRequest: RecoveryRequestParams{},
 	}
 
 	runTest := func(t *testing.T, test testCase) {
