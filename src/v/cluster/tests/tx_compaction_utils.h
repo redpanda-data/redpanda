@@ -124,6 +124,40 @@ public:
         }
     }
 
+    ss::future<>
+    validate(ss::shared_ptr<storage::log> log, int expected_fences) {
+        auto lstats = log->offsets();
+        storage::log_reader_config cfg(
+          lstats.start_offset,
+          lstats.committed_offset,
+          ss::default_priority_class());
+        auto reader = co_await log->make_reader(cfg);
+        auto batches = co_await copy_to_mem(reader);
+
+        // 1. There are no aborted keys (tracked in _aborted_xxx)
+        // 2. There are no tx control markers
+        // 3. Only tx control data batches allowed is fence type.
+        int fence_batch_count = 0;
+        for (auto& batch : batches) {
+            auto type = batch.header().type;
+            RPTEST_REQUIRE_NE_CORO(type, model::record_batch_type::tx_prepare);
+            if (batch.header().attrs.is_transactional()) {
+                model::producer_identity pid{
+                  batch.header().producer_id, batch.header().producer_epoch};
+                // no control (commit/abort) batches.
+                RPTEST_REQUIRE_CORO(!batch.header().attrs.is_control());
+                RPTEST_REQUIRE_EQ_CORO(
+                  type, model::record_batch_type::raft_data);
+                RPTEST_REQUIRE_CORO(_committed_pids.contains(pid));
+                RPTEST_REQUIRE_CORO(!_aborted_pids.contains(pid));
+            }
+            if (type == model::record_batch_type::tx_fence) {
+                fence_batch_count++;
+            }
+        }
+        RPTEST_REQUIRE_EQ_CORO(fence_batch_count, expected_fences);
+    }
+
     void run_random_workload(
       spec s,
       model::term_id term,
@@ -209,32 +243,7 @@ public:
         // 1. There are no aborted keys (tracked in _aborted_xxx)
         // 2. There are no tx control markers
         // 3. Only tx control data batches allowed is fence type.
-        auto lstats = log->offsets();
-        storage::log_reader_config cfg(
-          lstats.start_offset,
-          lstats.committed_offset,
-          ss::default_priority_class());
-        auto reader = log->make_reader(cfg).get0();
-        auto batches = copy_to_mem(reader).get0();
-
-        int fence_batch_count = 0;
-        for (auto& batch : batches) {
-            auto type = batch.header().type;
-            RPTEST_REQUIRE_NE(type, model::record_batch_type::tx_prepare);
-            if (batch.header().attrs.is_transactional()) {
-                model::producer_identity pid{
-                  batch.header().producer_id, batch.header().producer_epoch};
-                // no control (commit/abort) batches.
-                RPTEST_REQUIRE(!batch.header().attrs.is_control());
-                RPTEST_REQUIRE_EQ(type, model::record_batch_type::raft_data);
-                RPTEST_REQUIRE(_committed_pids.contains(pid));
-                RPTEST_REQUIRE(!_aborted_pids.contains(pid));
-            }
-            if (type == model::record_batch_type::tx_fence) {
-                fence_batch_count++;
-            }
-        }
-        RPTEST_REQUIRE_EQ(fence_batch_count, s._num_txes);
+        validate(log, s._num_txes).get();
     }
 
     auto& data_gen() { return _data_gen; }
