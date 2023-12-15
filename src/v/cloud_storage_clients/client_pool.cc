@@ -442,7 +442,7 @@ void client_pool::populate_client_pool() {
     _cvar.signal();
 }
 
-client_pool::http_client_ptr client_pool::make_client() const {
+client_pool::http_client_ptr client_pool::make_client() const noexcept {
     return std::visit(
       [this](const auto& cfg) -> http_client_ptr {
           using cfg_type = std::decay_t<decltype(cfg)>;

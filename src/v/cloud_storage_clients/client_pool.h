@@ -148,7 +148,7 @@ private:
       std::optional<client_self_configuration_output> result);
 
     void populate_client_pool();
-    http_client_ptr make_client() const;
+    http_client_ptr make_client() const noexcept;
     void release(http_client_ptr leased);
 
     /// Return number of clients which wasn't utilized
