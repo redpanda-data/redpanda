@@ -133,6 +133,10 @@ public:
 
     size_t max_size() const noexcept;
 
+    bool has_background_operations() const noexcept {
+        return _bg_gate.get_count() > 0;
+    }
+
 private:
     ss::future<>
     client_self_configure(std::optional<std::reference_wrapper<stop_signal>>
@@ -169,6 +173,10 @@ private:
     ss::condition_variable _cvar;
     ss::abort_source _as;
     ss::gate _gate;
+    // A gate for background operations. Most useful in testing where we want
+    // to wait all async housekeeping to complete before asserting state
+    // invariants.
+    ss::gate _bg_gate;
 
     /// Holds and applies the credentials for requests to S3. Shared pointer to
     /// enable rotating credentials to all clients.

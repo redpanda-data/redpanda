@@ -169,6 +169,8 @@ ss::future<> client_pool::stop() {
     _cvar.broken();
     _self_config_barrier.broken();
     _credentials_var.broken();
+    // Wait for all background operations to complete.
+    co_await _bg_gate.close();
     // Wait until all leased objects are returned
     co_await _gate.close();
 
@@ -351,13 +353,13 @@ client_pool::acquire(ss::abort_source& as) {
                   // the pool. This will lead to a situation when the connection
                   // simultaneously exists on two different shards.
                   client->shutdown();
-                  ssx::spawn_with_gate(pool->_gate, [client] {
+                  ssx::spawn_with_gate(pool->_bg_gate, [client] {
                       return client->stop().finally([client] {});
                   });
                   // In the background return the client to the connection pool
                   // of the source shard. The lifetime is guaranteed by the gate
                   // guard.
-                  ssx::spawn_with_gate(pool->_gate, [&pool, source_sid] {
+                  ssx::spawn_with_gate(pool->_bg_gate, [&pool, source_sid] {
                       return pool->container().invoke_on(
                         source_sid.value(),
                         [my_sid = ss::this_shard_id()](client_pool& other) {
@@ -408,7 +410,7 @@ bool client_pool::borrow_one(unsigned other) {
     _pool.pop_back();
     update_usage_stats();
     c->shutdown();
-    ssx::spawn_with_gate(_gate, [c] { return c->stop().finally([c] {}); });
+    ssx::spawn_with_gate(_bg_gate, [c] { return c->stop().finally([c] {}); });
     return true;
 }
 
