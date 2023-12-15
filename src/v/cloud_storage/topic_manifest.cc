@@ -118,7 +118,8 @@ struct topic_manifest_handler
                 // Just leave them empty.
                 _properties.segment_size = std::nullopt;
             } else if (_key == "retention_bytes") {
-                _properties.retention_bytes = tristate<size_t>{};
+                _properties.retention_bytes = tristate<size_t>{
+                  disable_tristate};
             } else if (_key == "retention_duration") {
                 _properties.retention_duration
                   = tristate<std::chrono::milliseconds>(
@@ -172,6 +173,13 @@ struct topic_manifest_handler
 
     bool Null() {
         if (_state == state::expect_value) {
+            if (_key == "retention_bytes") {
+                _properties.retention_bytes = tristate<size_t>{std::nullopt};
+            } else if (_key == "retention_duration") {
+                _properties.retention_duration
+                  = tristate<std::chrono::milliseconds>{std::nullopt};
+            }
+
             _state = state::expect_key;
             return true;
         }
@@ -197,7 +205,10 @@ struct topic_manifest_handler
     std::optional<model::initial_revision_id> _revision_id{};
 
     // optional fields
-    manifest_topic_configuration::topic_properties _properties;
+    manifest_topic_configuration::topic_properties _properties{
+      .retention_bytes = tristate<size_t>(disable_tristate),
+      .retention_duration = tristate<std::chrono::milliseconds>(
+        disable_tristate)};
     std::optional<ss::sstring> compaction_strategy_sv;
     std::optional<ss::sstring> timestamp_type_sv;
     std::optional<ss::sstring> compression_sv;
