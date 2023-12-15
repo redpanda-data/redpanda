@@ -48,7 +48,10 @@ v_cc_library(
     admin/security.cc
     admin/recovery.cc
     admin/transaction.cc
+    admin/partition.cc
     admin/usage.cc
+    admin/kafka.cc
+    admin/util.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc
