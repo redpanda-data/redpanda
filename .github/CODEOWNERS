@@ -33,5 +33,5 @@ licenses           @emaxerrno @dswang
 #
 /tests/docker                       @redpanda-data/devprod
 /tests/run.sh                       @redpanda-data/devprod
-/src/consistency-testing            @rystsov
-/tests/java/tx-verifier             @rystsov
+/src/consistency-testing            @mmaslankaprv
+/tests/java/tx-verifier             @mmaslankaprv
