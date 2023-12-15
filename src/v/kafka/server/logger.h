@@ -15,6 +15,9 @@
 
 #include <seastar/util/log.hh>
 
+#include <utils/truncating_logger.h>
+
 namespace kafka {
 extern ss::logger klog;
+extern truncating_logger kwire;
 } // namespace kafka
