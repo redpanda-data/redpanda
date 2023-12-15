@@ -135,7 +135,7 @@ void segment_index::maybe_track(
           to_optional_model_timestamp(new_broker_ts),
           path().is_internal_topic()
             || hdr.type == model::record_batch_type::raft_data,
-          internal::is_compactible(hdr))) {
+          internal::is_compactible(hdr) ? hdr.record_count : 0)) {
         _acc = 0;
     }
     _needs_persistence = true;
@@ -195,12 +195,6 @@ ss::future<> segment_index::truncate(
       std::end(_state.relative_offset_index),
       i,
       std::less<uint32_t>{});
-
-    if (
-      _state.first_compactible_offset.has_optional_value()
-      && _state.first_compactible_offset.value() > new_max_offset) {
-        _state.first_compactible_offset = tristate<model::offset>{std::nullopt};
-    }
 
     if (it != _state.relative_offset_index.end()) {
         _needs_persistence = true;

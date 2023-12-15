@@ -114,7 +114,9 @@ TEST(FindSlidingRangeTest, TestCollectExcludesPrevious) {
     ASSERT_EQ(segs.front()->offsets().base_offset(), 0);
 }
 
-TEST(FindSlidingRangeTest, TestCollectExcludesOneRecordSegments) {
+// Even though segments with one record would be skipped over during
+// compaction, that shouldn't be reflected by the sliding range.
+TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
     storage::disk_log_builder b;
     build_segments(
       b,
@@ -127,17 +129,16 @@ TEST(FindSlidingRangeTest, TestCollectExcludesOneRecordSegments) {
     compaction_config cfg(
       model::offset{30}, ss::default_priority_class(), never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
-    // All segments so far have only one record and shouldn't be eligible for
-    // compaction.
-    ASSERT_EQ(0, segs.size());
-    for (int i = 0; i < 5; i++) {
-        auto& seg = disk_log.segments()[i];
-        ASSERT_TRUE(seg->finished_self_compaction());
-        ASSERT_TRUE(seg->finished_windowed_compaction());
+    // Even though these segments don't have compactible records, they should
+    // be collected. E.g., they should still be self compacted to rebuild
+    // indexes if necessary, etc.
+    ASSERT_EQ(5, segs.size());
+    for (const auto& seg : segs) {
+        ASSERT_FALSE(seg->may_have_compactible_records());
     }
 
     // Add some segments with multiple records. They should be eligible for
-    // compaction and are included in the range.
+    // compaction and are also included in the range.
     add_segments(
       b,
       /*num_segs=*/3,
@@ -145,25 +146,12 @@ TEST(FindSlidingRangeTest, TestCollectExcludesOneRecordSegments) {
       /*start_offset=*/6,
       /*mark_compacted=*/false);
     segs = disk_log.find_sliding_range(cfg);
-    ASSERT_EQ(3, segs.size());
+    ASSERT_EQ(8, segs.size());
+    int i = 0;
     for (const auto& seg : segs) {
-        ASSERT_FALSE(seg->finished_self_compaction()) << seg;
-        ASSERT_FALSE(seg->finished_windowed_compaction()) << seg;
-    }
-
-    // Adding more segments with one record, the range should include them
-    // since they're not at the beginning of the log.
-    add_segments(
-      b,
-      /*num_segs=*/4,
-      /*records_per_seg=*/1,
-      /*start_offset=*/13,
-      /*mark_compacted=*/false);
-    segs = disk_log.find_sliding_range(cfg);
-    ASSERT_EQ(7, segs.size());
-    for (const auto& seg : segs) {
-        ASSERT_FALSE(seg->finished_self_compaction());
-        ASSERT_FALSE(seg->finished_windowed_compaction());
+        bool should_have_records = i >= 5;
+        ASSERT_EQ(should_have_records, seg->may_have_compactible_records());
+        i++;
     }
 }
 

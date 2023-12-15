@@ -130,7 +130,7 @@ public:
     /// might be removed if compaction were to run. May return false positives,
     /// e.g. if the underlying index was written in a version with insufficient
     /// metadata.
-    bool has_compactible_data_records() const;
+    bool may_have_compactible_records() const;
 
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
