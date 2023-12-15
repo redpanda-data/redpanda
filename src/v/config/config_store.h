@@ -70,31 +70,35 @@ public:
 
         for (auto const& node : root_node) {
             auto name = node.first.as<ss::sstring>();
-            auto found_opt = std::optional{_properties.find(name)};
-            if (found_opt == _properties.end()) {
-                found_opt = _aliases.find(name);
-                if (found_opt == _aliases.end()) {
-                    found_opt.reset();
+            auto* prop = [&]() -> base_property* {
+                auto found = _properties.find(name);
+                if (found != _properties.end()) {
+                    return found->second;
                 }
-            }
-            if (!found_opt) {
+                found = _aliases.find(name);
+                if (found != _aliases.end()) {
+                    return found->second;
+                }
+
+                return nullptr;
+            }();
+
+            if (prop == nullptr) {
                 if (!ignore_missing.contains(name)) {
                     throw std::invalid_argument(
                       fmt::format("Unknown property {}", name));
                 }
                 continue;
             }
-            auto& found = found_opt.value();
             bool ok = false;
             try {
-                auto validation_err = found->second->validate(node.second);
+                auto validation_err = prop->validate(node.second);
                 if (validation_err.has_value()) {
                     errors[name] = fmt::format(
                       "Validation error: {}",
                       validation_err.value().error_message());
                 }
-
-                found->second->set_value(node.second);
+                prop->set_value(node.second);
                 ok = true;
             } catch (YAML::InvalidNode const& e) {
                 errors[name] = fmt::format("Invalid syntax: {}", e);
@@ -107,7 +111,7 @@ public:
             // A validation error is fatal if the property was required,
             // e.g. if someone entered a non-integer node_id, or an invalid
             // internal RPC address.
-            if (!ok && found->second->is_required()) {
+            if (!ok && prop->is_required()) {
                 throw std::invalid_argument(fmt::format(
                   "Property {} is required and has invalid value", name));
             }
