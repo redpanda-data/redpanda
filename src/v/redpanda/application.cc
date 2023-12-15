@@ -1015,7 +1015,8 @@ void application::configure_admin_server() {
       &_transform_service,
       std::ref(audit_mgr),
       std::ref(_tx_manager_migrator),
-      std::ref(_kafka_server))
+      std::ref(_kafka_server),
+      std::ref(tx_gateway_frontend))
       .get();
 }
 
@@ -1420,7 +1421,6 @@ void application::wire_up_redpanda_services(
       partition_manager,
       std::ref(storage),
       std::ref(raft_group_manager),
-      std::ref(tx_gateway_frontend),
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
@@ -1437,9 +1437,7 @@ void application::wire_up_redpanda_services(
             }
         }),
       std::ref(feature_table),
-      std::ref(tm_stm_cache_manager),
-      std::ref(_archival_upload_housekeeping),
-      std::ref(producer_manager))
+      std::ref(_archival_upload_housekeeping))
       .get();
     vlog(_log.info, "Partition manager started");
     construct_service(

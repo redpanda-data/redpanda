@@ -37,32 +37,21 @@ namespace cluster {
 
 partition::partition(
   consensus_ptr r,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
-  ss::sharded<producer_state_manager>& producer_state_manager,
-  storage::kvstore& kvstore,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(std::move(r))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
-  , _tx_gateway_frontend(tx_gateway_frontend)
   , _feature_table(feature_table)
-  , _tm_stm_cache_manager(tm_stm_cache_manager)
-  , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
-  , _is_idempotence_enabled(
-      config::shard_local_cfg().enable_idempotence.value())
   , _archival_conf(std::move(archival_conf))
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
   , _cloud_storage_probe(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
-  , _upload_housekeeping(upload_hks)
-  , _kvstore(kvstore)
-  , _producer_state_manager(producer_state_manager) {
+  , _upload_housekeeping(upload_hks) {
     // Construct cloud_storage read path (remote_partition)
     if (
       config::shard_local_cfg().cloud_storage_enabled()
@@ -338,19 +327,11 @@ ss::future<result<kafka_result>> partition::replicate(
 
 ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     if (!_rm_stm) {
-        if (!_is_tx_enabled && !_is_idempotence_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process transactional and idempotent requests to {}. The "
-              "feature is disabled.",
-              _raft->ntp());
-        } else {
-            vlog(
-              clusterlog.error,
-              "Topic {} doesn't support idempotency and transactional "
-              "processing.",
-              _raft->ntp());
-        }
+        vlog(
+          clusterlog.error,
+          "Topic {} doesn't support idempotent and transactional "
+          "processing.",
+          _raft->ntp());
     }
     return _rm_stm;
 }
@@ -361,15 +342,6 @@ kafka_stages partition::replicate_in_stages(
   raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
     if (bid.is_transactional) {
-        if (!_is_tx_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process a transactional request to {}. Transactional "
-              "processing isn't enabled.",
-              _raft->ntp());
-            return kafka_stages(raft::errc::timeout);
-        }
-
         if (!_rm_stm) {
             vlog(
               clusterlog.error,
@@ -380,19 +352,10 @@ kafka_stages partition::replicate_in_stages(
     }
 
     if (bid.is_idempotent()) {
-        if (!_is_idempotence_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process an idempotent request to {}. Idempotency isn't "
-              "enabled.",
-              _raft->ntp());
-            return kafka_stages(raft::errc::timeout);
-        }
-
         if (!_rm_stm) {
             vlog(
               clusterlog.error,
-              "Topic {} doesn't support idempotency.",
+              "Topic {} doesn't support idempotent requests.",
               _raft->ntp());
             return kafka_stages(raft::errc::timeout);
         }

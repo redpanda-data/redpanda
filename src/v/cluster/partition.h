@@ -48,15 +48,11 @@ class partition {
 public:
     partition(
       consensus_ptr r,
-      ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache_manager>&,
       ss::sharded<archival::upload_housekeeping_service>&,
-      ss::sharded<producer_state_manager>&,
-      storage::kvstore&,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
 
@@ -507,11 +503,7 @@ private:
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::abort_source _as;
     partition_probe _probe;
-    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
-    bool _is_tx_enabled{false};
-    bool _is_idempotence_enabled{false};
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
@@ -533,9 +525,6 @@ private:
     std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
-
-    storage::kvstore& _kvstore;
-    ss::sharded<cluster::producer_state_manager>& _producer_state_manager;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

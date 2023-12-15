@@ -64,12 +64,11 @@ admin_server::get_all_transactions_handler(
         throw co_await redirect_to_leader(*req, tx_ntp);
     }
 
-    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-    if (!tx_frontend.local_is_initialized()) {
+    if (!_tx_gateway_frontend.local_is_initialized()) {
         throw ss::httpd::bad_request_exception("Can not get tx_frontend");
     }
 
-    auto res = co_await tx_frontend.local()
+    auto res = co_await _tx_gateway_frontend.local()
                  .get_all_transactions_for_one_tx_partition(tx_ntp);
     if (!res.has_value()) {
         co_await throw_on_error(*req, res.error(), tx_ntp);
@@ -136,8 +135,7 @@ admin_server::find_tx_coordinator_handler(
   std::unique_ptr<ss::http::request> req) {
     auto transaction_id = req->param["transactional_id"];
     kafka::transactional_id tid(transaction_id);
-    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-    auto r = co_await tx_frontend.local().find_coordinator(tid);
+    auto r = co_await _tx_gateway_frontend.local().find_coordinator(tid);
 
     ss::httpd::transaction_json::find_coordinator_reply reply;
     if (r.coordinator) {
@@ -157,14 +155,13 @@ admin_server::find_tx_coordinator_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
-    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-    if (!tx_frontend.local_is_initialized()) {
+    if (!_tx_gateway_frontend.local_is_initialized()) {
         throw ss::httpd::bad_request_exception("Transaction are disabled");
     }
     auto transaction_id = req->param["transactional_id"];
     kafka::transactional_id tid(transaction_id);
 
-    auto r = co_await tx_frontend.local().find_coordinator(tid);
+    auto r = co_await _tx_gateway_frontend.local().find_coordinator(tid);
     if (!r.ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
@@ -172,7 +169,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, *r.ntp);
     }
 
-    auto tx_ntp = tx_frontend.local().ntp_for_tx_id(tid);
+    auto tx_ntp = _tx_gateway_frontend.local().ntp_for_tx_id(tid);
     if (!tx_ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
@@ -203,7 +200,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
       etag,
       tid);
 
-    auto res = co_await tx_frontend.local().delete_partition_from_tx(
+    auto res = co_await _tx_gateway_frontend.local().delete_partition_from_tx(
       tid, partition_for_delete);
     co_await throw_on_error(*req, res, ntp);
     co_return ss::json::json_return_type(ss::json::json_void());
