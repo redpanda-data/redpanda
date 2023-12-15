@@ -419,8 +419,8 @@ class SecurityConfig:
     # sasl is required
     def sasl_enabled(self):
         return (self.kafka_enable_authorization is None and self.enable_sasl
-                and self.endpoint_authn_method is None
-                ) or self.endpoint_authn_method == "sasl"
+                and self.endpoint_authn_method
+                is None) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
     def mtls_identity_enabled(self):

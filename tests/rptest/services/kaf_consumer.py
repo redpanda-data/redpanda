@@ -34,8 +34,8 @@ class KafConsumer(BackgroundThreadService):
         try:
             partition = None
             cmd = "echo $$ ; kaf consume -b %s %s --offset %s %s" % (
-                self._redpanda.brokers(), "--follow" if self._num_records is
-                None else f"--limit-messages {self._num_records}",
+                self._redpanda.brokers(), "--follow" if self._num_records
+                is None else f"--limit-messages {self._num_records}",
                 self._offset_for_read, self._topic)
             for line in node.account.ssh_capture(cmd):
                 if self._pid is None:
