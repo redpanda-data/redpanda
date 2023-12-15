@@ -110,7 +110,8 @@ rp_test(
 )
 
 set (fixture_srcs
-  storage_e2e_fixture_test.cc)
+  storage_e2e_fixture_test.cc
+  compaction_e2e_multinode_test.cc)
 
 rp_test(
   FIXTURE_TEST

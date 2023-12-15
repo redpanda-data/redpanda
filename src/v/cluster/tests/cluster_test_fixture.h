@@ -22,6 +22,7 @@
 
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/defer.hh>
 
@@ -244,6 +245,21 @@ public:
                          return leaders.get_leader(tp_ns, p.id);
                      });
         }).get0();
+    }
+
+    std::tuple<redpanda_thread_fixture*, ss::lw_shared_ptr<cluster::partition>>
+    get_leader(const model::ntp& ntp) {
+        for (const auto& [_, instance] : _instances) {
+            auto& app = instance->app;
+            auto p = app.partition_manager.local().get(ntp);
+            if (!p) {
+                continue;
+            }
+            if (p->raft()->is_leader()) {
+                return std::make_tuple(instance.get(), p);
+            }
+        }
+        return std::make_tuple(nullptr, nullptr);
     }
 
     void shuffle_leadership(model::ntp ntp) {

@@ -10,6 +10,7 @@
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/tests/manual_mixin.h"
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
@@ -23,18 +24,6 @@
 namespace {
 ss::logger cmp_testlog("cmp_testlog");
 } // anonymous namespace
-
-class storage_manual_mixin {
-public:
-    storage_manual_mixin() {
-        cfg.get("log_segment_size_min")
-          .set_value(std::make_optional<uint64_t>(1));
-        cfg.get("log_disable_housekeeping_for_tests").set_value(true);
-    }
-
-private:
-    scoped_config cfg;
-};
 
 struct work_dir_summary {
     explicit work_dir_summary(ss::sstring path)

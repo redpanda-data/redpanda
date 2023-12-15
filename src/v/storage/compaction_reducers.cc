@@ -126,17 +126,6 @@ ss::future<> copy_data_segment_reducer::maybe_keep_offset(
         offset_deltas.push_back(r.offset_delta());
         co_return;
     }
-    // Keep the last record to ensure the bounds of the segment remain.
-    auto o = batch.base_offset() + model::offset_delta(r.offset_delta());
-    if (o == _segment_last_offset) {
-        vlog(
-          stlog.trace,
-          "retaining last record: {} of segment from batch: {}",
-          r,
-          batch.header());
-        offset_deltas.push_back(r.offset_delta());
-        co_return;
-    }
 }
 
 ss::future<std::optional<model::record_batch>>
@@ -181,8 +170,21 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     // 1. compute which records to keep
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
+    int last_batch_records_seen = 0;
     co_await batch.for_each_record_async(
-      [this, &batch, &offset_deltas](const model::record& r) {
+      [this, &batch, &offset_deltas, &last_batch_records_seen](
+        const model::record& r) {
+          if (
+            batch.last_offset() == _segment_last_offset
+            && batch.record_count() == ++last_batch_records_seen) {
+              vlog(
+                stlog.trace,
+                "retaining last record: {} of segment from batch: {}",
+                r,
+                batch.header());
+              offset_deltas.push_back(r.offset_delta());
+              return ss::make_ready_future<>();
+          }
           return maybe_keep_offset(batch, r, offset_deltas);
       });
 
