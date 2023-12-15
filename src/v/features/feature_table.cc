@@ -317,6 +317,8 @@ void feature_table::set_active_version(
   cluster_version v, feature_table::version_durability durability) {
     _active_version = v;
 
+    vlog(featureslog.debug, "Set active_version {} -> {}", _active_version, v);
+
     if (
       durability == version_durability::durable
       && _original_version == invalid_version) {
@@ -608,8 +610,20 @@ feature_table::decode_version_fence(model::record_batch batch) {
 }
 
 void feature_table::set_original_version(cluster::cluster_version v) {
-    _original_version = v;
-    if (v != cluster::invalid_version) {
+    vlog(
+      featureslog.debug,
+      "Try setting original_version {} -> {} (active_version: {})",
+      _original_version,
+      v,
+      _active_version);
+
+    if (
+      _original_version == cluster::invalid_version
+      || (v != cluster::invalid_version && v >= _original_version)) {
+        _original_version = v;
+    }
+
+    if (v != cluster::invalid_version && v >= _original_version) {
         config::shard_local_cfg().notify_original_version(
           config::legacy_version{v});
     }
