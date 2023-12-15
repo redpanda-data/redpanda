@@ -98,13 +98,14 @@ class CloudCleanup():
         self.provider = make_provider_client(self.config.provider, self.log,
                                              self.config.region, _keyId,
                                              _secret)
+        self.log.info(f"# Provider {self.config.provider} initialized. Running"
+                      f" as '{self.provider.get_caller_identity()['Arn']}'")
         self.utils = CloudClusterUtils(_fake_context, self.log, _keyId,
                                        _secret, self.config.provider,
                                        self.config.api_url, oauth_url_origin,
                                        self.config.oauth_audience)
 
         self.log.info(f"# Using CloudV2 API at '{self.config.api_url}'")
-        self.log.info(f"# Using provider {self.config.provider}")
 
         # Fugure out which time was 36h back
         self.back_36h = datetime.now() - timedelta(hours=36)
@@ -487,6 +488,80 @@ class CloudCleanup():
 
         return
 
+    def clean_buckets(self, mask=None):
+        """
+            Function list buckets on S3 for cloud cluster storage
+            and cleans them up if corresponding cluster is deleted/not exists.
+
+            Steps:
+            - List buckets with 'redpanda-cloud-storage-*'
+              example: 'redpanda-cloud-storage-cl0lhnudg5jkvqfj7vtg'
+            - Check if such cluster is deleted
+            - Delete bucket
+        """
+        if self.config.provider == "GCP":
+            self.log.warning("Bucket cleaning not yet supported for GCP")
+            return False
+
+        if not mask:
+            self.log.info("# Bucket mask is empty. "
+                          "Will not delete all buckets for account")
+            return
+        else:
+            self.log.info(f"# Listing buckets usign '{mask}'")
+            buckets = self.provider.list_buckets(mask=mask)
+            self.log.info(f"# Found buckets: {len(buckets)}")
+            for bucket in buckets:
+                self.log.info(f"-> Processing '{bucket['Name']}'")
+                # Check creation time
+                created = bucket['CreationDate']
+                if created.timestamp() > self.back_36h.timestamp():
+                    _d = created.strftime(ns_name_date_fmt)
+                    self.log.info(f"...36h not passed; created at {_d}'; "
+                                  "skipped")
+                    continue
+                # Do not need to check the cluster status in CloudV2 API
+                # As we are deleting logs and temp data storages
+
+                # Get first 3000 objects
+                bucket_objects = self.provider.list_bucket_objects(
+                    bucket['Name'], max_objects=3000)
+                _count = len(bucket_objects)
+                if _count >= 3000:
+                    self.log.info("...more than 3000 objects found. "
+                                  "Applying 1 day expiration policy")
+                    # Apply LC policy
+                    # Once we update the policy, creation date of
+                    # the bucket will change as it will be replicated
+                    # under the hood and it will be a new bucket
+                    # instead of old one
+                    self.provider.set_bucket_lifecycle_configuration(
+                        bucket['Name'])
+                else:
+                    # Delete objects
+                    if _count > 0:
+                        self.log.info(f"...deleting {_count} objects")
+                        self.provider.cleanup_bucket(bucket['Name'])
+                    iters = 10
+                    while iters > 0:
+                        count = self.provider.list_bucket_objects(
+                            bucket['Name'])
+                        count = len(count)
+                        if count == 0:
+                            break
+                        self.log.info("...bucket is not empty, waiting 10 sec")
+                        time.sleep(10)
+                        iters -= 1
+                    if iters == 0:
+                        self.log.info("...bucket deletion postponed")
+                        continue
+                    # Delete bucket
+                    self.log.info(f"...deleting bucket '{bucket['Name']}'")
+                    self.provider.delete_bucket(bucket['Name'])
+
+        self.log.info(f"# Done cleaning up buckets with mask '{mask}'\n\n")
+        return True
+
 
 # Main script
 def cleanup_entrypoint():
@@ -500,6 +575,11 @@ def cleanup_entrypoint():
     # Enable manually to cleanup redundancies
     # cleaner.clean_aws_nat()
 
+    # Clean buckets for deleted clusters and networks
+    # Enable manually
+    # cleaner.clean_buckets(mask="panda-bucket-")
+    # cleaner.clean_buckets(mask="redpanda-cloud-storage-")
+    # cleaner.clean_buckets(mask="redpanda-network-logs-")
     return
 
 
