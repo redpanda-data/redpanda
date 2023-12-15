@@ -245,9 +245,10 @@ node_config::error_map_t node_config::load(const YAML::Node& root_node) {
         throw std::invalid_argument("'redpanda' root is required");
     }
 
-    const auto& ignore = shard_local_cfg().property_names();
+    auto ignore = shard_local_cfg().property_names_and_aliases();
 
-    auto errors = config_store::read_yaml(root_node["redpanda"], ignore);
+    auto errors = config_store::read_yaml(
+      root_node["redpanda"], std::move(ignore));
     validate_multi_node_property_config(errors);
     return errors;
 }
