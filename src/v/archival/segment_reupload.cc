@@ -90,7 +90,13 @@ void segment_collector::do_collect() {
         // For the first compacted segment found, begin offset needs to be
         // re-aligned if it falls inside manifest segment.
         if (_segments.empty()) {
-            _begin_inclusive = result.segment->offsets().base_offset;
+            // We may have found our first segment, but we can't always use its
+            // base offset:
+            // - it's possible the segment we found is below our reupload
+            //   target start offset (_begin_inclusive), e.g. if the target
+            //   start offset is in the middle of a segment.
+            _begin_inclusive = std::max(
+              {_begin_inclusive, result.segment->offsets().base_offset});
             align_begin_offset_to_manifest();
         }
         _segments.push_back(result.segment);
