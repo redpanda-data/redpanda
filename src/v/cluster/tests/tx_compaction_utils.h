@@ -299,15 +299,16 @@ public:
 
     struct data_op final : tx_op {
     public:
-        explicit data_op(tx_op_ctx&& ctx, int weight)
-          : tx_op(std::move(ctx), weight) {}
+        explicit data_op(tx_op_ctx&& ctx, int weight, int records = 5)
+          : tx_op(std::move(ctx), weight)
+          , _num_records(records) {}
 
         ss::future<> execute() override {
             model::test::record_batch_spec spec;
             spec.producer_id = _ctx._pid.id;
             spec.producer_epoch = _ctx._pid.epoch;
             spec.is_transactional = true;
-            spec.count = 5;
+            spec.count = _num_records;
             auto batches = _ctx._data_gen->operator()(spec, 1);
             _data_idx = _ctx._data_gen->_idx - 1;
             RPTEST_REQUIRE_EQ_CORO(batches.size(), 1);
@@ -335,6 +336,7 @@ public:
         }
 
     private:
+        int _num_records;
         int _data_idx{};
     };
 
