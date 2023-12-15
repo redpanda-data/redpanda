@@ -82,34 +82,34 @@ public:
                     throw std::invalid_argument(
                       fmt::format("Unknown property {}", name));
                 }
-            } else {
-                auto& found = found_opt.value();
-                bool ok = false;
-                try {
-                    auto validation_err = found->second->validate(node.second);
-                    if (validation_err.has_value()) {
-                        errors[name] = fmt::format(
-                          "Validation error: {}",
-                          validation_err.value().error_message());
-                    }
-
-                    found->second->set_value(node.second);
-                    ok = true;
-                } catch (YAML::InvalidNode const& e) {
-                    errors[name] = fmt::format("Invalid syntax: {}", e);
-                } catch (YAML::ParserException const& e) {
-                    errors[name] = fmt::format("Invalid syntax: {}", e);
-                } catch (YAML::BadConversion const& e) {
-                    errors[name] = fmt::format("Invalid value: {}", e);
+                continue;
+            }
+            auto& found = found_opt.value();
+            bool ok = false;
+            try {
+                auto validation_err = found->second->validate(node.second);
+                if (validation_err.has_value()) {
+                    errors[name] = fmt::format(
+                      "Validation error: {}",
+                      validation_err.value().error_message());
                 }
 
-                // A validation error is fatal if the property was required,
-                // e.g. if someone entered a non-integer node_id, or an invalid
-                // internal RPC address.
-                if (!ok && found->second->is_required()) {
-                    throw std::invalid_argument(fmt::format(
-                      "Property {} is required and has invalid value", name));
-                }
+                found->second->set_value(node.second);
+                ok = true;
+            } catch (YAML::InvalidNode const& e) {
+                errors[name] = fmt::format("Invalid syntax: {}", e);
+            } catch (YAML::ParserException const& e) {
+                errors[name] = fmt::format("Invalid syntax: {}", e);
+            } catch (YAML::BadConversion const& e) {
+                errors[name] = fmt::format("Invalid value: {}", e);
+            }
+
+            // A validation error is fatal if the property was required,
+            // e.g. if someone entered a non-integer node_id, or an invalid
+            // internal RPC address.
+            if (!ok && found->second->is_required()) {
+                throw std::invalid_argument(fmt::format(
+                  "Property {} is required and has invalid value", name));
             }
         }
 
