@@ -36,6 +36,8 @@ if(Redpanda_ENABLE_SANITIZERS)
   add_compile_options(-fsanitize=address,leak,undefined)
 endif()
 
+add_compile_options(-msse4 -mpclmul)
+
 include(dependencies)
 include(v_library)
 include(testing)

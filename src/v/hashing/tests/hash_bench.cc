@@ -20,6 +20,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/perf_tests.hh>
 
+#include <absl/crc/crc32c.h>
 #include <absl/hash/hash.h>
 #include <absl/strings/string_view.h>
 #include <boost/crc.hpp>
@@ -29,8 +30,8 @@ static constexpr size_t step_bytes = 57;
 static constexpr size_t inner_iters = 1000;
 
 template<typename F>
-static size_t header_body(F n) {
-    auto buffer = random_generators::gen_alphanum_string(step_bytes);
+static size_t header_body(F n, size_t size = step_bytes) {
+    auto buffer = random_generators::gen_alphanum_string(size);
     perf_tests::start_measuring_time();
     for (auto i = inner_iters; i--;) {
         auto s = n(buffer);
@@ -126,7 +127,14 @@ PERF_TEST(header_hash, crc32_fn) {
         crc::crc32c crc;
         crc.extend(buffer.data(), buffer.size());
         return crc.value();
-    });
+    }, 4096);
+}
+
+PERF_TEST(header_hash, crc32_fn_absl) {
+    return header_body([](auto& buffer) {
+        return absl::ComputeCrc32c(
+          std::string_view(buffer.data(), buffer.size()));
+    }, 4096);
 }
 
 PERF_TEST(header_hash, xx32_fn) {
