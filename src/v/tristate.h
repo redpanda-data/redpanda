@@ -17,6 +17,11 @@
 
 #include <optional>
 #include <variant>
+
+using disable_tristate_t = std::monostate;
+
+constexpr static auto disable_tristate = disable_tristate_t{};
+
 /// The tristate class express a value that can either be present,
 /// not set or disabled explicitly.
 /// As the name suggest the tristate can have the following three states:
@@ -33,13 +38,16 @@ template<typename T>
 class tristate {
 public:
     using value_type = T;
-    constexpr tristate() noexcept = default;
+    constexpr tristate() noexcept
+      : tristate(disable_tristate){};
+    constexpr explicit tristate(disable_tristate_t) noexcept
+      : _value{disable_tristate} {}
 
     constexpr explicit tristate(std::optional<T> t) noexcept
       : _value(std::move(t)) {}
 
     constexpr bool is_disabled() const {
-        return std::holds_alternative<std::monostate>(_value);
+        return std::holds_alternative<disable_tristate_t>(_value);
     }
 
     /// \brief Checks if the tristate is in the "Set" state. That means
@@ -60,6 +68,12 @@ public:
     constexpr bool is_engaged() const {
         return is_disabled() || get_optional().has_value();
     }
+
+    /// \brief Checks if the tristate is in the not "Disabled" and not "Set"
+    /// states. we usually use this state to means that the values should be
+    /// retrieved from some other sources, like cluster default values for topic
+    /// properties. the logic is !is_engaged, so this is a convenience method
+    constexpr bool is_empty() const { return !is_engaged(); }
 
     constexpr const T& operator*() const& { return *get_optional(); }
     constexpr T& operator*() & { return *get_optional(); }
@@ -119,6 +133,6 @@ public:
     }
 
 private:
-    using underlying_t = std::variant<std::monostate, std::optional<T>>;
+    using underlying_t = std::variant<disable_tristate_t, std::optional<T>>;
     underlying_t _value;
 };
