@@ -13,6 +13,7 @@
 #include "cloud_storage_clients/abs_client.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_client.h"
+#include "model/timeout_clock.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/smp.hh>
@@ -269,7 +270,9 @@ client_pool::acquire(ss::abort_source& as) {
                 // If borrowing is disabled or this shard borrowed '_capacity'
                 // client connections then wait util one of the clients is
                 // freed.
-                co_await _cvar.wait();
+                co_await ssx::with_timeout_abortable(
+                  _cvar.wait(), model::no_timeout, as);
+
                 vlog(
                   pool_log.debug,
                   "cvar triggered, pool size: {}",
@@ -316,7 +319,8 @@ client_pool::acquire(ss::abort_source& as) {
                     client = make_client();
                 } else {
                     vlog(pool_log.debug, "can't borrow connection, waiting");
-                    co_await _cvar.wait();
+                    co_await ssx::with_timeout_abortable(
+                      _cvar.wait(), model::no_timeout, as);
                     vlog(
                       pool_log.debug,
                       "cvar triggered, pool size: {}",
