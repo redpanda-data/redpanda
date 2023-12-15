@@ -78,9 +78,11 @@ may_require_offsets_recovery(std::optional<recovery_stage> cur_stage) {
 class cluster_recovery_table {
 public:
     ss::future<> stop() {
-        _has_active_recovery.broken();
+        stop_waiters();
         return ss::make_ready_future();
     }
+
+    void stop_waiters() { _has_active_recovery.broken(); }
 
     bool is_recovery_active() const {
         if (_states.empty()) {
