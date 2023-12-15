@@ -413,7 +413,7 @@ config_manager::preload(YAML::Node const& legacy_config) {
         // to set something in redpanda.yaml and it's not working.
         if (legacy_config["redpanda"]) {
             const auto nag_properties
-              = config::shard_local_cfg().property_names();
+              = config::shard_local_cfg().property_names_and_aliases();
             for (auto const& node : legacy_config["redpanda"]) {
                 auto name = node.first.as<ss::sstring>();
                 if (nag_properties.contains(name)) {
