@@ -204,8 +204,8 @@ SEASTAR_THREAD_TEST_CASE(min_config_update_all_fields_correct) {
     BOOST_REQUIRE(!topic_config.properties.compaction_strategy);
     BOOST_REQUIRE(!topic_config.properties.timestamp_type);
     BOOST_REQUIRE(!topic_config.properties.segment_size);
-    BOOST_REQUIRE(topic_config.properties.retention_bytes.is_empty());
-    BOOST_REQUIRE(topic_config.properties.retention_duration.is_empty());
+    BOOST_REQUIRE(topic_config.properties.retention_bytes.is_disabled());
+    BOOST_REQUIRE(topic_config.properties.retention_duration.is_disabled());
 }
 
 SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
