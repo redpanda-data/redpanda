@@ -258,8 +258,8 @@ class RedpandaInstaller:
             cmd = None
             if self._head_backed_up:
                 cmd = f"mv /opt/redpanda {head_root_path}"
-            elif not node.account.exists(head_root_path):
-                cmd = f"ln -s {rp_install_path_root} {head_root_path}"
+            else:
+                cmd = f"ln -sf {rp_install_path_root} {head_root_path}"
             if cmd:
                 node.account.ssh_output(cmd)
 
