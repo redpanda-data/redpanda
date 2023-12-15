@@ -122,6 +122,8 @@ ss::future<> cluster_recovery_backend::stop_and_wait() {
         _term_as.value().get().request_abort();
     }
     _as.request_abort();
+    co_await _recovery_table.invoke_on_all(
+      &cluster_recovery_table::stop_waiters);
     vlog(clusterlog.info, "Closing cluster recovery backend gate...");
     co_await _gate.close();
 }

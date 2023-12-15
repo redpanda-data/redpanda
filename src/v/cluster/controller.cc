@@ -718,14 +718,14 @@ ss::future<> controller::stop() {
               }
               return ss::make_ready_future();
           })
-          .then([this] { return _recovery_table.stop(); })
-          .then([this] { return _recovery_manager.stop(); })
           .then([this] {
               if (_recovery_backend) {
                   return _recovery_backend->stop_and_wait();
               }
               return ss::make_ready_future();
           })
+          .then([this] { return _recovery_manager.stop(); })
+          .then([this] { return _recovery_table.stop(); })
           .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })
           .then([this] { return _feature_manager.stop(); })
