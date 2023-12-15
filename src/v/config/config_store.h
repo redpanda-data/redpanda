@@ -70,16 +70,20 @@ public:
 
         for (auto const& node : root_node) {
             auto name = node.first.as<ss::sstring>();
-            auto found = _properties.find(name);
-            if (found == _properties.end()) {
-                found = _aliases.find(name);
-                if (found == _aliases.end()) {
-                    if (!ignore_missing.contains(name)) {
-                        throw std::invalid_argument(
-                          fmt::format("Unknown property {}", name));
-                    }
+            auto found_opt = std::optional{_properties.find(name)};
+            if (found_opt == _properties.end()) {
+                found_opt = _aliases.find(name);
+                if (found_opt == _aliases.end()) {
+                    found_opt.reset();
+                }
+            }
+            if (!found_opt) {
+                if (!ignore_missing.contains(name)) {
+                    throw std::invalid_argument(
+                      fmt::format("Unknown property {}", name));
                 }
             } else {
+                auto& found = found_opt.value();
                 bool ok = false;
                 try {
                     auto validation_err = found->second->validate(node.second);
