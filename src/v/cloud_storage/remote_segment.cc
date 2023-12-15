@@ -959,12 +959,16 @@ ss::future<> remote_segment::hydrate(storage::opt_abort_source_t as) {
 
     // A no-op abort source is created on heap so that `do_hydrate` can call
     // `with_timeout_abortable` if we do not have an input abort source.
-    return ss::do_with(ss::abort_source{}, [this, as](ss::abort_source& noop) {
-        return do_hydrate(
-          as.value_or(noop),
-          ss::lowres_clock::now()
-            + config::shard_local_cfg().cloud_storage_hydration_timeout_ms());
-    });
+    return ss::do_with(
+             ss::abort_source{},
+             [this, as](ss::abort_source& noop) {
+                 return do_hydrate(
+                   as.value_or(noop),
+                   ss::lowres_clock::now()
+                     + config::shard_local_cfg()
+                         .cloud_storage_hydration_timeout_ms());
+             })
+      .finally([holder = std::move(g)] {});
 }
 
 ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
@@ -1023,6 +1027,7 @@ remote_segment::materialize_chunk(chunk_start_offset_t chunk_start) {
 
 ss::future<std::vector<model::tx_range>>
 remote_segment::aborted_transactions(model::offset from, model::offset to) {
+    auto g = _gate.hold();
     co_await hydrate();
     std::vector<model::tx_range> result;
     if (!_tx_range) {
