@@ -129,6 +129,11 @@ ss::future<> copy_data_segment_reducer::maybe_keep_offset(
     // Keep the last record to ensure the bounds of the segment remain.
     auto o = batch.base_offset() + model::offset_delta(r.offset_delta());
     if (o == _segment_last_offset) {
+        vlog(
+          stlog.trace,
+          "retaining last record: {} of segment from batch: {}",
+          r,
+          batch.header());
         offset_deltas.push_back(r.offset_delta());
         co_return;
     }
@@ -397,9 +402,9 @@ void tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
             // marker is the first entry in the segment.
             vlog(
               stlog.warn,
-              "No ongoing aborted tx found for pid {}, offset {}",
+              "No ongoing aborted tx found for pid {}, batch {}",
               pid,
-              b.base_offset());
+              b.header());
         }
         break;
     }
@@ -480,6 +485,7 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
     }
 
     if (discard_batch) {
+        vlog(stlog.trace, "discarded batch during compaction: {}", b.header());
         _stats._all_batches_discarded++;
         co_return ss::stop_iteration::no;
     }

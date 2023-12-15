@@ -1485,10 +1485,10 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
     }
     vlog(
       _ctx_log.trace,
-      "aborted transactions from: {}, to: {}, result size: {}",
+      "aborted transactions from: {}, to: {}, result : {}",
       from,
       to,
-      result.size());
+      result);
     co_return result;
 }
 
@@ -1781,7 +1781,13 @@ void rm_stm::try_arm(time_point_type deadline) {
 }
 
 void rm_stm::apply_fence(model::record_batch&& b) {
+    auto batch_base_offset = b.base_offset();
     auto batch_data = read_fence_batch(std::move(b));
+    vlog(
+      _ctx_log.trace,
+      "applying fence batch, offset: {}, pid: {}",
+      batch_base_offset,
+      batch_data.bid.pid);
 
     _highest_producer_id = std::max(
       _highest_producer_id, batch_data.bid.pid.get_id());
@@ -1915,10 +1921,11 @@ void rm_stm::apply_data(
             vlog(
               _ctx_log.trace,
               "Applying tx data batch with identity: {} and offset range: "
-              "[{},{}]",
+              "[{},{}], last kafka offset: {}",
               bid,
               header.base_offset,
-              last_offset);
+              last_offset,
+              last_kafka_offset);
             if (_log_state.prepared.contains(bid.pid)) {
                 vlog(
                   _ctx_log.error,
