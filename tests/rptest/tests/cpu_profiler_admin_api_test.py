@@ -37,7 +37,7 @@ class CPUProfilerAdminAPITest(RedpandaTest):
         # Provide traffic so there is something to sample.
         with repeater_traffic(context=self.test_context,
                               redpanda=self.redpanda,
-                              topic=self.topic,
+                              topics=[self.topic],
                               msg_size=4096,
                               workers=1) as repeater:
             repeater.await_group_ready()

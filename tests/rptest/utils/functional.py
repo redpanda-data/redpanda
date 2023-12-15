@@ -26,4 +26,4 @@ def flatten(input_list):
 
     Returns all lists concatenated into one
     """
-    return reduce(lambda acc, x: acc + x, input_list)
+    return reduce(lambda acc, x: acc + x, input_list, [])

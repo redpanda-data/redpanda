@@ -844,7 +844,8 @@ bool audit_log_manager::do_enqueue_audit_event(
         if (!units) {
             vlog(
               adtlog.warn,
-              "Unable to enqueue audit message, msg size: {}, avail units: {}",
+              "Unable to enqueue audit event {}, msg size: {}, avail units: {}",
+              *msg,
               msg_size,
               _queue_bytes_sem.available_units());
             probe().audit_error();

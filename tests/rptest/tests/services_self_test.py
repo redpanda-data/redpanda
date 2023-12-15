@@ -68,7 +68,7 @@ class KgoRepeaterSelfTest(RedpandaTest):
         with repeater_traffic(context=self.test_context,
                               redpanda=self.redpanda,
                               num_nodes=2,
-                              topic=topic,
+                              topics=[topic],
                               msg_size=4096,
                               workers=1) as repeater:
             repeater.await_group_ready()
@@ -186,7 +186,7 @@ class BucketScrubSelfTest(RedpandaTest):
 
         with repeater_traffic(context=self.test_context,
                               redpanda=self.redpanda,
-                              topic=topic,
+                              topics=[topic],
                               msg_size=msg_size,
                               workers=1) as repeater:
             repeater.await_group_ready()

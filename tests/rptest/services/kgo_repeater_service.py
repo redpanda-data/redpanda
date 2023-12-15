@@ -11,6 +11,8 @@ import signal
 import time
 import requests
 import json
+import operator
+from functools import reduce, partial
 from typing import Optional, Callable
 from contextlib import contextmanager
 from collections import defaultdict
@@ -21,7 +23,7 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, SaslCredentials
 from rptest.clients.rpk import RpkTool
 
 
@@ -35,9 +37,10 @@ class KgoRepeaterService(Service):
                  context: TestContext,
                  redpanda: RedpandaService,
                  *,
+                 sasl_options: Optional[SaslCredentials] = None,
                  nodes: Optional[list[ClusterNode]] = None,
                  num_nodes: Optional[int] = None,
-                 topic: str,
+                 topics: list[str],
                  msg_size: Optional[int],
                  workers: int,
                  key_count: Optional[int] = None,
@@ -64,10 +67,11 @@ class KgoRepeaterService(Service):
             self.nodes = nodes
 
         self.redpanda = redpanda
-        self.topic = topic
+        self.topics = topics
         self.msg_size = msg_size
         self.workers = workers
         self.group_name = group_name
+        self.sasl_options = sasl_options
 
         self.rate_limit_bps_per_node = rate_limit_bps // len(
             self.nodes) if rate_limit_bps else None
@@ -104,12 +108,16 @@ class KgoRepeaterService(Service):
     def start_node(self, node, clean=None):
         initial_data_mb = self.mb_per_worker * self.workers
 
+        topics = ",".join(self.topics)
         cmd = (
             "/opt/kgo-verifier/kgo-repeater "
-            f"-topic {self.topic} -brokers {self.redpanda.brokers()} "
+            f"-topics {topics} -brokers {self.redpanda.brokers()} "
             f"-workers {self.workers} -initial-data-mb {initial_data_mb} "
             f"-group {self.group_name} -remote -remote-port {self.remote_port} "
         )
+
+        if self.sasl_options is not None:
+            cmd += f" -username {self.sasl_options.username} -password {self.sasl_options.password}"
 
         if self.msg_size is not None:
             cmd += f" -payload-size={self.msg_size}"
@@ -245,6 +253,12 @@ class KgoRepeaterService(Service):
 
         def group_ready():
             rpk = RpkTool(self.redpanda)
+
+            if self.sasl_options is not None:
+                rpk = RpkTool(self.redpanda,
+                              username=self.sasl_options.username,
+                              password=self.sasl_options.password,
+                              sasl_mechanism=self.sasl_options.algorithm)
             try:
                 group = rpk.group_describe(self.group_name, summary=True)
             except Exception as e:
@@ -317,21 +331,52 @@ class KgoRepeaterService(Service):
         self.logger.debug(
             f"Group {self.group_name} became ready in {time.time() - t1}s")
 
+    def _get_status_reports(self):
+        for node in self.nodes:
+            r = requests.get(self._remote_url(node, "status"), timeout=10)
+            r.raise_for_status()
+            node_status = r.json()
+            for worker_status in node_status:
+                yield worker_status
+
     def total_messages(self):
         """
         :return: 2-tuple of produced, consumed
         """
         produced = 0
         consumed = 0
-        for node in self.nodes:
-            r = requests.get(self._remote_url(node, "status"), timeout=10)
-            r.raise_for_status()
-            node_status = r.json()
-            for worker_status in node_status:
-                produced += worker_status['produced']
-                consumed += worker_status['consumed']
+        for worker_status in self._get_status_reports():
+            produced += worker_status['produced']
+            consumed += worker_status['consumed']
 
         return produced, consumed
+
+    def latency_reports(self, report_type='e2e'):
+        """
+        :return: 3-tuple of average p50, p90, and p99 latencies
+        """
+        report_types = ['e2e', 'ack']
+        if report_type not in report_types:
+            raise RuntimeError(
+                f'Invalid report_type {report_type} passed, possible values are {report_types}'
+            )
+        latencies = []
+        for worker_status in self._get_status_reports():
+            histogram = worker_status['latency'][report_type]
+            latencies.append(
+                (histogram['p50'], histogram['p90'], histogram['p99']))
+
+        def tuple_op(binary_op, a, b):
+            """Perform binary_op() across all fields of tuple a and b"""
+            assert len(a) == len(b)
+            return tuple(binary_op(v[0], v[1]) for v in zip(a, b))
+
+        # Return average of all values
+        n = len(latencies)
+        if n == 0:
+            return ()
+        summed = reduce(partial(tuple_op, operator.add), latencies, (0, 0, 0))
+        return tuple_op(operator.truediv, summed, (n, n, n))
 
     def await_progress(self, msg_count, timeout_sec, err_msg=None):
         """
@@ -363,6 +408,12 @@ class KgoRepeaterService(Service):
                                  timeout_sec=timeout_sec,
                                  backoff_sec=1,
                                  err_msg=err_msg)
+
+    def reset(self):
+        """Internally resets the metrics accumulated within the kgo-repeater"""
+        for node in self.nodes:
+            r = requests.get(self._remote_url(node, "reset"), timeout=10)
+            r.raise_for_status()
 
 
 @contextmanager

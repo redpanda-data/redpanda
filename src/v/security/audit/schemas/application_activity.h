@@ -89,6 +89,13 @@ private:
     status_id _status_id;
     api_activity_unmapped _unmapped;
 
+    ss::sstring api_info() const final {
+        if (_http_request) {
+            return _http_request->url.path;
+        }
+        return _api.operation;
+    }
+
     size_t hash() const final { return std::hash<api_activity>()(*this); }
 
     friend inline void rjson_serialize(
