@@ -415,6 +415,7 @@ func saveK8SLogs(ctx context.Context, ps *stepParams, namespace, since string, l
 		limitBytes := int64(logsLimitBytes)
 		logOpts := &k8score.PodLogOptions{
 			LimitBytes: &limitBytes,
+			Container:  "redpanda",
 		}
 
 		if len(since) > 0 {
