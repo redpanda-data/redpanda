@@ -194,6 +194,20 @@ public:
         return groups_per_ntp;
     }
 
+    // Creates the specified number of groups and commits one offset per group,
+    // returning maps containing the underlying offsets topic partition,
+    // committed offsets, and associated groups.
+    auto create_groups_and_commit(size_t num_groups) {
+        auto client = make_connected_client();
+        auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+        auto groups = group_ids("test_group", num_groups);
+        auto members = create_groups(client, groups).get();
+        auto committed_offsets = commit_random_offsets(client, members).get();
+        auto num_groups_per_ntp = snap_num_group_per_offsets_ntp();
+        return std::make_tuple(num_groups_per_ntp, committed_offsets);
+    }
+
     // Repeatedly checks that each offsets NTP manages the exact count of
     // groups as in `groups_per_ntp`, verifying that all reported errors are in
     // `allowed_errors`.
@@ -300,22 +314,6 @@ public:
         BOOST_REQUIRE_EQUAL(committed_offsets, downloaded_offsets);
     }
 
-    using wipe = ss::bool_class<struct wipe_on_restart_tag>;
-    void restart(wipe should_wipe = wipe::no) {
-        shutdown();
-        if (should_wipe) {
-            std::filesystem::remove_all(data_dir);
-        }
-        app_signal = std::make_unique<::stop_signal>();
-        ss::smp::invoke_on_all([] {
-            auto& config = config::shard_local_cfg();
-            config.get("disable_metrics").set_value(false);
-        }).get0();
-        app.initialize(proxy_config(), proxy_client_config());
-        app.check_environment();
-        app.wire_up_and_start(*app_signal, true);
-    }
-
 protected:
     const cloud_storage_clients::bucket_name bucket;
     model::cluster_uuid cluster_uuid;
@@ -368,19 +366,9 @@ FIXTURE_TEST(test_snapshot_basic, offsets_recovery_fixture) {
 
 FIXTURE_TEST(test_snapshot_leadership_change, offsets_recovery_fixture) {
     make_partitions(1).get();
-
-    // Create a client and a bunch of groups.
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
-    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto [groups_per_ntp, _] = create_groups_and_commit(30);
 
     // Repeatedly snapshot while we undergo some leadership changes.
-    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
-
     ss::gate g;
     auto validate_fut = validate_group_counts_in_loop(
       groups_per_ntp, {cluster::cloud_metadata::error_outcome::not_ready}, g);
@@ -446,16 +434,7 @@ FIXTURE_TEST(test_snapshot_group_removal, offsets_recovery_fixture) {
 
 FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
     make_partitions(1).get();
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
-
-    // Commit a bunch of offsets.
-    auto committed_offsets = commit_random_offsets(client, members).get();
+    auto [_, committed_offsets] = create_groups_and_commit(30);
 
     // Upload the offsets.
     auto paths_per_pid = upload_offsets().get();
@@ -471,26 +450,15 @@ FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
 
 FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
     make_partitions(1).get();
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
-
-    // Commit a bunch of offsets.
-    auto committed_offsets = commit_random_offsets(client, members).get();
+    constexpr const auto num_groups = 30;
+    auto [groups_per_ntp, committed_offsets] = create_groups_and_commit(
+      num_groups);
     auto remote_paths = upload_offsets().get();
     BOOST_REQUIRE_EQUAL(16, remote_paths.size());
-    info("Stopping client...");
-    client.stop().get();
-    stop_client.cancel();
-    auto groups_per_ntp = snap_num_group_per_offsets_ntp();
 
     // Wipe the cluster and restore the groups from the snapshot.
     info("Clearing cluster...");
-    redpanda_thread_fixture::restart(should_wipe::yes);
+    restart(should_wipe::yes);
     make_partitions(1).get();
     BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
                     app.coordinator_ntp_mapper.local(),
@@ -536,6 +504,75 @@ FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
         num_groups_total += num_groups;
     }
     BOOST_REQUIRE_EQUAL(num_groups_total, num_groups);
+}
+
+FIXTURE_TEST(
+  test_offsets_recoverer_skips_existing_groups, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    constexpr const auto num_groups = 30;
+    auto [groups_per_ntp, committed_offsets] = create_groups_and_commit(
+      num_groups);
+    auto remote_paths = upload_offsets().get();
+    BOOST_REQUIRE_EQUAL(16, remote_paths.size());
+
+    // Wipe the cluster and restore the groups from the snapshot.
+    restart(should_wipe::yes);
+    make_partitions(1).get();
+    BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
+                    app.coordinator_ntp_mapper.local(),
+                    app.controller->get_topics_frontend().local(),
+                    1)
+                    .get());
+
+    // Wait for the group_manager to report healthy (but empty).
+    absl::flat_hash_map<model::ntp, size_t> empty_group_map;
+    for (const auto& ntp : offset_ntps) {
+        wait_for_leader(ntp).get();
+        empty_group_map[ntp] = 0;
+    }
+    validate_group_counts_eventually(empty_group_map).get();
+
+    // Create the same set of groups without committing any offsets.
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+    auto groups = group_ids("test_group", num_groups);
+    auto members = create_groups(client, groups).get();
+    validate_group_counts_eventually(groups_per_ntp).get();
+
+    // Now run recovery across the partitions using the snapshots.
+    offsets_recoverer recoverer(
+      config::node().node_id().value(),
+      app.cloud_storage_api,
+      app.shadow_index_cache,
+      app.offsets_lookup,
+      app.controller->get_partition_leaders(),
+      app._connection_cache,
+      app._group_manager);
+    auto cleanup = ss::defer([&] { recoverer.stop().get(); });
+    for (int i = 0; i < remote_paths.size(); i++) {
+        offsets_recovery_request req;
+        req.offsets_ntp = {
+          model::kafka_consumer_offsets_nt.ns,
+          model::kafka_consumer_offsets_nt.tp,
+          model::partition_id(i),
+        };
+        req.bucket = bucket;
+        BOOST_REQUIRE_EQUAL(remote_paths[i].size(), 1);
+        req.offsets_snapshot_paths.emplace_back(remote_paths[i][0]());
+        auto reply = recoverer.recover(std::move(req)).get();
+        BOOST_REQUIRE_EQUAL(reply.ec, cluster::errc::success);
+    }
+
+    // Because the groups already existed at recovery time, the offsets
+    // shouldn't be restored.
+    for (const auto& ntp : offset_ntps) {
+        auto snapshot_res
+          = app._group_manager.local().snapshot_groups(ntp).get();
+        BOOST_REQUIRE(snapshot_res.has_value());
+        for (const auto& group : snapshot_res.value().groups) {
+            BOOST_REQUIRE(group.offsets.empty());
+        }
+    }
 }
 
 FIXTURE_TEST(test_upload_dispatch_to_leaders, offsets_recovery_fixture) {
@@ -589,20 +626,12 @@ FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
     test_local_cfg.get("cloud_storage_cluster_metadata_upload_interval_ms")
       .set_value(5000ms);
 
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    BOOST_REQUIRE_EQUAL(groups.size(), members.size());
+    const auto [_, committed_offsets] = create_groups_and_commit(30);
 
     // Set up some metadata: a controller snapshot and some offsets.
     auto& controller_stm = app.controller->get_controller_stm().local();
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [&] { return controller_stm.maybe_write_snapshot(); });
-    auto committed_offsets = commit_random_offsets(client, members).get();
-    client.stop().get();
-    stop_client.cancel();
 
     // Now begin uploading metadata.
     auto& uploader = app.controller->metadata_uploader();
@@ -666,22 +695,13 @@ FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
 FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
     // Test that from an offset snapshot, we're able to recover.
     make_partitions(1).get();
-    auto client = make_connected_client();
-    auto stop_client = ss::defer([&client]() { client.stop().get(); });
-
-    constexpr int num_groups = 30;
-    auto groups = group_ids("test_group", num_groups);
-    auto members = create_groups(client, groups).get();
-    auto committed_offsets = commit_random_offsets(client, members).get();
-    auto num_groups_per_ntp = snap_num_group_per_offsets_ntp();
+    auto [num_groups_per_ntp, committed_offsets] = create_groups_and_commit(30);
 
     auto paths_per_pid = upload_offsets().get();
     BOOST_REQUIRE_EQUAL(paths_per_pid.size(), 16);
-    client.stop().get();
-    stop_client.cancel();
 
     // Restart empty.
-    restart(wipe::yes);
+    restart(should_wipe::yes);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
         return app.storage.local().get_cluster_uuid().has_value();
     });
@@ -739,7 +759,7 @@ FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
         }
     }
 
-    restart(wipe::no);
+    restart(should_wipe::no);
     RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
         const auto [err, l] = app._group_manager.local().list_groups();
         return err == kafka::error_code::none;
@@ -779,7 +799,7 @@ FIXTURE_TEST(test_cluster_recovery_with_offsets, offsets_recovery_fixture) {
 
     // Clear the cluster and restore.
     raft0 = nullptr;
-    restart(wipe::yes);
+    restart(should_wipe::yes);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
         return app.storage.local().get_cluster_uuid().has_value();
     });
