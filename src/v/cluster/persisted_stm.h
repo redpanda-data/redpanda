@@ -62,6 +62,7 @@ class file_backed_stm_snapshot {
 public:
     file_backed_stm_snapshot(
       ss::sstring snapshot_name, prefix_logger& log, raft::consensus* c);
+    ss::future<> perform_initial_cleanup();
     ss::future<std::optional<stm_snapshot>> load_snapshot();
     ss::future<> persist_snapshot(stm_snapshot&&);
     const ss::sstring& name();
@@ -94,6 +95,7 @@ public:
       model::ntp ntp,
       storage::kvstore& kvstore);
 
+    ss::future<> perform_initial_cleanup();
     ss::future<std::optional<stm_snapshot>> load_snapshot();
     ss::future<> persist_snapshot(stm_snapshot&&);
     const ss::sstring& name();
@@ -113,6 +115,7 @@ private:
 
 template<typename T>
 concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
+    { s.perform_initial_cleanup() } -> std::same_as<ss::future<>>;
     {
         s.load_snapshot()
     } -> std::same_as<ss::future<std::optional<stm_snapshot>>>;
