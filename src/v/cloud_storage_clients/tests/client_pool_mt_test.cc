@@ -107,11 +107,29 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_another_shard) {
         });
     });
 
-    ss::sleep(1ms).get();
+    // Wait for the above future to get scheduled and block.
+    pool
+      .invoke_on_others([](cloud_storage_clients::client_pool& pool) {
+          while (!pool.has_waiters()) {
+              return ss::yield();
+          }
+          return ss::now();
+      })
+      .get();
 
     vlog(test_log.debug, "return lease to the current shard");
     leases.pop_front();
-    ss::sleep(1ms).get();
+
+    pool
+      .invoke_on_all([](cloud_storage_clients::client_pool& pool) {
+          while (pool.has_background_operations()) {
+              return ss::yield();
+          }
+          return ss::now();
+      })
+      .get();
+    ;
+
     // Since we returned to the current shard the future that
     // await for the 'acquire' method to be completed on another shard
     // souldn't become available.
