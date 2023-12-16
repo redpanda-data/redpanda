@@ -630,7 +630,10 @@ archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
                 co_return false;
             }
         } catch (const ss::timed_out_error&) {
-            vlog(_logger.error, "Replication wait for archival STM timed out");
+            vlog(
+              _logger.warn,
+              "Replication wait for archival STM timed out (timeout = {})",
+              timeout);
             co_return false;
         } catch (...) {
             vlog(
