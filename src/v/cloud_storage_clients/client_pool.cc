@@ -272,7 +272,9 @@ client_pool::acquire(ss::abort_source& as) {
                 // client connections then wait util one of the clients is
                 // freed.
                 co_await ssx::with_timeout_abortable(
-                  _cvar.wait(), model::no_timeout, as);
+                  _cvar.wait([this] { return !_pool.empty(); }),
+                  model::no_timeout,
+                  as);
 
                 vlog(
                   pool_log.debug,
@@ -321,7 +323,9 @@ client_pool::acquire(ss::abort_source& as) {
                 } else {
                     vlog(pool_log.debug, "can't borrow connection, waiting");
                     co_await ssx::with_timeout_abortable(
-                      _cvar.wait(), model::no_timeout, as);
+                      _cvar.wait([this] { return !_pool.empty(); }),
+                      model::no_timeout,
+                      as);
                     vlog(
                       pool_log.debug,
                       "cvar triggered, pool size: {}",

@@ -111,7 +111,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_another_shard) {
 
     vlog(test_log.debug, "return lease to the current shard");
     leases.pop_front();
-    ss::sleep(1ms).get();
+    ss::sleep(10ms).get();
     // Since we returned to the current shard the future that
     // await for the 'acquire' method to be completed on another shard
     // souldn't become available.
