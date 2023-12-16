@@ -20,6 +20,8 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <deque>
+
 namespace cloud_storage_clients {
 
 /// Policy that controls behaviour of the client pool
@@ -166,7 +168,7 @@ private:
     client_configuration _config;
     ss::shared_ptr<client_probe> _probe;
     client_pool_overdraft_policy _policy;
-    std::vector<http_client_ptr> _pool;
+    std::deque<http_client_ptr> _pool;
     // List of all connections currently used by clients
     intrusive_list<client_lease, &client_lease::_hook> _leased;
     ss::condition_variable _cvar;

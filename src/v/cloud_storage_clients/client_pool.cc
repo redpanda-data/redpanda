@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <optional>
 #include <random>
+#include <utility>
 
 namespace {
 constexpr auto self_configure_attempts = 3;
@@ -356,11 +357,25 @@ client_pool::acquire(ss::abort_source& as) {
                         source_sid]() mutable {
           if (pool) {
               if (source_sid.has_value()) {
-                  vlog(
-                    pool_log.debug, "disposing the borrowed client connection");
-                  // Since the client was borrowed we can't just add it back to
-                  // the pool. This will lead to a situation when the connection
-                  // simultaneously exists on two different shards.
+                  // If all clients from the local pool are in-use we will
+                  // shutdown the borrowed one and return the "accounting unit"
+                  // to the source shard.
+                  // Otherwise, we replace the oldest client in the
+                  // pool to improve connection reuse.
+                  if (!pool->_pool.empty()) {
+                      vlog(
+                        pool_log.debug,
+                        "disposing the the oldest client connection and "
+                        "replacing it with the borrowed one");
+                      pool->_pool.push_back(std::move(client));
+                      client = pool->_pool.front();
+                      pool->_pool.pop_front();
+                  } else {
+                      vlog(
+                        pool_log.debug,
+                        "disposing the borrowed client connection");
+                  }
+
                   client->shutdown();
                   ssx::spawn_with_gate(pool->_bg_gate, [client] {
                       return client->stop().finally([client] {});
@@ -428,7 +443,8 @@ void client_pool::return_one(unsigned other) {
     vassert(
       _pool.size() < _capacity,
       "tried to return a borrowed client but the pool is full");
-    _pool.emplace_back(make_client());
+    // Cold clients are at the front. Hot clients are at the back.
+    _pool.emplace_front(make_client());
     update_usage_stats();
     vlog(
       pool_log.debug,
