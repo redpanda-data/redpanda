@@ -83,13 +83,13 @@ func (a *AdminAPI) StartAutomatedRecovery(ctx context.Context) (RecoveryStartRes
 	requestParams := &RecoveryRequestParams{}
 	var response RecoveryStartResponse
 
-	return response, a.sendAny(ctx, http.MethodPost, "/v1/cloud_storage/automated_recovery", requestParams, &response)
+	return response, a.sendToLeader(ctx, http.MethodPost, "/v1/cloud_storage/automated_recovery", requestParams, &response)
 }
 
 // PollAutomatedRecoveryStatus polls the automated recovery status API endpoint to retrieve the latest status of the recovery process.
 func (a *AdminAPI) PollAutomatedRecoveryStatus(ctx context.Context) (*TopicRecoveryStatus, error) {
 	var response TopicRecoveryStatus
-	return &response, a.sendAny(ctx, http.MethodGet, "/v1/cloud_storage/automated_recovery", http.NoBody, &response)
+	return &response, a.sendToLeader(ctx, http.MethodGet, "/v1/cloud_storage/automated_recovery", http.NoBody, &response)
 }
 
 func (a *AdminAPI) CloudStorageStatus(ctx context.Context, topic, partition string) (CloudStorageStatus, error) {
