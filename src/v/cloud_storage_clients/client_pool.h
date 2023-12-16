@@ -20,6 +20,8 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <deque>
+
 namespace cloud_storage_clients {
 
 /// Policy that controls behaviour of the client pool
@@ -132,6 +134,10 @@ public:
 
     size_t max_size() const noexcept;
 
+    bool has_background_operations() const noexcept {
+        return _bg_gate.get_count() > 0;
+    }
+
 private:
     ss::future<>
     client_self_configure(std::optional<std::reference_wrapper<stop_signal>>
@@ -143,7 +149,7 @@ private:
       std::optional<client_self_configuration_output> result);
 
     void populate_client_pool();
-    http_client_ptr make_client() const;
+    http_client_ptr make_client() const noexcept;
     void release(http_client_ptr leased);
 
     /// Return number of clients which wasn't utilized
@@ -162,12 +168,16 @@ private:
     client_configuration _config;
     ss::shared_ptr<client_probe> _probe;
     client_pool_overdraft_policy _policy;
-    std::vector<http_client_ptr> _pool;
+    std::deque<http_client_ptr> _pool;
     // List of all connections currently used by clients
     intrusive_list<client_lease, &client_lease::_hook> _leased;
     ss::condition_variable _cvar;
     ss::abort_source _as;
     ss::gate _gate;
+    // A gate for background operations. Most useful in testing where we want
+    // to wait all async housekeeping to complete before asserting state
+    // invariants.
+    ss::gate _bg_gate;
 
     /// Holds and applies the credentials for requests to S3. Shared pointer to
     /// enable rotating credentials to all clients.
