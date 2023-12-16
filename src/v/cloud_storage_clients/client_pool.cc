@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <optional>
 #include <random>
+#include <utility>
 
 namespace {
 constexpr auto self_configure_attempts = 3;
@@ -442,7 +443,8 @@ void client_pool::return_one(unsigned other) {
     vassert(
       _pool.size() < _capacity,
       "tried to return a borrowed client but the pool is full");
-    _pool.emplace_back(make_client());
+    // Cold clients are at the front. Hot clients are at the back.
+    _pool.emplace_front(make_client());
     update_usage_stats();
     vlog(
       pool_log.debug,
