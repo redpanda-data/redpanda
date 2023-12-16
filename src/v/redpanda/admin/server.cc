@@ -3526,6 +3526,9 @@ admin_server::initialize_cluster_recovery(
 }
 ss::future<ss::json::json_return_type>
 admin_server::get_cluster_recovery(std::unique_ptr<ss::http::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
     ss::httpd::shadow_indexing_json::cluster_recovery_status ret;
     ret.state = "inactive";
 
