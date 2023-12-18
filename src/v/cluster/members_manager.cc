@@ -47,6 +47,7 @@
 #include <fmt/ranges.h>
 
 #include <chrono>
+#include <exception>
 #include <system_error>
 namespace cluster {
 
@@ -1508,7 +1509,6 @@ members_manager::dispatch_configuration_update(model::broker broker) {
 ss::future<result<configuration_update_reply>>
 members_manager::handle_configuration_update_request(
   configuration_update_request req) {
-    using ret_t = result<configuration_update_reply>;
     if (req.target_node != _self.id()) {
         vlog(
           clusterlog.warn,
@@ -1516,7 +1516,7 @@ members_manager::handle_configuration_update_request(
           "configuration update.",
           _self,
           req.target_node);
-        return ss::make_ready_future<ret_t>(configuration_update_reply{false});
+        co_return configuration_update_reply{false};
     }
     vlog(
       clusterlog.trace, "Handling node {} configuration update", req.node.id());
@@ -1529,15 +1529,25 @@ members_manager::handle_configuration_update_request(
           err.value(),
           req.node,
           all_brokers);
-        return ss::make_ready_future<ret_t>(errc::invalid_configuration_update);
+        co_return errc::invalid_configuration_update;
     }
 
-    auto f = update_broker_client(
-      _self.id(),
-      _connection_cache,
-      req.node.id(),
-      req.node.rpc_address(),
-      _rpc_tls_config);
+    try {
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          req.node.id(),
+          req.node.rpc_address(),
+          _rpc_tls_config);
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "Unable to handle configuration update due to broker update error: "
+          "{}",
+          std::current_exception());
+        co_return configuration_update_reply{false};
+    }
+
     // Current node is not the leader have to send an RPC to leader
     // controller
     std::optional<model::node_id> leader_id = _raft0->get_leader_id();
@@ -1546,53 +1556,51 @@ members_manager::handle_configuration_update_request(
           clusterlog.warn,
           "Unable to handle configuration update, no leader controller",
           req.node.id());
-        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+        co_return errc::no_leader_controller;
     }
     // curent node is a leader
     if (leader_id == _self.id()) {
         // Just update raft0 configuration
-        return update_node(std::move(req.node)).then([](std::error_code ec) {
-            if (ec) {
-                vlog(
-                  clusterlog.warn,
-                  "Unable to handle configuration update - {}",
-                  ec.message());
-                return ss::make_ready_future<ret_t>(ec);
-            }
-            return ss::make_ready_future<ret_t>(
-              configuration_update_reply{true});
-        });
+        std::error_code ec = co_await update_node(std::move(req.node));
+        if (ec) {
+            vlog(
+              clusterlog.warn,
+              "Unable to handle configuration update - {}",
+              ec.message());
+            co_return ec;
+        }
+        co_return configuration_update_reply{true};
     }
 
     auto leader = _members_table.local().get_node_metadata_ref(*leader_id);
     if (!leader) {
-        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+        co_return errc::no_leader_controller;
     }
 
-    return with_client<controller_client_protocol>(
-             _self.id(),
-             _connection_cache,
-             *leader_id,
-             leader->get().broker.rpc_address(),
-             _rpc_tls_config,
-             _join_timeout,
-             [tout = ss::lowres_clock::now() + _join_timeout,
-              node = req.node,
-              target = *leader_id](controller_client_protocol c) mutable {
-                 return c
-                   .update_node_configuration(
-                     configuration_update_request(std::move(node), target),
-                     rpc::client_opts(tout))
-                   .then(&rpc::get_ctx_data<configuration_update_reply>);
-             })
-      .handle_exception([](const std::exception_ptr& e) {
-          vlog(
-            clusterlog.warn,
-            "Error while dispatching configuration update request - {}",
-            e);
-          return ss::make_ready_future<ret_t>(
-            errc::join_request_dispatch_error);
-      });
+    try {
+        co_return co_await with_client<controller_client_protocol>(
+          _self.id(),
+          _connection_cache,
+          *leader_id,
+          leader->get().broker.rpc_address(),
+          _rpc_tls_config,
+          _join_timeout,
+          [tout = ss::lowres_clock::now() + _join_timeout,
+           node = req.node,
+           target = *leader_id](controller_client_protocol c) mutable {
+              return c
+                .update_node_configuration(
+                  configuration_update_request(std::move(node), target),
+                  rpc::client_opts(tout))
+                .then(&rpc::get_ctx_data<configuration_update_reply>);
+          });
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "Error while dispatching configuration update request - {}",
+          std::current_exception());
+        co_return errc::join_request_dispatch_error;
+    }
 }
 
 std::ostream&
