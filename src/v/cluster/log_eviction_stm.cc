@@ -189,6 +189,17 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
       truncation_point);
     auto snapshot_data = co_await _raft->stm_manager()->take_snapshot(
       truncation_point);
+
+    if (truncation_point <= _raft->last_snapshot_index()) {
+        vlog(
+          _log.trace,
+          "Skipping writing snapshot as Raft already progressed with the new "
+          "snapshot. Current raft snapshot index: {}, requested truncation "
+          "point: {}",
+          _raft->last_snapshot_index(),
+          truncation_point);
+        co_return;
+    }
     co_await _raft->write_snapshot(
       raft::write_snapshot_cfg(truncation_point, std::move(snapshot_data)));
 }
