@@ -305,7 +305,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
               if (!_parser.is_header_done()) {
                   // We can't put EOF before all header bytes are received
                   ec = boost::beast::http::make_error_code(
-                    boost::beast::http::error::short_read);
+                    boost::beast::http::error::end_of_stream);
               } else {
                   _parser.put_eof(ec);
               }
