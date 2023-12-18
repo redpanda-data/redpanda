@@ -701,9 +701,12 @@ std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
     return o << "{no_of_chunks:" << a._opts.number_of_chunks
              << ", closed:" << a._closed
              << ", fallocation_offset:" << a._fallocation_offset
+             << ", stable_offset:" << a._stable_offset
+             << ", flushed_offset:" << a._flushed_offset
              << ", committed_offset:" << a._committed_offset
-             << ", inflight_writes:" << a._inflight.size()
-             << ", dispatched_writes:" << a._inflight_dispatched
+             << ", inflight:" << a._inflight.size()
+             << ", dispatched:" << a._inflight_dispatched
+             << ", merged:" << a._merged_writes
              << ", bytes_flush_pending:" << a._bytes_flush_pending << "}";
 }
 
