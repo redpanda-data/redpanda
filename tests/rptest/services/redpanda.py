@@ -384,7 +384,8 @@ class SISettings:
             self.endpoint_url = None
             self.cloud_storage_disable_tls = False
             self.cloud_storage_api_endpoint_port = 443
-        if test_context.globals.get(self.GLOBAL_S3_SECRET_KEY, None):
+        if test_context.globals.get(self.GLOBAL_CLOUD_STORAGE_CRED_SOURCE_KEY,
+                                    None):
             test_context.ok_to_fail = True
 
             msg = (
