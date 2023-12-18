@@ -225,6 +225,17 @@ class AuditLogTest(RedpandaTest):
 
         return {}
 
+    def _modify_cluster_config(self, cfg):
+        patch_result = self.admin.patch_cluster_config(upsert=cfg)
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
+
+    def _enable_auditing(self):
+        self._modify_cluster_config({'audit_enabled': True})
+
+    def _disable_auditing(self):
+        self._modify_cluster_config({'audit_enabled': False})
+
     def _run_repeater(self, topics: list[str], scale: ScaleParameters):
         repeater_kwargs = {'key_count': 2**32}
         repeater_msg_size = 16384
@@ -374,16 +385,13 @@ class AuditLogTest(RedpandaTest):
         # Use the kgo-repeater to generate traffic for 2 minutes
         # Then assert that the traffic is within an expected range
         topic_names = [topic.name for topic in topics]
-        audit_enabled_results = self._run_repeater(topic_names, scale)
 
-        # Disable auditing
-        patch_result = self.admin.patch_cluster_config(
-            upsert={'audit_enabled': False})
-        wait_for_version_sync(self.admin, self.redpanda,
-                              patch_result['config_version'])
+        self._disable_auditing()
+        audit_disabled_results = self._run_repeater(topic_names, scale)
 
         # Re-run the test and compare results
-        audit_disabled_results = self._run_repeater(topic_names, scale)
+        self._enable_auditing()
+        audit_enabled_results = self._run_repeater(topic_names, scale)
 
         # Assert that there is no more then a x% difference in produce and consume throughput
         allowable_threshold = 10.0
