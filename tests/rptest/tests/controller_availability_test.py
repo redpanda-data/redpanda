@@ -73,9 +73,8 @@ class ControllerAvailabilityTest(Test):
         for m in sent_vote_metrics.samples:
             self.logger.debug("Vote requests metric sample: {m}")
             assert (
-                m.value <= 2 * cluster_size,
-                f"two rounds of leader election must be enough to elect a leader, current node vote request count: {m.value}"
-            )
+                m.value <= 2 * cluster_size
+            ), f"two rounds of leader election must be enough to elect a leader, current node vote request count: {m.value}"
 
     @cluster(num_nodes=5)
     @matrix(cluster_size=[3, 4, 5], stop=["single", "minority"])
