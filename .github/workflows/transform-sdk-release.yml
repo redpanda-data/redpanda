@@ -17,6 +17,9 @@ jobs:
   list-golang:
     name: List Golang Transform SDK
     runs-on: ubuntu-latest
+    permissions:
+      metadata: read
+      contents: write
     steps:
       - name: Check out code
         uses: actions/checkout@v3
@@ -25,6 +28,17 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: 1.20.6
+
+      - name: Create golang specific tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/src/transform-sdk/go/transform/${{git.ref_name}}',
+              sha: context.sha
+            })
 
       - name: List module
         working-directory: src/transform-sdk/go
