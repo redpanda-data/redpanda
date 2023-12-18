@@ -281,6 +281,7 @@ ss::future<> segment_appender::truncate(size_t n) {
       n <= file_byte_offset(),
       "Cannot ask to truncate at:{} which is more bytes than we have:{} - {}",
       file_byte_offset(),
+      n,
       *this);
     return hard_flush()
       .then([this, n] { return do_truncation(n); })
