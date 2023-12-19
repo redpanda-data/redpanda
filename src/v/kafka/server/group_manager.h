@@ -184,7 +184,7 @@ public:
     // NTP, returning an error if the partition is not serving groups on this
     // shard (e.g. not leader, still loading groups, etc).
     ss::future<cluster::cloud_metadata::group_offsets_snapshot_result>
-    snapshot_groups(const model::ntp&);
+    snapshot_groups(const model::ntp&, size_t max_num_groups_per_snap = 1000);
 
     ss::future<kafka::error_code>
       recover_offsets(cluster::cloud_metadata::group_offsets_snapshot);

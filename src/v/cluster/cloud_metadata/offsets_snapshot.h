@@ -93,6 +93,6 @@ struct group_offsets_snapshot
 };
 
 using group_offsets_snapshot_result
-  = result<group_offsets_snapshot, error_outcome>;
+  = result<std::vector<group_offsets_snapshot>, error_outcome>;
 
 } // namespace cluster::cloud_metadata

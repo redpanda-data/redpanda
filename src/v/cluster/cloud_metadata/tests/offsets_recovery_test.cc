@@ -189,7 +189,9 @@ public:
         for (const auto& ntp : offset_ntps) {
             auto res = gm.snapshot_groups(ntp).get();
             BOOST_REQUIRE(res.has_value());
-            groups_per_ntp[ntp] = res.value().groups.size();
+            for (const auto& snap : res.value()) {
+                groups_per_ntp[ntp] += snap.groups.size();
+            }
         }
         return groups_per_ntp;
     }
@@ -222,8 +224,11 @@ public:
             for (const auto& ntp : offset_ntps) {
                 auto res = co_await gm.snapshot_groups(ntp);
                 if (res.has_value()) {
-                    BOOST_REQUIRE_EQUAL(
-                      groups_per_ntp[ntp], res.value().groups.size());
+                    size_t num_groups = 0;
+                    for (const auto& snap : res.value()) {
+                        num_groups += snap.groups.size();
+                    }
+                    BOOST_REQUIRE_EQUAL(groups_per_ntp[ntp], num_groups);
                 } else {
                     BOOST_REQUIRE(allowed_errors.contains(res.error()));
                 }
@@ -238,12 +243,16 @@ public:
     ss::future<bool> validate_group_counts_exactly(
       absl::flat_hash_map<model::ntp, size_t> groups_per_ntp) {
         for (const auto& ntp : offset_ntps) {
-            auto snap = co_await app._group_manager.local().snapshot_groups(
+            auto snaps = co_await app._group_manager.local().snapshot_groups(
               ntp);
-            if (!snap.has_value()) {
+            if (!snaps.has_value()) {
                 co_return false;
             }
-            if (snap.value().groups.size() != groups_per_ntp.at(ntp)) {
+            size_t snapshotted_num_groups = 0;
+            for (const auto& snap : snaps.value()) {
+                snapshotted_num_groups += snap.groups.size();
+            }
+            if (snapshotted_num_groups != groups_per_ntp.at(ntp)) {
                 co_return false;
             }
         }
@@ -336,10 +345,11 @@ FIXTURE_TEST(test_snapshot_basic, offsets_recovery_fixture) {
     for (const auto& ntp : offset_ntps) {
         auto snap = app._group_manager.local().snapshot_groups(ntp).get();
         BOOST_REQUIRE(snap.has_value());
-        snapped_groups += snap.value().groups.size();
+        BOOST_REQUIRE_EQUAL(snap.value().size(), 1);
+        snapped_groups += snap.value()[0].groups.size();
 
         // All groups are empty since we haven't committed anything.
-        for (const auto& g : snap.value().groups) {
+        for (const auto& g : snap.value()[0].groups) {
             BOOST_REQUIRE_EQUAL(0, g.offsets.size());
         }
     }
@@ -351,10 +361,11 @@ FIXTURE_TEST(test_snapshot_basic, offsets_recovery_fixture) {
     for (const auto& ntp : offset_ntps) {
         auto snap = app._group_manager.local().snapshot_groups(ntp).get();
         BOOST_REQUIRE(snap.has_value());
-        snapped_groups += snap.value().groups.size();
+        BOOST_REQUIRE_EQUAL(snap.value().size(), 1);
+        snapped_groups += snap.value()[0].groups.size();
 
         // All groups should have committed one offset.
-        for (const auto& g : snap.value().groups) {
+        for (const auto& g : snap.value()[0].groups) {
             BOOST_REQUIRE_EQUAL(1, g.offsets.size());
             BOOST_REQUIRE_EQUAL(
               g.offsets[0].partitions[0].offset(),
@@ -403,7 +414,8 @@ FIXTURE_TEST(test_snapshot_group_removal, offsets_recovery_fixture) {
     for (const auto& ntp : offset_ntps) {
         auto snap = gm.snapshot_groups(ntp).get();
         BOOST_REQUIRE(snap.has_value());
-        auto& groups = snap.value().groups;
+        BOOST_REQUIRE_EQUAL(snap.value().size(), 1);
+        auto& groups = snap.value()[0].groups;
         if (groups.empty()) {
             // NTP manages no groups.
             continue;
@@ -445,6 +457,28 @@ FIXTURE_TEST(test_upload_offsets, offsets_recovery_fixture) {
 
     // Download each snapshot and collect their committed offsets, ensuring
     // they are equivalent to what we started with.
+    validate_downloaded_offsets(*this, committed_offsets, remote_paths).get();
+}
+
+FIXTURE_TEST(test_upload_offsets_batched, offsets_recovery_fixture) {
+    make_partitions(1).get();
+    scoped_config cfg;
+    cfg.get("cloud_storage_cluster_metadata_num_consumer_groups_per_upload")
+      .set_value(size_t(1));
+    auto [_, committed_offsets] = create_groups_and_commit(30);
+
+    // Upload the offsets.
+    auto paths_per_pid = upload_offsets().get();
+    std::vector<cloud_storage::remote_segment_path> remote_paths;
+    size_t num_uploads = 0;
+    for (const auto& paths : paths_per_pid) {
+        remote_paths.insert(remote_paths.end(), paths.begin(), paths.end());
+        num_uploads += paths.size();
+    }
+    // Because we uploaded in group batches of size 1, there should be at least
+    // the same number of groups as there are uploads (not exact equality, to
+    // account for offsets partitions that were empty).
+    BOOST_REQUIRE_GE(num_uploads, 30);
     validate_downloaded_offsets(*this, committed_offsets, remote_paths).get();
 }
 
@@ -569,7 +603,8 @@ FIXTURE_TEST(
         auto snapshot_res
           = app._group_manager.local().snapshot_groups(ntp).get();
         BOOST_REQUIRE(snapshot_res.has_value());
-        for (const auto& group : snapshot_res.value().groups) {
+        BOOST_REQUIRE_EQUAL(snapshot_res.value().size(), 1);
+        for (const auto& group : snapshot_res.value()[0].groups) {
             BOOST_REQUIRE(group.offsets.empty());
         }
     }
@@ -695,10 +730,23 @@ FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
 FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
     // Test that from an offset snapshot, we're able to recover.
     make_partitions(1).get();
+
+    // Simulate a large enough number of groups to upload multiple snapshots
+    // per partition.
+    scoped_config cfg;
+    cfg.get("cloud_storage_cluster_metadata_num_consumer_groups_per_upload")
+      .set_value(size_t(1));
     auto [num_groups_per_ntp, committed_offsets] = create_groups_and_commit(30);
 
     auto paths_per_pid = upload_offsets().get();
     BOOST_REQUIRE_EQUAL(paths_per_pid.size(), 16);
+    std::vector<cloud_storage::remote_segment_path> remote_paths;
+    size_t num_uploads = 0;
+    for (const auto& paths : paths_per_pid) {
+        remote_paths.insert(remote_paths.end(), paths.begin(), paths.end());
+        num_uploads += paths.size();
+    }
+    BOOST_REQUIRE_GE(num_uploads, 30);
 
     // Restart empty.
     restart(should_wipe::yes);
@@ -746,7 +794,7 @@ FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
         BOOST_REQUIRE(snap.has_value());
 
         // All groups should have committed one offset.
-        for (const auto& g : snap.value().groups) {
+        for (const auto& g : snap.value()[0].groups) {
             BOOST_REQUIRE_EQUAL(1, g.offsets.size());
             BOOST_REQUIRE_EQUAL(1, g.offsets[0].partitions.size());
 

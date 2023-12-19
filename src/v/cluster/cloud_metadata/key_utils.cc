@@ -50,12 +50,14 @@ ss::sstring cluster_metadata_prefix(
 cloud_storage_clients::object_key offsets_snapshot_key(
   const model::cluster_uuid& cluster_uuid,
   const cluster_metadata_id& meta_id,
-  const model::partition_id& pid) {
+  const model::partition_id& pid,
+  size_t snapshot_idx) {
     return cloud_storage_clients::object_key{fmt::format(
-      "{}/{}/offsets/{}.snapshot",
+      "{}/{}/offsets/{}/{}.snapshot",
       cluster_uuid_prefix(cluster_uuid),
       meta_id(),
-      pid())};
+      pid(),
+      snapshot_idx)};
 }
 
 } // namespace cluster::cloud_metadata
