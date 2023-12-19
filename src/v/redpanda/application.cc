@@ -1652,6 +1652,7 @@ void application::wire_up_redpanda_services(
     construct_single_service(
       space_manager,
       config::shard_local_cfg().space_management_enable.bind(),
+      config::shard_local_cfg().space_management_enable_override.bind(),
       config::shard_local_cfg().retention_local_target_capacity_bytes.bind(),
       config::shard_local_cfg().retention_local_target_capacity_percent.bind(),
       config::shard_local_cfg().disk_reservation_percent.bind(),
