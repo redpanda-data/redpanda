@@ -386,6 +386,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> retention_local_trim_interval;
     property<double> retention_local_trim_overage_coeff;
     property<bool> space_management_enable;
+    property<bool> space_management_enable_override;
     bounded_property<double, numeric_bounds> disk_reservation_percent;
     bounded_property<uint16_t> space_management_max_log_concurrency;
     bounded_property<uint16_t> space_management_max_segment_concurrency;
