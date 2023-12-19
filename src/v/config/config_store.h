@@ -87,10 +87,10 @@ public:
                         errors[name] = fmt::format(
                           "Validation error: {}",
                           validation_err.value().error_message());
+                    } else {
+                        found->second->set_value(node.second);
+                        ok = true;
                     }
-
-                    found->second->set_value(node.second);
-                    ok = true;
                 } catch (YAML::InvalidNode const& e) {
                     errors[name] = fmt::format("Invalid syntax: {}", e);
                 } catch (YAML::ParserException const& e) {
