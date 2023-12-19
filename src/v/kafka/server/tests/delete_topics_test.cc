@@ -108,8 +108,8 @@ public:
     void validate_topic_is_deleteted(const model::topic& tp) {
         kafka::metadata_response resp = get_topic_metadata(tp);
         auto it = std::find_if(
-          std::cbegin(resp.data.topics),
-          std::cend(resp.data.topics),
+          resp.data.topics.begin(),
+          resp.data.topics.end(),
           [tp](const kafka::metadata_response::topic& md_tp) {
               return md_tp.name == tp;
           });
