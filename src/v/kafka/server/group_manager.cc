@@ -624,8 +624,8 @@ ss::future<> group_manager::reload_groups() {
     co_await ss::when_all_succeed(futures.begin(), futures.end());
 }
 
-ss::future<group_offsets_snapshot_result>
-group_manager::snapshot_groups(const model::ntp& ntp) {
+ss::future<group_offsets_snapshot_result> group_manager::snapshot_groups(
+  const model::ntp& ntp, size_t max_num_groups_per_snap) {
     auto it = _partitions.find(ntp);
     if (it == _partitions.end()) {
         co_return cluster::cloud_metadata::error_outcome::ntp_not_found;
@@ -642,9 +642,6 @@ group_manager::snapshot_groups(const model::ntp& ntp) {
     if (attached_partition->loading) {
         co_return cluster::cloud_metadata::error_outcome::not_ready;
     }
-    group_offsets_snapshot snap;
-    snap.offsets_topic_pid = ntp.tp.partition;
-
     // Make a copy of the groups that we're about to snapshot, to avoid racing
     // with removals during iteration.
     fragmented_vector<std::pair<group_id, group_ptr>> groups;
@@ -656,6 +653,10 @@ group_manager::snapshot_groups(const model::ntp& ntp) {
           const auto& [group_id, group] = g_pair;
           return group->partition()->ntp().tp.partition == ntp.tp.partition;
       });
+    std::vector<group_offsets_snapshot> snapshots;
+    snapshots.emplace_back();
+    auto* cur_snap = &snapshots.back();
+    cur_snap->offsets_topic_pid = ntp.tp.partition;
     vlog(klog.debug, "Snapshotting {} groups from {}", groups.size(), ntp);
     for (const auto& [group_id, group] : groups) {
         group_offsets go;
@@ -676,10 +677,16 @@ group_manager::snapshot_groups(const model::ntp& ntp) {
           "Snapshotting offsets for {} topics from group {}",
           go.offsets.size(),
           go.group_id);
-        snap.groups.emplace_back(std::move(go));
+        if (cur_snap->groups.size() >= max_num_groups_per_snap) {
+            // Current snapshot object is too large; roll to a new object.
+            snapshots.emplace_back();
+            cur_snap = &snapshots.back();
+            cur_snap->offsets_topic_pid = ntp.tp.partition;
+        }
+        cur_snap->groups.emplace_back(std::move(go));
         co_await ss::maybe_yield();
     }
-    co_return snap;
+    co_return snapshots;
 }
 
 ss::future<kafka::error_code>
