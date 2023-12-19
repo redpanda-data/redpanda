@@ -299,7 +299,7 @@ struct configured_test_pair {
     ss::shared_ptr<cloud_storage_clients::s3_client> client;
 };
 
-cloud_storage_clients::s3_configuration transport_configuration() {
+static cloud_storage_clients::s3_configuration transport_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     cloud_storage_clients::s3_configuration conf;
     conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
