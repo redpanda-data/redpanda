@@ -145,7 +145,7 @@ class S3Client:
         try:
             self._cli.delete_bucket(Bucket=name)
         except Exception as e:
-            self.logger.warn(f"Error deleting bucket {name}: {e}")
+            self.logger.error(f"Error deleting bucket {name}: {e}")
             self.logger.warn(f"Contents of bucket {name}:")
             for o in self.list_objects(name):
                 self.logger.warn(f"  {o.key}")
