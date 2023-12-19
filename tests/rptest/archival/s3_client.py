@@ -160,7 +160,7 @@ class S3Client:
         # count has to be modest to avoid hitting a lot of AWS SlowDown responses.
         max_workers = 4 if parallel else 1
         hash_prefixes = list(f"{i:02x}" for i in range(0, 256))
-        prefixes = hash_prefixes if parallel else [""]
+        prefixes = hash_prefixes + ["cluster_metadata"] if parallel else [""]
 
         def empty_bucket_prefix(prefix):
             self.logger.debug(
