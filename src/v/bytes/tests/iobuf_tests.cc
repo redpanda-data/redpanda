@@ -16,6 +16,7 @@
 #include "bytes/streambuf.h"
 #include "bytes/tests/utils.h"
 
+#include <seastar/core/memory.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -453,6 +454,62 @@ SEASTAR_THREAD_TEST_CASE(test_appending_frament_takes_ownership) {
     BOOST_REQUIRE_EQUAL(
       std::distance(target.begin(), target.end()),
       target_frags_cnt + other_frags_cnt);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_zero_copy_large_append) {
+    // Test that zero copy operations involve source buffers with
+    // max-size (128K) fragements are zero-copy.
+
+    if (seastar::memory::stats().allocated_memory() == 0) {
+        // we are running in debug mode, skip this test as our
+        // asserts rely on allocation behavior
+        return;
+    }
+
+    constexpr size_t chunk_count = 10;
+    constexpr auto max_chunk = details::io_allocation_size::max_chunk_size;
+    std::vector<char> max_vec(max_chunk, 'x');
+    auto max_buf = ss::temporary_buffer<char>(max_vec.data(), max_vec.size());
+    // this allocates the first time it is called, so get it out of the
+    // way to avoid including it in the allocation numbers below
+    max_buf.share();
+
+    auto mem_before = seastar::memory::stats();
+    auto allocated_bytes = [=] {
+        return seastar::memory::stats().allocated_memory()
+               - mem_before.allocated_memory();
+    };
+
+    // appending a max-sized temporary buffer shouldn't allocate anything
+    // since we should use zero-copy
+    iobuf target;
+
+    auto allocated_count = [=] {
+        return seastar::memory::stats().mallocs() - mem_before.mallocs();
+    };
+
+    for (size_t i = 0; i < chunk_count; i++) {
+        target.append(max_buf.share());
+    }
+
+    // We do a few small allocations for the fragments themselves (not the
+    // payload). This usually still reads as 0 since allocated_memory() only
+    // considers the large page pool and small allocs are mostly invisible, but
+    // we check against 128K since otherwise this test could flake when memory
+    // lines up just right and the small allocations require some new pages for
+    // the small pool. 128K is the largest amount the small pool will ask for
+    // from the page allocator.
+    BOOST_CHECK_LE(allocated_bytes(), 128 * 1024);
+    // each fragment allocates for the fragment
+    BOOST_CHECK_EQUAL(chunk_count, allocated_count());
+    BOOST_CHECK_EQUAL(chunk_count * max_chunk, target.size_bytes());
+
+    iobuf target2;
+    target2.append(target.share(0, target.size_bytes()));
+    target2.append(target.share(0, target.size_bytes()));
+    BOOST_CHECK_EQUAL(target2.size_bytes(), target.size_bytes() * 2);
+
+    BOOST_CHECK_LE(allocated_bytes(), 128 * 1024);
 }
 
 /*
