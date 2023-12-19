@@ -136,7 +136,8 @@ YAML::Node valid_configuration() {
                       " - two\n"
                       " - three\n"
                       "nullable_int: 111\n"
-                      "secret_string: actual_secret\n");
+                      "secret_string: actual_secret\n"
+                      "aliased_bool_legacy: false\n");
 }
 
 } // namespace
@@ -214,6 +215,7 @@ SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
     BOOST_TEST(cfg.strings().at(2) == "three");
     BOOST_TEST(cfg.nullable_int() == std::make_optional(111));
     BOOST_TEST(cfg.secret_string() == "actual_secret");
+    BOOST_TEST(cfg.aliased_bool() == false);
 };
 
 SEASTAR_THREAD_TEST_CASE(update_property_value) {
@@ -525,4 +527,6 @@ SEASTAR_THREAD_TEST_CASE(property_aliasing) {
     auto property_names = cfg.property_names();
     BOOST_TEST(property_names.contains("aliased_bool") == true);
     BOOST_TEST(property_names.contains("aliased_bool_legacy") == false);
+
+    BOOST_TEST(cfg.property_names_and_aliases().contains("aliased_bool"));
 }

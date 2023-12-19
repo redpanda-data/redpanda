@@ -70,42 +70,50 @@ public:
 
         for (auto const& node : root_node) {
             auto name = node.first.as<ss::sstring>();
-            auto found = _properties.find(name);
-            if (found == _properties.end()) {
+            auto* prop = [&]() -> base_property* {
+                auto found = _properties.find(name);
+                if (found != _properties.end()) {
+                    return found->second;
+                }
                 found = _aliases.find(name);
-                if (found == _aliases.end()) {
-                    if (!ignore_missing.contains(name)) {
-                        throw std::invalid_argument(
-                          fmt::format("Unknown property {}", name));
-                    }
-                }
-            } else {
-                bool ok = false;
-                try {
-                    auto validation_err = found->second->validate(node.second);
-                    if (validation_err.has_value()) {
-                        errors[name] = fmt::format(
-                          "Validation error: {}",
-                          validation_err.value().error_message());
-                    }
-
-                    found->second->set_value(node.second);
-                    ok = true;
-                } catch (YAML::InvalidNode const& e) {
-                    errors[name] = fmt::format("Invalid syntax: {}", e);
-                } catch (YAML::ParserException const& e) {
-                    errors[name] = fmt::format("Invalid syntax: {}", e);
-                } catch (YAML::BadConversion const& e) {
-                    errors[name] = fmt::format("Invalid value: {}", e);
+                if (found != _aliases.end()) {
+                    return found->second;
                 }
 
-                // A validation error is fatal if the property was required,
-                // e.g. if someone entered a non-integer node_id, or an invalid
-                // internal RPC address.
-                if (!ok && found->second->is_required()) {
-                    throw std::invalid_argument(fmt::format(
-                      "Property {} is required and has invalid value", name));
+                return nullptr;
+            }();
+
+            if (prop == nullptr) {
+                if (!ignore_missing.contains(name)) {
+                    throw std::invalid_argument(
+                      fmt::format("Unknown property {}", name));
                 }
+                continue;
+            }
+            bool ok = false;
+            try {
+                auto validation_err = prop->validate(node.second);
+                if (validation_err.has_value()) {
+                    errors[name] = fmt::format(
+                      "Validation error: {}",
+                      validation_err.value().error_message());
+                }
+                prop->set_value(node.second);
+                ok = true;
+            } catch (YAML::InvalidNode const& e) {
+                errors[name] = fmt::format("Invalid syntax: {}", e);
+            } catch (YAML::ParserException const& e) {
+                errors[name] = fmt::format("Invalid syntax: {}", e);
+            } catch (YAML::BadConversion const& e) {
+                errors[name] = fmt::format("Invalid value: {}", e);
+            }
+
+            // A validation error is fatal if the property was required,
+            // e.g. if someone entered a non-integer node_id, or an invalid
+            // internal RPC address.
+            if (!ok && prop->is_required()) {
+                throw std::invalid_argument(fmt::format(
+                  "Property {} is required and has invalid value", name));
             }
         }
 
@@ -184,6 +192,21 @@ public:
         }
 
         return result;
+    }
+
+    std::set<std::string_view> property_aliases() const {
+        std::set<std::string_view> result;
+        for (const auto& i : _aliases) {
+            result.insert(i.first);
+        }
+
+        return result;
+    }
+
+    std::set<std::string_view> property_names_and_aliases() const {
+        auto all = property_names();
+        all.merge(property_aliases());
+        return all;
     }
 
     friend std::ostream&
