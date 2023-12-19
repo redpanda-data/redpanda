@@ -321,6 +321,8 @@ struct configuration final : public config_store {
       cloud_storage_cluster_metadata_upload_interval_ms;
     property<std::chrono::milliseconds>
       cloud_storage_cluster_metadata_upload_timeout_ms;
+    property<size_t>
+      cloud_storage_cluster_metadata_num_consumer_groups_per_upload;
     property<int16_t> cloud_storage_cluster_metadata_retries;
     property<bool> cloud_storage_attempt_cluster_restore_on_bootstrap;
     property<double> cloud_storage_idle_threshold_rps;
