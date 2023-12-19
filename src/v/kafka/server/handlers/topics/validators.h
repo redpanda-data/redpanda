@@ -10,9 +10,12 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "model/metadata.h"
+#include "model/namespace.h"
 
 namespace kafka {
 template<typename Request, typename T>
@@ -123,6 +126,31 @@ struct replication_factor_must_be_positive {
         }
 
         return c.replication_factor > 0;
+    }
+};
+
+struct replication_factor_must_be_greater_or_equal_to_minimum {
+    static constexpr error_code ec = error_code::invalid_replication_factor;
+    static constexpr const char* error_message
+      = "Replication factor must be greater than or equal to specified minimum "
+        "value";
+
+    static bool is_valid(const creatable_topic& c) {
+        // All topics being validated as this level will be created in the kafka
+        // namespace
+        if (model::is_user_topic(
+              model::topic_namespace{model::kafka_namespace, c.name})) {
+            if (!c.assignments.empty()) {
+                return true;
+            } else {
+                return c.replication_factor
+                       >= config::shard_local_cfg()
+                            .minimum_topic_replication.value();
+            }
+        } else {
+            // Do not apply this validation against internally created topics
+            return true;
+        }
     }
 };
 
