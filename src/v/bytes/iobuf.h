@@ -373,7 +373,18 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
     oncore_debug_verify(_verify_shard);
     const size_t last_asz = last_allocation_size();
-    if (b.size() <= available_bytes() || b.size() <= last_asz) {
+    // The following is a heuristic to decide between copying and zero-copy
+    // append of the source buffer. The rule we apply is if the buffer we are
+    // appending is of the same size or smaller than last allocation we use
+    // a copy. This effecitvely linearizes a series of smaller buffers when
+    // they are appended to this one. However, if the incoming buffer is
+    // already at (or above) the maximum fragment size, we use zero copy as
+    // copying it provides almost no linearization benefits and appending
+    // full-sized fragments is in practice a common operation when buffers
+    // grow beyond the maximum fragment size.
+    if (
+      b.size() <= last_asz
+      && b.size() < details::io_allocation_size::max_chunk_size) {
         append(b.get(), b.size());
         return;
     }
