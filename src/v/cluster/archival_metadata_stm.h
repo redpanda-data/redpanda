@@ -15,6 +15,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "features/fwd.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "raft/persisted_stm.h"
@@ -111,7 +112,6 @@ public:
       features::feature_table&,
       ss::logger& logger,
       ss::shared_ptr<util::mem_tracker> partition_mem_tracker = nullptr);
-    ~archival_metadata_stm() override;
 
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
@@ -332,7 +332,11 @@ private:
     model::offset _last_dirty_at;
 
     // The last replication future
-    std::optional<ss::future<result<raft::replicate_result>>> _last_replicate;
+    struct last_replicate {
+        model::term_id term;
+        ss::shared_future<result<raft::replicate_result>> result;
+    };
+    std::optional<last_replicate> _last_replicate;
 
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
