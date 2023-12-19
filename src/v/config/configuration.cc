@@ -2030,6 +2030,15 @@ configuration::configuration()
       false,
       property<bool>::noop_validator,
       legacy_default<bool>(true, legacy_version{9}))
+  , retention_local_strict_override(
+      *this,
+      "retention_local_strict_override",
+      "Trim log data when a cloud topic reaches its local retention limit. "
+      "When this option is disabled Redpanda will allow partitions to grow "
+      "past the local retention limit, and will be trimmed automatically as "
+      "storage reaches the configured target size.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , retention_local_target_capacity_bytes(
       *this,
       "retention_local_target_capacity_bytes",
