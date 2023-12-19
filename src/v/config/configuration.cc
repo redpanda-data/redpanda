@@ -1663,6 +1663,14 @@ configuration::configuration()
       "Timeout for cluster metadata uploads.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       60s)
+  , cloud_storage_cluster_metadata_num_consumer_groups_per_upload(
+      *this,
+      "cloud_storage_cluster_metadata_num_consumer_groups_per_upload",
+      "Number of groups to upload in a single snapshot object during consumer "
+      "offsets upload. Setting a lower value will mean a larger number of "
+      "smaller snapshots are uploaded.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000)
   , cloud_storage_cluster_metadata_retries(
       *this,
       "cloud_storage_cluster_metadata_retries",
