@@ -27,6 +27,8 @@ def publish_package(pkg: str):
 
 
 def publish(version: str):
+    # Cargo does not like the `v` prefix we add to tags, so remove it.
+    version = version.removeprefix('v')
     # Set the version in the TOML file
     toml = CARGO_TOML_FILE.read_text()
     toml = re.sub(pattern='^version = "[^"]+"',
