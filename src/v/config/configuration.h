@@ -381,6 +381,7 @@ struct configuration final : public config_store {
     property<std::optional<size_t>> retention_local_target_bytes_default;
     property<std::chrono::milliseconds> retention_local_target_ms_default;
     property<bool> retention_local_strict;
+    property<bool> retention_local_strict_override;
     property<std::optional<uint64_t>> retention_local_target_capacity_bytes;
     bounded_property<std::optional<double>, numeric_bounds>
       retention_local_target_capacity_percent;
