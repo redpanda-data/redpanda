@@ -36,10 +36,11 @@ controller_snapshot_key(const model::cluster_uuid&, const model::offset&);
 ss::sstring
 cluster_metadata_prefix(const model::cluster_uuid&, const cluster_metadata_id&);
 
-// E.g. /cluster_metadata/<cluster_uuid>/<meta_id>/offsets/<pid>.snapshot
+// E.g. /cluster_metadata/<cluster_uuid>/<meta_id>/offsets/<pid>/<idx>.snapshot
 cloud_storage_clients::object_key offsets_snapshot_key(
   const model::cluster_uuid&,
   const cluster_metadata_id&,
-  const model::partition_id&);
+  const model::partition_id&,
+  size_t snapshot_idx);
 
 } // namespace cluster::cloud_metadata
