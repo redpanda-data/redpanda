@@ -235,3 +235,9 @@ class GCPClient:
         policy = bucket.get_iam_policy(requested_policy_version=3)
         policy.bindings.append(binding)
         bucket.set_iam_policy(policy)
+
+    def list_buckets(self):
+        raise NotImplementedError("Bucket operations is not supported for GCP")
+
+    def delete_buckets(self):
+        raise NotImplementedError("Bucket operations is not supported for GCP")

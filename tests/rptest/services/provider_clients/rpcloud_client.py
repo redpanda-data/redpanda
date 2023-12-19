@@ -164,6 +164,7 @@ class RpCloudApiClient(object):
         return _network
 
     def get_resource(self, resource_handle):
+        _r = None
         try:
             _r = self._http_get(endpoint=resource_handle)
             self._logger.debug(
@@ -178,6 +179,7 @@ class RpCloudApiClient(object):
         return _r
 
     def delete_resource(self, resource_handle):
+        _r = None
         try:
             _r = self._http_delete(endpoint=resource_handle)
             self._logger.debug(f"...delete requested for '{resource_handle}'")

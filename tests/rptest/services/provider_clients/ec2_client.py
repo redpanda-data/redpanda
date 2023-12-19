@@ -40,6 +40,8 @@ class EC2Client:
         self._disable_ssl = disable_ssl
         self._cli = self._make_client()
         self._s3cli = self._make_s3_client()
+        self._s3res = self._make_s3_resource()
+        self._sts = self._make_sts_client()
         self._log = logger
 
         self._log.debug(f"Created EC2 Client: {self._region}, {endpoint},"
@@ -58,6 +60,11 @@ class EC2Client:
                             endpoint_url=self._endpoint,
                             use_ssl=not self._disable_ssl)
 
+    def _make_sts_client(self):
+        return boto3.client('sts',
+                            aws_access_key_id=self._access_key,
+                            aws_secret_access_key=self._secret_key)
+
     def _make_s3_client(self):
         cfg = Config(region_name=self._region,
                      retries={
@@ -70,6 +77,22 @@ class EC2Client:
                             aws_secret_access_key=self._secret_key,
                             endpoint_url=self._endpoint,
                             use_ssl=not self._disable_ssl)
+
+    def _make_s3_resource(self):
+        cfg = Config(region_name=self._region,
+                     retries={
+                         'max_attempts': 10,
+                         'mode': 'adaptive'
+                     })
+        return boto3.resource('s3',
+                              config=cfg,
+                              aws_access_key_id=self._access_key,
+                              aws_secret_access_key=self._secret_key,
+                              endpoint_url=self._endpoint,
+                              use_ssl=not self._disable_ssl)
+
+    def get_caller_identity(self):
+        return self._sts.get_caller_identity()
 
     def create_vpc_peering(self, params):
         """
@@ -310,6 +333,99 @@ class EC2Client:
                 _id = _meta[_head + _mac + "-device-number"]
                 _new_meta[_head + _id + _tail] = v
         return _new_meta
+
+    def list_buckets(self, raw=False, mask=None):
+        """
+            List buckets with optional simple filtering
+              raw: As it is returned by boto3.s3cli.list_buckets
+              mask: string mask for name filtering: 'mask' in 'bucket_name'
+        """
+        if raw:
+            # Just return RAW boto3 answer
+            return self._s3cli.list_buckets()
+        elif not mask:
+            # Extract bucket list from boto3 return
+            return self._s3cli.list_buckets()['Buckets']
+        else:
+            # Filter by mask
+            buckets = []
+            for bucket in self._s3cli.list_buckets()['Buckets']:
+                if mask in bucket['Name']:
+                    buckets.append(bucket)
+            return buckets
+
+    def list_bucket_objects(self, name, max_objects=3000):
+        # Numner of objects collected
+        objects_collected = 0
+        # This will never be more than 1000
+        # See: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/client/list_objects_v2.html
+        objects_per_request = 1000
+        # Object list
+        objects = []
+        # Token to continue
+        continuation_token = None
+        while objects_collected < max_objects:
+            # Calculate if this will be the last portion
+            if objects_collected + objects_per_request > max_objects:
+                # Get the remainder object count
+                objects_per_request = max_objects - objects_collected
+            # Prepare params
+            kwargs = {"Bucket": name, "MaxKeys": objects_per_request}
+            if continuation_token:
+                kwargs['ContinuationToken'] = continuation_token
+            # get next portion
+            new_objects = self._s3cli.list_objects_v2(**kwargs)
+            # Get number of objects in response
+            objects_collected += new_objects['KeyCount']
+            # Get token to continue
+            if 'NextContinuationToken' in new_objects:
+                continuation_token = new_objects['NextContinuationToken']
+            else:
+                continuation_token = None
+            # If collected, get object keys
+            if objects_collected > 0:
+                objects += new_objects['Contents']
+            # If no token to continue, exit
+            if not continuation_token:
+                break
+
+        return objects
+
+    def delete_bucket(self, name):
+        r = self._s3cli.delete_bucket(Bucket=name)
+        return r
+
+    def cleanup_bucket(self, name):
+        """
+            Deletes all objects in a bucket
+        """
+        # Shorthand to delete resources
+        bucket = self._s3res.Bucket(name)
+        _r = bucket.objects.delete()
+        return _r
+
+    def set_bucket_lifecycle_configuration(self, bucket_name, prefix=None):
+        # Cleanup all keys in a bucket or by prefix
+        lifecycle_config = {
+            "Rules": [{
+                "ID": "One Day",
+                "Prefix": "",
+                "Status": "Enabled",
+                "Expiration": {
+                    "Days": 1
+                }
+            }]
+        }
+        # Set prefix if any
+        if prefix:
+            lifecycle_config['Rules'][0]['Prefix'] = prefix
+        # Convert policy to str and log
+        lifecycle_policy = json.dumps(lifecycle_config)
+        self._log.debug(lifecycle_policy)
+        # Set policy for bucket
+        r = self._s3cli.put_bucket_lifecycle_configuration(
+            Bucket=bucket_name, LifecycleConfiguration=lifecycle_config)
+        return r
 
     def block_bucket_from_vpc(self, bucket_name, vpc_id):
 
