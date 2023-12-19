@@ -1769,7 +1769,6 @@ ss::future<std::error_code> controller_backend::do_create_partition(
         co_return errc::success;
     }
 
-    auto f = ss::now();
     // handle partially created topic
     auto partition = _partition_manager.local().get(ntp);
 
