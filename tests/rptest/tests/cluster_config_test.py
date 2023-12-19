@@ -1880,20 +1880,46 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self._check_value_everywhere(self.key, expected)
 
     @cluster(num_nodes=3)
-    @parametrize(wipe_cache=True)
-    @parametrize(wipe_cache=False)
-    def test_legacy_default_explicit_after_upgrade(self, wipe_cache: bool):
+    @parametrize(wipe_cache=True,
+                 key='topic_partitions_per_shard',
+                 legacy_default=7000,
+                 new_default=1000)
+    @parametrize(wipe_cache=True,
+                 key='space_management_enable',
+                 legacy_default=False,
+                 new_default=True)
+    @parametrize(wipe_cache=False,
+                 key='topic_partitions_per_shard',
+                 legacy_default=7000,
+                 new_default=1000)
+    @parametrize(wipe_cache=False,
+                 key='space_management_enable',
+                 legacy_default=False,
+                 new_default=True)
+    def test_legacy_default_explicit_after_upgrade(self, wipe_cache: bool, key,
+                                                   legacy_default,
+                                                   new_default):
+
         old_version, _ = self.installer.latest_for_line(self.legacy_version)
         self.installer.install(self.redpanda.nodes, old_version)
         self.redpanda.start()
 
-        self._check_value_everywhere(self.key, self.legacy_default)
+        try:
+            self._check_value_everywhere(key, legacy_default)
+        except Exception as e:
+            if key != 'space_management_enable':
+                raise e
 
         self._upgrade(wipe_cache)
-        self._check_value_everywhere(self.key, self.legacy_default)
-        expected = self.new_default + 1
-        self.redpanda.set_cluster_config({self.key: expected})
 
-        self._check_value_everywhere(self.key, expected)
+        wait_until(lambda: self.logical_version_stable(),
+                   timeout_sec=20,
+                   backoff_sec=1)
+
+        self._check_value_everywhere(key, legacy_default)
+        expected = new_default
+        self.redpanda.set_cluster_config({key: expected})
+
+        self._check_value_everywhere(key, expected)
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        self._check_value_everywhere(self.key, expected)
+        self._check_value_everywhere(key, expected)

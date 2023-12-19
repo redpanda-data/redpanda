@@ -150,6 +150,43 @@ class RedpandaTest(Test):
 
         return versions
 
+    def logical_version_stable(self,
+                               old_logical_version: Optional[int] = None):
+        """Assuming all nodes have been updated to a particular version,
+            check that the cluster's active version has advanced to match the
+            logical version of the node we are talking to.
+            """
+        for node in self.redpanda.nodes:
+            features = self.redpanda._admin.get_features(node=node)
+
+            if 'node_latest_version' in features:
+                # Only Redpanda >= v23.2 has this field
+                if features['cluster_version'] != features[
+                        'node_latest_version']:
+                    # The cluster logical version has not yet updated
+                    return False
+                else:
+                    self.logger.debug(
+                        f"Accepting node {node.name} active version {features['cluster_version']}, it is equal to highest version"
+                    )
+
+            else:
+                assert old_logical_version is not None
+                # Older feature API just tells us the cluster version, we compare
+                # it to the logical version pre-upgrade
+                if features['cluster_version'] <= old_logical_version:
+                    return False
+                else:
+                    self.logger.debug(
+                        f"Accepting node {node.name} active version {features['cluster_version']}, it is > {old_logical_version}"
+                    )
+
+            if any(f['state'] == 'preparing' for f in features['features']):
+                # One or more features is still in preparing state.
+                return False
+
+        return True
+
     def upgrade_through_versions(
         self,
         versions_in: list[RedpandaVersion],
@@ -173,42 +210,6 @@ class RedpandaTest(Test):
             self.logger.info(f"Installing version {v}...")
             self.redpanda._installer.install(self.redpanda.nodes, v)
             return v
-
-        def logical_version_stable(old_logical_version: int):
-            """Assuming all nodes have been updated to a particular version,
-            check that the cluster's active version has advanced to match the
-            logical version of the node we are talking to.
-            """
-            for node in self.redpanda.nodes:
-                features = self.redpanda._admin.get_features(node=node)
-
-                if 'node_latest_version' in features:
-                    # Only Redpanda >= v23.2 has this field
-                    if features['cluster_version'] != features[
-                            'node_latest_version']:
-                        # The cluster logical version has not yet updated
-                        return False
-                    else:
-                        self.logger.debug(
-                            f"Accepting node {node.name} active version {features['cluster_version']}, it is equal to highest version"
-                        )
-
-                else:
-                    # Older feature API just tells us the cluster version, we compare
-                    # it to the logical version pre-upgrade
-                    if features['cluster_version'] <= old_logical_version:
-                        return False
-                    else:
-                        self.logger.debug(
-                            f"Accepting node {node.name} active version {features['cluster_version']}, it is > {old_logical_version}"
-                        )
-
-                if any(f['state'] == 'preparing'
-                       for f in features['features']):
-                    # One or more features is still in preparing state.
-                    return False
-
-            return True
 
         def await_consumer_offsets():
             rpk = RpkTool(self.redpanda)
@@ -285,7 +286,7 @@ class RedpandaTest(Test):
                 # logical version and associated feature flag state stabilize.  This avoids
                 # upgrading "too fast" such that the cluster thinks we skipped a version.
                 self.redpanda.wait_until(
-                    lambda: logical_version_stable(old_logical_version),
+                    lambda: self.logical_version_stable(old_logical_version),
                     timeout_sec=30,
                     backoff_sec=1)
 

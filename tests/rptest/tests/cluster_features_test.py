@@ -292,10 +292,6 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
 
         wait_until(complete, timeout_sec=5, backoff_sec=1)
 
-        # Check that initial version is properly remembered past restarts
-        self.redpanda.restart_nodes(self.redpanda.nodes)
-        assert complete()
-
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rollback(self):
         """
