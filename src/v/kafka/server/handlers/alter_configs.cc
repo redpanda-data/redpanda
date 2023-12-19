@@ -227,6 +227,7 @@ create_topic_properties_update(
             }
             if (cfg.name == topic_property_replication_factor) {
                 parse_and_set_topic_replication_factor(
+                  tp_ns,
                   update.custom_properties.replication_factor,
                   cfg.value,
                   kafka::config_resource_operation::set,
