@@ -77,7 +77,7 @@ error_outcome handle_client_transport_error(
         vlog(logger.warn, "Connection timeout {}", terr.what());
     } catch (const boost::system::system_error& err) {
         if (
-          err.code() != boost::beast::http::error::short_read
+          err.code() != boost::beast::http::error::end_of_stream
           && err.code() != boost::beast::http::error::partial_message) {
             vlog(logger.warn, "Connection failed {}", err.what());
             outcome = error_outcome::fail;
