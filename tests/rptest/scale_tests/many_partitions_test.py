@@ -884,7 +884,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         with repeater_traffic(context=self._ctx,
                               redpanda=self.redpanda,
                               nodes=self.preallocated_nodes,
-                              topic=topic_names[0],
+                              topics=[topic_names[0]],
                               msg_size=repeater_msg_size,
                               rate_limit_bps=rate_limit_bps,
                               workers=self._repeater_worker_count(scale),
