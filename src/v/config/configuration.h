@@ -163,6 +163,7 @@ struct configuration final : public config_store {
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;
     bounded_property<int16_t> default_topic_replication;
+    bounded_property<int16_t> minimum_topic_replication;
     deprecated_property transaction_coordinator_replication;
     deprecated_property id_allocator_replication;
     property<int32_t> transaction_coordinator_partitions;
