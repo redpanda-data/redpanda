@@ -1694,3 +1694,20 @@ class RpkTool:
         out = self._execute(cmd, stdin=stdin, timeout=timeout)
 
         return json.loads(out) if output_format == "json" else out
+
+    def force_partition_recovery(self, from_nodes, to_node=None):
+        cmd = [
+            self._rpk_binary(),
+            "cluster",
+            "partitions",
+            "unsafe-recover",
+            "--no-confirm",
+            "--from-nodes",
+            ",".join([str(x) for x in from_nodes]),
+        ]
+
+        if to_node is not None:
+            cmd += ["-X", "admin.hosts=" + f"{to_node.account.hostname}:9644"]
+        else:
+            cmd += ["-X", "admin.hosts=" + self._admin_host()]
+        return self._execute(cmd)

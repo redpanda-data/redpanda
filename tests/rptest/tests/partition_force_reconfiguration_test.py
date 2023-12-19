@@ -417,11 +417,12 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             n for n in self.redpanda.started_nodes()
             if self.redpanda.node_id(n) not in to_kill_node_ids
         ])
-        payload = make_recovery_payload(to_kill_node_ids,
-                                        partitions_lost_majority)
+
+        self.logger.debug(f"recovering from: {to_kill_node_ids}")
+        self._rpk = RpkTool(self.redpanda)
         # issue a node wise recovery
-        self.redpanda._admin.force_recover_partitions_from_nodes(
-            payload, surviving_node)
+        self._rpk.force_partition_recovery(from_nodes=to_kill_node_ids,
+                                           to_node=surviving_node)
 
         with ControllerLeadershipTransferInjector(self.redpanda) as transfers:
 
