@@ -465,6 +465,7 @@ extra_headers = {
 # the container type from std::vector
 override_member_container = {
     'metadata_response_partition': 'large_fragment_vector',
+    'metadata_response_topic': 'small_fragment_vector',
     'fetchable_partition_response': 'small_fragment_vector'
 }
 
