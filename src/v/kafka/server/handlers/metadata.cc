@@ -257,18 +257,16 @@ static metadata_response::topic make_topic_response(
     return res;
 }
 
-static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
+static ss::future<small_fragment_vector<metadata_response::topic>>
+get_topic_metadata(
   request_context& ctx,
   metadata_request& request,
   const is_node_isolated_or_decommissioned is_node_isolated) {
-    std::vector<metadata_response::topic> res;
+    small_fragment_vector<metadata_response::topic> res;
 
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
         auto& topics_md = ctx.metadata_cache().all_topics_metadata();
-        // reserve vector capacity to full size as there are only few topics
-        // outside of kafka namespace
-        res.reserve(topics_md.size());
         for (const auto& [tp_ns, md] : topics_md) {
             // only serve topics from the kafka namespace
             if (tp_ns.ns != model::kafka_namespace) {
@@ -288,8 +286,8 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
               make_topic_response(ctx, request, md.metadata, is_node_isolated));
         }
 
-        return ss::make_ready_future<std::vector<metadata_response::topic>>(
-          std::move(res));
+        return ss::make_ready_future<
+          small_fragment_vector<metadata_response::topic>>(std::move(res));
     }
 
     std::vector<model::topic> topics_to_be_created;
@@ -348,8 +346,8 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
                 .name = std::move(t)};
           });
 
-        return ss::make_ready_future<std::vector<metadata_response::topic>>(
-          std::move(res));
+        return ss::make_ready_future<
+          small_fragment_vector<metadata_response::topic>>(std::move(res));
     }
 
     std::for_each(
@@ -363,10 +361,7 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
     return ss::when_all_succeed(new_topics.begin(), new_topics.end())
       .then([res = std::move(res)](
               std::vector<metadata_response::topic> topics) mutable {
-          res.insert(
-            res.end(),
-            std::make_move_iterator(topics.begin()),
-            std::make_move_iterator(topics.end()));
+          std::move(topics.begin(), topics.end(), std::back_inserter(res));
           return std::move(res);
       });
 }
