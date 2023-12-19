@@ -2100,6 +2100,12 @@ configuration::configuration()
       true,
       property<bool>::noop_validator,
       legacy_default<bool>(false, legacy_version{9}))
+  , space_management_enable_override(
+      *this,
+      "space_management_enable_override",
+      "Enable automatic space management.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , disk_reservation_percent(
       *this,
       "disk_reservation_percent",
