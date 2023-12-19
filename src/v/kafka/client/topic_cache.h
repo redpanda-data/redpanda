@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 
@@ -46,7 +47,8 @@ public:
     ~topic_cache() noexcept = default;
 
     /// \brief Apply the given metadata response.
-    ss::future<> apply(std::vector<metadata_response::topic>&& topics);
+    ss::future<>
+    apply(small_fragment_vector<metadata_response::topic>&& topics);
 
     /// \brief Obtain the leader for the given topic-partition
     ss::future<model::node_id> leader(model::topic_partition tp) const;

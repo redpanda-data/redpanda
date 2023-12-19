@@ -14,13 +14,14 @@
 #include "kafka/client/partitioners.h"
 #include "kafka/protocol/metadata.h"
 #include "random/generators.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 
 namespace kafka::client {
 
 ss::future<>
-topic_cache::apply(std::vector<metadata_response::topic>&& topics) {
+topic_cache::apply(small_fragment_vector<metadata_response::topic>&& topics) {
     topics_t cache;
     cache.reserve(topics.size());
     for (const auto& t : topics) {
