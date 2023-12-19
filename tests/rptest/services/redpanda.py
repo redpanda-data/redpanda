@@ -1656,6 +1656,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         """
         return self._kubectl._cmd(remote_cmd)
 
+    def scale_cluster(self, nodes_count):
+        """Scale out/in cluster to specified number of nodes.
+        """
+        return self._cloud_cluster.scale_cluster(nodes_count)
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
