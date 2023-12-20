@@ -20,6 +20,8 @@ from pyflink.table import StreamTableEnvironment, EnvironmentSettings, \
 
 from pyflink.common import Configuration
 from pyflink.datastream import StreamExecutionEnvironment
+from pyflink.table.udf import udf
+from pyflink.table.expressions import col
 
 MODE_PRODUCE = 'produce'
 MODE_CONSUME = 'consume'
@@ -36,7 +38,7 @@ class WorkloadConfig:
     topic_name: str = "flink_transactions_topic"
     # options are produce/consume
     mode: str = MODE_PRODUCE
-    msg_size: int = 16
+    word_size: int = 16
     count: int = 65535
     batch_size: int = 256
     # This should be updated to value from self.redpanda.brokers()
@@ -101,11 +103,11 @@ class FlinkWorkloadProduce:
             Generates crypto-like bogus array of words
         """
         # Generate words using random word count (10-64)
-        # and random word len (4-msg_size)
+        # and random word len (4-word_size)
         return [
             ''.join(
                 random.choices(string.ascii_letters,
-                               k=random.randint(4, self.config.msg_size)))
+                               k=random.randint(4, self.config.word_size)))
             for idx in range(random.randint(10, 64))
         ]
 
@@ -127,6 +129,7 @@ class FlinkWorkloadProduce:
             .build()
 
         # Build descriptor with kafka connector and options
+        # see: https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/connectors/table/kafka/
         sink_table_desc = TableDescriptor.for_connector('kafka') \
             .schema(sink_table_schema) \
             .option('connector', 'kafka') \
@@ -183,13 +186,61 @@ class FlinkWorkloadProduce:
             - Init table schema for source
             - Init table schema for sink
         """
+
+        # Define the table schema with metadata
+        # See: https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/connectors/table/kafka/
+        source_table_schema = Schema.new_builder() \
+            .column_by_metadata('event_time', DataTypes.TIMESTAMP(3),
+                                'timestamp', is_virtual=False) \
+            .column_by_metadata('partition', DataTypes.BIGINT(), 'partition',
+                                is_virtual=True) \
+            .column_by_metadata('offset', DataTypes.BIGINT(), 'offset',
+                                is_virtual=True) \
+            .column('word', DataTypes.STRING()) \
+            .build()
+
+        source_table_schema = TableDescriptor.for_connector('kafka') \
+            .schema(source_table_schema) \
+            .option('connector', 'kafka') \
+            .option('topic', f'{self.config.topic_name}') \
+            .option('properties.bootstrap.servers', f'{self.config.brokers}') \
+            .option('properties.group.id', f'{self.config.producer_group}') \
+            .option('scan.startup.mode', 'earliest-offset') \
+            .option('format', 'csv') \
+            .build()
+
+        # Create target table
+        self.source_table = self.table_env.create_temporary_table(
+            'source', source_table_schema)
+
+        # Prepare sink with connector 'print'
+        _print_schema = Schema.new_builder() \
+            .column('a', DataTypes.BIGINT()) \
+            .column('b', DataTypes.BIGINT()) \
+            .build()
+        _print_desc = TableDescriptor.for_connector('print') \
+            .schema(_print_schema) \
+            .build()
+        self.table_env.create_temporary_table('sink', _print_desc)
+
         pass
 
     def consume_words(self):
         """
             Example of a consume task usign Table API
         """
-        pass
+        # User Defined function to count len of the string
+        @udf(result_type=DataTypes.BIGINT())
+        def length(data):
+            return len(data)
+
+        # process source
+        table = self.table_env.from_path('source')
+        table = table.select(col('offset'), length(col('word')))
+
+        table.execute_insert('sink')
+
+        return
 
     def run(self):
         # Run selected mode
@@ -200,7 +251,7 @@ class FlinkWorkloadProduce:
             self.prepare_consume_mode()
             self.consume_words()
         else:
-            self.logger.info(f"Mode '{self.mode}' not supported")
+            self.logger.info(f"Mode '{self.config.mode}' not supported")
 
         return
 
