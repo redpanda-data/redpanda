@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "config/bounded_property.h"
 #include "config/broker_authn_endpoint.h"
 #include "config/broker_endpoint.h"
 #include "config/convert.h"
@@ -81,6 +82,10 @@ public:
     // Path to the configuration file for low level storage failure injection.
     property<std::optional<std::filesystem::path>>
       storage_failure_injection_config_path;
+
+    // Timeout upper-bound for setting verbose (>=DEBUG) logging.
+    bounded_property<std::optional<std::chrono::seconds>>
+      verbose_logging_timeout_sec_max;
 
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
