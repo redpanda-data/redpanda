@@ -800,21 +800,22 @@ config_manager::store_delta(cluster_config_delta_cmd_data const& data) {
     auto& cfg = config::shard_local_cfg();
 
     for (const auto& u : data.upsert) {
+        /// skip section
         if (!cfg.contains(u.key)) {
             // passthrough unknown values
             _raw_values[u.key] = u.value;
             continue;
         }
 
+        /// conversion + cleanup section
         auto& prop = cfg.get(u.key);
         if (prop.name() == u.key) {
             // u key is already the main name of the property
             _raw_values[u.key] = u.value;
-            continue;
+        } else {
+            // ensure only the main name is used
+            _raw_values[ss::sstring{prop.name()}] = u.value;
         }
-
-        // ensure only the main name is used
-        _raw_values[ss::sstring{prop.name()}] = u.value;
         // cleanup any old alias lying around (it should be normally not
         // necessary, and at most one loop)
         for (auto const& alias : prop.aliases()) {
