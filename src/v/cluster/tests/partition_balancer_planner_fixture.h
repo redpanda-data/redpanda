@@ -20,6 +20,7 @@
 #include "cluster/topic_updates_dispatcher.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
 #include "units.h"
@@ -65,7 +66,9 @@ public:
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<std::vector<ss::sstring>>(
               std::vector<ss::sstring>{
-                {"__audit_log", "__consumer_offsets", "_schemas"}}),
+                {model::kafka_audit_logging_topic,
+                 "__consumer_offsets",
+                 "_schemas"}}),
             config::mock_binding<bool>(true))
           .get();
         // use node status that is not used in test as self is always available
