@@ -687,32 +687,28 @@ void admin_server::rearm_log_level_timer() {
     _log_level_timer.cancel();
 
     auto next = std::min_element(
-      _log_level_resets.begin(),
-      _log_level_resets.end(),
-      [](const auto& a, const auto& b) {
-          return a.second.expires < b.second.expires;
-      });
+      _log_level_resets.begin(), _log_level_resets.end());
 
-    if (next != _log_level_resets.end()) {
-        _log_level_timer.arm(next->second.expires);
+    if (next != _log_level_resets.end() && next->second.expires.has_value()) {
+        _log_level_timer.arm(next->second.expires.value());
     }
 }
 
 void admin_server::log_level_timer_handler() {
-    for (auto it = _log_level_resets.begin(); it != _log_level_resets.end();) {
-        if (it->second.expires <= ss::timer<>::clock::now()) {
+    absl::c_for_each(_log_level_resets, [](auto& pr) {
+        auto& [name, lr] = pr;
+        if (lr.expires.has_value() && lr.expires <= ss::timer<>::clock::now()) {
+            ss::global_logger_registry().set_logger_level(name, lr.level);
             vlog(
               adminlog.info,
               "Expiring log level for {{{}}} to {}",
-              it->first,
-              it->second.level);
-            ss::global_logger_registry().set_logger_level(
-              it->first, it->second.level);
-            _log_level_resets.erase(it++);
-        } else {
-            ++it;
+              name,
+              lr.level);
+            // we've reset this logger to its default level, which
+            // should never expire
+            lr.expires.reset();
         }
-    }
+    });
     rearm_log_level_timer();
 }
 
@@ -1304,10 +1300,12 @@ void admin_server::register_config_routes() {
           rsp.level = ss::to_sstring(cur_level);
 
           auto find_iter = _log_level_resets.find(name);
-          if (find_iter == _log_level_resets.end()) {
+          if (
+            find_iter == _log_level_resets.end()
+            || !find_iter->second.expires.has_value()) {
               rsp.expiration = 0;
           } else {
-              auto remaining_dur = find_iter->second.expires
+              auto remaining_dur = find_iter->second.expires.value()
                                    - ss::timer<>::clock::now();
               rsp.expiration = std::chrono::duration_cast<std::chrono::seconds>(
                                  remaining_dur)
@@ -1393,8 +1391,9 @@ void admin_server::register_config_routes() {
                   res.first->second.expires = when;
               }
           } else {
-              // perm change. no need to store prev level
-              _log_level_resets.erase(name);
+              // new log level never expires, but we still want an entry in the
+              // resets map as a record of the default
+              _log_level_resets.try_emplace(name, cur_level, std::nullopt);
           }
 
           rsp.expiration = expires->count();
