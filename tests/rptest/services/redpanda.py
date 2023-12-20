@@ -1046,12 +1046,13 @@ class RedpandaServiceBase(Service):
             metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
             for family in metrics:
                 for sample in family.samples:
+                    if sample.name != metric_name:
+                        continue
                     if ns and sample.labels["namespace"] != ns:
                         continue
                     if topic and sample.labels["topic"] != topic:
                         continue
-                    if sample.name == metric_name:
-                        count += int(sample.value)
+                    count += int(sample.value)
         return count
 
     def healthy(self):

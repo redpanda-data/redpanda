@@ -66,15 +66,20 @@ class FollowerFetchingTest(PreallocNodesTest):
         producer.wait()
         producer.free()
 
+    def get_node_metric(self, node, topic, metric):
+        return self.redpanda.metric_sum(ns="kafka",
+                                        nodes=[node],
+                                        topic=topic,
+                                        metric_name=metric)
+
     def get_fetch_bytes(self, node, topic):
-        metrics = self.redpanda.metrics(node)
-        total_bytes = 0
-        for family in metrics:
-            for sample in family.samples:
-                if sample.name == "vectorized_cluster_partition_bytes_fetched_total" and sample.labels[
-                        'topic'] == topic:
-                    total_bytes += sample.value
-        return total_bytes
+        return self.get_node_metric(
+            node, topic, "vectorized_cluster_partition_bytes_fetched_total")
+
+    def get_follower_fetched_bytes(self, node, topic):
+        return self.get_node_metric(
+            node, topic,
+            "vectorized_cluster_partition_bytes_fetched_from_follower_total")
 
     def create_consumer(self, topic, rack=None):
 
@@ -97,14 +102,23 @@ class FollowerFetchingTest(PreallocNodesTest):
             },
         )
 
-    def _bytes_fetched_per_node(self, topic):
-        fetched_per_node = {}
+    def _metrics_per_node(self, topic, metric):
+        per_node = {}
         for n in self.redpanda.nodes:
-            fetched_per_node[n] = self.get_fetch_bytes(n, topic)
+            per_node[n] = self.get_node_metric(n, topic, metric=metric)
             self.logger.info(
-                f"fetched {fetched_per_node[n]} bytes from node {n.account.hostname}:{self.redpanda.node_id(n)}"
+                f"{metric}={per_node[n]} at {n.account.hostname}:{self.redpanda.node_id(n)}"
             )
-        return fetched_per_node
+        return per_node
+
+    def _bytes_fetched_per_node(self, topic):
+        return self._metrics_per_node(
+            topic, "vectorized_cluster_partition_bytes_fetched_total")
+
+    def _follower_bytes_fetched_per_node(self, topic):
+        return self._metrics_per_node(
+            topic,
+            "vectorized_cluster_partition_bytes_fetched_from_follower_total")
 
     @cluster(num_nodes=5)
     @matrix(read_from_object_store=[True, False])
@@ -147,6 +161,8 @@ class FollowerFetchingTest(PreallocNodesTest):
                 f"Using consumer with {consumer_rack} in {n+1}/{number_of_samples} sample"
             )
             fetched_per_node_before = self._bytes_fetched_per_node(topic.name)
+            f_fetched_before = self._follower_bytes_fetched_per_node(
+                topic.name)
             consumer = self.create_consumer(topic.name, rack=consumer_rack)
             consumer.start()
             consumer.wait_for_messages(1000)
@@ -156,6 +172,7 @@ class FollowerFetchingTest(PreallocNodesTest):
             consumer.free()
 
             fetched_per_node_after = self._bytes_fetched_per_node(topic.name)
+            f_fetched_after = self._follower_bytes_fetched_per_node(topic.name)
             preferred_replica = self.redpanda.nodes[node_idx]
             self.logger.info(
                 f"preferred replica {preferred_replica.account.hostname}:{self.redpanda.node_id(preferred_replica)} in rack {consumer_rack}"
@@ -168,6 +185,14 @@ class FollowerFetchingTest(PreallocNodesTest):
                     assert current_bytes_fetched > 0
                 else:
                     assert current_bytes_fetched == 0
+
+            for n, new_fetched_bytes in f_fetched_after.items():
+                follower_fetched = new_fetched_bytes - f_fetched_before[n]
+                if n == preferred_replica:
+                    # follower fetched bytes may be equal to 0 if preferred replica is a leader
+                    assert follower_fetched >= 0
+                else:
+                    assert follower_fetched == 0
 
     @cluster(num_nodes=5)
     def test_with_leadership_transfers(self):
