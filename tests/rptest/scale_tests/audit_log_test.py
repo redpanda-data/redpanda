@@ -385,24 +385,26 @@ class AuditLogTest(RedpandaTest):
         # Re-run the test and compare results
         audit_disabled_results = self._run_repeater(topic_names, scale)
 
-        # Assert that there is no more then a x% difference in produce and consume throughput
+        # Assert that there is no more then a x% difference in observed results
         allowable_threshold = 10.0
 
-        def pct_difference(a, b):
-            return (abs(a - b) / abs((a + b) / 2)) * 100
+        def pct_chg(new, orig):
+            return ((orig - new) / abs(orig)) * 100
 
         self.redpanda.logger.info(
             f"audit_disabled_results: {audit_disabled_results}")
         self.redpanda.logger.info(
             f"audit_enabled_results: {audit_enabled_results}")
 
-        assert pct_difference(
-            audit_disabled_results.produce_mbps,
-            audit_enabled_results.produce_mbps) <= allowable_threshold
-        assert pct_difference(
-            audit_disabled_results.consume_mbps,
-            audit_enabled_results.consume_mbps) <= allowable_threshold
-        assert pct_difference(audit_disabled_results.p90,
-                              audit_enabled_results.p90) <= allowable_threshold
-        assert pct_difference(audit_disabled_results.p99,
-                              audit_enabled_results.p99) <= allowable_threshold
+        assert pct_chg(
+            audit_enabled_results.produce_mbps,
+            audit_disabled_results.produce_mbps) < allowable_threshold
+        assert pct_chg(
+            audit_enabled_results.consume_mbps,
+            audit_disabled_results.consume_mbps) < allowable_threshold
+        assert pct_chg(audit_enabled_results.p50,
+                       audit_disabled_results.p50) > (allowable_threshold * -1)
+        assert pct_chg(audit_enabled_results.p90,
+                       audit_disabled_results.p90) > (allowable_threshold * -1)
+        assert pct_chg(audit_enabled_results.p99,
+                       audit_disabled_results.p99) > (allowable_threshold * -1)
