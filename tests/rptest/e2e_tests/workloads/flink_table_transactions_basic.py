@@ -21,6 +21,9 @@ from pyflink.table import StreamTableEnvironment, EnvironmentSettings, \
 from pyflink.common import Configuration
 from pyflink.datastream import StreamExecutionEnvironment
 
+MODE_PRODUCE = 'produce'
+MODE_CONSUME = 'consume'
+
 
 @dataclass(kw_only=True)
 class WorkloadConfig:
@@ -31,7 +34,9 @@ class WorkloadConfig:
     producer_group: str = "flink_group"
     consumer_group: str = "flink_group"
     topic_name: str = "flink_transactions_topic"
-    # Not used
+    # options are produce/consume
+    mode: str = MODE_PRODUCE
+    msg_size: int = 16
     count: int = 65535
     batch_size: int = 256
     # This should be updated to value from self.redpanda.brokers()
@@ -88,15 +93,40 @@ class FlinkWorkloadProduce:
         # Alternative way to add connector, just for illustrative purposes
         table_env.get_config().set("pipeline.jars", self.config.connector_path)
 
+        # Publish it as class var
+        self.table_env = table_env
+
+    def _generate_words(self):
+        """
+            Generates crypto-like bogus array of words
+        """
+        # Generate words using random word count (10-64)
+        # and random word len (4-msg_size)
+        return [
+            ''.join(
+                random.choices(string.ascii_letters,
+                               k=random.randint(4, self.config.msg_size)))
+            for idx in range(random.randint(10, 64))
+        ]
+
+    def prepare_produce_mode(self):
+        """
+            Initialized produce mode
+
+            Steps:
+            - Generate words
+            - Initialize schema and tables
+        """
         # Prepare data to be sent
         self.logger.info(f"Generating {self.config.count} words")
         self.words = self._generate_words()
 
-        # define the sink
+        # Define the table schema
         sink_table_schema = Schema.new_builder() \
             .column('word', DataTypes.STRING()) \
             .build()
 
+        # Build descriptor with kafka connector and options
         sink_table_desc = TableDescriptor.for_connector('kafka') \
             .schema(sink_table_schema) \
             .option('connector', 'kafka') \
@@ -107,33 +137,24 @@ class FlinkWorkloadProduce:
             .option('format', 'csv') \
             .build()
 
-        self.kafka_table = table_env.create_temporary_table(
+        # Create target table
+        self.sink_table = self.table_env.create_temporary_table(
             'sink', sink_table_desc)
 
-        # Publish it as class var
-        self.table_env = table_env
+    def produce_words(self):
+        """
+            Example of a produce task using Table API
 
-    def _generate_words(self):
+            - initialize sending words in batches. I.e. single INSERT cmd
+              aka transaction
+            - select words for the next batch from the generated list
+            - execute SQL command to insert words in table/topic
         """
-            Generates crypto-like bogus array of words
-        """
-        # Generate words using random word count (10-64)
-        # and random word len (4-16)
-        return [
-            ''.join(
-                random.choices(string.ascii_letters, k=random.randint(4, 16)))
-            for idx in range(random.randint(10, 64))
-        ]
-
-    def run(self):
-        """
-            Example of a produce task
-
-            Steps:
-            - Select from temp table and insert into kafka sink
-        """
+        # Do the sending
         idx = 0
         while idx < self.config.count:
+            # Prepare list of words that will be included in one INSERT cmd
+            # aka batch
             values = [
                 f"('{self.id_to_word(random.randint(0, len(self.words)-1))}')"
                 for count in range(self.config.batch_size)
@@ -153,6 +174,35 @@ class FlinkWorkloadProduce:
             self.table_env.execute_sql("INSERT INTO sink " +
                                        f"VALUES {','.join(values)};")
             idx += self.config.batch_size
+
+    def prepare_consume_mode(self):
+        """
+            Initialize consume mode
+
+            Steps:
+            - Init table schema for source
+            - Init table schema for sink
+        """
+        pass
+
+    def consume_words(self):
+        """
+            Example of a consume task usign Table API
+        """
+        pass
+
+    def run(self):
+        # Run selected mode
+        if self.config.mode == MODE_PRODUCE:
+            self.prepare_produce_mode()
+            self.produce_words()
+        elif self.config.mode == MODE_CONSUME:
+            self.prepare_consume_mode()
+            self.consume_words()
+        else:
+            self.logger.info(f"Mode '{self.mode}' not supported")
+
+        return
 
     def cleanup(self):
         """
