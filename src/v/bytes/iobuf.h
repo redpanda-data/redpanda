@@ -28,15 +28,28 @@
 #include <string_view>
 #include <type_traits>
 
-/// our iobuf is a fragmented buffer. modeled after
-/// folly::iobufqueue.h - it supports prepend and append, but no
-/// operations in the middle. It provides a forward iterator for
-/// byte scanning and parsing. This is intended to be the workhorse
-/// of our data path.
-/// Noteworthy Operations:
-/// Append/Prepend - O(1)
-/// operator==, operator!=  - O(N)
-///
+/*
+ * Our iobuf is a fragmented buffer modeled after
+ * folly::iobufqueue.h - it supports prepend and append, but no
+ * operations in the middle. It provides a forward iterator for
+ * byte scanning and parsing. This is intended to be the workhorse
+ * of our data path.
+ * Noteworthy Operations:
+ * Append/Prepend - O(1)
+ * operator==, operator!=  - O(N)
+ *
+ * General sharing-mutation caveat:
+ *
+ * Operations such as share(), copy() and appending an iobuf or other compatible
+ * buffer type to an iobuf may be zero-copy, in the sense that some or all of
+ * the payload bytes may be shared between multiple iobufs (or between an iobuf
+ * and a compatible buffer type like ss::temporary_buffer<>). The sharing occurs
+ * at the fragment level.
+ *
+ * Be careful when any zero-copy operations are used as iobuf
+ * does not perform copy-on-write, Therefore changes will be visible to all
+ * iobufs that share the backing fragments.
+ */
 class iobuf {
     // Not a lightweight object.
     // 16 bytes for std::list
@@ -103,10 +116,27 @@ public:
         }
     }
 
-    /// shares the underlying temporary buffers
+    /**
+     * Returns a new iobuf of length len with the contents of this iobuf
+     * starting at offset pos.
+     *
+     * This is a zero-copy operation: the returned iobuf will share a subset of
+     * (depending on len and pos) the fragments of this iobuf. Currently no
+     * linearization is performed: the sequence and sizes of fragments of the
+     * copy will be the same as this iobuf, but callers should not rely on the
+     * precise details.
+     *
+     * Since this call performs zero-copy operations, the sharing-mutation
+     * caveat in the class comment applies.
+     */
     iobuf share(size_t pos, size_t len);
 
     /**
+     * Returns a copy of this iobuf. This is NOT a zero-copy operation: the
+     * returned iobuf is the unique owner of all of its fragments, so any
+     * mutations to the payload bytes of this iobuf do not affected the returned
+     * value or vice-versa.
+     *
      * Copying an iobuf is optimized for cases where the size of the resulting
      * iobuf will not be increased (e.g. via iobuf::append).
      */
@@ -122,25 +152,63 @@ public:
     /// as an empty details::io_fragment
     void reserve_memory(size_t reservation);
 
-    /// append src + len into storage
+    /*
+     * Append len bytes starting at src into this iobuf. This always makes
+     * a copy of the source bytes.
+     */
     void append(const char*, size_t);
-    /// append src + len into storage
+
+    /*
+     * Append len bytes starting at src into this iobuf. This always makes
+     * a copy of the source bytes.
+     */
     void append(const uint8_t*, size_t);
-    /// appends the contents of buffer; might pack values into existing space
+
+    /**
+     * Appends the contents of the passed buffer to this one.
+     *
+     * This may copy the contents of the buffer into this one, creating new
+     * fragments as necessary, or it may zero-copy link the source buffer into
+     * this iobuf as a new fragment.
+     *
+     * The choice depends on the relative sizes
+     * of the source buffer and this object and may change in the future.
+     *
+     * Since this call may perform zero-copy operations, the sharing-mutation
+     * caveat in the class comment applies.
+     */
     void append(ss::temporary_buffer<char>);
-    /// appends the contents of buffer; might pack values into existing space
+
+    /**
+     * Appends the contents of the passed buffer to this one.
+     *
+     * This may copy the contents of the buffer into this one, creating new
+     * fragments as necessary, or it may zero-copy link some of all of the
+     * fragments in the source into this one.
+     *
+     * The choice depends on the relative sizes
+     * of the source buffer and this object and may change in the future.
+     *
+     * Since this call may perform zero-copy operations, the sharing-mutation
+     * caveat in the class comment applies.
+     */
     void append(iobuf);
 
     /*
-     * appends all fragments from the iobuf parameter. be careful when appending
-     * fragments from a shared iobuf. sharing in a zero-copy operation and iobuf
-     * does not perform copy-on-write. therefore changes will be visible to all
-     * iobufs that share the backing fragments.
+     * Appends the contents of the passed buffer to this one.
+     *
+     * This differs from append(iobuf) in that it always uses zero-copy: all
+     * fragments from the source are appended as new fragments to this buffer
+     * without needing to make a copy of their contents.
+     *
+     * Since this call performs zero-copy operations, the sharing-mutation
+     * caveat in the class comment applies.
      */
     void append_fragments(iobuf);
 
     /**
-     * Append a fragment.
+     * Append a fragment to this iobuf. This takes ownership of the fragment
+     * and is a zero-copy operation.
      */
     void append(std::unique_ptr<fragment>);
 
@@ -305,7 +373,18 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
     oncore_debug_verify(_verify_shard);
     const size_t last_asz = last_allocation_size();
-    if (b.size() <= available_bytes() || b.size() <= last_asz) {
+    // The following is a heuristic to decide between copying and zero-copy
+    // append of the source buffer. The rule we apply is if the buffer we are
+    // appending is of the same size or smaller than last allocation we use
+    // a copy. This effecitvely linearizes a series of smaller buffers when
+    // they are appended to this one. However, if the incoming buffer is
+    // already at (or above) the maximum fragment size, we use zero copy as
+    // copying it provides almost no linearization benefits and appending
+    // full-sized fragments is in practice a common operation when buffers
+    // grow beyond the maximum fragment size.
+    if (
+      b.size() <= last_asz
+      && b.size() < details::io_allocation_size::max_chunk_size) {
         append(b.get(), b.size());
         return;
     }
