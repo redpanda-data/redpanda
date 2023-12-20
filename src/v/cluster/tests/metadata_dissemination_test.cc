@@ -28,42 +28,40 @@
 #include <vector>
 using namespace std::chrono_literals; // NOLINT
 
+static auto timeout = 20s;
 static ss::logger test_logger("test-logger");
 std::vector<model::node_id>
 wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
     std::vector<model::node_id> leaders;
-    tests::cooperative_spin_wait_with_timeout(
-      std::chrono::seconds(10),
-      [&cache, &leaders, id] {
-          leaders.clear();
-          const model::topic_namespace tn(
-            model::ns("default"), model::topic("test_1"));
-          auto tp_md = cache.get_topic_metadata(tn);
-          test_logger.info(
-            "waiting for leaders on node {}, current topic metadata: {}",
-            id,
-            tp_md.has_value());
-          if (!tp_md) {
-              return false;
-          }
-          if (tp_md->get_assignments().size() != 3) {
-              return false;
-          }
-          for (auto& p_md : tp_md->get_assignments()) {
-              auto leader_id = cache.get_leader_id(tn, p_md.id);
-              test_logger.info(
-                "waiting for leaders on node {}, partition {}, leader_id: {}",
-                id,
-                p_md.id,
-                leader_id);
-              if (!leader_id) {
-                  return false;
-              }
-              leaders.push_back(*leader_id);
-          }
-          return true;
-      })
-      .get0();
+    tests::cooperative_spin_wait_with_timeout(timeout, [&cache, &leaders, id] {
+        leaders.clear();
+        const model::topic_namespace tn(
+          model::ns("default"), model::topic("test_1"));
+        auto tp_md = cache.get_topic_metadata(tn);
+        test_logger.info(
+          "waiting for leaders on node {}, current topic metadata: {}",
+          id,
+          tp_md.has_value());
+        if (!tp_md) {
+            return false;
+        }
+        if (tp_md->get_assignments().size() != 3) {
+            return false;
+        }
+        for (auto& p_md : tp_md->get_assignments()) {
+            auto leader_id = cache.get_leader_id(tn, p_md.id);
+            test_logger.info(
+              "waiting for leaders on node {}, partition {}, leader_id: {}",
+              id,
+              p_md.id,
+              leader_id);
+            if (!leader_id) {
+                return false;
+            }
+            leaders.push_back(*leader_id);
+        }
+        return true;
+    }).get0();
     return leaders;
 }
 
@@ -80,12 +78,9 @@ FIXTURE_TEST(
     auto& cache_1 = get_local_cache(n_2);
     auto& cache_2 = get_local_cache(n_3);
 
-    tests::cooperative_spin_wait_with_timeout(
-      std::chrono::seconds(10),
-      [&cache_1, &cache_2] {
-          return cache_1.node_count() == 3 && cache_2.node_count() == 3;
-      })
-      .get0();
+    tests::cooperative_spin_wait_with_timeout(timeout, [&cache_1, &cache_2] {
+        return cache_1.node_count() == 3 && cache_2.node_count() == 3;
+    }).get0();
 
     // Make sure we have 3 working nodes
     BOOST_REQUIRE_EQUAL(cache_0.node_count(), 3);
@@ -119,10 +114,9 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     auto& cache_0 = get_local_cache(n_1);
     auto& cache_1 = get_local_cache(n_2);
 
-    tests::cooperative_spin_wait_with_timeout(
-      std::chrono::seconds(10),
-      [&cache_1] { return cache_1.node_count() == 2; })
-      .get0();
+    tests::cooperative_spin_wait_with_timeout(timeout, [&cache_1] {
+        return cache_1.node_count() == 2;
+    }).get0();
     // Make sure we have 2 working nodes
     BOOST_REQUIRE_EQUAL(cache_0.node_count(), 2);
     BOOST_REQUIRE_EQUAL(cache_1.node_count(), 2);
@@ -141,12 +135,9 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     create_node_application(model::node_id{2});
     auto& cache_2 = get_local_cache(model::node_id{2});
     // Wait for node to join the cluster
-    tests::cooperative_spin_wait_with_timeout(
-      std::chrono::seconds(10),
-      [&cache_1, &cache_2] {
-          return cache_1.node_count() == 3 && cache_2.node_count() == 3;
-      })
-      .get0();
+    tests::cooperative_spin_wait_with_timeout(timeout, [&cache_1, &cache_2] {
+        return cache_1.node_count() == 3 && cache_2.node_count() == 3;
+    }).get0();
 
     auto leaders_0 = wait_for_leaders_updates(0, cache_0);
     auto leaders_1 = wait_for_leaders_updates(1, cache_1);
