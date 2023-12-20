@@ -35,10 +35,17 @@ class WorkloadConfig:
     log_level: str = "DEBUG"
     producer_group: str = "flink_group"
     consumer_group: str = "flink_group"
+    # path to FOLDER
+    data_path: str = "file:///workloads/data",
     topic_name: str = "flink_transactions_topic"
     # options are produce/consume
     mode: str = MODE_PRODUCE
+    # maximum size of word in one message; tested values up to 512.
+    # Probably will be limited only by str len of Python/Java
+    # in the resulting INSERT: (4~word_size) * batch_size
     word_size: int = 16
+    # Follow this rule to eliminate possibility of Java's OutOfMemory Exception
+    # count / batch_size < 400
     count: int = 65535
     batch_size: int = 256
     # This should be updated to value from self.redpanda.brokers()
@@ -199,31 +206,32 @@ class FlinkWorkloadProduce:
             .column('word', DataTypes.STRING()) \
             .build()
 
-        source_table_schema = TableDescriptor.for_connector('kafka') \
+        source_table_desc = TableDescriptor.for_connector('kafka') \
             .schema(source_table_schema) \
             .option('connector', 'kafka') \
             .option('topic', f'{self.config.topic_name}') \
             .option('properties.bootstrap.servers', f'{self.config.brokers}') \
             .option('properties.group.id', f'{self.config.producer_group}') \
             .option('scan.startup.mode', 'earliest-offset') \
+            .option('scan.bounded.mode', 'latest-offset') \
             .option('format', 'csv') \
             .build()
 
         # Create target table
-        self.source_table = self.table_env.create_temporary_table(
-            'source', source_table_schema)
+        self.table_env.create_temporary_table('source', source_table_desc)
 
         # Prepare sink with connector 'print'
         _print_schema = Schema.new_builder() \
             .column('a', DataTypes.BIGINT()) \
-            .column('b', DataTypes.BIGINT()) \
+            .column('b', DataTypes.TIMESTAMP(3)) \
+            .column('c', DataTypes.BIGINT()) \
             .build()
-        _print_desc = TableDescriptor.for_connector('print') \
+        _print_desc = TableDescriptor.for_connector('filesystem') \
             .schema(_print_schema) \
+            .option('path', self.config.data_path) \
+            .format('csv') \
             .build()
         self.table_env.create_temporary_table('sink', _print_desc)
-
-        pass
 
     def consume_words(self):
         """
@@ -235,10 +243,19 @@ class FlinkWorkloadProduce:
             return len(data)
 
         # process source
+        # wait is critical for 'filesystem' sink connector
+        # as the main process would exit before child process is
+        # done writing the data
+        # In case of remote call, like kafka, wait is not nessesary
+        # Example folder structure after output is
+        #   data/part-a70f2a9f-7a84-4d89-b493-22d00cc07838-8-0: CSV text
         table = self.table_env.from_path('source')
-        table = table.select(col('offset'), length(col('word')))
-
-        table.execute_insert('sink')
+        # example csv row:
+        # 65528,"2023-12-20 13:40:37.461",274
+        table.select(col('offset'), col('event_time'),
+                     length(col('word'))) \
+            .execute_insert('sink') \
+            .wait(120000)
 
         return
 
