@@ -166,6 +166,85 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
     co_return partition;
 }
 
+ss::future<> producer::send_partition_agnostic(
+  model::topic_partition tp, model::record_batch batch) {
+    auto record_count = batch.record_count();
+    vlog(
+      kclog.debug,
+      "send record_batch: {}, {{record_count: {}}}",
+      tp,
+      record_count);
+
+    /// Wrap the 'success' case in a type that indicates a type of failure.
+    /// This is necessary to exit the loop when desired, otherwise the loop
+    /// continues until _config.retries() attempts are made
+    uint32_t unknown_tp_observed = 0;
+    using success_t = std::optional<produce_response::partition>;
+    auto success =
+      [this, &unknown_tp_observed, &batch, tp]() -> ss::future<success_t> {
+        if (
+          unknown_tp_observed > _config.produce_partition_agnostic_retries()) {
+            return ss::make_ready_future<success_t>(std::nullopt);
+        }
+        return do_send(tp, batch.share()).then([](auto res) {
+            return success_t(std::move(res));
+        });
+    };
+    auto errfn = [this, &unknown_tp_observed, tp](std::exception_ptr ex) {
+        auto f = ss::now();
+        try {
+            std::rethrow_exception(ex);
+        } catch (const partition_error& px) {
+            if (px.error == error_code::unknown_topic_or_partition) {
+                /// Avoid moving the batch if theres only 1 partition
+                f = _topic_cache.number_of_partitions_for(tp.topic).then(
+                  [&unknown_tp_observed](size_t num_partitions) {
+                      if (num_partitions > 1) {
+                          unknown_tp_observed++;
+                      } else {
+                          unknown_tp_observed = 0;
+                      }
+                  });
+            }
+        }
+        return f.then([this, ex]() { return _error_handler(ex); });
+    };
+
+    produce_response::partition resp;
+    try {
+        auto gh = _gate.hold();
+        auto result = co_await retry_with_mitigation(
+          _config.retries(),
+          _config.retry_base_backoff(),
+          std::move(success),
+          std::move(errfn));
+        if (!result) {
+            /// Responsibility of sending new batch belongs to another
+            /// produce_partition instance, new send() execution will begin,
+            /// important to note as handle_response() must be called once per
+            /// send or else client will be indefinitely blocked
+            auto new_tp = co_await move_batch(tp, batch.share());
+            vlog(
+              kclog.debug,
+              "moved record_batch: {}, {{record_count: {}}}, to tp {}",
+              tp,
+              record_count,
+              new_tp);
+            co_return;
+        }
+        resp = std::move(*result);
+    } catch (const std::exception& ex) {
+        resp = make_produce_response(tp.partition, std::make_exception_ptr(ex));
+    }
+    vlog(
+      kclog.debug,
+      "completed send record_batch: {}, {{record_count: {}}}, {}",
+      tp,
+      record_count,
+      resp.error_code);
+    get_context(std::move(tp))->handle_response(std::move(resp));
+}
+
 ss::future<>
 producer::send(model::topic_partition tp, model::record_batch&& batch) {
     auto record_count = batch.record_count();

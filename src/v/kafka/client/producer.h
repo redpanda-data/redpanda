@@ -52,6 +52,8 @@ public:
 
 private:
     ss::future<> send(model::topic_partition tp, model::record_batch&& batch);
+    ss::future<> send_partition_agnostic(
+      model::topic_partition tp, model::record_batch batch);
 
     ss::future<produce_response::partition>
     do_send(model::topic_partition tp, model::record_batch batch);
@@ -61,7 +63,11 @@ private:
 
     auto make_consumer(model::topic_partition tp) {
         return [this, tp](model::record_batch&& batch) {
-            (void)send(tp, std::move(batch));
+            if (_config.produce_partition_agnostic_retries() > 0) {
+                (void)send_partition_agnostic(tp, std::move(batch));
+            } else {
+                (void)send(tp, std::move(batch));
+            }
         };
     }
 
