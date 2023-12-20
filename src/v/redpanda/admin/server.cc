@@ -1318,6 +1318,7 @@ void admin_server::register_config_routes() {
     register_route<superuser>(
       ss::httpd::config_json::set_log_level,
       [this](std::unique_ptr<ss::http::request> req) {
+          using namespace std::chrono_literals;
           ss::httpd::config_json::set_log_level_response rsp{};
           ss::sstring name;
           if (!ss::http::internal::url_decode(req->param["name"], name)) {
@@ -1367,25 +1368,60 @@ void admin_server::register_config_routes() {
               }
           }
 
+          // Should we force the supplied expiration over the configured max?
+          auto force = false;
+          if (auto f = req->get_query_param("force"); !f.empty()) {
+              force = str_to_bool(f);
+          }
+
+          auto is_verbose = [](auto new_level) {
+              static std::unordered_set verbose_levels{
+                ss::log_level::debug, ss::log_level::trace};
+              return verbose_levels.contains(new_level);
+          };
+
+          auto clamp_expiry = [&is_verbose](
+                                auto& expires, auto level, auto force) {
+              // if no expiration was given, then use some reasonable
+              // default that will prevent the system from remaining in a
+              // non-optimal state (e.g. trace logging) indefinitely.
+              auto exp = expires.value_or(600s);
+
+              auto verbose = is_verbose(level);
+
+              // subject to a node-config'ed max value, overrideable by
+              // `force` query param
+              auto max_exp
+                = (!verbose || force)
+                    ? std::nullopt
+                    : config::node().verbose_logging_timeout_sec_max();
+
+              // don't allow indefinite trace logging if we have a max
+              // configured
+              if (max_exp.has_value() && exp / 1s == 0) {
+                  return max_exp.value();
+              }
+
+              return std::min(
+                exp, max_exp.value_or(std::chrono::seconds::max()));
+          };
+
+          // Maybe clamp expiration to node config
+          auto expires_v = clamp_expiry(expires, new_level, force);
+
           vlog(
             adminlog.info,
-            "Set log level for {{{}}}: {} -> {}",
+            "Set log level for {{{}}}: {} -> {} (expiring {})",
             name,
             cur_level,
-            new_level);
+            new_level,
+            expires_v / 1s > 0 ? ss::to_sstring(expires_v) : "NEVER");
 
           ss::global_logger_registry().set_logger_level(name, new_level);
 
-          if (!expires) {
-              // if no expiration was given, then use some reasonable default
-              // that will prevent the system from remaining in a non-optimal
-              // state (e.g. trace logging) indefinitely.
-              expires = std::chrono::minutes(10);
-          }
-
           // expires=0 is same as not specifying it at all
-          if (expires->count() > 0) {
-              auto when = ss::timer<>::clock::now() + expires.value();
+          if (expires_v / 1s > 0) {
+              auto when = ss::timer<>::clock::now() + expires_v;
               auto res = _log_level_resets.try_emplace(name, cur_level, when);
               if (!res.second) {
                   res.first->second.expires = when;
@@ -1396,7 +1432,7 @@ void admin_server::register_config_routes() {
               _log_level_resets.try_emplace(name, cur_level, std::nullopt);
           }
 
-          rsp.expiration = expires->count();
+          rsp.expiration = expires_v / 1s;
 
           rearm_log_level_timer();
 
