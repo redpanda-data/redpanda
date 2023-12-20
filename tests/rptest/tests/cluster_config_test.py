@@ -1434,13 +1434,13 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         of setting a property to accept the old name (alias) as well as the new one.
         """
         # Aliases should work when used in bootstrap
-        # NOTE due to https://github.com/redpanda-data/redpanda/issues/13362 this is incomplete (see commented line)
         self.redpanda.set_extra_rp_conf({
             prop_set.aliased_name:
             prop_set.test_values[0],
         })
         self.redpanda.start()
-        # self._check_value_everywhere(prop_set.primary_name, prop_set.values[0])
+        self._check_value_everywhere(prop_set.primary_name,
+                                     prop_set.test_values[0])
 
         # The configuration schema should include aliases
         schema = self.admin.get_cluster_config_schema()['properties']
