@@ -26,6 +26,7 @@ namespace storage {
 
 disk_space_manager::disk_space_manager(
   config::binding<bool> enabled,
+  config::binding<bool> enabled_override,
   config::binding<std::optional<uint64_t>> retention_target_capacity_bytes,
   config::binding<std::optional<double>> retention_target_capacity_pct,
   config::binding<double> disk_reservation_percent,
@@ -35,6 +36,7 @@ disk_space_manager::disk_space_manager(
   ss::sharded<cloud_storage::cache>* cache,
   ss::sharded<cluster::partition_manager>* pm)
   : _enabled(std::move(enabled))
+  , _enabled_override(std::move(enabled_override))
   , _local_monitor(local_monitor)
   , _storage(storage)
   , _storage_node(storage_node)
@@ -51,7 +53,14 @@ disk_space_manager::disk_space_manager(
         vlog(
           rlog.info,
           "{} disk space manager control loop",
-          _enabled() ? "Enabling" : "Disabling");
+          this->enabled() ? "Enabling" : "Disabling");
+        _control_sem.signal();
+    });
+    _enabled_override.watch([this] {
+        vlog(
+          rlog.info,
+          "{} disk space manager control loop",
+          this->enabled() ? "Enabling" : "Disabling");
         _control_sem.signal();
     });
     _retention_target_capacity_bytes.watch([this] { update_target_size(); });
@@ -59,11 +68,13 @@ disk_space_manager::disk_space_manager(
     _disk_reservation_percent.watch([this] { update_target_size(); });
 }
 
+bool disk_space_manager::enabled() { return _enabled() || _enabled_override(); }
+
 ss::future<> disk_space_manager::start() {
     vlog(
       rlog.info,
       "Starting disk space manager service ({})",
-      _enabled() ? "enabled" : "disabled");
+      enabled() ? "enabled" : "disabled");
     if (ss::this_shard_id() == run_loop_core) {
         ssx::spawn_with_gate(_gate, [this] { return run_loop(); });
         _cache_disk_nid = _storage_node->local().register_disk_notification(
@@ -100,7 +111,7 @@ ss::future<> disk_space_manager::run_loop() {
             // time for some controlling
         }
 
-        if (!_enabled()) {
+        if (!enabled()) {
             _local_monitor->local().set_log_data_state(std::nullopt);
             continue;
         }

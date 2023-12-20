@@ -221,6 +221,7 @@ class disk_space_manager {
 public:
     disk_space_manager(
       config::binding<bool> enabled,
+      config::binding<bool> enabled_override,
       config::binding<std::optional<uint64_t>> retention_target_capacity_bytes,
       config::binding<std::optional<double>> retention_target_capacity_percent,
       config::binding<double> disk_reservation_percent,
@@ -236,11 +237,14 @@ public:
     disk_space_manager& operator=(const disk_space_manager&) = delete;
     ~disk_space_manager() = default;
 
+    bool enabled();
+
     ss::future<> start();
     ss::future<> stop();
 
 private:
     config::binding<bool> _enabled;
+    config::binding<bool> _enabled_override;
     ss::sharded<cluster::node::local_monitor>* _local_monitor;
     ss::sharded<storage::api>* _storage;
     ss::sharded<storage::node>* _storage_node;
