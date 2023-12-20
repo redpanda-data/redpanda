@@ -102,4 +102,21 @@ ss::future<> systemd_raw_message(ss::sstring out) {
     co_return;
 }
 
+void directory_must_exist(
+  std::string_view name, const std::filesystem::path& dir) {
+    // check that the data directory exists
+    auto dir_str = dir.string();
+    std::optional<ss::directory_entry_type> data_dir_type
+      = ss::file_type(dir_str).get();
+    auto throw_bad_dir = [=](auto detail) {
+        throw std::invalid_argument(
+          fmt::format("Configured {} {}: {}", name, detail, dir_str));
+    };
+    if (!data_dir_type) {
+        throw_bad_dir("did not exist");
+    } else if (*data_dir_type != ss::directory_entry_type::directory) {
+        throw_bad_dir("is not a directory");
+    }
+}
+
 } // namespace syschecks

@@ -525,6 +525,10 @@ void application::initialize(
     }).get0();
 
     if (config::shard_local_cfg().enable_pid_file()) {
+        // check that the data directory exists now, because we are about to
+        // create the pidfile
+        syschecks::directory_must_exist(
+          "data directory", config::node().data_directory().path);
         syschecks::pidfile_create(config::node().pidfile_path());
     }
     smp_groups::config smp_groups_cfg{

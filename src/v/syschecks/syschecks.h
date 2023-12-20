@@ -64,6 +64,16 @@ ss::future<> systemd_message(fmt::format_string<Args...> fmt, Args&&... args) {
     return systemd_raw_message(std::move(s));
 }
 
+/**
+ * Ensure that the path specified by dir exists and is a directory.
+ *
+ * If it does not exist, throw an std::invalid_argument exception
+ * which embeds details of the failure, using name as a human-readable
+ * name in the error string.
+ */
+void directory_must_exist(
+  std::string_view name, const std::filesystem::path& dir);
+
 /*
  * write the pid lock file for this process at the given path. if the lock file
  * cannot be created or locked an exception is thrown.
