@@ -15,16 +15,51 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
 #include "test_utils/randoms.h"
+#include "test_utils/test_macros.h"
+
+#include <seastar/core/future.hh>
 
 namespace cluster {
 
-class random_tx_generator {
+class tx_executor {
 public:
     constexpr static const auto tx_timeout = std::chrono::milliseconds(
       std::numeric_limits<int32_t>::max());
 
     // Types of tx ops to generate
     enum tx_types { commit_only, abort_only, mixed };
+
+    enum tx_op_type : int {
+        begin,
+        commit,
+        abort,
+        data,
+        roll,
+    };
+
+    struct tx_op_ctx {
+        ss::shared_ptr<linear_int_kv_batch_generator> _data_gen;
+        ss::shared_ptr<rm_stm> _stm;
+        ss::shared_ptr<storage::log> _log;
+        model::producer_identity _pid;
+        model::term_id _term;
+    };
+
+    struct tx_op {
+    public:
+        explicit tx_op(tx_op_ctx&& ctx, int weight)
+          : _ctx(std::move(ctx))
+          , _weight(weight) {}
+        virtual ~tx_op() noexcept = default;
+        virtual ss::future<> execute() = 0;
+        virtual ss::sstring debug() = 0;
+        virtual tx_op_type type() = 0;
+        int weight() const { return _weight; }
+
+    protected:
+        tx_op_ctx _ctx;
+        int _weight;
+    };
 
     struct spec {
         int _num_txes = 5;
@@ -48,7 +83,82 @@ public:
         }
     };
 
-    void run_workload(
+    using tx_op_ptr = ss::shared_ptr<tx_op>;
+    struct tx_op_cmp {
+        bool operator()(tx_op_ptr l, tx_op_ptr r) {
+            return l->weight() > r->weight();
+        }
+    };
+    using sorted_tx_ops_t
+      = std::priority_queue<tx_op_ptr, std::vector<tx_op_ptr>, tx_op_cmp>;
+
+    ss::future<>
+    execute(sorted_tx_ops_t ops, ss::shared_ptr<storage::log> log = nullptr) {
+        auto dummy_as = ss::abort_source{};
+        constexpr auto ret_duration = 10s;
+        auto housekeeping = [&]() {
+            if (!log) {
+                return ss::make_ready_future<>();
+            }
+            return log->apply_segment_ms().then([&] {
+                return log
+                  ->housekeeping(storage::housekeeping_config{
+                    model::timestamp(
+                      model::timestamp::now().value() - ret_duration.count()),
+                    std::nullopt,
+                    log->stm_manager()->max_collectible_offset(),
+                    ss::default_priority_class(),
+                    dummy_as,
+                  })
+                  .handle_exception_type(
+                    [](const storage::segment_closed_exception&) {});
+            });
+        };
+        while (!ops.empty()) {
+            auto housekeeping_fut = housekeeping();
+            auto op = ops.top();
+            co_await op->execute();
+            vlog(clusterlog.info, "Executed op: {}", op->debug());
+            ops.pop();
+            co_await std::move(housekeeping_fut);
+        }
+    }
+
+    ss::future<>
+    validate(ss::shared_ptr<storage::log> log, int expected_fences) {
+        auto lstats = log->offsets();
+        storage::log_reader_config cfg(
+          lstats.start_offset,
+          lstats.committed_offset,
+          ss::default_priority_class());
+        auto reader = co_await log->make_reader(cfg);
+        auto batches = co_await copy_to_mem(reader);
+
+        // 1. There are no aborted keys (tracked in _aborted_xxx)
+        // 2. There are no tx control markers
+        // 3. Only tx control data batches allowed is fence type.
+        int fence_batch_count = 0;
+        for (auto& batch : batches) {
+            auto type = batch.header().type;
+            RPTEST_REQUIRE_NE_CORO(type, model::record_batch_type::tx_prepare);
+            if (batch.header().attrs.is_transactional()) {
+                model::producer_identity pid{
+                  batch.header().producer_id, batch.header().producer_epoch};
+                // no control (commit/abort) batches.
+                RPTEST_REQUIRE_CORO(!batch.header().attrs.is_control());
+                RPTEST_REQUIRE_EQ_CORO(
+                  type, model::record_batch_type::raft_data);
+                RPTEST_REQUIRE_CORO(_committed_pids.contains(pid));
+                RPTEST_REQUIRE_CORO(!_aborted_pids.contains(pid));
+            }
+            if (type == model::record_batch_type::tx_fence) {
+                fence_batch_count++;
+            }
+        }
+        RPTEST_REQUIRE_EQ_CORO(fence_batch_count, expected_fences);
+    }
+
+    void run_random_workload(
       spec s,
       model::term_id term,
       ss::shared_ptr<cluster::rm_stm> stm,
@@ -57,7 +167,7 @@ public:
         // As we generate random txns, we populate them in a priority queue that
         // orders them by their associated weight, which controls the sequence
         // of transactions.
-        std::priority_queue<tx_op_ptr, std::vector<tx_op_ptr>, tx_op_cmp> ops;
+        sorted_tx_ops_t ops;
         int num_ops = 3 * s._num_txes + s._num_rolls;
         auto rand_weight = [num_ops](int prev) {
             return prev + random_generators::get_int(1, num_ops);
@@ -105,140 +215,47 @@ public:
               random_generators::get_int(1, num_ops)}));
         }
 
-        auto dummy_as = ss::abort_source{};
-        constexpr auto ret_duration = 10s;
-        auto housekeeping = [&]() {
-            return log->apply_segment_ms().then([&] {
-                return log
-                  ->housekeeping(storage::housekeeping_config{
-                    model::timestamp(
-                      model::timestamp::now().value() - ret_duration.count()),
-                    std::nullopt,
-                    log->stm_manager()->max_collectible_offset(),
-                    ss::default_priority_class(),
-                    dummy_as,
-                  })
-                  .handle_exception_type(
-                    [](const storage::segment_closed_exception&) {});
-            });
-        };
-
         //----- Step 2: Execute ops
-        while (!ops.empty()) {
-            auto housekeeping_fut = housekeeping();
-            ss::yield().get();
-            auto op = ops.top();
-            op->execute();
-            vlog(clusterlog.info, "Executed op: {}", op->debug());
-            ops.pop();
-            housekeeping_fut.get();
-        }
+        execute(std::move(ops), log).get();
 
         //---- Step 3: Force a roll and compact the log.
         log->flush().get0();
         log->force_roll(ss::default_priority_class()).get0();
-        if (s._compact) {
-            ss::abort_source as{};
-            storage::housekeeping_config ccfg(
-              model::timestamp::min(),
-              std::nullopt,
-              model::offset::max(),
-              ss::default_priority_class(),
-              as);
-            // Compacts until a single sealed segment remains, other than the
-            // currently active one.
-            tests::cooperative_spin_wait_with_timeout(30s, [log, ccfg]() {
-                return log->housekeeping(ccfg).then(
-                  [log]() { return log->segment_count() == 2; });
-            }).get();
+        if (!s._compact) {
+            return;
         }
+        ss::abort_source as{};
+        storage::housekeeping_config ccfg(
+          model::timestamp::min(),
+          std::nullopt,
+          model::offset::max(),
+          ss::default_priority_class(),
+          as);
+        // Compacts until a single sealed segment remains, other than the
+        // currently active one.
+        tests::cooperative_spin_wait_with_timeout(30s, [log, ccfg]() {
+            return log->housekeeping(ccfg).then(
+              [log]() { return log->segment_count() == 2; });
+        }).get();
 
         //--- Step 4: Read the log and validate the batches.
 
         // 1. There are no aborted keys (tracked in _aborted_xxx)
         // 2. There are no tx control markers
         // 3. Only tx control data batches allowed is fence type.
-        auto lstats = log->offsets();
-        storage::log_reader_config cfg(
-          lstats.start_offset,
-          lstats.committed_offset,
-          ss::default_priority_class());
-        auto reader = log->make_reader(cfg).get0();
-        auto batches = copy_to_mem(reader).get0();
-
-        int fence_batch_count = 0;
-        for (auto& batch : batches) {
-            auto type = batch.header().type;
-            BOOST_REQUIRE_NE(type, model::record_batch_type::tx_prepare);
-            if (batch.header().attrs.is_transactional()) {
-                model::producer_identity pid{
-                  batch.header().producer_id, batch.header().producer_epoch};
-                // no control (commit/abort) batches.
-                BOOST_REQUIRE(!batch.header().attrs.is_control());
-                BOOST_REQUIRE_EQUAL(type, model::record_batch_type::raft_data);
-                BOOST_REQUIRE(_committed_pids.contains(pid));
-                BOOST_REQUIRE(!_aborted_pids.contains(pid));
-            }
-            if (type == model::record_batch_type::tx_fence) {
-                fence_batch_count++;
-            }
-        }
-        BOOST_REQUIRE_EQUAL(fence_batch_count, s._num_txes);
+        validate(log, s._num_txes).get();
     }
 
-private:
-    enum tx_op_type : int {
-        begin,
-        commit,
-        abort,
-        data,
-        roll,
-    };
-
-    struct tx_op_ctx {
-        ss::shared_ptr<linear_int_kv_batch_generator> _data_gen;
-        ss::shared_ptr<rm_stm> _stm;
-        ss::shared_ptr<storage::log> _log;
-        model::producer_identity _pid;
-        model::term_id _term;
-    };
-
-    struct tx_op {
-    public:
-        explicit tx_op(tx_op_ctx&& ctx, int weight)
-          : _ctx(std::move(ctx))
-          , _weight(weight) {}
-        virtual ~tx_op() noexcept = default;
-        virtual void execute() = 0;
-        virtual ss::sstring debug() = 0;
-        virtual tx_op_type type() = 0;
-        int weight() const { return _weight; }
-
-    protected:
-        tx_op_ctx _ctx;
-        int _weight;
-    };
-
-    using tx_op_ptr = ss::shared_ptr<tx_op>;
-    struct tx_op_cmp {
-        bool operator()(tx_op_ptr l, tx_op_ptr r) {
-            return l->weight() > r->weight();
-        }
-    };
+    auto& data_gen() { return _data_gen; }
 
     struct begin_op final : tx_op {
     public:
         explicit begin_op(tx_op_ctx&& ctx, int weight)
           : tx_op(std::move(ctx), weight) {}
 
-        void execute() override {
-            BOOST_REQUIRE(_ctx._stm
-                            ->begin_tx(
-                              _ctx._pid,
-                              model::tx_seq{0},
-                              tx_timeout,
-                              model::partition_id(0))
-                            .get0());
+        ss::future<> execute() override {
+            RPTEST_REQUIRE_CORO(co_await _ctx._stm->begin_tx(
+              _ctx._pid, model::tx_seq{0}, tx_timeout, model::partition_id(0)));
         }
 
         tx_op_type type() override { return tx_op_type::begin; }
@@ -252,10 +269,10 @@ private:
         explicit commit_op(tx_op_ctx&& ctx, int weight)
           : tx_op(std::move(ctx), weight) {}
 
-        void execute() override {
-            BOOST_REQUIRE_EQUAL(
-              _ctx._stm->commit_tx(_ctx._pid, model::tx_seq{0}, tx_timeout)
-                .get0(),
+        ss::future<> execute() override {
+            RPTEST_REQUIRE_EQ_CORO(
+              co_await _ctx._stm->commit_tx(
+                _ctx._pid, model::tx_seq{0}, tx_timeout),
               cluster::tx_errc::none);
         }
         tx_op_type type() override { return tx_op_type::commit; }
@@ -268,10 +285,10 @@ private:
     public:
         explicit abort_op(tx_op_ctx&& ctx, int weight)
           : tx_op(std::move(ctx), weight) {}
-        void execute() override {
-            BOOST_REQUIRE_EQUAL(
-              _ctx._stm->abort_tx(_ctx._pid, model::tx_seq{0}, tx_timeout)
-                .get0(),
+        ss::future<> execute() override {
+            RPTEST_REQUIRE_EQ_CORO(
+              co_await _ctx._stm->abort_tx(
+                _ctx._pid, model::tx_seq{0}, tx_timeout),
               cluster::tx_errc::none);
         }
         tx_op_type type() override { return tx_op_type::abort; }
@@ -282,18 +299,19 @@ private:
 
     struct data_op final : tx_op {
     public:
-        explicit data_op(tx_op_ctx&& ctx, int weight)
-          : tx_op(std::move(ctx), weight) {}
+        explicit data_op(tx_op_ctx&& ctx, int weight, int records = 5)
+          : tx_op(std::move(ctx), weight)
+          , _num_records(records) {}
 
-        void execute() override {
+        ss::future<> execute() override {
             model::test::record_batch_spec spec;
             spec.producer_id = _ctx._pid.id;
             spec.producer_epoch = _ctx._pid.epoch;
             spec.is_transactional = true;
-            spec.count = 5;
+            spec.count = _num_records;
             auto batches = _ctx._data_gen->operator()(spec, 1);
             _data_idx = _ctx._data_gen->_idx - 1;
-            BOOST_REQUIRE_EQUAL(batches.size(), 1);
+            RPTEST_REQUIRE_EQ_CORO(batches.size(), 1);
             model::batch_identity bid{
               .pid = _ctx._pid,
               .first_seq = 0,
@@ -302,17 +320,14 @@ private:
               .is_transactional = true};
             auto reader = model::make_memory_record_batch_reader(
               std::move(batches[0]));
-            auto result = _ctx._stm
-                            ->replicate(
-                              bid,
-                              std::move(reader),
-                              raft::replicate_options(
-                                raft::consistency_level::quorum_ack))
-                            .get0();
+            auto result = co_await _ctx._stm->replicate(
+              bid,
+              std::move(reader),
+              raft::replicate_options(raft::consistency_level::quorum_ack));
             if (!result.has_value()) {
                 vlog(clusterlog.error, "Error {}", result.error());
             }
-            BOOST_REQUIRE((bool)result);
+            RPTEST_REQUIRE_EQ_CORO((bool)result, true);
         }
 
         tx_op_type type() override { return tx_op_type::data; }
@@ -321,6 +336,7 @@ private:
         }
 
     private:
+        int _num_records;
         int _data_idx{};
     };
 
@@ -328,13 +344,14 @@ private:
     public:
         explicit roll_op(tx_op_ctx&& ctx, int weight)
           : tx_op(std::move(ctx), weight) {}
-        void execute() override {
-            _ctx._log->force_roll(ss::default_priority_class()).get0();
+        ss::future<> execute() override {
+            co_await _ctx._log->force_roll(ss::default_priority_class());
         }
         tx_op_type type() override { return tx_op_type::roll; }
         ss::sstring debug() override { return "roll log"; }
     };
 
+private:
     ss::future<ss::circular_buffer<model::record_batch>>
     copy_to_mem(model::record_batch_reader& reader) {
         using data_t = ss::circular_buffer<model::record_batch>;
