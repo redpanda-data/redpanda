@@ -28,17 +28,21 @@
 #include <vector>
 using namespace std::chrono_literals; // NOLINT
 
+static ss::logger test_logger("test-logger");
 std::vector<model::node_id>
 wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
     std::vector<model::node_id> leaders;
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
-      [&cache, &leaders] {
+      [&cache, &leaders, id] {
           leaders.clear();
           const model::topic_namespace tn(
             model::ns("default"), model::topic("test_1"));
           auto tp_md = cache.get_topic_metadata(tn);
-
+          test_logger.info(
+            "waiting for leaders on node {}, current topic metadata: {}",
+            id,
+            tp_md.has_value());
           if (!tp_md) {
               return false;
           }
@@ -47,6 +51,11 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
           }
           for (auto& p_md : tp_md->get_assignments()) {
               auto leader_id = cache.get_leader_id(tn, p_md.id);
+              test_logger.info(
+                "waiting for leaders on node {}, partition {}, leader_id: {}",
+                id,
+                p_md.id,
+                leader_id);
               if (!leader_id) {
                   return false;
               }
