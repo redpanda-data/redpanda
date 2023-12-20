@@ -592,11 +592,18 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # Don't modify oidc_principal mapping, the value is complex and tested elsewhere.
         exclude_settings.add('oidc_principal_mapping')
 
+        # List of settings that must be odd
+        odd_settings = [
+            'default_topic_replications', 'minimum_topic_replications'
+        ]
+
         initial_config = self.admin.get_cluster_config()
 
         for name, p in schema_properties.items():
             if name in exclude_settings:
                 continue
+
+            must_be_odd = name in odd_settings
 
             properties_require_restart |= p['needs_restart']
 
@@ -607,9 +614,15 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                     valid_value = yaml.full_load(valid_value)
             elif p['type'] == 'integer':
                 if initial_value:
-                    valid_value = initial_value * 2
+                    if must_be_odd:
+                        valid_value = initial_value * 3
+                    else:
+                        valid_value = initial_value * 2
                 else:
-                    valid_value = 100
+                    if must_be_odd:
+                        valid_value = 101
+                    else:
+                        valid_value = 100
             elif p['type'] == 'number':
                 if initial_value:
                     valid_value = float(initial_value * 2)
