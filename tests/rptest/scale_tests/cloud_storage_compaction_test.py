@@ -208,3 +208,20 @@ class CloudStorageCompactionTest(EndToEndTest):
         assert download_sucess > 0
         assert download_sucess <= upload_sucess, \
             f"Downloaded {download_sucess}, uploaded {upload_sucess}"
+
+        # read replica success and failures
+        rr_upload_successes = sum([
+            sample.value for sample in self.redpanda.metrics_sample(
+                "cloud_storage_successful_uploads",
+                metrics_endpoint=MetricsEndpoint.METRICS).samples
+        ])
+        rr_upload_failures = sum([
+            sample.value for sample in self.redpanda.metrics_sample(
+                "cloud_storage_failed_uploads",
+                metrics_endpoint=MetricsEndpoint.METRICS).samples
+        ])
+
+        # the read replica cluster should not be doing any uploads
+        assert (
+            rr_upload_successes + rr_upload_failures
+        ) == 0, f"Read replica cluster upload successes {rr_upload_successes} failures {rr_upload_failures}"
