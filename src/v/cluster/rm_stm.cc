@@ -344,8 +344,16 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
 }
 
 void rm_stm::cleanup_producer_state(model::producer_identity pid) {
+    // If this lock is not being held in the map, then we can clean it up.
+    // Otherwise assume a later epoch of the same producer is using the lock.
+    auto lock_it = _tx_locks.find(pid.get_id());
+    if (lock_it != _tx_locks.end() && lock_it->second->ready()) {
+        lock_it->second->broken();
+        _tx_locks.erase(lock_it);
+    }
+
     if (!_log_state.current_txes.contains(pid)) {
-        // No active transactions for this producer.`
+        // No active transactions for this producer.
         // note: this branch can be removed once we port tx state
         // into producer_state.
         _mem_state.forget(pid);
