@@ -180,6 +180,16 @@ node_config::node_config() noexcept
       "injection",
       {.visibility = visibility::tunable},
       std::nullopt)
+  , verbose_logging_timeout_sec_max(
+      *this,
+      "verbose_logging_timeout_sec_max",
+      "Maximum duration in seconds for verbose (i.e. TRACE or DEBUG) logging. "
+      "Values configured above this will be clamped. If null (the default) "
+      "there is no limit. Can be overridded in the Admin API on a per-request "
+      "basis.",
+      {.visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1s})
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
