@@ -387,7 +387,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                 'cloud_storage_idle_timeout_ms': 3000,
                 'cloud_storage_housekeeping_interval_ms':
                 self.housekeeping_interval_ms,
-                "cloud_storage_topic_purge_grace_period_ms": 5
+                "cloud_storage_topic_purge_grace_period_ms": 5000
             },
             si_settings=self.si_settings)
 
