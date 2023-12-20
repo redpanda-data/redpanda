@@ -634,6 +634,9 @@ class SISettings:
             conf[
                 'cloud_storage_max_throughput_per_shard'] = self.cloud_storage_max_throughput_per_shard
 
+        # Always run with scrubbing in testing.
+        conf['cloud_storage_enable_scrubbing'] = True
+
         return conf
 
     def set_expected_damage(self, damage_types: set[str]):
@@ -3190,6 +3193,11 @@ class RedpandaService(RedpandaServiceBase):
                     self._extra_rp_conf))
             conf.update(self._extra_rp_conf)
 
+        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (23, 3, 1):
+            # this configuration property was introduced in 23.3, ensure
+            # it doesn't appear in older configurations
+            conf.pop('cloud_storage_enable_scrubbing', None)
+
         if cur_ver != RedpandaInstaller.HEAD and cur_ver < (23, 2, 1):
             # this configuration property was introduced in 23.2, ensure
             # it doesn't appear in older configurations
@@ -4016,6 +4024,8 @@ class RedpandaService(RedpandaServiceBase):
             return None
 
         self.set_cluster_config({
+            "cloud_storage_enable_scrubbing":
+            True,
             "cloud_storage_partial_scrub_interval_ms":
             100,
             "cloud_storage_full_scrub_interval_ms":
