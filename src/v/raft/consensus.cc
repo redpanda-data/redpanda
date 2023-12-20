@@ -2099,7 +2099,6 @@ consensus::do_append_entries(append_entries_request&& r) {
              std::move(r).release_batches(), update_last_quorum_index::no)
       .then([this, m = request_metadata, target = reply.target_node_id](
               offsets_ret ofs) {
-          auto f = ss::make_ready_future<>();
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
           maybe_update_last_visible_index(last_visible);
           _last_leader_visible_offset = std::max(
