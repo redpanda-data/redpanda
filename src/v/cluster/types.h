@@ -1851,13 +1851,6 @@ struct topic_configuration
         }
     }
 
-    static void maybe_adjust_retention_policies(
-      std::optional<model::shadow_indexing_mode>,
-      tristate<std::size_t>&,
-      tristate<std::chrono::milliseconds>&,
-      tristate<std::size_t>&,
-      tristate<std::chrono::milliseconds>&);
-
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 
     friend bool

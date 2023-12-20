@@ -24,6 +24,7 @@
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
+#include <fmt/ranges.h>
 
 #include <chrono>
 #include <limits>
@@ -204,12 +205,8 @@ SEASTAR_THREAD_TEST_CASE(min_config_update_all_fields_correct) {
     BOOST_REQUIRE(!topic_config.properties.compaction_strategy);
     BOOST_REQUIRE(!topic_config.properties.timestamp_type);
     BOOST_REQUIRE(!topic_config.properties.segment_size);
-    BOOST_REQUIRE(
-      !topic_config.properties.retention_bytes.is_disabled()
-      && !topic_config.properties.retention_bytes.has_optional_value());
-    BOOST_REQUIRE(
-      !topic_config.properties.retention_duration.is_disabled()
-      && !topic_config.properties.retention_duration.has_optional_value());
+    BOOST_REQUIRE(topic_config.properties.retention_bytes.is_disabled());
+    BOOST_REQUIRE(topic_config.properties.retention_duration.is_disabled());
 }
 
 SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
@@ -369,4 +366,37 @@ SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
     // The usigned types that were passed in negative values shouldn't be set.
     BOOST_REQUIRE(tp_props.retention_bytes.is_disabled());
     BOOST_REQUIRE(!tp_props.segment_size.has_value());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
+    // see issues/14325
+
+    // check that serialization/deserialization of disabled tristate for
+    // retention_bytes and retention_duration works as expected
+
+    auto test_cfg = cfg;
+    test_cfg.properties.retention_bytes = tristate<size_t>{disable_tristate};
+    test_cfg.properties.retention_duration
+      = tristate<std::chrono::milliseconds>{disable_tristate};
+    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}};
+
+    auto serialized = m.serialize().get().stream;
+    auto buf = iobuf{};
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(serialized, os).get();
+
+    auto reconstructed = topic_manifest{};
+    reconstructed.update(make_iobuf_input_stream(std::move(buf))).get();
+
+    BOOST_REQUIRE(reconstructed.get_topic_config());
+    auto reconstructed_props
+      = reconstructed.get_topic_config().value().properties;
+    BOOST_CHECK_MESSAGE(
+      test_cfg.properties == reconstructed_props,
+      fmt::format(
+        "test_cfg: {} reconstructed_cfg: {}",
+        reflection::to_tuple(test_cfg.properties),
+        reflection::to_tuple(reconstructed_props)));
+
+    BOOST_CHECK(test_cfg == reconstructed.get_topic_config());
 }
