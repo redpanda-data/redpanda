@@ -1396,22 +1396,32 @@ PropertyAliasData:
     aliased_name: str  # this is the legacy name, retained as an alias for backward compat
     redpanda_version: RedpandaVersionLine  # this is the first version to use primary_name
     test_values: list[Any, Any, Any]  # values for this property to run the tests
+    expect_restart: bool # setting property will ask for a restart
 """
-PropertyAliasData = namedtuple(
-    "PropertyAliasData",
-    ["primary_name", "aliased_name", "redpanda_version", "test_values"])
+PropertyAliasData = namedtuple("PropertyAliasData", [
+    "primary_name", "aliased_name", "redpanda_version", "test_values",
+    "expect_restart"
+])
 
 cloud_storage_graceful_transfer_timeout = PropertyAliasData(
     primary_name="cloud_storage_graceful_transfer_timeout_ms",
     aliased_name="cloud_storage_graceful_transfer_timeout",
     redpanda_version=(23, 2),
-    test_values=(1234, 1235, 1236))
+    test_values=(1234, 1235, 1236),
+    expect_restart=False)
 log_retention_ms = PropertyAliasData(primary_name="log_retention_ms",
                                      aliased_name="delete_retention_ms",
                                      redpanda_version=(23, 3),
-                                     test_values=(1000000, 300000, 500000))
+                                     test_values=(1000000, 300000, 500000),
+                                     expect_restart=False)
 # NOTE due to https://github.com/redpanda-data/redpanda/issues/13432 ,
 # test_values can't be -1 (a valid value nonetheless to signal infinite value)
+data_transforms_per_core_memory_reservation = PropertyAliasData(
+    primary_name="data_transforms_per_core_memory_reservation",
+    aliased_name="wasm_per_core_memory_reservation",
+    redpanda_version=(23, 3),
+    test_values=(27000000, 37000000, 47000000),
+    expect_restart=True)
 
 
 class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
@@ -1426,8 +1436,10 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         pass  # Will start cluster in test
 
     @cluster(num_nodes=3)
-    @matrix(
-        prop_set=[cloud_storage_graceful_transfer_timeout, log_retention_ms])
+    @matrix(prop_set=[
+        cloud_storage_graceful_transfer_timeout, log_retention_ms,
+        data_transforms_per_core_memory_reservation
+    ])
     def test_aliasing(self, prop_set: PropertyAliasData):
         """
         Validate that configuration property aliases enable the various means
@@ -1456,7 +1468,8 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
 
         # Aliases should work when used in API POST
         self.redpanda.set_cluster_config(
-            {prop_set.aliased_name: prop_set.test_values[1]})
+            {prop_set.aliased_name: prop_set.test_values[1]},
+            expect_restart=prop_set.expect_restart)
         self._check_value_everywhere(prop_set.primary_name,
                                      prop_set.test_values[1])
 
@@ -1468,8 +1481,9 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         # The rpk CLI should also accept aliased names
         self.rpk.cluster_config_set(prop_set.aliased_name,
                                     prop_set.test_values[2])
-        self._check_value_everywhere(prop_set.primary_name,
-                                     prop_set.test_values[2])
+        # perform a restart to satisfy need_restart::yes properties
+        self._check_propagated_and_persistent(prop_set.primary_name,
+                                              prop_set.test_values[2])
 
     @cluster(num_nodes=3)
     @matrix(
