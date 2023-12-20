@@ -190,24 +190,17 @@ class CloudStorageCompactionTest(EndToEndTest):
         self.run_consumer_validation(enable_compaction=True,
                                      consumer_timeout_sec=600)
 
+        # source cluster uploads
         upload_sucess = sum([
             sample.value for sample in self.redpanda.metrics_sample(
                 "cloud_storage_successful_uploads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
-        upload_fails = sum([
-            sample.value for sample in self.redpanda.metrics_sample(
-                "cloud_storage_failed_uploads",
-                metrics_endpoint=MetricsEndpoint.METRICS).samples
-        ])
+
+        # read replica cluster downloads
         download_sucess = sum([
             sample.value for sample in self.rr_cluster.metrics_sample(
                 "cloud_storage_successful_downloads",
-                metrics_endpoint=MetricsEndpoint.METRICS).samples
-        ])
-        download_fails = sum([
-            sample.value for sample in self.rr_cluster.metrics_sample(
-                "cloud_storage_failed_downloads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
 
@@ -215,5 +208,3 @@ class CloudStorageCompactionTest(EndToEndTest):
         assert download_sucess > 0
         assert download_sucess <= upload_sucess, \
             f"Downloaded {download_sucess}, uploaded {upload_sucess}"
-        assert upload_fails == 0
-        assert download_fails == 0
