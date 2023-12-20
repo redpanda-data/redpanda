@@ -273,7 +273,7 @@ class AuditLogTestSecurityConfig(SecurityConfig):
 
 class AuditLogTestBase(RedpandaTest):
     """Base test object for testing the audit logs"""
-    audit_log = "__audit_log"
+    audit_log = "_redpanda.audit_log"
     kafka_rpc_service_name = "kafka rpc protocol"
     admin_audit_svc_name = "Redpanda Admin HTTP Server"
     sr_audit_svc_name = "Redpanda Schema Registry Service"
@@ -758,7 +758,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
     @cluster(num_nodes=4)
     def test_config_rejected(self):
         """
-        Ensures that attempting to add __audit_log to excluded topics will be
+        Ensures that attempting to add _redpanda.audit_log to excluded topics will be
         rejected
         """
         # Should pass
@@ -1489,10 +1489,10 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
                 assert r[
                     'class_uid'] == 6003, f'Should not see any ignored users in class {r["class_uid"]}'
                 assert {
-                    "name": "__audit_log",
+                    "name": self.audit_log,
                     "type": "topic"
                 } in r[
-                    'resources'], 'Did not find __audit_log topic in resources'
+                    'resources'], f'Did not find {self.audit_log} topic in resources'
         except TimeoutError:
             pass
 

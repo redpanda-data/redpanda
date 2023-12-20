@@ -14,6 +14,7 @@
 #include "config/node_config.h"
 #include "config/validators.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
@@ -1237,7 +1238,7 @@ configuration::configuration()
       "kafka_nodelete_topics",
       "Prevents the topics in the list from being deleted via the kafka api",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      {"__audit_log", "__consumer_offsets", "_schemas"},
+      {model::kafka_audit_logging_topic(), "__consumer_offsets", "_schemas"},
       &validate_non_empty_string_vec)
   , kafka_noproduce_topics(
       *this,
