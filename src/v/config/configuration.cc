@@ -1729,7 +1729,7 @@ configuration::configuration()
       "Enable scrubbing of cloud storage partitions. The scrubber validates "
       "the integrity of data and metadata uploaded to cloud storage",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      true)
+      false)
   , cloud_storage_partial_scrub_interval_ms(
       *this,
       "cloud_storage_partial_scrub_interval_ms",
