@@ -634,6 +634,9 @@ class SISettings:
             conf[
                 'cloud_storage_max_throughput_per_shard'] = self.cloud_storage_max_throughput_per_shard
 
+        # Always run with scrubbing in testing.
+        conf['cloud_storage_enable_scrubbing'] = True
+
         return conf
 
     def set_expected_damage(self, damage_types: set[str]):
