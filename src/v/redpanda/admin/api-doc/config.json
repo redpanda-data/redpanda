@@ -103,6 +103,13 @@
             "required": false,
             "allowMultiple": false,
             "type": "long"
+        },
+        {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "allowMultiple": false,
+            "type": "boolean"
         }
     ],
     "responses": {
