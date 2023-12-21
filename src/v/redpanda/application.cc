@@ -673,6 +673,20 @@ void application::hydrate_config(const po::variables_map& cfg) {
     if (node_config_errors.size() > 0) {
         throw std::invalid_argument("Validation errors in node config");
     }
+    /// Special case scenario with Rack ID being set to ''
+    /// Redpanda supplied ansible scripts are setting "rack: ''" which has
+    /// caused issues with some of our customers.  This hacky work around is an
+    /// alternative to using validation in node config to stop Redpanda from
+    /// starting if rack is supplied with an empty string.
+    auto& rack_id = config::node().rack.value();
+    if (rack_id.has_value() && *rack_id == model::rack_id{""}) {
+        vlog(
+          _log.warn,
+          "redpanda.rack specified as empty string.  Please remove "
+          "`redpanda.rack = ''` from your node config as in the future this "
+          "may result in Redpanda failing to start");
+        config::node().rack.set_value(std::nullopt);
+    }
 
     // This includes loading from local bootstrap file or legacy
     // config file on first-start or upgrade cases.
