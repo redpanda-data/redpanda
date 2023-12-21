@@ -183,9 +183,6 @@ private:
 ///   remote api is not active for cloud_storage_idle_timeout_ms milliseconds.
 /// - cloud_storage_housekeeping_interval_ms: epoch timeout. The service goes
 ///   active state forcibly, even if remote api is not idle.
-/// - cloud_storage_segment_upload_timeout x 3: if service is stopping being
-///   active for longer than 3x segment upload timeout the state is stopped
-///   forcibly and the error is generated.
 class upload_housekeeping_service {
 public:
     explicit upload_housekeeping_service(
