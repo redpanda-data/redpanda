@@ -226,6 +226,9 @@ class UpgradeBackToBackTest(PreallocNodesTest):
                 # First version, start up the workload
                 self._producer.start(clean=False)
                 self._producer.wait_for_offset_map()
+                self._producer.wait_for_acks(100,
+                                             timeout_sec=10,
+                                             backoff_sec=2)
                 wrote_at_least = self._producer.produce_status.acked
                 for consumer in self._consumers:
                     consumer.start(clean=False)
