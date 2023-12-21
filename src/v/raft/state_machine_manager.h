@@ -20,21 +20,27 @@
 #include "serde/envelope.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
+#include "utils/absl_sstring_hash.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sstring.hh>
 
 #include <absl/container/flat_hash_map.h>
 
 #include <concepts>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace raft {
 
 template<typename T>
-concept ManagableStateMachine = std::derived_from<T, state_machine_base>;
+concept ManagableStateMachine = requires(T stm) {
+    std::derived_from<T, state_machine_base>;
+    { T::name } -> std::convertible_to<std::string_view>;
+};
 template<typename Func>
 concept StateMachineIterateFunc = requires(
   Func f, const ss::sstring& name, const state_machine_base& stm) {
@@ -86,10 +92,15 @@ public:
 
 private:
     using stm_ptr = ss::shared_ptr<state_machine_base>;
+    struct named_stm {
+        named_stm(ss::sstring, stm_ptr);
+        ss::sstring name;
+        stm_ptr stm;
+    };
 
     state_machine_manager(
       consensus* raft,
-      std::vector<stm_ptr> stms_to_manage,
+      std::vector<named_stm> stms_to_manage,
       ss::scheduling_group apply_sg);
 
     friend class batch_applicator;
@@ -98,8 +109,10 @@ private:
     static constexpr const char* background_ctx = "background";
 
     struct state_machine_entry {
-        explicit state_machine_entry(ss::shared_ptr<state_machine_base> stm)
-          : stm(std::move(stm)) {}
+        explicit state_machine_entry(
+          ss::sstring name, ss::shared_ptr<state_machine_base> stm)
+          : name(std::move(name))
+          , stm(std::move(stm)) {}
         state_machine_entry(state_machine_entry&&) noexcept = default;
         state_machine_entry(const state_machine_entry&) noexcept = delete;
         state_machine_entry& operator=(state_machine_entry&&) noexcept = delete;
@@ -107,11 +120,13 @@ private:
           = delete;
         ~state_machine_entry() = default;
 
+        ss::sstring name;
         ss::shared_ptr<state_machine_base> stm;
         mutex background_apply_mutex;
     };
     using entry_ptr = ss::lw_shared_ptr<state_machine_entry>;
-    using state_machines_t = absl::flat_hash_map<ss::sstring, entry_ptr>;
+    using state_machines_t
+      = absl::flat_hash_map<ss::sstring, entry_ptr, sstring_hash, sstring_eq>;
 
     void maybe_start_background_apply(const entry_ptr&);
     ss::future<> background_apply_fiber(entry_ptr, ssx::semaphore_units);
@@ -158,7 +173,7 @@ public:
     template<ManagableStateMachine T, typename... Args>
     ss::shared_ptr<T> create_stm(Args&&... args) {
         auto machine = ss::make_shared<T>(std::forward<Args>(args)...);
-        _stms.push_back(machine);
+        _stms.emplace_back(ss::sstring(T::name), machine);
 
         return machine;
     }
@@ -170,7 +185,7 @@ public:
     }
 
 private:
-    std::vector<state_machine_manager::stm_ptr> _stms;
+    std::vector<state_machine_manager::named_stm> _stms;
     ss::scheduling_group _sg = ss::default_scheduling_group();
 };
 

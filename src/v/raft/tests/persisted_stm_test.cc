@@ -123,11 +123,10 @@ struct kv_state
 
 class persisted_kv : public persisted_stm<> {
 public:
+    static constexpr std::string_view name = "persited_kv_stm";
     explicit persisted_kv(raft_node_instance& rn)
       : persisted_stm<>("simple-kv", logger, rn.raft().get())
       , raft_node(rn) {}
-
-    std::string_view get_name() const final { return "persisted_kv"; };
 
     ss::future<> start() override { return persisted_stm<>::start(); }
     ss::future<> stop() override { return persisted_stm<>::stop(); }
