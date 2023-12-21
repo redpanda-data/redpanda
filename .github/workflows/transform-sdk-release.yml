@@ -18,7 +18,6 @@ jobs:
     name: List Golang Transform SDK
     runs-on: ubuntu-latest
     permissions:
-      metadata: read
       contents: write
     steps:
       - name: Check out code
