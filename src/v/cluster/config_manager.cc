@@ -345,8 +345,8 @@ static void preload_local(
   std::optional<std::reference_wrapper<config_manager::preload_result>>
     result) {
     auto& cfg = config::shard_local_cfg();
-    auto& property = cfg.get(key);
     if (cfg.contains(key)) {
+        auto& property = cfg.get(key);
         std::string raw_value;
         try {
             raw_value = value.as<std::string>();
