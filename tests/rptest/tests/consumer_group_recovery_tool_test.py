@@ -38,7 +38,8 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
                 # clear topics from the the kafka_nodelete_topics to allow for
                 # __consumer_offsets to be configured in this test.
                 "kafka_nodelete_topics": [],
-                "group_topic_partitions": self.initial_partition_count
+                "group_topic_partitions": self.initial_partition_count,
+                "enable_leader_balancer": False,
             },
             node_prealloc_count=1,
             **kwargs)
