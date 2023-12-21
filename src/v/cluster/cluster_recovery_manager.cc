@@ -88,6 +88,9 @@ cluster_recovery_manager::initialize_recovery(
     if (!_remote.local_is_initialized()) {
         co_return cluster::errc::invalid_request;
     }
+    if (config::node().recovery_mode_enabled()) {
+        co_return cluster::errc::feature_disabled;
+    }
     auto synced_term = co_await sync_leader(_sharded_as.local());
     if (!synced_term.has_value()) {
         co_return cluster::errc::not_leader_controller;
