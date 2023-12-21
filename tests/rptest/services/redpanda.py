@@ -87,6 +87,8 @@ DEFAULT_LOG_ALLOW_LIST = [
     re.compile("not on XFS. This is a non-supported setup."),
     # >= 23.2 version of the message
     re.compile("not on XFS or ext4. This is a non-supported"),
+    # >= 23.2.22, 23.3 version of the message
+    re.compile("not XFS or ext4. This is a unsupported"),
 
     # This is expected when tests are intentionally run on low memory configurations
     re.compile(r"Memory: '\d+' below recommended"),
