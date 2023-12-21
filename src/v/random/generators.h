@@ -71,6 +71,12 @@ T get_int(T min, T max) {
     return dist(internal::gen);
 }
 
+inline bool with_probability(float p) {
+    std::uniform_real_distribution<float> dist(0, 1.0);
+    float e = dist(internal::gen);
+    return e <= p;
+}
+
 template<typename T>
 T get_int(T max) {
     return get_int<T>(0, max);
