@@ -28,6 +28,8 @@
 #include <iterator>
 #include <limits>
 #include <ranges>
+#include <stdexcept>
+#include <utility>
 
 using namespace cloud_storage;
 static ss::logger test("test-logger-s");
@@ -1341,4 +1343,552 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_retrieve_edge_case) {
     auto last_frame_first_offset
       = metadata[cloud_storage::cstore_max_frame_size * 2].base_offset;
     BOOST_CHECK_NO_THROW(store.lower_bound(last_frame_first_offset));
+}
+
+class segment_meta_random_walk {
+    static constexpr int64_t ts_start = 1700000000000;
+
+public:
+    segment_meta_random_walk(
+      bool add_reuploads,
+      bool add_reorderings,
+      bool add_gaps,
+      bool add_overlaps,
+      bool add_empty)
+      : _add_reuploads(add_reuploads)
+      , _add_reorderings(add_reorderings)
+      , _add_gaps(add_gaps)
+      , _add_overlaps(add_overlaps)
+      , _add_empty(add_empty) {}
+
+    /// Returns truncate-offset, expected-start-offset
+    /// Offsets might be different in case of out of order
+    /// truncations.
+    std::pair<model::offset, model::offset> maybe_truncate() {
+        if (
+          !_ooo_write.empty() ||
+          // The probability of the truncation has to be relatively low so the
+          // size of the cstore would grow to multiple frames
+          model::test::with_probability(0.999) || _segments.empty()) {
+            return std::make_pair(model::offset{}, model::offset{});
+        }
+        auto s = _segments.size();
+        auto max_index = static_cast<int>(s / 2);
+        auto ix = model::test::get_int(0, max_index);
+        if (ix == 0) {
+            return std::make_pair(model::offset{}, model::offset{});
+        }
+        auto it = _segments.begin();
+        // Generate reordered truncate
+        if (
+          _add_reorderings && it->first() > 0
+          && model::test::with_probability(0.2)) {
+            return std::make_pair(model::offset{}, it->first);
+        }
+        std::advance(it, ix);
+        auto new_so = it->first;
+        vlog(
+          test.info,
+          "Truncating first {} segments out of {}, new start offset = {}",
+          ix,
+          s,
+          new_so);
+        _segments.erase(_segments.begin(), it);
+        if (_segments.empty()) {
+            vlog(test.info, "All segments removed");
+        } else {
+            vlog(test.info, "New start offset = {}", _segments.begin()->first);
+        }
+        _num_truncations++;
+        return std::make_pair(new_so, new_so);
+    }
+
+    enum class op_type {
+        append,
+        prepend,
+        replace,
+    };
+
+    /// Produce next random segment in the run
+    ///
+    /// \return generated segment meta and the flag that indicates that the
+    ///         segment replaces existing segments or is added to the end.
+    std::pair<segment_meta, op_type> next_segment() {
+        if (!_ooo_write.empty()) {
+            auto m = _ooo_write.back();
+            _ooo_write.pop_back();
+            vlog(test.info, "Delayed write {}", m);
+            _segments.insert(std::make_pair(m.base_offset, m));
+            return std::make_pair(m, op_type::replace);
+        }
+        constexpr int max_rec_per_segment = 200;
+        constexpr int max_segment_size = 100000;
+        constexpr int max_timestamp_delta = 100000;
+        constexpr float small_probability = 0.05;
+        constexpr float large_probability = 0.25;
+        auto n_rec = model::test::get_int(
+          _add_empty ? 0 : 1, max_rec_per_segment);
+        auto n_conf = model::test::get_int(0, n_rec);
+        auto s_size = model::test::get_int(0, max_segment_size);
+        auto ts_delta = model::test::get_int(0, max_timestamp_delta);
+
+        // Generate append
+        if (_segments.empty()) {
+            // Add first segment
+            auto ts_init = model::test::get_int(0, max_timestamp_delta);
+            auto append = make_segment(
+              0,
+              n_rec,
+              0,
+              n_conf,
+              ts_start + ts_init,
+              ts_start + ts_init + ts_delta,
+              0,
+              0,
+              s_size);
+            _segments.insert(std::make_pair(append.base_offset, append));
+            return std::make_pair(append, op_type::append);
+        }
+        if (
+          _add_reuploads && model::test::with_probability(large_probability)) {
+            if (
+              _num_truncations > 0 && _segments.size() > 0
+              && model::test::with_probability(0.1)) {
+                // Generate reordering between the truncation and segment
+                // append.
+                auto prepend = _segments.begin()->second;
+                // The segment content doesn't matter in this case.
+                // Collapse first segment into one batch and move it one offset
+                // back.
+                prepend.base_offset = model::prev_offset(prepend.base_offset);
+                prepend.committed_offset = model::prev_offset(
+                  prepend.base_offset);
+                prepend.delta_offset = prepend.delta_offset_end;
+                vlog(test.info, "Producing prepend {}", prepend);
+                _segments.insert(std::make_pair(prepend.base_offset, prepend));
+                return std::make_pair(prepend, op_type::prepend);
+            } else {
+                // Generate replacement. Pick random segment to replace.
+                // Align the end of the reupload to some other segment.
+                auto ix = model::test::get_int(0UL, _segments.size() - 1);
+                auto it = _segments.begin();
+                std::advance(it, ix);
+                n_rec = static_cast<int>(
+                  it->second.committed_offset() - it->first() + 1);
+                auto max_to_replace = _segments.size() - ix;
+                auto n_segments_to_replace = model::test::get_int(
+                  1, static_cast<int>(max_to_replace));
+
+                auto first = it;
+                auto last = it;
+                auto replacement = it->second;
+                ix++;
+                it++;
+                for (int i = ix; i < n_segments_to_replace; i++, it++) {
+                    replacement.committed_offset = it->second.committed_offset;
+                    replacement.max_timestamp = it->second.max_timestamp;
+                    replacement.size_bytes += it->second.size_bytes;
+                    replacement.delta_offset_end = it->second.delta_offset_end;
+                    replacement.archiver_term = it->second.archiver_term;
+                    last = it;
+                }
+                _segments.erase(first, std::next(last));
+                _segments.insert(
+                  std::make_pair(replacement.base_offset, replacement));
+                vlog(test.info, "Producing replacement {}", replacement);
+                _segments.insert(
+                  std::make_pair(replacement.base_offset, replacement));
+                return std::make_pair(replacement, op_type::replace);
+            }
+        }
+        auto p_last = _segments.end();
+        auto last_co = std::numeric_limits<int64_t>::min();
+        for (auto it = _segments.begin(); it != _segments.end(); it++) {
+            if (it->second.committed_offset() > last_co) {
+                p_last = it;
+                last_co = it->second.committed_offset();
+            }
+        }
+        BOOST_REQUIRE(p_last != _segments.end());
+
+        int gap = 0;
+        if (_add_gaps && model::test::with_probability(small_probability)) {
+            gap = model::test::get_int(max_rec_per_segment);
+        } else if (
+          _add_overlaps && model::test::with_probability(small_probability)) {
+            gap = model::test::get_int(max_rec_per_segment);
+        }
+
+        generated_params props{
+          .n_rec = n_rec,
+          .n_conf = n_conf,
+          .ts_delta = ts_delta,
+          .segment_term_delta = model::test::get_int(1),
+          .archiver_term_delta = model::test::get_int(1),
+          .s_size = s_size,
+          .gap_size = gap,
+        };
+        auto append = make_segment(p_last->second, props);
+
+        if (
+          _add_reorderings
+          && model::test::with_probability(small_probability)) {
+            constexpr int max_reordered = 32;
+            auto to_reorder = model::test::get_int(max_reordered);
+            for (int i = 0; i < to_reorder; i++) {
+                vlog(test.info, "Going to delay append {}", append);
+                _ooo_write.push_back(append);
+                append = make_segment(_ooo_write.back(), props);
+                vlog(test.info, "Producing next append {}", append);
+            }
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(_ooo_write.begin(), _ooo_write.end(), g);
+        }
+
+        vlog(test.info, "Producing append {}", append);
+        _segments.insert(std::make_pair(append.base_offset, append));
+        return std::make_pair(append, op_type::append);
+    }
+
+    /// Check that the meta is correct (should be in the manifest)
+    bool is_valid(const segment_meta& m) {
+        auto o = m.base_offset;
+        auto it = _segments.find(o);
+        if (it == _segments.end()) {
+            vlog(test.debug, "Segment {} wasn't generated", m);
+        }
+        if (it == _segments.end()) {
+            return false;
+        }
+        vlog(test.debug, "Expected value: {}", m);
+        vlog(test.debug, "Actual value: {}", it->second);
+        return it->second == m;
+    }
+
+    const std::map<model::offset, segment_meta>& get_segments() const {
+        return _segments;
+    }
+
+    /// Get actual last segment (take possible segment overlap into account)
+    std::optional<segment_meta> get_last_segment() const {
+        if (_segments.empty()) {
+            return std::nullopt;
+        }
+        auto p_last = _segments.end();
+        auto last_co = std::numeric_limits<int64_t>::min();
+        for (auto it = _segments.begin(); it != _segments.end(); it++) {
+            if (it->second.committed_offset() > last_co) {
+                p_last = it;
+                last_co = it->second.committed_offset();
+            }
+        }
+        if (p_last == _segments.end()) {
+            return std::nullopt;
+        }
+        return p_last->second;
+    }
+
+    std::optional<segment_meta> get_first_segment() const {
+        if (_segments.empty()) {
+            return std::nullopt;
+        }
+        return _segments.begin()->second;
+    }
+
+    std::optional<model::offset> get_start_offset() const {
+        auto first = get_first_segment();
+        if (!first.has_value()) {
+            return std::nullopt;
+        }
+        return first->base_offset;
+    }
+
+    std::optional<model::offset> get_last_offset() const {
+        auto last = get_last_segment();
+        if (!last.has_value()) {
+            return std::nullopt;
+        }
+        return last->committed_offset;
+    }
+
+private:
+    struct generated_params {
+        int n_rec{0};
+        int n_conf{0};
+        int ts_delta{0};
+        int segment_term_delta{0};
+        int archiver_term_delta{0};
+        int s_size{0};
+        // optional, positive value means gap, negative encodes an overlap
+        int gap_size{0};
+    };
+
+    segment_meta make_segment(const segment_meta& prev, generated_params p) {
+        auto base_offset = prev.committed_offset() + 1;
+        auto start_delta = prev.delta_offset_end();
+        auto end_delta = start_delta + p.n_conf;
+        auto ts_base = prev.max_timestamp.value();
+        auto ts_last = ts_base + p.ts_delta;
+        auto t_segm = prev.segment_term() + p.segment_term_delta;
+        auto t_arch = std::max(
+          prev.archiver_term() + p.archiver_term_delta, t_segm);
+
+        if (p.gap_size > 0) {
+            base_offset += p.gap_size;
+        } else if (p.gap_size < 0) {
+            base_offset -= std::min(
+              static_cast<int64_t>(-1 * p.gap_size), base_offset);
+        }
+
+        return make_segment(
+          base_offset,
+          p.n_rec,
+          start_delta,
+          end_delta,
+          ts_base,
+          ts_last,
+          t_arch,
+          t_segm,
+          p.s_size);
+    }
+
+    segment_meta make_segment(
+      int64_t base,
+      int64_t num_records,
+      int64_t start_delta,
+      int64_t end_delta,
+      int64_t base_ts,
+      int64_t last_ts,
+      int64_t archiver_term,
+      int64_t segment_term,
+      uint64_t size) {
+        BOOST_REQUIRE(start_delta <= end_delta);
+        BOOST_REQUIRE(num_records >= 0);
+        BOOST_REQUIRE(size >= 0);
+        BOOST_REQUIRE(archiver_term >= segment_term);
+        segment_meta m{
+          .is_compacted = false,
+          .size_bytes = size,
+          .base_offset = model::offset(base),
+          .committed_offset = model::offset(base + num_records - 1),
+          .base_timestamp = model::timestamp(base_ts),
+          .max_timestamp = model::timestamp(last_ts),
+          .delta_offset = model::offset_delta(start_delta),
+          .archiver_term = model::term_id(archiver_term),
+          .segment_term = model::term_id(segment_term),
+          .delta_offset_end = model::offset_delta(end_delta),
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = 0,
+        };
+        return m;
+    }
+
+    bool _add_reuploads;
+    bool _add_reorderings;
+    bool _add_gaps;
+    bool _add_overlaps;
+    bool _add_empty;
+    std::map<model::offset, segment_meta> _segments;
+    /// Used to generate out of order updates
+    std::vector<segment_meta> _ooo_write;
+    int _num_truncations{0};
+};
+
+void test_segment_meta_cstore_invariants_randomized(
+  const int n_iter,
+  bool allow_reuploads,
+  bool allow_reorderings,
+  bool allow_gaps,
+  bool allow_overlaps,
+  bool allow_empty) {
+    segment_meta_random_walk walk(
+      allow_reuploads,
+      allow_reorderings,
+      allow_gaps,
+      allow_overlaps,
+      allow_empty);
+
+    segment_meta_cstore cstore;
+    vlog(test.info, "Running randomized invariants test");
+    vlog(
+      test.info,
+      "n_iter = {}, allow_reuploads = {}, allow_gaps = {}, allow_overlaps = "
+      "{}, allow_empty = {}",
+      n_iter,
+      allow_reuploads,
+      allow_gaps,
+      allow_overlaps,
+      allow_empty);
+
+    auto cond =
+      [&](bool condition, const segment_meta& target, bool is_replacement) {
+          if (condition) {
+              return true;
+          }
+          if (is_replacement) {
+              vlog(test.info, "Check failed for replacement {}", target);
+          } else {
+              vlog(test.info, "Check failed for append {}", target);
+              vlog(
+                test.info,
+                "Expected last_segment: {}",
+                std::prev(walk.get_segments().end())->second);
+              vlog(test.info, "Actual last_segment: {}", cstore.last_segment());
+          }
+          vlog(test.info, "Expected segments:");
+          for (const auto& [base, m] : walk.get_segments()) {
+              vlog(
+                test.info,
+                "......{}({})-{}",
+                base,
+                m.base_offset,
+                m.committed_offset);
+          }
+          vlog(test.info, "\n\n\n\n\n\n\n\n\n");
+          vlog(test.info, "Expected segments:");
+          for (const auto& m : cstore) {
+              vlog(test.info, "......{}-{}", m.base_offset, m.committed_offset);
+          }
+          return false;
+      };
+
+    auto cond1 = [&](bool condition) {
+        if (condition) {
+            return true;
+        }
+        vlog(test.info, "Check failed");
+        vlog(test.info, "Expected segments:");
+        for (const auto& [base, m] : walk.get_segments()) {
+            vlog(
+              test.info,
+              "......{}({})-{}",
+              base,
+              m.base_offset,
+              m.committed_offset);
+        }
+        vlog(test.info, "\n\n\n\n");
+        vlog(test.info, "Expected segments:");
+        for (const auto& m : cstore) {
+            vlog(test.info, "......{}-{}", m.base_offset, m.committed_offset);
+        }
+        return false;
+    };
+
+    // Last element invariants
+    auto check_last_element_invariants = [&](const segment_meta& last_element) {
+        auto cs_last = cstore.last_segment();
+        vlog(
+          test.info,
+          "Checking last element {}, cstore last element {}",
+          last_element,
+          cs_last);
+        auto o = last_element.base_offset;
+        BOOST_REQUIRE(cond(cs_last == last_element, last_element, false));
+        // check that it can be found by its base offset
+        {
+            auto it = cstore.find(o);
+            BOOST_REQUIRE(cond(it != cstore.end(), last_element, false));
+            BOOST_REQUIRE(
+              cond(*it == cstore.last_segment(), last_element, false));
+        }
+        // check that prev(end) matches the last_segment
+        {
+            auto e = cstore.end();
+            auto it = cstore.prev(e);
+            BOOST_REQUIRE(cond(*it == last_element, last_element, false));
+        }
+    };
+
+    // Whole log invariants
+    auto check_global_invariants = [&](model::offset first) {
+        if (cstore.empty()) {
+            return;
+        }
+        auto b_it = cstore.find(first);
+        auto e_it = cstore.end();
+        BOOST_REQUIRE(cond1(b_it == cstore.begin()));
+        BOOST_REQUIRE(cond1(*cstore.prev(e_it) == cstore.last_segment()));
+    };
+
+    // Single batch invariants
+    auto check_local_invariants = [&](
+                                    const segment_meta& meta,
+                                    bool is_replacement) {
+        vlog(test.info, "Checking {}", meta);
+        auto o = meta.base_offset;
+        // check that it can be found by its base offset
+        {
+            auto it = cstore.find(o);
+            BOOST_REQUIRE(cond(it != cstore.end(), meta, is_replacement));
+            BOOST_REQUIRE(cond(*it == meta, meta, is_replacement));
+        }
+
+        // check that it can be found using upper_bound
+        {
+            auto it = cstore.upper_bound(o);
+            if (it != cstore.begin()) {
+                auto it2 = cstore.prev(it);
+                auto m2 = *it2;
+                BOOST_REQUIRE(cond(walk.is_valid(m2), m2, is_replacement));
+                BOOST_REQUIRE(cond(m2.base_offset == o, meta, is_replacement));
+            } else {
+                BOOST_REQUIRE(cond(cstore.size() == 1, meta, is_replacement));
+            }
+        }
+    };
+    for (int i = 0; i < n_iter; i++) {
+        auto [t_off, exp_so] = walk.maybe_truncate();
+        if (t_off != model::offset{}) {
+            vlog(
+              test.info, "Cstore truncate {}, expected SO: {}", t_off, exp_so);
+            cstore.prefix_truncate(t_off);
+            check_global_invariants(exp_so);
+        }
+        auto [meta, op_type] = walk.next_segment();
+
+        try {
+            vlog(test.info, "Cstore insert {}", meta);
+            auto tx = cstore.append(meta);
+            std::ignore = std::move(tx);
+        } catch (const std::invalid_argument& e) {
+            vlog(
+              test.info,
+              "Cstore insert {} failed with {}, retrying with flush",
+              meta,
+              e.what());
+            cstore.flush_write_buffer();
+            auto tx = cstore.append(meta);
+            std::ignore = std::move(tx);
+        }
+
+        switch (op_type) {
+        case segment_meta_random_walk::op_type::append:
+            if (model::test::with_probability(0.1)) {
+                check_last_element_invariants(meta);
+            }
+            break;
+        case segment_meta_random_walk::op_type::prepend:
+            check_global_invariants(walk.get_start_offset().value());
+            break;
+        case segment_meta_random_walk::op_type::replace:
+            if (model::test::with_probability(0.1)) {
+                check_local_invariants(meta, true);
+                for (const auto& [key, m] : walk.get_segments()) {
+                    std::ignore = key;
+                    check_local_invariants(m, true);
+                }
+            }
+            break;
+        };
+    }
+    vlog(test.info, "Completed run of {} iterations", n_iter);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_fuzz_invariants) {
+#ifndef _NDEBUG
+    const int n_iter = 100000;
+    test_segment_meta_cstore_invariants_randomized(
+      n_iter, true, true, true, false, false);
+#endif
 }
