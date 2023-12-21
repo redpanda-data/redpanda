@@ -14,11 +14,15 @@
 
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
+#include "model/metadata.h"
+#include "model/namespace.h"
 #include "outcome.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
@@ -308,8 +312,10 @@ struct segment_size_validator {
 };
 
 struct replication_factor_must_be_positive {
-    std::optional<ss::sstring>
-    operator()(const ss::sstring& raw, const cluster::replication_factor&) {
+    std::optional<ss::sstring> operator()(
+      model::topic_namespace_view,
+      const ss::sstring& raw,
+      const cluster::replication_factor&) {
         static_assert(sizeof(int) > sizeof(cluster::replication_factor::type));
         auto value = boost::lexical_cast<int>(raw);
         if (value <= 0) {
@@ -320,8 +326,10 @@ struct replication_factor_must_be_positive {
 };
 
 struct replication_factor_must_be_odd {
-    std::optional<ss::sstring>
-    operator()(const ss::sstring&, const cluster::replication_factor& value) {
+    std::optional<ss::sstring> operator()(
+      model::topic_namespace_view,
+      const ss::sstring&,
+      const cluster::replication_factor& value) {
         if (value % 2 == 0) {
             return fmt::format("replication factor {} must be odd", value);
         }
@@ -329,22 +337,46 @@ struct replication_factor_must_be_odd {
     }
 };
 
+struct replication_factor_must_be_greater_or_equal_to_minimum {
+    std::optional<ss::sstring> operator()(
+      model::topic_namespace_view tns,
+      const ss::sstring&,
+      const cluster::replication_factor& value) {
+        if (model::is_user_topic(tns)) {
+            const auto min_val
+              = config::shard_local_cfg().minimum_topic_replication.value();
+            if (value() < min_val) {
+                return fmt::format(
+                  "replication factor ({}) must be greater or equal to "
+                  "specified minimum value ({})",
+                  value,
+                  min_val);
+            }
+        }
+
+        return std::nullopt;
+    }
+};
+
 template<typename T, typename... ValidatorTypes>
 requires requires(
-  const ss::sstring& s, const T& value, ValidatorTypes... validators) {
+  model::topic_namespace_view tns,
+  const ss::sstring& s,
+  const T& value,
+  ValidatorTypes... validators) {
     {
-        std::get<0>(std::tuple{validators...})(s, value)
+        std::get<0>(std::tuple{validators...})(tns, s, value)
     } -> std::convertible_to<std::optional<ss::sstring>>;
     (std::is_same_v<
-       decltype(std::get<0>(std::tuple{validators...})(s, value)),
+       decltype(std::get<0>(std::tuple{validators...})(tns, s, value)),
        decltype(validators)>
      && ...);
 }
 struct config_validator_list {
-    std::optional<ss::sstring>
-    operator()(const ss::sstring& raw, const T& value) {
+    std::optional<ss::sstring> operator()(
+      model::topic_namespace_view tns, const ss::sstring& raw, const T& value) {
         std::optional<ss::sstring> result;
-        ((result = ValidatorTypes{}(raw, value)) || ...);
+        ((result = ValidatorTypes{}(tns, raw, value)) || ...);
         return result;
     }
 };
@@ -352,7 +384,8 @@ struct config_validator_list {
 using replication_factor_validator = config_validator_list<
   cluster::replication_factor,
   replication_factor_must_be_positive,
-  replication_factor_must_be_odd>;
+  replication_factor_must_be_odd,
+  replication_factor_must_be_greater_or_equal_to_minimum>;
 
 template<typename T, typename Validator = noop_validator<T>>
 requires requires(const T& value, const ss::sstring& str, Validator validator) {
@@ -463,14 +496,16 @@ void parse_and_set_tristate(
 
 template<typename Validator = noop_validator<cluster::replication_factor>>
 requires requires(
+  model::topic_namespace_view tns,
   const ss::sstring& raw,
   const cluster::replication_factor& value,
   Validator validator) {
     {
-        validator(raw, value)
+        validator(tns, raw, value)
     } -> std::convertible_to<std::optional<ss::sstring>>;
 }
 inline void parse_and_set_topic_replication_factor(
+  model::topic_namespace_view tns,
   cluster::property_update<std::optional<cluster::replication_factor>>&
     property,
   const std::optional<ss::sstring>& value,
@@ -481,7 +516,7 @@ inline void parse_and_set_topic_replication_factor(
         property.value = std::nullopt;
         if (value) {
             auto v = cluster::parsing_replication_factor(*value);
-            auto v_error = validator(*value, v);
+            auto v_error = validator(tns, *value, v);
             if (v_error) {
                 throw validation_error(*v_error);
             }

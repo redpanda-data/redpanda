@@ -46,6 +46,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <algorithm>
@@ -73,7 +74,8 @@ topics_frontend::topics_frontend(
   ss::sharded<shard_table>& shard_table,
   plugin_table& plugin_table,
   metadata_cache& metadata_cache,
-  config::binding<unsigned> hard_max_disk_usage_ratio)
+  config::binding<unsigned> hard_max_disk_usage_ratio,
+  config::binding<int16_t> minimum_topic_replication)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
@@ -89,7 +91,13 @@ topics_frontend::topics_frontend(
   , _members_table(members_table)
   , _pm(pm)
   , _shard_table(shard_table)
-  , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio) {}
+  , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio)
+  , _minimum_topic_replication(minimum_topic_replication) {
+    if (ss::this_shard_id() == 0) {
+        _minimum_topic_replication.watch(
+          [this]() { print_rf_warning_message(); });
+    }
+}
 
 static bool
 needs_linearizable_barrier(const std::vector<topic_result>& results) {
@@ -1891,6 +1899,27 @@ topics_frontend::get_partition_state(model::ntp ntp) {
         results.push_back(std::move(*res.state));
     }
     co_return results;
+}
+
+void topics_frontend::print_rf_warning_message() {
+    const auto min_rf = _minimum_topic_replication();
+    const auto& topics = _topics.local().topics_map();
+    for (const auto& t : topics) {
+        if (!model::is_user_topic(t.first)) {
+            continue;
+        }
+        auto rf = t.second.get_replication_factor();
+        if (rf() >= min_rf) {
+            continue;
+        }
+        vlog(
+          clusterlog.warn,
+          "Topic {} has a replication factor less than specified "
+          "minimum: {} < {}",
+          t.first,
+          rf,
+          min_rf);
+    }
 }
 
 } // namespace cluster

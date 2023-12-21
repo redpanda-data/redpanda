@@ -69,6 +69,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
@@ -362,6 +363,10 @@ ss::future<> controller::start(
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
                   .storage_space_alert_free_threshold_percent.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .minimum_topic_replication.bind();
             }));
       })
       .then([this] {
@@ -482,8 +487,12 @@ ss::future<> controller::start(
                       return stm.wait(last_applied, model::no_timeout, as);
                   }
               })
-            .then(
-              [] { vlog(clusterlog.info, "Controller log replay complete."); });
+            .then([this] {
+                vlog(clusterlog.info, "Controller log replay complete.");
+                /// Once the controller log is replayed and topics are recovered
+                /// print the RF minimum warning
+                _tp_frontend.local().print_rf_warning_message();
+            });
       })
       .then([this, &discovery] { return cluster_creation_hook(discovery); })
       .then(

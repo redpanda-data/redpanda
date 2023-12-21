@@ -97,3 +97,17 @@ class ReplicationFactorChangeTest(RedpandaTest):
                                          new_rf)
         assert len(self.admin.list_reconfigurations()) == 0
         self.check_rf(self.replication_factor)
+
+        self.redpanda.set_cluster_config(
+            {'default_topic_replications': str(3)})
+        self.redpanda.set_cluster_config(
+            {'minimum_topic_replications': str(3)})
+        new_rf = 1
+        with expect_exception(
+                RpkException, lambda e: "INVALID_REPLICATION_FACTOR" in e.msg
+                or "INVALID_CONFIG" in e.msg):
+            self._rpk.alter_topic_config(self.topic_name, self.rf_property,
+                                         new_rf)
+
+        assert len(self.admin.list_reconfigurations()) == 0
+        self.check_rf(self.replication_factor)

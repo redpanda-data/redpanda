@@ -25,6 +25,7 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import wait_for_local_storage_truncate, expect_exception
 from rptest.clients.kcl import KCL
+from rptest.tests.cluster_config_test import wait_for_version_sync
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
@@ -292,6 +293,73 @@ class CreateTopicsTest(RedpandaTest):
             timeout_sec=30,
             backoff_sec=3,
             err_msg="Timed out waiting for single create_topic command")
+
+    @staticmethod
+    def _modify_cluster_config(admin, redpanda, upsert):
+        patch_result = admin.patch_cluster_config(upsert=upsert)
+        wait_for_version_sync(admin, redpanda, patch_result['config_version'])
+
+    @cluster(num_nodes=3)
+    def test_create_with_min_rf(self):
+        """
+        Validate behavior of topic creation when setting
+        minimum_topic_replications
+        """
+        admin = Admin(self.redpanda)
+        # Set default RF to 3
+        self._modify_cluster_config(admin, self.redpanda,
+                                    {'default_topic_replications': 3})
+        # Now can set minimum RF to 3
+        self._modify_cluster_config(admin, self.redpanda,
+                                    {'minimum_topic_replications': 3})
+        rpk = RpkTool(self.redpanda)
+        try:
+            rpk.create_topic("should-fail", replicas=1)
+            assert False, "Creation should have failed"
+        except RpkException as e:
+            assert "Replication factor must be greater than or equal to specified minimum value" in str(
+                e), f'Unexpected return message: "{str(e)}"'
+
+        rpk.create_topic("should-succeed", replicas=None)
+
+    @cluster(num_nodes=3)
+    def test_min_rf_log(self):
+        """
+        Validates that a log message appears when minimum_topic_replications
+        is changed and current topic RF's that violate the minimum are logged.
+        """
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic("topic-1", replicas=1)
+        rpk.create_topic("topic-3", replicas=3)
+
+        admin = Admin(self.redpanda)
+        self._modify_cluster_config(admin, self.redpanda,
+                                    {'default_topic_replications': 3})
+        self._modify_cluster_config(admin, self.redpanda,
+                                    {'minimum_topic_replications': 3})
+
+        assert self.redpanda.search_log_node(
+            self.redpanda.nodes[0],
+            "Topic {kafka/topic-1} has a replication factor less than specified minimum: 1 < 3"
+        ), "Missing log message for topic-1"
+        assert not self.redpanda.search_log_node(
+            self.redpanda.nodes[0],
+            "Topic {kafka-topic3} has a replication factor"
+        ), "Invalid log message found for topic-3"
+
+        # Restart nodes and verify we see the message at startup
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        num_found = self.redpanda.count_log_node(
+            self.redpanda.nodes[0],
+            "Topic {kafka/topic-1} has a replication factor less than specified minimum: 1 < 3"
+        )
+        assert num_found == 2, f'Expected to find 2 messages about topic-1, but found {num_found}'
+
+        num_found = self.redpanda.count_log_node(
+            self.redpanda.nodes[0],
+            "Topic {kafka-topic3} has a replication factor")
+        assert num_found == 0, f'Expected to find 0 messages about topic-3, but found {num_found}'
 
 
 class CreateSITopicsTest(RedpandaTest):

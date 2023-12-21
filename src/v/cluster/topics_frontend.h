@@ -58,7 +58,8 @@ public:
       ss::sharded<shard_table>&,
       plugin_table&,
       metadata_cache&,
-      config::binding<unsigned>);
+      config::binding<unsigned>,
+      config::binding<int16_t>);
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<custom_assignable_topic_configuration>,
@@ -189,6 +190,10 @@ public:
     ss::future<result<std::vector<partition_state>>>
       get_partition_state(model::ntp);
 
+    /// Prints a warning log for every topic that has a replication factor
+    /// less than the minimum specified in minimum_topic_replication
+    void print_rf_warning_message();
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -274,6 +279,7 @@ private:
     ss::sharded<shard_table>& _shard_table;
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
+    config::binding<int16_t> _minimum_topic_replication;
 
     static constexpr std::chrono::seconds _get_health_report_timeout = 10s;
 };
