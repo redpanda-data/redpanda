@@ -64,6 +64,7 @@ namespace cluster {
  */
 class rm_stm final : public raft::persisted_stm<> {
 public:
+    static constexpr const char* name = "rm_stm";
     using clock_type = ss::lowres_clock;
     using time_point_type = clock_type::time_point;
     using duration_type = clock_type::duration;
@@ -261,7 +262,6 @@ public:
 
     uint64_t get_local_snapshot_size() const override;
 
-    std::string_view get_name() const final { return "rm_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
     const producers_t& get_producers() const { return _producers; }

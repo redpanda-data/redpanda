@@ -445,6 +445,7 @@ ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
 
     if (is_tx_manager_topic(_raft->ntp()) && _is_tx_enabled) {
         _tm_stm = builder.create_stm<cluster::tm_stm>(
+          ss::sstring(tm_stm_name),
           clusterlog,
           _raft.get(),
           _feature_table,
