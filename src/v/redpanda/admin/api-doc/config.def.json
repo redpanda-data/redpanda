@@ -1,0 +1,42 @@
+"get_log_level_response": {
+    "description": "Response to get loggers",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "Name of the logger"
+        },
+        "level": {
+            "type": "string",
+            "description": "Name of the logger"
+        },
+        "expiration": {
+            "type": "long",
+            "description": "How long until this level expires, 0 if default"
+        }
+    },
+    "required": ["name","level","expiration"]
+},
+"set_log_level_response": {
+    "description": "Response to set log level",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "Name of the logger that was changed"
+        },
+        "previous_level": {
+            "type": "string",
+            "description": "The previous logging level of the logger"
+        },
+        "new_level": {
+            "type": "string",
+            "description": "The new logging level of this logger"
+        },
+        "expiration": {
+            "type": "long",
+            "description": "How long this new logging level will be at, in seconds.  0 for indefinite"
+        }
+    },
+    "required": ["name", "previous_level", "new_level", "expiration"]
+}
