@@ -25,6 +25,13 @@ type Replica struct {
 	Core   int `json:"core" yaml:"core"`
 }
 
+// NTP represents a partition's namespace, topic, and partition ID.
+type NTP struct {
+	Ns          string `json:"ns" yaml:"ns"`
+	Topic       string `json:"topic" yaml:"topic"`
+	PartitionID int    `json:"partition" yaml:"partition"`
+}
+
 type Replicas []Replica
 
 func (rs Replicas) String() string {
@@ -64,7 +71,7 @@ type Status struct {
 	Operations []Operation `json:"operations"`
 }
 
-// Reconfiguration is the detail of a partition reconfiguration.
+// ReconfigurationsResponse is the detail of a partition reconfiguration.
 type ReconfigurationsResponse struct {
 	Ns                     string    `json:"ns"`
 	Topic                  string    `json:"topic"`
@@ -84,6 +91,13 @@ type ClusterPartition struct {
 	LeaderID    *int      `json:"leader_id,omitempty" yaml:"leader_id,omitempty"` // LeaderID may be missing in the response.
 	Replicas    []Replica `json:"replicas" yaml:"replicas"`
 	Disabled    *bool     `json:"disabled,omitempty" yaml:"disabled,omitempty"` // Disabled may be discarded if not present.
+}
+
+type MajorityLostPartitions struct {
+	NTP           NTP       `json:"ntp,omitempty" yaml:"ntp,omitempty"`
+	TopicRevision int       `json:"topic_revision" yaml:"topic_revision"`
+	Replicas      []Replica `json:"replicas,omitempty" yaml:"replicas,omitempty"`
+	DeadNodes     []int     `json:"dead_nodes,omitempty" yaml:"dead_nodes,omitempty"`
 }
 
 // GetPartition returns detailed partition information.
@@ -154,4 +168,23 @@ func (a *AdminAPI) ToggleTopicPartitions(ctx context.Context, disabled bool, nam
 		Disabled bool `json:"disabled"`
 	}{disabled}
 	return a.sendToLeader(ctx, http.MethodPost, disableURL, body, nil)
+}
+
+// MajorityLostPartitions returns a list of partitions that have lost majority
+// when given an input set of dead nodes.
+func (a *AdminAPI) MajorityLostPartitions(ctx context.Context, deadNodes []int) ([]MajorityLostPartitions, error) {
+	var rr []MajorityLostPartitions
+	// One liner to convert []int -> int,int,int.
+	csv := strings.Trim(strings.Join(strings.Split(fmt.Sprint(deadNodes), " "), ","), "[]")
+	path := fmt.Sprintf("/v1/partitions/majority_lost?dead_nodes=%v", csv)
+	return rr, a.sendAny(ctx, http.MethodGet, path, nil, &rr)
+}
+
+// ForceRecoverFromNode force recovers partitions from input list of nodes.
+func (a *AdminAPI) ForceRecoverFromNode(ctx context.Context, plan []MajorityLostPartitions, deadNodes []int) error {
+	body := map[string]interface{}{
+		"dead_nodes":                  deadNodes,
+		"partitions_to_force_recover": plan,
+	}
+	return a.sendAny(ctx, http.MethodPost, "/v1/partitions/force_recover_from_nodes", body, nil)
 }

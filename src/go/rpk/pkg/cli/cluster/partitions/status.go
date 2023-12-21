@@ -95,17 +95,17 @@ investigation. A few areas to investigate:
 }
 
 func printBalancerStatus(pbs adminapi.PartitionBalancerStatus) {
-	const format = `Status:                       %v
-Seconds Since Last Tick:      %v
-Current Reassignment Count:   %v
-`
-	fmt.Printf(format, pbs.Status, pbs.SecondsSinceLastTick, pbs.CurrentReassignmentsCount)
-
+	tw := out.NewTable()
+	defer tw.Flush()
+	tw.Print("Status:", pbs.Status)
+	tw.Print("Seconds Since Last Tick:", pbs.SecondsSinceLastTick)
+	tw.Print("Current Reassignment Count:", pbs.CurrentReassignmentsCount)
+	if pbs.PartitionsPendingForceRecovery != nil && pbs.PartitionsPendingRecoveryList != nil {
+		tw.Print(fmt.Sprintf("Partitions Pending Recovery (%v):", *pbs.PartitionsPendingForceRecovery), pbs.PartitionsPendingRecoveryList)
+	}
 	v := pbs.Violations
 	if len(v.OverDiskLimitNodes) > 0 || len(v.UnavailableNodes) > 0 {
-		const vFormat = `Unavailable Nodes:            %v
-Over Disk Limit Nodes:        %v
-`
-		fmt.Printf(vFormat, v.UnavailableNodes, v.OverDiskLimitNodes)
+		tw.Print("Unavailable Nodes:", v.UnavailableNodes)
+		tw.Print("Over Disk Limit Nodes:", v.OverDiskLimitNodes)
 	}
 }
