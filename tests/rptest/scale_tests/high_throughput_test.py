@@ -11,6 +11,7 @@ import math
 import time
 
 from ducktape.tests.test import TestContext
+from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureInjector, FailureSpec
