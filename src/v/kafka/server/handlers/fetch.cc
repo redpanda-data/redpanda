@@ -111,6 +111,10 @@ static ss::future<read_result> read_from_partition(
         data = std::make_unique<iobuf>(std::move(result.data));
         part.probe().add_records_fetched(result.record_count);
         part.probe().add_bytes_fetched(data->size_bytes());
+        if (!part.is_leader() && config.read_from_follower) {
+            part.probe().add_bytes_fetched_from_follower(data->size_bytes());
+        }
+
         if (result.first_tx_batch_offset && result.record_count > 0) {
             // Reader should live at least until this point to hold on to the
             // segment locks so that prefix truncation doesn't happen.
