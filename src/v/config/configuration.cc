@@ -754,6 +754,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       1,
       {.min = 1, .oddeven = odd_even_constraint::odd})
+  , minimum_topic_replication(
+      *this,
+      "minimum_topic_replications",
+      "Minimum permitted value of replication factor for new topics",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      1,
+      {.min = 1, .oddeven = odd_even_constraint::odd})
   , transaction_coordinator_replication(
       *this, "transaction_coordinator_replication")
   , id_allocator_replication(*this, "id_allocator_replication")

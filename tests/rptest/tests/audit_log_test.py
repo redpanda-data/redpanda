@@ -39,6 +39,7 @@ from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until, wait_until_result
 from rptest.utils.rpk_config import read_redpanda_cfg
+from rptest.utils.schema_registry_utils import get_subjects
 from urllib.parse import urlparse
 
 
@@ -1815,8 +1816,6 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
     Validates schema registry auditing
     """
 
-    HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
-
     username = 'test'
     password = 'test'
     algorithm = 'SCRAM-SHA-256'
@@ -1836,55 +1835,6 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
                                      }),
             schema_registry_config=sr_config)
 
-    def _request(self, verb, path, hostname=None, **kwargs):
-        if hostname is None:
-            nodes = [n for n in self.redpanda.nodes]
-            random.shuffle(nodes)
-            node = nodes[0]
-            hostname = node.account.hostname
-
-        scheme = 'http'
-        uri = f'{scheme}://{hostname}:8081/{path}'
-
-        if 'timeout' not in kwargs:
-            kwargs['timeout'] = 60
-
-        # Error codes that may appear during normal API operation, do not
-        # indicate an issue with the service
-        acceptable_errors = {409, 422, 404}
-
-        def accept_response(resp):
-            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
-
-        self.logger.debug(f"{verb} hostname={hostname} {path} {kwargs}")
-
-        r = requests.request(verb, uri, **kwargs)
-        if not accept_response(r):
-            self.logger.info(
-                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
-            )
-            time.sleep(10)
-            r = requests.request(verb, uri, **kwargs)
-            if accept_response(r):
-                self.logger.info(
-                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
-                )
-            else:
-                self.logger.info(
-                    f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
-                )
-
-        self.logger.info(
-            f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
-
-        return r
-
-    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
-        return self._request("GET",
-                             f"subjects{'?deleted=true' if deleted else ''}",
-                             headers=headers,
-                             **kwargs)
-
     def setup_cluster(self):
         self.admin.create_user(self.username, self.password, self.algorithm)
 
@@ -1892,7 +1842,9 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
     def test_sr_audit(self):
         self.setup_cluster()
 
-        r = self._get_subjects(auth=(self.username, self.password))
+        r = get_subjects(self.redpanda.nodes,
+                         self.logger,
+                         auth=(self.username, self.password))
         assert r.status_code == requests.codes.ok
 
         def match_api_user(endpoint, user, svc_name, record):
@@ -1929,7 +1881,9 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
 
     @cluster(num_nodes=5)
     def test_sr_audit_bad_authn(self):
-        r = self._get_subjects(auth=(self.username, self.password))
+        r = get_subjects(self.redpanda.nodes,
+                         self.logger,
+                         auth=(self.username, self.password))
         assert r.json()['error_code'] == 40101
 
         def match_authn_user(user, svc_name, result, record):
