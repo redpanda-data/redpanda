@@ -47,6 +47,13 @@ type PartitionBalancerStatus struct {
 	// CurrentReassignmentsCount is the current number of partition
 	// reassignments in progress.
 	CurrentReassignmentsCount int `json:"current_reassignments_count,omitempty"`
+	// PartitionsPendingForceRecovery Specifies the number of partitions that
+	// are yet to be force recovered. This is a pointer because not all Redpanda
+	// versions include this parameter.
+	PartitionsPendingForceRecovery *int `json:"partitions_pending_force_recovery_count"`
+	// PartitionsPendingRecoveryList Is a sample list of partitions pending
+	// force recovery (limit capped to 10).
+	PartitionsPendingRecoveryList []string `json:"partitions_pending_force_recovery_sample"`
 }
 
 // PartitionBalancerViolations describe the violations of the partition
