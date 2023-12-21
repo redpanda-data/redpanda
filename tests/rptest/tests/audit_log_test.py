@@ -33,10 +33,11 @@ from rptest.services.cluster import cluster
 from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
-from rptest.services.redpanda import AUDIT_LOG_ALLOW_LIST, LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
+from rptest.services.redpanda import AUDIT_LOG_ALLOW_LIST, SaslCredentials, LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.util import wait_until, wait_until_result
 from rptest.utils.rpk_config import read_redpanda_cfg
 from urllib.parse import urlparse
@@ -273,6 +274,13 @@ class AuditLogTestSecurityConfig(SecurityConfig):
         return self._user_creds
 
     @property
+    def sasl_credentials(self) -> Optional[SaslCredentials]:
+        if self._user_creds is None:
+            return None
+        return SaslCredentials(self._user_creds[0], self._user_creds[1],
+                               self._user_creds[2])
+
+    @property
     def user_cert(self) -> Optional[tls.Certificate]:
         return self._user_cert
 
@@ -372,6 +380,11 @@ class AuditLogTestBase(RedpandaTest):
             self.super_rpk.sasl_create_user(self.security.user_creds[0],
                                             self.security.user_creds[1],
                                             self.security.user_creds[2])
+            self.super_rpk.sasl_allow_principal(
+                f'User:{self.security.user_creds[0]}', ['all'], 'topic', '*')
+            self.super_rpk.sasl_allow_principal(
+                f'User:{self.security.user_creds[0]}', ['all'], 'group', '*')
+
         self.ocsf_server.start()
         self.logger.debug(
             f'Running OCSF Server Version {self.ocsf_server.get_api_version(None)}'
@@ -1979,3 +1992,108 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
             assert f'Should not have found any records but found {self.aggregate_count(records)}: {records}'
         except TimeoutError:
             pass
+
+
+class AuditLogTestInternalClient(AuditLogTestBase):
+    """
+    Tests a specific change to the internal kafka client that adds the ability
+    to dynamically change the partition to produce onto
+    """
+    def __init__(self, test_context):
+        super(AuditLogTestInternalClient,
+              self).__init__(test_context=test_context,
+                             audit_log_config=AuditLogConfig(
+                                 num_partitions=2,
+                                 replication_factor=1,
+                                 event_types=['admin', 'authenticate']),
+                             log_config=LoggingConfig('info',
+                                                      logger_levels={
+                                                          'auditing': 'trace',
+                                                          'kafka': 'trace',
+                                                          'kafka/client':
+                                                          'trace'
+                                                      }))
+        self._ctx = test_context
+
+    @cluster(num_nodes=5)
+    def test_unknown_topic_or_partition_failure(self):
+        # Create a topic to generate traffic onto
+        test_topic = 'foo'
+        self.super_rpk.create_topic(test_topic)
+
+        # Lower this number for the frequency of calls to client.produce()
+        # is higher. This in theory increases the chances of the situation
+        # thats desired to be tested, i.e. hoping that the client chooses
+        # the eventual downed partition as the partition to produce onto
+        self._modify_cluster_config({'audit_queue_drain_interval_ms': 200})
+
+        def stop_node_with_id(node_id: int):
+            node = [
+                node for node in self.redpanda.nodes
+                if self.redpanda.node_id(node) == node_id
+            ]
+            assert len(node) == 1
+            self.redpanda.stop_node(node[0], forced=True)
+
+        def replication_factor_of_audit_log() -> int:
+            rf_factors = [
+                len(p.replicas)
+                for p in self.super_rpk.describe_topic(self.audit_log)
+            ]
+            assert len(rf_factors) > 0
+            assert all(rf_factors[0] == rf for rf in rf_factors)
+            return rf_factors[0]
+
+        assert replication_factor_of_audit_log() == 1
+
+        # Use a moderate amount of traffic to avoid filling up the auditing
+        # queues
+        rate_bps = 5000000  # 5MB/s
+        msg_size = 16384
+        with repeater_traffic(context=self._ctx,
+                              redpanda=self.redpanda,
+                              sasl_options=self.security.sasl_credentials,
+                              topics=[test_topic],
+                              msg_size=msg_size,
+                              rate_limit_bps=rate_bps,
+                              workers=4) as repeater:
+            # Allow test to soak for a bit so records are produced onto audit log
+            time.sleep(3)
+
+            # This is the partition that will be offline, since there is only 1 replica
+            # per partition this will cause this partition to be permanantly offline
+            response = list(self.super_rpk.describe_topic(self.audit_log))
+            partition = random.choice(response)
+            stop_node_with_id(int(partition.leader))
+
+            soak_time_secs = 5
+            soak_await_bytes = rate_bps * soak_time_secs
+            soak_await_msgs = soak_await_bytes / msg_size
+            # Add some leeway to avoid test flakiness
+            soak_timeout = soak_time_secs * 1.25
+            try:
+                repeater.await_progress(soak_await_msgs, soak_timeout)
+            except TimeoutError:
+                produced, consumed = repeater.total_messages()
+                self.redpanda.logger.error(
+                    f"Failed waiting on expected rate {soak_await_bytes} to arrive at client, total produced: {produced} total consumed: {consumed} "
+                )
+                raise
+
+            # Assert the kgo-repeater had no errors, any 'broker_not_available'
+            # returned due to auditing not working as expected would be recorded
+            # within the repeater.
+            assert repeater.total_errors() == 0
+
+        # Ensure the test ran as intended, only with 1 replica per partition
+        # for audit log
+        assert replication_factor_of_audit_log() == 1
+
+        # If internally the audit client is 'stuck' on producing on attempt to shutdown
+        # it would print an error log about dropping records which would be picked up
+        # by the bad_log_lines_routine, eg:
+        #
+        # vlog(adtlog.error, "{} audit records dropped", n_records);
+        #
+        # Shutdown auditing to see if all queued records were successfully produced
+        self._modify_cluster_config({'audit_enabled': False})
