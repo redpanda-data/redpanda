@@ -189,6 +189,7 @@ class AuditLogConfig:
     def __init__(self,
                  enabled: bool = True,
                  num_partitions: int = 8,
+                 replication_factor: int = 3,
                  event_types=['management', 'admin']):
         """Initializes the config
 
@@ -200,11 +201,15 @@ class AuditLogConfig:
         num_partitions: int, default=8
             Number of partitions to create
 
+        replication_factor: int, default 3
+            Number of replicas for the audit log topic
+
         event_types: [str], default=['management']
             The event types to start with enabled
         """
         self.enabled = enabled
         self.num_partitions = num_partitions
+        self.replication_factor = replication_factor
         self.event_types = event_types
 
     def to_conf(self) -> {str, str}:
@@ -218,6 +223,7 @@ class AuditLogConfig:
         return {
             'audit_enabled': self.enabled,
             'audit_log_num_partitions': self.num_partitions,
+            'audit_log_replication_factor': self.replication_factor,
             'audit_enabled_event_types': self.event_types
         }
 
