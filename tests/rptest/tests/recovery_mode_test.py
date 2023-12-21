@@ -14,7 +14,7 @@ from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import SISettings
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import Admin
@@ -45,8 +45,13 @@ def assert_rpk_fails(cmd, error_msg):
 
 
 class RecoveryModeTest(RedpandaTest):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, num_brokers=4, **kwargs)
+    def __init__(self, test_ctx, *args, **kwargs):
+        self.si_settings = SISettings(test_ctx)
+        super().__init__(*args,
+                         test_ctx,
+                         num_brokers=4,
+                         si_settings=self.si_settings,
+                         **kwargs)
 
     def setUp(self):
         # start the nodes manually

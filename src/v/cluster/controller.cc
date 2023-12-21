@@ -638,6 +638,9 @@ ss::future<> controller::start(
             &partition_balancer_backend::start);
       })
       .then([this, offsets_uploader, producer_id_recovery, offsets_recovery] {
+          if (config::node().recovery_mode_enabled()) {
+              return;
+          }
           auto bucket_opt = get_configured_bucket();
           if (!bucket_opt.has_value()) {
               return;

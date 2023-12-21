@@ -60,7 +60,9 @@ uploader::uploader(
   , _bucket(bucket)
   , _upload_interval_ms(
       config::shard_local_cfg()
-        .cloud_storage_cluster_metadata_upload_interval_ms.bind()) {}
+        .cloud_storage_cluster_metadata_upload_interval_ms.bind()) {
+    vassert(_offsets_uploader, "expected initialized offsets_uploader");
+}
 
 ss::future<bool> uploader::term_has_changed(model::term_id term) {
     if (!_raft0->is_leader() || _raft0->term() != term) {

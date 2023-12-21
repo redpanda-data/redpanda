@@ -86,7 +86,10 @@ cluster_recovery_backend::cluster_recovery_backend(
   , _producer_id_recovery(std::move(producer_id_recovery))
   , _offsets_recovery(std::move(offsets_recovery))
   , _recovery_table(recovery_table)
-  , _raft0(std::move(raft0)) {}
+  , _raft0(std::move(raft0)) {
+    vassert(_producer_id_recovery, "expected initialized producer_id_recovery");
+    vassert(_offsets_recovery, "expected initialized offsets_recovery");
+}
 
 void cluster_recovery_backend::start() {
     _leader_cb_id = _raft_group_manager.register_leadership_notification(
