@@ -379,15 +379,11 @@ class Admin:
         return self._request("GET", "cluster_config/schema", node=node).json()
 
     def patch_cluster_config(self,
-                             upsert=None,
-                             remove=None,
+                             upsert: dict[str, str] = {},
+                             remove: list[str] = [],
                              force=False,
                              dry_run=False,
                              node=None):
-        if upsert is None:
-            upsert = {}
-        if remove is None:
-            remove = []
 
         path = "cluster_config"
         params = {}
@@ -844,7 +840,7 @@ class Admin:
 
     def maintenance_start(self, node, dst_node=None):
         """
-        Start maintenanceing on 'node', sending the request to 'dst_node'.
+        Start maintenance on 'node', sending the request to 'dst_node'.
         """
         id = self.redpanda.node_id(node)
         url = f"brokers/{id}/maintenance"
@@ -854,7 +850,7 @@ class Admin:
 
     def maintenance_stop(self, node, dst_node=None):
         """
-        Stop maintenanceing on 'node', sending the request to 'dst_node'.
+        Stop maintenance on 'node', sending the request to 'dst_node'.
         """
         id = self.redpanda.node_id(node)
         url = f"brokers/{id}/maintenance"
