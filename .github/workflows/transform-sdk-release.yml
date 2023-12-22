@@ -35,7 +35,7 @@ jobs:
             github.rest.git.createRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              ref: 'refs/tags/src/transform-sdk/go/transform/${{git.ref_name}}',
+              ref: 'refs/tags/src/transform-sdk/go/transform/${{github.ref_name}}',
               sha: context.sha
             })
 
