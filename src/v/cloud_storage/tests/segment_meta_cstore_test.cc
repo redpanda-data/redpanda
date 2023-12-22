@@ -36,8 +36,10 @@ using delta_xor_alg = details::delta_xor;
 using delta_xor_frame = deltafor_frame<int64_t, delta_xor_alg{}>;
 using delta_delta_alg = details::delta_delta<int64_t>;
 using delta_delta_frame = deltafor_frame<int64_t, delta_delta_alg{}>;
-using delta_xor_column = deltafor_column<int64_t, delta_xor_alg>;
-using delta_delta_column = deltafor_column<int64_t, delta_delta_alg>;
+using delta_xor_column
+  = deltafor_column<int64_t, delta_xor_alg, cstore_max_frame_size>;
+using delta_delta_column
+  = deltafor_column<int64_t, delta_delta_alg, cstore_max_frame_size>;
 
 // The performance of these tests depend on compiler optimizations a lot.
 // The read codepath only works well when the compiler is able to vectorize

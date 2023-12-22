@@ -31,9 +31,11 @@ namespace cloud_storage {
 using int64_delta_alg = details::delta_delta<int64_t>;
 using int64_xor_alg = details::delta_xor;
 // Column for monotonically increasing data
-using counter_col_t = deltafor_column<int64_t, int64_delta_alg>;
+using counter_col_t
+  = deltafor_column<int64_t, int64_delta_alg, cstore_max_frame_size>;
 // Column for varying data
-using gauge_col_t = deltafor_column<int64_t, int64_xor_alg>;
+using gauge_col_t
+  = deltafor_column<int64_t, int64_xor_alg, cstore_max_frame_size>;
 
 /// Sampling rate of the indexer inside the column store, if
 /// sampling_rate == 1 every row is indexed, 2 - every second row, etc

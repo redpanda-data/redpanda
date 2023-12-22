@@ -527,21 +527,22 @@ private:
 /// algorithm and another one for delta_delta. The latter one is guaranteed
 /// to be used with monotonic sequences which makes some search
 /// optimizations possible.
-template<class value_t, class delta_t>
+template<class value_t, class delta_t, size_t max_frame_size>
 class deltafor_column;
 
 // to get rid of value_t and delta_alg
-template<class value_t, auto delta_alg, class Derived>
+template<class value_t, auto delta_alg, class Derived, size_t max_frame_size>
 class deltafor_column_impl
   : public serde::envelope<
-      deltafor_column_impl<value_t, delta_alg, Derived>,
+      deltafor_column_impl<value_t, delta_alg, Derived, max_frame_size>,
       serde::version<0>,
       serde::compat_version<0>> {
     using delta_t = std::remove_cvref_t<decltype(delta_alg)>;
     using frame_t = deltafor_frame<value_t, delta_alg>;
     using decoder_t = deltafor_decoder<value_t, delta_t>;
 
-    using self_t = deltafor_column_impl<value_t, delta_alg, Derived>;
+    using self_t
+      = deltafor_column_impl<value_t, delta_alg, Derived, max_frame_size>;
 
     // this friendship is used to access frame_t and _frames
     friend class column_store;
@@ -565,7 +566,6 @@ public:
     /// index lookup operations
     using hint_t = typename frame_t::hint_t;
 
-    static constexpr size_t max_frame_size = cstore_max_frame_size;
     using const_iterator = deltafor_column_const_iterator<value_t, delta_alg>;
 
     deltafor_column_impl() = default;
@@ -610,13 +610,15 @@ public:
 
         column_tx_t(
           frame_tx_t inner,
-          deltafor_column_impl<value_t, delta_alg, Derived>& self)
+          deltafor_column_impl<value_t, delta_alg, Derived, max_frame_size>&
+            self)
           : inner(std::move(inner))
           , self(self) {}
 
         column_tx_t(
           frame_t frame,
-          deltafor_column_impl<value_t, delta_alg, Derived>& self)
+          deltafor_column_impl<value_t, delta_alg, Derived, max_frame_size>&
+            self)
           : inner(std::list<frame_t>())
           , self(self) {
             std::get<frame_list_t>(inner).push_back(std::move(frame));
@@ -827,16 +829,18 @@ protected:
 /// specialization is for xor-delta algorithm. It doesn't allow skipping
 /// frames so all search operations require full scan. Random access by
 /// index can skip frames since indexes are monotonic.
-template<class value_t>
-class deltafor_column<value_t, details::delta_xor>
+template<class value_t, size_t max_frame_size>
+class deltafor_column<value_t, details::delta_xor, max_frame_size>
   : public deltafor_column_impl<
       value_t,
       details::delta_xor{},
-      deltafor_column<value_t, details::delta_xor>> {
+      deltafor_column<value_t, details::delta_xor, max_frame_size>,
+      max_frame_size> {
     using base_t = deltafor_column_impl<
       value_t,
       details::delta_xor{},
-      deltafor_column<value_t, details::delta_xor>>;
+      deltafor_column<value_t, details::delta_xor, max_frame_size>,
+      max_frame_size>;
 
 public:
     using delta_alg = details::delta_xor;
@@ -861,16 +865,18 @@ public:
 /// single digit microsecond intervals even with millions of elements
 /// in the column. The actual decoding is only performed for a single frame.
 /// The access by index is also fast (same order of magnitued as search).
-template<class value_t>
-class deltafor_column<value_t, details::delta_delta<value_t>>
+template<class value_t, size_t max_frame_size>
+class deltafor_column<value_t, details::delta_delta<value_t>, max_frame_size>
   : public deltafor_column_impl<
       value_t,
       details::delta_delta<value_t>{},
-      deltafor_column<value_t, details::delta_delta<value_t>>> {
+      deltafor_column<value_t, details::delta_delta<value_t>, max_frame_size>,
+      max_frame_size> {
     using base_t = deltafor_column_impl<
       value_t,
       details::delta_delta<value_t>{},
-      deltafor_column<value_t, details::delta_delta<value_t>>>;
+      deltafor_column<value_t, details::delta_delta<value_t>, max_frame_size>,
+      max_frame_size>;
 
 public:
     using delta_alg = details::delta_delta<value_t>;
@@ -959,8 +965,10 @@ public:
 
     using int64_delta_alg = details::delta_delta<int64_t>;
     using int64_xor_alg = details::delta_xor;
-    using counter_col_t = deltafor_column<int64_t, int64_delta_alg>;
-    using gauge_col_t = deltafor_column<int64_t, int64_xor_alg>;
+    using counter_col_t
+      = deltafor_column<int64_t, int64_delta_alg, cstore_max_frame_size>;
+    using gauge_col_t
+      = deltafor_column<int64_t, int64_xor_alg, cstore_max_frame_size>;
 
     segment_meta_cstore();
     segment_meta_cstore(segment_meta_cstore&&) noexcept;
