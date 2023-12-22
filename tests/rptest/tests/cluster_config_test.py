@@ -1924,3 +1924,29 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self._check_value_everywhere(self.key, expected)
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere(self.key, expected)
+
+
+class ClusterConfigUnknownTest(RedpandaTest):
+    def __init__(self, test_context):
+        super().__init__(test_context)
+
+        self.admin = Admin(self.redpanda)
+
+    @cluster(num_nodes=3)
+    def test_unknown_value(self):
+        """
+        Test that an unknown property saved in the log does not prevent a node from starting.
+        In this test we use a non existing property,
+        but it can be a property not yet introduced in the current version.
+        For example a property set in the middle of an upgrade followed up by a rollback.
+        see issues/15839
+        """
+        self.admin.patch_cluster_config(
+            upsert={"a_non_existing_property": "a_value_with_no_importance"},
+            force=True)
+
+        assert "a_non_existing_property" not in self.admin.get_cluster_config(
+        ), "unexpected property found in cluster config"
+
+        # issue would appear when reloading the property back
+        self.redpanda.restart_nodes(self.redpanda.nodes[0])
