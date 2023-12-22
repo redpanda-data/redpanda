@@ -131,7 +131,7 @@ class even_topic_distributon_constraint final
     using topic_id_t = model::revision_id::type;
 
     template<typename ValueType>
-    using topic_map = absl::flat_hash_map<topic_id_t, ValueType>;
+    using topic_map = absl::btree_map<topic_id_t, ValueType>;
 
 public:
     even_topic_distributon_constraint(
