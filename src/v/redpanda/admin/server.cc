@@ -3568,6 +3568,10 @@ admin_server::initialize_cluster_recovery(
   std::unique_ptr<ss::http::request> request,
   std::unique_ptr<ss::http::reply> reply) {
     reply->set_content_type("json");
+    if (config::node().recovery_mode_enabled()) {
+        throw ss::httpd::bad_request_exception(
+          "Cluster restore is not available, recovery mode enabled");
+    }
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*request, model::controller_ntp);
     }

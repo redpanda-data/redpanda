@@ -144,10 +144,6 @@ public:
         return _recovery_manager;
     }
 
-    cloud_metadata::cluster_recovery_backend& get_cluster_recovery_backend() {
-        return *_recovery_backend;
-    }
-
     ss::sharded<cluster_recovery_table>& get_cluster_recovery_table() {
         return _recovery_table;
     }
