@@ -33,11 +33,11 @@ using namespace cloud_storage;
 static ss::logger test("test-logger-s");
 
 using delta_xor_alg = details::delta_xor;
-using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg{}>;
+using delta_xor_frame = deltafor_frame<int64_t, delta_xor_alg{}>;
 using delta_delta_alg = details::delta_delta<int64_t>;
-using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg{}>;
-using delta_xor_column = segment_meta_column<int64_t, delta_xor_alg>;
-using delta_delta_column = segment_meta_column<int64_t, delta_delta_alg>;
+using delta_delta_frame = deltafor_frame<int64_t, delta_delta_alg{}>;
+using delta_xor_column = deltafor_column<int64_t, delta_xor_alg>;
+using delta_delta_column = deltafor_column<int64_t, delta_delta_alg>;
 
 // The performance of these tests depend on compiler optimizations a lot.
 // The read codepath only works well when the compiler is able to vectorize

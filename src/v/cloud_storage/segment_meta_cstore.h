@@ -33,20 +33,20 @@ constexpr size_t cstore_max_frame_size = 0x400;
 constexpr size_t cstore_sampling_rate = 8;
 
 template<class value_t, class decoder_t>
-class segment_meta_frame_const_iterator
+class deltafor_frame_const_iterator
   : public boost::iterator_facade<
-      segment_meta_frame_const_iterator<value_t, decoder_t>,
+      deltafor_frame_const_iterator<value_t, decoder_t>,
       value_t const,
       boost::iterators::forward_traversal_tag> {
     constexpr static uint32_t buffer_depth = details::FOR_buffer_depth;
     constexpr static uint32_t index_mask = buffer_depth - 1;
 
     friend class boost::iterator_core_access;
-    using self_t = segment_meta_frame_const_iterator<value_t, decoder_t>;
+    using self_t = deltafor_frame_const_iterator<value_t, decoder_t>;
 
 public:
     /// Create iterator that points to the beginning
-    explicit segment_meta_frame_const_iterator(
+    explicit deltafor_frame_const_iterator(
       decoder_t decoder,
       const std::array<value_t, buffer_depth>& head,
       uint32_t size,
@@ -63,7 +63,7 @@ public:
     }
 
     /// Create iterator that points to the end
-    segment_meta_frame_const_iterator() = default;
+    deltafor_frame_const_iterator() = default;
 
     uint32_t index() const { return _pos; }
 
@@ -108,9 +108,9 @@ struct share_frame_t {};
 inline constexpr auto share_frame = share_frame_t{};
 
 template<class value_t, auto delta_alg_instance = details::delta_xor{}>
-class segment_meta_column_frame
+class deltafor_frame
   : public serde::envelope<
-      segment_meta_column_frame<value_t, delta_alg_instance>,
+      deltafor_frame<value_t, delta_alg_instance>,
       serde::version<0>,
       serde::compat_version<0>> {
 public:
@@ -128,14 +128,13 @@ private:
         value_t value;
     };
 
-    using self_t = segment_meta_column_frame<value_t, delta_alg_instance>;
+    using self_t = deltafor_frame<value_t, delta_alg_instance>;
 
 public:
-    segment_meta_column_frame() = default;
+    deltafor_frame() = default;
 
     // constructor that will share the underlying buffer of src
-    segment_meta_column_frame(
-      share_frame_t, segment_meta_column_frame& src) noexcept
+    deltafor_frame(share_frame_t, deltafor_frame& src) noexcept
       : _head{src._head}
       , _tail{[&] {
           if (src._tail.has_value()) {
@@ -148,8 +147,7 @@ public:
       , _size{src._size}
       , _last_row{src._last_row} {}
 
-    using const_iterator
-      = segment_meta_frame_const_iterator<value_t, decoder_t>;
+    using const_iterator = deltafor_frame_const_iterator<value_t, decoder_t>;
 
     using hint_t = deltafor_stream_pos_t<value_t>;
 
@@ -381,22 +379,22 @@ private:
 /// copy of the column (the underlying iobuf is shared, the write buffer
 /// is copied).
 template<class value_t, auto delta_alg>
-class segment_meta_column_const_iterator
+class deltafor_column_const_iterator
   : public boost::iterator_facade<
-      segment_meta_column_const_iterator<value_t, delta_alg>,
+      deltafor_column_const_iterator<value_t, delta_alg>,
       value_t const,
       boost::iterators::forward_traversal_tag> {
     friend class boost::iterator_core_access;
 
 public:
-    using frame_t = segment_meta_column_frame<value_t, delta_alg>;
+    using frame_t = deltafor_frame<value_t, delta_alg>;
     using frame_iter_t = typename frame_t::const_iterator;
     using hint_t = typename frame_t::hint_t;
 
 private:
     using outer_iter_t = typename std::list<frame_iter_t>::iterator;
     using iter_list_t = std::list<frame_iter_t>;
-    using self_t = segment_meta_column_const_iterator<value_t, delta_alg>;
+    using self_t = deltafor_column_const_iterator<value_t, delta_alg>;
 
     template<class container_t>
     static iter_list_t make_snapshot(const container_t& src) {
@@ -462,7 +460,7 @@ private:
 public:
     /// Create iterator that points to the beginning of the column
     template<class container_t>
-    explicit segment_meta_column_const_iterator(const container_t& src)
+    explicit deltafor_column_const_iterator(const container_t& src)
       : _snapshot(make_snapshot(src))
       , _outer_it(_snapshot.begin())
       , _inner_it(
@@ -470,7 +468,7 @@ public:
 
     /// Create iterator that points to the middle of the column
     template<class iterator_t>
-    explicit segment_meta_column_const_iterator(
+    explicit deltafor_column_const_iterator(
       iterator_t begin,
       iterator_t end,
       uint32_t intra_frame_ix,
@@ -482,7 +480,7 @@ public:
       , _ix_column(column_ix) {}
 
     template<class iterator_t>
-    explicit segment_meta_column_const_iterator(
+    explicit deltafor_column_const_iterator(
       iterator_t begin,
       iterator_t end,
       uint32_t intra_frame_ix,
@@ -495,7 +493,7 @@ public:
       , _ix_column(column_ix) {}
 
     /// Create iterator that points to the end of any column
-    segment_meta_column_const_iterator()
+    deltafor_column_const_iterator()
       : _outer_it(_snapshot.end()) {}
 
     // Current index
@@ -530,26 +528,26 @@ private:
 /// to be used with monotonic sequences which makes some search
 /// optimizations possible.
 template<class value_t, class delta_t>
-class segment_meta_column;
+class deltafor_column;
 
 // to get rid of value_t and delta_alg
 template<class value_t, auto delta_alg, class Derived>
-class segment_meta_column_impl
+class deltafor_column_impl
   : public serde::envelope<
-      segment_meta_column_impl<value_t, delta_alg, Derived>,
+      deltafor_column_impl<value_t, delta_alg, Derived>,
       serde::version<0>,
       serde::compat_version<0>> {
     using delta_t = std::remove_cvref_t<decltype(delta_alg)>;
-    using frame_t = segment_meta_column_frame<value_t, delta_alg>;
+    using frame_t = deltafor_frame<value_t, delta_alg>;
     using decoder_t = deltafor_decoder<value_t, delta_t>;
 
-    using self_t = segment_meta_column_impl<value_t, delta_alg, Derived>;
+    using self_t = deltafor_column_impl<value_t, delta_alg, Derived>;
 
     // this friendship is used to access frame_t and _frames
     friend class column_store;
 
     // constructor that will share all the frames from the source range
-    segment_meta_column_impl(
+    deltafor_column_impl(
       share_frame_t, auto&& frame_iterator, auto&& frame_iterator_end) {
         for (; frame_iterator != frame_iterator_end; ++frame_iterator) {
             // this target the constructor that will share the underlying buffer
@@ -568,13 +566,12 @@ public:
     using hint_t = typename frame_t::hint_t;
 
     static constexpr size_t max_frame_size = cstore_max_frame_size;
-    using const_iterator
-      = segment_meta_column_const_iterator<value_t, delta_alg>;
+    using const_iterator = deltafor_column_const_iterator<value_t, delta_alg>;
 
-    segment_meta_column_impl() = default;
+    deltafor_column_impl() = default;
 
-    segment_meta_column_impl(segment_meta_column_impl&&) = default;
-    segment_meta_column_impl& operator=(segment_meta_column_impl&&) = default;
+    deltafor_column_impl(deltafor_column_impl&&) noexcept = default;
+    deltafor_column_impl& operator=(deltafor_column_impl&&) noexcept = default;
 
     void append(value_t value) {
         if (_frames.empty() || _frames.back().size() == max_frame_size) {
@@ -613,13 +610,13 @@ public:
 
         column_tx_t(
           frame_tx_t inner,
-          segment_meta_column_impl<value_t, delta_alg, Derived>& self)
+          deltafor_column_impl<value_t, delta_alg, Derived>& self)
           : inner(std::move(inner))
           , self(self) {}
 
         column_tx_t(
           frame_t frame,
-          segment_meta_column_impl<value_t, delta_alg, Derived>& self)
+          deltafor_column_impl<value_t, delta_alg, Derived>& self)
           : inner(std::list<frame_t>())
           , self(self) {
             std::get<frame_list_t>(inner).push_back(std::move(frame));
@@ -823,7 +820,7 @@ protected:
     std::list<frame_t> _frames;
 };
 
-/// Segment metadata column.
+/// DeltaFor encoded collection of values.
 ///
 /// Contains a list of frames. The frames are not overlapping with each
 /// other. The iterator is used to scan both all frames seamlessly. This
@@ -831,15 +828,15 @@ protected:
 /// frames so all search operations require full scan. Random access by
 /// index can skip frames since indexes are monotonic.
 template<class value_t>
-class segment_meta_column<value_t, details::delta_xor>
-  : public segment_meta_column_impl<
+class deltafor_column<value_t, details::delta_xor>
+  : public deltafor_column_impl<
       value_t,
       details::delta_xor{},
-      segment_meta_column<value_t, details::delta_xor>> {
-    using base_t = segment_meta_column_impl<
+      deltafor_column<value_t, details::delta_xor>> {
+    using base_t = deltafor_column_impl<
       value_t,
       details::delta_xor{},
-      segment_meta_column<value_t, details::delta_xor>>;
+      deltafor_column<value_t, details::delta_xor>>;
 
 public:
     using delta_alg = details::delta_xor;
@@ -865,15 +862,15 @@ public:
 /// in the column. The actual decoding is only performed for a single frame.
 /// The access by index is also fast (same order of magnitued as search).
 template<class value_t>
-class segment_meta_column<value_t, details::delta_delta<value_t>>
-  : public segment_meta_column_impl<
+class deltafor_column<value_t, details::delta_delta<value_t>>
+  : public deltafor_column_impl<
       value_t,
       details::delta_delta<value_t>{},
-      segment_meta_column<value_t, details::delta_delta<value_t>>> {
-    using base_t = segment_meta_column_impl<
+      deltafor_column<value_t, details::delta_delta<value_t>>> {
+    using base_t = deltafor_column_impl<
       value_t,
       details::delta_delta<value_t>{},
-      segment_meta_column<value_t, details::delta_delta<value_t>>>;
+      deltafor_column<value_t, details::delta_delta<value_t>>>;
 
 public:
     using delta_alg = details::delta_delta<value_t>;
@@ -962,8 +959,8 @@ public:
 
     using int64_delta_alg = details::delta_delta<int64_t>;
     using int64_xor_alg = details::delta_xor;
-    using counter_col_t = segment_meta_column<int64_t, int64_delta_alg>;
-    using gauge_col_t = segment_meta_column<int64_t, int64_xor_alg>;
+    using counter_col_t = deltafor_column<int64_t, int64_delta_alg>;
+    using gauge_col_t = deltafor_column<int64_t, int64_xor_alg>;
 
     segment_meta_cstore();
     segment_meta_cstore(segment_meta_cstore&&) noexcept;

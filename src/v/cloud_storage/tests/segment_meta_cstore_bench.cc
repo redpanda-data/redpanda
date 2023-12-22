@@ -25,11 +25,11 @@
 using namespace cloud_storage;
 
 using delta_xor_alg = details::delta_xor;
-using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg{}>;
+using delta_xor_frame = deltafor_frame<int64_t, delta_xor_alg{}>;
 using delta_delta_alg = details::delta_delta<int64_t>;
-using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg{}>;
-using delta_xor_column = segment_meta_column<int64_t, delta_xor_alg>;
-using delta_delta_column = segment_meta_column<int64_t, delta_delta_alg>;
+using delta_delta_frame = deltafor_frame<int64_t, delta_delta_alg{}>;
+using delta_xor_column = deltafor_column<int64_t, delta_xor_alg>;
+using delta_delta_column = deltafor_column<int64_t, delta_delta_alg>;
 
 static const delta_xor_frame xor_frame_4K = []() {
     delta_xor_frame frame{};
