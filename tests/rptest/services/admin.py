@@ -502,16 +502,31 @@ class Admin:
             for l in self._request("GET", "loggers", node=node).json()
         ]
 
-    def set_log_level(self, name, level, expires=None):
+    def get_log_level(self, name):
+        """
+        Get broker log level
+        """
+        responses = []
+        name = name.replace("/", "%2F")
+        for node in self.redpanda.nodes:
+            path = f"config/log_level/{name}"
+            responses.append(self._request('get', path, node=node).json())
+        return responses
+
+    def set_log_level(self, name, level, expires=None, force=False):
         """
         Set broker log level
         """
+        responses = []
         name = name.replace("/", "%2F")
         for node in self.redpanda.nodes:
             path = f"config/log_level/{name}?level={level}"
-            if expires:
+            if expires is not None:
                 path = f"{path}&expires={expires}"
-            self._request('put', path, node=node)
+            if force:
+                path = f"{path}&force=true"
+            responses.append(self._request('put', path, node=node).json())
+        return responses
 
     def get_brokers(self, node=None):
         """

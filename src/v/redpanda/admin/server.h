@@ -621,12 +621,22 @@ private:
     struct level_reset {
         using time_point = ss::timer<>::clock::time_point;
 
-        level_reset(ss::log_level level, time_point expires)
+        level_reset(ss::log_level level, std::optional<time_point> expires)
           : level(level)
           , expires(expires) {}
 
+        friend bool operator<(const level_reset& l, const level_reset& r) {
+            if (!l.expires.has_value()) {
+                return false;
+            } else if (!r.expires.has_value()) {
+                return true;
+            } else {
+                return l.expires.value() < r.expires.value();
+            }
+        }
+
         ss::log_level level;
-        time_point expires;
+        std::optional<time_point> expires;
     };
 
     ss::timer<> _log_level_timer;
