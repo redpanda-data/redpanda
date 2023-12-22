@@ -4,6 +4,7 @@ rp_test(
   BINARY_NAME cloud_storage_clients_single_thread
   SOURCES
     backend_detection_test.cc
+    client_pool_test.cc
     s3_client_test.cc
     xml_sax_parser_test.cc
     exception_test.cc
