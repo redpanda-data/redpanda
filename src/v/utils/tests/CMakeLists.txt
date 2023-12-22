@@ -65,3 +65,11 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::utils
   LABELS utils
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME delta_for
+  SOURCES delta_for_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::utils
+  LABELS utils
+)
