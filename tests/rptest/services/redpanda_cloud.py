@@ -100,6 +100,7 @@ class CloudClusterConfig:
     oauth_client_secret: str = ""
     oauth_audience: str = ""
     api_url: str = ""
+    admin_api_url: str = ""
     teleport_auth_server: str = ""
     teleport_bot_token: str = ""
     id: str = ""  # empty string makes it easier to pass thru default value from duck.py
@@ -1369,3 +1370,16 @@ class CloudCluster():
                         product['advertisedMaxPartitionCount']))
 
         return None
+
+    def scale_cluster(self, nodes_count):
+        """Scale out/in cluster to specified number of nodes.
+
+        Uses cloud admin api.
+        """
+        payload = {
+            'cluster_id': self.cluster_id,
+            'nodes_count': str(nodes_count)
+        }
+        return self.cloudv2._http_post(base_url=self.config.admin_api_url,
+                                       endpoint='/ScaleCluster',
+                                       json=payload)
