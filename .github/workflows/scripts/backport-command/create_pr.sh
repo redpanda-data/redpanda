@@ -56,7 +56,7 @@ gh pr create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
   --head "$GIT_USER:$HEAD_BRANCH" \
   --draft \
   --repo "$TARGET_ORG/$TARGET_REPO" \
-  --reviewer "$ORIG_REVIEWERS" \
+  --reviewer "$AUTHOR" \
   --milestone "$TARGET_MILESTONE" \
   --body "Backport of PR $ORIG_ISSUE_URL
 $backport_issue_urls"
