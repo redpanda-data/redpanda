@@ -61,6 +61,36 @@ model::record_batch record_batch_builder::build() && {
         _timestamp = model::timestamp::now();
     }
 
+    auto header = build_header();
+
+    if (_compression != model::compression::none) {
+        _records = compression::compressor::compress(_records, _compression);
+    }
+
+    internal::reset_size_checksum_metadata(header, _records);
+    return model::record_batch(
+      header, std::move(_records), model::record_batch::tag_ctor_ng{});
+}
+
+ss::future<model::record_batch> record_batch_builder::build_async() && {
+    if (!_timestamp) {
+        _timestamp = model::timestamp::now();
+    }
+
+    auto header = build_header();
+
+    if (_compression != model::compression::none) {
+        _records = co_await compression::stream_compressor::compress(
+          std::move(_records), _compression);
+    }
+
+    internal::reset_size_checksum_metadata(header, _records);
+
+    co_return model::record_batch(
+      header, std::move(_records), model::record_batch::tag_ctor_ng{});
+}
+
+model::record_batch_header record_batch_builder::build_header() const {
     model::record_batch_header header = {
       .size_bytes = 0,
       .base_offset = _base_offset,
@@ -85,13 +115,7 @@ model::record_batch record_batch_builder::build() && {
         header.attrs.set_transactional_type();
     }
 
-    if (_compression != model::compression::none) {
-        _records = compression::compressor::compress(_records, _compression);
-    }
-
-    internal::reset_size_checksum_metadata(header, _records);
-    return model::record_batch(
-      header, std::move(_records), model::record_batch::tag_ctor_ng{});
+    return header;
 }
 
 uint32_t record_batch_builder::record_size(
