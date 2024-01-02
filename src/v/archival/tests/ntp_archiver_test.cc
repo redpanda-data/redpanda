@@ -955,7 +955,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
       raft::group_id{0},
       manifest_ntp,
       b.storage());
-    tr.start(raft::offset_translator::must_reset::yes, {}).get();
+    tr.start(raft::offset_translator::must_reset::yes).get();
     const auto& tr_state = *tr.state();
 
     // first offset that is not yet uploaded
