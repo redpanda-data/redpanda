@@ -21,6 +21,7 @@ from rptest.services.admin import Replica
 from rptest.clients.kcl import KCL
 from threading import Thread, Condition
 from rptest.services.redpanda import RedpandaService
+from rptest.util import wait_until_result
 
 
 class ControllerLeadershipTransferInjector():
@@ -140,17 +141,26 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
     def _alive_nodes(self):
         return [n.account.hostname for n in self.redpanda.started_nodes()]
 
-    def _stop_majority_nodes(self, replication=5, conf=None):
+    def _stop_majority_nodes(self, replication=5):
         """
         Stops a random majority of nodes hosting partition 0 of test topic.
         """
         assert self.redpanda
-        if not conf:
-            conf = self.redpanda._admin._get_stable_configuration(
+
+        def _get_details():
+            d = self.redpanda._admin._get_stable_configuration(
                 hosts=self._alive_nodes(),
                 topic=self.topic,
                 replication=replication)
-        replicas = conf.replicas
+            if d is None:
+                return (False, None)
+            return (True, d)
+
+        partition_details = wait_until_result(_get_details,
+                                              timeout_sec=30,
+                                              backoff_sec=2)
+
+        replicas = partition_details.replicas
         shuffle(replicas)
         mid = len(replicas) // 2 + 1
         (killed, alive) = (replicas[0:mid], replicas[mid:])

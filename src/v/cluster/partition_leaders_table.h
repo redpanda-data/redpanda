@@ -88,12 +88,6 @@ public:
       model::term_id,
       std::optional<model::node_id>);
 
-    // Intended to be called when we apply the topic snapshot: add leader
-    // guesses for partitions that are present in the topic table but we have
-    // not leader information for (i.e. all as-yet unseen partitions).  Assumes
-    // that topic_table doesn't change during the call.
-    ss::future<> update_with_estimates();
-
     struct leader_info_t {
         model::topic_namespace tp_ns;
         model::partition_id pid;

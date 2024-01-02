@@ -115,8 +115,6 @@ private:
 
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
-    ss::future<>
-    update_leaders_with_estimates(ss::chunked_fifo<ntp_leader> leaders);
     template<typename T>
     void
     add_allocations_for_new_partitions(const T&, partition_allocation_domain);

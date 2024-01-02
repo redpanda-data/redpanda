@@ -125,16 +125,11 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     if (ec == errc::success) {
         add_allocations_for_new_partitions(
           assignments, get_allocation_domain(tp_ns));
-        ss::chunked_fifo<ntp_leader> leaders;
         for (const auto& p_as : assignments) {
             _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
               tp_ns.ns, tp_ns.tp, p_as.id, {}, p_as.replicas);
-            leaders.emplace_back(
-              model::ntp(tp_ns.ns, tp_ns.tp, p_as.id),
-              p_as.replicas.begin()->node_id);
             co_await ss::coroutine::maybe_yield();
         }
-        co_await update_leaders_with_estimates(std::move(leaders));
 
         co_return errc::success;
     }
@@ -501,25 +496,6 @@ topic_updates_dispatcher::collect_in_progress(
     return in_progress;
 }
 
-ss::future<> topic_updates_dispatcher::update_leaders_with_estimates(
-  ss::chunked_fifo<ntp_leader> leaders) {
-    return ss::do_with(
-      std::move(leaders), [this](ss::chunked_fifo<ntp_leader>& leaders) {
-          return ss::parallel_for_each(leaders, [this](ntp_leader& leader) {
-              vlog(
-                clusterlog.debug,
-                "update_leaders_with_estimates: new NTP {} leader {}",
-                leader.first,
-                leader.second);
-              return _partition_leaders_table.invoke_on_all(
-                [leader = std::move(leader)](partition_leaders_table& l) {
-                    return l.update_partition_leader(
-                      leader.first, model::term_id(1), leader.second);
-                });
-          });
-      });
-}
-
 template<typename Cmd>
 ss::future<std::error_code> do_apply(
   ss::shard_id shard,
@@ -609,11 +585,6 @@ ss::future<> topic_updates_dispatcher::apply_snapshot(
     co_await _topic_table.invoke_on_all([&snap, offset](topic_table& topics) {
         return topics.apply_snapshot(offset, snap);
     });
-
-    co_await _partition_leaders_table.invoke_on_all(
-      [](partition_leaders_table& leaders) {
-          return leaders.update_with_estimates();
-      });
 
     co_await _partition_allocator.local().apply_snapshot(snap);
 
