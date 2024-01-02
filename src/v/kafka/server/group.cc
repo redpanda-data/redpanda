@@ -29,6 +29,7 @@
 #include "raft/errc.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "utils/fragmented_vector.h"
 #include "utils/to_string.h"
 #include "vassert.h"
 
@@ -2679,7 +2680,7 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
     if (!r.data.topics) {
         absl::flat_hash_map<
           model::topic,
-          std::vector<offset_fetch_response_partition>>
+          small_fragment_vector<offset_fetch_response_partition>>
           tmp;
         for (const auto& e : _offsets) {
             offset_fetch_response_partition p = {
