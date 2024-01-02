@@ -1741,7 +1741,7 @@ configuration::configuration()
       "cloud_storage_full_scrub_interval_ms",
       "Time interval between a final scrub and thte next scrub",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1h)
+      12h)
   , cloud_storage_scrubbing_interval_jitter_ms(
       *this,
       "cloud_storage_scrubbing_interval_jitter_ms",
