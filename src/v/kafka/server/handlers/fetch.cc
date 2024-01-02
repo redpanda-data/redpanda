@@ -336,7 +336,9 @@ static ss::future<read_result> do_read_from_ntp(
           kafka_partition->start_offset(),
           kafka_partition->high_watermark());
     }
-    if (ntp_config.cfg.consumer_rack_id && kafka_partition->is_leader()) {
+    if (
+      config::shard_local_cfg().enable_rack_awareness.value()
+      && ntp_config.cfg.consumer_rack_id && kafka_partition->is_leader()) {
         auto p_info_res = kafka_partition->get_partition_info();
         if (p_info_res.has_error()) {
             // TODO: add mapping here
