@@ -32,6 +32,24 @@ for h in logging.getLogger().handlers:
 COMMON_TEST_ARGS = ["--blocked-reactor-notify-ms 2000000"]
 
 
+def find_vbuild_path_from_binary(binary_path, num_subdirs=1):
+    """
+    Return the absolute path to the vbuild directory by extracting it from a
+    binary's path.
+
+    Optionally also include num_subdirs subdirectory components.
+    """
+    path_parts = binary_path.split("/")
+    try:
+        vbuild = "/".join(path_parts[0:path_parts.index("vbuild") +
+                                     num_subdirs])
+    except (ValueError, IndexError):
+        sys.stderr.write(
+            f"Could not find vbuild in binary path {binary_path}\n")
+        return
+    return vbuild
+
+
 class BacktraceCapture(threading.Thread):
     """
     Class for capturing stderr into a string, while also
@@ -131,14 +149,8 @@ class BacktraceCapture(threading.Thread):
             return ci_location
 
         # Workstation: find our build directory by searching back from binary
-        path_parts = self.binary.split("/")
-        try:
-            vbuild = "/".join(path_parts[0:path_parts.index("vbuild") + 3])
-        except (ValueError, IndexError):
-            sys.stderr.write(
-                f"Could not find vbuild in binary path {self.binary}\n")
-            return
-        else:
+        vbuild = find_vbuild_path_from_binary(self.binary, 3)
+        if vbuild:
             location = os.path.join(
                 vbuild,
                 "v_deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line"
@@ -234,7 +246,16 @@ class TestRunner():
                 args = [arg for arg in args if arg != "--"]
 
         elif "rpbench" in binary:
-            args = args + COMMON_TEST_ARGS
+            json_output = []
+            vbuild = find_vbuild_path_from_binary(self.binary)
+            bench_name = os.path.basename(self.binary)
+            if vbuild:
+                json_output = [
+                    "--json-output",
+                    os.path.join(vbuild, f"microbench/{bench_name}.json")
+                ]
+
+            args = args + COMMON_TEST_ARGS + json_output
         # aggregated args for test
         self.test_args = " ".join(args)
 
