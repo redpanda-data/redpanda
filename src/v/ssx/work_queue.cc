@@ -14,31 +14,24 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
 
-#include <exception>
-
 namespace ssx {
 work_queue::work_queue(error_reporter_fn fn)
-  : _error_reporter(std::move(fn)) {}
+  : _error_reporter(std::move(fn)) {
+    ssx::background = process();
+}
 
 void work_queue::submit(ss::noncopyable_function<ss::future<>()> fn) {
     if (_as.abort_requested()) {
         return;
     }
-    _tail = _tail
-              .then([this, fn = std::move(fn)]() {
-                  if (_as.abort_requested()) {
-                      return ss::now();
-                  }
-                  return fn();
-              })
-              .handle_exception(
-                [this](const std::exception_ptr& ex) { _error_reporter(ex); });
+    _tasks.push_back(std::move(fn));
+    _cond_var.signal();
 }
 
 ss::future<> work_queue::shutdown() {
     _as.request_abort();
+    _cond_var.signal();
     co_await _gate.close();
-    co_await std::exchange(_tail, ss::now());
 }
 
 void work_queue::submit_after(
@@ -50,4 +43,23 @@ void work_queue::submit_after(
           submit(std::move(fn));
       });
 }
+
+ss::future<> work_queue::process() {
+    auto holder = _gate.hold();
+    while (true) {
+        co_await _cond_var.wait(
+          [this] { return !_tasks.empty() || _as.abort_requested(); });
+        if (_as.abort_requested()) {
+            co_return;
+        }
+        auto task_fn = std::move(_tasks.front());
+        _tasks.pop_front();
+        try {
+            co_await task_fn();
+        } catch (...) {
+            _error_reporter(std::current_exception());
+        }
+    }
+}
+
 } // namespace ssx
