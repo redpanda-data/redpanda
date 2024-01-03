@@ -9,6 +9,7 @@
 
 #include "cluster/scheduling/partition_allocator.h"
 
+#include "base/units.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
@@ -19,7 +20,6 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "storage/segment_appender.h"
-#include "units.h"
 #include "utils/human.h"
 
 #include <seastar/core/chunked_fifo.hh>

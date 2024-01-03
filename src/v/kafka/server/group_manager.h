@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/cloud_metadata/offsets_recovery_rpc_types.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/fwd.h"
@@ -32,7 +33,6 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "raft/group_manager.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "utils/rwlock.h"
 

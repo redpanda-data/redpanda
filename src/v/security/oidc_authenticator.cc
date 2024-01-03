@@ -9,6 +9,7 @@
  */
 #include "security/oidc_authenticator.h"
 
+#include "base/vlog.h"
 #include "config/property.h"
 #include "security/acl.h"
 #include "security/errc.h"
@@ -16,7 +17,6 @@
 #include "security/logger.h"
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_service.h"
-#include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
 

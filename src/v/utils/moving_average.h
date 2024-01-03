@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "likely.h"
+#include "base/likely.h"
+#include "base/vassert.h"
 #include "named_type.h"
-#include "vassert.h"
 
 #include <array>
 #include <chrono>

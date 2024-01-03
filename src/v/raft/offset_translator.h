@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/units.h"
 #include "model/fundamental.h"
 #include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
-#include "units.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 

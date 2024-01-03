@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/parsing/exceptions.h"
 #include "pandaproxy/parsing/from_chars.h"
 #include "reflection/type_traits.h"
-#include "vassert.h"
 
 #include <seastar/http/httpd.hh>
 #include <seastar/http/request.hh>

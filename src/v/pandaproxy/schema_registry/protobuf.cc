@@ -11,13 +11,13 @@
 
 #include "pandaproxy/schema_registry/protobuf.h"
 
+#include "base/vlog.h"
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 

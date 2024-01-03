@@ -8,11 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/recursive_directory_walker.h"
-#include "seastarx.h"
 #include "test_utils/tmp_dir.h"
 
 #include <seastar/core/file.hh>

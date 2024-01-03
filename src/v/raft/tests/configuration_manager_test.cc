@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -22,7 +23,6 @@
 #include "storage/types.h"
 #include "test_utils/fixture.h"
 #include "test_utils/randoms.h"
-#include "units.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/util/log.hh>

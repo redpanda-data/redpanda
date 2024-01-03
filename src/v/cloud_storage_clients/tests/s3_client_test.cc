@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
@@ -18,7 +19,6 @@
 #include "net/dns.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
-#include "seastarx.h"
 #include "test_utils/fixture.h"
 #include "utils/base64.h"
 

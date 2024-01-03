@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "model/metadata.h"
-#include "outcome.h"
 #include "raft/logger.h"
 #include "raft/recovery_memory_quota.h"
 #include "storage/snapshot.h"

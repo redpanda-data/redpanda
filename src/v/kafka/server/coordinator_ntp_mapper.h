@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/metadata_cache.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
@@ -17,7 +18,6 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "seastar/core/sharded.hh"
-#include "seastarx.h"
 
 #include <seastar/core/reactor.hh>
 

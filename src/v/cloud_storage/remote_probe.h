@@ -10,10 +10,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/types.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>

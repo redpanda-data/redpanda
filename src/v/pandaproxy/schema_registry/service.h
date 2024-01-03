@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/client/client.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/server.h"
 #include "pandaproxy/util.h"
-#include "seastarx.h"
 #include "security/fwd.h"
 #include "security/request_auth.h"
 

@@ -9,11 +9,11 @@
 
 #include "http/client.h"
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "net/transport.h"
 #include "rpc/types.h"
-#include "seastarx.h"
 #include "syschecks/syschecks.h"
-#include "vlog.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/future.hh>

@@ -8,8 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "cloud_storage_clients/client_pool.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

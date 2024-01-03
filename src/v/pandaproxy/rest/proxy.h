@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "pandaproxy/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
 #include "pandaproxy/util.h"
-#include "seastarx.h"
 #include "security/request_auth.h"
 
 #include <seastar/core/future.hh>

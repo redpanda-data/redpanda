@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/exceptions.h"
 #include "pandaproxy/error.h"
@@ -20,7 +21,6 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/exceptions.h"
 #include "pandaproxy/schema_registry/exceptions.h"
-#include "seastarx.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sstring.hh>

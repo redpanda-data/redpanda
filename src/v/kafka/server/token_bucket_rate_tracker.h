@@ -10,8 +10,8 @@
  */
 
 #pragma once
-#include "likely.h"
-#include "seastarx.h"
+#include "base/likely.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/bool_class.hh>

@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/units.h"
 #include "resource_mgmt/memory_groups.h"
-#include "units.h"
 #include "utils/human.h"
 
 #include <gmock/gmock.h>

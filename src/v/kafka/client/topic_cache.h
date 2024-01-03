@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/client/partitioners.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 #include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>

@@ -9,6 +9,7 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
@@ -35,7 +36,6 @@
 #include "storage/segment_appender_utils.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_future.hh>

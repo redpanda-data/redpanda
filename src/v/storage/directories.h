@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
-#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/seastar.hh>

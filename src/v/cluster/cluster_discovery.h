@@ -8,11 +8,11 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "random/simple_time_jitter.h"
-#include "seastarx.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/future.hh>

@@ -9,6 +9,7 @@
 
 #include "migrations/cloud_storage_config.h"
 
+#include "base/vlog.h"
 #include "cluster/controller.h"
 #include "cluster/feature_manager.h"
 #include "cluster/topics_frontend.h"
@@ -16,7 +17,6 @@
 #include "features/logger.h"
 #include "migrations/feature_migrator.h"
 #include "ssx/future-util.h"
-#include "vlog.h"
 
 #include <seastar/core/sleep.hh>
 

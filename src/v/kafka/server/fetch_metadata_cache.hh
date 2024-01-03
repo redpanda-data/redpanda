@@ -14,7 +14,7 @@
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
-#include "units.h"
+#include "base/units.h"
 
 #include <seastar/core/lowres_clock.hh>
 

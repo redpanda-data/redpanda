@@ -10,7 +10,7 @@
  */
 #include "io/tests/common.h"
 
-#include "units.h"
+#include "base/units.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/util/later.hh>

@@ -10,8 +10,8 @@
  */
 #include "utils/bottomless_token_bucket.h"
 
-#include "likely.h"
-#include "vassert.h"
+#include "base/likely.h"
+#include "base/vassert.h"
 
 #include <fmt/chrono.h>
 

@@ -10,13 +10,13 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
 #include "test_utils/fixture.h"
-#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>

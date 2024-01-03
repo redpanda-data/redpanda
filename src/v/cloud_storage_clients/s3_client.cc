@@ -10,6 +10,7 @@
 
 #include "cloud_storage_clients/s3_client.h"
 
+#include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
@@ -20,7 +21,6 @@
 #include "net/types.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

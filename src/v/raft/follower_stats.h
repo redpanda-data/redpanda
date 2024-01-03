@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/follower_queue.h"
 #include "raft/types.h"
-#include "vassert.h"
 
 #include <absl/container/node_hash_map.h>
 

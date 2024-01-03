@@ -9,10 +9,10 @@
  */
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
-#include "outcome.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

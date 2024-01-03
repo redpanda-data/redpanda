@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
@@ -38,7 +39,6 @@
 #include "net/unresolved_address.h"
 #include "redpanda/tests/fixture.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>

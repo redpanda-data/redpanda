@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/record.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "seastarx.h"
 #include "wasm/fwd.h"
 
 #include <memory>

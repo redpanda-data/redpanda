@@ -11,11 +11,11 @@
 
 #include "cluster/self_test_frontend.h"
 
+#include "base/vlog.h"
 #include "cluster/logger.h"
 #include "cluster/self_test/netcheck.h"
 #include "cluster/self_test_backend.h"
 #include "ssx/future-util.h"
-#include "vlog.h"
 
 namespace cluster {
 

@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/util/log.hh>
 

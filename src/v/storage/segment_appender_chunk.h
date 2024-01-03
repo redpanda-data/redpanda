@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "config/configuration.h"
-#include "seastarx.h"
-#include "units.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/align.hh>

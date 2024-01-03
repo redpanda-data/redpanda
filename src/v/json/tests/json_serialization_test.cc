@@ -7,11 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/core/thread.hh>

@@ -11,6 +11,9 @@
 
 #include "cluster/node/local_monitor.h"
 
+#include "base/seastarx.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/logger.h"
 #include "cluster/node/types.h"
 #include "config/configuration.h"
@@ -19,9 +22,7 @@
 #include "storage/node.h"
 #include "storage/types.h"
 #include "utils/human.h"
-#include "vassert.h"
 #include "version.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
@@ -34,7 +35,6 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <seastarx.h>
 
 using namespace std::chrono_literals;
 

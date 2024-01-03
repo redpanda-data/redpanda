@@ -11,6 +11,7 @@
 
 #include "wasm/transform_module.h"
 
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "model/compression.h"
@@ -20,7 +21,6 @@
 #include "model/transform.h"
 #include "utils/named_type.h"
 #include "utils/vint.h"
-#include "vassert.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
 #include "wasm/wasi.h"

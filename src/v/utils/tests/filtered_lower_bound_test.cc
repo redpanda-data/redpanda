@@ -8,9 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "utils/filtered_lower_bound.h"
-#include "vlog.h"
 
 #include <seastar/util/log.hh>
 

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/units.h"
 #include "cluster/commands.h"
 #include "cluster/members_table.h"
 #include "cluster/node_status_table.h"
@@ -23,7 +24,6 @@
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
-#include "units.h"
 
 #include <seastar/core/chunked_fifo.hh>
 

@@ -12,8 +12,8 @@
 #include "archival/logger.h"
 #include "archival/types.h"
 #include "archival/upload_housekeeping_service.h"
+#include "base/vlog.h"
 #include "utils/retry_chain_node.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

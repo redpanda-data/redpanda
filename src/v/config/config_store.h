@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/property.h"
-#include "seastarx.h"
 #include "utils/to_string.h"
 
 #include <fmt/format.h>

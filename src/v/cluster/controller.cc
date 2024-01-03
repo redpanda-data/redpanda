@@ -9,6 +9,7 @@
 
 #include "cluster/controller.h"
 
+#include "base/likely.h"
 #include "cluster/bootstrap_backend.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/cluster_recovery_backend.h"
@@ -56,7 +57,6 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "features/feature_table.h"
-#include "likely.h"
 #include "model/metadata.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"

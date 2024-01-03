@@ -9,15 +9,15 @@
 
 #include "rpc/transport.h"
 
-#include "likely.h"
+#include "base/likely.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "net/connection.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>

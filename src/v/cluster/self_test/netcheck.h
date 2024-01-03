@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "cluster/self_test/metrics.h"
 #include "cluster/self_test_rpc_service.h"
 #include "cluster/self_test_rpc_types.h"
 #include "rpc/connection_cache.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

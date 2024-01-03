@@ -11,6 +11,7 @@
 
 #include "security/request_auth.h"
 
+#include "base/vlog.h"
 #include "cluster/controller.h"
 #include "config/configuration.h"
 #include "seastar/http/exception.hh"
@@ -19,7 +20,6 @@
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/types.h"
-#include "vlog.h"
 
 #include <seastar/core/sstring.hh>
 

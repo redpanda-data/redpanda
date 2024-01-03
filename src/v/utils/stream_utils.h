@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "ssx/semaphore.h"
-#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>

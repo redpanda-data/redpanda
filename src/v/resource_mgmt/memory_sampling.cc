@@ -11,10 +11,10 @@
 
 #include "resource_mgmt/memory_sampling.h"
 
+#include "base/vlog.h"
 #include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>

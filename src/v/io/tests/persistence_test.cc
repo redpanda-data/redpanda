@@ -8,10 +8,10 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "base/units.h"
 #include "io/persistence.h"
 #include "io/tests/common.h"
 #include "test_utils/test.h"
-#include "units.h"
 
 #include <seastar/util/defer.hh>
 #include <seastar/util/file.hh>

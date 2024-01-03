@@ -1,6 +1,6 @@
 #include "metrics_registry.h"
 
-#include "vassert.h"
+#include "base/vassert.h"
 
 void metrics_registry::register_metric(
   const group_name_t& group_name,

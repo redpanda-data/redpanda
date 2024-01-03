@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

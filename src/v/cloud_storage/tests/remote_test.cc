@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
@@ -24,7 +25,6 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 #include "storage/directories.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"

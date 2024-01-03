@@ -1,5 +1,5 @@
 #pragma once
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>

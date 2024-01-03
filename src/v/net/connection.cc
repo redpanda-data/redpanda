@@ -9,9 +9,9 @@
 
 #include "net/connection.h"
 
+#include "base/seastarx.h"
 #include "net/exceptions.h"
 #include "rpc/service.h"
-#include "seastarx.h"
 #include "ssx/abort_source.h"
 
 #include <seastar/core/future.hh>

@@ -9,8 +9,8 @@
 
 #include "syschecks/syschecks.h"
 
-#include "likely.h"
-#include "seastarx.h"
+#include "base/likely.h"
+#include "base/seastarx.h"
 #include "version.h"
 
 #include <seastar/core/coroutine.hh>

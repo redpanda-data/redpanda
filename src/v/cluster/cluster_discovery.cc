@@ -9,6 +9,7 @@
 
 #include "cluster/cluster_discovery.h"
 
+#include "base/seastarx.h"
 #include "cluster/bootstrap_types.h"
 #include "cluster/cluster_bootstrap_service.h"
 #include "cluster/cluster_utils.h"
@@ -18,7 +19,6 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 #include "storage/kvstore.h"
 #include "utils/directory_walker.h"
 

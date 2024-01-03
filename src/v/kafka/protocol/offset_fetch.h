@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_fetch_request.h"
 #include "kafka/protocol/schemata/offset_fetch_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>

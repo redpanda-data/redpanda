@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/units.h"
 #include "model/record_batch_reader.h"
-#include "outcome.h"
 #include "raft/types.h"
 #include "ssx/semaphore.h"
-#include "units.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>

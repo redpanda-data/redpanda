@@ -10,10 +10,10 @@
  */
 #include "plugin_table.h"
 
+#include "base/vassert.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/transform.h"
-#include "vassert.h"
 
 namespace cluster {
 

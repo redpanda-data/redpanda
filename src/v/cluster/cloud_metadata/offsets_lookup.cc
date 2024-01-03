@@ -10,6 +10,7 @@
 
 #include "cluster/cloud_metadata/offsets_lookup.h"
 
+#include "base/vlog.h"
 #include "cluster/cloud_metadata/offsets_lookup_rpc_types.h"
 #include "cluster/logger.h"
 #include "cluster/partition_manager.h"
@@ -17,7 +18,6 @@
 #include "config/configuration.h"
 #include "kafka/server/partition_proxy.h"
 #include "model/ktp.h"
-#include "vlog.h"
 
 #include <seastar/util/later.hh>
 

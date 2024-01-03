@@ -7,13 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/scattered_message.h"
 #include "compression/async_stream_zstd.h"
 #include "hashing/xx.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
-#include "vassert.h"
 
 namespace rpc {
 iobuf header_as_iobuf(const header& h) {

@@ -7,13 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <numeric>
-#include <seastarx.h>
 
 auto plus(int inc) {
     return [inc](auto val) { return val + inc; };

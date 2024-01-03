@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "config/mock_property.h"
 #include "model/fundamental.h"
@@ -31,10 +33,8 @@
 #include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/tmp_dir.h"
-#include "units.h"
 #include "utils/directory_walker.h"
 #include "utils/to_string.h"
-#include "vassert.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/seastar.hh>

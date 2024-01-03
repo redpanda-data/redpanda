@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/likely.h"
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/types.h"
-#include "likely.h"
-#include "seastarx.h"
 #include "utils/utf8.h"
 #include "utils/vint.h"
 

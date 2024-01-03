@@ -10,6 +10,8 @@
  */
 #include "transform/transform_manager.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
@@ -18,8 +20,6 @@
 #include "transform/logger.h"
 #include "transform/transform_processor.h"
 #include "utils/human.h"
-#include "vassert.h"
-#include "vlog.h"
 #include "wasm/api.h"
 
 #include <seastar/core/future.hh>

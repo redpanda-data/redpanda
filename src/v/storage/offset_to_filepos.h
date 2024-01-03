@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "outcome.h"
-#include "seastarx.h"
 #include "storage/fwd.h"
 #include "storage/logger.h"
 

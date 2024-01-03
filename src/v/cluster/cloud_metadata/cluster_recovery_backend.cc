@@ -9,6 +9,7 @@
  */
 #include "cluster/cloud_metadata/cluster_recovery_backend.h"
 
+#include "base/seastarx.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_file.h"
@@ -34,7 +35,6 @@
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "raft/group_manager.h"
-#include "seastarx.h"
 #include "serde/async.h"
 #include "ssx/future-util.h"
 

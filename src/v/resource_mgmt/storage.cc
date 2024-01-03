@@ -11,12 +11,12 @@
 
 #include "storage.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/cache_service.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/partition_manager.h"
 #include "storage/disk_log_impl.h"
 #include "utils/human.h"
-#include "vlog.h"
 
 #include <seastar/util/log.hh>
 

@@ -9,13 +9,13 @@
 
 #include "batch_cache.h"
 
+#include "base/vassert.h"
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
 #include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
 #include "storage/logger.h"
 #include "utils/to_string.h"
-#include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>

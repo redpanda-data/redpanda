@@ -9,12 +9,12 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "bytes/iobuf.h"
 #include "cloud_storage/cache_service.h"
 #include "config/property.h"
-#include "seastarx.h"
 #include "test_utils/tmp_dir.h"
-#include "units.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/seastar.hh>

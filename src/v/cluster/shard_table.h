@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/logger.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "raft/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/reactor.hh> // shard_id
 

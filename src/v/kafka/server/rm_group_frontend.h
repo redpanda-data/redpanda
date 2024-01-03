@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/rm_group_proxy.h"
 #include "cluster/types.h"
 #include "kafka/protocol/errors.h"
@@ -18,7 +19,6 @@
 #include "kafka/types.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
-#include "seastarx.h"
 
 namespace kafka {
 

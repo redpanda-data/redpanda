@@ -9,14 +9,14 @@
 
 #pragma once
 
+#include "base/oncore.h"
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "config/property.h"
-#include "oncore.h"
 #include "seastar/core/gate.hh"
 #include "seastar/core/sharded.hh"
 #include "seastar/net/inet_address.hh"
-#include "seastarx.h"
 #include "utils/mutex.h"
-#include "vassert.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/hash/hash.h>

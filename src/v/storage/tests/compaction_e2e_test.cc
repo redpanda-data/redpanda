@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/vlog.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
@@ -15,7 +16,6 @@
 #include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 #include "utils/directory_walker.h"
-#include "vlog.h"
 
 #include <seastar/core/io_priority_class.hh>
 

@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/convert.h"
-#include "seastarx.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>

@@ -9,9 +9,10 @@
 
 #include "raft/heartbeat_manager.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
-#include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "outcome_future_utils.h"
@@ -23,7 +24,6 @@
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
-#include "vlog.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>

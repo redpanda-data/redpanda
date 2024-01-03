@@ -10,10 +10,10 @@
 
 #include "cloud_storage/recursive_directory_walker.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>

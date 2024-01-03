@@ -9,6 +9,7 @@
  */
 #include "cluster/cluster_recovery_manager.h"
 
+#include "base/seastarx.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_file.h"
@@ -23,7 +24,6 @@
 #include "cluster/logger.h"
 #include "cluster/security_frontend.h"
 #include "config/configuration.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

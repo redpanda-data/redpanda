@@ -10,9 +10,9 @@
 
 #include "security/gssapi_principal_mapper.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "security/logger.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/format.h>

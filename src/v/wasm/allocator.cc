@@ -10,9 +10,9 @@
  */
 #include "wasm/allocator.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
-#include "vlog.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/align.hh>

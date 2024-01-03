@@ -9,13 +9,13 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "serde/rw/tags.h"
 #include "serde/serde_exception.h"
 #include "serde/serde_is_enum.h"
 #include "serde/type_str.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 #include <bit>
 #include <cinttypes>

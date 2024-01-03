@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/types.h"
 #include "kafka/protocol/wire.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>

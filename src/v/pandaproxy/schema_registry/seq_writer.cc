@@ -9,6 +9,8 @@
 
 #include "pandaproxy/schema_registry/seq_writer.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
@@ -18,8 +20,6 @@
 #include "pandaproxy/schema_registry/storage.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

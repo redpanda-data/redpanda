@@ -10,13 +10,13 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
+#include "base/units.h"
+#include "base/vassert.h"
 #include "cloud_roles/types.h"
 #include "http/client.h"
-#include "outcome.h"
-#include "seastarx.h"
-#include "units.h"
 #include "utils/named_type.h"
-#include "vassert.h"
 
 #include <fmt/chrono.h>
 

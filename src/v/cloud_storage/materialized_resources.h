@@ -10,13 +10,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/segment_state.h"
 #include "config/property.h"
 #include "random/simple_time_jitter.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "utils/adjustable_semaphore.h"
 #include "utils/intrusive_list_helpers.h"

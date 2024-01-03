@@ -10,13 +10,13 @@
  */
 
 #pragma once
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "cluster/state_machine_registry.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
-#include "outcome.h"
 #include "raft/fwd.h"
 #include "raft/persisted_stm.h"
-#include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/types.h"
 #include "utils/mutex.h"

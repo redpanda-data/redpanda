@@ -10,7 +10,7 @@
 
 #include "cloud_storage/recovery_errors.h"
 
-#include "outcome.h"
+#include "base/outcome.h"
 
 namespace cloud_storage {
 

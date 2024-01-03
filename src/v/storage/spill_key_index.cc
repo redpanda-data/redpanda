@@ -9,6 +9,8 @@
 
 #include "storage/spill_key_index.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -17,8 +19,6 @@
 #include "storage/logger.h"
 #include "storage/segment_utils.h"
 #include "utils/vint.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>

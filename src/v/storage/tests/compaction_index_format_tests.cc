@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
 #include "random/generators.h"
@@ -20,7 +21,6 @@
 #include "storage/spill_key_index.h"
 #include "test_utils/fixture.h"
 #include "test_utils/randoms.h"
-#include "units.h"
 #include "utils/tmpbuf_file.h"
 #include "utils/vint.h"
 

@@ -1,9 +1,9 @@
 #include "net/transport.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "net/dns.h"
 #include "rpc/logger.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>

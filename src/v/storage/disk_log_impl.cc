@@ -9,6 +9,8 @@
 
 #include "storage/disk_log_impl.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "config/configuration.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
@@ -37,8 +39,6 @@
 #include "storage/types.h"
 #include "storage/version.h"
 #include "utils/human.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

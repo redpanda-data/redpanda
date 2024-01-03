@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "outcome.h"
+#include "base/outcome.h"
 #include "rpc/errc.h"
 #include "rpc/exceptions.h"
 #include "rpc/types.h"

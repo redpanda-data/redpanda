@@ -10,6 +10,7 @@
 
 #include "cloud_storage/materialized_resources.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/remote_partition.h"
@@ -19,7 +20,6 @@
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_groups.h"
 #include "ssx/future-util.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/iostream.hh>

@@ -1,7 +1,7 @@
 #include "cluster/tx_helpers.h"
 
+#include "base/vlog.h"
 #include "cluster/logger.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 

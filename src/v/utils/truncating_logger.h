@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "ssx/sformat.h"
-#include "vassert.h"
 
 #include <seastar/util/log-impl.hh>
 #include <seastar/util/log.hh>

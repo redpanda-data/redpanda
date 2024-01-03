@@ -11,6 +11,7 @@
  */
 #pragma once
 
+#include "base/units.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -19,7 +20,6 @@
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
-#include "units.h"
 
 namespace model {
 inline model::topic_namespace random_topic_namespace() {

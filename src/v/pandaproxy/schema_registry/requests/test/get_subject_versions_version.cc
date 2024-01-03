@@ -9,7 +9,7 @@
 
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

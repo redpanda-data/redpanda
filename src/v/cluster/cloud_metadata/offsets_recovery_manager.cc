@@ -10,6 +10,7 @@
 
 #include "cluster/cloud_metadata/offsets_recovery_manager.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/remote_file.h"
 #include "cloud_storage/types.h"
 #include "cluster/cloud_metadata/offsets_recovery_router.h"
@@ -23,7 +24,6 @@
 #include "kafka/server/rm_group_frontend.h"
 #include "model/namespace.h"
 #include "utils/retry_chain_node.h"
-#include "vlog.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/util/later.hh>

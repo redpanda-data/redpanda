@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "config/configuration.h"
 #include "config/tls_config.h"
 #include "hashing/jump_consistent_hash.h"
 #include "model/metadata.h"
-#include "outcome.h"
 #include "outcome_future_utils.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/errc.h"

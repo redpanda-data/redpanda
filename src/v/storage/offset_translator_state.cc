@@ -11,10 +11,10 @@
 
 #include "storage/offset_translator_state.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "model/fundamental.h"
 #include "storage/logger.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <iterator>
 

@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
@@ -19,7 +20,6 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "serde/serde.h"
 #include "utils/tracking_allocator.h"
 

@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/vlog.h"
 #include "kafka/protocol/schemata/api_versions_request.h"
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/schemata/produce_request.h"
@@ -21,7 +22,6 @@
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/utils.h"
 #include "utils/to_string.h"
-#include "vlog.h"
 
 #include <seastar/core/print.hh>
 #include <seastar/util/log.hh>

@@ -9,9 +9,9 @@
 
 #include "raft/group_manager.h"
 
+#include "base/likely.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
-#include "likely.h"
 #include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/group_configuration.h"

@@ -9,12 +9,12 @@
 
 #include "compression/stream_zstd.h"
 
+#include "base/likely.h"
+#include "base/units.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "bytes/details/io_allocation_size.h"
-#include "likely.h"
-#include "units.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/aligned_buffer.hh>
 

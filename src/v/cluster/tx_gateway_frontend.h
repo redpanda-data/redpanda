@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
 #include "cluster/tx_coordinator_mapper.h"
@@ -20,7 +21,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
-#include "seastarx.h"
 #include "utils/available_promise.h"
 
 namespace cluster {

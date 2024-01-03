@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
-#include "outcome.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 #include "utils/string_switch.h"
 

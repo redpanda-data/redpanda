@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #pragma once
+#include "base/seastarx.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>

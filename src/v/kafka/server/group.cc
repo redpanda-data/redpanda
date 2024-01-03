@@ -9,6 +9,8 @@
 
 #include "kafka/server/group.h"
 
+#include "base/likely.h"
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
@@ -23,7 +25,6 @@
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "raft/errc.h"
@@ -31,7 +32,6 @@
 #include "storage/record_batch_builder.h"
 #include "utils/fragmented_vector.h"
 #include "utils/to_string.h"
-#include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 

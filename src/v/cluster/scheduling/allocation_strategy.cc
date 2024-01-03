@@ -11,6 +11,7 @@
 
 #include "cluster/scheduling/allocation_strategy.h"
 
+#include "base/vassert.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/scheduling/allocation_node.h"
@@ -20,7 +21,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
-#include "vassert.h"
 
 #include <seastar/core/shared_ptr.hh>
 

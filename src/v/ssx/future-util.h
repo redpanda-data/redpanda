@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "base/vassert.h"
 #include "utils/functional.h"
-#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>

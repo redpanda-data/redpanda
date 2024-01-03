@@ -10,10 +10,10 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/mutex.h"
 

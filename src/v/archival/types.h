@@ -10,11 +10,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/types.h"
 #include "seastar/core/lowres_clock.hh"
 #include "seastar/core/sstring.hh"
 #include "seastar/util/bool_class.hh"
-#include "seastarx.h"
 #include "utils/named_type.h"
 #include "utils/retry_chain_node.h"
 

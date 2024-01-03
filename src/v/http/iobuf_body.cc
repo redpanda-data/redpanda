@@ -9,8 +9,8 @@
 
 #include "http/iobuf_body.h"
 
+#include "base/vlog.h"
 #include "http/logger.h"
-#include "vlog.h"
 
 #include <boost/beast/core/buffer_traits.hpp>
 #include <boost/beast/core/detail/buffers_ref.hpp>

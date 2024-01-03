@@ -9,6 +9,7 @@
 
 #include "pandaproxy/json/requests/fetch.h"
 
+#include "base/seastarx.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/client/test/utils.h"
@@ -21,7 +22,6 @@
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
-#include "seastarx.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

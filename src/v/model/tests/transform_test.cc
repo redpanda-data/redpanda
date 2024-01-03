@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/units.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
@@ -18,7 +19,6 @@
 #include "model/transform.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
-#include "units.h"
 
 #include <seastar/core/chunked_fifo.hh>
 

@@ -132,8 +132,8 @@
  *
  */
 
+#include "base/seastarx.h"
 #include "random/fast_prng.h"
-#include "seastarx.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>

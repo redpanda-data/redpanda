@@ -11,11 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/metadata_cache.h"
 #include "features/feature_table.h"
 #include "kafka/server/request_context.h"
-
-#include <seastarx.h>
 
 namespace kafka {
 

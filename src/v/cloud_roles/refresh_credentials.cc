@@ -10,6 +10,7 @@
 
 #include "cloud_roles/refresh_credentials.h"
 
+#include "base/vlog.h"
 #include "cloud_roles/aws_refresh_impl.h"
 #include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
@@ -18,7 +19,6 @@
 #include "model/metadata.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

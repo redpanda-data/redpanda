@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "config/property.h"
 #include "features/feature_table.h"
@@ -34,7 +35,6 @@
 #include "storage/api.h"
 #include "test_utils/test.h"
 #include "utils/prefix_logger.h"
-#include "vassert.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/util/bool_class.hh>

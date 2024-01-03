@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "net/batched_output_stream.h"
 #include "net/server_probe.h"
-#include "seastarx.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/net/api.hh>

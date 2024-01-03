@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "utils/mutex.h"
-#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/alien.hh>

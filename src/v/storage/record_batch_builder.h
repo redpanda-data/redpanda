@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "model/record.h"
-#include "seastarx.h"
 #include "utils/vint.h"
 
 namespace storage {

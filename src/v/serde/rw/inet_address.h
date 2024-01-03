@@ -9,11 +9,11 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "serde/rw/iobuf.h"
 #include "serde/rw/rw.h"
 #include "serde/rw/scalar.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 #include <seastar/net/inet_address.hh>
 

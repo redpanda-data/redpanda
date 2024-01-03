@@ -9,6 +9,8 @@
 
 #include "storage/segment.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "compression/compression.h"
 #include "config/configuration.h"
 #include "ssx/future-util.h"
@@ -25,8 +27,6 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/do_with.hh>

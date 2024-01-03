@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/metadata_request.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

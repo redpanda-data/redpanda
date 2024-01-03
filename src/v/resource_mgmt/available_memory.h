@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/future.hh>

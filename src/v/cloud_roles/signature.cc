@@ -10,13 +10,13 @@
 
 #include "cloud_roles/signature.h"
 
+#include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "cloud_roles/logger.h"
 #include "config/base_property.h"
 #include "hashing/secure.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
-#include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>

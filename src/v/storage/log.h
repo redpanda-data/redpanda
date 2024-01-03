@@ -10,12 +10,12 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 #include "storage/log_appender.h"
 #include "storage/ntp_config.h"
 #include "storage/segment_reader.h"

@@ -11,9 +11,9 @@
 
 #include "producer_state.h"
 
+#include "base/vassert.h"
 #include "cluster/logger.h"
 #include "cluster/producer_state_manager.h"
-#include "vassert.h"
 
 namespace cluster {
 

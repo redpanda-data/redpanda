@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

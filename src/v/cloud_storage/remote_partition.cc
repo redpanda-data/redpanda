@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote_partition.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_resources.h"
@@ -25,7 +26,6 @@
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>

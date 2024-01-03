@@ -9,12 +9,12 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/types.h"
 #include "config/property.h"
-#include "seastarx.h"
 #include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
 

@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/units.h"
 #include "config/property.h"
 #include "ssx/semaphore.h"
-#include "units.h"
 #include "utils/adjustable_semaphore.h"
 
 #include <cstdint>

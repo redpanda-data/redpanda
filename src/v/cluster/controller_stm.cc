@@ -11,11 +11,11 @@
 
 #include "cluster/controller_stm.h"
 
+#include "base/vlog.h"
 #include "bytes/iostream.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 

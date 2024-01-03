@@ -9,9 +9,10 @@
 
 #include "raft/consensus.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "config/configuration.h"
 #include "config/property.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -37,7 +38,6 @@
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
-#include "vlog.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>

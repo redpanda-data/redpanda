@@ -8,6 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/vlog.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "common_def.h"
@@ -16,7 +17,6 @@
 #include "random/generators.h"
 #include "utils/delta_for.h"
 #include "utils/human.h"
-#include "vlog.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>

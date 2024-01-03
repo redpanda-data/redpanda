@@ -9,12 +9,12 @@
 
 #include "storage/types.h"
 
+#include "base/vlog.h"
 #include "storage/compacted_index.h"
 #include "storage/logger.h"
 #include "storage/ntp_config.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
-#include "vlog.h"
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>

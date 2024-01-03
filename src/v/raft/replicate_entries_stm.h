@@ -11,18 +11,18 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "outcome.h"
 #include "raft/consensus.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "rpc/types.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "storage/types.h"
 #include "utils/mutex.h"

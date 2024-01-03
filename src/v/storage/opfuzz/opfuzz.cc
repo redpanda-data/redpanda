@@ -9,14 +9,14 @@
 
 #include "storage/opfuzz/opfuzz.h"
 
+#include "base/units.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
-#include "units.h"
 #include "utils/directory_walker.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/loop.hh>

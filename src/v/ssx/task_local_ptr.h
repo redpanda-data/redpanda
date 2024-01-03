@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "vassert.h"
+#include "base/vassert.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/task.hh>

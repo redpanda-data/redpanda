@@ -9,8 +9,8 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "kafka/client/client.h"
-#include "outcome.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"

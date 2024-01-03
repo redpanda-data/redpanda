@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "config/fwd.h"
 #include "kafka/client/fwd.h"
 #include "model/compression.h"
-#include "seastarx.h"
 #include "security/acl.h"
 
 #include <seastar/core/future.hh>

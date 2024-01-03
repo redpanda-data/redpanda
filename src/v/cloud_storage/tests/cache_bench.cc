@@ -8,8 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "cloud_storage/access_time_tracker.h"
-#include "seastarx.h"
 #include "ssx/sformat.h"
 
 #include <seastar/testing/perf_tests.hh>

@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/property.h"
 #include "json/_include_first.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "seastarx.h"
 
 #include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>

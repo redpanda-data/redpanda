@@ -12,6 +12,7 @@
 #include "redpanda/admin/server.h"
 
 #include "archival/ntp_archiver_service.h"
+#include "base/vlog.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_partition.h"
@@ -108,7 +109,6 @@
 #include "utils/fragmented_vector.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>

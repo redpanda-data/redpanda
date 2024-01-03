@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "cluster/commands.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/utils.h"
@@ -17,7 +18,6 @@
 #include "raft/types.h"
 #include "test_utils/fixture.h"
 #include "topic_table_fixture.h"
-#include "units.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

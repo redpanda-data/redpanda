@@ -1,4 +1,5 @@
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/partition.h"
 #include "kafka/protocol/fwd.h"
@@ -8,7 +9,6 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>

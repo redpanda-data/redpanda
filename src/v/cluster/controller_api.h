@@ -9,15 +9,15 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "cluster/controller_backend.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "outcome.h"
 #include "rpc/fwd.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

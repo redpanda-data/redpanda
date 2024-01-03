@@ -11,9 +11,9 @@
 
 #include "cluster/self_test/netcheck.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/logger.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 

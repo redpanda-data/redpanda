@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "units.h"
+#include "base/units.h"
 #include "wasm/wasi.h"
 
 #include <seastar/util/log.hh>

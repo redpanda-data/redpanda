@@ -11,19 +11,19 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/vassert.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
-#include "outcome.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/state_machine.h"
 #include "ssx/future-util.h"
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
-#include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>

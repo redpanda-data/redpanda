@@ -10,12 +10,12 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/cluster_recovery_table.h"
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/abort_source.hh>

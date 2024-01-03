@@ -10,6 +10,8 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "cluster/security_frontend.h"
 #include "kafka/protocol/fetch.h"
@@ -27,7 +29,6 @@
 #include "kafka/types.h"
 #include "model/namespace.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "seastarx.h"
 #include "security/acl.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
@@ -37,7 +38,6 @@
 #include "security/authorizer.h"
 #include "security/fwd.h"
 #include "ssx/abort_source.h"
-#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>

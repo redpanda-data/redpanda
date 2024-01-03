@@ -8,11 +8,11 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "base/seastarx.h"
 #include "compat/check.h"
 #include "compat/run.h"
 #include "json/prettywriter.h"
 #include "model/compression.h"
-#include "seastarx.h"
 #include "test_utils/tmp_dir.h"
 #include "utils/directory_walker.h"
 #include "utils/file_io.h"

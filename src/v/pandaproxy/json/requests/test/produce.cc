@@ -9,11 +9,11 @@
 
 #include "pandaproxy/json/requests/produce.h"
 
+#include "base/seastarx.h"
 #include "kafka/protocol/produce.h"
 #include "model/timestamp.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"
-#include "seastarx.h"
 #include "utils/to_string.h"
 
 #include <seastar/testing/thread_test_case.hh>

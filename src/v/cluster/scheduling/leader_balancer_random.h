@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/vassert.h"
 #include "cluster/scheduling/leader_balancer_constraints.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
@@ -17,7 +18,6 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "utils/fragmented_vector.h"
-#include "vassert.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>

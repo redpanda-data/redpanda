@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #pragma once
-#include "outcome.h"
+#include "base/outcome.h"
 #include "security/acl.h"
 #include "security/fwd.h"
 #include "security/sasl_authentication.h"

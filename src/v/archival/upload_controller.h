@@ -10,8 +10,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
-#include "seastarx.h"
 #include "storage/backlog_controller.h"
 #include "utils/named_type.h"
 #include "utils/prefix_logger.h"

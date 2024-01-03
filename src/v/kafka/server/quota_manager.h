@@ -10,11 +10,11 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "config/client_group_byte_rate_quota.h"
 #include "config/property.h"
 #include "kafka/server/token_bucket_rate_tracker.h"
 #include "resource_mgmt/rate.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>

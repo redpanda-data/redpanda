@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "compression/compression.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -21,12 +23,10 @@
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
-#include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
-#include "units.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>

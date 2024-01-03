@@ -10,13 +10,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage_clients/configuration.h"
 #include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/future.hh>

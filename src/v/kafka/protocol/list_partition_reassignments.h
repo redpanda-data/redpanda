@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/list_partition_reassignments_request.h"
 #include "kafka/protocol/schemata/list_partition_reassignments_response.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

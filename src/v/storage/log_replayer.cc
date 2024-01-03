@@ -9,15 +9,15 @@
 
 #include "storage/log_replayer.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "hashing/crc32c.h"
-#include "likely.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "storage/logger.h"
 #include "storage/parser.h"
 #include "storage/segment.h"
 #include "utils/vint.h"
-#include "vlog.h"
 
 #include <limits>
 #include <type_traits>

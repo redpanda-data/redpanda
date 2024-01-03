@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "kafka/server/handlers/fetch.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 
 #include <boost/test/auto_unit_test.hpp>

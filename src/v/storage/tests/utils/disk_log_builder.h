@@ -10,18 +10,18 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "base/units.h"
+#include "base/vassert.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/disk_log_impl.h"
-#include "units.h"
-#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sstring.hh>

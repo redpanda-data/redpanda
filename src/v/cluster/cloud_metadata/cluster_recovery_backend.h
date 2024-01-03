@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/cluster_recovery_reconciler.h"
 #include "cluster/commands.h"
@@ -17,7 +18,6 @@
 #include "features/fwd.h"
 #include "model/fundamental.h"
 #include "raft/fwd.h"
-#include "seastarx.h"
 #include "security/fwd.h"
 #include "ssx/semaphore.h"
 

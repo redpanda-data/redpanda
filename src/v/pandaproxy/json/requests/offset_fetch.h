@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_fetch.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

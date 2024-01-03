@@ -9,11 +9,11 @@
 
 #include "bytes/iobuf.h"
 
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "bytes/details/io_allocation_size.h"
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
-#include "vassert.h"
 
 #include <seastar/core/bitops.hh>
 #include <seastar/core/do_with.hh>

@@ -11,6 +11,7 @@
 #include "archival/tests/service_fixture.h"
 
 #include "archival/types.h"
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "cloud_storage/base_manifest.h"
@@ -21,7 +22,6 @@
 #include "config/configuration.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "storage/directories.h"
 #include "storage/disk_log_impl.h"
 #include "test_utils/async.h"

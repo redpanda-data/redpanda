@@ -9,7 +9,7 @@
 
 #include "utils/hdr_hist.h"
 
-#include "likely.h"
+#include "base/likely.h"
 #include "utils/human.h"
 
 #include <fmt/format.h>

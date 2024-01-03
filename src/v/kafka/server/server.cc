@@ -9,6 +9,7 @@
 
 #include "server.h"
 
+#include "base/vlog.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "config/broker_authn_endpoint.h"
@@ -63,7 +64,6 @@
 #include "ssx/thread_worker.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
-#include "vlog.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/loop.hh>

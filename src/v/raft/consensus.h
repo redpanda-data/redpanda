@@ -11,9 +11,10 @@
 
 #pragma once
 
+#include "base/likely.h"
+#include "base/seastarx.h"
 #include "features/feature_table.h"
 #include "hashing/crc32c.h"
-#include "likely.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -36,7 +37,6 @@
 #include "raft/replicate_batcher.h"
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"

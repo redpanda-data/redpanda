@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "seastarx.h"
-#include "vlog.h"
+#include "base/seastarx.h"
+#include "base/vlog.h"
 
 #include <seastar/util/log.hh>
 #include <seastar/util/tmp_file.hh>

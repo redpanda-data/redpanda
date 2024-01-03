@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "ssx/sformat.h"
 
 #include <seastar/util/log.hh>

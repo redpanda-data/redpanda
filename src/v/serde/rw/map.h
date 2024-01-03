@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "serde/rw/reservable.h"
 #include "serde/rw/rw.h"
 #include "serde/serde_exception.h"
@@ -16,7 +17,6 @@
 #include "serde/serde_size_t.h"
 #include "serde/type_str.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 #include <cinttypes>
 #include <type_traits>

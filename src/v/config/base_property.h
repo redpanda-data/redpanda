@@ -10,10 +10,10 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "config/validation_error.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/bool_class.hh>

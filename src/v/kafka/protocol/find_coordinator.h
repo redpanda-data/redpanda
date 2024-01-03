@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/find_coordinator_request.h"
 #include "kafka/protocol/schemata/find_coordinator_response.h"
 #include "kafka/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

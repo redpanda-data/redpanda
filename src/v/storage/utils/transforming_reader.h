@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>

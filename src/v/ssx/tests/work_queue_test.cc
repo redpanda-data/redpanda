@@ -6,8 +6,8 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
+#include "base/seastarx.h"
 #include "gmock/gmock.h"
-#include "seastarx.h"
 #include "ssx/work_queue.h"
 
 #include <seastar/core/future.hh>

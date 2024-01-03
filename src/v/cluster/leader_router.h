@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
@@ -17,7 +18,6 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
-#include "seastarx.h"
 #include "vformat.h"
 
 #include <seastar/core/abort_source.hh>

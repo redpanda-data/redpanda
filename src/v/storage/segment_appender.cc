@@ -9,16 +9,16 @@
 
 #include "storage/segment_appender.h"
 
+#include "base/likely.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "config/configuration.h"
-#include "likely.h"
 #include "reflection/adl.h"
 #include "ssx/semaphore.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/storage_resources.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>

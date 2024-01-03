@@ -10,6 +10,7 @@
  */
 #include "transform/transform_processor.h"
 
+#include "base/units.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -17,7 +18,6 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
 #include "transform/logger.h"
-#include "units.h"
 #include "wasm/api.h"
 
 #include <seastar/core/loop.hh>

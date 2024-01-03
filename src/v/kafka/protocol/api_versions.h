@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/api_versions_request.h"
 #include "kafka/protocol/schemata/api_versions_response.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

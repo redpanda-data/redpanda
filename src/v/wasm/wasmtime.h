@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "ssx/thread_worker.h"
 #include "wasm/fwd.h"
 

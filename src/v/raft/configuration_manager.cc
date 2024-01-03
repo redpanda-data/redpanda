@@ -9,6 +9,7 @@
 
 #include "raft/configuration_manager.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
@@ -18,7 +19,6 @@
 #include "serde/rw/rw.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/util/defer.hh>

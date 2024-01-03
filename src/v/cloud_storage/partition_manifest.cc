@@ -10,6 +10,7 @@
 
 #include "cloud_storage/partition_manifest.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
@@ -31,7 +32,6 @@
 #include "ssx/sformat.h"
 #include "storage/fs_utils.h"
 #include "utils/to_string.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/iostream.hh>

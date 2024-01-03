@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/config_store.h"
 #include "config/rest_authn_endpoint.h"
 #include "hashing/jump_consistent_hash.h"
@@ -19,7 +20,6 @@
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/kafka_client_cache.h"
 #include "pandaproxy/types.h"
-#include "seastarx.h"
 #include "security/request_auth.h"
 
 #include <seastar/core/abort_source.hh>

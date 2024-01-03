@@ -9,7 +9,7 @@
 
 #include "raft/state_machine.h"
 
-#include "likely.h"
+#include "base/likely.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"

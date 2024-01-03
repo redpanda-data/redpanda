@@ -10,12 +10,12 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "seastarx.h"
 
 namespace kafka {
 

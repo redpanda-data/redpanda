@@ -9,6 +9,7 @@
 
 #include "handlers.h"
 
+#include "base/vlog.h"
 #include "config/rest_authn_endpoint.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
@@ -41,7 +42,6 @@
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "storage/record_batch_builder.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

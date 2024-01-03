@@ -10,11 +10,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "hashing/xx.h"
 #include "recursive_directory_walker.h"
 #include "seastar/core/iostream.hh"
-#include "seastarx.h"
 #include "serde/envelope.h"
 #include "utils/mutex.h"
 

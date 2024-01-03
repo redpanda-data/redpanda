@@ -9,7 +9,7 @@
 
 #include "utils/human.h"
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/print.hh>
 

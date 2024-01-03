@@ -34,9 +34,9 @@ RPC_TEMPLATE = """
 #include "finjector/hbadger.h"
 #include "utils/string_switch.h"
 #include "random/fast_prng.h"
-#include "outcome.h"
+#include "base/outcome.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 // extra includes
 {%- for include in includes %}

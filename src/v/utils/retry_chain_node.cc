@@ -11,8 +11,8 @@
 
 #include "utils/retry_chain_node.h"
 
+#include "base/vassert.h"
 #include "ssx/sformat.h"
-#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>

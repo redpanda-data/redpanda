@@ -9,13 +9,13 @@
  */
 #include "kafka/server/tests/offset_for_leader_epoch_utils.h"
 
+#include "base/vlog.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_request.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_response.h"
 #include "kafka/protocol/types.h"
-#include "vlog.h"
 
 #include <seastar/util/log.hh>
 

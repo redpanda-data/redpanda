@@ -9,12 +9,12 @@
  */
 #include "kafka/server/tests/produce_consume_utils.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "storage/record_batch_builder.h"
-#include "vlog.h"
 
 #include <seastar/util/log.hh>
 

@@ -10,9 +10,9 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/configuration.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 #include "utils/token_bucket.h"
 
 #include <seastar/core/sharded.hh>

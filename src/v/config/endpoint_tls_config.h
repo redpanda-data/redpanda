@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/tls_config.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 #include <yaml-cpp/yaml.h>
 

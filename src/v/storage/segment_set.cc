@@ -9,14 +9,14 @@
 
 #include "storage/segment_set.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "storage/fs_utils.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
 #include "utils/directory_walker.h"
 #include "utils/filtered_lower_bound.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>

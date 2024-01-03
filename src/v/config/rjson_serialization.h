@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
@@ -21,7 +22,6 @@
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

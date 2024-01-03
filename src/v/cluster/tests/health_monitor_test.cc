@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/outcome.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_cache.h"
@@ -22,7 +23,6 @@
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "net/unresolved_address.h"
-#include "outcome.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 

@@ -11,6 +11,7 @@
 
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
+#include "base/vlog.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -34,7 +35,6 @@
 #include "storage/segment_utils.h"
 #include "storage/snapshot.h"
 #include "utils/retry_chain_node.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/io_priority_class.hh>

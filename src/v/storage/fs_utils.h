@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "storage/ntp_config.h"
 #include "storage/version.h"
 

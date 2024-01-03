@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "http/chunk_encoding.h"
 #include "http/iobuf_body.h"
 #include "http/probe.h"
 #include "net/transport.h"
-#include "seastarx.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>

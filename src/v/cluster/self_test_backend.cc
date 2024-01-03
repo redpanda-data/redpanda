@@ -11,10 +11,10 @@
 
 #include "cluster/self_test_backend.h"
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "cluster/logger.h"
-#include "seastarx.h"
 #include "ssx/future-util.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

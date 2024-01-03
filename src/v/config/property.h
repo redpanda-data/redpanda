@@ -10,11 +10,11 @@
  */
 
 #pragma once
+#include "base/oncore.h"
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "oncore.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "reflection/type_traits.h"

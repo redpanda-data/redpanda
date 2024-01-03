@@ -9,14 +9,14 @@
  */
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cloud_metadata/offsets_upload_rpc_types.h"
 #include "cluster/cloud_metadata/types.h"
 #include "cluster/logger.h"
 #include "kafka/server/fwd.h"
-#include "outcome.h"
-#include "seastarx.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>

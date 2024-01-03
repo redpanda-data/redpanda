@@ -9,11 +9,11 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/base_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cloud_metadata/types.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 

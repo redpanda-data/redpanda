@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "raft/offset_monitor.h"
-#include "seastarx.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

@@ -10,10 +10,10 @@
  */
 #include "security/scram_authenticator.h"
 
+#include "base/vlog.h"
 #include "security/credential_store.h"
 #include "security/errc.h"
 #include "security/logger.h"
-#include "vlog.h"
 
 namespace security {
 
