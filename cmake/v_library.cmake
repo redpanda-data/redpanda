@@ -3,8 +3,7 @@ include(CMakeParseArguments)
 set(V_CXX_STANDARD 20)
 set(V_DEFAULT_LINKOPTS)
 set(V_DEFAULT_COPTS -Wall -Wextra -Werror -Wno-missing-field-initializers -Wimplicit-fallthrough)
-set(V_COMMON_INCLUDE_DIRS
-  "${PROJECT_SOURCE_DIR}/src/v")
+
 # v_cc_library()
 #
 # CMake function to imitate Bazel's cc_library rule.
@@ -84,12 +83,7 @@ function(v_cc_library)
       add_library(${_NAME} "")
     endif()
     target_sources(${_NAME} PRIVATE ${V_CC_LIB_SRCS} ${V_CC_LIB_HDRS})
-    target_include_directories(${_NAME}
-      PUBLIC
-      "$<BUILD_INTERFACE:${V_COMMON_INCLUDE_DIRS}>"
-      # we don't install targets
-      # $<INSTALL_INTERFACE:${V_INSTALL_INCLUDEDIR}>
-      )
+    target_include_directories(${_NAME} PUBLIC ${CMAKE_CURRENT_LIST_DIR}/include)
     target_compile_options(${_NAME}
       PRIVATE ${V_DEFAULT_COPTS}
       PRIVATE ${V_CC_LIB_COPTS})
@@ -113,12 +107,7 @@ function(v_cc_library)
   else()
     # Generating header-only library
     add_library(${_NAME} INTERFACE)
-    target_include_directories(${_NAME}
-      INTERFACE
-      "$<BUILD_INTERFACE:${V_COMMON_INCLUDE_DIRS}>"
-      # We don't install
-      #$<INSTALL_INTERFACE:${V_INSTALL_INCLUDEDIR}>
-      )
+    target_include_directories(${_NAME} INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
     target_link_libraries(${_NAME}
       INTERFACE
       ${V_CC_LIB_DEPS}
