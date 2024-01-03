@@ -490,6 +490,7 @@ class SISettings:
             self.endpoint_url = None  # None so boto auto-gens the endpoint url
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
+            self.cloud_storage_api_endpoint_port = 443
         elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
             logger.info("Running on AWS S3, setting credentials")
             self.cloud_storage_access_key = cloud_storage_access_key

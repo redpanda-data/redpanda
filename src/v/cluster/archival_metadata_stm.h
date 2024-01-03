@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/persisted_stm.h"
 #include "features/fwd.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/record_batch_builder.h"
@@ -301,7 +302,11 @@ private:
     model::offset _last_dirty_at;
 
     // The last replication future
-    std::optional<ss::future<result<raft::replicate_result>>> _last_replicate;
+    struct last_replicate {
+        model::term_id term;
+        ss::shared_future<result<raft::replicate_result>> result;
+    };
+    std::optional<last_replicate> _last_replicate;
 
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
