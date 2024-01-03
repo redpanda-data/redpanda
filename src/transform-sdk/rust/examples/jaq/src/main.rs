@@ -14,7 +14,7 @@
 
 use anyhow::{anyhow, ensure, Context, Result};
 use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter, Val};
-use redpanda_transform_sdk::{on_record_written, Record, WriteEvent};
+use redpanda_transform_sdk::{on_record_written, Record, RecordWriter, WriteEvent};
 
 // This allows one to use $KEY to reference the record's key as a string.
 const KEY_VAR: &str = "KEY";
@@ -30,14 +30,13 @@ fn main() -> Result<()> {
     ensure!(errs.is_empty(), "filter {filter} is invalid");
     let f = defs.compile(f.unwrap());
     ensure!(defs.errs.is_empty(), "filter {filter} is invalid");
-    on_record_written(|event| jaq_transform(&f, event));
+    on_record_written(|event, writer| jaq_transform(&f, event, writer));
 }
 
-fn jaq_transform(filter: &Filter, event: WriteEvent) -> Result<Vec<Record>> {
+fn jaq_transform(filter: &Filter, event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<()> {
     let payload = event.record.value().context("missing json")?;
     let json_payload: serde_json::Value = serde_json::from_slice(payload)?;
     let inputs = RcIter::new(core::iter::empty());
-    let mut transformed: Vec<Record> = Vec::with_capacity(1);
     let key = event
         .record
         .key()
@@ -47,10 +46,10 @@ fn jaq_transform(filter: &Filter, event: WriteEvent) -> Result<Vec<Record>> {
     for output in filter.run((ctx, Val::from(json_payload))) {
         let value = output.map_err(|e| anyhow!("error: {e}"))?;
         let value: serde_json::Value = value.into();
-        transformed.push(Record::new(
+        writer.write(Record::new(
             event.record.key().map(|k| k.to_owned()),
             Some(serde_json::to_vec(&value)?),
-        ));
+        ))?;
     }
-    Ok(transformed)
+    Ok(())
 }

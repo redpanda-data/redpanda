@@ -26,7 +26,7 @@
 //! This crate provides a framework for writing transforms.
 //!
 //! [`on_record_written`]: Transforms individual records after they have been written to an input topic.
-//! Resulting records are written to the output topic.
+//! Written records are output to the destination topic.
 
 use std::fmt::Debug;
 
@@ -53,19 +53,18 @@ pub use redpanda_transform_sdk_types::*;
 /// }
 ///
 /// // A transform that duplicates the record on the input topic to the output topic.
-/// fn my_transform(event: WriteEvent) -> Result<Vec<Record>> {
-///   Ok(vec![
-///     Record::new(
-///       event.record.key().map(|k| k.to_owned()),
-///       event.record.value().map(|v| v.to_owned()),
-///     )
-///   ])
+/// fn my_transform(event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<()> {
+///   writer.write(Record::new(
+///     event.record.key().map(|k| k.to_owned()),
+///     event.record.value().map(|v| v.to_owned()),
+///   ))?;
+///   Ok(())
 /// }
 /// ```
 pub fn on_record_written<E, F>(cb: F) -> !
 where
     E: Debug,
-    F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
+    F: Fn(WriteEvent, &mut dyn RecordWriter) -> Result<(), E>,
 {
     redpanda_transform_sdk_sys::process(cb)
 }

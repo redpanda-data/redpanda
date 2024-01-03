@@ -40,16 +40,20 @@ fn main() -> Result<()> {
           ]
         }"#,
     )?;
-    on_record_written(|evt| my_transform(&schema, evt));
+    on_record_written(|evt, writer| my_transform(&schema, evt, writer));
 }
 
-fn my_transform(schema: &apache_avro::Schema, event: WriteEvent) -> Result<Vec<Record>> {
+fn my_transform(
+    schema: &apache_avro::Schema,
+    event: WriteEvent,
+    writer: &mut dyn RecordWriter,
+) -> Result<()> {
     let transformed_value = match event.record.value() {
         Some(bytes) => Some(json_to_avro(schema, bytes)?),
         None => None,
     };
 
-    Ok(vec![Record::new_with_headers(
+    writer.write(Record::new_with_headers(
         event.record.key().map(|b| b.to_owned()),
         transformed_value,
         event
@@ -58,7 +62,8 @@ fn my_transform(schema: &apache_avro::Schema, event: WriteEvent) -> Result<Vec<R
             .iter()
             .map(|h| h.to_owned())
             .collect(),
-    )])
+    ))?;
+    Ok(())
 }
 
 type JsonValue = serde_json::Value;
