@@ -159,6 +159,72 @@ void admin_server::register_security_routes() {
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(users));
       });
+
+    // RBAC stubs
+
+    register_route<user>(
+      ss::httpd::security_json::list_user_roles,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::list_roles,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::create_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::get_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::update_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::delete_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::list_role_members,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::update_role_members,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw ss::httpd::base_exception{
+            "Not Implemented", ss::http::reply::status_type::not_implemented};
+      });
 }
 
 ss::future<ss::json::json_return_type>
