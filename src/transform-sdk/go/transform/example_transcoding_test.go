@@ -35,28 +35,27 @@ type Foo struct {
 	B int    `json:"b"`
 }
 
-func csvToJsonTransform(e transform.WriteEvent) ([]transform.Record, error) {
+func csvToJsonTransform(e transform.WriteEvent, w transform.RecordWriter) error {
 	// The input data is a CSV (without a header row) that is the structure of:
 	// key, a, b
 	// This transform emits each row in that CSV as JSON.
 	reader := csv.NewReader(bytes.NewReader(e.Record().Value))
 	// Improve performance by reusing the result slice.
 	reader.ReuseRecord = true
-	output := []transform.Record{}
 	for {
 		row, err := reader.Read()
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return nil, err
+			return err
 		}
 		if len(row) != 3 {
-			return nil, errors.New("unexpected number of rows")
+			return errors.New("unexpected number of rows")
 		}
 		// Convert the last column into an int
 		b, err := strconv.Atoi(row[2])
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// Marshal our JSON value
 		f := Foo{
@@ -65,14 +64,16 @@ func csvToJsonTransform(e transform.WriteEvent) ([]transform.Record, error) {
 		}
 		v, err := json.Marshal(&f)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// Add our output record using the first column as the key.
-		output = append(output, transform.Record{
+		r := transform.Record{
 			Key:   []byte(row[0]),
 			Value: v,
-		})
-
+		}
+		if err := w.Write(r); err != nil {
+			return err
+		}
 	}
-	return output, nil
+	return nil
 }

@@ -28,11 +28,11 @@ func main() {
 
 var allocated bytes.Buffer
 
-func identityTransform(e transform.WriteEvent) ([]transform.Record, error) {
+func identityTransform(e transform.WriteEvent, w transform.RecordWriter) error {
 	key := string(e.Record().Key)
 	switch key {
 	case "poison":
-		return nil, errors.New("☠︎")
+		return errors.New("☠︎")
 	case "bomb":
 		panic("💥")
 	case "loop":
@@ -41,18 +41,18 @@ func identityTransform(e transform.WriteEvent) ([]transform.Record, error) {
 	case "allocate":
 		amt := binary.LittleEndian.Uint32(e.Record().Value)
 		allocated.Grow(int(amt))
-		return nil, nil
+		return nil
 	case "zero":
-		return []transform.Record{}, nil
+		return nil
 	case "mirror":
-		return []transform.Record{e.Record()}, nil
+		return w.Write(e.Record())
 	case "double":
-		return []transform.Record{
-			e.Record(),
-			e.Record(),
-		}, nil
+		if err := w.Write(e.Record()); err != nil {
+			return err
+		}
+		return w.Write(e.Record())
 	}
 	println("unknown record:", key)
 	// omit nothing
-	return nil, nil
+	return nil
 }
