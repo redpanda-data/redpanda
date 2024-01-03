@@ -30,6 +30,7 @@
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "ssx/future-util.h"
+#include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_appender_utils.h"
 #include "utils/fragmented_vector.h"
@@ -39,6 +40,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_future.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/defer.hh>
 
@@ -590,14 +592,12 @@ archival_metadata_stm::archival_metadata_stm(
   raft::consensus* raft,
   cloud_storage::remote& remote,
   features::feature_table& ft,
-  ss::logger& logger,
-  ss::shared_ptr<util::mem_tracker> partition_mem_tracker)
+  ss::logger& logger)
   : raft::persisted_stm<>(archival_stm_snapshot, logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
+  , _mem_tracker(ss::make_shared<util::mem_tracker>(raft->ntp().path()))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
-      raft->ntp(),
-      raft->log_config().get_initial_revision(),
-      partition_mem_tracker))
+      raft->ntp(), raft->log_config().get_initial_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft) {}
 
@@ -1602,6 +1602,27 @@ archival_metadata_stm::state_dirty archival_metadata_stm::get_dirty(
                  ? state_dirty::clean
                  : state_dirty::dirty;
     }
+}
+
+archival_metadata_stm_factory::archival_metadata_stm_factory(
+  bool cloud_storage_enabled,
+  ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<features::feature_table>& feature_table)
+  : _cloud_storage_enabled(cloud_storage_enabled)
+  , _cloud_storage_api(cloud_storage_api)
+  , _feature_table(feature_table) {}
+
+bool archival_metadata_stm_factory::is_applicable_for(
+  const storage::ntp_config& ntp_cfg) const {
+    return _cloud_storage_enabled && _cloud_storage_api.local_is_initialized()
+           && ntp_cfg.ntp().ns == model::kafka_namespace;
+}
+
+void archival_metadata_stm_factory::create(
+  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+    auto stm = builder.create_stm<cluster::archival_metadata_stm>(
+      raft, _cloud_storage_api.local(), _feature_table.local(), clusterlog);
+    raft->log()->stm_manager()->add_stm(stm);
 }
 
 } // namespace cluster

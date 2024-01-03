@@ -17,5 +17,6 @@ class consensus;
 class group_manager;
 class recovery_throttle;
 class state_machine_manager;
+class state_machine_base;
 
 } // namespace raft

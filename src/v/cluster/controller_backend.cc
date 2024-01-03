@@ -1798,7 +1798,6 @@ ss::future<std::error_code> controller_backend::do_create_partition(
                 initial_rev.value()),
               group_id,
               std::move(members),
-              *cfg,
               cfg->properties.remote_topic_properties,
               read_replica_bucket);
 

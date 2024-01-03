@@ -71,6 +71,8 @@ class node_isolation_watcher;
 struct controller_snapshot;
 struct controller_join_snapshot;
 class tx_manager_migrator;
+struct state_machine_factory;
+class state_machine_registry;
 
 namespace node {
 class local_monitor;

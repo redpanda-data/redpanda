@@ -13,6 +13,7 @@
 
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
 #include "config/endpoint_tls_config.h"
 #include "finjector/stress_fiber.h"
@@ -90,7 +91,8 @@ public:
       ss::sharded<transform::service>*,
       ss::sharded<security::audit::audit_log_manager>&,
       std::unique_ptr<cluster::tx_manager_migrator>&,
-      ss::sharded<kafka::server>&);
+      ss::sharded<kafka::server>&,
+      ss::sharded<cluster::tx_gateway_frontend>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -674,6 +676,7 @@ private:
     ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
     std::unique_ptr<cluster::tx_manager_migrator>& _tx_manager_migrator;
     ss::sharded<kafka::server>& _kafka_server;
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

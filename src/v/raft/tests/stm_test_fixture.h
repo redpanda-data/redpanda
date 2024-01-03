@@ -40,7 +40,6 @@
 
 using namespace raft;
 namespace {
-
 /**
  * We use value entry struct to make kv_store apply operations not
  * idempotent
@@ -70,6 +69,7 @@ struct value_entry
  */
 struct simple_kv : public raft::state_machine_base {
     using state_t = absl::flat_hash_map<ss::sstring, value_entry>;
+    static constexpr std::string_view name = "simple_kv";
     explicit simple_kv(raft_node_instance& rn)
       : raft_node(rn) {}
 
@@ -107,7 +107,8 @@ struct simple_kv : public raft::state_machine_base {
         co_return;
     };
 
-    std::string_view get_name() const override { return "simple_kv"; };
+    size_t get_local_state_size() const final { return 0; }
+    ss::future<> remove_local_state() final { co_return; }
 
     ss::future<iobuf>
     take_snapshot(model::offset last_included_offset) override {

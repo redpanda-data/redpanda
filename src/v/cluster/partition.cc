@@ -15,6 +15,7 @@
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
+#include "cluster/rm_stm.h"
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -23,6 +24,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
 
@@ -31,54 +33,25 @@
 
 #include <exception>
 
-namespace {
-bool is_id_allocator_topic(model::ntp ntp) {
-    return ntp.ns == model::kafka_internal_namespace
-           && ntp.tp.topic == model::id_allocator_topic;
-}
-
-bool is_tx_manager_topic(const model::ntp& ntp) {
-    return ntp.ns == model::kafka_internal_namespace
-           && ntp.tp.topic == model::tx_manager_topic;
-}
-
-bool is_transform_offsets_topic(const model::ntp& ntp) {
-    return ntp.ns == model::kafka_internal_namespace
-           && ntp.tp.topic == model::transform_offsets_topic;
-}
-}; // namespace
 namespace cluster {
 
 partition::partition(
   consensus_ptr r,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
-  ss::sharded<producer_state_manager>& producer_state_manager,
-  storage::kvstore& kvstore,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(std::move(r))
-  , _partition_mem_tracker(
-      ss::make_shared<util::mem_tracker>(_raft->ntp().path()))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
-  , _tx_gateway_frontend(tx_gateway_frontend)
   , _feature_table(feature_table)
-  , _tm_stm_cache_manager(tm_stm_cache_manager)
-  , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
-  , _is_idempotence_enabled(
-      config::shard_local_cfg().enable_idempotence.value())
   , _archival_conf(std::move(archival_conf))
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
   , _cloud_storage_probe(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
-  , _upload_housekeeping(upload_hks)
-  , _kvstore(kvstore)
-  , _producer_state_manager(producer_state_manager) {
+  , _upload_housekeeping(upload_hks) {
     // Construct cloud_storage read path (remote_partition)
     if (
       config::shard_local_cfg().cloud_storage_enabled()
@@ -354,19 +327,11 @@ ss::future<result<kafka_result>> partition::replicate(
 
 ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     if (!_rm_stm) {
-        if (!_is_tx_enabled && !_is_idempotence_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process transactional and idempotent requests to {}. The "
-              "feature is disabled.",
-              _raft->ntp());
-        } else {
-            vlog(
-              clusterlog.error,
-              "Topic {} doesn't support idempotency and transactional "
-              "processing.",
-              _raft->ntp());
-        }
+        vlog(
+          clusterlog.error,
+          "Topic {} doesn't support idempotent and transactional "
+          "processing.",
+          _raft->ntp());
     }
     return _rm_stm;
 }
@@ -377,15 +342,6 @@ kafka_stages partition::replicate_in_stages(
   raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
     if (bid.is_transactional) {
-        if (!_is_tx_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process a transactional request to {}. Transactional "
-              "processing isn't enabled.",
-              _raft->ntp());
-            return kafka_stages(raft::errc::timeout);
-        }
-
         if (!_rm_stm) {
             vlog(
               clusterlog.error,
@@ -396,19 +352,10 @@ kafka_stages partition::replicate_in_stages(
     }
 
     if (bid.is_idempotent()) {
-        if (!_is_idempotence_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process an idempotent request to {}. Idempotency isn't "
-              "enabled.",
-              _raft->ntp());
-            return kafka_stages(raft::errc::timeout);
-        }
-
         if (!_rm_stm) {
             vlog(
               clusterlog.error,
-              "Topic {} doesn't support idempotency.",
+              "Topic {} doesn't support idempotent requests.",
               _raft->ntp());
             return kafka_stages(raft::errc::timeout);
         }
@@ -433,113 +380,60 @@ kafka_stages partition::replicate_in_stages(
       std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
-ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
+ss::future<> partition::start(state_machine_registry& stm_registry) {
     const auto& ntp = _raft->ntp();
-    raft::state_machine_manager_builder builder;
-    // special cases for id_allocator and transaction coordinator partitions
-    if (is_id_allocator_topic(ntp)) {
-        _id_allocator_stm = builder.create_stm<cluster::id_allocator_stm>(
-          clusterlog, _raft.get());
-        co_return co_await _raft->start(std::move(builder));
-    }
+    raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
+      _raft.get());
 
-    if (is_tx_manager_topic(_raft->ntp()) && _is_tx_enabled) {
-        _tm_stm = builder.create_stm<cluster::tm_stm>(
-          clusterlog,
-          _raft.get(),
-          _feature_table,
-          _tm_stm_cache_manager.local().get(_raft->ntp().tp.partition));
-        _raft->log()->stm_manager()->add_stm(_tm_stm);
-        co_return co_await _raft->start(std::move(builder));
-    }
+    co_await _raft->start(std::move(builder));
+    // store rm_stm pointer in partition as this is commonly used stm
+    _rm_stm = _raft->stm_manager()->get<cluster::rm_stm>();
+    _log_eviction_stm = _raft->stm_manager()->get<cluster::log_eviction_stm>();
+    // store _archival_meta_stm pointer in partition as this is commonly used
+    // stm (in future we may decide to remove it from partition)
+    _archival_meta_stm
+      = _raft->stm_manager()->get<cluster::archival_metadata_stm>();
 
-    if (is_transform_offsets_topic(_raft->ntp())) {
-        vassert(
-          topic_cfg.has_value(),
-          "No topic configuration passed, stm requires configuration for "
-          "partition count.");
-        _transform_offsets_stm = builder.create_stm<transform_offsets_stm_t>(
-          topic_cfg->partition_count, clusterlog, _raft.get());
-    }
-    /**
-     * Data partitions
-     */
-    if (!storage::deletion_exempt(_raft->ntp())) {
-        _log_eviction_stm = builder.create_stm<cluster::log_eviction_stm>(
-          _raft.get(), clusterlog, _kvstore);
-        _raft->log()->stm_manager()->add_stm(_log_eviction_stm);
-    }
-    const model::topic_namespace_view tp_ns(_raft->ntp());
-    const bool is_group_ntp = tp_ns == model::kafka_consumer_offsets_nt;
-    const bool has_rm_stm = (_is_tx_enabled || _is_idempotence_enabled)
-                            && model::controller_ntp != _raft->ntp()
-                            && !is_group_ntp;
-
-    if (has_rm_stm) {
-        _rm_stm = builder.create_stm<cluster::rm_stm>(
-          clusterlog,
-          _raft.get(),
-          _tx_gateway_frontend,
-          _feature_table,
-          _producer_state_manager);
-        _raft->log()->stm_manager()->add_stm(_rm_stm);
-    }
-
-    // Construct cloud_storage read path (remote_partition)
-    if (
-      config::shard_local_cfg().cloud_storage_enabled()
-      && _cloud_storage_api.local_is_initialized()
-      && _raft->ntp().ns == model::kafka_namespace) {
-        _archival_meta_stm = builder.create_stm<cluster::archival_metadata_stm>(
-          _raft.get(),
-          _cloud_storage_api.local(),
-          _feature_table.local(),
-          clusterlog,
-          _partition_mem_tracker);
-        _raft->log()->stm_manager()->add_stm(_archival_meta_stm);
-
-        if (_cloud_storage_cache.local_is_initialized()) {
-            const auto& bucket_config
-              = cloud_storage::configuration::get_bucket_config();
-            auto bucket = bucket_config.value();
-            if (
-              _read_replica_bucket
-              && _raft->log_config().is_read_replica_mode_enabled()) {
-                vlog(
-                  clusterlog.info,
-                  "{} Remote topic bucket is {}",
-                  _raft->ntp(),
-                  _read_replica_bucket);
-                // Override the bucket for read replicas
-                bucket = _read_replica_bucket;
-            }
-            if (!bucket) {
-                throw std::runtime_error{fmt::format(
-                  "configuration property {} is not set",
-                  bucket_config.name())};
-            }
-
-            _cloud_storage_manifest_view
-              = ss::make_shared<cloud_storage::async_manifest_view>(
-                _cloud_storage_api,
-                _cloud_storage_cache,
-                _archival_meta_stm->manifest(),
-                cloud_storage_clients::bucket_name{*bucket});
-
-            _cloud_storage_partition
-              = ss::make_shared<cloud_storage::remote_partition>(
-                _cloud_storage_manifest_view,
-                _cloud_storage_api.local(),
-                _cloud_storage_cache.local(),
-                cloud_storage_clients::bucket_name{*bucket},
-                *_cloud_storage_probe);
-        }
-    }
-
-    // Start the probe after the partition is fully initialised, but before
-    // starting everything.
+    // Start the probe after the partition is fully initialised
     _probe.setup_metrics(ntp);
 
+    // Construct cloud_storage read path (remote_partition)
+
+    if (_archival_meta_stm && _cloud_storage_cache.local_is_initialized()) {
+        const auto& bucket_config
+          = cloud_storage::configuration::get_bucket_config();
+        auto bucket = bucket_config.value();
+        if (
+          _read_replica_bucket
+          && _raft->log_config().is_read_replica_mode_enabled()) {
+            vlog(
+              clusterlog.info,
+              "{} Remote topic bucket is {}",
+              _raft->ntp(),
+              _read_replica_bucket);
+            // Override the bucket for read replicas
+            bucket = _read_replica_bucket;
+        }
+        if (!bucket) {
+            throw std::runtime_error{fmt::format(
+              "configuration property {} is not set", bucket_config.name())};
+        }
+
+        _cloud_storage_manifest_view
+          = ss::make_shared<cloud_storage::async_manifest_view>(
+            _cloud_storage_api,
+            _cloud_storage_cache,
+            _archival_meta_stm->manifest(),
+            cloud_storage_clients::bucket_name{*bucket});
+
+        _cloud_storage_partition
+          = ss::make_shared<cloud_storage::remote_partition>(
+            _cloud_storage_manifest_view,
+            _cloud_storage_api.local(),
+            _cloud_storage_cache.local(),
+            cloud_storage_clients::bucket_name{*bucket},
+            *_cloud_storage_probe);
+    }
     if (_cloud_storage_manifest_view) {
         co_await _cloud_storage_manifest_view->start();
     }
@@ -560,8 +454,6 @@ ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
             co_await _archiver->start();
         }
     }
-
-    co_return co_await _raft->start(std::move(builder));
 }
 
 ss::future<> partition::stop() {
@@ -804,38 +696,27 @@ void partition::maybe_construct_archiver() {
 
 uint64_t partition::non_log_disk_size_bytes() const {
     uint64_t raft_size = _raft->get_snapshot_size();
-
-    std::optional<uint64_t> rm_size;
-    if (_rm_stm) {
-        rm_size = _rm_stm->get_local_snapshot_size();
-    }
-
-    std::optional<uint64_t> tm_size;
-    if (_tm_stm) {
-        tm_size = _tm_stm->get_local_snapshot_size();
-    }
-
-    std::optional<uint64_t> archival_size;
-    if (_archival_meta_stm) {
-        archival_size = _archival_meta_stm->get_local_snapshot_size();
-    }
-
-    std::optional<uint64_t> idalloc_size;
-    if (_id_allocator_stm) {
-        idalloc_size = _id_allocator_stm->get_local_snapshot_size();
-    }
+    uint64_t stm_local_size = 0;
+    _raft->stm_manager()->for_each_stm(
+      [this, &stm_local_size](
+        const ss::sstring& name, const raft::state_machine_base& stm) {
+          auto const sz = stm.get_local_state_size();
+          vlog(
+            clusterlog.trace,
+            "local non-log disk size of {} stm {} = {} bytes",
+            _raft->ntp(),
+            name,
+            sz);
+          stm_local_size += sz;
+      });
 
     vlog(
       clusterlog.trace,
-      "non-log disk size: raft {} rm {} tm {} archival {} idalloc {}",
-      raft_size,
-      rm_size,
-      tm_size,
-      archival_size,
-      idalloc_size);
+      "local non-log disk size of {}: {}",
+      _raft->ntp(),
+      raft_size + stm_local_size);
 
-    return raft_size + rm_size.value_or(0) + tm_size.value_or(0)
-           + archival_size.value_or(0) + idalloc_size.value_or(0);
+    return raft_size + stm_local_size;
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
@@ -937,21 +818,7 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
 }
 
 ss::future<> partition::remove_persistent_state() {
-    if (_rm_stm) {
-        co_await _rm_stm->remove_persistent_state();
-    }
-    if (_tm_stm) {
-        co_await _tm_stm->remove_persistent_state();
-    }
-    if (_archival_meta_stm) {
-        co_await _archival_meta_stm->remove_persistent_state();
-    }
-    if (_id_allocator_stm) {
-        co_await _id_allocator_stm->remove_persistent_state();
-    }
-    if (_log_eviction_stm) {
-        co_await _log_eviction_stm->remove_persistent_state();
-    }
+    co_await _raft->stm_manager()->remove_local_state();
 }
 
 /**
@@ -1104,8 +971,8 @@ partition::transfer_leadership(transfer_leadership_request req) {
     ss::basic_rwlock<>::holder stm_prepare_lock;
     if (_rm_stm) {
         stm_prepare_lock = co_await _rm_stm->prepare_transfer_leadership();
-    } else if (_tm_stm) {
-        stm_prepare_lock = co_await _tm_stm->prepare_transfer_leadership();
+    } else if (auto stm = tm_stm(); stm) {
+        stm_prepare_lock = co_await stm->prepare_transfer_leadership();
     }
 
     co_return co_await _raft->do_transfer_leadership(req);

@@ -52,26 +52,20 @@ namespace cluster {
 partition_manager::partition_manager(
   ss::sharded<storage::api>& storage,
   ss::sharded<raft::group_manager>& raft,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
-  ss::sharded<archival::upload_housekeeping_service>& upload_hks,
-  ss::sharded<producer_state_manager>& producer_state_manager)
+  ss::sharded<archival::upload_housekeeping_service>& upload_hks)
   : _storage(storage.local())
   , _raft_manager(raft)
-  , _tx_gateway_frontend(tx_gateway_frontend)
   , _partition_recovery_mgr(recovery_mgr)
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
   , _archival_conf(std::move(archival_conf))
   , _feature_table(feature_table)
-  , _tm_stm_cache_manager(tm_stm_cache_manager)
-  , _upload_hks(upload_hks)
-  , _producer_state_manager(producer_state_manager) {
+  , _upload_hks(upload_hks) {
     _leader_notify_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -111,7 +105,6 @@ ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
-  std::optional<topic_configuration> topic_cfg,
   std::optional<remote_topic_properties> rtp,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,
@@ -230,15 +223,11 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     auto p = ss::make_lw_shared<partition>(
       c,
-      _tx_gateway_frontend,
       _cloud_storage_api,
       _cloud_storage_cache,
       _archival_conf,
       _feature_table,
-      _tm_stm_cache_manager,
       _upload_hks,
-      _producer_state_manager,
-      _storage.kvs(),
       read_replica_bucket);
 
     _ntp_table.emplace(log->config().ntp(), p);
@@ -258,7 +247,7 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     _manage_watchers.notify(p->ntp(), p);
 
-    co_await p->start(std::move(topic_cfg));
+    co_await p->start(_stm_registry);
 
     co_return c;
 }

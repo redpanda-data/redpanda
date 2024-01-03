@@ -37,6 +37,7 @@
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/id_allocator_stm.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
@@ -51,9 +52,11 @@
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/producer_state_manager.h"
 #include "cluster/rm_partition_frontend.h"
+#include "cluster/rm_stm.h"
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
+#include "cluster/tm_stm.h"
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topic_recovery_service.h"
 #include "cluster/topic_recovery_status_frontend.h"
@@ -108,6 +111,7 @@
 #include "transform/api.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/service.h"
+#include "transform/transform_offsets_stm.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
@@ -1011,7 +1015,8 @@ void application::configure_admin_server() {
       &_transform_service,
       std::ref(audit_mgr),
       std::ref(_tx_manager_migrator),
-      std::ref(_kafka_server))
+      std::ref(_kafka_server),
+      std::ref(tx_gateway_frontend))
       .get();
 }
 
@@ -1416,7 +1421,6 @@ void application::wire_up_redpanda_services(
       partition_manager,
       std::ref(storage),
       std::ref(raft_group_manager),
-      std::ref(tx_gateway_frontend),
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
@@ -1433,9 +1437,7 @@ void application::wire_up_redpanda_services(
             }
         }),
       std::ref(feature_table),
-      std::ref(tm_stm_cache_manager),
-      std::ref(_archival_upload_housekeeping),
-      std::ref(producer_manager))
+      std::ref(_archival_upload_housekeeping))
       .get();
     vlog(_log.info, "Partition manager started");
     construct_service(
@@ -2452,6 +2454,27 @@ void application::start_runtime_services(
     node_status_backend.invoke_on_all(&cluster::node_status_backend::start)
       .get();
     syschecks::systemd_message("Starting the partition manager").get();
+    partition_manager
+      .invoke_on_all([this](cluster::partition_manager& pm) {
+          pm.register_factory<cluster::tm_stm_factory>(
+            tm_stm_cache_manager, feature_table);
+          pm.register_factory<cluster::id_allocator_stm_factory>();
+          pm.register_factory<transform::transform_offsets_stm_factory>(
+            controller->get_topics_state());
+          pm.register_factory<cluster::rm_stm_factory>(
+            config::shard_local_cfg().enable_transactions.value(),
+            config::shard_local_cfg().enable_idempotence.value(),
+            tx_gateway_frontend,
+            producer_manager,
+            feature_table);
+          pm.register_factory<cluster::log_eviction_stm_factory>(
+            storage.local().kvs());
+          pm.register_factory<cluster::archival_metadata_stm_factory>(
+            config::shard_local_cfg().cloud_storage_enabled(),
+            cloud_storage_api,
+            feature_table);
+      })
+      .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
 
     syschecks::systemd_message("Starting Raft group manager").get();

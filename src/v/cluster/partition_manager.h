@@ -39,15 +39,12 @@ public:
     partition_manager(
       ss::sharded<storage::api>&,
       ss::sharded<raft::group_manager>&,
-      ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::partition_recovery_manager>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache_manager>&,
-      ss::sharded<archival::upload_housekeeping_service>&,
-      ss::sharded<producer_state_manager>&);
+      ss::sharded<archival::upload_housekeeping_service>&);
 
     ~partition_manager();
 
@@ -90,7 +87,6 @@ public:
       storage::ntp_config,
       raft::group_id,
       std::vector<model::broker>,
-      std::optional<topic_configuration> topic_config = std::nullopt,
       std::optional<remote_topic_properties> = std::nullopt,
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
       raft::with_learner_recovery_throttle
@@ -166,10 +162,6 @@ public:
      */
     const ntp_table_container& partitions() const { return _ntp_table; }
 
-    ss::sharded<cluster::tx_gateway_frontend>& get_tx_frontend() {
-        return _tx_gateway_frontend;
-    }
-
     /*
      * Block/unblock current node from leadership for new and existing raft
      * groups.
@@ -208,6 +200,11 @@ public:
     ss::future<cloud_storage::cache_usage_target>
     get_cloud_cache_disk_usage_target() const;
 
+    template<typename T, typename... Args>
+    void register_factory(Args&&... args) {
+        _stm_registry.register_factory<T>(std::forward<Args>(args)...);
+    }
+
 private:
     /// Download log if partition_recovery_manager is initialized.
     ///
@@ -230,14 +227,13 @@ private:
     ntp_table_container _ntp_table;
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
       _raft_table;
-    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+
     ss::sharded<cloud_storage::partition_recovery_manager>&
       _partition_recovery_mgr;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
     ss::sharded<archival::upload_housekeeping_service>& _upload_hks;
     ss::gate _gate;
 
@@ -248,10 +244,10 @@ private:
 
     bool _block_new_leadership{false};
 
-    ss::sharded<producer_state_manager>& _producer_state_manager;
-
     // Our handle from registering for leadership notifications on group_manager
     std::optional<cluster::notification_id_type> _leader_notify_handle;
+
+    state_machine_registry _stm_registry;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };

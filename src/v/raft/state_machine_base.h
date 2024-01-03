@@ -61,13 +61,6 @@ public:
     virtual ss::future<> apply_raft_snapshot(const iobuf&) = 0;
 
     /**
-     * Returns a unique identifier of this state machine. Each stm built on top
-     * of the same Raft group must have different id.
-     * Id is going to be used when logging and to mark parts of the snapshots.
-     */
-    virtual std::string_view get_name() const = 0;
-
-    /**
      * Returns a snapshot of an STM state with requested last included offset
      */
     virtual ss::future<iobuf>
@@ -79,6 +72,18 @@ public:
     model::offset last_applied_offset() const {
         return model::prev_offset(_next);
     }
+
+    /**
+     * Some of the state machines may persist additional local state, to account
+     * for it we provide a method that should return size of local state in
+     * bytes.
+     */
+    virtual size_t get_local_state_size() const = 0;
+    /**
+     * Some of the state machines may persist additional local state. This
+     * method is used by stm manager to clean the persistent state of the stm
+     */
+    virtual ss::future<> remove_local_state() = 0;
 
 protected:
     /**

@@ -12,17 +12,14 @@
 using namespace raft;
 
 inline ss::logger logger("stm-test-logger");
-struct other_simple_kv : public simple_kv {
-    explicit other_simple_kv(raft_node_instance& rn)
-      : simple_kv(rn) {}
-    std::string_view get_name() const override { return "other_simple_kv"; };
+struct other_kv : simple_kv {
+    using simple_kv::simple_kv;
+    static constexpr std::string_view name = "other_simple_kv";
 };
-
 struct throwing_kv : public simple_kv {
+    static constexpr std::string_view name = "throwing_kv";
     explicit throwing_kv(raft_node_instance& rn)
       : simple_kv(rn) {}
-
-    std::string_view get_name() const override { return "throwing_kv"; };
 
     ss::future<> apply(const model::record_batch& batch) override {
         if (tests::random_bool()) {
@@ -53,10 +50,9 @@ struct throwing_kv : public simple_kv {
  * Local snapshot stm manages its own local snapshot.
  */
 struct local_snapshot_stm : public simple_kv {
+    static constexpr std::string_view name = "local_snapshot_kv";
     explicit local_snapshot_stm(raft_node_instance& rn)
       : simple_kv(rn) {}
-
-    std::string_view get_name() const override { return "local_snapshot_stm"; };
 
     ss::future<> apply(const model::record_batch& batch) override {
         vassert(
@@ -89,7 +85,7 @@ TEST_F_CORO(state_machine_fixture, test_basic_apply) {
     for (auto& [id, node] : nodes()) {
         raft::state_machine_manager_builder builder;
         auto kv_stm = builder.create_stm<simple_kv>(*node);
-        auto other_kv_stm = builder.create_stm<other_simple_kv>(*node);
+        auto other_kv_stm = builder.create_stm<other_kv>(*node);
         co_await node->init_and_start(all_vnodes(), std::move(builder));
         stms.push_back(kv_stm);
         stms.push_back(ss::dynamic_pointer_cast<simple_kv>(other_kv_stm));

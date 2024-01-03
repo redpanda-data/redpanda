@@ -14,6 +14,7 @@
 #include "cluster/logger.h"
 #include "distributed_kv_stm_types.h"
 #include "raft/persisted_stm.h"
+#include "utils/fixed_string.h"
 
 #include <type_traits>
 
@@ -73,11 +74,13 @@ concept SerdeSerializable = requires(T t, iobuf buf, iobuf_parser parser) {
 template<
   SerdeSerializable Key,
   SerdeSerializable Value,
+  fixed_string Name = "distributed_kv_stm",
   size_t MaxMemoryUsage = 1_MiB>
 requires std::is_trivially_copyable_v<Key>
          && std::is_trivially_copyable_v<Value>
 class distributed_kv_stm final : public raft::persisted_stm<> {
 public:
+    static constexpr std::string_view name = Name;
     explicit distributed_kv_stm(
       size_t max_partitions, ss::logger& logger, raft::consensus* raft)
       : persisted_stm<>("distributed_kv_stm.snapshot", logger, raft)
@@ -156,7 +159,6 @@ public:
         co_return;
     }
 
-    std::string_view get_name() const final { return "distributed_kv_stm"; }
     // TODO: implement delete retention with incremental raft snapshots.
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 

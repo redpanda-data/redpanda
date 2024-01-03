@@ -14,6 +14,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/state_machine_registry.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -24,6 +25,7 @@
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -104,14 +106,14 @@ class archival_metadata_stm final : public raft::persisted_stm<> {
     friend class details::archival_metadata_stm_accessor;
 
 public:
+    static constexpr std::string_view name = "archival_metadata_stm";
     friend class command_batch_builder;
 
     explicit archival_metadata_stm(
       raft::consensus*,
       cloud_storage::remote& remote,
       features::feature_table&,
-      ss::logger& logger,
-      ss::shared_ptr<util::mem_tracker> partition_mem_tracker = nullptr);
+      ss::logger& logger);
 
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
@@ -247,7 +249,6 @@ public:
 
     model::offset max_collectible_offset() override;
 
-    std::string_view get_name() const final { return "archival_metadata_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 private:
@@ -322,6 +323,7 @@ private:
 
     mutex _lock;
 
+    ss::shared_ptr<util::mem_tracker> _mem_tracker;
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 
     // The offset of the last mark_clean_cmd applied: if the manifest is
@@ -341,6 +343,22 @@ private:
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
     ss::abort_source _download_as;
+};
+
+class archival_metadata_stm_factory : public state_machine_factory {
+public:
+    archival_metadata_stm_factory(
+      bool cloud_storage_enabled,
+      ss::sharded<cloud_storage::remote>&,
+      ss::sharded<features::feature_table>&);
+
+    bool is_applicable_for(const storage::ntp_config&) const final;
+    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+
+private:
+    bool _cloud_storage_enabled;
+    ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 } // namespace cluster
