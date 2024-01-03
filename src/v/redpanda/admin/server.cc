@@ -1073,6 +1073,16 @@ ss::future<> admin_server::throw_on_error(
               config::shard_local_cfg()
                 .data_transforms_per_core_memory_reservation.name()));
         }
+        case cluster::errc::role_exists:
+            // TODO(oren): maybe should pull this into the handler
+            throw ss::httpd::base_exception(
+              fmt::format("Role already exists"),
+              ss::http::reply::status_type::conflict);
+        case cluster::errc::role_does_not_exist:
+            // TODO(oren): maybe should pull this into the handler
+            throw ss::httpd::base_exception(
+              fmt::format("Role not found"),
+              ss::http::reply::status_type::not_found);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
