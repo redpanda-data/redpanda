@@ -380,9 +380,7 @@ kafka_stages partition::replicate_in_stages(
       std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
-ss::future<> partition::start(
-  std::optional<topic_configuration> topic_cfg,
-  state_machine_registry& stm_registry) {
+ss::future<> partition::start(state_machine_registry& stm_registry) {
     const auto& ntp = _raft->ntp();
     raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
       _raft.get());

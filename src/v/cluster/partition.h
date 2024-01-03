@@ -59,8 +59,7 @@ public:
     ~partition();
 
     raft::group_id group() const { return _raft->group(); }
-    ss::future<>
-    start(std::optional<topic_configuration>, state_machine_registry&);
+    ss::future<> start(state_machine_registry&);
     ss::future<> stop();
 
     bool should_construct_archiver();

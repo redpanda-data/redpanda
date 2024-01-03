@@ -105,7 +105,6 @@ ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
-  std::optional<topic_configuration> topic_cfg,
   std::optional<remote_topic_properties> rtp,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,
@@ -248,7 +247,7 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     _manage_watchers.notify(p->ntp(), p);
 
-    co_await p->start(std::move(topic_cfg), _stm_registry);
+    co_await p->start(_stm_registry);
 
     co_return c;
 }
