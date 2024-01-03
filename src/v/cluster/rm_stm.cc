@@ -666,34 +666,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
             co_return tx_errc::request_rejected;
         }
     } else {
-        auto preparing_it = _mem_state.preparing.find(pid);
-        if (preparing_it != _mem_state.preparing.end()) {
-            ss::sstring msg;
-            if (preparing_it->second.tx_seq > tx_seq) {
-                // - tm_stm & rm_stm failed during prepare
-                // - during recovery tm_stm recommits its previous tx
-                // - that commit (we're here) collides with "next" failed
-                // prepare it may happen only if the commit passed => acking
-                co_return tx_errc::none;
-            } else if (preparing_it->second.tx_seq == tx_seq) {
-                msg = ssx::sformat(
-                  "can't commit pid:{} tx_seq:{} - prepare request hasn't "
-                  "completed",
-                  pid,
-                  tx_seq);
-            } else {
-                msg = ssx::sformat(
-                  "can't commit pid:{} tx_seq:{} - it conflicts with observed "
-                  "tx_seq:{}",
-                  pid,
-                  tx_seq,
-                  preparing_it->second.tx_seq);
-            }
-
-            vlog(_ctx_log.error, "{}", msg);
-            co_return tx_errc::request_rejected;
-        }
-
         auto prepare_it = _log_state.prepared.find(pid);
         if (prepare_it == _log_state.prepared.end()) {
             co_return tx_errc::none;
@@ -721,7 +693,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
               prepare_it->second.tx_seq);
             co_return tx_errc::request_rejected;
         }
-        _mem_state.preparing.erase(pid);
     }
 
     auto batch = make_tx_control_batch(
@@ -1830,7 +1801,6 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
     _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
     _log_state.prepared.try_emplace(pid, prepare);
-    _mem_state.preparing.erase(pid);
 }
 
 void rm_stm::apply_control(
@@ -2416,12 +2386,7 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
 }
 
 std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
-    fmt::print(
-      o,
-      "{{ estimated: {}, preparing: "
-      "{} }}",
-      state.estimated.size(),
-      state.preparing.size());
+    fmt::print(o, "{{ estimated: {} }} ", state.estimated.size());
     return o;
 }
 

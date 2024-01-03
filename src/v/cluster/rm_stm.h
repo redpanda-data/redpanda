@@ -507,11 +507,7 @@ private:
           , estimated(mt::map<
                       absl::flat_hash_map,
                       model::producer_identity,
-                      model::offset>(_tracker))
-          , preparing(mt::map<
-                      absl::flat_hash_map,
-                      model::producer_identity,
-                      prepare_marker>(_tracker)) {}
+                      model::offset>(_tracker)) {}
 
         ss::shared_ptr<util::mem_tracker> _tracker;
         // once raft's term has passed mem_state::term we wipe mem_state
@@ -535,19 +531,7 @@ private:
         // it with last_lso
         model::offset last_lso{-1};
 
-        // FIELDS TO GO AFTER GA
-        // `preparing` helps to identify failed prepare requests and use them to
-        // filter out stale abort requests
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          prepare_marker>
-          preparing;
-
-        void forget(model::producer_identity pid) {
-            estimated.erase(pid);
-            preparing.erase(pid);
-        }
+        void forget(model::producer_identity pid) { estimated.erase(pid); }
     };
 
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
