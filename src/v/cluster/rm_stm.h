@@ -514,10 +514,6 @@ private:
                      model::producer_identity,
                      model::offset>(_tracker))
           , tx_starts(mt::set<absl::btree_set, model::offset>(_tracker))
-          , expected(mt::map<
-                     absl::flat_hash_map,
-                     model::producer_identity,
-                     model::tx_seq>(_tracker))
           , preparing(mt::map<
                       absl::flat_hash_map,
                       model::producer_identity,
@@ -555,13 +551,7 @@ private:
           tx_start;
         // a heap of the first offsets of all ongoing transactions
         mt::set_t<absl::btree_set, model::offset> tx_starts;
-        // a set of ongoing sessions. we use it  to prevent some client protocol
-        // errors like the transactional writes outside of a transaction
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          model::tx_seq>
-          expected;
+
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
         mt::unordered_map_t<
@@ -571,7 +561,6 @@ private:
           preparing;
 
         void forget(model::producer_identity pid) {
-            expected.erase(pid);
             estimated.erase(pid);
             preparing.erase(pid);
             auto tx_start_it = tx_start.find(pid);

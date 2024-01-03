@@ -724,8 +724,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         _mem_state.preparing.erase(pid);
     }
 
-    _mem_state.expected.erase(pid);
-
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
@@ -896,10 +894,6 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
             co_return tx_errc::request_rejected;
         }
     }
-
-    // preventing prepare and replicte once we
-    // know we're going to abort tx and abandon pid
-    _mem_state.expected.erase(pid);
 
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_abort);
@@ -1190,10 +1184,6 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           "got {} on replicating tx data batch for pid:{}",
           r.error(),
           bid.pid);
-        if (_mem_state.estimated.contains(bid.pid)) {
-            // an error during replication, preventin tx from progress
-            _mem_state.expected.erase(bid.pid);
-        }
         req_ptr->set_value(r.error());
         co_return r.error();
     }
@@ -1622,8 +1612,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         }
     }
 
-    _mem_state.expected.erase(pid);
-
     std::optional<model::tx_seq> tx_seq = get_tx_seq(pid);
     if (tx_seq) {
         vlog(_ctx_log.trace, "trying to expire pid:{} tx_seq:{}", pid, tx_seq);
@@ -1845,7 +1833,6 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
     _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
     _log_state.prepared.try_emplace(pid, prepare);
-    _mem_state.expected.erase(pid);
     _mem_state.preparing.erase(pid);
 }
 
@@ -2434,12 +2421,11 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
 std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
     fmt::print(
       o,
-      "{{ estimated: {}, tx_start: {}, tx_starts: {}, expected: {}, preparing: "
+      "{{ estimated: {}, tx_start: {}, tx_starts: {}, preparing: "
       "{} }}",
       state.estimated.size(),
       state.tx_start.size(),
       state.tx_starts.size(),
-      state.expected.size(),
       state.preparing.size());
     return o;
 }
