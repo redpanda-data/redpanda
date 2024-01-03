@@ -6,12 +6,15 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+
+from enum import Enum
 from logging import Logger
 import random
 import json
 import requests
 import time
 from time import sleep
+import urllib.parse
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 from requests.packages.urllib3.util.retry import Retry
@@ -19,6 +22,7 @@ from ducktape.cluster.cluster import ClusterNode
 from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
 from rptest.util import wait_until_result
 from requests.exceptions import HTTPError
+from requests import Response
 
 DEFAULT_TIMEOUT = 30
 
@@ -88,6 +92,59 @@ class CommittedWasmOffset(NamedTuple):
     name: str
     partition: int
     offset: int
+
+
+class RoleErrorCode(Enum):
+    MALFORMED_DEF = 40001
+    INVALID_NAME = 40002
+    UNRECOGNIZED_FIELD = 40003
+    MEMBER_LIST_CONFLICT = 40004
+    ROLE_NOT_FOUND = 40401
+    ROLE_ALERADY_EXISTS = 40901
+    ROLE_NAME_CONFLICT = 40902
+
+
+class RoleError:
+    def __init__(self, code: RoleErrorCode, message: str):
+        self.code = code
+        self.message = message
+
+    @classmethod
+    def from_json(cls, body: str):
+        data = json.loads(body)
+        return cls(RoleErrorCode(data['code']), data['message'])
+
+    @classmethod
+    def from_http_error(cls, e: HTTPError):
+        data = e.response.json()
+        return cls.from_json(e.response.json()['message'])
+
+
+class RoleUpdate(NamedTuple):
+    role: str
+
+
+class RoleDescription(NamedTuple):
+    name: str
+
+
+class RolesList:
+    def __init__(self, roles: list[RoleDescription]):
+        self.roles = roles
+
+    def __len__(self):
+        return len(self.roles)
+
+    @classmethod
+    def from_json(cls, body: bytes):
+        d = json.loads(body)
+        for k in d:
+            assert k == 'roles', f"Unexpected key {k}"
+        return cls([RoleDescription(**r) for r in d.get('roles', [])])
+
+    @classmethod
+    def from_response(cls, rsp: Response):
+        return cls.from_json(rsp.content)
 
 
 class Admin:
@@ -843,6 +900,51 @@ class Admin:
         }
         return self._request("get", "security/users", node=node,
                              params=params).json()
+
+    def list_user_roles(self):
+        return self._request("get", f"security/users/roles")
+
+    def create_role(self, role: str):
+        return self._request("post", "security/roles", json=dict(role=role))
+
+    def get_role(self, role: str):
+        return self._request("get", f"security/roles/{role}")
+
+    def delete_role(self, role: str):
+        return self._request("delete", f"security/roles/{role}")
+
+    def update_role(self, role: str, update: RoleUpdate):
+        return self._request("put",
+                             f"security/roles/{role}",
+                             json=update._asdict())
+
+    def list_roles(self,
+                   filter: Optional[str] = None,
+                   principal: Optional[str] = None):
+        params = {}
+        if filter is not None:
+            params['filter'] = filter
+        if principal is not None:
+            params['principal'] = principal
+        return self._request(
+            "get", "security/roles?" + urllib.parse.urlencode(params))
+
+    def update_role_members(self,
+                            role: str,
+                            add: Optional[list] = [],
+                            remove: Optional[list] = []):
+        if add is not None:
+            add = [{"name": n, "principal_type": "User"} for n in add]
+
+        if remove is not None:
+            remove = [{"name": n, "principal_type": "User"} for n in remove]
+
+        return self._request("post",
+                             f"security/roles/{role}/members",
+                             json=dict(add=add, remove=remove))
+
+    def list_role_members(self, role: str):
+        return self._request("get", f"security/roles/{role}/members")
 
     def partition_transfer_leadership(self,
                                       namespace,
