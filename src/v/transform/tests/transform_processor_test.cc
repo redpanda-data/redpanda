@@ -112,6 +112,8 @@ TEST_F(ProcessorTestFixture, HandlesDoubleStops) {
     stop();
 }
 
+TEST_F(ProcessorTestFixture, HandlesDoubleStarts) { start(); }
+
 TEST_F(ProcessorTestFixture, ProcessOne) {
     auto batch = make_tiny_batch();
     push_batch(batch.share());

@@ -131,6 +131,11 @@ processor::processor(
 }
 
 ss::future<> processor::start() {
+    // Don't allow double starts of this module - we use the abort_requested
+    // flag to determine if the module is "running" or not.
+    if (!_as.abort_requested()) {
+        co_return;
+    }
     _as = {};
     co_await _source->start();
     co_await _offset_tracker->start();
