@@ -1539,9 +1539,6 @@ ss::future<> rm_stm::do_abort_old_txes() {
     for (auto& [k, _] : _mem_state.estimated) {
         pids.push_back(k);
     }
-    for (auto& [k, _] : _mem_state.tx_start) {
-        pids.push_back(k);
-    }
     for (auto& [k, _] : _log_state.ongoing_map) {
         pids.push_back(k);
     }
@@ -2421,11 +2418,9 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
 std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
     fmt::print(
       o,
-      "{{ estimated: {}, tx_start: {}, tx_starts: {}, preparing: "
+      "{{ estimated: {}, preparing: "
       "{} }}",
       state.estimated.size(),
-      state.tx_start.size(),
-      state.tx_starts.size(),
       state.preparing.size());
     return o;
 }

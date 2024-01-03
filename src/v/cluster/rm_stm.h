@@ -364,7 +364,6 @@ private:
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;
         is_known |= _mem_state.estimated.contains(pid);
-        is_known |= _mem_state.tx_start.contains(pid);
         is_known |= _log_state.ongoing_map.contains(pid);
         is_known |= _log_state.current_txes.contains(pid);
         return is_known;
@@ -509,11 +508,6 @@ private:
                       absl::flat_hash_map,
                       model::producer_identity,
                       model::offset>(_tracker))
-          , tx_start(mt::map<
-                     absl::flat_hash_map,
-                     model::producer_identity,
-                     model::offset>(_tracker))
-          , tx_starts(mt::set<absl::btree_set, model::offset>(_tracker))
           , preparing(mt::map<
                       absl::flat_hash_map,
                       model::producer_identity,
@@ -542,16 +536,6 @@ private:
         model::offset last_lso{-1};
 
         // FIELDS TO GO AFTER GA
-        // a map from producer_identity (a session) to the first offset of
-        // the current transaction in this session
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          model::offset>
-          tx_start;
-        // a heap of the first offsets of all ongoing transactions
-        mt::set_t<absl::btree_set, model::offset> tx_starts;
-
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
         mt::unordered_map_t<
@@ -563,11 +547,6 @@ private:
         void forget(model::producer_identity pid) {
             estimated.erase(pid);
             preparing.erase(pid);
-            auto tx_start_it = tx_start.find(pid);
-            if (tx_start_it != tx_start.end()) {
-                tx_starts.erase(tx_start_it->second);
-                tx_start.erase(pid);
-            }
         }
     };
 
