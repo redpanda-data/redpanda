@@ -32,17 +32,6 @@
 
 #include <exception>
 
-namespace {
-bool is_id_allocator_topic(model::ntp ntp) {
-    return ntp.ns == model::kafka_internal_namespace
-           && ntp.tp.topic == model::id_allocator_topic;
-}
-
-bool is_transform_offsets_topic(const model::ntp& ntp) {
-    return ntp.ns == model::kafka_internal_namespace
-           && ntp.tp.topic == model::transform_offsets_topic;
-}
-}; // namespace
 namespace cluster {
 
 partition::partition(
@@ -435,14 +424,7 @@ ss::future<> partition::start(
     const auto& ntp = _raft->ntp();
     raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
       _raft.get());
-    if (is_transform_offsets_topic(_raft->ntp())) {
-        vassert(
-          topic_cfg.has_value(),
-          "No topic configuration passed, stm requires configuration for "
-          "partition count.");
-        _transform_offsets_stm = builder.create_stm<transform_offsets_stm_t>(
-          topic_cfg->partition_count, clusterlog, _raft.get());
-    }
+
     /**
      * Data partitions
      */

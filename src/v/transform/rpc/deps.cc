@@ -25,6 +25,7 @@
 #include "model/namespace.h"
 #include "model/transform.h"
 #include "transform/rpc/logger.h"
+#include "transform/transform_offsets_stm.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
@@ -146,7 +147,8 @@ private:
             }
             co_return response;
         }
-        auto stm = partition->transform_offsets_stm();
+        auto stm
+          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
         if (partition->ntp().tp.partition != coordinator_partition) {
             for (const auto& key : request.keys) {
                 response.errors[key] = cluster::errc::not_leader;
@@ -176,7 +178,8 @@ private:
             response.errc = cluster::errc::not_leader;
             co_return response;
         }
-        auto stm = partition->transform_offsets_stm();
+        auto stm
+          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
         response.errc = co_await stm->put(std::move(req.kvs));
         co_return response;
     }
@@ -191,7 +194,8 @@ private:
             }
             co_return response;
         }
-        auto stm = partition->transform_offsets_stm();
+        auto stm
+          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
         for (const auto& key : request.keys) {
             auto result = co_await stm->get(key);
             if (result.has_error()) {

@@ -45,11 +45,6 @@ class partition_manager;
 /// holds cluster logic that is not raft related
 /// all raft logic is proxied transparently
 class partition {
-private:
-    using transform_offsets_stm_t = cluster::distributed_kv_stm<
-      model::transform_offsets_key,
-      model::transform_offsets_value>;
-
 public:
     partition(
       consensus_ptr r,
@@ -511,7 +506,6 @@ private:
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
-    ss::shared_ptr<transform_offsets_stm_t> _transform_offsets_stm;
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;

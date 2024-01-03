@@ -16,6 +16,7 @@ v_cc_library(
     transform_manager.cc
     commit_batcher.cc
     txn_reader.cc
+    transform_offsets_stm.cc
   DEPS
     v::wasm
     v::model

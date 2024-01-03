@@ -110,6 +110,7 @@
 #include "transform/api.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/service.h"
+#include "transform/transform_offsets_stm.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
@@ -2459,6 +2460,8 @@ void application::start_runtime_services(
           pm.register_factory<cluster::tm_stm_factory>(
             tm_stm_cache_manager, feature_table);
           pm.register_factory<cluster::id_allocator_stm_factory>();
+          pm.register_factory<transform::transform_offsets_stm_factory>(
+            controller->get_topics_state());
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
