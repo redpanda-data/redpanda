@@ -77,6 +77,9 @@ foreach(PYTHON_DEPENDENCY jsonschema jinja2)
     endif()
 endforeach()
 
+add_subdirectory(base)
+link_libraries(v::base)
+
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(io)

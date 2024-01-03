@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "utils/source_location.h"
+#include "source_location.h"
 #include "vassert.h"
 
 #include <seastar/core/smp.hh>
