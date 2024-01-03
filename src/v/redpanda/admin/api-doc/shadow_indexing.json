@@ -203,8 +203,7 @@
           "summary": "Invoke trimming on the local cache of tiered storage objects",
           "operationId": "cloud_storage_cache_trim",
           "nickname": "post_cloud_storage_cache_trim",
-          "parameters": [
-          ]
+          "parameters": []
         }
       ]
     },
@@ -398,85 +397,84 @@
       "id": "partition_cloud_storage_status",
       "properties": {
         "cloud_storage_mode": {
-            "type": "string",
-            "description": "The partition's cloud storage mode (one of: disabled, write_only, read_only, full and read_replica)"
+          "type": "string",
+          "description": "The partition's cloud storage mode (one of: disabled, write_only, read_only, full and read_replica)"
         },
         "ms_since_last_manifest_upload": {
-            "type": "long",
-            "nullable": true,
-            "description": "Delta in milliseconds since the last upload of the partition's manifest"
+          "type": "long",
+          "nullable": true,
+          "description": "Delta in milliseconds since the last upload of the partition's manifest"
         },
         "ms_since_last_segment_upload": {
-            "type": "long",
-            "nullable": true,
-            "description": "Delta in milliseconds since the last segment upload for the partition"
+          "type": "long",
+          "nullable": true,
+          "description": "Delta in milliseconds since the last segment upload for the partition"
         },
         "ms_since_last_manifest_sync": {
-            "type": "long",
-            "nullable": true,
-            "description": "Delta in milliseconds since the last manifest sync (only present for read replicas)"
+          "type": "long",
+          "nullable": true,
+          "description": "Delta in milliseconds since the last manifest sync (only present for read replicas)"
         },
         "metadata_update_pending": {
           "type": "boolean",
           "description": "If true, the remote metadata may not yet include all segments that have been uploaded."
-
         },
         "total_log_size_bytes": {
-            "type": "long",
-            "description": "Total size of the log for the partition (overlap between local and cloud log is excluded)"
+          "type": "long",
+          "description": "Total size of the log for the partition (overlap between local and cloud log is excluded)"
         },
         "cloud_log_size_bytes": {
-            "type": "long",
-            "description": "Total size of the addressable cloud log for the partition"
+          "type": "long",
+          "description": "Total size of the addressable cloud log for the partition"
         },
         "stm_region_size_bytes": {
-            "type": "long",
-            "description": "Total size of the addressable segments in the STM region of the log"
+          "type": "long",
+          "description": "Total size of the addressable segments in the STM region of the log"
         },
         "archive_size_bytes": {
-            "type": "long",
-            "description": "Total size of the archive region of the log"
+          "type": "long",
+          "description": "Total size of the archive region of the log"
         },
         "local_log_size_bytes": {
-            "type": "long",
-            "description": "Total size of the addressable local log for the partition"
+          "type": "long",
+          "description": "Total size of the addressable local log for the partition"
         },
         "stm_region_segment_count": {
-            "type": "long",
-            "description": "Number of segments in the STM region of the cloud log"
+          "type": "long",
+          "description": "Number of segments in the STM region of the cloud log"
         },
         "cloud_log_segment_count": {
-            "type": "long",
-            "description": "Number of segments in the STM region of the cloud log"
+          "type": "long",
+          "description": "Number of segments in the STM region of the cloud log"
         },
         "local_log_segment_count": {
-            "type": "long",
-            "description": "Number of segments in the local log"
+          "type": "long",
+          "description": "Number of segments in the local log"
         },
         "cloud_log_start_offset": {
-            "type": "long",
-            "nullable": true,
-            "description": "The first Kafka offset accessible from the cloud (inclusive)"
+          "type": "long",
+          "nullable": true,
+          "description": "The first Kafka offset accessible from the cloud (inclusive)"
         },
         "stm_region_start_offset": {
-            "type": "long",
-            "nullable": true,
-            "description": "The first Kafka offset accessible from the cloud in the STM region (inclusive)"
+          "type": "long",
+          "nullable": true,
+          "description": "The first Kafka offset accessible from the cloud in the STM region (inclusive)"
         },
         "cloud_log_last_offset": {
-            "type": "long",
-            "nullable": true,
-            "description": "The last Kafka offset accessible from the cloud (inclusive)"
+          "type": "long",
+          "nullable": true,
+          "description": "The last Kafka offset accessible from the cloud (inclusive)"
         },
         "local_log_start_offset": {
-            "type": "long",
-            "nullable": true,
-            "description": "The first Kafka offset accessible locally (inclusive)"
+          "type": "long",
+          "nullable": true,
+          "description": "The first Kafka offset accessible locally (inclusive)"
         },
         "local_log_last_offset": {
-            "type": "long",
-            "nullable": true,
-            "description": "The last Kafka offset accessible locally (inclusive)"
+          "type": "long",
+          "nullable": true,
+          "description": "The last Kafka offset accessible locally (inclusive)"
         }
       }
     },
@@ -504,7 +502,9 @@
       "properties": {
         "markers": {
           "type": "array",
-          "items": {"type":  "lifecycle_marker"}
+          "items": {
+            "type": "lifecycle_marker"
+          }
         }
       }
     },
@@ -590,20 +590,38 @@
         },
         "missing_spillover_manifests": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "nullable": true
         },
         "missing_segments": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "nullable": true
         },
         "segment_metadata_anomalies": {
           "type": "array",
-          "items": {"type": "metadata_anomaly"},
+          "items": {
+            "type": "metadata_anomaly"
+          },
           "nullable": true
         },
         "last_complete_scrub_at": {
+          "type": "long",
+          "nullable": true
+        },
+        "num_discarded_missing_spillover_manifests": {
+          "type": "long",
+          "nullable": true
+        },
+        "num_discarded_missing_segments": {
+          "type": "long",
+          "nullable": true
+        },
+        "num_discarded_metadata_anomalies": {
           "type": "long",
           "nullable": true
         }
