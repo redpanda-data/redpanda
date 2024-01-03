@@ -248,10 +248,11 @@ class TestRunner():
         elif "rpbench" in binary:
             json_output = []
             vbuild = find_vbuild_path_from_binary(self.binary)
+            bench_name = os.path.basename(self.binary)
             if vbuild:
                 json_output = [
                     "--json-output",
-                    os.path.join(vbuild, "microbench/bench.json")
+                    os.path.join(vbuild, f"microbench/{bench_name}.json")
                 ]
 
             args = args + COMMON_TEST_ARGS + json_output
