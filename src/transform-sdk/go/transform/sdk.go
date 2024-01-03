@@ -26,7 +26,7 @@ func OnRecordWritten(fn OnRecordWrittenCallback) {
 }
 
 // OnRecordWrittenCallback is a callback to transform records after a write event happens in the input topic.
-type OnRecordWrittenCallback func(e WriteEvent) ([]Record, error)
+type OnRecordWrittenCallback func(e WriteEvent, w RecordWriter) error
 
 // WriteEvent contains information about the write that took place,
 // namely it contains the record that was written.
@@ -35,14 +35,14 @@ type WriteEvent interface {
 	Record() Record
 }
 
-// Look at options/builder pattern for making TransformEvent, and make it a "private" interface
-
-type writeEvent struct {
-	record Record
-}
-
-func (e *writeEvent) Record() Record {
-	return e.record
+// RecordWriter is an interface for writing transformed records to the destination topic.
+type RecordWriter interface {
+	// Write writes a record to the output topic.
+	//
+	// When writing a record, only the key, value and headers are
+	// used other information like the timestamp will be overridden
+	// by the broker.
+	Write(Record) error
 }
 
 // Headers are optional key/value pairs that are passed along with

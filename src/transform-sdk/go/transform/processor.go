@@ -15,6 +15,7 @@
 package transform
 
 import (
+	"errors"
 	"strconv"
 	"time"
 	"unsafe"
@@ -35,12 +36,36 @@ type batchHeader struct {
 	baseSequence         int
 }
 
+type writeEvent struct {
+	record Record
+}
+
+func (e *writeEvent) Record() Record {
+	return e.record
+}
+
+type recordWriter struct {
+	outbuf *rwbuf.RWBuf
+}
+
+func (w *recordWriter) Write(r Record) error {
+	w.outbuf.Reset()
+	r.serializePayload(w.outbuf)
+	b := w.outbuf.ReadAll()
+	// Write the record back out to the broker
+	amt := int(writeRecord(unsafe.Pointer(&b[0]), int32(len(b))))
+	if amt != len(b) {
+		return errors.New("writing record failed with errno: " + strconv.Itoa(amt))
+	}
+	return nil
+}
+
 // Cache a bunch of objects to not GC
 var (
 	currentHeader batchHeader  = batchHeader{}
 	inbuf         *rwbuf.RWBuf = rwbuf.New(128)
-	outbuf        *rwbuf.RWBuf = rwbuf.New(128)
 	e             writeEvent
+	w             recordWriter = recordWriter{rwbuf.New(128)}
 )
 
 // run our transformation loop
@@ -89,26 +114,11 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 		if amt < 0 {
 			panic("reading record failed with errno: " + strconv.Itoa(amt) + " buffer size: " + strconv.Itoa(bufSize))
 		}
-		err := e.record.deserializePayload(inbuf)
-		if err != nil {
+		if err := e.record.deserializePayload(inbuf); err != nil {
 			panic("deserializing record failed: " + err.Error())
 		}
-		rs, err := userTransformFunction(&e)
-		if err != nil {
+		if err := userTransformFunction(&e, &w); err != nil {
 			panic("transforming record failed: " + err.Error())
-		}
-		if rs == nil {
-			continue
-		}
-		for _, r := range rs {
-			outbuf.Reset()
-			r.serializePayload(outbuf)
-			b := outbuf.ReadAll()
-			// Write the record back out to the broker
-			amt := int(writeRecord(unsafe.Pointer(&b[0]), int32(len(b))))
-			if amt != len(b) {
-				panic("writing record failed with errno: " + strconv.Itoa(amt))
-			}
 		}
 	}
 }

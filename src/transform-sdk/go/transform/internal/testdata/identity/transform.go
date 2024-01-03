@@ -22,6 +22,6 @@ func main() {
 	transform.OnRecordWritten(identityTransform)
 }
 
-func identityTransform(e transform.WriteEvent) ([]transform.Record, error) {
-	return []transform.Record{e.Record()}, nil
+func identityTransform(e transform.WriteEvent, w transform.RecordWriter) error {
+	return w.Write(e.Record())
 }

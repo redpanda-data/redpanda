@@ -11,7 +11,7 @@ func main() {
 }
 
 // doTransform is where you read the record that was written, and then you can
-// return new records that will be written to the output topic
-func doTransform(e transform.WriteEvent) ([]transform.Record, error) {
-	return []transform.Record{e.Record()}, nil
+// output new records that will be written to the destination topic
+func doTransform(e transform.WriteEvent, w transform.RecordWriter) error {
+	return w.Write(e.Record())
 }

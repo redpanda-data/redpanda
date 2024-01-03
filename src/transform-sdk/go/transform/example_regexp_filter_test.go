@@ -42,7 +42,7 @@ func Example_regularExpressionFilter() {
 	transform.OnRecordWritten(doRegexFilter)
 }
 
-func doRegexFilter(e transform.WriteEvent) ([]transform.Record, error) {
+func doRegexFilter(e transform.WriteEvent, w transform.RecordWriter) error {
 	var b []byte
 	if checkValue {
 		b = e.Record().Value
@@ -50,12 +50,12 @@ func doRegexFilter(e transform.WriteEvent) ([]transform.Record, error) {
 		b = e.Record().Key
 	}
 	if b == nil {
-		return nil, nil
+		return nil
 	}
 	pass := re.Match(b)
 	if pass {
-		return []transform.Record{e.Record()}, nil
+		return w.Write(e.Record())
 	} else {
-		return nil, nil
+		return nil
 	}
 }
