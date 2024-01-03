@@ -13,7 +13,7 @@
 
 #include "bytes/details/io_fragment.h"
 #include "bytes/details/out_of_range.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 namespace details {
 class io_placeholder {

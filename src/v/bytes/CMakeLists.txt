@@ -6,5 +6,6 @@ v_cc_library(
   DEPS
     absl::hash
     Seastar::seastar
+    v::container
   )
 add_subdirectory(tests)
