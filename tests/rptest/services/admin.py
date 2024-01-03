@@ -844,6 +844,42 @@ class Admin:
         return self._request("get", "security/users", node=node,
                              params=params).json()
 
+    def list_user_roles(self):
+        return self._request("get", f"security/users/roles")
+
+    def create_role(self, role: str):
+        return self._request("post", "security/roles", json=dict(role=role))
+
+    def get_role(self, role: str):
+        return self._request("get", f"security/roles/{role}")
+
+    def delete_role(self, role: str):
+        return self._request("delete", f"security/roles/{role}")
+
+    def update_role(self, role: str, update: dict):
+        return self._request("put", f"security/roles/{role}", json=update)
+
+    def list_roles(self, filter: Optional[str] = None):
+        param = "" if filter is None else f"?filter={filter}"
+        return self._request("get", f"security/roles{param}")
+
+    def update_role_members(self,
+                            role: str,
+                            add: Optional[list] = [],
+                            remove: Optional[list] = []):
+        if add is not None:
+            add = [{"name": n, "principal_type": "User"} for n in add]
+
+        if remove is not None:
+            remove = [{"name": n, "principal_type": "User"} for n in remove]
+
+        return self._request("post",
+                             f"security/roles/{role}/members",
+                             json=dict(add=add, remove=remove))
+
+    def list_role_members(self, role: str):
+        return self._request("get", f"security/roles/{role}/members")
+
     def partition_transfer_leadership(self,
                                       namespace,
                                       topic,
