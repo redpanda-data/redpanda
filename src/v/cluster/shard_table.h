@@ -38,13 +38,6 @@ public:
         return std::nullopt;
     }
 
-    std::optional<model::revision_id> revision_for(const model::ntp& ntp) {
-        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            return it->second.revision;
-        }
-        return std::nullopt;
-    }
-
     /**
      * \brief Lookup the owning shard for an ntp.
      */
