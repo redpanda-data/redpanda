@@ -30,6 +30,30 @@ pub struct WriteEvent<'a> {
     pub record: BorrowedRecord<'a>,
 }
 
+/// A writer trait for output transformed records to the destination topic.
+pub trait RecordWriter {
+    /// Write a record to the output topic returning any errors.
+    fn write(&mut self, r: Record) -> Result<(), WriteError>;
+}
+
+/// An error that can occur when writing records to the output topic.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum WriteError {
+    /// Unknown error from the broker with the corresponding error code.
+    Unknown(i32),
+}
+
+impl std::fmt::Display for WriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WriteError::Unknown(errno) => write!(f, "writing record failed with errno: {}", errno),
+        }
+    }
+}
+
+impl std::error::Error for WriteError {}
+
 /// A zero-copy [`BorrowedRecord`] header.
 #[derive(Debug)]
 pub struct BorrowedHeader<'a> {
