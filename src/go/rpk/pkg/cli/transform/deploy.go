@@ -28,6 +28,7 @@ import (
 
 func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var fc deployFlagConfig
+	var file string
 
 	cmd := &cobra.Command{
 		Use:   "deploy [WASM]",
@@ -42,7 +43,7 @@ Otherwise, the topics can be specified on the command line using the
 
 To deploy Wasm files directly without a transform.yaml file:
 
-  rpk transform deploy transform.wasm --name myTransform \
+  rpk transform deploy --file transform.wasm --name myTransform \
     --input-topic my-topic-1 \
     --output-topic my-topic-2
 
@@ -53,7 +54,7 @@ The --var flag can be repeated to specify multiple variables like so:
 
   rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ
 `,
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -62,6 +63,7 @@ The --var flag can be repeated to specify multiple variables like so:
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 			cfg := fc.ToProjectConfig()
+
 			fileConfig, err := project.LoadCfg(fs)
 			// We allow users to deploy if they aren't in a directory with transform.yaml
 			// in that case all config needs to be specified on the command line.
@@ -87,8 +89,8 @@ The --var flag can be repeated to specify multiple variables like so:
 			}
 
 			deployable := fmt.Sprintf("%s.wasm", cfg.Name)
-			if len(args) == 1 {
-				deployable = args[0]
+			if file != "" {
+				deployable = file
 			}
 			wasm, err := loadWasm(fs, deployable)
 			out.MaybeDieErr(err)
@@ -114,6 +116,8 @@ The --var flag can be repeated to specify multiple variables like so:
 			fmt.Printf("transform %q deployed.\n", cfg.Name)
 		},
 	}
+	cmd.Flags().StringVar(&file, "file", "", "The WebAssembly module to deploy")
+
 	cmd.Flags().StringVarP(&fc.inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
 	cmd.Flags().StringVarP(&fc.outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
 	cmd.Flags().StringVar(&fc.functionName, "name", "", "The name of the transform")
