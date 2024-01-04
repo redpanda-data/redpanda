@@ -116,6 +116,8 @@ struct test_config : public config::config_store {
           true) {}
 };
 
+struct noop_config : public config::config_store {};
+
 YAML::Node minimal_valid_configuration() {
     return YAML::Load("required_string: test_value_1\n"
                       "strings:\n"
@@ -529,4 +531,42 @@ SEASTAR_THREAD_TEST_CASE(property_aliasing) {
     BOOST_TEST(property_names.contains("aliased_bool_legacy") == false);
 
     BOOST_TEST(cfg.property_names_and_aliases().contains("aliased_bool"));
+}
+
+SEASTAR_THREAD_TEST_CASE(ignored_keys) {
+    auto yaml_with_unknown_properties = YAML::Load(R"yaml(
+secret_string: terces
+aliased_bool_legacy: false
+    )yaml");
+
+    BOOST_TEST_CONTEXT(
+      "smoke test: check that the properties are valid for test_config") {
+        auto cfg = test_config{};
+        BOOST_CHECK_EQUAL(cfg.secret_string.value(), "");
+        BOOST_CHECK_EQUAL(cfg.aliased_bool.value(), true);
+        BOOST_REQUIRE_NO_THROW(cfg.read_yaml(yaml_with_unknown_properties));
+        BOOST_CHECK_EQUAL(cfg.secret_string.value(), "terces");
+        BOOST_CHECK_EQUAL(cfg.aliased_bool.value(), false);
+    }
+    BOOST_TEST_CONTEXT("if a key is managed by the config, it will be set and "
+                       "the ignored_missing list does not matter") {
+        auto cfg = test_config{};
+        BOOST_REQUIRE_NO_THROW(cfg.read_yaml(
+          yaml_with_unknown_properties,
+          {"secret_string", "aliased_bool_legacy"}));
+        BOOST_CHECK_EQUAL(cfg.secret_string.value(), "terces");
+        BOOST_CHECK_EQUAL(cfg.aliased_bool.value(), false);
+    }
+    BOOST_TEST_CONTEXT("an unknow key will generate an exception") {
+        auto noop_cfg = noop_config{};
+        BOOST_REQUIRE_THROW(
+          noop_cfg.read_yaml(yaml_with_unknown_properties),
+          std::invalid_argument);
+    }
+    BOOST_TEST_CONTEXT("unknown keys that are accounted for are fine") {
+        auto noop_cfg = noop_config{};
+        BOOST_REQUIRE_NO_THROW(noop_cfg.read_yaml(
+          yaml_with_unknown_properties,
+          test_config{}.property_names_and_aliases()));
+    }
 }
