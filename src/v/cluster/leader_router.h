@@ -182,8 +182,9 @@ ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::process_or_dispatch(
         } else {
             vlog(
               clusterlog.trace,
-              "dispatching {} from {} to {} ",
+              "dispatching request {} for ntp {} from {} to {}",
               handler_t::process_name(),
+              ntp,
               _self,
               leader);
             r = co_await dispatch_to_leader(req, leader, timeout);
@@ -206,9 +207,13 @@ ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::process_or_dispatch(
           fmt::runtime("{} failed with {}"), handler_t::process_name(), r.ec);
         vlog(
           clusterlog.trace,
-          "{} failed, retries left: {}",
+          "request {} for ntp {} failed, error: {} retries left: {}, delay ms: "
+          "{}",
           handler_t::process_name(),
-          retries);
+          ntp,
+          error,
+          retries,
+          delay_ms.count());
         co_await sleep_abortable(delay_ms, _as);
     }
     if (error) {
