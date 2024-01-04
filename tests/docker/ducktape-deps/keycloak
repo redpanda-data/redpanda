@@ -2,7 +2,7 @@
 set -e
 
 # get keycloak binary
-KC_VERSION=21.1.2
+KC_VERSION=23.0.3
 wget "https://github.com/keycloak/keycloak/releases/download/${KC_VERSION}/keycloak-${KC_VERSION}.tar.gz"
 
 tar -xvzf keycloak-${KC_VERSION}.tar.gz

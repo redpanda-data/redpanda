@@ -3,7 +3,7 @@ set -e
 apt update
 apt install -y \
   build-essential \
-  default-jdk \
+  openjdk-17-jdk \
   git \
   maven \
   cmake \
