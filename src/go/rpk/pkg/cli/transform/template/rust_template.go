@@ -27,7 +27,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-redpanda-transform-sdk = "*"
 `
 
 func WasmRustCargoConfig(name string) string {
