@@ -15,6 +15,8 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -43,8 +45,11 @@ public:
 private:
     void submit_after(ss::future<>, ss::noncopyable_function<ss::future<>()>);
 
+    ss::future<> process();
+
     error_reporter_fn _error_reporter;
-    ss::future<> _tail = ss::now();
+    ss::condition_variable _cond_var;
+    ss::chunked_fifo<ss::noncopyable_function<ss::future<>()>> _tasks;
     ss::abort_source _as;
     ss::gate _gate;
 };
