@@ -72,15 +72,6 @@ namespace security::audit {
 
 namespace {
 
-api_activity::activity_id http_method_to_activity_id(std::string_view method) {
-    return string_switch<api_activity::activity_id>(method)
-      .match_all("POST", "post", api_activity::activity_id::create)
-      .match_all("GET", "get", api_activity::activity_id::read)
-      .match_all("PUT", "put", api_activity::activity_id::update)
-      .match_all("DELETE", "delete", api_activity::activity_id::delete_id)
-      .default_match(api_activity::activity_id::unknown);
-}
-
 uniform_resource_locator
 uri_from_ss_http_request(const ss::http::request& req) {
     return {
@@ -233,35 +224,6 @@ template<typename Clock = ss::lowres_system_clock>
 timestamp_t create_timestamp_t() {
     return create_timestamp_t(Clock::now());
 }
-constexpr api_activity::activity_id op_to_crud(security::acl_operation op) {
-    switch (op) {
-    case acl_operation::read:
-        return api_activity::activity_id::read;
-    case acl_operation::write:
-        return api_activity::activity_id::update;
-    case acl_operation::create:
-        return api_activity::activity_id::create;
-    case acl_operation::remove:
-        return api_activity::activity_id::delete_id;
-    case acl_operation::alter:
-        return api_activity::activity_id::update;
-    case acl_operation::describe:
-        return api_activity::activity_id::update;
-    case acl_operation::cluster_action:
-        return api_activity::activity_id::update;
-    case acl_operation::describe_configs:
-        return api_activity::activity_id::read;
-    case acl_operation::alter_configs:
-        return api_activity::activity_id::update;
-    case acl_operation::idempotent_write:
-        return api_activity::activity_id::update;
-    case acl_operation::all:
-        // The `acl_operation` passed to this function is based off of
-        // the ACL check performed by the Kafka handlers.  None of the
-        // handlers should be providing `all` to an ACL check.
-        vassert(false, "Cannot convert an ALL acl operation to a CRUD");
-    }
-}
 
 actor result_to_actor(const security::auth_result& result) {
     user user{
@@ -322,6 +284,15 @@ mechanism_string_to_auth_protocol(std::string_view mech) {
 }
 
 } // namespace
+
+api_activity::activity_id http_method_to_activity_id(std::string_view method) {
+    return string_switch<api_activity::activity_id>(method)
+      .match_all("POST", "post", api_activity::activity_id::create)
+      .match_all("GET", "get", api_activity::activity_id::read)
+      .match_all("PUT", "put", api_activity::activity_id::update)
+      .match_all("DELETE", "delete", api_activity::activity_id::delete_id)
+      .default_match(api_activity::activity_id::unknown);
+}
 
 std::ostream& operator<<(std::ostream& os, audit_resource_type type) {
     switch (type) {
@@ -592,7 +563,7 @@ api_activity make_api_activity_event(
   uint16_t client_port,
   std::optional<std::string_view> client_id,
   std::vector<resource_detail> additional_resources) {
-    auto crud = op_to_crud(auth_result.operation);
+    auto crud = api_activity::op_to_crud(auth_result.operation);
     auto actor = result_to_actor(auth_result);
     additional_resources.emplace_back(resource_detail{
       .name = auth_result.resource_name,

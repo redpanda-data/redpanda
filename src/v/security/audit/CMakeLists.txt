@@ -5,6 +5,7 @@ v_cc_library(
     probes.cc
     logger.cc
     schemas/utils.cc
+    schemas/hashing_utils.cc
   DEPS
     v::kafka_client
     v::bytes
