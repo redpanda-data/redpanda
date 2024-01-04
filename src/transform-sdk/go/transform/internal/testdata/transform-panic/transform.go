@@ -22,6 +22,6 @@ func main() {
 	transform.OnRecordWritten(panicTransform)
 }
 
-func panicTransform(e transform.WriteEvent) ([]transform.Record, error) {
+func panicTransform(e transform.WriteEvent, w transform.RecordWriter) error {
 	panic("oh noes!")
 }

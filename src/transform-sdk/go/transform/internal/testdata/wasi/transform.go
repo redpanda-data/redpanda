@@ -34,16 +34,16 @@ type WasiInfo struct {
 	RandomNumber int
 }
 
-func wasiTransform(e transform.WriteEvent) ([]transform.Record, error) {
-	w := &WasiInfo{
+func wasiTransform(e transform.WriteEvent, w transform.RecordWriter) error {
+	i := &WasiInfo{
 		Args:         os.Args,
 		Env:          os.Environ(),
 		NowNanos:     time.Now().UnixNano(),
 		RandomNumber: rand.Int(),
 	}
-	b, err := json.Marshal(w)
+	b, err := json.Marshal(i)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return []transform.Record{{Value: b}}, nil
+	return w.Write(transform.Record{Value: b})
 }

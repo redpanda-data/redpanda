@@ -32,7 +32,7 @@ func Example_identityTransform() {
 
 // This will be called for each record in the source topic.
 //
-// The output records returned will be written to the destination topic.
-func mirrorTransform(e transform.WriteEvent) ([]transform.Record, error) {
-	return []transform.Record{e.Record()}, nil
+// The records written to w be output to the destination topic.
+func mirrorTransform(e transform.WriteEvent, w transform.RecordWriter) error {
+	return w.Write(e.Record())
 }

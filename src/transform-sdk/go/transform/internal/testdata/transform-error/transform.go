@@ -24,6 +24,6 @@ func main() {
 	transform.OnRecordWritten(errTransform)
 }
 
-func errTransform(e transform.WriteEvent) ([]transform.Record, error) {
-	return nil, errors.New("oh noes!")
+func errTransform(e transform.WriteEvent, w transform.RecordWriter) error {
+	return errors.New("oh noes!")
 }

@@ -42,7 +42,7 @@ func main() {
 }
 
 // This is an example transform that converts avro->json using the avro schema specified in schema registry.
-func avroToJsonTransform(e transform.WriteEvent) ([]transform.Record, error) {
+func avroToJsonTransform(e transform.WriteEvent, w transform.RecordWriter) error {
 	v := e.Record().Value
 	ex := avro.Example{}
 	// Attempt to decode the value, if it's from a schema we don't know about then
@@ -51,11 +51,11 @@ func avroToJsonTransform(e transform.WriteEvent) ([]transform.Record, error) {
 	if err == sr.ErrNotRegistered {
 		id, err := sr.ExtractID(v)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		schema, err := c.LookupSchemaById(id)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// Register the new schema
 		s.Register(id, sr.DecodeFn[*avro.Example](func(b []byte, e *avro.Example) error {
@@ -68,15 +68,18 @@ func avroToJsonTransform(e transform.WriteEvent) ([]transform.Record, error) {
 		}))
 		// Now try and decode the value now that we've looked it up.
 		if err = s.Decode(v, &ex); err != nil {
-			return nil, err
+			return err
 		}
 	} else if err != nil {
-		return nil, err
+		return err
 	}
 	// Output the record as JSON.
 	j, err := ex.MarshalJSON()
-	return []transform.Record{{
+	if err != nil {
+		return err
+	}
+	return w.Write(transform.Record{
 		Key:   e.Record().Key,
 		Value: j,
-	}}, err
+	})
 }
