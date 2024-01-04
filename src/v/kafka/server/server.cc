@@ -910,7 +910,6 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
     for (auto& req_topic : unauthorized) {
         auto& topic = resp.data.topics.emplace_back();
         topic.name = std::move(req_topic.name);
-        topic.partitions.reserve(req_topic.partition_indexes.size());
         for (auto partition_index : req_topic.partition_indexes) {
             auto& partition = topic.partitions.emplace_back();
             partition.partition_index = partition_index;
