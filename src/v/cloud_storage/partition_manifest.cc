@@ -39,6 +39,7 @@
 #include <seastar/util/later.hh>
 
 #include <fmt/ostream.h>
+#include <fmt/ranges.h>
 #include <rapidjson/error/en.h>
 
 #include <algorithm>
@@ -48,33 +49,11 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
-
-namespace fmt {
-template<>
-struct fmt::formatter<cloud_storage::partition_manifest::segment_meta> {
-    using segment_meta = cloud_storage::partition_manifest::segment_meta;
-
-    template<typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) {
-        return ctx.begin();
-    }
-
-    template<typename FormatContext>
-    auto format(segment_meta const& m, FormatContext& ctx) {
-        return fmt::format_to(
-          ctx.out(),
-          "{{o={}-{} t={}-{}}}",
-          m.base_offset,
-          m.committed_offset,
-          m.base_timestamp,
-          m.max_timestamp);
-    }
-};
-} // namespace fmt
 
 namespace cloud_storage {
 std::ostream&
@@ -520,9 +499,6 @@ partition_manifest::const_iterator partition_manifest::end() const {
 }
 
 std::optional<segment_meta> partition_manifest::last_segment() const {
-    if (_segments.empty()) {
-        return std::nullopt;
-    }
     return _segments.last_segment();
 }
 
@@ -879,15 +855,29 @@ void partition_manifest::reset_scrubbing_metadata() {
 
 std::optional<size_t> partition_manifest::move_aligned_offset_range(
   const segment_meta& replacing_segment) {
+    // nullopt means that the replacing_segment can't be inserted in the
+    // manifest, either by breaking an invariant in segment_map, or by failing
+    // to generate a distinct name
+    if (unlikely(!_segments.can_be_inserted(replacing_segment))) {
+        // log an error, as it's not expected for a segment at this stage to
+        // fail this check. safe_segment_meta_to_add() fail before this
+        vlog(
+          cst_log.error,
+          "{} segment {:s} can't be inserted because it's covered by another "
+          "in the manifest",
+          _ntp,
+          replacing_segment);
+        return std::nullopt;
+    }
+
     size_t total_replaced_size = 0;
+
     auto replacing_path = generate_remote_segment_name(replacing_segment);
-    for (auto it = _segments.lower_bound(replacing_segment.base_offset),
-              end_it = _segments.end();
-         it != end_it
-         // The segment is considered replaced only if all its
-         // offsets are covered by new segment's offset range
-         && it->base_offset >= replacing_segment.base_offset
-         && it->committed_offset <= replacing_segment.committed_offset;
+
+    // The segment is considered replaced only if all its
+    // offsets are covered by new segment's offset range
+    for (auto [it, end_covered] = _segments.covered_range(replacing_segment);
+         it != end_covered;
          ++it) {
         if (generate_remote_segment_name(*it) == replacing_path) {
             // The replacing segment shouldn't be exactly the same as the
@@ -895,7 +885,7 @@ std::optional<size_t> partition_manifest::move_aligned_offset_range(
             // same segment twice leads to data loss.
             vlog(
               cst_log.warn,
-              "{} segment is already added {}",
+              "{} segment is already added {:s}",
               _ntp,
               replacing_segment);
             return std::nullopt;
@@ -922,6 +912,9 @@ bool partition_manifest::add(segment_meta meta) {
     if (meta.ntp_revision == model::initial_revision_id{}) {
         meta.ntp_revision = _rev;
     }
+
+    // move_aligned_offset_range not failing means that this insert will not
+    // fail either
     _segments.insert(meta);
 
     _last_offset = std::max(meta.committed_offset, _last_offset);
@@ -952,6 +945,9 @@ bool partition_manifest::add(
 
 size_t partition_manifest::safe_segment_meta_to_add(
   std::vector<segment_meta> meta_list) const {
+    // TODO should meta_list be sorted?
+    // vassert(std::ranges::is_sorted(meta_list....));
+
     struct manifest_substitute {
         model::offset last_offset;
         std::optional<segment_meta> last_segment;
@@ -977,7 +973,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                   cst_log.error,
                   "[{}] New segment does not line up with last offset of empty "
                   "log: "
-                  "last_offset: {}, new_segment: {}",
+                  "last_offset: {}, new_segment: {:s}",
                   get_manifest_path(),
                   subst.last_offset,
                   m);
@@ -988,21 +984,18 @@ size_t partition_manifest::safe_segment_meta_to_add(
             subst.num_accepted++;
         } else {
             // We have segments to check
-            auto format_seg_meta_anomalies =
+            constexpr static auto format_seg_meta_anomalies =
               [](const segment_meta_anomalies& smas) {
                   if (smas.empty()) {
                       return ss::sstring{};
                   }
 
-                  std::vector<anomaly_type> types;
-                  for (const auto& a : smas) {
-                      types.push_back(a.type);
-                  }
-
                   return ssx::sformat(
-                    "{{anomaly_types: {}, new_segment: {}, previous_segment: "
-                    "{}}}",
-                    types,
+                    "{{anomaly_types: ({}), new_segment: {:s}, "
+                    "previous_segment: "
+                    "{:s}}}",
+                    fmt::join(
+                      smas | std::views::transform(&anomaly_meta::type), ", "),
                     smas.begin()->at,
                     smas.begin()->previous);
               };
@@ -1063,7 +1056,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                           cst_log.error,
                           "[{}] New replacement segment has the same size as "
                           "replaced "
-                          "segment: new_segment: {}, replaced_segment: {}",
+                          "segment: new_segment: {:s}, replaced_segment: {:s}",
                           get_manifest_path(),
                           m,
                           *it);
@@ -1093,7 +1086,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                       "[{}] New replacement segment does not match the "
                       "committed "
                       "offset of "
-                      "any previous segment: new_segment: {}",
+                      "any previous segment: new_segment: {:s}",
                       get_manifest_path(),
                       m);
                     break;
@@ -1257,7 +1250,8 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
     if (!so.has_value()) {
         vlog(
           cst_log.warn,
-          "{} Can't apply spillover manifest because the manifest is empty, {}",
+          "{} Can't apply spillover manifest because the manifest is empty, "
+          "{:s}",
           _ntp,
           meta);
         return false;
@@ -1267,7 +1261,7 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
         vlog(
           cst_log.warn,
           "{} Can't apply spillover manifest because the start offsets are not "
-          "aligned: {} vs {}, {}",
+          "aligned: {} vs {}, {:s}",
           _ntp,
           so.value(),
           meta.base_offset,
@@ -1282,7 +1276,7 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
         vlog(
           cst_log.warn,
           "{} Can't apply spillover manifest because the end of the manifest "
-          "is not aligned, {}",
+          "is not aligned, {:s}",
           _ntp,
           meta);
         return false;
@@ -1301,7 +1295,7 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
       cst_log.warn,
       "{} Can't apply spillover manifest because the end of the previous "
       "manifest {} "
-      "is not aligned with the new one {}",
+      "is not aligned with the new one {:s}",
       _ntp,
       _spillover_manifests.last_segment(),
       meta);

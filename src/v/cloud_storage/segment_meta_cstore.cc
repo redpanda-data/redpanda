@@ -129,6 +129,72 @@ auto tuple_map(Fn&& map_fn, auto&& first_tuple, auto&& second_tuple) {
       first_tuple);
 }
 
+struct sm_range {
+    model::offset base_offset;
+    model::offset committed_offset;
+};
+
+constexpr bool
+left_covers_the_range_of_right(auto const& left, auto const& right) {
+    // ensure that left is bigger or equal than right (a sort of >= relation)
+    return left.base_offset <= right.base_offset
+           && left.committed_offset >= right.committed_offset;
+}
+
+// can_be_inserted implementation, takes as parameters adapters to be able to
+// operate on both _write_buffer and counter_col_t search m.base_offset. either
+// it's an exact match, so the result can be inspected, or it's a
+// segment starting after m.base_offset. if it's begin(), then m can be
+// inserted (the container starts strictly after m) otherwise check the
+// prev segment, as it might cover m.
+constexpr auto impl_can_be_inserted(
+  auto& sm,
+  auto const& container,
+  auto dereference_op,
+  auto committed_offset_dereference_op,
+  auto prev_op) {
+    if (container.empty()) {
+        // empty container, can be inserted
+        return true;
+    }
+    // look for an exact match or whatever comes after it
+    auto candidate = container.lower_bound(sm.base_offset);
+    if (
+      candidate == container.begin()
+      && dereference_op(candidate) != sm.base_offset) {
+        // not an exact hit, and candidate starts after offset. can be
+        // inserted
+        return true;
+    }
+
+    if (
+      candidate != container.end()
+      && dereference_op(candidate) == sm.base_offset) {
+        // candidate is not end() and it's an exact hit, check
+        // committed_offset and return true if the new
+        // committed_offset is greater or equal.
+        return left_covers_the_range_of_right(
+          sm,
+          sm_range{
+            dereference_op(candidate),
+            committed_offset_dereference_op(candidate)});
+    }
+
+    // candidate comes after the offset and it's not begin(), check
+    // the prev segment as it might contain offset
+    auto prev_it = prev_op(candidate);
+    // first part of condition is always true (it's not less than sm,
+    // and it's not equal)
+    if (left_covers_the_range_of_right(
+          sm_range{
+            dereference_op(prev_it), committed_offset_dereference_op(prev_it)},
+          sm)) {
+        // prev already covers the range from sm
+        return false;
+    }
+    // no perfect overlap
+    return true;
+}
 } // namespace details
 
 /// The aggregated columnar storage for segment_meta.
@@ -434,9 +500,8 @@ public:
                 auto to_replace = dereference(old_segments_it);
                 // find first segment that is not completely covered by
                 // replacement_meta
-                if (!(to_replace.base_offset >= replacement_meta.base_offset
-                      && to_replace.committed_offset
-                           <= replacement_meta.committed_offset)) {
+                if (!details::left_covers_the_range_of_right(
+                      replacement_meta, to_replace)) {
                     break;
                 }
                 details::increment_all(old_segments_it);
@@ -1003,7 +1068,10 @@ public:
         _write_buffer.erase(it);
     }
 
-    void insert(const segment_meta& m) {
+    bool insert(const segment_meta& m) {
+        if (unlikely(!can_be_inserted(m))) {
+            return false;
+        }
         auto [m_it, _] = _write_buffer.insert_or_assign(m.base_offset, m);
         // the new segment_meta could be a replacement for subsequent entries in
         // the buffer, so do a pass to clean them
@@ -1012,7 +1080,7 @@ public:
               std::next(m_it), _write_buffer.end(), [&](auto& kv) {
                   // first element with a committed offset that spans over the
                   // range of m
-                  return kv.second.committed_offset > m.committed_offset;
+                  return !details::left_covers_the_range_of_right(m, kv.second);
               });
             // if(next(m_it) == not_replaced_segment) there is nothing to erase,
             // _write_buffer.erase would do nothing
@@ -1022,6 +1090,75 @@ public:
         if (_write_buffer.size() > max_buffer_entries) {
             flush_write_buffer();
         }
+        return true;
+    }
+
+    bool can_be_inserted(const segment_meta& m) const {
+        // segment insertion is order dependant, so not all the sequence of
+        // insertions of the same set of segment_meta will result in the same
+        // end result. for example. given this manifest [0, 10][11, 20],
+        // inserting the segment [9, 12] is symptomatic of an underlying issue
+        // (no alignment whatsoever), but can't be rejected immediately. other
+        // edge cases can be rejected in the interest of keeping the manifest in
+        // a reasonable state: if the new segment is entirely inside an old
+        // segment it can be rejected. in this case [12, 20], [18,20] and [14,
+        // 17] should be rejected.
+        // in case of perfect overlap, the insertion can be done since it does
+        // not break the invariants, but the user of this class
+        // (partition_manifest) will apply further logic to restrict this case
+
+        // check _write_buffer first
+        auto allowed_in_write_buffer = details::impl_can_be_inserted(
+          m,
+          _write_buffer,
+          [](auto& it) { return it->second.base_offset; },
+          [](auto& it) { return it->second.committed_offset; },
+          [](auto& it) { return std::prev(it); });
+
+        if (!allowed_in_write_buffer) {
+            return false;
+        }
+
+        // then cstore
+        auto& base_col = _col.get_column_cref<segment_meta_ix::base_offset>();
+        auto& committed_col
+          = _col.get_column_cref<segment_meta_ix::committed_offset>();
+
+        return details::impl_can_be_inserted(
+          m,
+          base_col,
+          [](auto& it) { return model::offset{*it}; },
+          [&](auto& it) {
+              return model::offset{*committed_col.at_index(it.index())};
+          },
+          [&](auto& it) {
+              return base_col.at_index(
+                (it.is_end() ? _col.size() : it.index()) - 1);
+          });
+    }
+
+    auto covered_range(const segment_meta& sm) const -> std::pair<
+      std::unique_ptr<segment_meta_materializing_iterator::impl>,
+      std::unique_ptr<segment_meta_materializing_iterator::impl>> {
+        if (unlikely(!can_be_inserted(sm))) {
+            return {end(), end()};
+        }
+        flush_write_buffer();
+        auto it = lower_bound(sm.base_offset);
+        auto it_end = end();
+        if (it->equal(*it_end)) {
+            // no segment is entirely covered by sm
+            return {std::move(it), std::move(it_end)};
+        }
+        // first segment covered by sm
+        auto begin_range = at_index(it->index());
+        // find first segment not entirely covered by sm
+        for (;
+             !it->equal(*it_end)
+             && details::left_covers_the_range_of_right(sm, it->dereference());
+             it->increment()) {
+        }
+        return {std::move(begin_range), std::move(it)};
     }
 
     auto inflated_actual_size() const {
@@ -1161,7 +1298,20 @@ segment_meta_cstore::lower_bound(model::offset o) const {
     return const_iterator(_impl->lower_bound(o));
 }
 
-void segment_meta_cstore::insert(const segment_meta& s) { _impl->insert(s); }
+bool segment_meta_cstore::insert(const segment_meta& s) {
+    return _impl->insert(s);
+}
+
+bool segment_meta_cstore::can_be_inserted(const segment_meta& sm) const {
+    return _impl->can_be_inserted(sm);
+}
+
+auto segment_meta_cstore::covered_range(const segment_meta& sm) const
+  -> std::pair<const_iterator, const_iterator> {
+    auto [begin_r, end_r] = _impl->covered_range(sm);
+    return {
+      const_iterator{std::move(begin_r)}, const_iterator{std::move(end_r)}};
+}
 
 void segment_meta_cstore::prefix_truncate(model::offset new_start_offset) {
     return _impl->prefix_truncate(new_start_offset);

@@ -90,16 +90,23 @@ struct delta_delta {
         for (uint32_t i = 0; i < row_width; ++i) {
             vassert(
               row[i] >= p,
-              "Value {} can't be smaller than the previous one {}",
+              "Value row[{}]={} can't be smaller than the previous one {}",
+              i,
               row[i],
               p);
-            auto delta = row[i] - p;
+
+            value_t delta;
+            auto no_overflow = !__builtin_sub_overflow(row[i], p, &delta);
+            vassert(
+              no_overflow, "overflow in op row[{}] - p -> {} {}", i, row[i], p);
             vassert(
               delta >= _step_size,
-              "Delta {} can't be smaller than step size {}",
+              "Delta[{}] {} can't be smaller than step size {}",
+              i,
               delta,
               _step_size);
-            buf[i] = (row[i] - p) - _step_size;
+
+            buf[i] = delta - _step_size;
             agg |= buf[i];
             p = row[i];
         }

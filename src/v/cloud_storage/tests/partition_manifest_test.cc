@@ -29,6 +29,9 @@
 #include <boost/test/tools/context.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
+#include <fmt/ranges.h>
+
+#include <ranges>
 
 using namespace cloud_storage;
 
@@ -2655,4 +2658,302 @@ SEASTAR_THREAD_TEST_CASE(test_last_partition_scrub_json_serde) {
       .get();
 
     BOOST_REQUIRE(manifest == manifest_after_round_trip);
+}
+
+enum class segment_options { none, empty, not_empty, recede_base };
+auto next_segment_generator() {
+    return
+      [base_offset = model::offset{10},
+       base_timestamp = model::to_timestamp(
+         std::chrono::sys_days(31d / 10 / 2021y))](
+        segment_options opts = segment_options::none) mutable -> segment_meta {
+          // 0 length segments are edge cases that should not compromise the
+          // manifest bare minimum segment_meta
+          auto res = segment_meta{
+            .size_bytes = 2024,
+            .base_offset = base_offset,
+            .committed_offset = base_offset,
+            .base_timestamp = base_timestamp,
+            .max_timestamp = model::timestamp(base_timestamp() + 10'000),
+            .delta_offset = model::offset_delta{0},
+            .ntp_revision = model::initial_revision_id{73},
+            .archiver_term = model::term_id{87},
+            .segment_term = model::term_id{10},
+            .delta_offset_end = model::offset_delta{0},
+            .sname_format = segment_name_format::v3,
+            .metadata_size_hint = 0,
+          };
+
+          if (opts != segment_options::empty) {
+              // ensure empty is the only case that with
+              // base_offset==committed_offset
+              res.committed_offset
+                += random_generators::get_int<model::offset::type>(
+                  opts == segment_options::not_empty ? 5 : 0, 10);
+          }
+
+          if (opts == segment_options::recede_base) {
+              // this options assumes that previous is not empty
+              res.base_offset += model::offset{-1};
+          }
+
+          // advance base_offset|timestamp for next invocation
+          base_offset = model::next_offset(res.committed_offset);
+          base_timestamp = model::timestamp(res.max_timestamp() + 1);
+          return res;
+      };
+}
+
+static auto sanity_check_manifest(auto&& segments) {
+    //  sanity check, using the relaxed invariants of segment_meta_cstore
+
+    // strictly ascending order for base_offset, std::less_equal comp
+    // ensures that [n+1].base_offset > [n].base_offset
+    BOOST_CHECK(std::ranges::is_sorted(
+      segments, std::less_equal<>{}, &segment_meta::base_offset));
+
+    // relaxed ascending order for committed offset
+    BOOST_CHECK(std::ranges::is_sorted(
+      segments, std::less<>{}, &segment_meta::committed_offset));
+
+    // sanity check of no malformed segments
+    BOOST_CHECK(std::ranges::all_of(segments, [](auto& sm) {
+        return sm.base_offset <= sm.committed_offset;
+    }));
+};
+SEASTAR_TEST_CASE(test_partition_manifest_illegal_replacements) {
+    // test to check if the underlying segment_meta_cstore handles the rejection
+    // of some illegal replacements correctly. mainly, the a replacement can't
+    // be completely inside previously inserted segment range
+
+    constexpr static auto run_check = [](
+                                        std::string_view tag,
+                                        auto manifest,
+                                        auto expected_last,
+                                        auto rejected_last) {
+        // check that add behaves as safe_segment_meta_to_add (for this illegal
+        // segment) before the check last segment could differ from the actual
+        // last segment from the iterator, so check that
+        BOOST_TEST_CONTEXT(fmt::format(
+          "{}: should reject [{:c}] expected last [{:c}]",
+          tag,
+          rejected_last,
+          expected_last)) {
+            BOOST_CHECK(!manifest.safe_segment_meta_to_add(rejected_last));
+            BOOST_CHECK(!manifest.add(rejected_last));
+
+            auto segments = std::vector<segment_meta>{};
+            for (auto it = manifest.begin(), end = manifest.end(); it != end;
+                 ++it) {
+                segments.push_back(*it);
+            }
+
+            sanity_check_manifest(segments);
+            BOOST_CHECK(manifest.last_segment() != rejected_last);
+            BOOST_CHECK(manifest.last_segment() == expected_last);
+            BOOST_CHECK(segments.back() == expected_last);
+        }
+    };
+
+    auto manifest = partition_manifest{
+      model::ntp{"kafka", "test_partition_manifest_replacements_outoforder", 3},
+      model::initial_revision_id{73}};
+
+    // add some segments and test with the last one
+    auto next_segment = next_segment_generator();
+    manifest.add(next_segment(segment_options::not_empty));
+    manifest.add(next_segment(segment_options::not_empty));
+    auto wider_segment = next_segment(segment_options::not_empty);
+    manifest.add(wider_segment);
+
+    BOOST_TEST_CONTEXT([&] {
+        auto sg = std::vector<segment_meta>{};
+        for (auto it = manifest.begin(); it != manifest.end(); ++it) {
+            sg.push_back(*it);
+        }
+
+        return fmt::format(
+          "manifest content\n{}",
+          fmt::join(
+            sg | std::views::transform([](auto& s) {
+                return fmt::format("[{:c}]", s);
+            }),
+            "\n"));
+    }()) {
+        // rejection tests
+        auto aligned_base_shorter = wider_segment;
+        aligned_base_shorter.committed_offset += model::offset{-1};
+        run_check(
+          "aligned base segment",
+          manifest.clone(),
+          wider_segment,
+          aligned_base_shorter);
+        auto aligned_committed_shorter = wider_segment;
+        aligned_committed_shorter.base_offset += model::offset{1};
+        run_check(
+          "aligned commit segment",
+          manifest.clone(),
+          wider_segment,
+          aligned_committed_shorter);
+
+        auto smaller_segment = wider_segment;
+        smaller_segment.base_offset += model::offset{1};
+        smaller_segment.committed_offset += model::offset{-1};
+        run_check(
+          "smaller segment", manifest.clone(), wider_segment, smaller_segment);
+
+        auto cpy_segment = wider_segment;
+        // modify a field that we don't care about (in v23.3.x) for debugging
+        // purposes
+        cpy_segment.metadata_size_hint++;
+        run_check(
+          "same segments added twice",
+          manifest.clone(),
+          wider_segment,
+          cpy_segment);
+
+        [wider_segment](auto manifest) {
+            // test case where safe_segment_meta_to_add accepts the segment,
+            // since it has different size
+            auto same_range_different_size = wider_segment;
+            // note how size can be greater
+            same_range_different_size.size_bytes++;
+
+            BOOST_TEST_CONTEXT(fmt::format(
+              "same range different size: should accept [{:c}], should "
+              "disappear: "
+              "[{:c}]",
+              same_range_different_size,
+              wider_segment)) {
+                BOOST_CHECK(
+                  manifest.safe_segment_meta_to_add(same_range_different_size));
+                BOOST_CHECK(manifest.add(same_range_different_size));
+
+                auto segments = std::vector<segment_meta>{};
+                for (auto it = manifest.begin(), end = manifest.end();
+                     it != end;
+                     ++it) {
+                    segments.push_back(*it);
+                }
+
+                sanity_check_manifest(segments);
+
+                BOOST_CHECK(manifest.last_segment() != wider_segment);
+                BOOST_CHECK(
+                  manifest.last_segment() == same_range_different_size);
+                BOOST_CHECK(segments.back() == same_range_different_size);
+            }
+        }(manifest.clone());
+    }
+    return ss::now();
+}
+
+SEASTAR_TEST_CASE(test_partition_manifest_gaps_and_overlaps) {
+    // generate a source manifest with some interesting data
+    // we are interested in checking that overlaps (a segment with base and/or
+    // committed offset not aligned with other segments) and gaps (range of
+    // offset initially not covered by a segment) do not compromise the
+    // partition_manifest
+    // generator for a continuous range of segments
+    auto next_segment = next_segment_generator();
+
+    auto source_manifest = partition_manifest{
+      model::ntp{"kafka", "test_partition_manifest_gaps_and_overlaps", 3},
+      model::initial_revision_id{73}};
+
+    // first run of contiguous segments
+    for (auto i = random_generators::get_int<size_t>(5, 50); i-- > 0;) {
+        source_manifest.add(next_segment());
+    }
+    // save a gap segment to re-apply it later out of order
+    auto gap_segment = next_segment(segment_options::not_empty);
+    gap_segment.archiver_term++; // give it some distinct data to mark it, in
+                                 // case we need to debug the binary data
+    // second run, now with a gap from before
+    for (auto i = random_generators::get_int<size_t>(5, 50); i-- > 0;) {
+        source_manifest.add(next_segment());
+    }
+    // reinsert gap_segment
+    source_manifest.add(gap_segment);
+
+    // this segment will be used later to check rejection of later segments with
+    // ranges falling directly into
+    auto non_empty_segment = next_segment(segment_options::not_empty);
+    source_manifest.add(non_empty_segment);
+
+    // add a non-empty segment meta to support an overlap_segment with base
+    // offset falling in this range
+    source_manifest.add(next_segment(segment_options::not_empty));
+    auto overlap_segment = next_segment(segment_options::recede_base);
+    overlap_segment.archiver_term += 2;
+    source_manifest.add(overlap_segment);
+
+    // third run
+    for (auto i = random_generators::get_int<size_t>(5, 50); i-- > 0;) {
+        source_manifest.add(next_segment());
+    }
+
+    auto get_replacement = [](auto& manifest, auto idx) {
+        // assume that idx and idx+1 falls into the range of manifest
+        auto r_it = manifest.begin();
+        std::advance(r_it, idx);
+        auto repl = *r_it;
+        repl.committed_offset = (++r_it)->committed_offset;
+        repl.archiver_term += 3;
+        return repl;
+    };
+
+    // create a replacement segment with overlaps
+    source_manifest.add(get_replacement(source_manifest, 3));
+    // create a replacement segment without overlaps
+    {
+        auto repl = get_replacement(source_manifest, 7);
+        repl.committed_offset += model::offset{1};
+        source_manifest.add(repl);
+    }
+
+    auto small_segment = non_empty_segment;
+    small_segment.base_offset += model::offset{1};
+    small_segment.committed_offset += model::offset{-1};
+    BOOST_CHECK(
+      source_manifest.get(small_segment.base_offset) != small_segment);
+
+    // create a clone via serde, to keep a snapshot of the original state.
+    auto serde_manifest_copy = partition_manifest{};
+    serde_manifest_copy.from_iobuf(source_manifest.to_iobuf().copy());
+    BOOST_CHECK(source_manifest == serde_manifest_copy);
+    // create a clone via clone. right now, this is done via an external vector
+    // for the segments, so it's a good proxy for snapshots
+    auto clone_manifest_copy = source_manifest.clone();
+    BOOST_CHECK(source_manifest == clone_manifest_copy);
+
+    auto check_consistency =
+      [](partition_manifest const& manifest, std::string_view tag) {
+          auto segments = std::vector<cloud_storage::segment_meta>{};
+          for (auto it = manifest.begin(), end = manifest.end(); it != end;
+               ++it) {
+              segments.push_back(*it);
+          }
+
+          BOOST_TEST_CONTEXT(tag) {
+              sanity_check_manifest(segments);
+              // not enforced by partition_manifest, but this test should not
+              // produce gaps
+              BOOST_CHECK(std::ranges::all_of(
+                segments,
+                [last_committed_offset = segments.front().base_offset
+                                         - model::offset{1}](auto& sm) mutable {
+                    auto no_gap = (sm.base_offset - last_committed_offset)
+                                  <= model::offset{1};
+                    last_committed_offset = sm.committed_offset;
+                    return no_gap;
+                }));
+          }
+      };
+
+    check_consistency(source_manifest, "source_manifest");
+    check_consistency(serde_manifest_copy, "serde_manifest_copy");
+    check_consistency(clone_manifest_copy, "clone_manifest_copy");
+
+    return ss::now();
 }
