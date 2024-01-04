@@ -146,4 +146,21 @@ TEST(WorkQueue, CanShutdownWithDelayedTasks) {
     EXPECT_FALSE(a2);
 }
 
+TEST(WorkQueue, RecursiveSubmit) {
+    work_queue queue([](auto ex) { std::rethrow_exception(ex); });
+    ss::promise<> p;
+    queue.submit([&] {
+        queue.submit([&] {
+            queue.submit([&] {
+                p.set_value();
+                return ss::now();
+            });
+            return ss::now();
+        });
+        return ss::now();
+    });
+    p.get_future().get();
+    queue.shutdown().get();
+}
+
 } // namespace ssx
