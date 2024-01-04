@@ -131,6 +131,11 @@ processor::processor(
 }
 
 ss::future<> processor::start() {
+    // Don't allow double starts of this module - we use the abort_requested
+    // flag to determine if the module is "running" or not.
+    if (!_as.abort_requested()) {
+        co_return;
+    }
     _as = {};
     co_await _source->start();
     co_await _offset_tracker->start();
@@ -269,6 +274,9 @@ void processor::report_lag(int64_t lag) {
 model::transform_id processor::id() const { return _id; }
 const model::ntp& processor::ntp() const { return _ntp; }
 const model::transform_metadata& processor::meta() const { return _meta; }
-bool processor::is_running() const { return !_task.available(); }
+bool processor::is_running() const {
+    // Only mark this as running if we've called start without calling stop.
+    return !_as.abort_requested();
+}
 int64_t processor::current_lag() const { return _last_reported_lag; }
 } // namespace transform
