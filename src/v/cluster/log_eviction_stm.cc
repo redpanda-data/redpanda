@@ -184,13 +184,24 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
           max_collectible_offset,
           truncation_point);
     }
+    if (truncation_point <= _raft->last_snapshot_index()) {
+        vlog(
+          _log.trace,
+          "Skipping writing snapshot as Raft already progressed with the new "
+          "snapshot. Current raft snapshot index: {}, requested truncation "
+          "point: {}",
+          _raft->last_snapshot_index(),
+          truncation_point);
+        co_return;
+    }
     vlog(
       _log.debug,
       "Requesting raft snapshot with final offset: {}",
       truncation_point);
     auto snapshot_data = co_await _raft->stm_manager()->take_snapshot(
       truncation_point);
-
+    // we need to check snapshot index again as it may already progressed after
+    // snapshot is taken by stm_manager
     if (truncation_point <= _raft->last_snapshot_index()) {
         vlog(
           _log.trace,
