@@ -21,8 +21,8 @@ fn main() {
     on_record_written(my_transform);
 }
 
-fn my_transform(event: WriteEvent) -> Result<Vec<Record>> {
-    Ok(vec![Record::new_with_headers(
+fn my_transform(event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<()> {
+    writer.write(Record::new_with_headers(
         event.record.key().map(|b| b.to_owned()),
         event.record.value().map(|b| b.to_owned()),
         event
@@ -31,5 +31,6 @@ fn my_transform(event: WriteEvent) -> Result<Vec<Record>> {
             .iter()
             .map(|h| h.to_owned())
             .collect(),
-    )])
+    ))?;
+    Ok(())
 }

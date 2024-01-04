@@ -45,7 +45,7 @@ extern crate rand;
 pub fn process<E, F>(cb: F) -> !
 where
     E: Debug,
-    F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
+    F: Fn(WriteEvent, &mut dyn RecordWriter) -> Result<(), E>,
 {
     unsafe {
         abi::check_abi();
@@ -68,10 +68,37 @@ struct BatchHeader {
     pub base_sequence: i32,
 }
 
+struct AbiRecordWriter {
+    pub output_buffer: Vec<u8>,
+}
+
+impl AbiRecordWriter {
+    fn new() -> Self {
+        Self {
+            output_buffer: Vec::new(),
+        }
+    }
+}
+
+impl RecordWriter for AbiRecordWriter {
+    fn write(&mut self, r: Record) -> Result<(), WriteError> {
+        self.output_buffer.clear();
+        serde::write_record_payload(&r, &mut self.output_buffer);
+        let errno_or_amt = unsafe {
+            abi::write_record(self.output_buffer.as_ptr(), self.output_buffer.len() as u32)
+        };
+        if errno_or_amt == self.output_buffer.len() as i32 {
+            Ok(())
+        } else {
+            Err(WriteError::Unknown(errno_or_amt))
+        }
+    }
+}
+
 fn process_batch<E, F>(cb: &F)
 where
     E: Debug,
-    F: Fn(WriteEvent) -> Result<Vec<Record>, E>,
+    F: Fn(WriteEvent, &mut dyn RecordWriter) -> Result<(), E>,
 {
     let mut header = BatchHeader {
         base_offset: 0,
@@ -105,7 +132,7 @@ where
     );
     let buf_size = errno_or_buf_size as usize;
     let mut input_buffer: Vec<u8> = vec![0; buf_size];
-    let mut output_buffer: Vec<u8> = Vec::new();
+    let mut record_writer = AbiRecordWriter::new();
     for _ in 0..header.record_count {
         let mut attr: u8 = 0;
         let mut timestamp: i64 = 0;
@@ -127,16 +154,6 @@ where
         let ts = SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp as u64);
         let record = serde::read_record_from_payload(&input_buffer[0..amt], ts)
             .expect("deserializing record failed");
-        let transformed = cb(WriteEvent { record }).expect("transforming record failed");
-        for record in transformed {
-            output_buffer.clear();
-            serde::write_record_payload(&record, &mut output_buffer);
-            let errno_or_amt =
-                unsafe { abi::write_record(output_buffer.as_ptr(), output_buffer.len() as u32) };
-            assert!(
-                errno_or_amt == output_buffer.len() as i32,
-                "writing record failed with errno: {errno_or_amt}"
-            );
-        }
+        cb(WriteEvent { record }, &mut record_writer).expect("transforming record failed");
     }
 }
