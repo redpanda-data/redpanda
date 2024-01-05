@@ -8,14 +8,14 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
 #include "seastar/util/file.hh"
 #include "ssx/future-util.h"
 #include "storage/segment.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>

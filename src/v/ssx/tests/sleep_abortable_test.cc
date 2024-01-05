@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "ssx/sleep_abortable.h"
 
 #include <seastar/core/abort_source.hh>
@@ -18,7 +19,6 @@
 
 #include <chrono>
 #include <numeric>
-#include <seastarx.h>
 
 using namespace std::chrono_literals;
 

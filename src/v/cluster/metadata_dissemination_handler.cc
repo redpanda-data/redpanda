@@ -9,12 +9,12 @@
 
 #include "cluster/metadata_dissemination_handler.h"
 
+#include "base/likely.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/partition_leaders_table.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"

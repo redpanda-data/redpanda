@@ -11,9 +11,9 @@
 #pragma once
 
 #include "archival/types.h"
+#include "base/seastarx.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/core/metrics_registration.hh>
 

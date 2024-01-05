@@ -9,10 +9,10 @@
 
 #include "compression/snappy_standard_compressor.h"
 
+#include "base/likely.h"
+#include "base/units.h"
+#include "base/vassert.h"
 #include "bytes/bytes.h"
-#include "likely.h"
-#include "units.h"
-#include "vassert.h"
 
 #include <fmt/format.h>
 

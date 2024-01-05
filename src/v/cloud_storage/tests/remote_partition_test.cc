@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
@@ -30,7 +31,6 @@
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
-#include "seastarx.h"
 #include "ssx/future-util.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"

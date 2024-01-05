@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "utils/source_location.h"
+#include "base/source_location.h"
 
 // NOLINTNEXTLINE
 #define fmt_with_ctx(method, fmt, args...)                                     \

@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 #include <seastar/core/smp.hh>
 

@@ -11,11 +11,11 @@
 
 #include "feature_barrier.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/feature_manager.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
-#include "vassert.h"
-#include "vlog.h"
 
 namespace cluster {
 

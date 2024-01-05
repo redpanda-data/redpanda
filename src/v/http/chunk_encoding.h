@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
-#include "units.h"
 
 #include <seastar/core/temporary_buffer.hh>
 

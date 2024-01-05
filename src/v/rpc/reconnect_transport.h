@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "model/metadata.h"
-#include "outcome.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"

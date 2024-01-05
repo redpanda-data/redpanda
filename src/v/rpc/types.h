@@ -11,15 +11,15 @@
 
 #pragma once
 
+#include "base/likely.h"
+#include "base/outcome.h"
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
-#include "likely.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
-#include "outcome.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "utils/log_hist.h"
-#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>

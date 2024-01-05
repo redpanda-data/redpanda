@@ -8,10 +8,10 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/vassert.h"
 #include "config/configuration.h"
 #include "net/server.h"
 #include "rpc/service.h"
-#include "vassert.h"
 
 namespace rpc {
 

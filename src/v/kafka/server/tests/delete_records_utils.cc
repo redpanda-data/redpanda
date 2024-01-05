@@ -9,12 +9,12 @@
  */
 #include "kafka/server/tests/delete_records_utils.h"
 
+#include "base/vlog.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/delete_records.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/delete_records_request.h"
 #include "kafka/protocol/schemata/delete_records_response.h"
-#include "vlog.h"
 
 #include <seastar/util/log.hh>
 

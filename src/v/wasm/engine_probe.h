@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>

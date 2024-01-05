@@ -11,13 +11,13 @@
 
 #pragma once
 
-#include "likely.h"
+#include "base/likely.h"
+#include "base/seastarx.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/group_configuration.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
-#include "seastarx.h"
 #include "utils/copy_range.h"
 
 #include <seastar/core/chunked_fifo.hh>

@@ -12,6 +12,7 @@
 
 #include "archival/logger.h"
 #include "archival/segment_reupload.h"
+#include "base/vlog.h"
 #include "config/configuration.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
@@ -21,7 +22,6 @@
 #include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "storage/version.h"
-#include "vlog.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>

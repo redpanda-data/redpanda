@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/producer_state.h"
 #include "config/property.h"
-#include "seastarx.h"
 
 #include <seastar/core/sharded.hh>
 

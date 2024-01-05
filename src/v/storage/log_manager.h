@@ -11,13 +11,14 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "cluster/topic_table.h"
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
-#include "seastarx.h"
 #include "storage/batch_cache.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/key_offset_map.h"
@@ -27,7 +28,6 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "units.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 

@@ -10,12 +10,12 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/handlers/topics/validators.h"
 #include "model/timeout_clock.h"
-#include "seastarx.h"
 
 #include <boost/container/flat_map.hpp>
 

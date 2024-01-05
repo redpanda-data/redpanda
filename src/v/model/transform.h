@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
-#include "seastarx.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 

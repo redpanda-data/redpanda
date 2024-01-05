@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/property.h"
-#include "seastarx.h"
 #include "security/acl.h"
 
 #include <seastar/core/sstring.hh>

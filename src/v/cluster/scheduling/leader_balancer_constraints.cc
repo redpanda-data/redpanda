@@ -10,8 +10,8 @@
  */
 #include "cluster/scheduling/leader_balancer_constraints.h"
 
+#include "base/vassert.h"
 #include "model/metadata.h"
-#include "vassert.h"
 
 namespace cluster::leader_balancer_types {
 

@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/seastarx.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
 #include "local_monitor_fixture.h"
 #include "redpanda/tests/fixture.h"
-#include "seastarx.h"
 #include "storage/types.h"
 
 #include <seastar/core/reactor.hh>

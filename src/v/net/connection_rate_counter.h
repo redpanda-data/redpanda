@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "net/server_probe.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/lowres_clock.hh>

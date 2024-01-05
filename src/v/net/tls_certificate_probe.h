@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "config/tls_config.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/net/tls.hh>

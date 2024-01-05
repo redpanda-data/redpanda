@@ -9,13 +9,13 @@
 
 #include "cluster/members_table.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <algorithm>
 #include <vector>

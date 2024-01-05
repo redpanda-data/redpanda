@@ -10,7 +10,7 @@
  */
 #include "utils/base64.h"
 
-#include "vassert.h"
+#include "base/vassert.h"
 
 #include <seastar/core/sstring.hh>
 

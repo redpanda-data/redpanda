@@ -7,12 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "bytes/details/io_byte_iterator.h"
 #include "bytes/details/io_fragment.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "http/chunk_encoding.h"
-#include "seastarx.h"
 
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>

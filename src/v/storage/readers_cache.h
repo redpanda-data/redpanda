@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/vlog.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -17,7 +18,6 @@
 #include "storage/readers_cache_probe.h"
 #include "storage/types.h"
 #include "utils/intrusive_list_helpers.h"
-#include "vlog.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>

@@ -10,15 +10,15 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_probe.h"
 #include "cloud_storage/recursive_directory_walker.h"
 #include "config/property.h"
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/storage.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
-#include "units.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>

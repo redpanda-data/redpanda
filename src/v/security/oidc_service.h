@@ -9,8 +9,8 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "config/property.h"
-#include "outcome.h"
 #include "security/fwd.h"
 
 #include <chrono>

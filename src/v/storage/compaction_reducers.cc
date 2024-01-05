@@ -9,6 +9,7 @@
 
 #include "storage/compaction_reducers.h"
 
+#include "base/vlog.h"
 #include "compression/compression.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
@@ -19,7 +20,6 @@
 #include "storage/parser_utils.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_utils.h"
-#include "vlog.h"
 
 #include <seastar/core/future.hh>
 

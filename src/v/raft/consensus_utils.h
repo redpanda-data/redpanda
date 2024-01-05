@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "likely.h"
+#include "base/likely.h"
 #include "model/record.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/types.h"

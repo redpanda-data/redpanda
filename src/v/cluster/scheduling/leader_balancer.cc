@@ -10,6 +10,8 @@
  */
 #include "cluster/scheduling/leader_balancer.h"
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
@@ -27,8 +29,6 @@
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
-#include "seastarx.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>

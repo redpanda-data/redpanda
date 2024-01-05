@@ -9,12 +9,12 @@
  */
 #pragma once
 
+#include "base/oncore.h"
+#include "base/outcome.h"
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
 #include "json/pointer.h"
 #include "json/writer.h"
-#include "oncore.h"
-#include "outcome.h"
 #include "security/oidc_error.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"

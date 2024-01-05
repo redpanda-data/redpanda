@@ -10,13 +10,13 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "features/fwd.h"
 #include "model/metadata.h"
 #include "model/transform.h"
 #include "raft/fwd.h"
-#include "seastarx.h"
 #include "transform/fwd.h"
 #include "wasm/fwd.h"
 

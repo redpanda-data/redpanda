@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "outcome.h"
-#include "seastarx.h"
+#include "base/outcome.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/future-util.hh>
 

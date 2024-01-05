@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/client_group_byte_rate_quota.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

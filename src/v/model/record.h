@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "model/compression.h"
@@ -20,7 +21,6 @@
 #include "model/timestamp.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
-#include "vassert.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/util/optimized_optional.hh>

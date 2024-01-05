@@ -10,8 +10,8 @@
 
 #include "cloud_storage/types.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/logger.h"
-#include "vlog.h"
 
 namespace {
 cloud_storage_clients::default_overrides get_default_overrides() {

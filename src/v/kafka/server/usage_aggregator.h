@@ -10,10 +10,10 @@
  */
 
 #pragma once
+#include "base/vlog.h"
 #include "kafka/server/logger.h"
 #include "storage/kvstore.h"
 #include "utils/fragmented_vector.h"
-#include "vlog.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>

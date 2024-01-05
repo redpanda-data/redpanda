@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cluster/scheduling/types.h"
 #include "model/metadata.h"
-#include "outcome.h"
 
 namespace cluster {
 class allocation_state;

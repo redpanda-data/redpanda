@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/units.h"
 #include "gmock/gmock.h"
-#include "units.h"
 #include "wasm/allocator.h"
 
 #include <seastar/core/reactor.hh>

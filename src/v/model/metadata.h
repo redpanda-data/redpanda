@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "model/fundamental.h"
 #include "net/unresolved_address.h"
-#include "seastarx.h"
 #include "serde/envelope.h"
-#include "units.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>

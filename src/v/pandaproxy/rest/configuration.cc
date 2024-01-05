@@ -9,11 +9,11 @@
 
 #include "configuration.h"
 
+#include "base/units.h"
 #include "config/base_property.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "model/metadata.h"
-#include "units.h"
 
 #include <chrono>
 

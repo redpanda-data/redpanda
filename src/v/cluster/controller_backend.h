@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/topic_table.h"
@@ -19,7 +20,6 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "outcome.h"
 #include "raft/group_configuration.h"
 #include "storage/api.h"
 

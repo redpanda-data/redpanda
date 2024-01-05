@@ -8,11 +8,11 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/units.h"
 #include "cluster/types.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
-#include "units.h"
 
 inline cluster::remote_topic_properties random_remote_topic_properties() {
     cluster::remote_topic_properties remote_tp;

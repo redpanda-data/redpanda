@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 
+#include "base/units.h"
 #include "config/base_property.h"
 #include "config/bounded_property.h"
 #include "config/node_config.h"
@@ -23,7 +24,6 @@
 #include "ssx/sformat.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
-#include "units.h"
 #include "utils/bottomless_token_bucket.h"
 
 #include <cstdint>

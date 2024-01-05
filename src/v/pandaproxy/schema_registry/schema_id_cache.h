@@ -10,11 +10,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "seastarx.h"
 
 #include <boost/multi_index/indexed_by.hpp>
 #include <boost/multi_index/key.hpp>

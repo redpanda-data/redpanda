@@ -10,11 +10,11 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "model/timeout_clock.h"
-#include "seastarx.h"
 #include "ssx/sformat.h"
 #include "test_utils/test_macros.h"
-#include "vassert.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/idle_cpu_handler.hh>

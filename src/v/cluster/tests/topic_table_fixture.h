@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/units.h"
 #include "cluster/members_table.h"
 #include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_state.h"
@@ -22,7 +23,6 @@
 #include "model/metadata.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
-#include "units.h"
 
 inline void validate_delta(
   const fragmented_vector<cluster::topic_table::delta>& d,

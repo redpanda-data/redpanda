@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "vassert.h"
+#include "base/vassert.h"
 
 #define RAPIDJSON_HAS_STDSTRING 1
 #define RAPIDJSON_ASSERT(x) vassert(x, "Rapidjson ")

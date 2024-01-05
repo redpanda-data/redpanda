@@ -9,10 +9,11 @@
 
 #include "storage/log_manager.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
@@ -37,7 +38,6 @@
 #include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>

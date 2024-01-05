@@ -7,11 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #pragma once
+#include "base/outcome.h"
+#include "base/vassert.h"
 #include "bytes/bytes.h"
-#include "outcome.h"
 #include "security/acl.h"
 #include "security/audit/schemas/types.h"
-#include "vassert.h"
 
 #include <seastar/core/lowres_clock.hh>
 

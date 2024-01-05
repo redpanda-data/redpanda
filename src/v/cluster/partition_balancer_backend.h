@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/partition_balancer_types.h"
@@ -17,7 +18,6 @@
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
-#include "seastarx.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>

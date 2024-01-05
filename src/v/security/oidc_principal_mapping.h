@@ -8,10 +8,10 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #pragma once
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "config/property.h"
 #include "json/pointer.h"
-#include "outcome.h"
-#include "seastarx.h"
 #include "security/acl.h"
 #include "security/fwd.h"
 #include "security/mtls.h"

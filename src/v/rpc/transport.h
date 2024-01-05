@@ -11,16 +11,16 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "net/transport.h"
-#include "outcome.h"
 #include "reflection/async_adl.h"
 #include "rpc/errc.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/gate.hh>

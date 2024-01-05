@@ -16,10 +16,10 @@
  * llvm-cov show src/v/bytes/tests/fuzz_iobuf -instr-profile=default.profdata
  * -format=html ../src/v/bytes/iobuf.h ../src/v/bytes/iobuf.cc > cov.html
  */
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/scattered_message.h"
-#include "vassert.h"
 
 #include <numeric>
 

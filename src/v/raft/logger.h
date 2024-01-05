@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>

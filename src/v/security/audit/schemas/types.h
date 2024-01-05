@@ -10,9 +10,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 #include "version.h"
 

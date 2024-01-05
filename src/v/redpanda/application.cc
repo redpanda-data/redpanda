@@ -14,6 +14,7 @@
 #include "archival/purger.h"
 #include "archival/upload_controller.h"
 #include "archival/upload_housekeeping_service.h"
+#include "base/vlog.h"
 #include "cli_parser.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/remote.h"
@@ -116,7 +117,6 @@
 #include "utils/human.h"
 #include "utils/uuid.h"
 #include "version.h"
-#include "vlog.h"
 #include "wasm/api.h"
 #include "wasm/cache.h"
 

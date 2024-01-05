@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "config/node_config.h"
 #include "ssx/sformat.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/logger.h"
 #include "storage/segment_appender.h"
-#include "vassert.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/util/backtrace.hh>
@@ -33,7 +33,7 @@
 
 namespace bi = boost::intrusive;
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 namespace storage {
 

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
 #include "kafka/protocol/api_versions.h"
@@ -21,7 +22,6 @@
 #include "kafka/server/protocol_utils.h"
 #include "kafka/types.h"
 #include "net/transport.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>

@@ -11,6 +11,7 @@
 
 #include "config_manager.h"
 
+#include "base/vlog.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller_service.h"
 #include "cluster/controller_snapshot.h"
@@ -26,7 +27,6 @@
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "utils/file_io.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 

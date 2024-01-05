@@ -9,14 +9,14 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "config/property.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "security/acl.h"
 #include "security/acl_store.h"
 #include "security/logger.h"
-#include "vlog.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>

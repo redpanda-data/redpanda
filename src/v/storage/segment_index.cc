@@ -9,12 +9,12 @@
 
 #include "storage/segment_index.h"
 
+#include "base/vassert.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
 #include "storage/segment_utils.h"
-#include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "outcome.h"
+#include "base/outcome.h"
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "raft/vote_stm.h"

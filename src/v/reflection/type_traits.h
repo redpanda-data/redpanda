@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"

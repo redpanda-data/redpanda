@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
 #include "features/feature_table.h"
@@ -25,7 +26,6 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/scheduling.hh>

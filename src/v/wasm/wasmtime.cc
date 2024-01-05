@@ -10,6 +10,7 @@
  */
 #include "wasm/wasmtime.h"
 
+#include "base/vassert.h"
 #include "metrics/metrics.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -19,7 +20,6 @@
 #include "storage/parser_utils.h"
 #include "utils/human.h"
 #include "utils/type_traits.h"
-#include "vassert.h"
 #include "wasm/allocator.h"
 #include "wasm/api.h"
 #include "wasm/engine_probe.h"

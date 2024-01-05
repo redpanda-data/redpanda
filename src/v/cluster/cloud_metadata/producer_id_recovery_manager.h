@@ -8,13 +8,13 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/fwd.h"
 #include "config/node_config.h"
 #include "model/record.h"
 #include "rpc/connection_cache.h"
-#include "seastarx.h"
 
 #include <seastar/core/sharded.hh>
 

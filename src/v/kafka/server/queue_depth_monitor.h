@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/vlog.h"
 #include "kafka/server/logger.h"
 #include "utils/queue_depth_control.h"
-#include "vlog.h"
 
 namespace kafka {
 

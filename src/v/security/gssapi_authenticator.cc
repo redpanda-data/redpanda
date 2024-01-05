@@ -9,6 +9,7 @@
  */
 #include "security/gssapi_authenticator.h"
 
+#include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "kafka/protocol/wire.h"
 #include "security/acl.h"
@@ -17,7 +18,6 @@
 #include "security/krb5.h"
 #include "security/logger.h"
 #include "ssx/thread_worker.h"
-#include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
 

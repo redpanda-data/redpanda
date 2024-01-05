@@ -9,11 +9,11 @@
 
 #include "kafka/protocol/batch_reader.h"
 
+#include "base/vlog.h"
 #include "kafka/protocol/exceptions.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>

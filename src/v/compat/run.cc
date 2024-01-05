@@ -10,6 +10,7 @@
  */
 #include "compat/run.h"
 
+#include "base/seastarx.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
@@ -35,7 +36,6 @@
 #include "json/prettywriter.h"
 #include "json/writer.h"
 #include "model/record.h"
-#include "seastarx.h"
 #include "utils/base64.h"
 #include "utils/file_io.h"
 

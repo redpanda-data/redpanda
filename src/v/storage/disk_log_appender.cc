@@ -9,13 +9,13 @@
 
 #include "storage/disk_log_appender.h"
 
-#include "likely.h"
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "model/record_utils.h"
 #include "storage/disk_log_impl.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
-#include "vlog.h"
 
 #include <seastar/coroutine/exception.hh>
 

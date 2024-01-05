@@ -11,9 +11,9 @@
 
 #include "resource_mgmt/memory_groups.h"
 
+#include "base/seastarx.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
-#include "seastarx.h"
 
 #include <seastar/core/memory.hh>
 

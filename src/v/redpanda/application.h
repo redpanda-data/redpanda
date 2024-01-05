@@ -12,6 +12,7 @@
 #pragma once
 
 #include "archival/fwd.h"
+#include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/config_manager.h"
@@ -48,7 +49,6 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
-#include "seastarx.h"
 #include "security/fwd.h"
 #include "ssx/fwd.h"
 #include "storage/api.h"

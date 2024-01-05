@@ -10,8 +10,8 @@
 
 #include "http/tests/http_imposter.h"
 
+#include "base/vlog.h"
 #include "utils/uuid.h"
-#include "vlog.h"
 
 #include <seastar/http/function_handlers.hh>
 

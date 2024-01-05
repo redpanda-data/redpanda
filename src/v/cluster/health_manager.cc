@@ -10,6 +10,8 @@
  */
 #include "cluster/health_manager.h"
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
@@ -20,8 +22,6 @@
 #include "cluster/types.h"
 #include "model/namespace.h"
 #include "model/transform.h"
-#include "seastarx.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>

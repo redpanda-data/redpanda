@@ -9,6 +9,8 @@
 
 #include "kafka/server/handlers/produce.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
@@ -17,7 +19,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/server/replicated_partition.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -30,7 +31,6 @@
 #include "ssx/future-util.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
-#include "vlog.h"
 
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/future.hh>

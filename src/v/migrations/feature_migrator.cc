@@ -9,13 +9,13 @@
 
 #include "feature_migrator.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/controller.h"
 #include "cluster/feature_manager.h"
 #include "features/feature_table.h"
 #include "features/logger.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/sleep.hh>
 

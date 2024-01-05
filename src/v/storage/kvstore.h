@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 #include "storage/fwd.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"

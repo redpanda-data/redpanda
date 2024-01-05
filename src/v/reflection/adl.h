@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "reflection/for_each_field.h"
 #include "reflection/type_traits.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/byteorder.hh>

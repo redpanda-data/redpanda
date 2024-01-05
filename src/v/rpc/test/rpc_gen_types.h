@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "reflection/adl.h"
 #include "rpc/parse_utils.h"
-#include "seastarx.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 

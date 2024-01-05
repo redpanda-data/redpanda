@@ -10,11 +10,11 @@
  */
 #pragma once
 
+#include "base/vlog.h"
 #include "hashing/xx.h"
 #include "reflection/adl.h"
 #include "serde/serde_exception.h"
 #include "storage/index_state.h"
-#include "vlog.h"
 
 namespace storage::serde_compat {
 

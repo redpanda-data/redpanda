@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "pandaproxy/rest/proxy.h"
 #include "pandaproxy/server.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

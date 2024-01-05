@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/outcome.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "outcome.h"
 #include "raft/errc.h"
 #include "raft/heartbeats.h"
 #include "rpc/types.h"

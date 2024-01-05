@@ -9,6 +9,7 @@
 
 #include "cluster/cluster_utils.h"
 
+#include "base/vlog.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
@@ -20,7 +21,6 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/types.h"
 #include "storage/kvstore.h"
-#include "vlog.h"
 
 #include <seastar/core/future.hh>
 

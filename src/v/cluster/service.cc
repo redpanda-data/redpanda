@@ -9,6 +9,7 @@
 
 #include "cluster/service.h"
 
+#include "base/vlog.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
@@ -31,7 +32,6 @@
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
 #include "rpc/errc.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

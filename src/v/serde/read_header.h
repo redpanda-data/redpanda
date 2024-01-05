@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "serde/checksum_t.h"
 #include "serde/envelope.h"
@@ -17,7 +18,6 @@
 #include "serde/type_str.h"
 #include "serde_exception.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 namespace serde {
 

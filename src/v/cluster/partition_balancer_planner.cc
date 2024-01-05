@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_planner.h"
 
+#include "base/vlog.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/members_table.h"
 #include "cluster/node_status_table.h"
@@ -21,7 +22,6 @@
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/maybe_yield.hh>

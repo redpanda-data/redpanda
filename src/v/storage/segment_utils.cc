@@ -9,9 +9,12 @@
 
 #include "storage/segment_utils.h"
 
+#include "base/likely.h"
+#include "base/units.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "config/configuration.h"
-#include "likely.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
@@ -34,9 +37,6 @@
 #include "storage/scoped_file_tracker.h"
 #include "storage/segment.h"
 #include "storage/types.h"
-#include "units.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>

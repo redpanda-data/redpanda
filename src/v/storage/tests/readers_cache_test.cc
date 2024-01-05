@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "storage/readers_cache.h"
 #include "test_utils/fixture.h"
 

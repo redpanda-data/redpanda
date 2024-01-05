@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
@@ -30,7 +31,6 @@
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 #include "utils/string_switch.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 

@@ -9,8 +9,8 @@
 
 #include "raft/configuration_bootstrap_state.h"
 
+#include "base/likely.h"
 #include "bytes/iobuf_parser.h"
-#include "likely.h"
 #include "model/record.h"
 #include "raft/consensus_utils.h"
 #include "raft/types.h"

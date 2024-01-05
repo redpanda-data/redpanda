@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/io_queue.hh>

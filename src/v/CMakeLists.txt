@@ -80,6 +80,11 @@ foreach(PYTHON_DEPENDENCY jsonschema jinja2)
     endif()
 endforeach()
 
+# The foundational base library is configured as a dependency of every other
+# target. See base/README.md for more information.
+add_subdirectory(base)
+link_libraries(v::base)
+
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(io)
@@ -164,12 +169,3 @@ v_cc_library(
 
 # main executables
 add_subdirectory(redpanda)
-
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME outcome_tests
-  SOURCES outcome_tests.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework
-  )

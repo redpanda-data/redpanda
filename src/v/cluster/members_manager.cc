@@ -9,6 +9,7 @@
 
 #include "cluster/members_manager.h"
 
+#include "base/seastarx.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
@@ -32,7 +33,6 @@
 #include "random/generators.h"
 #include "redpanda/application.h"
 #include "reflection/adl.h"
-#include "seastarx.h"
 #include "storage/api.h"
 
 #include <seastar/core/coroutine.hh>

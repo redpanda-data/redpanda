@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
-#include "seastarx.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 

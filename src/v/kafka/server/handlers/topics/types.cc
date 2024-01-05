@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/topics/types.h"
 
+#include "base/units.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/handlers/configs/config_utils.h"
@@ -17,7 +18,6 @@
 #include "model/namespace.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "units.h"
 #include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>

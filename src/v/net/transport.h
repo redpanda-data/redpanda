@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
 #include "net/batched_output_stream.h"
 #include "net/client_probe.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
-#include "seastarx.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>

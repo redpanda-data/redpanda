@@ -8,10 +8,10 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "utils/delta_for.h"
 
 #include <seastar/testing/perf_tests.hh>

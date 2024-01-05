@@ -9,6 +9,7 @@
 
 #include "kafka/client/client.h"
 
+#include "base/seastarx.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
@@ -28,7 +29,6 @@
 #include "model/timeout_clock.h"
 #include "net/unresolved_address.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>

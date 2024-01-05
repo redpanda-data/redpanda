@@ -9,17 +9,17 @@
 
 #include "storage/index_state.h"
 
+#include "base/likely.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "hashing/crc32c.h"
-#include "likely.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "serde/serde.h"
 #include "serde/serde_exception.h"
 #include "storage/index_state_serde_compat.h"
 #include "storage/logger.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>

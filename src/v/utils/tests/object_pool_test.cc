@@ -9,7 +9,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "utils/object_pool.h"
 
 #include <seastar/core/future.hh>

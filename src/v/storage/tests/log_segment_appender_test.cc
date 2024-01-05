@@ -7,11 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "config/configuration.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "storage/storage_resources.h"

@@ -9,6 +9,7 @@
 
 #include "raft/vote_stm.h"
 
+#include "base/vassert.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -16,7 +17,6 @@
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
 #include "ssx/semaphore.h"
-#include "vassert.h"
 
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>

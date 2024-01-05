@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/likely.h"
+#include "base/seastarx.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/self_test/metrics.h"
 #include "cluster/self_test_rpc_types.h"
 #include "config/node_config.h"
-#include "likely.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/aligned_buffer.hh>

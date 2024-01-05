@@ -11,6 +11,7 @@
 
 #include "kafka/server/group_metadata.h"
 
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
@@ -22,7 +23,6 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "utils/to_string.h"
-#include "vassert.h"
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>

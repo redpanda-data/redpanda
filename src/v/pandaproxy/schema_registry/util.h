@@ -11,14 +11,14 @@
 
 #pragma once
 
+#include "base/likely.h"
+#include "base/seastarx.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "likely.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 
 #include <fmt/core.h>

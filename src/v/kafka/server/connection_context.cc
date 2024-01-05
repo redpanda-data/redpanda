@@ -10,6 +10,9 @@
  */
 #include "kafka/server/connection_context.h"
 
+#include "base/likely.h"
+#include "base/units.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
@@ -25,11 +28,8 @@
 #include "kafka/server/response.h"
 #include "kafka/server/server.h"
 #include "kafka/server/snc_quota_manager.h"
-#include "likely.h"
 #include "net/exceptions.h"
 #include "security/exceptions.h"
-#include "units.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

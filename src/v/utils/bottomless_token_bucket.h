@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
 #include "seastar/core/lowres_clock.hh"
-#include "seastarx.h"
 
 #include <fmt/core.h>
 

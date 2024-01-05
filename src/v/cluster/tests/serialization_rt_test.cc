@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/health_monitor_types.h"
@@ -30,7 +31,6 @@
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 #include "tristate.h"
-#include "units.h"
 #include "v8_engine/data_policy.h"
 
 #include <seastar/core/chunked_fifo.hh>

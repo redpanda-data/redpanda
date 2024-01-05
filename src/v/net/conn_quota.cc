@@ -9,13 +9,13 @@
 
 #include "conn_quota.h"
 
+#include "base/vlog.h"
 #include "config/configuration.h"
 #include "config/validators.h"
 #include "hashing/xx.h"
 #include "rpc/logger.h"
 #include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
-#include "vlog.h"
 
 namespace net {
 

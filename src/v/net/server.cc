@@ -9,16 +9,16 @@
 
 #include "net/server.h"
 
+#include "base/likely.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "config/configuration.h"
-#include "likely.h"
 #include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "ssx/sformat.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

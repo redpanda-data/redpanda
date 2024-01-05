@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "features/fwd.h"
 #include "model/metadata.h"
-#include "outcome.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_configuration.h"

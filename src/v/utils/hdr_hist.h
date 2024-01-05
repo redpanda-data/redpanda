@@ -17,7 +17,7 @@
 
 // vectorized types. needed comment to allow clang-format
 // header sorting to not resort cstdint
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "static_deleter_fn.h"
 
 #include <seastar/core/metrics_types.hh>

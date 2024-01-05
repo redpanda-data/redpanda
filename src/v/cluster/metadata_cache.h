@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
@@ -20,7 +21,6 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "seastarx.h"
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/future.hh>

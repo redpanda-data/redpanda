@@ -9,6 +9,8 @@
 
 #include "raft/types.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -22,8 +24,6 @@
 #include "reflection/async_adl.h"
 #include "serde/serde.h"
 #include "utils/to_string.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 

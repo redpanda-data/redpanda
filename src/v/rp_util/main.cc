@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/seastarx.h"
 #include "boost/program_options.hpp"
 #include "compat/run.h"
 #include "redpanda/cluster_config_schema_util.h"
 #include "seastar/core/app-template.hh"
-#include "seastarx.h"
 #include "version.h"
 
 #include <filesystem>

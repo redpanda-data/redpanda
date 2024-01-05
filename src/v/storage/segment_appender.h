@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/likely.h"
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "likely.h"
 #include "model/record.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender_chunk.h"

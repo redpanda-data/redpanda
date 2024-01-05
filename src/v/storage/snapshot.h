@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>

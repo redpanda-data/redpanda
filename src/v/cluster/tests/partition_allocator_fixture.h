@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/units.h"
 #include "cluster/commands.h"
 #include "cluster/members_table.h"
 #include "cluster/scheduling/allocation_node.h"
@@ -23,7 +24,6 @@
 #include "net/unresolved_address.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
-#include "units.h"
 
 #include <seastar/core/chunked_fifo.hh>
 

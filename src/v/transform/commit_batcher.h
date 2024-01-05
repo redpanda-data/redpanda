@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cluster/errc.h"
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/transform.h"
-#include "outcome.h"
 
 #include <seastar/core/abort_source.hh>
 

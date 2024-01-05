@@ -9,6 +9,7 @@
 
 #include "cluster/migrations/tx_manager_migrator.h"
 
+#include "base/vlog.h"
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/migrations/tx_manager_migrator_types.h"
@@ -28,7 +29,6 @@
 #include "ssx/future-util.h"
 #include "storage/types.h"
 #include "utils/fragmented_vector.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

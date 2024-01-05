@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/convert.h"
 #include "net/unresolved_address.h"
-#include "seastarx.h"
 
 #include <model/metadata.h>
 #include <yaml-cpp/yaml.h>

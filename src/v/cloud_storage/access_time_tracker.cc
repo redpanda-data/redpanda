@@ -10,9 +10,9 @@
 
 #include "cloud_storage/access_time_tracker.h"
 
+#include "base/units.h"
 #include "bytes/iostream.h"
 #include "serde/serde.h"
-#include "units.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>

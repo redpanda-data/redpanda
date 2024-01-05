@@ -11,12 +11,12 @@
 
 #include "cluster/self_test/diskcheck.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/logger.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
 #include "utils/uuid.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>

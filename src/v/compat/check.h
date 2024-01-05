@@ -10,13 +10,13 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "json/document.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
-#include "seastarx.h"
 #include "serde/serde.h"
 
 #include <seastar/core/sstring.hh>

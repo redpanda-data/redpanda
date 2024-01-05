@@ -8,8 +8,8 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "base/units.h"
 #include "storage/key_offset_map.h"
-#include "units.h"
 
 #include <gtest/gtest.h>
 

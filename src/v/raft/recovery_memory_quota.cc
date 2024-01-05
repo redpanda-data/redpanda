@@ -10,10 +10,10 @@
  */
 #include "raft/recovery_memory_quota.h"
 
+#include "base/vlog.h"
 #include "raft/logger.h"
 #include "resource_mgmt/memory_groups.h"
 #include "ssx/semaphore.h"
-#include "vlog.h"
 
 #include <seastar/core/memory.hh>
 

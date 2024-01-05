@@ -9,8 +9,8 @@
 
 #include "config/base_property.h"
 
+#include "base/vassert.h"
 #include "config/config_store.h"
-#include "vassert.h"
 
 #include <ostream>
 

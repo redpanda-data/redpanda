@@ -11,12 +11,12 @@
 
 #include "wasi.h"
 
+#include "base/seastarx.h"
+#include "base/units.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "ffi.h"
-#include "seastarx.h"
-#include "units.h"
 #include "utils/utf8.h"
-#include "vassert.h"
-#include "vlog.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/byteorder.hh>

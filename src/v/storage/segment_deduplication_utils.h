@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "storage/fwd.h"
 #include "storage/index_state.h"
 #include "storage/segment_set.h"

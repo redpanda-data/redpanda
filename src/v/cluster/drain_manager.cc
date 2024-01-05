@@ -1,10 +1,10 @@
 #include "cluster/drain_manager.h"
 
+#include "base/vlog.h"
 #include "cluster/logger.h"
 #include "cluster/partition_manager.h"
 #include "cluster/types.h"
 #include "random/generators.h"
-#include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/smp.hh>

@@ -9,8 +9,8 @@
 
 #include "configuration.h"
 
+#include "base/units.h"
 #include "config/configuration.h"
-#include "units.h"
 
 namespace kafka::client {
 using namespace std::chrono_literals;

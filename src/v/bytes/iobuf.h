@@ -10,15 +10,15 @@
  */
 
 #pragma once
+#include "base/likely.h"
+#include "base/oncore.h"
+#include "base/seastarx.h"
 #include "bytes/details/io_allocation_size.h"
 #include "bytes/details/io_byte_iterator.h"
 #include "bytes/details/io_fragment.h"
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/details/io_placeholder.h"
 #include "bytes/details/out_of_range.h"
-#include "likely.h"
-#include "oncore.h"
-#include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/temporary_buffer.hh>

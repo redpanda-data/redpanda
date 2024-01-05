@@ -11,10 +11,10 @@
 
 #include "schema_registry_module.h"
 
+#include "base/vassert.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "utils/named_type.h"
-#include "vassert.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
 

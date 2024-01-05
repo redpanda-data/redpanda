@@ -9,9 +9,9 @@
 
 #include "kafka/server/quota_manager.h"
 
+#include "base/vlog.h"
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
-#include "vlog.h"
 
 #include <fmt/chrono.h>
 

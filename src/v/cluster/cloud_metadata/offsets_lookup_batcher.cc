@@ -10,11 +10,11 @@
  */
 #include "cluster/cloud_metadata/offsets_lookup_batcher.h"
 
+#include "base/vlog.h"
 #include "cluster/cloud_metadata/offsets_lookup_rpc_types.h"
 #include "cluster/logger.h"
 #include "cluster/offsets_recovery_rpc_service.h"
 #include "rpc/connection_cache.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/timed_out_error.hh>

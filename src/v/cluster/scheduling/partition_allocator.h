@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "cluster/logger.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/allocation_state.h"
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/types.h"
 #include "config/property.h"
-#include "vlog.h"
 
 namespace cluster {
 

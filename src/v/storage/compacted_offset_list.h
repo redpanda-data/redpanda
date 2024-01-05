@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "model/fundamental.h"
-#include "vassert.h"
 
 #include <bits/stdint-uintn.h>
 #include <roaring/roaring.hh>

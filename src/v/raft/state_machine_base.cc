@@ -9,8 +9,8 @@
 
 #include "raft/state_machine_base.h"
 
+#include "base/vassert.h"
 #include "raft/consensus.h"
-#include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 

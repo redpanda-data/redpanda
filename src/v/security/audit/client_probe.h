@@ -10,8 +10,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "metrics/metrics.h"
-#include "seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics_registration.hh>

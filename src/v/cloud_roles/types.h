@@ -10,8 +10,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/metrics.hh>

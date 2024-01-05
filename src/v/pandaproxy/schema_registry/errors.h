@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "outcome.h"
+#include "base/outcome.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/types.h"

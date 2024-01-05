@@ -11,9 +11,9 @@
 
 #include "resource_mgmt/available_memory.h"
 
+#include "base/seastarx.h"
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "seastarx.h"
 
 #include <seastar/core/memory.hh>
 #include <seastar/core/metrics.hh>

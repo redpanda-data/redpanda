@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

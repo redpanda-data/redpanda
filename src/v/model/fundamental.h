@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
 #include "serde/serde.h"
 #include "ssx/sformat.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
-#include "vassert.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>

@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #define BOOST_TEST_MODULE outcome
-#include "outcome.h"
+#include "base/outcome.h"
 
 #include <boost/test/unit_test.hpp>
 

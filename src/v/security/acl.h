@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>

@@ -9,10 +9,10 @@
 
 #include "compression/internal/lz4_frame_compressor.h"
 
+#include "base/units.h"
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "static_deleter_fn.h"
-#include "units.h"
-#include "vassert.h"
 
 #include <seastar/core/temporary_buffer.hh>
 

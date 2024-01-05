@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/wire.h"
 #include "kafka/types.h"
@@ -17,7 +18,6 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/noncopyable_function.hh>

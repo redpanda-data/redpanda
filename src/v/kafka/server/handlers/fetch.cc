@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/fetch.h"
 
+#include "base/likely.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -25,7 +26,6 @@
 #include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record_utils.h"

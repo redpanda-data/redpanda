@@ -9,6 +9,7 @@
 
 #include "kafka/server/rm_group_frontend.h"
 
+#include "base/vlog.h"
 #include "cluster/controller.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/logger.h"
@@ -25,7 +26,6 @@
 #include "kafka/server/group.h"
 #include "kafka/server/group_router.h"
 #include "rpc/connection_cache.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 

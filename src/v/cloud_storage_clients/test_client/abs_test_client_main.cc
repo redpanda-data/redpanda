@@ -8,13 +8,13 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "cloud_roles/types.h"
 #include "cloud_storage_clients/abs_client.h"
 #include "http/client.h"
-#include "seastarx.h"
 #include "syschecks/syschecks.h"
-#include "vlog.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/file.hh>

@@ -7,12 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "delta_for_characterization_data.h"
 #include "random/generators.h"
 #include "utils/delta_for.h"
 #include "version.h"
-#include "vlog.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>

@@ -1,4 +1,4 @@
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "ssx/semaphore.h"
 #include "utils/rwlock.h"
 

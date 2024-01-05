@@ -1097,7 +1097,7 @@ HEADER_TEMPLATE = """
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "kafka/protocol/errors.h"
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "utils/fragmented_vector.h"
 {%- if not struct.is_streamable %}
 #include <fmt/format.h>

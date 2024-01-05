@@ -10,6 +10,7 @@
 
 #include "cloud_storage_clients/abs_client.h"
 
+#include "base/vlog.h"
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
@@ -20,7 +21,6 @@
 #include "config/configuration.h"
 #include "json/document.h"
 #include "json/istreamwrapper.h"
-#include "vlog.h"
 
 #include <utility>
 

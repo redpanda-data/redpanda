@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "json/stringbuffer.h"
@@ -25,7 +26,6 @@
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
-#include "seastarx.h"
 #include "storage/parser_utils.h"
 
 #include <seastar/core/sstring.hh>

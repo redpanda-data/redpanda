@@ -11,9 +11,9 @@
 
 #include "feature_table_snapshot.h"
 
+#include "base/vlog.h"
 #include "features/feature_table.h"
 #include "features/logger.h"
-#include "vlog.h"
 
 namespace features {
 

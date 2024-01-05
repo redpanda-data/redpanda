@@ -11,6 +11,7 @@
 
 #include "pandaproxy/schema_registry/sharded_store.h"
 
+#include "base/vlog.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "kafka/protocol/errors.h"
@@ -22,7 +23,6 @@
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

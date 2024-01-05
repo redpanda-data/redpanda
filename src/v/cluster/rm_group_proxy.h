@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 namespace cluster {
 

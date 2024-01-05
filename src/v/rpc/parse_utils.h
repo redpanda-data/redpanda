@@ -11,15 +11,15 @@
 
 #pragma once
 
+#include "base/likely.h"
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "bytes/iostream.h"
 #include "compression/async_stream_zstd.h"
 #include "hashing/xx.h"
-#include "likely.h"
 #include "reflection/async_adl.h"
 #include "rpc/logger.h"
 #include "rpc/types.h"
-#include "seastarx.h"
-#include "vlog.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>

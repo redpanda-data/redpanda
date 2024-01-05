@@ -9,10 +9,10 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "outcome.h"
 #include "serde/envelope.h"
 #include "utils/fragmented_vector.h"
 

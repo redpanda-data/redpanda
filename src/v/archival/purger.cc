@@ -11,6 +11,7 @@
 #include "archival/purger.h"
 
 #include "archival/logger.h"
+#include "base/vlog.h"
 #include "cloud_storage/lifecycle_marker.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -23,7 +24,6 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "hashing/xx.h"
-#include "vlog.h"
 
 namespace {
 static constexpr std::string_view serde_extension = ".bin";

@@ -9,11 +9,11 @@
 
 #include "storage/segment_reader.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "ssx/future-util.h"
 #include "storage/logger.h"
 #include "storage/segment_utils.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>

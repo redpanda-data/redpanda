@@ -13,7 +13,7 @@
 /**
  * Transpartent hash & eq functors for ss::sstring
  */
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

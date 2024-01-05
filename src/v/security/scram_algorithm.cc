@@ -1,10 +1,10 @@
 #include "security/scram_algorithm.h"
 
+#include "base/vlog.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
 #include "utils/to_string.h"
 #include "utils/utf8.h"
-#include "vlog.h"
 
 #include <boost/algorithm/string.hpp>
 #include <re2/re2.h>

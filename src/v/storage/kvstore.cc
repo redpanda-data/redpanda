@@ -9,6 +9,7 @@
 
 #include "storage/kvstore.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "config/configuration.h"
@@ -22,7 +23,6 @@
 #include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "storage/types.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/metrics.hh>

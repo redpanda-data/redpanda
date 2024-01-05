@@ -9,12 +9,12 @@
 
 #include "storage/log_reader.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "model/record.h"
 #include "storage/logger.h"
 #include "storage/parser_errc.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>

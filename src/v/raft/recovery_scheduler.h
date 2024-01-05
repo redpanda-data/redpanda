@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/property.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
@@ -17,7 +18,6 @@
 #include "seastar/core/gate.hh"
 #include "seastar/core/lowres_clock.hh"
 #include "seastar/core/timer.hh"
-#include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <fmt/core.h>

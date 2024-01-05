@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_gateway_frontend.h"
@@ -24,7 +25,6 @@
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
-#include "seastarx.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/utils.h"
 #include "security/fwd.h"

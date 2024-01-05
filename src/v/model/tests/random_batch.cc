@@ -9,6 +9,7 @@
 
 #include "model/tests/random_batch.h"
 
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "compression/compression.h"
 #include "model/fundamental.h"
@@ -17,7 +18,6 @@
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "utils/vint.h"
-#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>

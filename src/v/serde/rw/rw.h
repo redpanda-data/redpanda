@@ -9,12 +9,12 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "serde/read_header.h"
 #include "serde/rw/tags.h"
 #include "serde/serde_exception.h"
 #include "serde/type_str.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 namespace serde {
 

@@ -9,9 +9,9 @@
 
 #include "net/batched_output_stream.h"
 
-#include "likely.h"
+#include "base/likely.h"
+#include "base/vassert.h"
 #include "ssx/semaphore.h"
-#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/scattered_message.hh>

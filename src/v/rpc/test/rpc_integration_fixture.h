@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "config/tls_config.h"
 #include "net/dns.h"
 #include "net/server.h"
@@ -17,7 +18,6 @@
 #include "rpc/service.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>

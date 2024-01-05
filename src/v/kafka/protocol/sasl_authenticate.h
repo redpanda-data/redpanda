@@ -10,10 +10,10 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/sasl_authenticate_request.h"
 #include "kafka/protocol/schemata/sasl_authenticate_response.h"
 #include "kafka/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

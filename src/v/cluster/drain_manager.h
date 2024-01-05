@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "reflection/adl.h"
-#include "seastarx.h"
 #include "serde/serde.h"
 #include "ssx/semaphore.h"
 

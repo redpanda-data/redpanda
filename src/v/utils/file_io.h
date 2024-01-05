@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
 
 #include <seastar/core/seastar.hh>
 #include <seastar/core/temporary_buffer.hh>

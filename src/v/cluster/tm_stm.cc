@@ -9,13 +9,13 @@
 
 #include "cluster/tm_stm.h"
 
+#include "base/units.h"
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/types.h"
 #include "model/record.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
-#include "units.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

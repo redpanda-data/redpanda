@@ -10,11 +10,11 @@
  */
 #include "storage/readers_cache.h"
 
+#include "base/vlog.h"
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>

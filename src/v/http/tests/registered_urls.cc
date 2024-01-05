@@ -10,7 +10,7 @@
 
 #include "http/tests/registered_urls.h"
 
-#include "vassert.h"
+#include "base/vassert.h"
 
 namespace {
 const auto not_found = http_test_utils::response{

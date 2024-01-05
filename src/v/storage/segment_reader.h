@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/types.h"

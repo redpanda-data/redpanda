@@ -9,6 +9,8 @@
 
 #include "cluster/controller_backend.h"
 
+#include "base/outcome.h"
+#include "base/vassert.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -27,12 +29,10 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "outcome.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

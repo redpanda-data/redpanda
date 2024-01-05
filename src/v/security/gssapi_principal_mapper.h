@@ -10,8 +10,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "config/property.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>

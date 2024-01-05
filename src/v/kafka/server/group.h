@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/partition.h"
@@ -27,7 +28,6 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 #include "utils/mutex.h"
 #include "utils/rwlock.h"
 

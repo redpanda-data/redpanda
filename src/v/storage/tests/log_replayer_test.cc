@@ -7,11 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "features/feature_table.h"
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "seastarx.h"
 #include "storage/disk_log_appender.h"
 #include "storage/file_sanitizer.h"
 #include "storage/log_replayer.h"

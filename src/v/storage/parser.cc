@@ -9,10 +9,11 @@
 
 #include "storage/parser.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
-#include "likely.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "reflection/adl.h"
@@ -20,7 +21,6 @@
 #include "storage/parser.h"
 #include "storage/parser_utils.h"
 #include "storage/segment_appender_utils.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>

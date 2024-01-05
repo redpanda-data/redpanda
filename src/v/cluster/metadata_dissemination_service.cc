@@ -9,6 +9,9 @@
 
 #include "cluster/metadata_dissemination_service.h"
 
+#include "base/likely.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
@@ -21,7 +24,6 @@
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -30,8 +32,6 @@
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "utils/retry.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

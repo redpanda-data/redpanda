@@ -11,16 +11,16 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/logger.h"
 #include "storage/probe.h"
 #include "storage/storage_resources.h"
 #include "utils/notification_list.h"
-#include "vlog.h"
 
 #include <seastar/core/condition-variable.hh>
 

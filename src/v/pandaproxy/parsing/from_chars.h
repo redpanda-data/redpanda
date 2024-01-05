@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "exceptions.h"
-#include "outcome.h"
 #include "reflection/type_traits.h"
 #include "utils/utf8.h"
 

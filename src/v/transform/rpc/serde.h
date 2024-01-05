@@ -10,12 +10,12 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "cluster/errc.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
-#include "outcome.h"
 #include "serde/envelope.h"
 #include "utils/fragmented_vector.h"
 #include "utils/uuid.h"

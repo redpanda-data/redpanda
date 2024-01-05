@@ -10,7 +10,7 @@
 
 #include "cloud_storage/download_exception.h"
 
-#include "vassert.h"
+#include "base/vassert.h"
 
 namespace cloud_storage {
 

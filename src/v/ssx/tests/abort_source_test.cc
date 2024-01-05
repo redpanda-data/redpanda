@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/vlog.h"
 #include "ssx/abort_source.h"
-#include "vlog.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>

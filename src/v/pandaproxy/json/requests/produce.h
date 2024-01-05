@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
@@ -21,7 +22,6 @@
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/types.h"
-#include "seastarx.h"
 #include "tristate.h"
 
 #include <seastar/core/sstring.hh>

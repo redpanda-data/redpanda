@@ -17,6 +17,7 @@
 #include "archival/scrubber.h"
 #include "archival/segment_reupload.h"
 #include "archival/types.h"
+#include "base/vlog.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -43,7 +44,6 @@
 #include "utils/human.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

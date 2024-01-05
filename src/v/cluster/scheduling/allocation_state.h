@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/oncore.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "model/metadata.h"
-#include "oncore.h"
 
 #include <seastar/core/weak_ptr.hh>
 

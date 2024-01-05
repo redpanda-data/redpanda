@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "cluster/scheduling/leader_balancer.h"
 #include "cluster/scheduling/leader_balancer_constraints.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
@@ -18,7 +19,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
-#include "vassert.h"
 
 #include <algorithm>
 #include <iterator>

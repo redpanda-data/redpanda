@@ -11,11 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 

@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "absl/container/flat_hash_map.h"
+#include "base/seastarx.h"
 #include "cluster/partition_manager.h"
 #include "cluster/scheduling/leader_balancer_probe.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
@@ -17,7 +18,6 @@
 #include "cluster/types.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
-#include "seastarx.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>
