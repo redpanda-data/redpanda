@@ -31,7 +31,7 @@ public:
       ss::sharded<cloud_storage::topic_recovery_service>& service);
 
     ss::future<status_response>
-    get_status(status_request&&, rpc::streaming_context&) final;
+    get_status(status_request, rpc::streaming_context&) final;
 
 private:
     ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;

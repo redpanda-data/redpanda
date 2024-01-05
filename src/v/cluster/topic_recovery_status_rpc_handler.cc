@@ -49,7 +49,7 @@ status_response map_log_to_response(
 }
 
 ss::future<status_response> topic_recovery_status_rpc_handler::get_status(
-  status_request&&, rpc::streaming_context&) {
+  status_request, rpc::streaming_context&) {
     if (!_topic_recovery_service.local_is_initialized()) {
         co_return status_response{
           .status_log = {

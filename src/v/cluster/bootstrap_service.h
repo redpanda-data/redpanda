@@ -28,7 +28,7 @@ public:
       , _storage(storage) {}
 
     ss::future<cluster_bootstrap_info_reply> cluster_bootstrap_info(
-      cluster_bootstrap_info_request&&, rpc::streaming_context&) override;
+      cluster_bootstrap_info_request, rpc::streaming_context&) override;
 
 private:
     ss::sharded<storage::api>& _storage;

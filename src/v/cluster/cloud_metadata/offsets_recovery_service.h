@@ -36,19 +36,19 @@ public:
             .cloud_storage_cluster_metadata_upload_timeout_ms.bind()) {}
 
     ss::future<offsets_lookup_reply> offsets_lookup(
-      offsets_lookup_request&& req, rpc::streaming_context&) override {
+      offsets_lookup_request req, rpc::streaming_context&) override {
         co_return co_await _offsets_lookup.local().lookup(std::move(req));
     }
 
     ss::future<offsets_upload_reply> offsets_upload(
-      offsets_upload_request&& req, rpc::streaming_context& ctx) override {
+      offsets_upload_request req, rpc::streaming_context& ctx) override {
         auto ntp = req.offsets_ntp;
         co_return co_await _offsets_upload_router.local().process_or_dispatch(
           std::move(req), std::move(ntp), _metadata_timeout_ms());
     }
 
     ss::future<offsets_recovery_reply> offsets_recovery(
-      offsets_recovery_request&& req, rpc::streaming_context& ctx) override {
+      offsets_recovery_request req, rpc::streaming_context& ctx) override {
         auto ntp = req.offsets_ntp;
         co_return co_await _offsets_recovery_router.local().process_or_dispatch(
           std::move(req), std::move(ntp), 30s);
