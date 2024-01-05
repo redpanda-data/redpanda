@@ -1623,6 +1623,7 @@ class RpkTool:
             input_topic,
             "--output-topic",
             output_topic,
+            "--file",
             "/opt/transforms/tinygo/identity.wasm",
         ])
 
