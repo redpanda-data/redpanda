@@ -8,9 +8,9 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
+#include "compression/delta_for.h"
 #include "delta_for_characterization_data.h"
 #include "random/generators.h"
-#include "utils/delta_for.h"
 #include "version.h"
 #include "vlog.h"
 

@@ -11,10 +11,10 @@
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "common_def.h"
+#include "compression/delta_for.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
-#include "utils/delta_for.h"
 #include "utils/human.h"
 #include "vlog.h"
 

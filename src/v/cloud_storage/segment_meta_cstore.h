@@ -11,7 +11,7 @@
 #pragma once
 
 #include "cloud_storage/types.h"
-#include "utils/delta_for.h"
+#include "compression/delta_for.h"
 
 #include <absl/container/btree_map.h>
 #include <boost/iterator/iterator_categories.hpp>
