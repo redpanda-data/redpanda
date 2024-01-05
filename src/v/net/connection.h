@@ -54,12 +54,12 @@ public:
     ss::future<> write(ss::scattered_message<char> msg);
     ss::future<> shutdown();
     void shutdown_input();
-    ss::socket_address local_address() const noexcept {
-        return _fd.local_address();
+    const ss::socket_address& local_address() const noexcept {
+        return _local_addr;
     }
 
     // NOLINTNEXTLINE
-    const ss::socket_address addr;
+    const ss::socket_address addr; // remote addr
 
     /// Returns DN from client certificate
     ///
@@ -79,6 +79,7 @@ private:
     boost::intrusive::list<connection>& _hook;
     ss::sstring _name;
     ss::connected_socket _fd;
+    ss::socket_address _local_addr;
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
     server_probe& _probe;

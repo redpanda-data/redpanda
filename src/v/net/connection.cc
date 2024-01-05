@@ -133,6 +133,7 @@ connection::connection(
   , _hook(hook)
   , _name(std::move(name))
   , _fd(std::move(f))
+  , _local_addr(_fd.local_address())
   , _in(_fd.input())
   , _out(_fd.output())
   , _probe(p)
