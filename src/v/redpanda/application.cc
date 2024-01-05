@@ -535,7 +535,10 @@ void application::initialize(
       .raft_group_max_non_local_requests
       = config::shard_local_cfg().raft_smp_max_non_local_requests().value_or(
         smp_groups::default_raft_non_local_requests(
-          config::shard_local_cfg().topic_partitions_per_shard()))};
+          config::shard_local_cfg().topic_partitions_per_shard())),
+      .proxy_group_max_non_local_requests
+      = config::shard_local_cfg().pp_sr_smp_max_non_local_requests().value_or(
+        smp_groups::default_max_nonlocal_requests)};
 
     smp_service_groups.create_groups(smp_groups_cfg).get();
     _deferred.emplace_back(
