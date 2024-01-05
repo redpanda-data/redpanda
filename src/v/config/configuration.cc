@@ -2829,6 +2829,14 @@ configuration::configuration()
       "Per-shard capacity of the cache for validating schema IDs.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       128)
+  , pp_sr_smp_max_non_local_requests(
+      *this,
+      "pp_sr_smp_max_non_local_requests",
+      "Maximum number of x-core requests pending in Panda Proxy and Schema "
+      "Registry seastar::smp group.  (for more details look at "
+      "`seastar::smp_service_group` documentation)",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      std::nullopt)
   , kafka_memory_share_for_fetch(
       *this,
       "kafka_memory_share_for_fetch",
