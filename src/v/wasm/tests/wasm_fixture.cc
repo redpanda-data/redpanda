@@ -149,6 +149,9 @@ void WasmTestFixture::SetUp() {
           .debug_host_stack_usage = false,
 #endif
         },
+        .cpu = {
+          .per_invocation_timeout = 3s,
+        },
     };
     _runtime->start(wasm_runtime_config).get();
     _meta = {

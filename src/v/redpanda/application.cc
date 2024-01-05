@@ -2416,6 +2416,9 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           .stack_memory = {
             .debug_host_stack_usage = false,
           },
+          .cpu = {
+            .per_invocation_timeout = cluster.data_transforms_runtime_limit_ms.value(),
+          },
         };
         _wasm_runtime->start(config).get();
         _transform_service.invoke_on_all(&transform::service::start).get();
