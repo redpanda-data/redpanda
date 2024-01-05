@@ -639,4 +639,15 @@ client::request_header redacted_header(client::request_header original) {
     return h;
 }
 
+iobuf request_header_to_iobuf(const client::request_header& header) {
+    iobuf outbuf;
+    auto w = client::request_header::writer(
+      header, header.version(), header.method());
+    for (const auto b : w.get()) {
+        outbuf.append(ss::temporary_buffer<char>(
+          static_cast<const char*>(b.data()), b.size()));
+    }
+    return outbuf;
+}
+
 } // namespace http

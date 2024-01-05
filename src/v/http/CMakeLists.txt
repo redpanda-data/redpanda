@@ -6,6 +6,8 @@ v_cc_library(
     chunk_encoding.cc
     client.cc
     logger.cc
+    mime.cc
+    multipart.cc
   DEPS
     Seastar::seastar
     v::bytes

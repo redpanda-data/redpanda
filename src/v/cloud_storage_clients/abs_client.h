@@ -98,8 +98,18 @@ public:
       bucket_name const& name,
       object_key const& path);
 
+    /// Unfortunately, Azure requires request payload size to be known in
+    /// advance. Can't stream the request.
+    /// https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch?tabs=azure-ad
+    result<http::client::request_header>
+    make_batch_request(const std::string& boundary, size_t content_length);
+
+    result<http::client::request_header> make_batch_delete_blob_subrequest(
+      bucket_name const& name, object_key const& key);
+
 private:
     access_point_uri _ap;
+
     /// Applies credentials to http requests by adding headers and signing
     /// request payload. Shared pointer so that the credentials can be
     /// rotated through the client pool.
@@ -266,6 +276,23 @@ private:
       const object_key& key,
       ss::lowres_clock::duration timeout);
 
+    ss::future<result<abs_client::delete_objects_result, error_outcome>>
+    do_delete_objects(
+      const bucket_name& bucket,
+      std::vector<object_key> paths,
+      ss::lowres_clock::duration timeout);
+
+    ss::future<iobuf> make_delete_objects_payload(
+      const bucket_name& bucket,
+      std::string boundary,
+      const std::vector<object_key>& keys);
+
+    ss::future<result<abs_client::delete_objects_result, error_outcome>>
+    parse_delete_objects_payload(
+      ss::input_stream<char> response_body,
+       std::string_view boundary,
+      const std::vector<object_key>& keys);
+
     ss::future<list_bucket_result> do_list_objects(
       const bucket_name& name,
       std::optional<object_key> prefix,
@@ -282,6 +309,12 @@ private:
     ss::future<> do_delete_path(
       bucket_name const& name,
       object_key path,
+      ss::lowres_clock::duration timeout);
+
+    ss::future<result<abs_client::delete_objects_result, error_outcome>>
+    do_delete_paths(
+      const bucket_name& bucket,
+      std::vector<object_key> paths,
       ss::lowres_clock::duration timeout);
 
     ss::future<> do_delete_file(

@@ -271,6 +271,9 @@ auto with_client(client&& cl, Func func) {
 const std::unordered_set<std::variant<boost::beast::http::field, std::string>>
 redacted_fields();
 
+/// Serializes a request to an iobuf.
+iobuf request_header_to_iobuf(const client::request_header& header);
+
 } // namespace http
 
 template<>

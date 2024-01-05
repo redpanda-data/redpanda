@@ -13,15 +13,42 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
+#include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/logger.h"
+#include "cloud_storage_clients/types.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
+#include "http/client.h"
+#include "http/mime.h"
+#include "http/multipart.h"
 #include "json/document.h"
 #include "json/istreamwrapper.h"
+#include "utils/memory_data_source.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/iostream.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/simple-stream.hh>
+#include <seastar/core/temporary_buffer.hh>
+
+#include <boost/beast/core/error.hpp>
+#include <boost/beast/core/string_type.hpp>
+#include <boost/beast/http/chunk_encode.hpp>
+#include <boost/beast/http/empty_body.hpp>
+#include <boost/beast/http/field.hpp>
+#include <boost/beast/http/fields.hpp>
+#include <boost/beast/http/message.hpp>
+#include <boost/beast/http/parser.hpp>
+#include <boost/beast/http/verb.hpp>
+#include <boost/beast/http/write.hpp>
+
+#include <cstddef>
+#include <iterator>
+#include <memory>
+#include <sstream>
 #include <utility>
 
 namespace {
@@ -51,6 +78,10 @@ constexpr boost::beast::string_view is_hns_enabled_name = "x-ms-is-hns-enabled";
 constexpr boost::beast::string_view delete_snapshot_value = "include";
 constexpr boost::beast::string_view error_code_name = "x-ms-error-code";
 constexpr boost::beast::string_view content_type_name = "Content-Type";
+
+constexpr boost::beast::string_view batch_uri = "/?comp=batch";
+constexpr boost::beast::string_view batch_sub_content_type = "application/html";
+constexpr boost::beast::string_view batch_sub_transfer_encoding = "binary";
 
 bool is_error_retryable(
   const cloud_storage_clients::abs_rest_error_response& err) {
@@ -363,6 +394,52 @@ abs_request_creator::make_delete_file_request(
     header.method(boost::beast::http::verb::delete_);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+
+    auto error_code = _apply_credentials->add_auth(header);
+    if (error_code) {
+        return error_code;
+    }
+
+    return header;
+}
+
+result<http::client::request_header> abs_request_creator::make_batch_request(
+  const std::string& boundary, size_t content_length) {
+    http::client::request_header header{};
+    header.target(batch_uri);
+    header.method(boost::beast::http::verb::post);
+    const boost::beast::string_view host{_ap().data(), _ap().length()};
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", content_length));
+    header.insert(
+      boost::beast::http::field::content_type,
+      http::format_media_type(
+        {.type = "multipart/mixed", .params = {{"boundary", boundary}}}));
+
+    auto error_code = _apply_credentials->add_auth(header);
+    if (error_code) {
+        return error_code;
+    }
+
+    return header;
+}
+
+result<http::client::request_header>
+abs_request_creator::make_batch_delete_blob_subrequest(
+  bucket_name const& name, object_key const& key) {
+    // DELETE /{container-id}/{blob-id} HTTP/1.1
+    // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
+    // Authorization:{signature}           # added by 'add_auth'
+    const auto target = fmt::format("/{}/{}", name(), key().string());
+
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::delete_);
+    header.target(target);
+    header.insert(delete_snapshot_name, delete_snapshot_value);
+    header.insert(boost::beast::http::field::content_length, "0");
 
     auto error_code = _apply_credentials->add_auth(header);
     if (error_code) {
@@ -727,10 +804,151 @@ abs_client::delete_objects(
   const bucket_name& bucket,
   std::vector<object_key> keys,
   ss::lowres_clock::duration timeout) {
+    if (!_adls_client) {
+        return do_delete_objects(bucket, std::move(keys), timeout);
+    } else {
+        return do_delete_paths(bucket, std::move(keys), timeout);
+    }
+
+    const std::string boundary = http::random_multipart_boundary();
+}
+
+ss::future<result<abs_client::delete_objects_result, error_outcome>>
+abs_client::do_delete_objects(
+  const bucket_name& bucket,
+  std::vector<object_key> keys,
+  ss::lowres_clock::duration timeout) {
+    const auto boundary = http::random_multipart_boundary();
+    auto request_body = co_await make_delete_objects_payload(
+      bucket, boundary, keys);
+
+    auto header = _requestor.make_batch_request(
+      boundary, request_body.size_bytes());
+    if (!header) {
+        vlog(
+          abs_log.warn, "Failed to create request header: {}", header.error());
+        throw std::system_error(header.error());
+    }
+
+    auto istream = make_iobuf_input_stream(std::move(request_body));
+    auto response_stream = co_await _client.request(
+      std::move(header.value()), istream, timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::accepted) {
+        iobuf buf = co_await util::drain_response_stream(response_stream);
+        const auto content_type = get_response_content_type(
+          response_stream->get_headers());
+        throw parse_rest_error_response(content_type, status, std::move(buf));
+    }
+
+    auto response_istream = response_stream->as_input_stream();
+
+    co_return co_await parse_delete_objects_payload(
+      std::move(response_istream), boundary, keys);
+}
+
+ss::future<iobuf> abs_client::make_delete_objects_payload(
+  const bucket_name& bucket,
+  std::string boundary,
+  const std::vector<object_key>& keys) {
+    iobuf buf;
+    ss::output_stream<char> out = make_iobuf_ref_output_stream(buf);
+    auto w = http::multipart_writer(out, std::move(boundary));
+
+    size_t key_id = 0;
+    for (const auto& key : keys) {
+        http::multipart_fields part_header;
+        part_header.insert(
+          boost::beast::http::field::content_type, batch_sub_content_type);
+        part_header.insert(
+          boost::beast::http::field::content_transfer_encoding,
+          batch_sub_transfer_encoding);
+        part_header.insert(
+          boost::beast::http::field::content_id, fmt::format("{}", ++key_id));
+
+        auto key_header = _requestor.make_batch_delete_blob_subrequest(
+          bucket, key);
+        if (!key_header) {
+            vlog(
+              abs_log.warn,
+              "Failed to create request header: {}",
+              key_header.error());
+            throw std::system_error(key_header.error());
+        }
+
+        iobuf part_body = http::request_header_to_iobuf(key_header.value());
+        co_await w.write_part(std::move(part_header), std::move(part_body));
+    }
+    co_await w.close();
+
+    co_return buf;
+}
+
+ss::future<result<abs_client::delete_objects_result, error_outcome>>
+abs_client::parse_delete_objects_payload(
+  ss::input_stream<char> response_body,
+  std::string_view boundary,
+  const std::vector<object_key>& keys) {
+    auto mp = http::multipart_reader(response_body, boundary);
+
+    abs_client::delete_objects_result delete_objects_result;
+
+    for (;;) {
+        auto maybe_part = co_await mp.next();
+        if (!maybe_part.has_value()) {
+            break;
+        }
+
+        // Convert part body to buffers compatible with boost::beast.
+        static constexpr std::string_view last_crlf = "\r\n";
+        auto part_parser = boost::beast::http::response_parser<
+          boost::beast::http::empty_body>();
+        std::vector<boost::asio::const_buffer> seq;
+        for (auto const& fragm : maybe_part->body) {
+            seq.emplace_back(fragm.get(), fragm.size());
+        }
+        seq.emplace_back(last_crlf.data(), last_crlf.size());
+
+        boost::beast::error_code ec;
+        part_parser.put(seq, ec);
+        if (ec.failed()) {
+            throw boost::system::system_error(ec);
+        }
+
+        part_parser.put_eof(ec);
+        if (ec.failed()) {
+            throw boost::system::system_error(ec);
+        }
+
+        const auto headers = part_parser.get();
+        if (headers.result() == boost::beast::http::status::accepted) {
+            // Ok.
+        } else if (headers.result() == boost::beast::http::status::not_found) {
+            // Ok.
+        } else {
+            delete_objects_result.undeleted_keys.emplace_back(
+              keys.at(std::stoi(
+                maybe_part->header.at(boost::beast::http::field::content_id))),
+              "ERROR: TODO(nv) parse it");
+        }
+    }
+
+    co_return delete_objects_result;
+}
+
+ss::future<result<abs_client::delete_objects_result, error_outcome>>
+abs_client::do_delete_paths(
+  const bucket_name& bucket,
+  std::vector<object_key> keys,
+  ss::lowres_clock::duration timeout) {
     abs_client::delete_objects_result delete_objects_result;
     for (const auto& key : keys) {
         try {
-            auto res = co_await delete_object(bucket, key, timeout);
+            auto res = co_await delete_path(bucket, key, timeout);
             if (res.has_error()) {
                 delete_objects_result.undeleted_keys.push_back(
                   {key, fmt::format("{}", res.error())});
