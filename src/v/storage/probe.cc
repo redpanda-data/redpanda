@@ -159,6 +159,8 @@ void probe::setup_metrics(const model::ntp& ntp) {
     _metrics.add_group(
       group_name,
       {
+        // compaction_ratio cannot easily be aggregated since aggregation always
+        // sums values and sum is nonsensical for a compaction ratio
         sm::make_total_bytes(
           "compaction_ratio",
           [this] { return _compaction_ratio; },
