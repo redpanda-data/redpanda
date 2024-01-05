@@ -80,14 +80,8 @@ std::optional<cluster::leader_term> get_leader_term(
   const cluster::metadata_cache& md_cache,
   const std::vector<model::node_id>& replicas) {
     auto leader_term = md_cache.get_leader_term(tp_ns, p_id);
-    /**
-     * If current broker do not yet have any information about leadership we
-     * simply return random node to force the client metadata update.
-     */
     if (!leader_term) {
-        auto idx = fast_prng_source() % replicas.size();
-        leader_term.emplace(replicas[idx], model::term_id(-1));
-        return leader_term;
+        return std::nullopt;
     }
     if (!leader_term->leader.has_value()) {
         const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
