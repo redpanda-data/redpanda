@@ -366,7 +366,6 @@ private:
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;
         is_known |= _mem_state.estimated.contains(pid);
-        is_known |= _mem_state.tx_start.contains(pid);
         is_known |= _log_state.ongoing_map.contains(pid);
         is_known |= _log_state.current_txes.contains(pid);
         return is_known;
@@ -510,20 +509,7 @@ private:
           , estimated(mt::map<
                       absl::flat_hash_map,
                       model::producer_identity,
-                      model::offset>(_tracker))
-          , tx_start(mt::map<
-                     absl::flat_hash_map,
-                     model::producer_identity,
-                     model::offset>(_tracker))
-          , tx_starts(mt::set<absl::btree_set, model::offset>(_tracker))
-          , expected(mt::map<
-                     absl::flat_hash_map,
-                     model::producer_identity,
-                     model::tx_seq>(_tracker))
-          , preparing(mt::map<
-                      absl::flat_hash_map,
-                      model::producer_identity,
-                      prepare_marker>(_tracker)) {}
+                      model::offset>(_tracker)) {}
 
         ss::shared_ptr<util::mem_tracker> _tracker;
         // once raft's term has passed mem_state::term we wipe mem_state
@@ -547,41 +533,7 @@ private:
         // it with last_lso
         model::offset last_lso{-1};
 
-        // FIELDS TO GO AFTER GA
-        // a map from producer_identity (a session) to the first offset of
-        // the current transaction in this session
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          model::offset>
-          tx_start;
-        // a heap of the first offsets of all ongoing transactions
-        mt::set_t<absl::btree_set, model::offset> tx_starts;
-        // a set of ongoing sessions. we use it  to prevent some client protocol
-        // errors like the transactional writes outside of a transaction
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          model::tx_seq>
-          expected;
-        // `preparing` helps to identify failed prepare requests and use them to
-        // filter out stale abort requests
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          prepare_marker>
-          preparing;
-
-        void forget(model::producer_identity pid) {
-            expected.erase(pid);
-            estimated.erase(pid);
-            preparing.erase(pid);
-            auto tx_start_it = tx_start.find(pid);
-            if (tx_start_it != tx_start.end()) {
-                tx_starts.erase(tx_start_it->second);
-                tx_start.erase(pid);
-            }
-        }
+        void forget(model::producer_identity pid) { estimated.erase(pid); }
     };
 
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {

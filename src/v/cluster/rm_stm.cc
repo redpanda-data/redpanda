@@ -667,34 +667,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
             co_return tx_errc::request_rejected;
         }
     } else {
-        auto preparing_it = _mem_state.preparing.find(pid);
-        if (preparing_it != _mem_state.preparing.end()) {
-            ss::sstring msg;
-            if (preparing_it->second.tx_seq > tx_seq) {
-                // - tm_stm & rm_stm failed during prepare
-                // - during recovery tm_stm recommits its previous tx
-                // - that commit (we're here) collides with "next" failed
-                // prepare it may happen only if the commit passed => acking
-                co_return tx_errc::none;
-            } else if (preparing_it->second.tx_seq == tx_seq) {
-                msg = ssx::sformat(
-                  "can't commit pid:{} tx_seq:{} - prepare request hasn't "
-                  "completed",
-                  pid,
-                  tx_seq);
-            } else {
-                msg = ssx::sformat(
-                  "can't commit pid:{} tx_seq:{} - it conflicts with observed "
-                  "tx_seq:{}",
-                  pid,
-                  tx_seq,
-                  preparing_it->second.tx_seq);
-            }
-
-            vlog(_ctx_log.error, "{}", msg);
-            co_return tx_errc::request_rejected;
-        }
-
         auto prepare_it = _log_state.prepared.find(pid);
         if (prepare_it == _log_state.prepared.end()) {
             co_return tx_errc::none;
@@ -722,10 +694,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
               prepare_it->second.tx_seq);
             co_return tx_errc::request_rejected;
         }
-        _mem_state.preparing.erase(pid);
     }
-
-    _mem_state.expected.erase(pid);
 
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_commit);
@@ -897,10 +866,6 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
             co_return tx_errc::request_rejected;
         }
     }
-
-    // preventing prepare and replicte once we
-    // know we're going to abort tx and abandon pid
-    _mem_state.expected.erase(pid);
 
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_abort);
@@ -1191,10 +1156,6 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           "got {} on replicating tx data batch for pid:{}",
           r.error(),
           bid.pid);
-        if (_mem_state.estimated.contains(bid.pid)) {
-            // an error during replication, preventin tx from progress
-            _mem_state.expected.erase(bid.pid);
-        }
         req_ptr->set_value(r.error());
         co_return r.error();
     }
@@ -1550,9 +1511,6 @@ ss::future<> rm_stm::do_abort_old_txes() {
     for (auto& [k, _] : _mem_state.estimated) {
         pids.push_back(k);
     }
-    for (auto& [k, _] : _mem_state.tx_start) {
-        pids.push_back(k);
-    }
     for (auto& [k, _] : _log_state.ongoing_map) {
         pids.push_back(k);
     }
@@ -1622,8 +1580,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
             co_return tx_errc::stale;
         }
     }
-
-    _mem_state.expected.erase(pid);
 
     std::optional<model::tx_seq> tx_seq = get_tx_seq(pid);
     if (tx_seq) {
@@ -1846,8 +1802,6 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
     _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
     _log_state.prepared.try_emplace(pid, prepare);
-    _mem_state.expected.erase(pid);
-    _mem_state.preparing.erase(pid);
 }
 
 void rm_stm::apply_control(
@@ -2433,15 +2387,7 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
 }
 
 std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
-    fmt::print(
-      o,
-      "{{ estimated: {}, tx_start: {}, tx_starts: {}, expected: {}, preparing: "
-      "{} }}",
-      state.estimated.size(),
-      state.tx_start.size(),
-      state.tx_starts.size(),
-      state.expected.size(),
-      state.preparing.size());
+    fmt::print(o, "{{ estimated: {} }} ", state.estimated.size());
     return o;
 }
 
