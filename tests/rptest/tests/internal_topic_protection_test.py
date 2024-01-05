@@ -18,7 +18,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.tests.cluster_config_test import wait_for_version_sync
-from rptest.util import expect_exception
+from rptest.util import expect_exception, wait_until_result
 from rptest.utils.schema_registry_utils import get_subjects
 
 from ducktape.mark import parametrize
@@ -227,7 +227,17 @@ class InternalTopicProtectionLargeClusterTest(RedpandaTest):
 
         topics = self.rpk.list_topics()
         assert "_schemas" in topics, f'_schemas not in topics {topics}'
-        config = list(self.rpk.describe_topic('_schemas'))[0]
+
+        def schemas_topic_ready():
+            partitions = list(self.rpk.describe_topic('_schemas'))
+            return (len(partitions) > 0, partitions)
+
+        partitions = wait_until_result(
+            schemas_topic_ready,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg='_schemas topic never became ready')
+        config = partitions[0]
         assert len(
             config.replicas
         ) == 3, f'Expected RF of 3 for _schemas but got {len(config.replicas)}'
