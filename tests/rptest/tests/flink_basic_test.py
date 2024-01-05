@@ -41,34 +41,17 @@ class FlinkBasicTests(RedpandaTest):
         self.kafkacli.delete_topic(self.topic)
         return super().tearDown()
 
-    @cluster(num_nodes=4)
-    def test_basic_workload(self):
-        # Currently test is failed on data processing
+    def _run_workloads(self, workloads, config):
+        """
+            Run workloads from the list with supplied config
 
-        # Start Flink
-        self.flink.start()
-
-        # Load python workload to target node
-        # Hardcoded file
-        # TODO: Add workload config management
-        tags = ['flink', 'produce', 'basic']
-        workloads = self.workload_manager.get_workloads(tags)
-        if len(workloads) < 1:
-            raise RuntimeError("No workloads found "
-                               f"with tags: {', '.join(tags)}")
-        _workload_config = {
-            "log_level": "DEBUG",
-            "brokers": self.redpanda.brokers(),
-            "producer_group": "flink_produce_group",
-            "consumer_group": "flink_consume_group",
-            "topic_name": self.topic_name,
-            "msg_size": 4096,
-            "count": 10
-        }
+            Return: list of failed jobs
+        """
+        # Run produce job
         for workload in workloads:
             # Add script as a job
             self.logger.info(f"Adding {workload['name']} to flink")
-            _ids = self.flink.run_flink_job(workload['path'], _workload_config)
+            _ids = self.flink.run_flink_job(workload['path'], config)
             if _ids is None:
                 raise RuntimeError("Failed to run job on flink for "
                                    f"workload: {workload['name']}")
@@ -88,11 +71,186 @@ class FlinkBasicTests(RedpandaTest):
                 self.logger.warning(f"Job '{_id}' has failed")
                 _failed.append(_job)
 
-        # Stop flink
-        self.flink.stop()
+        return _failed
+
+    def _get_workloads_by_tags(self, tags):
+        """
+            Calls to manager to get workloads using supplied list of tags
+            Raises error on nothing found
+
+            return: list of workloads
+        """
+        workloads = self.workload_manager.get_workloads(tags)
+        if len(workloads) < 1:
+            raise RuntimeError("No workloads found "
+                               f"with tags: {', '.join(tags)}")
+        return workloads
+
+    def _parse_csv(self, data_str, data_types):
+        csv = []
+        lines = data_str.splitlines()
+        # Check if data_type list provides correct number of types
+        # Assume all lines have same number of columns
+        if len(lines[0].split(',')) != len(data_types):
+            raise RuntimeError("Data types list does not match column "
+                               "quantity in CSV created by Flink "
+                               "transaction workload")
+        for line in lines:
+            values = []
+            raw_values = line.split(',')
+            # Process data types per item to handle transformations
+            for idx in range(len(data_types)):
+                # Strip data from whitespace chars
+                src = raw_values[idx].strip()
+                # transforms if type not equal
+                if not isinstance(src, data_types[idx]):
+                    # try to transform
+                    try:
+                        src = data_types[idx](src)
+                    except Exception:
+                        self.logger.warning(
+                            f"Error processing CSV line '{line}' using data "
+                            f"type list of '{data_types}'")
+                # Save it
+                values.append(src)
+            csv.append(values)
+
+        return csv
+
+    @cluster(num_nodes=4)
+    def test_basic_workload(self):
+        """
+            Test starts produce workload and then consume
+            No checks for message counts, just job success
+        """
+
+        # Start Flink
+        self.flink.start()
+
+        # Load python workload to target node
+        # Hardcoded file
+        # TODO: Add workload config management
+        _workload_config = {
+            "log_level": "DEBUG",
+            "brokers": self.redpanda.brokers(),
+            "producer_group": "flink_produce_group",
+            "consumer_group": "flink_consume_group",
+            "topic_name": self.topic_name,
+            "msg_size": 4096,
+            "count": 10
+        }
+
+        # Run produce basic
+        workloads = self._get_workloads_by_tags(['flink', 'produce', 'basic'])
+        _failed = self._run_workloads(workloads, _workload_config)
 
         # Assert failed jobs
         assert len(_failed) == 0, \
-            f"Flink reports failed jobs for the workload {_workload}"
+            f"Flink reports failed jobs for basic produce workloads {_failed}"
 
+        # Run consume basic
+        workloads = self._get_workloads_by_tags(['flink', 'consume', 'basic'])
+        _failed = self._run_workloads(workloads, _workload_config)
+
+        # Assert failed jobs
+        assert len(_failed) == 0, \
+            f"Flink reports failed jobs for basic consume workload {_failed}"
+
+        # Stop flink
+        self.flink.stop()
+
+        return
+
+    @cluster(num_nodes=4)
+    def test_transaction_workload(self):
+        """
+            Test uses same workload with different modes to produce
+            and consume/process given number of transactions
+        """
+
+        # Start Flink
+        self.flink.start()
+
+        # Load python workload to target node
+        # Hardcoded file
+        # TODO: Add workload config management
+        _data_path = "/workloads/data"
+        # Currently, each INSERT operator will generate 1 subjob
+        # So this config will generate 256 / 64 jobs
+        _workload_config = {
+            "log_level": "DEBUG",
+            "brokers": self.redpanda.brokers(),
+            "data_path": "file://" + _data_path,
+            "producer_group": "flink_produce_group",
+            "consumer_group": "flink_consume_group",
+            "topic_name": self.topic_name,
+            "mode": "produce",
+            "word_size": 64,
+            "batch_size": 64,
+            "count": 256
+        }
+
+        # Get workload
+        workloads = self._get_workloads_by_tags(
+            ['flink', 'table', 'transactions', 'basic'])
+        # Run produce part
+        _failed = self._run_workloads(workloads, _workload_config)
+
+        # Assert failed jobs
+        assert len(_failed) == 0, \
+            f"Flink reports failed produce job for transaction workload {_failed}"
+
+        # Needs python venv preparations from infra side
+        _workload_config['mode'] = 'consume'
+        _failed = self._run_workloads(workloads, _workload_config)
+
+        # Assert failed jobs
+        assert len(_failed) == 0, \
+            f"Flink reports failed consume job for transaction workload {_failed}"
+
+        # Load data output. There should be 1 partition file
+        # with offset at the env equals to _workload_config['count']
+        # Example filename:
+        #     /workloads/data/part-cfbe2720-7117-40fd-8c28-fca31a459ff8-0-0
+        # Data sample:
+        # ...
+        # 201,"2024-01-05 20:38:53.125",46
+        # ...
+        files = self.flink.node.account.ssh_output(f"ls -1 {_data_path}")
+        files = files.decode().splitlines()
+
+        # There should be at least one file
+        assert len(
+            files) > 0, f"Flink transaction workload produced no data files"
+
+        # Load data file and parse it
+        data = {}
+        for f in files:
+            # Create record
+            if f not in data:
+                data[f] = []
+            # This is basic test, no big data expected
+            # So, no copying file locally.
+            csv_data = self.flink.node.account.ssh_output(
+                f"cat {_data_path}/{f}").decode()
+            # Parse the csv
+            # Second parameter is the quick and dirty value type map
+            data[f] = self._parse_csv(csv_data, [int, str, int])
+
+        # Find max offset
+        offset_column = 0
+        max_offset = 0
+        for ff, part_data in data.items():
+            for row in part_data:
+                if max_offset < row[offset_column]:
+                    max_offset = row[offset_column]
+
+        # Stop flink
+        self.flink.stop()
+
+        # 'count - 1' coz offset starts with '0'
+        target_offset = _workload_config['count'] - 1
+        assert max_offset == target_offset, \
+            f"Flink workload consume max offset is incorrect: {max_offset} " \
+            f"(should be: {target_offset})"
         return

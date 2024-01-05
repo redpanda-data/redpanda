@@ -237,6 +237,7 @@ class FlinkService(Service):
             cmd += f" {run_path}"
         elif script.endswith(".py"):
             cmd += " -pyclientexec /usr/bin/python3"
+            cmd += " -pyexec /usr/bin/python3"
             cmd += f" -py {run_path}"
 
         if detached:

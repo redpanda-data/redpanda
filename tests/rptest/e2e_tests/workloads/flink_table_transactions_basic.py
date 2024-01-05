@@ -30,7 +30,9 @@ MODE_CONSUME = 'consume'
 @dataclass(kw_only=True)
 class WorkloadConfig:
     # Default values are set for CDT run inside EC2 instance
-    connector_path: str = "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
+    connector_path: str = "File:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
+    python_lib_path: str = "File:///opt/flink/opt/flink-python-1.18.0.jar"
+    python_archive: str = "/opt/flink/flink_venv.tgz"
     logger_path: str = "/workloads"
     log_level: str = "DEBUG"
     producer_group: str = "flink_group"
@@ -101,7 +103,14 @@ class FlinkWorkloadProduce:
 
         # Alternative way to add connector, just for illustrative purposes
         table_env.get_config().set("pipeline.jars", self.config.connector_path)
+        # This is needed for Scalar functions work
+        # See https://nightlies.apache.org/flink/flink-docs-master/docs/dev/python/dependency_management/
+        table_env.get_config().set("pipeline.classpaths",
+                                   self.config.python_lib_path)
 
+        # Add python venv archive to table_api
+        table_env.add_python_archive(self.config.python_archive, "venv")
+        table_env.get_config().set_python_executable("venv/bin/python")
         # Publish it as class var
         self.table_env = table_env
 
@@ -255,7 +264,11 @@ class FlinkWorkloadProduce:
         table.select(col('offset'), col('event_time'),
                      length(col('word'))) \
             .execute_insert('sink') \
-            .wait(120000)
+            # No wait for remote cluster, aka AWS
+
+        #   # Enable for local debug
+        #   #.wait(120000)
+        pass
 
         return
 
