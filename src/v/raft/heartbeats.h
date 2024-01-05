@@ -12,11 +12,11 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "compression/delta_for.h"
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
-#include "utils/delta_for.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>

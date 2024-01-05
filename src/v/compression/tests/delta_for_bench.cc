@@ -8,10 +8,10 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "compression/delta_for.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "seastarx.h"
-#include "utils/delta_for.h"
 
 #include <seastar/testing/perf_tests.hh>
 #include <seastar/util/defer.hh>

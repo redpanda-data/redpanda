@@ -4,8 +4,6 @@ rp_test(
   BINARY_NAME utils_single_thread
   SOURCES
     base64_test.cc
-    delta_for_test.cc
-    delta_for_characterization_data.cc
     directory_walker_test.cc
     expiring_promise_test.cc
     input_stream_fanout_test.cc
@@ -62,14 +60,6 @@ rp_test(
   BENCHMARK_TEST
   BINARY_NAME seastar_histogram
   SOURCES seastar_histogram_bench.cc
-  LIBRARIES Seastar::seastar_perf_testing v::utils
-  LABELS utils
-)
-
-rp_test(
-  BENCHMARK_TEST
-  BINARY_NAME delta_for
-  SOURCES delta_for_bench.cc
   LIBRARIES Seastar::seastar_perf_testing v::utils
   LABELS utils
 )

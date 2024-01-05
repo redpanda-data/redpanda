@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "utils/delta_for.h"
+#include "compression/delta_for.h"
 
 #include <cstdint>
 #include <span>
