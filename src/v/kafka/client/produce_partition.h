@@ -34,14 +34,16 @@ public:
     produce_partition(const configuration& config, consumer&& c)
       : _config{config}
       , _batcher{compression_from_str(config.produce_compression_type())}
-      , _timer{[this]() { try_consume(true); }}
+      , _timer{[this]() {
+          ssx::spawn_with_gate(_gate, [this]() { return try_consume(); });
+      }}
       , _consumer{std::move(c)} {}
 
     ss::future<response> produce(model::record_batch&& batch) {
         _record_count += batch.record_count();
         _size_bytes += batch.size_bytes();
         auto fut = _batcher.produce(std::move(batch));
-        try_consume(false);
+        arm_consumer();
         return fut;
     }
 
@@ -49,17 +51,18 @@ public:
         vassert(_in_flight, "handle_response requires a batch in flight");
         _batcher.handle_response(std::move(res));
         _in_flight = false;
-        try_consume(false);
+        arm_consumer();
     }
 
     ss::future<> stop() {
-        try_consume(true);
+        _timer.set_callback([]() {});
+        co_await try_consume();
         _timer.cancel();
-        return ss::now();
+        co_await _gate.close();
     }
 
 private:
-    model::record_batch do_consume() {
+    ss::future<model::record_batch> do_consume() {
         vassert(!_in_flight, "do_consume should not run concurrently");
 
         _in_flight = true;
@@ -68,26 +71,46 @@ private:
         return _batcher.consume();
     }
 
-    bool try_consume(bool timed_out) {
-        if (_in_flight || _record_count == 0) {
-            return false;
+    ss::future<> try_consume() {
+        if (consumer_can_run()) {
+            _consumer(co_await do_consume());
+        }
+    }
+
+    /// \brief Arms the timer that starts the consumer
+    ///
+    /// Will arm the timer only if the consumer can run and then sets the timer
+    /// delay depending on whether or not size thresholds have been met
+    void arm_consumer() {
+        if (!consumer_can_run()) {
+            return;
         }
 
+        std::chrono::milliseconds rearm_timer_delay{0};
+        // If the threshold is met, then use a delay of 0 so the timer fires
+        // nearly immediately after this call.  Otherwise use the produce
+        // batch delay when arming the timer.
+        if (!threshold_met()) {
+            rearm_timer_delay = _config.produce_batch_delay();
+        }
+        _timer.cancel();
+        _timer.arm(rearm_timer_delay);
+    }
+
+    /// \brief Validates that the size threshold has been met to trigger produce
+    bool threshold_met() const {
         auto batch_record_count = _config.produce_batch_record_count();
         auto batch_size_bytes = _config.produce_batch_size_bytes();
 
-        auto threshold_met = _record_count >= batch_record_count
-                             || _size_bytes >= batch_size_bytes;
-
-        if (!timed_out && !threshold_met) {
-            _timer.cancel();
-            _timer.arm(_config.produce_batch_delay());
-            return false;
-        }
-
-        _consumer(do_consume());
-        return true;
+        return _record_count >= batch_record_count
+               || _size_bytes >= batch_size_bytes;
     }
+
+    /// \brief Checks to see if the consumer can run
+    ///
+    /// Consumer can only run if one is not already running and there are
+    /// records available
+    bool consumer_can_run() const { return !_in_flight && _record_count > 0; }
 
     const configuration& _config;
     produce_batcher _batcher{};
@@ -96,6 +119,7 @@ private:
     int32_t _record_count{};
     int32_t _size_bytes{};
     bool _in_flight{};
+    ss::gate _gate;
 };
 
 } // namespace kafka::client

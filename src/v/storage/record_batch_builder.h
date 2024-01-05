@@ -30,7 +30,8 @@ public:
       std::optional<iobuf>&& key,
       std::optional<iobuf>&& value,
       std::vector<model::record_header> headers);
-    virtual model::record_batch build() &&;
+    model::record_batch build() &&;
+    ss::future<model::record_batch> build_async() &&;
     virtual ~record_batch_builder();
 
     void set_producer_identity(int64_t id, int16_t epoch) {
@@ -81,6 +82,7 @@ private:
         std::vector<model::record_header> headers;
     };
 
+    model::record_batch_header build_header() const;
     uint32_t record_size(int32_t offset_delta, const serialized_record& r);
 
     model::record_batch_type _batch_type;
