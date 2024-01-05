@@ -14,7 +14,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "seastarx.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 #include "utils/vint.h"
 
 #include <seastar/core/sstring.hh>

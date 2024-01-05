@@ -1,6 +1,3 @@
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
-
 add_compile_options(-Wall)
 
 #
@@ -80,6 +77,9 @@ foreach(PYTHON_DEPENDENCY jsonschema jinja2)
     endif()
 endforeach()
 
+add_subdirectory(base)
+link_libraries(v::base)
+
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(io)
@@ -117,6 +117,8 @@ add_subdirectory(resource_mgmt)
 add_subdirectory(migrations)
 add_subdirectory(wasm)
 add_subdirectory(transform)
+add_subdirectory(container)
+add_subdirectory(strings)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 

@@ -13,7 +13,6 @@ v_cc_library(
     directory_walker.cc
     uuid.cc
     bottomless_token_bucket.cc
-    utf8.cc
     log_hist.cc
   DEPS
     Seastar::seastar
