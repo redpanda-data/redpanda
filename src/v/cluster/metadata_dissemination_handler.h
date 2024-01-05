@@ -40,10 +40,10 @@ public:
       ss::sharded<partition_leaders_table>&);
 
     ss::future<get_leadership_reply>
-    get_leadership(get_leadership_request&&, rpc::streaming_context&) final;
+    get_leadership(get_leadership_request, rpc::streaming_context&) final;
 
     ss::future<update_leadership_reply> update_leadership_v2(
-      update_leadership_request_v2&&, rpc::streaming_context&) final;
+      update_leadership_request_v2, rpc::streaming_context&) final;
 
 private:
     ss::future<update_leadership_reply>

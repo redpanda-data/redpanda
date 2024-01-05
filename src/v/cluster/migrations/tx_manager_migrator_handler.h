@@ -40,14 +40,14 @@ public:
           pm, st, metadata_cache, connection_cache, leaders, self) {}
 
     ss::future<tx_manager_replicate_reply> tx_manager_replicate(
-      tx_manager_replicate_request&& request, ::rpc::streaming_context&) final {
+      tx_manager_replicate_request request, ::rpc::streaming_context&) final {
         auto ntp = request.ntp;
         return _replicate_router.process_or_dispatch(
           std::move(request), ntp, tx_manager_migrator::default_timeout);
     }
 
     ss::future<tx_manager_read_reply> tx_manager_read(
-      tx_manager_read_request&& request, ::rpc::streaming_context&) final {
+      tx_manager_read_request request, ::rpc::streaming_context&) final {
         auto ntp = request.ntp;
         return _read_router.process_or_dispatch(
           std::move(request), ntp, tx_manager_migrator::default_timeout);

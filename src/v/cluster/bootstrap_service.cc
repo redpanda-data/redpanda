@@ -20,7 +20,7 @@ namespace cluster {
 
 ss::future<cluster_bootstrap_info_reply>
 bootstrap_service::cluster_bootstrap_info(
-  cluster_bootstrap_info_request&&, rpc::streaming_context&) {
+  cluster_bootstrap_info_request, rpc::streaming_context&) {
     cluster_bootstrap_info_reply r{};
     r.broker = make_self_broker(config::node());
     r.version = features::feature_table::get_latest_logical_version();

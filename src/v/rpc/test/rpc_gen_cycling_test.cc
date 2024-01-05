@@ -46,12 +46,12 @@ struct movistar final : cycling::team_movistar_service_base<Codec> {
     movistar(ss::scheduling_group& sc, ss::smp_service_group& ssg)
       : cycling::team_movistar_service_base<Codec>(sc, ssg) {}
     ss::future<cycling::mount_tamalpais>
-    ibis_hakka(cycling::san_francisco&&, rpc::streaming_context&) final {
+    ibis_hakka(cycling::san_francisco, rpc::streaming_context&) final {
         return ss::make_ready_future<cycling::mount_tamalpais>(
           cycling::mount_tamalpais{66});
     }
     ss::future<cycling::nairo_quintana>
-    canyon(cycling::ultimate_cf_slx&&, rpc::streaming_context&) final {
+    canyon(cycling::ultimate_cf_slx, rpc::streaming_context&) final {
         return ss::make_ready_future<cycling::nairo_quintana>(
           cycling::nairo_quintana{32});
     }
@@ -62,31 +62,31 @@ struct echo_impl final : echo::echo_service_base<Codec> {
     echo_impl(ss::scheduling_group& sc, ss::smp_service_group& ssg)
       : echo::echo_service_base<Codec>(sc, ssg) {}
     ss::future<echo::echo_resp>
-    prefix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
+    prefix_echo(echo::echo_req req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
           echo::echo_resp{.str = ssx::sformat("prefix_{}", req.str)});
     }
     ss::future<echo::echo_resp>
-    suffix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
+    suffix_echo(echo::echo_req req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
           echo::echo_resp{.str = ssx::sformat("{}_suffix", req.str)});
     }
 
     ss::future<echo::sleep_resp>
-    sleep_for(echo::sleep_req&& req, rpc::streaming_context&) final {
+    sleep_for(echo::sleep_req req, rpc::streaming_context&) final {
         return ss::sleep(std::chrono::seconds(req.secs)).then([]() {
             return echo::sleep_resp{.str = "Zzz..."};
         });
     }
 
     ss::future<echo::cnt_resp>
-    counter(echo::cnt_req&& req, rpc::streaming_context&) final {
+    counter(echo::cnt_req req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::cnt_resp>(
           echo::cnt_resp{.expected = req.expected, .current = cnt++});
     }
 
     ss::future<echo::throw_resp>
-    throw_exception(echo::throw_req&& req, rpc::streaming_context&) final {
+    throw_exception(echo::throw_req req, rpc::streaming_context&) final {
         switch (req.type) {
         case echo::failure_type::exceptional_future:
             return ss::make_exception_future<echo::throw_resp>(
@@ -99,7 +99,7 @@ struct echo_impl final : echo::echo_service_base<Codec> {
     }
 
     ss::future<echo::echo_resp>
-    echo(echo::echo_req&& req, rpc::streaming_context&) final {
+    echo(echo::echo_req req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
           echo::echo_resp{.str = req.str});
     }
@@ -113,7 +113,7 @@ struct echo_v2_impl final : echo_v2::echo_service_base<Codec> {
       : echo_v2::echo_service_base<Codec>(sc, ssg) {}
 
     ss::future<echo_v2::echo_resp>
-    echo(echo_v2::echo_req&& req, rpc::streaming_context&) final {
+    echo(echo_v2::echo_req req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo_v2::echo_resp>(
           echo_v2::echo_resp{.str = req.str, .str_two = req.str_two});
     }
