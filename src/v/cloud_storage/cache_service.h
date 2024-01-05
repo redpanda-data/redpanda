@@ -132,7 +132,7 @@ public:
     /// proceeding with put
     ss::future<> put(
       std::filesystem::path key,
-      ss::input_stream<char>& data,
+      ss::input_stream<char> data,
       space_reservation_guard& reservation,
       ss::io_priority_class io_priority
       = priority_manager::local().shadow_indexing_priority(),

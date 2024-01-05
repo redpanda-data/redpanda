@@ -91,9 +91,11 @@ public:
             auto reservation = cache.local().reserve_space(123, 1).get();
             cache.local()
               .put(
-                path, stream.stream, reservation, ss::default_priority_class())
+                path,
+                std::move(stream.stream),
+                reservation,
+                ss::default_priority_class())
               .get();
-            stream.stream.close().get();
         }
         // upload to the cloud
         auto [in_stream, size_bytes] = spm.serialize().get();
@@ -134,9 +136,12 @@ public:
         auto stream = spm.serialize().get();
         auto reservation = cache.local().reserve_space(123, 1).get();
         cache.local()
-          .put(path, stream.stream, reservation, ss::default_priority_class())
+          .put(
+            path,
+            std::move(stream.stream),
+            reservation,
+            ss::default_priority_class())
           .get();
-        stream.stream.close().get();
     }
 
     void load_spillover_manifest_from_file(const ss::sstring& spill_path) {
@@ -214,9 +219,11 @@ public:
             auto reservation = cache.local().reserve_space(123, 1).get();
             cache.local()
               .put(
-                path, stream.stream, reservation, ss::default_priority_class())
+                path,
+                std::move(stream.stream),
+                reservation,
+                ss::default_priority_class())
               .get();
-            stream.stream.close().get();
         }
         // upload to the cloud
         auto [in_stream, size_bytes] = spm.serialize().get();

@@ -2541,7 +2541,7 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto reservation = co_await _cache.reserve_space(len, 1);
         co_await _cache.put(
           tail.get_manifest_path()(),
-          str,
+          std::move(str),
           reservation,
           _conf->upload_io_priority);
 
