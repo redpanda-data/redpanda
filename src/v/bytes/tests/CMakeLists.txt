@@ -10,7 +10,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   add_executable(iobuf_fuzz_rpfixture iobuf_fuzz.cc)
   target_compile_options(iobuf_fuzz_rpfixture PRIVATE -g -O0 -fsanitize=address,fuzzer)
-  target_link_libraries(iobuf_fuzz_rpfixture v::serde -fsanitize=address,undefined,fuzzer)
+  target_link_libraries(iobuf_fuzz_rpfixture v::vassert_abort_implementation v::serde -fsanitize=address,undefined,fuzzer)
   add_test (
     NAME iobuf_fuzz_rpfixture
     COMMAND $<TARGET_FILE:iobuf_fuzz_rpfixture> -max_total_time=30 -rss_limit_mb=8192

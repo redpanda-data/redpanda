@@ -155,6 +155,21 @@ else()
   set(GIT_CLEAN_DIRTY "-dev")
 endif()
 
+# header only interface that exposes vassert but requires an implementation
+v_cc_library(NAME vassert_header
+  HDRS vassert.h
+  DEPS fmt::fmt
+)
+
+v_cc_library(NAME vassert_abort_implementation
+  SRCS vassert.cc
+  DEPS Seastar::seastar
+)
+
+v_cc_library(NAME vassert_exception_implementation
+  SRCS vassert_as_exception.cc
+  DEPS Seastar::seastar
+)
 configure_file(version.cc.in version.cc @ONLY)
 v_cc_library(
   NAME version

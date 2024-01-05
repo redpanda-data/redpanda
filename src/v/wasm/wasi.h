@@ -33,6 +33,7 @@
 #include "wasm/ffi.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/flat_hash_map.h>

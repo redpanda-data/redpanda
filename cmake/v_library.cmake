@@ -5,6 +5,7 @@ set(V_DEFAULT_LINKOPTS)
 set(V_DEFAULT_COPTS -Wall -Wextra -Werror -Wno-missing-field-initializers -Wimplicit-fallthrough)
 set(V_COMMON_INCLUDE_DIRS
   "${PROJECT_SOURCE_DIR}/src/v")
+set(V_ASSERT_HEADER v_vassert_header)
 # v_cc_library()
 #
 # CMake function to imitate Bazel's cc_library rule.
@@ -126,6 +127,10 @@ function(v_cc_library)
       ${V_DEFAULT_LINKOPTS}
       )
     target_compile_definitions(${_NAME} INTERFACE ${V_CC_LIB_DEFINES})
+  endif()
+  if(NOT ${_NAME} STREQUAL ${V_ASSERT_HEADER})
+    # link all the libraries to the vassert header, except the vassert library itself
+    target_link_libraries(${_NAME} INTERFACE ${V_ASSERT_HEADER})
   endif()
   # main symbol exported
   add_library(v::${V_CC_LIB_NAME} ALIAS ${_NAME})

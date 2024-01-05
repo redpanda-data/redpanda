@@ -28,7 +28,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     add_executable(serde-fuzz fuzz.cc ${generated-structs-path})
     target_include_directories(serde-fuzz PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
     target_compile_options(serde-fuzz PRIVATE -g -O0 -fsanitize=address,fuzzer)
-    target_link_libraries(serde-fuzz v::serde -fsanitize=address,undefined,fuzzer)
+    target_link_libraries(serde-fuzz v::vassert_abort_implementation v::serde -fsanitize=address,undefined,fuzzer)
 
     add_test (
       NAME serde-fuzz-test
@@ -39,5 +39,5 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   add_executable(serde-fuzz-main fuzz.cc ${generated-structs-path})
   target_include_directories(serde-fuzz-main PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   target_compile_definitions(serde-fuzz-main PRIVATE MAIN=1)
-  target_link_libraries(serde-fuzz-main v::serde)
+  target_link_libraries(serde-fuzz-main v::vassert_abort_implementation v::serde)
 endif()
