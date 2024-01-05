@@ -1230,7 +1230,11 @@ void application::wire_up_runtime_services(
                 &controller->get_members_table());
           }),
           &_connection_cache,
-          &_transform_rpc_service)
+          &_transform_rpc_service,
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .data_transforms_binary_max_size.bind();
+          }))
           .get();
 
         construct_service(
@@ -2423,6 +2427,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           },
         };
         _wasm_runtime->start(config).get();
+        _transform_rpc_client.invoke_on_all(&transform::rpc::client::start)
+          .get();
         _transform_service.invoke_on_all(&transform::service::start).get();
     }
 
