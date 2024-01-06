@@ -72,7 +72,7 @@ public:
     }
 
     [[gnu::always_inline]] ss::future<heartbeat_reply>
-    heartbeat(heartbeat_request&& r, rpc::streaming_context&) final {
+    heartbeat(heartbeat_request r, rpc::streaming_context&) final {
         using ret_t = std::vector<append_entries_reply>;
         auto const req_sz = r.heartbeats.size();
         auto grouped = group_hbeats_by_shard(std::move(r.heartbeats));
@@ -112,7 +112,7 @@ public:
     }
 
     ss::future<heartbeat_reply_v2>
-    heartbeat_v2(heartbeat_request_v2&& r, rpc::streaming_context&) final {
+    heartbeat_v2(heartbeat_request_v2 r, rpc::streaming_context&) final {
         const auto source = r.source();
         const auto target = r.target();
         auto grouped = group_hbeats_by_shard(std::move(r));
@@ -160,7 +160,7 @@ public:
     }
 
     [[gnu::always_inline]] ss::future<vote_reply>
-    vote(vote_request&& r, rpc::streaming_context&) final {
+    vote(vote_request r, rpc::streaming_context&) final {
         return _probe.vote().then([this, r = std::move(r)]() mutable {
             return dispatch_request(
               std::move(r),
@@ -172,7 +172,7 @@ public:
     }
 
     [[gnu::always_inline]] ss::future<append_entries_reply>
-    append_entries(append_entries_request&& r, rpc::streaming_context&) final {
+    append_entries(append_entries_request r, rpc::streaming_context&) final {
         return _probe.append_entries().then([this, r = std::move(r)]() mutable {
             auto gr = r.target_group();
             return dispatch_request(
@@ -185,7 +185,7 @@ public:
     }
     [[gnu::always_inline]] ss::future<append_entries_reply>
     append_entries_full_serde(
-      append_entries_request_serde_wrapper&& r, rpc::streaming_context&) final {
+      append_entries_request_serde_wrapper r, rpc::streaming_context&) final {
         return _probe.append_entries().then([this, r = std::move(r)]() mutable {
             auto request = std::move(r).release();
             const raft::group_id gr = request.target_group();
@@ -199,7 +199,7 @@ public:
     }
 
     [[gnu::always_inline]] ss::future<install_snapshot_reply> install_snapshot(
-      install_snapshot_request&& r, rpc::streaming_context&) final {
+      install_snapshot_request r, rpc::streaming_context&) final {
         return _probe.install_snapshot().then([this,
                                                r = std::move(r)]() mutable {
             return dispatch_request(
@@ -213,7 +213,7 @@ public:
     }
 
     [[gnu::always_inline]] ss::future<timeout_now_reply>
-    timeout_now(timeout_now_request&& r, rpc::streaming_context&) final {
+    timeout_now(timeout_now_request r, rpc::streaming_context&) final {
         return _probe.timeout_now().then([this, r = std::move(r)]() mutable {
             return dispatch_request(
               std::move(r),
@@ -226,7 +226,7 @@ public:
 
     [[gnu::always_inline]] ss::future<transfer_leadership_reply>
     transfer_leadership(
-      transfer_leadership_request&& r, rpc::streaming_context&) final {
+      transfer_leadership_request r, rpc::streaming_context&) final {
         return _probe.transfer_leadership().then(
           [this, r = std::move(r)]() mutable {
               return dispatch_request(

@@ -84,28 +84,28 @@ public:
       , _service(service) {}
 
     ss::future<produce_reply>
-    produce(produce_request&&, ::rpc::streaming_context&) override;
+    produce(produce_request, ::rpc::streaming_context&) override;
 
     ss::future<store_wasm_binary_reply> store_wasm_binary(
-      store_wasm_binary_request&&, ::rpc::streaming_context&) override;
+      store_wasm_binary_request, ::rpc::streaming_context&) override;
 
     ss::future<load_wasm_binary_reply> load_wasm_binary(
-      load_wasm_binary_request&&, ::rpc::streaming_context&) override;
+      load_wasm_binary_request, ::rpc::streaming_context&) override;
 
     ss::future<delete_wasm_binary_reply> delete_wasm_binary(
-      delete_wasm_binary_request&&, ::rpc::streaming_context&) override;
+      delete_wasm_binary_request, ::rpc::streaming_context&) override;
 
     ss::future<find_coordinator_response> find_coordinator(
-      find_coordinator_request&&, ::rpc::streaming_context&) override;
+      find_coordinator_request, ::rpc::streaming_context&) override;
 
     ss::future<offset_commit_response>
-    offset_commit(offset_commit_request&&, ::rpc::streaming_context&) override;
+    offset_commit(offset_commit_request, ::rpc::streaming_context&) override;
 
     ss::future<offset_fetch_response>
-    offset_fetch(offset_fetch_request&&, ::rpc::streaming_context&) override;
+    offset_fetch(offset_fetch_request, ::rpc::streaming_context&) override;
 
     ss::future<generate_report_reply> generate_report(
-      generate_report_request&&, ::rpc::streaming_context&) override;
+      generate_report_request, ::rpc::streaming_context&) override;
 
 private:
     ss::sharded<local_service>* _service;

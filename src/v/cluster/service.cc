@@ -75,7 +75,7 @@ service::service(
   , _plugin_frontend(pf) {}
 
 ss::future<join_node_reply>
-service::join_node(join_node_request&& req, rpc::streaming_context&) {
+service::join_node(join_node_request req, rpc::streaming_context&) {
     cluster_version expect_version
       = _feature_table.local().get_active_version();
     if (expect_version == invalid_version) {
@@ -130,7 +130,7 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
 }
 
 ss::future<create_topics_reply>
-service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
+service::create_topics(create_topics_request r, rpc::streaming_context&) {
     return ss::with_scheduling_group(
              get_scheduling_group(),
              [this, r = std::move(r)]() mutable {
@@ -147,7 +147,7 @@ service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
 }
 
 ss::future<purged_topic_reply>
-service::purged_topic(purged_topic_request&& r, rpc::streaming_context&) {
+service::purged_topic(purged_topic_request r, rpc::streaming_context&) {
     return ss::with_scheduling_group(
              get_scheduling_group(),
              [this, r = std::move(r)]() mutable {
@@ -177,7 +177,7 @@ service::fetch_metadata_and_cfg(const std::vector<topic_result>& res) {
 }
 
 ss::future<configuration_update_reply> service::update_node_configuration(
-  configuration_update_request&& req, rpc::streaming_context&) {
+  configuration_update_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return _members_manager
@@ -197,7 +197,7 @@ ss::future<configuration_update_reply> service::update_node_configuration(
 }
 
 ss::future<finish_partition_update_reply> service::finish_partition_update(
-  finish_partition_update_request&& req, rpc::streaming_context&) {
+  finish_partition_update_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_finish_partition_update(std::move(req));
@@ -205,7 +205,7 @@ ss::future<finish_partition_update_reply> service::finish_partition_update(
 }
 
 ss::future<finish_partition_update_reply>
-service::do_finish_partition_update(finish_partition_update_request&& req) {
+service::do_finish_partition_update(finish_partition_update_request req) {
     auto ec
       = co_await _topics_frontend.local().finish_moving_partition_replicas(
         req.ntp,
@@ -225,7 +225,7 @@ service::do_finish_partition_update(finish_partition_update_request&& req) {
 }
 
 ss::future<update_topic_properties_reply> service::update_topic_properties(
-  update_topic_properties_request&& req, rpc::streaming_context&) {
+  update_topic_properties_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_update_topic_properties(std::move(req));
@@ -233,7 +233,7 @@ ss::future<update_topic_properties_reply> service::update_topic_properties(
 }
 
 ss::future<update_topic_properties_reply>
-service::do_update_topic_properties(update_topic_properties_request&& req) {
+service::do_update_topic_properties(update_topic_properties_request req) {
     // local topic frontend instance will eventually dispatch request to _raft0
     // core
     auto res = co_await _topics_frontend.local().update_topic_properties(
@@ -245,7 +245,7 @@ service::do_update_topic_properties(update_topic_properties_request&& req) {
 }
 
 ss::future<create_acls_reply>
-service::create_acls(create_acls_request&& request, rpc::streaming_context&) {
+service::create_acls(create_acls_request request, rpc::streaming_context&) {
     return ss::with_scheduling_group(
              get_scheduling_group(),
              [this, r = std::move(request)]() mutable {
@@ -258,7 +258,7 @@ service::create_acls(create_acls_request&& request, rpc::streaming_context&) {
 }
 
 ss::future<delete_acls_reply>
-service::delete_acls(delete_acls_request&& request, rpc::streaming_context&) {
+service::delete_acls(delete_acls_request request, rpc::streaming_context&) {
     return ss::with_scheduling_group(
              get_scheduling_group(),
              [this, r = std::move(request)]() mutable {
@@ -271,7 +271,7 @@ service::delete_acls(delete_acls_request&& request, rpc::streaming_context&) {
 }
 
 ss::future<reconciliation_state_reply> service::get_reconciliation_state(
-  reconciliation_state_request&& req, rpc::streaming_context&) {
+  reconciliation_state_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_get_reconciliation_state(std::move(req));
@@ -286,7 +286,7 @@ service::do_get_reconciliation_state(reconciliation_state_request req) {
 }
 
 ss::future<decommission_node_reply> service::decommission_node(
-  decommission_node_request&& req, rpc::streaming_context&) {
+  decommission_node_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req]() mutable {
           return _members_frontend.local().decommission_node(req.id).then(
@@ -304,7 +304,7 @@ ss::future<decommission_node_reply> service::decommission_node(
 }
 
 ss::future<recommission_node_reply> service::recommission_node(
-  recommission_node_request&& req, rpc::streaming_context&) {
+  recommission_node_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req]() mutable {
           return _members_frontend.local().recommission_node(req.id).then(
@@ -322,7 +322,7 @@ ss::future<recommission_node_reply> service::recommission_node(
 }
 
 ss::future<finish_reallocation_reply> service::finish_reallocation(
-  finish_reallocation_request&& req, rpc::streaming_context&) {
+  finish_reallocation_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(),
       [this, req]() mutable { return do_finish_reallocation(req); });
@@ -330,14 +330,14 @@ ss::future<finish_reallocation_reply> service::finish_reallocation(
 
 ss::future<revert_cancel_partition_move_reply>
 service::revert_cancel_partition_move(
-  revert_cancel_partition_move_request&& req, rpc::streaming_context&) {
+  revert_cancel_partition_move_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(),
       [this, req]() mutable { return do_revert_cancel_partition_move(req); });
 }
 
 ss::future<set_maintenance_mode_reply> service::set_maintenance_mode(
-  set_maintenance_mode_request&& req, rpc::streaming_context&) {
+  set_maintenance_mode_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req]() mutable {
           return _members_frontend.local()
@@ -365,7 +365,7 @@ ss::future<set_maintenance_mode_reply> service::set_maintenance_mode(
  * start calling for votes which may cause disruption.
  */
 ss::future<hello_reply>
-service::hello(hello_request&& req, rpc::streaming_context&) {
+service::hello(hello_request req, rpc::streaming_context&) {
     vlog(
       clusterlog.debug,
       "Handling hello request from node {} with start time {}",
@@ -385,7 +385,7 @@ service::hello(hello_request&& req, rpc::streaming_context&) {
 }
 
 ss::future<config_status_reply>
-service::config_status(config_status_request&& req, rpc::streaming_context&) {
+service::config_status(config_status_request req, rpc::streaming_context&) {
     // Move to stack to avoid referring to reference argument after a
     // scheduling point
     auto status = std::move(req.status);
@@ -416,7 +416,7 @@ service::config_status(config_status_request&& req, rpc::streaming_context&) {
 }
 
 ss::future<config_update_reply>
-service::config_update(config_update_request&& req, rpc::streaming_context&) {
+service::config_update(config_update_request req, rpc::streaming_context&) {
     auto patch_result = co_await _config_frontend.invoke_on(
       config_frontend::version_shard,
       [req = std::move(req)](config_frontend& fe) mutable {
@@ -489,7 +489,7 @@ cluster::errc map_health_monitor_error_code(std::error_code e) {
 }
 
 ss::future<get_node_health_reply> service::collect_node_health_report(
-  get_node_health_request&& req, rpc::streaming_context&) {
+  get_node_health_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_collect_node_health_report(std::move(req));
@@ -497,7 +497,7 @@ ss::future<get_node_health_reply> service::collect_node_health_report(
 }
 
 ss::future<get_cluster_health_reply> service::get_cluster_health_report(
-  get_cluster_health_request&& req, rpc::streaming_context&) {
+  get_cluster_health_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_get_cluster_health_report(std::move(req));
@@ -581,7 +581,7 @@ service::do_get_cluster_health_report(get_cluster_health_request req) {
 }
 
 ss::future<feature_action_response>
-service::feature_action(feature_action_request&& req, rpc::streaming_context&) {
+service::feature_action(feature_action_request req, rpc::streaming_context&) {
     co_await _feature_manager.invoke_on(
       feature_manager::backend_shard,
       [req = std::move(req)](feature_manager& fm) {
@@ -593,8 +593,8 @@ service::feature_action(feature_action_request&& req, rpc::streaming_context&) {
     };
 }
 
-ss::future<feature_barrier_response> service::feature_barrier(
-  feature_barrier_request&& req, rpc::streaming_context&) {
+ss::future<feature_barrier_response>
+service::feature_barrier(feature_barrier_request req, rpc::streaming_context&) {
     auto result = co_await _feature_manager.invoke_on(
       feature_manager::backend_shard,
       [req = std::move(req)](feature_manager& fm) {
@@ -607,14 +607,14 @@ ss::future<feature_barrier_response> service::feature_barrier(
 
 ss::future<cancel_partition_movements_reply>
 service::cancel_all_partition_movements(
-  cancel_all_partition_movements_request&& req, rpc::streaming_context&) {
+  cancel_all_partition_movements_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
         return do_cancel_all_partition_movements(req);
     });
 }
 ss::future<cancel_partition_movements_reply>
 service::cancel_node_partition_movements(
-  cancel_node_partition_movements_request&& req, rpc::streaming_context&) {
+  cancel_node_partition_movements_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
         return do_cancel_node_partition_movements(req);
     });
@@ -655,7 +655,7 @@ service::do_cancel_node_partition_movements(
 }
 
 ss::future<transfer_leadership_reply> service::transfer_leadership(
-  transfer_leadership_request&& r, rpc::streaming_context&) {
+  transfer_leadership_request r, rpc::streaming_context&) {
     auto shard_id = _api.local().shard_for(r.group);
     if (!shard_id.has_value()) {
         co_return transfer_leadership_reply{
@@ -680,7 +680,7 @@ ss::future<transfer_leadership_reply> service::transfer_leadership(
 }
 
 ss::future<producer_id_lookup_reply> service::highest_producer_id(
-  producer_id_lookup_request&&, rpc::streaming_context&) {
+  producer_id_lookup_request, rpc::streaming_context&) {
     producer_id_lookup_reply reply;
     auto highest_pid = co_await _partition_manager.map_reduce0(
       [](const partition_manager& pm) {
@@ -701,7 +701,7 @@ ss::future<producer_id_lookup_reply> service::highest_producer_id(
 }
 
 ss::future<cloud_storage_usage_reply> service::cloud_storage_usage(
-  cloud_storage_usage_request&& req, rpc::streaming_context&) {
+  cloud_storage_usage_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
         return do_cloud_storage_usage(req);
     });
@@ -767,7 +767,7 @@ service::do_cloud_storage_usage(cloud_storage_usage_request req) {
 }
 
 ss::future<partition_state_reply> service::get_partition_state(
-  partition_state_request&& req, rpc::streaming_context&) {
+  partition_state_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
         return do_get_partition_state(req);
     });
@@ -775,7 +775,7 @@ ss::future<partition_state_reply> service::get_partition_state(
 
 ss::future<controller_committed_offset_reply>
 service::get_controller_committed_offset(
-  controller_committed_offset_request&&, rpc::streaming_context&) {
+  controller_committed_offset_request, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this]() {
         return ss::smp::submit_to(controller_stm_shard, [this]() {
             if (!_controller->is_raft0_leader()) {
@@ -822,7 +822,7 @@ service::do_get_partition_state(partition_state_request req) {
 }
 
 ss::future<upsert_plugin_response>
-service::upsert_plugin(upsert_plugin_request&& req, rpc::streaming_context&) {
+service::upsert_plugin(upsert_plugin_request req, rpc::streaming_context&) {
     // Capture the request values in this coroutine
     auto transform = std::move(req.transform);
     auto deadline = model::timeout_clock::now() + req.timeout;
@@ -833,7 +833,7 @@ service::upsert_plugin(upsert_plugin_request&& req, rpc::streaming_context&) {
 }
 
 ss::future<remove_plugin_response>
-service::remove_plugin(remove_plugin_request&& req, rpc::streaming_context&) {
+service::remove_plugin(remove_plugin_request req, rpc::streaming_context&) {
     // Capture the request values in this coroutine
     auto name = std::move(req.name);
     auto deadline = model::timeout_clock::now() + req.timeout;
@@ -844,7 +844,7 @@ service::remove_plugin(remove_plugin_request&& req, rpc::streaming_context&) {
 }
 
 ss::future<delete_topics_reply>
-service::delete_topics(delete_topics_request&& req, rpc::streaming_context&) {
+service::delete_topics(delete_topics_request req, rpc::streaming_context&) {
     // Capture the request values in this coroutine
     auto topics = req.topics_to_delete;
     auto timeout = req.timeout;

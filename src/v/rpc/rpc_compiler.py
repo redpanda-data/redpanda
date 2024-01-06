@@ -125,12 +125,12 @@ public:
                               {{method.output_type}},
                               Codec>::exec(in, ctx, {{method.name}}_method,
       [this](
-          {{method.input_type}}&& t, ::rpc::streaming_context& ctx) -> ss::future<{{method.output_type}}> {
+          {{method.input_type}} t, ::rpc::streaming_context& ctx) -> ss::future<{{method.output_type}}> {
           return {{method.name}}(std::move(t), ctx);
       });
     }
     virtual ss::future<{{method.output_type}}>
-    {{method.name}}({{method.input_type}}&&, ::rpc::streaming_context&) {
+    {{method.name}}({{method.input_type}}, ::rpc::streaming_context&) {
        throw std::runtime_error("unimplemented method");
     }
     {%- endfor %}

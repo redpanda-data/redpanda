@@ -44,97 +44,96 @@ public:
       ss::sharded<partition_manager>&);
 
     virtual ss::future<join_node_reply>
-    join_node(join_node_request&&, rpc::streaming_context&) override;
+    join_node(join_node_request, rpc::streaming_context&) override;
 
     virtual ss::future<create_topics_reply>
-    create_topics(create_topics_request&&, rpc::streaming_context&) override;
+    create_topics(create_topics_request, rpc::streaming_context&) override;
 
     virtual ss::future<purged_topic_reply>
-    purged_topic(purged_topic_request&&, rpc::streaming_context&) override;
+    purged_topic(purged_topic_request, rpc::streaming_context&) override;
 
     ss::future<configuration_update_reply> update_node_configuration(
-      configuration_update_request&&, rpc::streaming_context&) final;
+      configuration_update_request, rpc::streaming_context&) final;
 
     ss::future<finish_partition_update_reply> finish_partition_update(
-      finish_partition_update_request&&, rpc::streaming_context&) final;
+      finish_partition_update_request, rpc::streaming_context&) final;
 
     ss::future<revert_cancel_partition_move_reply> revert_cancel_partition_move(
-      revert_cancel_partition_move_request&&, rpc::streaming_context&) final;
+      revert_cancel_partition_move_request, rpc::streaming_context&) final;
 
     ss::future<update_topic_properties_reply> update_topic_properties(
-      update_topic_properties_request&&, rpc::streaming_context&) final;
+      update_topic_properties_request, rpc::streaming_context&) final;
     ss::future<reconciliation_state_reply> get_reconciliation_state(
-      reconciliation_state_request&&, rpc::streaming_context&) final;
+      reconciliation_state_request, rpc::streaming_context&) final;
 
     ss::future<create_acls_reply>
-    create_acls(create_acls_request&&, rpc::streaming_context&) final;
+    create_acls(create_acls_request, rpc::streaming_context&) final;
 
     ss::future<delete_acls_reply>
-    delete_acls(delete_acls_request&&, rpc::streaming_context&) final;
+    delete_acls(delete_acls_request, rpc::streaming_context&) final;
 
-    ss::future<decommission_node_reply> decommission_node(
-      decommission_node_request&&, rpc::streaming_context&) final;
+    ss::future<decommission_node_reply>
+    decommission_node(decommission_node_request, rpc::streaming_context&) final;
 
-    ss::future<recommission_node_reply> recommission_node(
-      recommission_node_request&&, rpc::streaming_context&) final;
+    ss::future<recommission_node_reply>
+    recommission_node(recommission_node_request, rpc::streaming_context&) final;
 
     ss::future<finish_reallocation_reply> finish_reallocation(
-      finish_reallocation_request&&, rpc::streaming_context&) final;
+      finish_reallocation_request, rpc::streaming_context&) final;
 
     ss::future<config_status_reply>
-    config_status(config_status_request&&, rpc::streaming_context&) final;
+    config_status(config_status_request, rpc::streaming_context&) final;
 
     ss::future<config_update_reply>
-    config_update(config_update_request&&, rpc::streaming_context&) final;
+    config_update(config_update_request, rpc::streaming_context&) final;
 
     ss::future<get_node_health_reply> collect_node_health_report(
-      get_node_health_request&&, rpc::streaming_context&) final;
+      get_node_health_request, rpc::streaming_context&) final;
 
     ss::future<get_cluster_health_reply> get_cluster_health_report(
-      get_cluster_health_request&&, rpc::streaming_context&) final;
+      get_cluster_health_request, rpc::streaming_context&) final;
 
     ss::future<feature_action_response>
-    feature_action(feature_action_request&& req, rpc::streaming_context&) final;
+    feature_action(feature_action_request req, rpc::streaming_context&) final;
 
     ss::future<feature_barrier_response>
-    feature_barrier(feature_barrier_request&&, rpc::streaming_context&) final;
+    feature_barrier(feature_barrier_request, rpc::streaming_context&) final;
 
     ss::future<set_maintenance_mode_reply> set_maintenance_mode(
-      set_maintenance_mode_request&&, rpc::streaming_context&) final;
+      set_maintenance_mode_request, rpc::streaming_context&) final;
 
-    ss::future<hello_reply>
-    hello(hello_request&&, rpc::streaming_context&) final;
+    ss::future<hello_reply> hello(hello_request, rpc::streaming_context&) final;
 
     ss::future<cancel_partition_movements_reply> cancel_all_partition_movements(
-      cancel_all_partition_movements_request&&, rpc::streaming_context&) final;
+      cancel_all_partition_movements_request, rpc::streaming_context&) final;
     ss::future<cancel_partition_movements_reply>
     cancel_node_partition_movements(
-      cancel_node_partition_movements_request&&, rpc::streaming_context&) final;
+      cancel_node_partition_movements_request, rpc::streaming_context&) final;
 
     ss::future<transfer_leadership_reply> transfer_leadership(
-      transfer_leadership_request&& r, rpc::streaming_context&) final;
+      transfer_leadership_request r, rpc::streaming_context&) final;
 
     ss::future<producer_id_lookup_reply> highest_producer_id(
-      producer_id_lookup_request&&, rpc::streaming_context&) final;
+      producer_id_lookup_request, rpc::streaming_context&) final;
 
     ss::future<cloud_storage_usage_reply> cloud_storage_usage(
-      cloud_storage_usage_request&& r, rpc::streaming_context&) final;
+      cloud_storage_usage_request r, rpc::streaming_context&) final;
 
-    ss::future<partition_state_reply> get_partition_state(
-      partition_state_request&&, rpc::streaming_context&) final;
+    ss::future<partition_state_reply>
+    get_partition_state(partition_state_request, rpc::streaming_context&) final;
 
     ss::future<controller_committed_offset_reply>
     get_controller_committed_offset(
-      controller_committed_offset_request&&, rpc::streaming_context&) final;
+      controller_committed_offset_request, rpc::streaming_context&) final;
 
     ss::future<upsert_plugin_response>
-    upsert_plugin(upsert_plugin_request&&, rpc::streaming_context&) final;
+    upsert_plugin(upsert_plugin_request, rpc::streaming_context&) final;
 
     ss::future<remove_plugin_response>
-    remove_plugin(remove_plugin_request&&, rpc::streaming_context&) final;
+    remove_plugin(remove_plugin_request, rpc::streaming_context&) final;
 
     ss::future<delete_topics_reply>
-    delete_topics(delete_topics_request&&, rpc::streaming_context&) final;
+    delete_topics(delete_topics_request, rpc::streaming_context&) final;
 
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
@@ -143,10 +142,10 @@ private:
       fetch_metadata_and_cfg(const std::vector<topic_result>&);
 
     ss::future<finish_partition_update_reply>
-    do_finish_partition_update(finish_partition_update_request&&);
+      do_finish_partition_update(finish_partition_update_request);
 
     ss::future<update_topic_properties_reply>
-    do_update_topic_properties(update_topic_properties_request&&);
+      do_update_topic_properties(update_topic_properties_request);
 
     ss::future<reconciliation_state_reply>
       do_get_reconciliation_state(reconciliation_state_request);
