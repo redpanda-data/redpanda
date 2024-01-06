@@ -128,4 +128,20 @@ public:
     virtual ~runtime() = default;
 };
 
+/**
+ * A logging interface for wasm transforms.
+ *
+ */
+class logger {
+public:
+    logger() = default;
+    virtual ~logger() = default;
+    logger(const logger&) = delete;
+    logger& operator=(const logger&) = delete;
+    logger(logger&&) = delete;
+    logger& operator=(logger&&) = delete;
+
+    virtual void log(ss::log_level lvl, std::string_view message) noexcept = 0;
+};
+
 } // namespace wasm
