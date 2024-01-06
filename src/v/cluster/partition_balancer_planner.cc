@@ -125,13 +125,15 @@ public:
     static reconfiguration_policy
     map_change_reason_to_policy(change_reason reason) {
         switch (reason) {
-        case change_reason::node_unavailable:
-        case change_reason::rack_constraint_repair:
-            return reconfiguration_policy::full_local_retention;
-        case change_reason::disk_full:
+        // fast movement
         case change_reason::node_decommissioning:
         case change_reason::partition_count_rebalancing:
             return reconfiguration_policy::target_initial_retention;
+        // full retention
+        case change_reason::node_unavailable:
+        case change_reason::rack_constraint_repair:
+        case change_reason::disk_full:
+            return reconfiguration_policy::full_local_retention;
         }
     }
 
