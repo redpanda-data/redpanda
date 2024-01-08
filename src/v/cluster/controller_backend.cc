@@ -32,6 +32,7 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/group_configuration.h"
 #include "raft/types.h"
+#include "ssx/event.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
@@ -249,7 +250,101 @@ std::error_code check_configuration_update(
     return errc::success;
 }
 
+enum class partition_claim_state {
+    acquiring, // shard has an intention to own this partition
+    acquired,  // shard is the sole owner of this partition
+    released,  // the partition is free to be acquired by other shards.
+};
+
+[[maybe_unused]] std::ostream&
+operator<<(std::ostream& o, partition_claim_state s) {
+    switch (s) {
+    case partition_claim_state::acquiring:
+        return o << "acquiring";
+    case partition_claim_state::acquired:
+        return o << "acquired";
+    case partition_claim_state::released:
+        return o << "released";
+    }
+    __builtin_unreachable();
+}
+
 } // namespace
+
+struct controller_backend::ntp_reconciliation_state {
+    std::optional<model::revision_id> changed_at;
+    std::optional<model::revision_id> properties_changed_at;
+    bool removed = false;
+
+    ssx::event wakeup_event{"c/cb/rfwe"};
+    std::optional<in_progress_operation> cur_operation;
+
+    bool is_reconciled() const { return !changed_at.has_value(); }
+
+    void mark_reconciled(model::revision_id rev) {
+        mark_properties_reconciled(rev);
+        if (changed_at && *changed_at <= rev) {
+            changed_at = std::nullopt;
+        }
+        cur_operation = std::nullopt;
+    }
+
+    void mark_properties_reconciled(model::revision_id rev) {
+        if (properties_changed_at && *properties_changed_at <= rev) {
+            properties_changed_at = std::nullopt;
+        }
+    }
+
+    void set_cur_operation(
+      model::revision_id rev,
+      partition_operation_type type,
+      partition_assignment p_as = partition_assignment{}) {
+        if (!cur_operation) {
+            cur_operation = in_progress_operation{};
+        }
+        cur_operation->revision = rev;
+        cur_operation->type = type;
+        cur_operation->assignment = std::move(p_as);
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
+        fmt::print(
+          o,
+          "{{changed_at: {}, properties_changed_at: {}, removed: {}, "
+          "cur_operation: {}}}",
+          rs.changed_at,
+          rs.properties_changed_at,
+          rs.removed,
+          rs.cur_operation);
+        return o;
+    }
+};
+
+/// Partition claim is a small struct that is used for two purposes:
+/// 1) tracking which shard hosts persistent shard-local kvstore data for
+/// this partition and 2) is the partition currently
+/// starting/started/stopping or otherwise in use by this shard (i.e. a
+/// lock). This is useful for coordinating cross-shard partition moves. The
+/// _ntp_claims map is usually small because a partition object held by
+/// partition_manager also counts as a claim so we insert the claim into the
+/// map before we start the partition and delete the claim after the
+/// partition is fully started.
+struct controller_backend::partition_claim {
+    model::revision_id log_revision;
+    partition_claim_state state = partition_claim_state::released;
+    bool hosting = false;
+
+    friend std::ostream& operator<<(std::ostream& o, partition_claim pc) {
+        fmt::print(
+          o,
+          "{{log_revision: {}, state: {}, hosting: {}}}",
+          pc.log_revision,
+          pc.state,
+          pc.hosting);
+        return o;
+    }
+};
 
 controller_backend::controller_backend(
   ss::sharded<topic_table>& tp_state,
@@ -281,6 +376,8 @@ controller_backend::controller_backend(
   , _initial_retention_local_target_ms(
       std::move(initial_retention_local_target_ms))
   , _as(as) {}
+
+controller_backend::~controller_backend() = default;
 
 bool controller_backend::command_based_membership_active() const {
     return _features.local().is_active(

@@ -21,7 +21,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/group_configuration.h"
-#include "ssx/event.h"
 #include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
@@ -209,6 +208,7 @@ public:
       config::binding<std::optional<std::chrono::milliseconds>>
         initial_retention_local_target_ms,
       ss::sharded<seastar::abort_source>&);
+    ~controller_backend();
 
     ss::future<> stop();
     ss::future<> start();
@@ -229,55 +229,8 @@ public:
     get_current_op(const model::ntp&) const;
 
 private:
-    struct ntp_reconciliation_state {
-        std::optional<model::revision_id> changed_at;
-        std::optional<model::revision_id> properties_changed_at;
-        bool removed = false;
-
-        ssx::event wakeup_event{"c/cb/rfwe"};
-        std::optional<in_progress_operation> cur_operation;
-
-        bool is_reconciled() const { return !changed_at.has_value(); }
-
-        void mark_reconciled(model::revision_id rev) {
-            mark_properties_reconciled(rev);
-            if (changed_at && *changed_at <= rev) {
-                changed_at = std::nullopt;
-            }
-            cur_operation = std::nullopt;
-        }
-
-        void mark_properties_reconciled(model::revision_id rev) {
-            if (properties_changed_at && *properties_changed_at <= rev) {
-                properties_changed_at = std::nullopt;
-            }
-        }
-
-        void set_cur_operation(
-          model::revision_id rev,
-          partition_operation_type type,
-          partition_assignment p_as = partition_assignment{}) {
-            if (!cur_operation) {
-                cur_operation = in_progress_operation{};
-            }
-            cur_operation->revision = rev;
-            cur_operation->type = type;
-            cur_operation->assignment = std::move(p_as);
-        }
-
-        friend std::ostream&
-        operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
-            fmt::print(
-              o,
-              "{{changed_at: {}, properties_changed_at: {}, removed: {}, "
-              "cur_operation: {}}}",
-              rs.changed_at,
-              rs.properties_changed_at,
-              rs.removed,
-              rs.cur_operation);
-            return o;
-        }
-    };
+    struct ntp_reconciliation_state;
+    struct partition_claim;
 
     // Topics
     ss::future<> bootstrap_controller_backend();
@@ -428,48 +381,6 @@ private:
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
       _states;
 
-    enum class partition_claim_state {
-        acquiring, // shard has an intention to own this partition
-        acquired,  // shard is the sole owner of this partition
-        released,  // the partition is free to be acquired by other shards.
-    };
-
-    friend std::ostream& operator<<(std::ostream& o, partition_claim_state s) {
-        switch (s) {
-        case partition_claim_state::acquiring:
-            return o << "acquiring";
-        case partition_claim_state::acquired:
-            return o << "acquired";
-        case partition_claim_state::released:
-            return o << "released";
-        }
-        __builtin_unreachable();
-    }
-
-    /// Partition claim is a small struct that is used for two purposes:
-    /// 1) tracking which shard hosts persistent shard-local kvstore data for
-    /// this partition and 2) is the partition currently
-    /// starting/started/stopping or otherwise in use by this shard (i.e. a
-    /// lock). This is useful for coordinating cross-shard partition moves. The
-    /// _ntp_claims map is usually small because a partition object held by
-    /// partition_manager also counts as a claim so we insert the claim into the
-    /// map before we start the partition and delete the claim after the
-    /// partition is fully started.
-    struct partition_claim {
-        model::revision_id log_revision;
-        partition_claim_state state = partition_claim_state::released;
-        bool hosting = false;
-
-        friend std::ostream& operator<<(std::ostream& o, partition_claim pc) {
-            fmt::print(
-              o,
-              "{{log_revision: {}, state: {}, hosting: {}}}",
-              pc.log_revision,
-              pc.state,
-              pc.hosting);
-            return o;
-        }
-    };
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, partition_claim> _ntp_claims;
 
