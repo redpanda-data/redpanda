@@ -21,6 +21,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/group_configuration.h"
+#include "ssx/event.h"
 #include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
@@ -233,7 +234,10 @@ private:
         std::optional<model::revision_id> properties_changed_at;
         bool removed = false;
 
+        ssx::event wakeup_event{"c/cb/rfwe"};
         std::optional<in_progress_operation> cur_operation;
+
+        bool is_reconciled() const { return !changed_at.has_value(); }
 
         void mark_reconciled(model::revision_id rev) {
             mark_properties_reconciled(rev);
@@ -291,13 +295,16 @@ private:
     ss::future<> clear_orphan_topic_files(
       model::revision_id bootstrap_revision,
       absl::flat_hash_map<model::ntp, model::revision_id> topic_table_snapshot);
-    void start_topics_reconciliation_loop();
 
+    void start_fetch_deltas_loop();
     ss::future<> fetch_deltas();
 
     ss::future<> bootstrap_partition_claims();
-    ss::future<> reconcile_topics();
-    ss::future<> reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
+
+    ss::future<> reconcile_ntp_fiber(
+      model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>);
+    ss::future<>
+    try_reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
     ss::future<result<ss::stop_iteration>>
     reconcile_ntp_step(const model::ntp&, ntp_reconciliation_state&);
 
@@ -392,7 +399,6 @@ private:
 
     ss::future<std::error_code> dispatch_revert_cancel_move(model::ntp);
 
-    void housekeeping();
     void setup_metrics();
 
     bool command_based_membership_active() const;
@@ -419,7 +425,8 @@ private:
       _initial_retention_local_target_ms;
     ss::sharded<ss::abort_source>& _as;
 
-    absl::btree_map<model::ntp, ntp_reconciliation_state> _states;
+    absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
+      _states;
 
     enum class partition_claim_state {
         acquiring, // shard has an intention to own this partition
@@ -466,8 +473,10 @@ private:
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, partition_claim> _ntp_claims;
 
-    ss::timer<> _housekeeping_timer;
-    ssx::semaphore _topics_sem{1, "c/controller-be"};
+    // Limits the number of concurrently executing reconciliation fibers.
+    // Initially reconciliation is blocked and we deposit a non-zero amount of
+    // units when we are ready to start reconciling.
+    ssx::semaphore _reconciliation_sem{0, "c/controller-be"};
     ss::gate _gate;
 
     metrics::internal_metric_groups _metrics;
