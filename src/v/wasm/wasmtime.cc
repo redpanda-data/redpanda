@@ -75,16 +75,9 @@ constexpr size_t max_host_function_stack_usage = vm_stack_size
                                                  - max_vm_guest_stack_usage
                                                  - 4_KiB;
 
-// The maximum amount of fuel we give for a single record transform (as well as
-// main setup). In experiments using an infinite loop on a x86_64 machine with
-// no other load this amount allowed for about 3 seconds of execution in total.
-//
-// It would be better to give the engine "infinite" fuel and make this both time
-// based and configurable, but until that work, this is the simpler option.
-constexpr uint64_t fuel_amount = 5'000'000'000;
-// This interval in the above experiment allowed for Wasm to take up CPU for no
-// more than 1 millisecond max at once.
-constexpr uint64_t fuel_yield_interval = 2'000'000;
+// This amount of fuel allows the VM to run for about 1 millisecond for an
+// infinite loop workload on x86_64.
+constexpr uint64_t millisecond_fuel_amount = 2'000'000;
 
 // The reserved memory for an instance of a WebAssembly VM.
 //
@@ -124,6 +117,8 @@ public:
 
     engine_probe_cache* engine_probe_cache();
 
+    size_t per_invocation_fuel_amount() const;
+
 private:
     void register_metrics();
 
@@ -156,6 +151,7 @@ private:
     size_t _total_executable_memory = 0;
     metrics::public_metric_groups _public_metrics;
     ss::sharded<wasm::engine_probe_cache> _engine_probe_cache;
+    size_t _per_invocation_fuel_amount = 0;
 };
 
 void check_error(const wasmtime_error_t* error) {
@@ -536,7 +532,8 @@ private:
 
     void reset_fuel(wasmtime_context_t* ctx) {
         handle<wasmtime_error_t, wasmtime_error_delete> error(
-          wasmtime_context_set_fuel(ctx, fuel_amount));
+          wasmtime_context_set_fuel(
+            ctx, _runtime->per_invocation_fuel_amount()));
         check_error(error.get());
     }
 
@@ -592,7 +589,7 @@ private:
         auto* context = wasmtime_store_context(store.get());
 
         wasmtime_context_fuel_async_yield_interval(
-          context, fuel_yield_interval);
+          context, millisecond_fuel_amount);
 
         reset_fuel(context);
 
@@ -1280,6 +1277,9 @@ wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema_registry> sr)
 }
 
 ss::future<> wasmtime_runtime::start(runtime::config c) {
+    _per_invocation_fuel_amount = (c.cpu.per_invocation_timeout / 1ms)
+                                  * millisecond_fuel_amount;
+
     size_t page_size = ::getpagesize();
     size_t aligned_pool_size = ss::align_down(
       c.heap_memory.per_core_pool_size_bytes, page_size);
@@ -1419,6 +1419,9 @@ heap_allocator* wasmtime_runtime::heap_allocator() {
 }
 engine_probe_cache* wasmtime_runtime::engine_probe_cache() {
     return &_engine_probe_cache.local();
+}
+size_t wasmtime_runtime::per_invocation_fuel_amount() const {
+    return _per_invocation_fuel_amount;
 }
 
 wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(

@@ -17,6 +17,7 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "wasm/fwd.h"
 
+#include <chrono>
 #include <memory>
 
 namespace wasm {
@@ -101,6 +102,16 @@ public:
             bool debug_host_stack_usage;
         };
         stack_memory stack_memory;
+        struct cpu {
+            // per transform timeout (CPU time) also is applied for startup
+            // timeout.
+            //
+            // NOTE: This is translated into fuel (instruction count limits) so
+            // it's an approximate limit in terms of actual timeout at the
+            // moment.
+            std::chrono::milliseconds per_invocation_timeout;
+        };
+        cpu cpu;
     };
 
     virtual ss::future<> start(config) = 0;

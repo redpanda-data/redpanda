@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "cluster/errc.h"
 #include "cluster/types.h"
+#include "config/mock_property.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "kafka/server/partition_proxy.h"
@@ -32,6 +33,7 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
+#include "test_utils/async.h"
 #include "test_utils/randoms.h"
 #include "test_utils/test.h"
 #include "transform/rpc/client.h"
@@ -162,6 +164,29 @@ public:
         _topic_cfgs.insert_or_assign(tp_ns, std::move(cfg));
     }
 
+    void update_topic_cfg(const cluster::topic_properties_update& update) {
+        auto it = _topic_cfgs.find(update.tp_ns);
+        if (it == _topic_cfgs.end()) {
+            throw std::runtime_error(
+              ss::format("unknown topic: {}", update.tp_ns));
+        }
+        auto& config = it->second;
+        // NOTE: We just support batch_max_bytes because that's all we use in
+        // tests.
+        const auto& prop_update = update.properties.batch_max_bytes;
+        switch (prop_update.op) {
+        case cluster::none:
+            return;
+        case cluster::set:
+            config.properties.batch_max_bytes
+              = update.properties.batch_max_bytes.value;
+            break;
+        case cluster::remove:
+            config.properties.batch_max_bytes.reset();
+            break;
+        }
+    }
+
     uint32_t get_default_batch_max_bytes() const final { return 1_MiB; };
 
 private:
@@ -198,9 +223,12 @@ public:
     fake_topic_creator(
       ss::noncopyable_function<void(const cluster::topic_configuration&)>
         new_topic_cb,
+      ss::noncopyable_function<void(const cluster::topic_properties_update&)>
+        update_topic_cb,
       ss::noncopyable_function<void(const model::ntp&, model::node_id)>
         new_ntp_cb)
       : _new_topic_cb(std::move(new_topic_cb))
+      , _update_topic_cb(std::move(update_topic_cb))
       , _new_ntp_cb(std::move(new_ntp_cb)) {}
 
     ss::future<cluster::errc> create_topic(
@@ -223,6 +251,12 @@ public:
         co_return cluster::errc::success;
     }
 
+    ss::future<cluster::errc>
+    update_topic(cluster::topic_properties_update update) override {
+        _update_topic_cb(update);
+        co_return cluster::errc::success;
+    }
+
     void set_default_new_topic_leader(model::node_id node_id) {
         _default_new_topic_leader = node_id;
     }
@@ -231,6 +265,8 @@ private:
     model::node_id _default_new_topic_leader;
     ss::noncopyable_function<void(const cluster::topic_configuration&)>
       _new_topic_cb;
+    ss::noncopyable_function<void(const cluster::topic_properties_update&)>
+      _update_topic_cb;
     ss::noncopyable_function<void(const model::ntp&, model::node_id)>
       _new_ntp_cb;
 };
@@ -649,6 +685,10 @@ public:
               remote_metadata_cache()->set_topic_cfg(tp_cfg);
               local_metadata_cache()->set_topic_cfg(tp_cfg);
           },
+          [this](const cluster::topic_properties_update& update) {
+              remote_metadata_cache()->update_topic_cfg(update);
+              local_metadata_cache()->update_topic_cfg(update);
+          },
           [this](const model::ntp& ntp, model::node_id leader) {
               elect_leader(ntp, leader);
           });
@@ -660,7 +700,9 @@ public:
           std::move(ftpc),
           std::make_unique<fake_cluster_members_cache>(),
           &_conn_cache,
-          &_local_services);
+          &_local_services,
+          _max_wasm_binary_size.bind());
+        _client->start().get();
     }
     void TearDown() override {
         _client->stop().get();
@@ -758,6 +800,10 @@ public:
     fake_partition_manager* remote_partition_manager() { return _remote_fpm; }
     rpc::local_service* remote_service() { return &_remote_services.local(); }
 
+    void set_max_wasm_binary_size(size_t size) {
+        _max_wasm_binary_size.update(std::move(size));
+    }
+
 private:
     record_batches batches_for(model::node_id node, const model::ntp& ntp) {
         auto manager = node == self_node ? local_partition_manager()
@@ -781,6 +827,7 @@ private:
     ss::sharded<::rpc::connection_cache> _conn_cache;
     std::unique_ptr<rpc::client> _client;
     ss::sharded<ss::abort_source> _as;
+    config::mock_property<size_t> _max_wasm_binary_size = 1_MiB;
 };
 
 } // namespace
@@ -803,7 +850,9 @@ model::transform_report make_transform_report(model::transform_metadata meta) {
     return model::transform_report(std::move(meta));
 };
 
+using ::testing::Field;
 using ::testing::IsEmpty;
+using ::testing::Optional;
 using ::testing::SizeIs;
 
 TEST_P(TransformRpcTest, ClientCanProduce) {
@@ -817,6 +866,13 @@ TEST_P(TransformRpcTest, ClientCanProduce) {
       << cluster::error_category().message(int(ec));
     EXPECT_THAT(non_leader_batches(ntp), IsEmpty());
     EXPECT_EQ(leader_batches(ntp), batches);
+}
+
+auto MaxBatchSizeIs(size_t size) {
+    return Field(
+      &cluster::topic_configuration::properties,
+      Field(
+        &cluster::topic_properties::batch_max_bytes, Optional(uint32_t(size))));
 }
 
 TEST_P(TransformRpcTest, WasmBinaryCrud) {
@@ -846,6 +902,19 @@ TEST_P(TransformRpcTest, WasmBinaryCrud) {
     auto ec = delete_wasm_binary(key);
     EXPECT_EQ(ec, cluster::errc::success)
       << cluster::error_category().message(int(ec));
+
+    for (auto* cache : {remote_metadata_cache(), local_metadata_cache()}) {
+        auto cfg = cache->find_topic_cfg(
+          model::topic_namespace_view(model::wasm_binaries_internal_ntp));
+        EXPECT_THAT(cfg, Optional(MaxBatchSizeIs(1_MiB)));
+    }
+    set_max_wasm_binary_size(1_GiB);
+    tests::drain_task_queue().get();
+    for (auto* cache : {remote_metadata_cache(), local_metadata_cache()}) {
+        auto cfg = cache->find_topic_cfg(
+          model::topic_namespace_view(model::wasm_binaries_internal_ntp));
+        EXPECT_THAT(cfg, Optional(MaxBatchSizeIs(1_GiB)));
+    }
 }
 
 TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {

@@ -53,6 +53,9 @@ public:
                 .stack_memory = {
                   .debug_host_stack_usage = false,
                 },
+                .cpu = {
+                  .per_invocation_timeout = 30s,
+                },
             };
             co_await _runtime->start(wasm_runtime_config);
         }
