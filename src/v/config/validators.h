@@ -36,6 +36,9 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms);
 std::optional<ss::sstring>
 validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms);
 
+bool oidc_is_enabled_http();
+bool oidc_is_enabled_kafka();
+
 std::optional<ss::sstring> validate_0_to_1_ratio(const double d);
 
 std::optional<ss::sstring>
