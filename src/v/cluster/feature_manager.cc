@@ -17,6 +17,7 @@
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
+#include "config/validators.h"
 #include "features/feature_table.h"
 #include "model/timeout_clock.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -210,6 +211,10 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
                 return m == "GSSAPI";
             });
         };
+        auto has_oidc = []() {
+            return config::oidc_is_enabled_kafka()
+                   || config::oidc_is_enabled_http();
+        };
         auto has_schma_id_validation = [&cfg]() {
             return cfg.enable_schema_id_validation()
                    != pandaproxy::schema_registry::schema_id_validation_mode::
@@ -219,7 +224,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
           cfg.audit_enabled || cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
                == model::partition_autobalancing_mode::continuous
-          || has_gssapi() || has_schma_id_validation()) {
+          || has_gssapi() || has_oidc() || has_schma_id_validation()) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
