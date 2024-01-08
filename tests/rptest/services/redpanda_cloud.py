@@ -8,7 +8,7 @@ import yaml
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from prometheus_client.parser import text_string_to_metric_families
 
 from ducktape.utils.util import wait_until
@@ -32,7 +32,7 @@ PROVIDER_GCP = 'GCP'
 TIER_DEFAULTS = {PROVIDER_AWS: "tier-1-aws", PROVIDER_GCP: "tier-1-gcp"}
 
 
-def get_config_profile_name(config):
+def get_config_profile_name(config: None | dict[str, Any]) -> str:
     """Gets config profile name
 
     Suitable to call before cluster creation.
@@ -132,21 +132,21 @@ class LiveClusterParams:
     cluster_id: str = ""
     _isAlive: bool = False
     connection_type: str = 'public'
-    namespace_uuid: str = None
-    name: str = None
+    namespace_uuid: str | None = None
+    name: str | None = None
     last_status: str = ""
     consoleUrl: str = ""
-    network_id: str = None
-    network_cidr: str = None
-    install_pack_ver: str = None
-    product_name: str = None
-    region: str = None
-    region_id: str = None
-    peer_vpc_id: str = None
-    peer_owner_id: str = None
-    rp_vpc_id: str = None
-    rp_owner_id: str = None
-    vpc_peering_id: str = None
+    network_id: str | None = None
+    network_cidr: str | None = None
+    install_pack_ver: str | None = None
+    product_name: str | None = None
+    region: str | None = None
+    region_id: str | None = None
+    peer_vpc_id: str | None = None
+    peer_owner_id: str | None = None
+    rp_vpc_id: str | None = None
+    rp_owner_id: str | None = None
+    vpc_peering_id: str | None = None
     # Special flag that is checked on cluster deletion
     # last test in the list should set this to True
     # along with 'use_same_cluster' in config
@@ -155,7 +155,7 @@ class LiveClusterParams:
     # Can't use mutables in defaults of dataclass
     # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
     zones: list[str] = field(default_factory=list)
-    aws_vpc_peering: dict = field(default_factory=dict)
+    aws_vpc_peering: dict[str, Any] = field(default_factory=dict)
 
     @property
     def network_endpoint(self):
