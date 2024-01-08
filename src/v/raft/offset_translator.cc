@@ -90,8 +90,7 @@ bytes offset_translator::kvstore_highest_known_offset_key(
     return serialize_kvstore_key(group, kvstore_key_type::highest_known_offset);
 }
 
-ss::future<>
-offset_translator::start(must_reset reset, bootstrap_state&& bootstrap) {
+ss::future<> offset_translator::start(must_reset reset) {
     vassert(
       _state->empty(),
       "ntp {}: offset translator state was modified before start()",
@@ -128,19 +127,14 @@ offset_translator::start(must_reset reset, bootstrap_state&& bootstrap) {
             _highest_known_offset = std::max(
               _highest_known_offset, _state->last_gap_offset());
         } else {
-            // For backwards compatibility: load state from
-            // configuration_manager state
             vlog(
               _logger.info,
-              "offset translation kvstore state not found, loading from "
-              "provided bootstrap state");
-
-            *_state = storage::offset_translator_state::from_bootstrap_state(
-              _state->ntp(), bootstrap.offset2delta);
+              "offset translation kvstore state not found, will recover it "
+              "from the log later");
+            *_state = storage::offset_translator_state(
+              _state->ntp(), model::offset::min(), 0);
             ++_map_version;
-            _highest_known_offset = bootstrap.highest_known_offset;
-
-            co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
+            _highest_known_offset = model::offset::min();
         }
     }
 

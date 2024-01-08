@@ -1394,25 +1394,13 @@ ss::future<> consensus::do_start() {
           initial_state);
 
         co_await _configuration_manager.start(initial_state, _self.revision());
-
         vlog(
           _ctxlog.trace,
           "Configuration manager started: {}",
           _configuration_manager);
-        offset_translator::must_reset must_reset{initial_state};
 
-        absl::btree_map<model::offset, int64_t> offset2delta;
-        for (const auto& it : _configuration_manager) {
-            offset2delta.emplace(it.first, it.second.idx());
-        }
-
-        auto bootstrap = offset_translator::bootstrap_state{
-          .offset2delta = std::move(offset2delta),
-          .highest_known_offset
-          = _configuration_manager.get_highest_known_offset(),
-        };
-
-        co_await _offset_translator.start(must_reset, std::move(bootstrap));
+        co_await _offset_translator.start(
+          offset_translator::must_reset{initial_state});
 
         co_await _snapshot_lock.with([this] { return hydrate_snapshot(); });
 
