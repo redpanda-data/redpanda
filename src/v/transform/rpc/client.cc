@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/constraints.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -189,14 +190,16 @@ client::client(
   std::unique_ptr<topic_creator> t,
   std::unique_ptr<cluster_members_cache> m,
   ss::sharded<::rpc::connection_cache>* c,
-  ss::sharded<local_service>* s)
+  ss::sharded<local_service>* s,
+  config::binding<size_t> b)
   : _self(self)
   , _cluster_members(std::move(m))
   , _leaders(std::move(l))
   , _topic_metadata(std::move(md_cache))
   , _topic_creator(std::move(t))
   , _connections(c)
-  , _local_service(s) {}
+  , _local_service(s)
+  , _max_wasm_binary_size(std::move(b)) {}
 
 ss::future<cluster::errc> client::produce(
   model::topic_partition tp, ss::chunked_fifo<model::record_batch> batches) {
@@ -235,9 +238,20 @@ ss::future<cluster::errc> client::do_produce_once(produce_request req) {
     co_return reply.results.front().err;
 }
 
+ss::future<> client::start() {
+    if (ss::this_shard_id() != 0) {
+        co_return;
+    }
+    ssx::spawn_with_gate(_gate, [this] { return update_wasm_binary_size(); });
+    _max_wasm_binary_size.watch([this] {
+        ssx::spawn_with_gate(
+          _gate, [this] { return update_wasm_binary_size(); });
+    });
+}
+
 ss::future<> client::stop() {
     _as.request_abort();
-    return ss::now();
+    co_await _gate.close();
 }
 
 ss::future<produce_reply> client::do_local_produce(produce_request req) {
@@ -457,9 +471,7 @@ ss::future<result<iobuf, cluster::errc>> client::do_remote_load_wasm_binary(
 
 ss::future<bool> client::try_create_wasm_binary_ntp() {
     cluster::topic_properties topic_props;
-    // TODO: This should be configurable
-    constexpr size_t wasm_binaries_max_bytes = 10_MiB;
-    topic_props.batch_max_bytes = wasm_binaries_max_bytes;
+    topic_props.batch_max_bytes = _max_wasm_binary_size();
     // Mark all these as disabled
     topic_props.retention_bytes = tristate<size_t>();
     topic_props.retention_local_target_bytes = tristate<size_t>();
@@ -797,6 +809,50 @@ client::generate_remote_report(model::node_id node) {
 template<typename Func>
 std::invoke_result_t<Func> client::retry(Func&& func) {
     return retry_with_backoff(std::forward<Func>(func), &_as);
+}
+
+ss::future<> client::update_wasm_binary_size() {
+    mutex::units _ = co_await _wasm_binary_max_size_updater_mu.get_units();
+    auto tn = model::topic_namespace_view(model::wasm_binaries_internal_ntp);
+    auto config = _topic_metadata->find_topic_cfg(tn);
+    if (!config) {
+        // Topic hasn't been created yet.
+        co_return;
+    }
+    if (
+      config->properties.batch_max_bytes.has_value()
+      && config->properties.batch_max_bytes.value()
+           == uint32_t(_max_wasm_binary_size())) {
+        // Nothing to do.
+        co_return;
+    }
+    // We need to update the size.
+    ss::future<cluster::errc> fut
+      = co_await ss::coroutine::as_future<cluster::errc>(retry([this, tn] {
+            auto updates = cluster::incremental_topic_updates();
+            updates.batch_max_bytes.value = _max_wasm_binary_size();
+            updates.batch_max_bytes.op
+              = cluster::incremental_update_operation::set;
+            return _topic_creator->update_topic(
+              cluster::topic_properties_update(
+                model::topic_namespace(tn),
+                updates,
+                cluster::incremental_topic_custom_updates()));
+        }));
+    if (fut.failed()) {
+        vlog(
+          log.warn,
+          "unable to update internal wasm binary topic size: {}",
+          fut.get_exception());
+    }
+    cluster::errc ec = fut.get();
+    if (ec == cluster::errc::success) {
+        co_return;
+    }
+    vlog(
+      log.warn,
+      "unable to update internal wasm binary topic size: {}",
+      cluster::error_category().message(int(ec)));
 }
 
 } // namespace transform::rpc

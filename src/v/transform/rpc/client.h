@@ -13,6 +13,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -48,7 +49,8 @@ public:
       std::unique_ptr<topic_creator>,
       std::unique_ptr<cluster_members_cache>,
       ss::sharded<::rpc::connection_cache>*,
-      ss::sharded<local_service>*);
+      ss::sharded<local_service>*,
+      config::binding<size_t>);
     client(client&&) = delete;
     client& operator=(client&&) = delete;
     client(const client&) = delete;
@@ -82,6 +84,7 @@ public:
 
     ss::future<model::cluster_transform_report> generate_report();
 
+    ss::future<> start();
     ss::future<> stop();
 
 private:
@@ -149,6 +152,8 @@ private:
     template<typename Func>
     std::invoke_result_t<Func> retry(Func&&);
 
+    ss::future<> update_wasm_binary_size();
+
     model::node_id _self;
     std::unique_ptr<cluster_members_cache> _cluster_members;
     // need partition_leaders_table to know which node owns the partitions
@@ -158,6 +163,9 @@ private:
     ss::sharded<::rpc::connection_cache>* _connections;
     ss::sharded<local_service>* _local_service;
     ss::abort_source _as;
+    ss::gate _gate;
+    mutex _wasm_binary_max_size_updater_mu;
+    config::binding<size_t> _max_wasm_binary_size;
 };
 
 } // namespace transform::rpc

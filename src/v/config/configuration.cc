@@ -193,6 +193,24 @@ configuration::configuration()
       2_MiB,
       // WebAssembly uses 64KiB pages and has a 32bit address space
       {.min = 64_KiB, .max = 4_GiB})
+  , data_transforms_runtime_limit_ms(
+      *this,
+      "data_transforms_runtime_limit_ms",
+      "The maximum amount of runtime for startup time of a data transform, and "
+      "the time it takes for a single record to be transformed.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      3s)
+  , data_transforms_binary_max_size(
+      *this,
+      "data_transforms_binary_max_size",
+      "The maximum size for a deployable WebAssembly binary that the broker "
+      "can store.",
+      {
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::tunable,
+      },
+      10_MiB,
+      {.min = 1_MiB, .max = 128_MiB})
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",

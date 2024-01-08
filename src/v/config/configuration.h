@@ -72,6 +72,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> data_transforms_commit_interval_ms;
     bounded_property<size_t> data_transforms_per_core_memory_reservation;
     bounded_property<size_t> data_transforms_per_function_memory_limit;
+    property<std::chrono::milliseconds> data_transforms_runtime_limit_ms;
+    bounded_property<size_t> data_transforms_binary_max_size;
 
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;

@@ -138,6 +138,12 @@ public:
       int32_t partition_count,
       cluster::topic_properties)
       = 0;
+
+    /**
+     * Update a topic.
+     */
+    virtual ss::future<cluster::errc>
+      update_topic(cluster::topic_properties_update) = 0;
 };
 
 /**
