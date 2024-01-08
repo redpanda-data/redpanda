@@ -101,6 +101,7 @@ class MetricsReporterTest(RedpandaTest):
         assert_fields_are_the_same(metadata, 'cluster_created_ts')
         # Configuration should be the same across requests
         assert_fields_are_the_same(metadata, 'has_kafka_gssapi')
+        assert_fields_are_the_same(metadata, 'has_oidc')
         # cluster config should be the same
         assert_fields_are_the_same(metadata, 'config')
         # get the last report
@@ -108,6 +109,7 @@ class MetricsReporterTest(RedpandaTest):
         assert last['topic_count'] == total_topics
         assert last['partition_count'] == total_partitions
         assert last['has_kafka_gssapi'] is False
+        assert last['has_oidc'] is False
         assert last['active_logical_version'] == features['cluster_version']
         assert last['original_logical_version'] == features[
             'original_cluster_version']
