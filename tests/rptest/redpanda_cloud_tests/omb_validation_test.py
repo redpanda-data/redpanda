@@ -141,7 +141,7 @@ class OMBValidationTest(RedpandaTest):
     def _mb_to_mib(self, mb):
         return math.floor(0.9537 * mb)
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=10)
     def test_max_connections(self):
         tier_limits = self.tier_limits
 
@@ -285,7 +285,7 @@ class OMBValidationTest(RedpandaTest):
         finally:
             self.rpk.delete_topic(swarm_topic_name)
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=10)
     def test_max_partitions(self):
         tier_limits = self.tier_limits
 
@@ -327,7 +327,7 @@ class OMBValidationTest(RedpandaTest):
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=10)
     def test_common_workload(self):
         tier_limits = self.tier_limits
 
@@ -380,7 +380,7 @@ class OMBValidationTest(RedpandaTest):
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=10)
     def test_retention(self):
         tier_limits = self.tier_limits
 
