@@ -56,19 +56,12 @@ disk_space_manager::disk_space_manager(
           this->enabled() ? "Enabling" : "Disabling");
         _control_sem.signal();
     });
-    _enabled_override.watch([this] {
-        vlog(
-          rlog.info,
-          "{} disk space manager control loop",
-          this->enabled() ? "Enabling" : "Disabling");
-        _control_sem.signal();
-    });
     _retention_target_capacity_bytes.watch([this] { update_target_size(); });
     _retention_target_capacity_percent.watch([this] { update_target_size(); });
     _disk_reservation_percent.watch([this] { update_target_size(); });
 }
 
-bool disk_space_manager::enabled() { return _enabled() || _enabled_override(); }
+bool disk_space_manager::enabled() { return _enabled(); }
 
 ss::future<> disk_space_manager::start() {
     vlog(
