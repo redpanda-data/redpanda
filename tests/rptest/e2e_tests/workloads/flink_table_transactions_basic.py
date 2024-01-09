@@ -15,6 +15,8 @@ import sys
 
 from dataclasses import dataclass
 
+from pyflink.datastream.checkpointing_mode import CheckpointingMode
+from pyflink.datastream.checkpoint_config import ExternalizedCheckpointCleanup
 from pyflink.table import StreamTableEnvironment, EnvironmentSettings, \
     TableDescriptor, Schema, DataTypes
 
@@ -48,8 +50,8 @@ class WorkloadConfig:
     word_size: int = 16
     # Follow this rule to eliminate possibility of Java's OutOfMemory Exception
     # count / batch_size < 400
-    count: int = 65535
-    batch_size: int = 256
+    count: int = 512
+    batch_size: int = 64
     # This should be updated to value from self.redpanda.brokers()
     brokers: str = "localhost:9092"
 
@@ -93,6 +95,31 @@ class FlinkWorkloadProduce:
         settings.from_configuration(config)
         # Streaming env is user in order to add kafka connector
         env = StreamExecutionEnvironment.get_execution_environment()
+        # Checkpoints settings
+        # See: https://nightlies.apache.org/flink/flink-docs-master/api/python/reference/pyflink.datastream/checkpoint.html
+        # and: https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/fault-tolerance/checkpointing/
+
+        # start a checkpoint every 1000 ms
+        env.enable_checkpointing(1000)
+        # advanced options:
+        # set mode to exactly-once (this is the default)
+        env.get_checkpoint_config().set_checkpointing_mode(
+            CheckpointingMode.EXACTLY_ONCE)
+        # make sure 500 ms of progress happen between checkpoints
+        env.get_checkpoint_config().set_min_pause_between_checkpoints(500)
+        # checkpoints have to complete within one minute, or are discarded
+        env.get_checkpoint_config().set_checkpoint_timeout(60000)
+        # only two consecutive checkpoint failures are tolerated
+        env.get_checkpoint_config().set_tolerable_checkpoint_failure_number(2)
+        # allow only one checkpoint to be in progress at the same time
+        env.get_checkpoint_config().set_max_concurrent_checkpoints(1)
+        # enable externalized checkpoints which are retained after job cancellation
+        env.get_checkpoint_config().enable_externalized_checkpoints(
+            ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION)
+        # enables the unaligned checkpoints
+        env.get_checkpoint_config().enable_unaligned_checkpoints()
+
+        # Configure jars
         env.add_jars(self.config.connector_path)
         settings = EnvironmentSettings.new_instance() \
             .in_streaming_mode()\
@@ -141,6 +168,8 @@ class FlinkWorkloadProduce:
 
         # Define the table schema
         sink_table_schema = Schema.new_builder() \
+            .column('index', DataTypes.BIGINT()) \
+            .column('subindex', DataTypes.BIGINT()) \
             .column('word', DataTypes.STRING()) \
             .build()
 
@@ -152,7 +181,10 @@ class FlinkWorkloadProduce:
             .option('topic', f'{self.config.topic_name}') \
             .option('properties.bootstrap.servers', f'{self.config.brokers}') \
             .option('properties.group.id', f'{self.config.producer_group}') \
+            .option('properties.transaction.timeout.ms', '15000') \
             .option('scan.startup.mode', 'earliest-offset') \
+            .option('sink.delivery-guarantee', 'exactly-once') \
+            .option('sink.transactional-id-prefix', 'flink_transaction_test_1') \
             .option('format', 'csv') \
             .build()
 
@@ -174,10 +206,17 @@ class FlinkWorkloadProduce:
         while idx < self.config.count:
             # Prepare list of words that will be included in one INSERT cmd
             # aka batch
-            values = [
-                f"('{self.id_to_word(random.randint(0, len(self.words)-1))}')"
-                for count in range(self.config.batch_size)
-            ]
+            words_to_go = self.config.count - idx
+            if words_to_go == 0:
+                break
+            size = self.config.batch_size
+            size = size if words_to_go > size else words_to_go
+            values = []
+            for count in range(size):
+                word = self.id_to_word(random.randint(0, len(self.words) - 1))
+                row = f"({idx+count}, {count}, '{word}')"
+                values.append(row)
+
             # Note:
             # One insert operator is a good example of a transaction.
             # Which is two-phase: 'pre-commit/checkpoint' -> 'commit'/'abort'
@@ -190,9 +229,13 @@ class FlinkWorkloadProduce:
             # i.e. once again, ~400 transactions
             # Using batch_size of 256 -> OutOfMemoryError after 104447 inserts,
             # i.e. yet once again, ~400 transactions
+            sys.stdout.write(f"Sending {len(values)} values at '{idx}'\n")
+            sys.stdout.flush()
             self.table_env.execute_sql("INSERT INTO sink " +
                                        f"VALUES {','.join(values)};")
-            idx += self.config.batch_size
+            idx += size
+
+        return
 
     def prepare_consume_mode(self):
         """
@@ -206,6 +249,8 @@ class FlinkWorkloadProduce:
         # Define the table schema with metadata
         # See: https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/connectors/table/kafka/
         source_table_schema = Schema.new_builder() \
+            .column('index', DataTypes.BIGINT()) \
+            .column('subindex', DataTypes.BIGINT()) \
             .column_by_metadata('event_time', DataTypes.TIMESTAMP(3),
                                 'timestamp', is_virtual=False) \
             .column_by_metadata('partition', DataTypes.BIGINT(), 'partition',
@@ -221,6 +266,9 @@ class FlinkWorkloadProduce:
             .option('topic', f'{self.config.topic_name}') \
             .option('properties.bootstrap.servers', f'{self.config.brokers}') \
             .option('properties.group.id', f'{self.config.producer_group}') \
+            .option('properties.transaction.timeout.ms', '15000') \
+            .option('properties.auto.offset.reset', 'earliest') \
+            .option('properties.isolation.level', 'read_committed') \
             .option('scan.startup.mode', 'earliest-offset') \
             .option('scan.bounded.mode', 'latest-offset') \
             .option('format', 'csv') \
@@ -231,9 +279,12 @@ class FlinkWorkloadProduce:
 
         # Prepare sink with connector 'print'
         _print_schema = Schema.new_builder() \
-            .column('a', DataTypes.BIGINT()) \
-            .column('b', DataTypes.TIMESTAMP(3)) \
-            .column('c', DataTypes.BIGINT()) \
+            .column('offs', DataTypes.BIGINT()) \
+            .column('index', DataTypes.BIGINT()) \
+            .column('bindex', DataTypes.BIGINT()) \
+            .column('ts', DataTypes.TIMESTAMP(3)) \
+            .column('len', DataTypes.BIGINT()) \
+            .column('data', DataTypes.STRING()) \
             .build()
         _print_desc = TableDescriptor.for_connector('filesystem') \
             .schema(_print_schema) \
@@ -260,15 +311,10 @@ class FlinkWorkloadProduce:
         #   data/part-a70f2a9f-7a84-4d89-b493-22d00cc07838-8-0: CSV text
         table = self.table_env.from_path('source')
         # example csv row:
-        # 65528,"2023-12-20 13:40:37.461",274
-        table.select(col('offset'), col('event_time'),
-                     length(col('word'))) \
-            .execute_insert('sink') \
-            # No wait for remote cluster, aka AWS
-
-        #   # Enable for local debug
-        #   #.wait(120000)
-        pass
+        # 542,415,31,"2024-01-09 22:22:43.647",17,TiJJtOuzOkiOsGmws
+        table.select(col('offset'), col('index'), col('subindex'),
+                     col('event_time'), length(col('word')), col('word')) \
+            .execute_insert('sink')
 
         return
 

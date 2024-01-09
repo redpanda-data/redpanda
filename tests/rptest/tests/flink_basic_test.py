@@ -6,6 +6,9 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import time
+
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.e2e_tests.workload_manager import WorkloadManager
@@ -41,7 +44,7 @@ class FlinkBasicTests(RedpandaTest):
         self.kafkacli.delete_topic(self.topic)
         return super().tearDown()
 
-    def _run_workloads(self, workloads, config):
+    def _run_workloads(self, workloads, config, wait_timeout=900):
         """
             Run workloads from the list with supplied config
 
@@ -61,17 +64,20 @@ class FlinkBasicTests(RedpandaTest):
                               f"jobs: {', '.join(_ids)}")
 
         # Wait for jobs to finish
-        self.flink.wait(timeout_sec=3600)
+        if wait_timeout > 0:
+            self.flink.wait(timeout_sec=wait_timeout)
 
         # Collect failed jobs
         _failed = []
+        _all = []
         for _id in _ids:
             _job = self.flink.get_job_by_id(_id)
             if _job['state'] == self.flink.STATE_FAILED:
                 self.logger.warning(f"Job '{_id}' has failed")
                 _failed.append(_job)
+            _all.append(_job)
 
-        return _failed
+        return _all, _failed
 
     def _get_workloads_by_tags(self, tags):
         """
@@ -142,7 +148,8 @@ class FlinkBasicTests(RedpandaTest):
 
         # Run produce basic
         workloads = self._get_workloads_by_tags(['flink', 'produce', 'basic'])
-        _failed = self._run_workloads(workloads, _workload_config)
+        # Do not need list of jobs, so just discard them
+        _, _failed = self._run_workloads(workloads, _workload_config)
 
         # Assert failed jobs
         assert len(_failed) == 0, \
@@ -150,7 +157,8 @@ class FlinkBasicTests(RedpandaTest):
 
         # Run consume basic
         workloads = self._get_workloads_by_tags(['flink', 'consume', 'basic'])
-        _failed = self._run_workloads(workloads, _workload_config)
+        # Do not need list of jobs, so just discard them
+        _, _failed = self._run_workloads(workloads, _workload_config)
 
         # Assert failed jobs
         assert len(_failed) == 0, \
@@ -181,28 +189,35 @@ class FlinkBasicTests(RedpandaTest):
             "log_level": "DEBUG",
             "brokers": self.redpanda.brokers(),
             "data_path": "file://" + _data_path,
-            "producer_group": "flink_produce_group",
-            "consumer_group": "flink_consume_group",
+            "producer_group": "flink_group",
+            "consumer_group": "flink_group",
             "topic_name": self.topic_name,
             "mode": "produce",
             "word_size": 64,
-            "batch_size": 64,
-            "count": 256
+            "batch_size": 32,
+            "count": 512
         }
 
         # Get workload
         workloads = self._get_workloads_by_tags(
             ['flink', 'table', 'transactions', 'basic'])
         # Run produce part
-        _failed = self._run_workloads(workloads, _workload_config)
+        jobs, _failed = self._run_workloads(workloads, _workload_config)
 
         # Assert failed jobs
+        _desc = [f"{j['name']} ({j['jid']}): {j['state']}" for j in _failed]
+        _desc = "\n".join(_desc)
         assert len(_failed) == 0, \
-            f"Flink reports failed produce job for transaction workload {_failed}"
+            "Flink reports failed produce job for " \
+            f"transaction workload:\n{_desc}"
 
-        # Needs python venv preparations from infra side
+        # Run workload in consume mode
+        # Workload will run continuously, we will stop it once file is produced
+        # this is why wait_timeout is 0, i.e. do not wait
         _workload_config['mode'] = 'consume'
-        _failed = self._run_workloads(workloads, _workload_config)
+        jobs, _failed = self._run_workloads(workloads,
+                                            _workload_config,
+                                            wait_timeout=0)
 
         # Assert failed jobs
         assert len(_failed) == 0, \
@@ -214,14 +229,39 @@ class FlinkBasicTests(RedpandaTest):
         #     /workloads/data/part-cfbe2720-7117-40fd-8c28-fca31a459ff8-0-0
         # Data sample:
         # ...
-        # 201,"2024-01-05 20:38:53.125",46
+        # 542,415,31,"2024-01-09 22:22:43.647",17,TiJJtOuzOkiOsGmws
         # ...
-        files = self.flink.node.account.ssh_output(f"ls -1 {_data_path}")
-        files = files.decode().splitlines()
+
+        # Wait for file, timeout 5 min (10 sec * 30 iterations)
+        self.logger.info("Waiting for consume workload data file")
+        backoff_sec = 10
+        iterations = 30
+        files = []
+        while iterations > 0:
+            # List files in data folder
+            try:
+                files = self.flink.node.account.ssh_output(
+                    f"ls -1 {_data_path}")
+                files = files.decode().splitlines()
+            except RemoteCommandError:
+                # Ignore ssh_output command errors
+                # as folder will not be existent just yet
+                continue
+            # exit if file is present
+            # Not that there is no need to check file name as tmp file will
+            # have filename started with '.part' and it will not be listed by
+            # bare 'ls -1' command
+            if len(files) > 0:
+                break
+            self.logger.info("No data file present. "
+                             f"Sleeping for {backoff_sec} sec")
+            time.sleep(backoff_sec)
+            iterations -= 1
 
         # There should be at least one file
         assert len(
-            files) > 0, f"Flink transaction workload produced no data files"
+            files
+        ) > 0, f"Flink transaction workload produced no data files after 5 min"
 
         # Load data file and parse it
         data = {}
@@ -235,22 +275,23 @@ class FlinkBasicTests(RedpandaTest):
                 f"cat {_data_path}/{f}").decode()
             # Parse the csv
             # Second parameter is the quick and dirty value type map
-            data[f] = self._parse_csv(csv_data, [int, str, int])
+            data[f] = self._parse_csv(csv_data, [int, int, int, str, int, str])
 
         # Find max offset
-        offset_column = 0
-        max_offset = 0
+        offset_column = 1
+        max_index = 0
         for ff, part_data in data.items():
             for row in part_data:
-                if max_offset < row[offset_column]:
-                    max_offset = row[offset_column]
+                if max_index < row[offset_column]:
+                    max_index = row[offset_column]
 
         # Stop flink
         self.flink.stop()
 
-        # 'count - 1' coz offset starts with '0'
-        target_offset = _workload_config['count'] - 1
-        assert max_offset == target_offset, \
-            f"Flink workload consume max offset is incorrect: {max_offset} " \
-            f"(should be: {target_offset})"
+        # 'count - 1' coz index starts with '0'
+        target_index = _workload_config['count'] - 1
+        assert max_index == target_index, \
+            f"Flink workload consume max offset is incorrect: {max_index} " \
+            f"(should be: {target_index})"
+
         return
