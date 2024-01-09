@@ -373,6 +373,7 @@ private:
     model::node_id _self;
     ss::sstring _data_directory;
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
+    simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     config::binding<std::optional<size_t>>
       _initial_retention_local_target_bytes;
     config::binding<std::optional<std::chrono::milliseconds>>

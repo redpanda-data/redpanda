@@ -371,11 +371,17 @@ controller_backend::controller_backend(
   , _self(*config::node().node_id())
   , _data_directory(config::node().data_directory().as_sstring())
   , _housekeeping_interval(std::move(housekeeping_interval))
+  , _housekeeping_jitter(_housekeeping_interval())
   , _initial_retention_local_target_bytes(
       std::move(initial_retention_local_target_bytes))
   , _initial_retention_local_target_ms(
       std::move(initial_retention_local_target_ms))
-  , _as(as) {}
+  , _as(as) {
+    _housekeeping_interval.watch([this] {
+        _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>(
+          _housekeeping_interval());
+    });
+}
 
 controller_backend::~controller_backend() = default;
 
@@ -879,7 +885,7 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
     auto gate_holder = _gate.hold();
 
     while (true) {
-        co_await rs->wakeup_event.wait(_housekeeping_interval());
+        co_await rs->wakeup_event.wait(_housekeeping_jitter.next_duration());
         if (_as.local().abort_requested()) {
             break;
         }
