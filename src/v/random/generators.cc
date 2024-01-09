@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "generators.h"
+#include "random/generators.h"
 
 namespace random_generators {
 
