@@ -203,6 +203,7 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<storage::api>&,
       ss::sharded<features::feature_table>&,
+      config::binding<std::chrono::milliseconds> housekeeping_interval,
       config::binding<std::optional<size_t>>
         initial_retention_local_target_bytes,
       config::binding<std::optional<std::chrono::milliseconds>>
@@ -371,7 +372,7 @@ private:
     ss::sharded<features::feature_table>& _features;
     model::node_id _self;
     ss::sstring _data_directory;
-    std::chrono::milliseconds _housekeeping_timer_interval;
+    config::binding<std::chrono::milliseconds> _housekeeping_interval;
     config::binding<std::optional<size_t>>
       _initial_retention_local_target_bytes;
     config::binding<std::optional<std::chrono::milliseconds>>

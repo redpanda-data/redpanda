@@ -407,6 +407,10 @@ ss::future<> controller::start(
             std::ref(_feature_table),
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
+                  .controller_backend_housekeeping_interval_ms.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
                   .initial_retention_local_target_bytes_default.bind();
             }),
             ss::sharded_parameter([] {

@@ -355,6 +355,7 @@ controller_backend::controller_backend(
   ss::sharded<topics_frontend>& frontend,
   ss::sharded<storage::api>& storage,
   ss::sharded<features::feature_table>& features,
+  config::binding<std::chrono::milliseconds> housekeeping_interval,
   config::binding<std::optional<size_t>> initial_retention_local_target_bytes,
   config::binding<std::optional<std::chrono::milliseconds>>
     initial_retention_local_target_ms,
@@ -369,8 +370,7 @@ controller_backend::controller_backend(
   , _features(features)
   , _self(*config::node().node_id())
   , _data_directory(config::node().data_directory().as_sstring())
-  , _housekeeping_timer_interval(
-      config::shard_local_cfg().controller_backend_housekeeping_interval_ms())
+  , _housekeeping_interval(std::move(housekeeping_interval))
   , _initial_retention_local_target_bytes(
       std::move(initial_retention_local_target_bytes))
   , _initial_retention_local_target_ms(
@@ -879,7 +879,7 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
     auto gate_holder = _gate.hold();
 
     while (true) {
-        co_await rs->wakeup_event.wait(_housekeeping_timer_interval);
+        co_await rs->wakeup_event.wait(_housekeeping_interval());
         if (_as.local().abort_requested()) {
             break;
         }
