@@ -24,5 +24,5 @@ v_cc_library(
     v::bytes
     v::rphashing
     v::json
-    v::rprandom)
+    v::random)
 add_subdirectory(tests)

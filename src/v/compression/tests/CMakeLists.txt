@@ -2,14 +2,14 @@ rp_test(
   BENCHMARK_TEST
   BINARY_NAME zstd_stream
   SOURCES zstd_stream_bench.cc
-  LIBRARIES Seastar::seastar_perf_testing v::compression v::rprandom
+  LIBRARIES Seastar::seastar_perf_testing v::compression v::random
   LABELS compression
 )
 rp_test(
   UNIT_TEST
   BINARY_NAME zstd_tests
   SOURCES zstd_tests.cc
-  LIBRARIES v::seastar_testing_main v::compression v::rprandom
+  LIBRARIES v::seastar_testing_main v::compression v::random
   LABELS compression
   ARGS "-- -c 1"
   )

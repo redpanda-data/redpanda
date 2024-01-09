@@ -33,7 +33,7 @@ v_cc_library(
     v::config
     v::bytes
     v::utils
-    v::rprandom
+    v::random
     v::version
     absl::flat_hash_map
     absl::flat_hash_set

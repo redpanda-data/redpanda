@@ -6,5 +6,5 @@ v_cc_library(
   DEPS
     Seastar::seastar
     absl::flat_hash_map
-    v::rprandom
+    v::random
   )

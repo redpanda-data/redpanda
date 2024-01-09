@@ -7,7 +7,7 @@ v_cc_library(
     "random_batch.cc"
   DEPS
     v::model
-    v::rprandom
+    v::random
     v::compression
 )
 
