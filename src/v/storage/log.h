@@ -126,6 +126,23 @@ public:
     virtual size_t size_bytes() const = 0;
     // Byte size of the log for all segments after offset 'o'
     virtual uint64_t size_bytes_after_offset(model::offset o) const = 0;
+
+    struct offset_range_size_result_t {
+        size_t on_disk_size;
+        model::offset last_offset;
+    };
+
+    struct offset_range_size_requirements_t {
+        size_t target_size;
+        size_t min_size;
+    };
+
+    virtual ss::future<offset_range_size_result_t> offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::io_priority_class io_priority)
+      = 0;
+
     virtual ss::future<>
       update_configuration(ntp_config::default_overrides) = 0;
 

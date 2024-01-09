@@ -51,7 +51,10 @@
 #include <iterator>
 #include <numeric>
 #include <optional>
+#include <stdexcept>
 #include <vector>
+
+static ss::logger e2e_test_log("storage_e2e_test");
 
 void validate_offsets(
   model::offset base,
@@ -3542,3 +3545,125 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
 
     b.stop().get();
 }
+
+FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    struct batch_summary {
+        model::offset base;
+        model::offset last;
+        size_t batch_size;
+    };
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < 300; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    struct batch_summary_accumulator {
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+            size_t sz = summaries->empty() ? 0 : acc_size->back();
+            batch_summary summary{
+              .base = b.base_offset(),
+              .last = b.last_offset(),
+              .batch_size = b.data().size_bytes()
+                            + model::packed_record_batch_header_size,
+            };
+            summaries->push_back(summary);
+            acc_size->push_back(sz + summary.batch_size);
+            prev_size->push_back(sz);
+            co_return ss::stop_iteration::no;
+        }
+        bool end_of_stream() const { return false; }
+
+        std::vector<batch_summary>* summaries;
+        std::vector<size_t>* acc_size;
+        std::vector<size_t>* prev_size;
+    };
+    std::vector<batch_summary> summaries;
+    std::vector<size_t> acc_size;
+    std::vector<size_t> prev_size;
+
+    storage::log_reader_config reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto reader = log->make_reader(reader_cfg).get();
+
+    batch_summary_accumulator acc{
+      .summaries = &summaries,
+      .acc_size = &acc_size,
+      .prev_size = &prev_size,
+    };
+    std::move(reader).consume(acc, model::no_timeout).get();
+
+    for (size_t i = 0; i < num_test_cases; i++) {
+        auto ix_base = model::test::get_int((size_t)0, summaries.size() - 1);
+        auto ix_last = model::test::get_int(ix_base, summaries.size() - 1);
+        auto base = summaries[ix_base].base;
+        auto last = summaries[ix_last].last;
+
+        auto expected_size = acc_size[ix_last] - prev_size[ix_base];
+        auto result
+          = log->offset_range_size(base, last, ss::default_priority_class())
+              .get();
+
+        vlog(
+          e2e_test_log.debug,
+          "base: {}, last: {}, expected size: {}, actual size: {}",
+          base,
+          last,
+          expected_size,
+          result.on_disk_size);
+
+        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+        BOOST_REQUIRE_EQUAL(last, result.last_offset);
+    }
+
+    auto new_start_offset = model::next_offset(first_segment_last_offset);
+    log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        new_start_offset, ss::default_priority_class()))
+      .get();
+
+    auto lstat = log->offsets();
+    BOOST_REQUIRE_EQUAL(lstat.start_offset, new_start_offset);
+
+    // Check that out of range access triggers exception.
+
+    BOOST_REQUIRE_THROW(
+      log
+        ->offset_range_size(
+          model::offset(0),
+          model::next_offset(new_start_offset),
+          ss::default_priority_class())
+        .get(),
+      std::invalid_argument);
+
+    BOOST_REQUIRE_THROW(
+      log
+        ->offset_range_size(
+          model::next_offset(new_start_offset),
+          model::next_offset(lstat.committed_offset),
+          ss::default_priority_class())
+        .get(),
+      std::invalid_argument);
+
+#endif
+};
