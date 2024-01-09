@@ -35,6 +35,11 @@ hours = 60 * minutes
 
 class OMBValidationTest(RedpandaTest):
 
+    # The numbers of nodes we expect to run with - this value (10) is the default
+    # for duck.py so these tests should just work with that default, but not necessarily
+    # any less than that.
+    CLUSTER_NODES = 10
+
     # common workload details shared among most/all test methods
     WORKLOAD_DEFAULTS = {
         "topics": 1,
@@ -141,7 +146,7 @@ class OMBValidationTest(RedpandaTest):
     def _mb_to_mib(self, mb):
         return math.floor(0.9537 * mb)
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=CLUSTER_NODES)
     def test_max_connections(self):
         tier_limits = self.tier_limits
 
@@ -150,7 +155,7 @@ class OMBValidationTest(RedpandaTest):
 
         PRODUCER_TIMEOUT_MS = 5000
         OMB_WORKERS = 4
-        SWARM_WORKERS = 7
+        SWARM_WORKERS = 5
 
         # OMB parameters
         #
@@ -285,7 +290,7 @@ class OMBValidationTest(RedpandaTest):
         finally:
             self.rpk.delete_topic(swarm_topic_name)
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=CLUSTER_NODES)
     def test_max_partitions(self):
         tier_limits = self.tier_limits
 
@@ -320,14 +325,14 @@ class OMBValidationTest(RedpandaTest):
             self.redpanda,
             "ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
             (workload, validator),
-            num_workers=10,
+            num_workers=self.CLUSTER_NODES - 1,
             topology="ensemble")
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=CLUSTER_NODES)
     def test_common_workload(self):
         tier_limits = self.tier_limits
 
@@ -373,14 +378,14 @@ class OMBValidationTest(RedpandaTest):
         benchmark = OpenMessagingBenchmark(self._ctx,
                                            self.redpanda,
                                            driver, (workload, validator),
-                                           num_workers=10,
+                                           num_workers=self.CLUSTER_NODES - 1,
                                            topology="ensemble")
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
-    @cluster(num_nodes=12)
+    @cluster(num_nodes=CLUSTER_NODES)
     def test_retention(self):
         tier_limits = self.tier_limits
 
@@ -439,7 +444,7 @@ class OMBValidationTest(RedpandaTest):
         benchmark = OpenMessagingBenchmark(self._ctx,
                                            self.redpanda,
                                            driver, (workload, validator),
-                                           num_workers=10,
+                                           num_workers=self.CLUSTER_NODES - 1,
                                            topology="ensemble")
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5
