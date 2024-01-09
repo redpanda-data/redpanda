@@ -8,10 +8,10 @@
 # by the Apache License, Version 2.0
 
 import os
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Sequence
 
-from ducktape.tests.test import Test
-from rptest.services.redpanda import CloudTierName, make_redpanda_service, CloudStorageType
+from ducktape.tests.test import Test, TestContext
+from rptest.services.redpanda import CloudTierName, SISettings, make_redpanda_service, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
@@ -31,13 +31,13 @@ class RedpandaTest(Test):
     topics: Sequence[TopicSpec] = []
 
     def __init__(self,
-                 test_context,
-                 num_brokers=None,
-                 cloud_tier: Optional[CloudTierName] = None,
+                 test_context: TestContext,
+                 num_brokers: int | None = None,
+                 cloud_tier: CloudTierName | None = None,
                  apply_cloud_tier_to_noncloud: bool = False,
-                 extra_rp_conf=None,
-                 si_settings=None,
-                 **kwargs):
+                 extra_rp_conf: dict[str, Any] | None = None,
+                 si_settings: SISettings | None = None,
+                 **kwargs: Any):
         """
         Any trailing keyword arguments are passed through to the
         RedpandaService constructor.

@@ -1628,7 +1628,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         return count
 
     @staticmethod
-    def get_cloud_globals(globals):
+    def get_cloud_globals(globals: dict[str, Any]) -> dict[str, Any]:
         _config = {}
         if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in globals:
             # Load needed config values from cloud section
@@ -4240,10 +4240,10 @@ class RedpandaService(RedpandaServiceBase):
 def make_redpanda_service(context: TestContext,
                           num_brokers: Optional[int],
                           *,
-                          cloud_tier: Optional[str] = None,
+                          cloud_tier: CloudTierName | None = None,
                           apply_cloud_tier_to_noncloud: bool = False,
                           extra_rp_conf=None,
-                          **kwargs) -> RedpandaServiceBase:
+                          **kwargs) -> RedpandaServiceCloud | RedpandaService:
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
 
     if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in context.globals:

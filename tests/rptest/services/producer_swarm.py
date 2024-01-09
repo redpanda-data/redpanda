@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.tests.test import TestContext
 from ducktape.services.service import Service
 from typing import Optional
 
@@ -18,7 +19,7 @@ class ProducerSwarm(Service):
     logs = {"repeater_log": {"path": LOG_PATH, "collect_default": True}}
 
     def __init__(self,
-                 context,
+                 context: TestContext,
                  redpanda,
                  topic: str,
                  producers: int,
