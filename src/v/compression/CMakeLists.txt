@@ -6,10 +6,6 @@ find_package(ZLIB REQUIRED)
 v_cc_library(
   NAME
     compression
-  HDRS
-    "compression.h"
-    "stream_zstd.h"
-    "async_stream_zstd.h"
   SRCS
     "compression.cc"
     "stream_zstd.cc"

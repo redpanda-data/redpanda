@@ -15,6 +15,7 @@ v_cc_library(
     v::config
     v::metrics
     v::rphashing
+    v::compression
   )
 
 add_subdirectory(tests)
