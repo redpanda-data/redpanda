@@ -383,7 +383,8 @@ def verify_file_layout(baseline_per_host,
                     logger.info(
                         f"checking size of the partition for {ntp}, new {total_size} vs already accounted {ntps[ntp]}"
                     )
-                    assert total_size == ntps[ntp]
+                    assert total_size == ntps[ntp],\
+                          f"{ntp=} new {total_size=} differs from already accounted size={ntps[ntp]}"
                 else:
                     ntps[ntp] = max(total_size, ntps[ntp])
         return ntps
