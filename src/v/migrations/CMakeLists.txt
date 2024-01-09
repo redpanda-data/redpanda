@@ -7,4 +7,5 @@ v_cc_library(
     Seastar::seastar
     v::model
     v::config
+    v::compression
 )
