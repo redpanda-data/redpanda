@@ -1144,7 +1144,7 @@ class TopicRecoveryTest(RedpandaTest):
         # For each topic/partition, wait for local storage to be truncated according
         # to retention policy.
 
-        deltas = deque(maxlen=6)
+        cloud_sizes = deque(maxlen=6)
         total_partitions = sum([t.partition_count for t in expected_topics])
         tolerance = default_log_segment_size * total_partitions
         path_matcher = PathMatcher(expected_topics)
@@ -1213,19 +1213,20 @@ class TopicRecoveryTest(RedpandaTest):
             # If sizes match, we can stop
             if not delta:
                 return True
-            deltas.append(delta)
-            # We want to make sure the diff between disk and s3 is stable
-            # IE unchanging for last N iterations, and also the diff is less than
-            # tolerated limit
-            is_stable = (delta <= tolerance and len(deltas) == deltas.maxlen
-                         and deltas.count(delta) == len(deltas))
+            cloud_sizes.append(size_in_cloud)
+            # We want to make sure we're no longer uploading, and that the diff
+            # is less than the tolerated limit.
+            is_stable = (delta <= tolerance
+                         and len(cloud_sizes) == cloud_sizes.maxlen and
+                         cloud_sizes.count(size_in_cloud) == len(cloud_sizes))
             if not is_stable:
                 self.logger.info(
                     f"not enough data uploaded to S3, "
                     f"uploaded {size_in_cloud} bytes, "
                     f"with {size_on_disk} bytes on disk. "
                     f"current delta: {delta} "
-                    f"tracked deltas: {pprint.pformat(deltas, indent=2)}")
+                    f"tracked cloud_sizes: {pprint.pformat(cloud_sizes, indent=2)}"
+                )
                 return False
             return True
 
