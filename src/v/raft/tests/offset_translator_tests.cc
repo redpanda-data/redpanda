@@ -100,7 +100,7 @@ void validate_translation(
 struct offset_translator_fixture : base_fixture {
     offset_translator_fixture()
       : tr(make_offset_translator()) {
-        tr.start(raft::offset_translator::must_reset::yes, {}).get();
+        tr.start(raft::offset_translator::must_reset::yes).get();
     }
 
     void validate_offset_translation(
@@ -314,7 +314,7 @@ struct fuzz_checker {
 
     ss::future<> start() {
         _tr.emplace(_make_offset_translator());
-        co_await _tr->start(raft::offset_translator::must_reset::yes, {});
+        co_await _tr->start(raft::offset_translator::must_reset::yes);
         co_await _tr->sync_with_log(_log, std::nullopt);
     }
 
@@ -468,7 +468,7 @@ struct fuzz_checker {
             _tr.emplace(_make_offset_translator());
             _gate = ss::gate{};
 
-            co_await _tr->start(raft::offset_translator::must_reset::no, {});
+            co_await _tr->start(raft::offset_translator::must_reset::no);
             co_await _tr->prefix_truncate_reset(
               _snapshot_offset, _snapshot_delta);
             co_await _tr->sync_with_log(_log, std::nullopt);
@@ -604,11 +604,7 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
       // data batch @ 9 -> kafka 3
     };
     auto local_ot = make_offset_translator();
-    local_ot
-      .start(
-        raft::offset_translator::must_reset::yes,
-        raft::offset_translator::bootstrap_state{})
-      .get();
+    local_ot.start(raft::offset_translator::must_reset::yes).get();
     for (auto o : batch_offsets) {
         local_ot.process(
           create_batch(model::record_batch_type::raft_configuration, o));
@@ -649,10 +645,7 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
             ntp,
             api.local()};
           return ss::do_with(std::move(remote_ot), [](auto& remote_ot) {
-              return remote_ot
-                .start(
-                  raft::offset_translator::must_reset::no,
-                  raft::offset_translator::bootstrap_state{})
+              return remote_ot.start(raft::offset_translator::must_reset::no)
                 .then([&remote_ot] {
                     validate_translation(
                       remote_ot, model::offset(0), model::offset(0));

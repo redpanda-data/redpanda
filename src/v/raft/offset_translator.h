@@ -58,15 +58,9 @@ public:
 
     using must_reset = ss::bool_class<struct must_reset_tag>;
 
-    struct bootstrap_state {
-        absl::btree_map<model::offset, int64_t> offset2delta;
-        model::offset highest_known_offset;
-    };
-
     /// Load persistent state from kvstore. If `reset` is true, resets to an
-    /// empty state and persists it. If persistent state is not found, uses
-    /// information from `bootstrap_state` and persists it.
-    ss::future<> start(must_reset reset, bootstrap_state&&);
+    /// empty state and persists it.
+    ss::future<> start(must_reset reset);
 
     /// Searches for non-data batches up to the tip of the log. After this
     /// method succeeds, offset translator is usable.
