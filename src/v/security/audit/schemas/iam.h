@@ -135,8 +135,6 @@ private:
 
     ss::sstring api_info() const final { return _user.name; }
 
-    size_t hash() const final { return std::hash<authentication>()(*this); }
-
     friend inline void rjson_serialize(
       ::json::Writer<::json::StringBuffer>& w, const authentication& a) {
         w.StartObject();

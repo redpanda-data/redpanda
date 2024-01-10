@@ -230,8 +230,6 @@ private:
         return _api.operation;
     }
 
-    size_t hash() const final { return std::hash<api_activity>()(*this); }
-
     friend inline void rjson_serialize(
       ::json::Writer<::json::StringBuffer>& w, const api_activity& a) {
         w.StartObject();
@@ -307,10 +305,6 @@ public:
 private:
     activity_id _activity_id;
     product _app;
-
-    size_t hash() const final {
-        return std::hash<application_lifecycle>()(*this);
-    }
 
     friend inline void rjson_serialize(
       ::json::Writer<::json::StringBuffer>& w, const application_lifecycle& a) {
