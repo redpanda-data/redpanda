@@ -18,6 +18,7 @@
 #include "model/timeout_clock.h"
 #include "net/types.h"
 #include "security/acl.h"
+#include "security/audit/logger.h"
 #include "security/audit/probe.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
@@ -100,12 +101,11 @@ public:
             }
         }
 
-        return do_enqueue_audit_event(
-          std::make_unique<api_activity>(api_activity::construct(
-            operation_name,
-            std::move(result),
-            std::forward<Args>(args)...,
-            restrict_topics(std::move(func)))));
+        return do_enqueue_audit_event<api_activity>(
+          operation_name,
+          std::move(result),
+          std::forward<Args>(args)...,
+          restrict_topics(std::move(func)));
     }
 
     template<typename T, typename... Args>
@@ -127,12 +127,11 @@ public:
                 return (bool)*val;
             }
         }
-        return do_enqueue_audit_event(
-          std::make_unique<api_activity>(api_activity::construct(
-            operation_name,
-            std::move(result),
-            std::forward<Args>(args)...,
-            std::vector<model::topic>())));
+        return do_enqueue_audit_event<api_activity>(
+          operation_name,
+          std::move(result),
+          std::forward<Args>(args)...,
+          std::vector<model::topic>());
     }
 
     bool enqueue_authn_event(authentication_event_options options) {
@@ -141,8 +140,7 @@ public:
             val.has_value()) {
             return (bool)*val;
         }
-        return do_enqueue_audit_event(std::make_unique<authentication>(
-          authentication::construct(std::move(options))));
+        return do_enqueue_audit_event<authentication>(std::move(options));
     }
 
     template<typename... Args>
@@ -150,9 +148,8 @@ public:
         if (auto val = should_enqueue_audit_event(); val.has_value()) {
             return (bool)*val;
         }
-
-        return do_enqueue_audit_event(std::make_unique<application_lifecycle>(
-          application_lifecycle::construct(std::forward<Args>(args)...)));
+        return do_enqueue_audit_event<application_lifecycle>(
+          std::forward<Args>(args)...);
     }
 
     bool enqueue_api_activity_event(
@@ -167,10 +164,8 @@ public:
             val.has_value()) {
             return (bool)*val;
         }
-
-        return do_enqueue_audit_event(
-          std::make_unique<api_activity>(api_activity::construct(
-            req, auth_result, svc_name, authorized, reason)));
+        return do_enqueue_audit_event<api_activity>(
+          req, auth_result, svc_name, authorized, reason);
     }
 
     bool enqueue_api_activity_event(
@@ -182,9 +177,7 @@ public:
             val.has_value()) {
             return (bool)*val;
         }
-
-        return do_enqueue_audit_event(std::make_unique<api_activity>(
-          api_activity::construct(req, user, svc_name)));
+        return do_enqueue_audit_event<api_activity>(req, user, svc_name);
     }
 
     /// Returns the number of items pending to be written to auditing log
@@ -236,9 +229,49 @@ private:
     ss::future<> resume();
 
     bool is_audit_event_enabled(event_type) const;
-    bool do_enqueue_audit_event(
-      std::unique_ptr<security::audit::ocsf_base_impl> msg);
     void set_enabled_events();
+
+    template<InheritsFromOCSFBase T, typename... Args>
+    bool do_enqueue_audit_event(Args&&... args) {
+        auto& map = _queue.get<underlying_unordered_map>();
+        const auto hash_key = T::hash(args...);
+        auto it = map.find(hash_key);
+        if (it == map.end()) {
+            auto msg = std::make_unique<T>(
+              T::construct(std::forward<Args>(args)...));
+            const auto msg_size = msg->estimated_size();
+            auto units = ss::try_get_units(_queue_bytes_sem, msg_size);
+            if (!units) {
+                vlog(
+                  adtlog.warn,
+                  "Unable to enqueue audit event {}, msg size: {}, avail "
+                  "units: {}",
+                  *msg,
+                  msg_size,
+                  _queue_bytes_sem.available_units());
+                probe().audit_error();
+                return false;
+            }
+            auto& list = _queue.get<underlying_list>();
+            vlog(
+              adtlog.trace,
+              "Successfully enqueued audit event {}, semaphore contains {} "
+              "units",
+              *msg,
+              _queue_bytes_sem.available_units());
+            list.push_back(
+              audit_msg(hash_key, std::move(msg), std::move(*units)));
+        } else {
+            vlog(
+              adtlog.trace, "Incrementing count of event {}", it->ocsf_msg());
+            auto now = security::audit::timestamp_t{
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count()};
+            it->increment(now);
+        }
+        return true;
+    }
 
     audit_probe& probe() { return *_probe; }
 
@@ -266,15 +299,20 @@ private:
         /// Main benefit is to tie the lifetime of semaphore units with the
         /// underlying ocsf event itself
         audit_msg(
-          std::unique_ptr<ocsf_base_impl> msg, ssx::semaphore_units&& units)
-          : _msg(std::move(msg))
+          size_t hash_key,
+          std::unique_ptr<ocsf_base_impl> msg,
+          ssx::semaphore_units&& units)
+          : _hash_key(hash_key)
+          , _msg(std::move(msg))
           , _units(std::move(units)) {
             vassert(_msg != nullptr, "Audit record cannot be null");
         }
 
-        size_t key() const { return _msg->key(); }
+        size_t key() const { return _hash_key; }
 
         void increment(timestamp_t t) const { _msg->increment(t); }
+
+        const std::unique_ptr<ocsf_base_impl>& ocsf_msg() const { return _msg; }
 
         std::unique_ptr<ocsf_base_impl> release() && {
             _units.return_all();
@@ -282,6 +320,7 @@ private:
         }
 
     private:
+        size_t _hash_key;
         std::unique_ptr<ocsf_base_impl> _msg;
         ssx::semaphore_units _units;
     };
