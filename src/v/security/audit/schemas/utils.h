@@ -159,11 +159,6 @@ api_activity make_api_activity_event(
   const ss::sstring& user,
   const ss::sstring& svc_name);
 
-authentication make_authentication_event(
-  ss::httpd::const_req req,
-  const request_auth_result& r,
-  const ss::sstring& svc_name);
-
 struct authentication_event_options {
     std::string_view auth_protocol;
 
