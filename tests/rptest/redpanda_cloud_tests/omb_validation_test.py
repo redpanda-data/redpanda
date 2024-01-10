@@ -109,6 +109,10 @@ class OMBValidationTest(RedpandaTest):
             config_profile['machine_type'])
         self.rpk = RpkTool(self.redpanda)
 
+    def tearDown(self):
+        super().tearDown()
+        self.redpanda.clean_cluster()
+
     @staticmethod
     def base_validator(multiplier: float = 1):
         """Return a default validator object with reasonable latency targets for
