@@ -3,7 +3,6 @@ v_cc_library(
   SRCS
     generators.cc
   DEPS
-    v::bytes
     absl::random_seed_sequences
     Seastar::seastar
 )

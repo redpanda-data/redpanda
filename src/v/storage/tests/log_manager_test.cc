@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/random.h"
 #include "model/fundamental.h"
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"

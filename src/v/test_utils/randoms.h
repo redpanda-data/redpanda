@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "bytes/random.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/producer_state.h"
 #include "model/metadata.h"

@@ -4,7 +4,7 @@ rp_test(
   SOURCES
     errors.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::pandaproxy_common v::kafka_protocol
+  LIBRARIES Boost::unit_test_framework v::pandaproxy_common v::kafka_protocol v::bytes_random
   LABELS pandaproxy
 )
 

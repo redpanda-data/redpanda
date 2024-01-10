@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "base/seastarx.h"
+#include "bytes/random.h"
 #include "random/generators.h"
 #include "storage/snapshot.h"
 

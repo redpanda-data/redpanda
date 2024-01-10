@@ -10,6 +10,7 @@
 #include "base/units.h"
 #include "base/vassert.h"
 #include "bytes/bytes.h"
+#include "bytes/random.h"
 #include "config/mock_property.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"

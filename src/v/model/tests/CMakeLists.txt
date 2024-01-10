@@ -9,6 +9,8 @@ v_cc_library(
     v::model
     v::random
     v::compression
+    v::bytes
+    v::bytes_random
 )
 
 rp_test(

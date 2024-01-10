@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
+#include "bytes/random.h"
 #include "bytes/scattered_message.h"
 #include "bytes/streambuf.h"
 #include "bytes/tests/utils.h"
