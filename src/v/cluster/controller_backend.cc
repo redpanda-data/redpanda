@@ -277,6 +277,7 @@ struct controller_backend::ntp_reconciliation_state {
     bool removed = false;
 
     ssx::event wakeup_event{"c/cb/rfwe"};
+    ss::lowres_clock::time_point last_retried_at = ss::lowres_clock::now();
     std::optional<in_progress_operation> cur_operation;
 
     bool is_reconciled() const { return !changed_at.has_value(); }
@@ -494,6 +495,7 @@ ss::future<> controller_backend::start() {
         _reconciliation_sem.signal(max_reconciliation_concurrency);
 
         start_fetch_deltas_loop();
+        ssx::background = stuck_ntp_watchdog_fiber();
     });
 }
 
@@ -892,6 +894,7 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
 
         try {
             auto sem_units = co_await ss::get_units(_reconciliation_sem, 1);
+            rs->last_retried_at = ss::lowres_clock::now();
             co_await try_reconcile_ntp(ntp, *rs);
             if (rs->is_reconciled()) {
                 _states.erase(ntp);
@@ -964,6 +967,48 @@ ss::future<> controller_backend::try_reconcile_ntp(
               ntp,
               rs);
             break;
+        }
+    }
+}
+
+ss::future<> controller_backend::stuck_ntp_watchdog_fiber() {
+    const auto sleep_interval = 10 * _housekeeping_interval();
+    const auto stuck_timeout = 60 * _housekeeping_interval();
+    const size_t max_reported = 50;
+
+    if (_gate.is_closed()) {
+        co_return;
+    }
+    auto gate_holder = _gate.hold();
+
+    while (!_as.local().abort_requested()) {
+        try {
+            co_await ss::sleep_abortable(sleep_interval, _as.local());
+        } catch (const ss::sleep_aborted&) {
+            break;
+        }
+
+        auto now = ss::lowres_clock::now();
+        size_t num_stuck = 0;
+        for (const auto& [ntp, rs] : _states) {
+            if (now > rs->last_retried_at + stuck_timeout) {
+                ++num_stuck;
+                if (num_stuck > max_reported) {
+                    vlog(
+                      clusterlog.error,
+                      "more than {} stuck partitions, won't report more",
+                      max_reported);
+                    break;
+                }
+
+                vlog(
+                  clusterlog.error,
+                  "[{}] reconciliation seems stuck "
+                  "(last retried {}s. ago), state: {}",
+                  ntp,
+                  (now - rs->last_retried_at) / 1s,
+                  *rs);
+            }
         }
     }
 }

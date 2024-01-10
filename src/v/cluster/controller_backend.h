@@ -262,6 +262,8 @@ private:
     ss::future<result<ss::stop_iteration>>
     reconcile_ntp_step(const model::ntp&, ntp_reconciliation_state&);
 
+    ss::future<> stuck_ntp_watchdog_fiber();
+
     /**
      * Given the original and new replica set for a force configuration, splits
      * the new replica set into voters and learners and returns the equivalent
