@@ -48,7 +48,6 @@ public:
 
     virtual ss::sstring api_info() const = 0;
     virtual ss::sstring to_json() const = 0;
-    virtual size_t key() const noexcept = 0;
     virtual size_t estimated_size() const noexcept = 0;
     virtual void increment(timestamp_t) const = 0;
     virtual category_uid get_category_uid() const = 0;
@@ -73,13 +72,6 @@ public:
     }
 
     ss::sstring api_info() const override { return ""; }
-
-    size_t key() const noexcept final {
-        size_t h = 0;
-        boost::hash_combine(h, this->hash());
-        boost::hash_combine(h, this->base_hash());
-        return h;
-    }
 
     ss::sstring to_json() const final {
         return ::security::audit::rjson_serialize(
@@ -135,8 +127,6 @@ protected:
           config::node().node_id().value_or(model::node_id{0}));
     }
 
-    virtual size_t hash() const = 0;
-
     void rjson_serialize(::json::Writer<::json::StringBuffer>& w) const {
         w.Key("category_uid");
         ::json::rjson_serialize(w, _category_uid);
@@ -178,17 +168,6 @@ private:
     timestamp_t _start_time;
     timestamp_t _time;
     type_uid _type_uid;
-
-    size_t base_hash() const {
-        size_t h = 0;
-        boost::hash_combine(h, std::hash<category_uid>()(_category_uid));
-        boost::hash_combine(h, std::hash<class_uid>()(_class_uid));
-        boost::hash_combine(h, std::hash<metadata>()(_metadata));
-        boost::hash_combine(h, std::hash<severity_id>()(_severity_id));
-        boost::hash_combine(h, std::hash<type_uid>()(_type_uid));
-
-        return h;
-    }
 
     /// Method to estimate the size of an ocsf message
     ///
