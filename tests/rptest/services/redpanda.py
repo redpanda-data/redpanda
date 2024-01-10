@@ -1666,6 +1666,23 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         """
         return self._cloud_cluster.scale_cluster(nodes_count)
 
+    def clean_cluster(self):
+        """Cleans state from a running cluster to make it seem like it was newly provisioned.
+
+        Call this function at the end of a test case so the next test case has a clean cluster.
+        For safety, this function must not be called concurrently.
+        """
+        assert self.context.session_context.max_parallel < 2, 'unsafe to clean cluster if ducktape run with parallelism'
+
+        # assuming topics beginning with '_' are system topics that should not be deleted
+        rpk = RpkTool(self)
+        topics = rpk.list_topics()
+        deletable = [x for x in topics if not x.startswith('_')]
+        self.logger.debug(
+            f'found topics to delete ({len(deletable)}): {deletable}')
+        for topic in deletable:
+            rpk.delete_topic(topic)
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
