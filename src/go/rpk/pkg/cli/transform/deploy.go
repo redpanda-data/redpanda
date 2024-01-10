@@ -13,14 +13,18 @@ package transform
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -88,11 +92,15 @@ The --var flag can be repeated to specify multiple variables like so:
 				}
 			}
 
-			deployable := fmt.Sprintf("%s.wasm", cfg.Name)
-			if file != "" {
-				deployable = file
+			if file == "" {
+				file = fmt.Sprintf("%s.wasm", cfg.Name)
 			}
-			wasm, err := loadWasm(fs, deployable)
+			var wasm io.Reader
+			if strings.HasPrefix(file, "https://") || strings.HasPrefix(file, "http://") {
+				wasm, err = loadWasmFromNetwork(cmd.Context(), file)
+			} else {
+				wasm, err = loadWasmFromDisk(fs, file)
+			}
 			out.MaybeDieErr(err)
 
 			t := adminapi.TransformMetadata{
@@ -227,24 +235,35 @@ func validateProjectConfig(cfg project.Config, fileConfigErr error) error {
 	return nil
 }
 
-// loadWasm loads the wasm file and ensures the magic bytes are correct.
-func loadWasm(fs afero.Fs, path string) (io.Reader, error) {
-	ok, err := afero.Exists(fs, path)
-	if err != nil {
-		return nil, fmt.Errorf("unable to determine if %q exists: %v", path, err)
+// verifyWasm checks that a wasm file has the correct magic bytes.
+func verifyWasm(binary []byte) error {
+	// Check the file is a .wasm file (needs the magic \0asm prefix)
+	if !bytes.HasPrefix(binary, []byte{0x00, 0x61, 0x73, 0x6d}) {
+		return fmt.Errorf("invalid wasm binary")
 	}
-	if !ok {
+	return nil
+}
+
+// loadWasmFromDisk loads the wasm file and ensures the magic bytes are correct.
+func loadWasmFromDisk(fs afero.Fs, path string) (io.Reader, error) {
+	contents, err := afero.ReadFile(fs, path)
+	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("missing %q did you run `rpk transform build`", path)
 	}
-	contents, err := afero.ReadFile(fs, path)
 	if err != nil {
-		return nil, fmt.Errorf("missing %q: %v did you run `rpk transform build`", path, err)
+		return nil, fmt.Errorf("unable to read %q: %v", path, err)
 	}
-	// Check the file is a .wasm file (needs the magic \0asm prefix)
-	if !bytes.HasPrefix(contents, []byte{0x00, 0x61, 0x73, 0x6d}) {
-		return nil, fmt.Errorf("invalid wasm binary")
+	return bytes.NewReader(contents), verifyWasm(contents)
+}
+
+// loadWasmFromDisk downloads the wasm file and ensures the magic bytes are correct.
+func loadWasmFromNetwork(ctx context.Context, url string) (io.Reader, error) {
+	client := httpapi.NewClient(httpapi.ReqTimeout(120 * time.Second))
+	var contents []byte
+	if err := client.Get(ctx, url, nil, &contents); err != nil {
+		return nil, fmt.Errorf("unable to fetch wasm file: %v", err)
 	}
-	return bytes.NewReader(contents), err
+	return bytes.NewReader(contents), verifyWasm(contents)
 }
 
 // mapToEnvVars converts a map to the adminapi environment variable type.
