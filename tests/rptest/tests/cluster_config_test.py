@@ -1855,6 +1855,9 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
 
         self.legacy_version = (23, 1)
 
+        # version where space_management legacy defaults are introduced
+        self.intermediate_version = (23, 2)
+
         # this is synchronized with configuration.cc
         self.key = 'topic_partitions_per_shard'
         self.legacy_default = 7000
@@ -1863,8 +1866,8 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
     def setUp(self):
         pass
 
-    def _upgrade(self, wipe_cache):
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+    def _upgrade(self, wipe_cache, version=RedpandaInstaller.HEAD):
+        self.installer.install(self.redpanda.nodes, version)
         for node in self.redpanda.nodes:
             self.redpanda.stop_node(node)
 
@@ -1924,6 +1927,67 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self._check_value_everywhere(self.key, expected)
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere(self.key, expected)
+
+    @cluster(num_nodes=3)
+    @parametrize(wipe_cache=True)
+    @parametrize(wipe_cache=False)
+    def test_removal_of_legacy_default_defaulted(self, wipe_cache: bool):
+        # in 23.1 space management feature does not exist
+        old_version, _ = self.installer.latest_for_line(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, old_version)
+        self.redpanda.start()
+
+        # in 23.2 space management exists, but is disabled by default for
+        # upgraded clusters.
+        self._upgrade(wipe_cache, self.intermediate_version)
+        self._check_value_everywhere("space_management_enable", False)
+        self._check_value_everywhere("retention_local_strict", True)
+
+        # in >=23.3 (using upstream build) space management should be enabled by
+        # default provided that it wasn't explicitly disabled in 23.2. in this
+        # case no configs were changed so it should be enabled now.
+        self._upgrade(wipe_cache)
+        self._check_value_everywhere("space_management_enable", True)
+        self._check_value_everywhere("retention_local_strict", False)
+
+        # survives a restart
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self._check_value_everywhere("space_management_enable", True)
+        self._check_value_everywhere("retention_local_strict", False)
+
+    @cluster(num_nodes=3)
+    @parametrize(wipe_cache=True)
+    @parametrize(wipe_cache=False)
+    def test_removal_of_legacy_default_disabled(self, wipe_cache: bool):
+        # in 23.1 space management feature does not exist
+        old_version, _ = self.installer.latest_for_line(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, old_version)
+        self.redpanda.start()
+
+        # in 23.2 space management exists, but is disabled by default for
+        # upgraded clusters.
+        self._upgrade(wipe_cache, self.intermediate_version)
+        self._check_value_everywhere("space_management_enable", False)
+        self._check_value_everywhere("retention_local_strict", True)
+
+        # the interface seems to ignore setting a value to its current value. so
+        # we enable then disable to make sure it gets through.
+        self.redpanda.set_cluster_config({"space_management_enable": True})
+        self.redpanda.set_cluster_config({"space_management_enable": False})
+        self.redpanda.set_cluster_config({"retention_local_strict": False})
+        self.redpanda.set_cluster_config({"retention_local_strict": True})
+
+        # in >=23.3 (using upstream build) space management should be enabled by
+        # default provided that it wasn't explicitly disabled in 23.2. in this
+        # case we disabled it in 23.2 state so it should still be disabled here.
+        self._upgrade(wipe_cache)
+        self._check_value_everywhere("space_management_enable", False)
+        self._check_value_everywhere("retention_local_strict", True)
+
+        # survives a restart
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self._check_value_everywhere("space_management_enable", False)
+        self._check_value_everywhere("retention_local_strict", True)
 
 
 class ClusterConfigUnknownTest(RedpandaTest):
