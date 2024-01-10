@@ -143,6 +143,12 @@ public:
       ss::io_priority_class io_priority)
       = 0;
 
+    virtual ss::future<offset_range_size_result_t> offset_range_size(
+      model::offset first,
+      offset_range_size_requirements_t target,
+      ss::io_priority_class io_priority)
+      = 0;
+
     virtual ss::future<>
       update_configuration(ntp_config::default_overrides) = 0;
 

@@ -84,6 +84,16 @@ public:
       model::offset last,
       ss::io_priority_class io_priority) override;
 
+    /// Find the offset range based on size requirements
+    ///
+    /// The 'first' offset should be the first offset of the batch. The 'target'
+    /// contains size requirements. The desired target size and smallest
+    /// acceptable size.
+    ss::future<offset_range_size_result_t> offset_range_size(
+      model::offset first,
+      offset_range_size_requirements_t target,
+      ss::io_priority_class io_priority) override;
+
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
     // External synchronization: only one append can be performed at a time.

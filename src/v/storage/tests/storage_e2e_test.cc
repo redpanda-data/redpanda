@@ -3546,14 +3546,35 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
     b.stop().get();
 }
 
+struct batch_summary {
+    model::offset base;
+    model::offset last;
+    size_t batch_size;
+};
+struct batch_summary_accumulator {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        size_t sz = summaries->empty() ? 0 : acc_size->back();
+        batch_summary summary{
+          .base = b.base_offset(),
+          .last = b.last_offset(),
+          .batch_size = b.data().size_bytes()
+                        + model::packed_record_batch_header_size,
+        };
+        summaries->push_back(summary);
+        acc_size->push_back(sz + summary.batch_size);
+        prev_size->push_back(sz);
+        co_return ss::stop_iteration::no;
+    }
+    bool end_of_stream() const { return false; }
+
+    std::vector<batch_summary>* summaries;
+    std::vector<size_t>* acc_size;
+    std::vector<size_t>* prev_size;
+};
+
 FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
 #ifdef NDEBUG
     size_t num_test_cases = 5000;
-    struct batch_summary {
-        model::offset base;
-        model::offset last;
-        size_t batch_size;
-    };
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -3578,26 +3599,6 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
         log->force_roll(ss::default_priority_class()).get();
     }
 
-    struct batch_summary_accumulator {
-        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-            size_t sz = summaries->empty() ? 0 : acc_size->back();
-            batch_summary summary{
-              .base = b.base_offset(),
-              .last = b.last_offset(),
-              .batch_size = b.data().size_bytes()
-                            + model::packed_record_batch_header_size,
-            };
-            summaries->push_back(summary);
-            acc_size->push_back(sz + summary.batch_size);
-            prev_size->push_back(sz);
-            co_return ss::stop_iteration::no;
-        }
-        bool end_of_stream() const { return false; }
-
-        std::vector<batch_summary>* summaries;
-        std::vector<size_t>* acc_size;
-        std::vector<size_t>* prev_size;
-    };
     std::vector<batch_summary> summaries;
     std::vector<size_t> acc_size;
     std::vector<size_t> prev_size;
@@ -3664,6 +3665,186 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
           ss::default_priority_class())
         .get(),
       std::invalid_argument);
+
+#endif
+};
+
+FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < 300; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    std::vector<batch_summary> summaries;
+    std::vector<size_t> acc_size;
+    std::vector<size_t> prev_size;
+
+    storage::log_reader_config reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto reader = log->make_reader(reader_cfg).get();
+
+    batch_summary_accumulator acc{
+      .summaries = &summaries,
+      .acc_size = &acc_size,
+      .prev_size = &prev_size,
+    };
+    std::move(reader).consume(acc, model::no_timeout).get();
+
+    for (size_t i = 0; i < num_test_cases; i++) {
+        // - pick 'base' randomly
+        // - pick target upload size randomly
+        // - do the query
+        // - use the offset field of the result to compute
+        //   the expected upload size
+        // - compare it to on_disk_size field of the result
+        auto base_ix = model::test::get_int((size_t)0, summaries.size() - 1);
+        auto base = summaries[base_ix].base;
+        auto max_size = acc_size.back() - prev_size[base_ix];
+        auto min_size = storage::segment_index::default_data_buffer_step;
+        auto target_size = model::test::get_int(min_size, max_size);
+        auto result = log
+                        ->offset_range_size(
+                          base,
+                          storage::log::offset_range_size_requirements_t{
+                            .target_size = target_size,
+                            .min_size = 0,
+                          },
+                          ss::default_priority_class())
+                        .get();
+
+        auto last_offset = result.last_offset;
+        size_t result_ix = 0;
+        for (auto s : summaries) {
+            if (s.last == last_offset) {
+                break;
+            }
+            result_ix++;
+        }
+        auto expected_size = acc_size[result_ix] - prev_size[base_ix];
+        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+    }
+
+    auto new_start_offset = model::next_offset(first_segment_last_offset);
+    log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        new_start_offset, ss::default_priority_class()))
+      .get();
+
+    auto lstat = log->offsets();
+    BOOST_REQUIRE_EQUAL(lstat.start_offset, new_start_offset);
+
+    // Check that out of range access triggers exception.
+
+    BOOST_REQUIRE_THROW(
+      log
+        ->offset_range_size(
+          model::offset(0),
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 1,
+          },
+          ss::default_priority_class())
+        .get(),
+      std::invalid_argument);
+
+    // Query committed offset of the last batch, expect
+    // no result.
+
+    auto res = log
+                 ->offset_range_size(
+                   summaries.back().last,
+                   storage::log::offset_range_size_requirements_t{
+                     .target_size = 0x10000,
+                     .min_size = 0,
+                   },
+                   ss::default_priority_class())
+                 .get();
+
+    BOOST_REQUIRE_EQUAL(res.last_offset, model::offset{});
+
+    // Query offset out of range to trigger the exception.
+
+    BOOST_REQUIRE_THROW(
+      log
+        ->offset_range_size(
+          model::next_offset(summaries.back().last),
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 0,
+          },
+          ss::default_priority_class())
+        .get(),
+      std::invalid_argument);
+
+    // Check that the last batch can be measured independently
+    res = log
+            ->offset_range_size(
+              summaries.back().base,
+              storage::log::offset_range_size_requirements_t{
+                .target_size = 0x10000,
+                .min_size = 0,
+              },
+              ss::default_priority_class())
+            .get();
+
+    // Only one batch is returned
+    BOOST_REQUIRE_EQUAL(res.last_offset, lstat.committed_offset);
+    BOOST_REQUIRE_EQUAL(res.on_disk_size, acc_size.back() - prev_size.back());
+
+    // Check that we can measure the size of the log tail. This is needed for
+    // timed uploads.
+    size_t tail_length = 5;
+
+    for (size_t i = 0; i < tail_length; i++) {
+        auto ix_batch = summaries.size() - 1 - i;
+        res = log
+                ->offset_range_size(
+                  summaries.at(ix_batch).base,
+                  storage::log::offset_range_size_requirements_t{
+                    .target_size = 0x10000,
+                    .min_size = 0,
+                  },
+                  ss::default_priority_class())
+                .get();
+
+        BOOST_REQUIRE_EQUAL(res.last_offset, lstat.committed_offset);
+        BOOST_REQUIRE_EQUAL(
+          res.on_disk_size, acc_size.back() - prev_size.at(ix_batch));
+    }
+
+    // Check that the min_size is respected
+    res = log
+            ->offset_range_size(
+              summaries.back().base,
+              storage::log::offset_range_size_requirements_t{
+                .target_size = 0x10000,
+                .min_size = summaries.back().batch_size + 1,
+              },
+              ss::default_priority_class())
+            .get();
+
+    BOOST_REQUIRE_EQUAL(res.last_offset, model::offset{});
 
 #endif
 };
