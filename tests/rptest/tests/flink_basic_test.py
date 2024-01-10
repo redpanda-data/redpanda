@@ -6,9 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import time
+import os
+import csv
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.e2e_tests.workload_manager import WorkloadManager
@@ -92,36 +95,31 @@ class FlinkBasicTests(RedpandaTest):
                                f"with tags: {', '.join(tags)}")
         return workloads
 
-    def _parse_csv(self, data_str, data_types):
-        csv = []
-        lines = data_str.splitlines()
+    def _serialize_csv_row(self, csv_row, data_types):
         # Check if data_type list provides correct number of types
         # Assume all lines have same number of columns
-        if len(lines[0].split(',')) != len(data_types):
+        if len(csv_row) != len(data_types):
             raise RuntimeError("Data types list does not match column "
                                "quantity in CSV created by Flink "
                                "transaction workload")
-        for line in lines:
-            values = []
-            raw_values = line.split(',')
-            # Process data types per item to handle transformations
-            for idx in range(len(data_types)):
-                # Strip data from whitespace chars
-                src = raw_values[idx].strip()
-                # transforms if type not equal
-                if not isinstance(src, data_types[idx]):
-                    # try to transform
-                    try:
-                        src = data_types[idx](src)
-                    except Exception:
-                        self.logger.warning(
-                            f"Error processing CSV line '{line}' using data "
-                            f"type list of '{data_types}'")
-                # Save it
-                values.append(src)
-            csv.append(values)
-
-        return csv
+        values = []
+        # Process data types per item to handle transformations
+        for idx in range(len(data_types)):
+            # Strip data from whitespace chars
+            src = csv_row[idx].strip()
+            # transforms if type not equal
+            if not isinstance(src, data_types[idx]):
+                # try to transform
+                try:
+                    src = data_types[idx](src)
+                except Exception:
+                    self.logger.warning(
+                        f"Error processing CSV line '{csv_row}' using data "
+                        f"type list of '{data_types}'")
+            # Save it
+            values.append(src)
+        # Return row as array of converted values
+        return values
 
     @cluster(num_nodes=4)
     def test_basic_workload(self):
@@ -231,59 +229,57 @@ class FlinkBasicTests(RedpandaTest):
         # ...
         # 542,415,31,"2024-01-09 22:22:43.647",17,TiJJtOuzOkiOsGmws
         # ...
-
-        # Wait for file, timeout 5 min (10 sec * 30 iterations)
-        self.logger.info("Waiting for consume workload data file")
-        backoff_sec = 10
-        iterations = 30
-        files = []
-        while iterations > 0:
-            # List files in data folder
+        def list_files(path):
+            files = []
             try:
+                # Note that there is no need to check file name as tmp file will
+                # have filename started with '.part' and it will not be listed by
+                # bare 'ls -1' command
                 files = self.flink.node.account.ssh_output(
                     f"ls -1 {_data_path}")
                 files = files.decode().splitlines()
             except RemoteCommandError:
                 # Ignore ssh_output command errors
                 # as folder will not be existent just yet
-                continue
-            # exit if file is present
-            # Not that there is no need to check file name as tmp file will
-            # have filename started with '.part' and it will not be listed by
-            # bare 'ls -1' command
-            if len(files) > 0:
-                break
-            self.logger.info("No data file present. "
-                             f"Sleeping for {backoff_sec} sec")
-            time.sleep(backoff_sec)
-            iterations -= 1
+                pass
+            return files
 
-        # There should be at least one file
-        assert len(
-            files
-        ) > 0, f"Flink transaction workload produced no data files after 5 min"
+        # Wait for file, timeout 5 min (10 sec * 30 iterations)
+        self.logger.info("Waiting for consume workload data file")
+        wait_until(lambda: len(list_files(_data_path)) > 0,
+                   timeout_sec=300,
+                   backoff_sec=10,
+                   err_msg="Flink transaction workload produced"
+                   "no data files after 5 min")
 
         # Load data file and parse it
-        data = {}
-        for f in files:
-            # Create record
-            if f not in data:
-                data[f] = []
-            # This is basic test, no big data expected
-            # So, no copying file locally.
-            csv_data = self.flink.node.account.ssh_output(
-                f"cat {_data_path}/{f}").decode()
-            # Parse the csv
-            # Second parameter is the quick and dirty value type map
-            data[f] = self._parse_csv(csv_data, [int, int, int, str, int, str])
+        # For most efficient way of processing data it would be more
+        # convenient to copy script to target node and run it there
+        # But this is basic test, and copying file locally is a more
+        # simple approach in this case.
 
-        # Find max offset
-        offset_column = 1
+        # Max index and target column
+        index_column = 1
         max_index = 0
-        for ff, part_data in data.items():
-            for row in part_data:
-                if max_index < row[offset_column]:
-                    max_index = row[offset_column]
+        for f in list_files(_data_path):
+            # Copy file locally
+            tmpfile = os.path.join("/tmp", "tmpcsvdata")
+            filepath = os.path.join(_data_path, f)
+            self.flink.node.account.copy_from(filepath, tmpfile)
+
+            # processing file with csvreader will give most efficient memory
+            # usage. Only one row will present in memory at all times
+            # newline='' is critical, refer to: https://docs.python.org/3/library/csv.html
+            with open(tmpfile, newline='') as csvfile:
+                c_reader = csv.reader(csvfile, delimiter=',')
+                for row in c_reader:
+                    # Second parameter is the quick and dirty value type map
+                    values = self._serialize_csv_row(
+                        row, [int, int, int, str, int, str])
+                    if max_index < values[index_column]:
+                        max_index = values[index_column]
+            # Cleanup
+            os.remove(tmpfile)
 
         # Stop flink
         self.flink.stop()
