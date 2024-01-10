@@ -3848,3 +3848,175 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
 
 #endif
 };
+
+FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("kafka", "test-topic", 0);
+
+    storage::ntp_config::default_overrides overrides{
+      .cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction,
+    };
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < 300; i++) {
+        append_random_batches(
+          log, 10, model::term_id(i), key_limited_random_batch_generator());
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    // Build the maps before and after compaction (nc_ vs c_) to reflect the
+    // changes
+    std::vector<batch_summary> nc_summaries;
+    std::vector<size_t> nc_acc_size;
+    std::vector<size_t> nc_prev_size;
+
+    std::vector<batch_summary> c_summaries;
+    std::vector<size_t> c_acc_size;
+    std::vector<size_t> c_prev_size;
+
+    // Read non-compacted version
+    storage::log_reader_config nc_reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto nc_reader = log->make_reader(nc_reader_cfg).get();
+    batch_summary_accumulator nc_acc{
+      .summaries = &nc_summaries,
+      .acc_size = &nc_acc_size,
+      .prev_size = &nc_prev_size,
+    };
+    std::move(nc_reader).consume(nc_acc, model::no_timeout).get();
+
+    // Compact topic
+    vlog(e2e_test_log.info, "Starting compaction");
+    storage::housekeeping_config h_cfg(
+      model::timestamp::min(),
+      std::nullopt,
+      log->offsets().committed_offset,
+      ss::default_priority_class(),
+      as);
+    log->housekeeping(h_cfg).get();
+
+    // Read compacted version
+    storage::log_reader_config c_reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto c_reader = log->make_reader(c_reader_cfg).get();
+    batch_summary_accumulator c_acc{
+      .summaries = &c_summaries,
+      .acc_size = &c_acc_size,
+      .prev_size = &c_prev_size,
+    };
+    std::move(c_reader).consume(c_acc, model::no_timeout).get();
+
+    auto num_compacted = nc_summaries.size() - c_summaries.size();
+    vlog(
+      e2e_test_log.info,
+      "Number of compacted batches: {} (before {}, after {})",
+      num_compacted,
+      nc_summaries.size(),
+      c_summaries.size());
+    vlog(
+      e2e_test_log.info,
+      "Size before compaction {}, size after compaction {}",
+      nc_acc_size.back(),
+      c_acc_size.back());
+    BOOST_REQUIRE(num_compacted > 0);
+
+    for (size_t i = 0; i < num_test_cases; i++) {
+        auto ix_base = model::test::get_int((size_t)0, nc_summaries.size() - 1);
+        auto ix_last = model::test::get_int(ix_base, nc_summaries.size() - 1);
+        auto base = nc_summaries[ix_base].base;
+        auto last = nc_summaries[ix_last].last;
+
+        // To find expected size we need to first search c_summaries
+        auto c_it_base = std::lower_bound(
+          c_summaries.begin(),
+          c_summaries.end(),
+          batch_summary{.base = base},
+          [](const batch_summary& lhs, const batch_summary& rhs) {
+              return lhs.base < rhs.base;
+          });
+        auto c_ix_base = std::distance(c_summaries.begin(), c_it_base);
+        auto c_it_last = std::upper_bound(
+          c_summaries.begin(),
+          c_summaries.end(),
+          batch_summary{.last = last},
+          [](const batch_summary& lhs, const batch_summary& rhs) {
+              return lhs.last < rhs.last;
+          });
+        c_it_last = std::prev(c_it_last);
+        auto c_ix_last = std::distance(c_summaries.begin(), c_it_last);
+        auto expected_size = c_acc_size[c_ix_last] - c_prev_size[c_ix_base];
+        vlog(
+          e2e_test_log.debug,
+          "NON-COMPACTED offset range: {}-{} (indexes: {}-{}), "
+          "COMPACTED offset range: {}-{} (indexes: {}-{})",
+          base,
+          last,
+          ix_base,
+          ix_last,
+          c_summaries[c_ix_base].base,
+          c_summaries[c_ix_last].last,
+          c_ix_base,
+          c_ix_last);
+
+        auto result
+          = log->offset_range_size(base, last, ss::default_priority_class())
+              .get();
+
+        vlog(
+          e2e_test_log.debug,
+          "base: {}, last: {}, expected size: {}, actual size: {}",
+          base,
+          last,
+          expected_size,
+          result.on_disk_size);
+
+        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+        BOOST_REQUIRE_EQUAL(last, result.last_offset);
+    }
+
+    auto new_start_offset = model::next_offset(first_segment_last_offset);
+    log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        new_start_offset, ss::default_priority_class()))
+      .get();
+
+    auto lstat = log->offsets();
+    BOOST_REQUIRE_EQUAL(lstat.start_offset, new_start_offset);
+
+    // Check that out of range access triggers exception.
+
+    BOOST_REQUIRE_THROW(
+      log
+        ->offset_range_size(
+          model::offset(0),
+          model::next_offset(new_start_offset),
+          ss::default_priority_class())
+        .get(),
+      std::invalid_argument);
+
+    BOOST_REQUIRE_THROW(
+      log
+        ->offset_range_size(
+          model::next_offset(new_start_offset),
+          model::next_offset(lstat.committed_offset),
+          ss::default_priority_class())
+        .get(),
+      std::invalid_argument);
+
+#endif
+};
