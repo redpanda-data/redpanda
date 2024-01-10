@@ -23,6 +23,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/validators.h"
 #include "hashing/secure.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -264,6 +265,9 @@ metrics_reporter::build_metrics_snapshot() {
     snapshot.has_kafka_gssapi = absl::c_any_of(
       config::shard_local_cfg().sasl_mechanisms(),
       [](auto const& mech) { return mech == "GSSAPI"; });
+
+    snapshot.has_oidc = config::oidc_is_enabled_kafka()
+                        || config::oidc_is_enabled_http();
 
     auto env_value = std::getenv("REDPANDA_ENVIRONMENT");
     if (env_value) {
@@ -525,6 +529,9 @@ void rjson_serialize(
     w.EndArray();
     w.Key("has_kafka_gssapi");
     w.Bool(snapshot.has_kafka_gssapi);
+
+    w.Key("has_oidc");
+    w.Bool(snapshot.has_oidc);
 
     w.Key("config");
     config::shard_local_cfg().to_json_for_metrics(w);

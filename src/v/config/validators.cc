@@ -12,6 +12,7 @@
 #include "config/validators.h"
 
 #include "config/client_group_byte_rate_quota.h"
+#include "config/configuration.h"
 #include "model/namespace.h"
 #include "model/validation.h"
 #include "net/inet_address_wrapper.h"
@@ -139,6 +140,18 @@ validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms) {
         }
     }
     return std::nullopt;
+}
+
+bool oidc_is_enabled_http() {
+    return absl::c_any_of(
+      config::shard_local_cfg().http_authentication(),
+      [](const auto& m) { return m == "OIDC"; });
+}
+
+bool oidc_is_enabled_kafka() {
+    return absl::c_any_of(
+      config::shard_local_cfg().sasl_mechanisms(),
+      [](const auto& m) { return m == "OAUTHBEARER"; });
 }
 
 std::optional<ss::sstring> validate_0_to_1_ratio(const double d) {
