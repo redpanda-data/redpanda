@@ -834,41 +834,6 @@ bool audit_log_manager::report_redpanda_app_event(is_started app_started) {
         : application_lifecycle::activity_id::stop);
 }
 
-bool audit_log_manager::do_enqueue_audit_event(
-  std::unique_ptr<security::audit::ocsf_base_impl> msg) {
-    auto& map = _queue.get<underlying_unordered_map>();
-    auto it = map.find(msg->key());
-    if (it == map.end()) {
-        const auto msg_size = msg->estimated_size();
-        auto units = ss::try_get_units(_queue_bytes_sem, msg_size);
-        if (!units) {
-            vlog(
-              adtlog.warn,
-              "Unable to enqueue audit event {}, msg size: {}, avail units: {}",
-              *msg,
-              msg_size,
-              _queue_bytes_sem.available_units());
-            probe().audit_error();
-            return false;
-        }
-        auto& list = _queue.get<underlying_list>();
-        vlog(
-          adtlog.trace,
-          "Successfully enqueued audit event {}, semaphore contains {} units",
-          *msg,
-          _queue_bytes_sem.available_units());
-        list.push_back(audit_msg(std::move(msg), std::move(*units)));
-    } else {
-        vlog(adtlog.trace, "Incrementing count of event {}", *msg);
-        auto now = security::audit::timestamp_t{
-          std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count()};
-        it->increment(now);
-    }
-    return true;
-}
-
 ss::future<> audit_log_manager::drain() {
     if (_queue.empty()) {
         co_return;
