@@ -581,7 +581,7 @@ ss::future<> audit_sink::publish_app_lifecycle_event(
     /// events. This ensures that the event won't get discarded in the case
     /// audit is disabled.
     auto lifecycle_event = std::make_unique<application_lifecycle>(
-      make_application_lifecycle(event, ss::sstring{subsystem_name}));
+      application_lifecycle::construct(event, ss::sstring{subsystem_name}));
     auto as_json = lifecycle_event->to_json();
     iobuf b;
     b.append(as_json.c_str(), as_json.size());

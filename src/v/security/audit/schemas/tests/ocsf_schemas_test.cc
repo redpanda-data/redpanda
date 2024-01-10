@@ -725,7 +725,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
       "sasl",
       request_auth_result::superuser::no};
 
-    auto api_activity = sa::make_api_activity_event(
+    auto api_activity = sa::api_activity::construct(
       req, auth_result, "http", true, std::nullopt);
 
     auth_result.pass();
@@ -844,7 +844,7 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
       "sasl",
       request_auth_result::superuser::no};
 
-    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+    auto authn = sa::authentication::construct(sa::authentication_event_options {
       .auth_protocol = "sasl",
       .server_addr = {fmt::format("{}", req.get_server_address().addr()), req.get_server_address().port(), req.get_server_address().addr().in_family()},
       .svc_name = service_name,
@@ -925,7 +925,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
       request_auth_result::superuser::yes,
       request_auth_result::auth_required::no};
 
-    auto api_activity = sa::make_api_activity_event(
+    auto api_activity = sa::api_activity::construct(
       req, auth_result, "http", true, std::nullopt);
 
     auth_result.pass();
@@ -1037,7 +1037,7 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
     req._headers["Authorization"] = "You shouldn't see this at all";
     req.protocol_name = protocol_name;
 
-    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+    auto authn = sa::authentication::construct(sa::authentication_event_options {
       .server_addr = {fmt::format("{}", req.get_server_address().addr()), req.get_server_address().port(), req.get_server_address().addr().in_family()},
       .svc_name = service_name,
       .client_addr = {fmt::format("{}", req.get_client_address().addr()), req.get_client_address().port(), req.get_client_address().addr().in_family()},
@@ -1109,7 +1109,7 @@ BOOST_AUTO_TEST_CASE(test_ocsf_size) {
 
     const ss::sstring username = "test";
     const ss::sstring service_name = "test-service";
-    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+    auto authn = sa::authentication::construct(sa::authentication_event_options {
       .server_addr = {fmt::format("{}", http_req.get_server_address().addr()), http_req.get_server_address().port(), http_req.get_server_address().addr().in_family()},
       .svc_name = service_name,
       .client_addr = {fmt::format("{}", http_req.get_client_address().addr()), http_req.get_client_address().port(), http_req.get_client_address().addr().in_family()},
