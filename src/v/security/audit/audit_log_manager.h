@@ -76,20 +76,6 @@ public:
     /// Shuts down the internal kafka client and stops all pending bg work
     ss::future<> stop();
 
-    /// Enqueue an event to be produced onto an audit log partition
-    ///
-    /// Returns: bool representing if the audit msg was successfully moved into
-    /// the queue or not. If unsuccessful this means the audit subsystem cannot
-    /// publish messages. Consumers of this API should react accordingly, i.e.
-    /// return an error to the client.
-    template<InheritsFromOCSFBase T>
-    bool enqueue_audit_event(event_type type, T&& t) {
-        if (auto val = should_enqueue_audit_event(type); val.has_value()) {
-            return (bool)*val;
-        }
-        return do_enqueue_audit_event(std::make_unique<T>(std::forward<T>(t)));
-    }
-
     template<
       typename T,
       security::audit::returns_auditable_resource_vector Func,
