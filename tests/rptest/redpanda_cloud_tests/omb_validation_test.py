@@ -289,7 +289,14 @@ class OMBValidationTest(RedpandaTest):
     def test_max_partitions(self):
         tier_limits = self.tier_limits
 
-        partitions_per_topic = tier_limits.max_partition_count
+        # Producer clients perform poorly with many partitions. Hence we limit
+        # the max amount per producer by splitting them over multiple topics.
+        MAX_PARTITIONS_PER_TOPIC = 5000
+        topics = math.ceil(tier_limits.max_partition_count /
+                           MAX_PARTITIONS_PER_TOPIC)
+
+        partitions_per_topic = math.ceil(tier_limits.max_partition_count /
+                                         topics)
         subscriptions = max(tier_limits.max_egress // tier_limits.max_ingress,
                             1)
         producer_rate = tier_limits.max_ingress // 2
@@ -297,13 +304,20 @@ class OMBValidationTest(RedpandaTest):
         total_consumers = self._consumer_count(producer_rate * subscriptions)
 
         workload = self.WORKLOAD_DEFAULTS | {
-            "name": "MaxPartitionsTestWorkload",
-            "partitions_per_topic": partitions_per_topic,
-            "subscriptions_per_topic": subscriptions,
-            "consumer_per_subscription": max(total_consumers // subscriptions,
-                                             1),
-            "producers_per_topic": total_producers,
-            "producer_rate": producer_rate / (1 * KiB),
+            "name":
+            "MaxPartitionsTestWorkload",
+            "topics":
+            topics,
+            "partitions_per_topic":
+            partitions_per_topic,
+            "subscriptions_per_topic":
+            subscriptions,
+            "consumer_per_subscription":
+            max(total_consumers // subscriptions // topics, 1),
+            "producers_per_topic":
+            max(total_producers // topics, 1),
+            "producer_rate":
+            producer_rate / (1 * KiB),
         }
 
         # we allow latencies to be 50% higher in the max partitions test as we
