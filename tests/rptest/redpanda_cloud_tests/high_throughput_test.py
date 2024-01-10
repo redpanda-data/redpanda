@@ -347,6 +347,7 @@ class HighThroughputTest(PreallocNodesTest):
         for item in self.resources:
             if item['type'] == 'topic':
                 self.rpk.delete_topic(item['spec'].name)
+        self.redpanda.clean_cluster()
 
     @cluster(num_nodes=0)
     def test_cluster_cleanup(self):
