@@ -12,8 +12,6 @@
 #include "kafka/protocol/types.h"
 #include "net/unresolved_address.h"
 #include "security/acl.h"
-#include "security/audit/schemas/application_activity.h"
-#include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/types.h"
 #include "security/audit/types.h"
 #include "security/authorizer.h"
@@ -40,6 +38,23 @@ enum class audit_resource_type : int8_t {
     acl_binding,
     acl_binding_filter
 };
+
+template<typename Clock>
+timestamp_t create_timestamp_t(std::chrono::time_point<Clock> time_point) {
+    return timestamp_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                         time_point.time_since_epoch())
+                         .count());
+}
+
+template<typename Clock = ss::lowres_system_clock>
+timestamp_t create_timestamp_t() {
+    return create_timestamp_t(Clock::now());
+}
+
+api_activity_unmapped unmapped_data();
+api_activity_unmapped unmapped_data(const security::auth_result& auth_result);
+
+actor result_to_actor(const security::auth_result& result);
 
 std::ostream& operator<<(std::ostream&, audit_resource_type);
 
@@ -71,17 +86,18 @@ consteval audit_resource_type get_audit_resource_type() {
 }
 
 template<typename T>
-resource_detail transform_to_resource_detail(const T& v) {
-    const auto get_resource_name = [](auto&& v) {
-        if constexpr (std::is_same_v<T, security::acl_binding>) {
-            return "create acl";
-        } else if constexpr (std::is_same_v<T, security::acl_binding_filter>) {
-            return "delete acl";
-        } else {
-            return v();
-        }
-    };
+ss::sstring get_resource_name(const T& v) {
+    if constexpr (std::is_same_v<T, security::acl_binding>) {
+        return "create acl";
+    } else if constexpr (std::is_same_v<T, security::acl_binding_filter>) {
+        return "delete acl";
+    } else {
+        return v();
+    }
+}
 
+template<typename T>
+resource_detail transform_to_resource_detail(const T& v) {
     const auto get_resource_data =
       [](auto&& v) -> std::optional<acl_binding_detail> {
         if constexpr (std::is_same_v<T, security::acl_binding>) {
@@ -146,50 +162,5 @@ concept returns_auditable_resource_vector = requires(Func func) {
     requires AuditableResource<
       typename std::remove_cvref_t<decltype(func())>::value_type>;
 };
-
-api_activity make_api_activity_event(
-  ss::httpd::const_req req,
-  const request_auth_result& auth_result,
-  const ss::sstring& svc_name,
-  bool authorized,
-  const std::optional<std::string_view>& reason);
-
-api_activity make_api_activity_event(
-  ss::httpd::const_req req,
-  const ss::sstring& user,
-  const ss::sstring& svc_name);
-
-struct authentication_event_options {
-    std::string_view auth_protocol;
-
-    net::unresolved_address server_addr;
-    std::optional<std::string_view> svc_name;
-    net::unresolved_address client_addr;
-    std::optional<std::string_view> client_id;
-    authentication::used_cleartext is_cleartext;
-    security::audit::user user;
-    std::optional<ss::sstring> error_reason;
-};
-
-authentication make_authentication_event(authentication_event_options options);
-
-/// Creates a security::audit::api_activity event from an authorization result
-///
-/// Fills the appropriate structures for an authorized connection event
-api_activity make_api_activity_event(
-  std::string_view operation_name,
-  const security::auth_result& auth_result,
-  const ss::socket_address& local_address,
-  std::string_view service_name,
-  ss::net::inet_address client_addr,
-  uint16_t client_port,
-  std::optional<std::string_view> client_id,
-  std::vector<resource_detail> additional_resources);
-
-application_lifecycle
-make_application_lifecycle(application_lifecycle::activity_id activity_id);
-
-application_lifecycle make_application_lifecycle(
-  application_lifecycle::activity_id activity_id, ss::sstring feature_name);
 
 } // namespace security::audit

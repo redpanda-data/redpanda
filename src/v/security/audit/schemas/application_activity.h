@@ -14,6 +14,7 @@
 #include "security/audit/schemas/hashing_utils.h"
 #include "security/audit/schemas/schemas.h"
 #include "security/audit/schemas/types.h"
+#include "security/audit/schemas/utils.h"
 #include "security/authorizer.h"
 #include "security/request_auth.h"
 
@@ -109,6 +110,59 @@ public:
       const std::optional<std::string_view>& reason);
 
     static size_t hash(
+      ss::httpd::const_req req,
+      const ss::sstring& user,
+      const ss::sstring& svc_name);
+
+    template<typename T>
+    static api_activity construct(
+      std::string_view operation_name,
+      const security::auth_result& auth_result,
+      const ss::socket_address& local_address,
+      std::string_view service_name,
+      ss::net::inet_address client_addr,
+      uint16_t client_port,
+      std::optional<std::string_view> client_id,
+      std::vector<T> additional_resources) {
+        auto new_ars = create_resource_details(std::move(additional_resources));
+        auto crud = op_to_crud(auth_result.operation);
+        auto actor = result_to_actor(auth_result);
+        new_ars.emplace_back(resource_detail{
+          .name = auth_result.resource_name,
+          .type = fmt::format("{}", auth_result.resource_type)});
+
+        return {
+          crud,
+          std::move(actor),
+          api{
+            .operation = ss::sstring{operation_name},
+            .service = {.name = ss::sstring{service_name}}},
+          network_endpoint{
+            .addr = net::unresolved_address(
+              fmt::format("{}", local_address.addr()), local_address.port()),
+            .svc_name = ss::sstring{service_name},
+          },
+          std::nullopt,
+          std::move(new_ars),
+          severity_id::informational,
+          network_endpoint{
+            .addr = net::unresolved_address(
+              fmt::format("{}", client_addr), client_port),
+            .name = ss::sstring{client_id.value_or("")}},
+          auth_result.authorized ? api_activity::status_id::success
+                                 : api_activity::status_id::failure,
+          create_timestamp_t(),
+          unmapped_data(auth_result)};
+    }
+
+    static api_activity construct(
+      ss::httpd::const_req req,
+      const request_auth_result& auth_result,
+      const ss::sstring& svc_name,
+      bool authorized,
+      const std::optional<std::string_view>& reason);
+
+    static api_activity construct(
       ss::httpd::const_req req,
       const ss::sstring& user,
       const ss::sstring& svc_name);
@@ -243,6 +297,10 @@ public:
     static size_t hash(
       activity_id activity_id,
       const std::optional<ss::sstring>& feature_name = std::nullopt);
+
+    static application_lifecycle construct(
+      activity_id activity_id,
+      std::optional<ss::sstring> feature_name = std::nullopt);
 
     auto equality_fields() const { return std::tie(_activity_id, _app); }
 

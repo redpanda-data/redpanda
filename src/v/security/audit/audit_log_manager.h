@@ -101,11 +101,11 @@ public:
         }
 
         return do_enqueue_audit_event(
-          std::make_unique<api_activity>(make_api_activity_event(
+          std::make_unique<api_activity>(api_activity::construct(
             operation_name,
             std::move(result),
             std::forward<Args>(args)...,
-            create_resource_details(restrict_topics(std::move(func))))));
+            restrict_topics(std::move(func)))));
     }
 
     template<typename T, typename... Args>
@@ -128,11 +128,11 @@ public:
             }
         }
         return do_enqueue_audit_event(
-          std::make_unique<api_activity>(make_api_activity_event(
+          std::make_unique<api_activity>(api_activity::construct(
             operation_name,
             std::move(result),
             std::forward<Args>(args)...,
-            {})));
+            std::vector<model::topic>())));
     }
 
     bool enqueue_authn_event(authentication_event_options options) {
@@ -142,7 +142,7 @@ public:
             return (bool)*val;
         }
         return do_enqueue_audit_event(std::make_unique<authentication>(
-          make_authentication_event(std::move(options))));
+          authentication::construct(std::move(options))));
     }
 
     template<typename... Args>
@@ -152,7 +152,7 @@ public:
         }
 
         return do_enqueue_audit_event(std::make_unique<application_lifecycle>(
-          make_application_lifecycle(std::forward<Args>(args)...)));
+          application_lifecycle::construct(std::forward<Args>(args)...)));
     }
 
     bool enqueue_api_activity_event(
@@ -169,7 +169,7 @@ public:
         }
 
         return do_enqueue_audit_event(
-          std::make_unique<api_activity>(make_api_activity_event(
+          std::make_unique<api_activity>(api_activity::construct(
             req, auth_result, svc_name, authorized, reason)));
     }
 
@@ -184,7 +184,7 @@ public:
         }
 
         return do_enqueue_audit_event(std::make_unique<api_activity>(
-          make_api_activity_event(req, user, svc_name)));
+          api_activity::construct(req, user, svc_name)));
     }
 
     /// Returns the number of items pending to be written to auditing log

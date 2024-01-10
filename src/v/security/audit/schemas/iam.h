@@ -13,8 +13,14 @@
 #include "json/json.h"
 #include "security/audit/schemas/schemas.h"
 #include "security/audit/schemas/types.h"
+#include "security/request_auth.h"
+
+#include <seastar/http/handlers.hh>
 
 namespace security::audit {
+
+struct authentication_event_options;
+
 // Event that reports authentication session activities
 // https://schema.ocsf.io/1.0.0/classes/authentication?extensions=
 class authentication final : public ocsf_base_event<authentication> {
@@ -95,6 +101,10 @@ public:
           });
     }
 
+    static size_t hash(const authentication_event_options&);
+
+    static authentication construct(authentication_event_options);
+
     auto equality_fields() const {
         return std::tie(
           _activity_id,
@@ -160,4 +170,17 @@ private:
         w.EndObject();
     }
 };
+
+struct authentication_event_options {
+    std::string_view auth_protocol;
+
+    net::unresolved_address server_addr;
+    std::optional<std::string_view> svc_name;
+    net::unresolved_address client_addr;
+    std::optional<std::string_view> client_id;
+    authentication::used_cleartext is_cleartext;
+    security::audit::user user;
+    std::optional<ss::sstring> error_reason;
+};
+
 } // namespace security::audit
