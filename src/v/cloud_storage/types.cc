@@ -13,6 +13,8 @@
 #include "cloud_storage/logger.h"
 #include "vlog.h"
 
+#include <absl/container/node_hash_set.h>
+
 namespace {
 cloud_storage_clients::default_overrides get_default_overrides() {
     // Set default overrides
@@ -246,6 +248,9 @@ void scrub_segment_meta(
     }
 }
 
+// Limit on number of anomalies that can be stored in the manifest
+static constexpr size_t max_number_of_manifest_anomalies = 100;
+
 bool anomalies::has_value() const {
     return missing_partition_manifest || missing_spillover_manifests.size() > 0
            || missing_segments.size() > 0
@@ -262,17 +267,53 @@ size_t anomalies::count_segment_meta_anomaly_type(anomaly_type type) const {
     return static_cast<size_t>(count);
 }
 
+/// Returns number of discarded elements
+template<class T, size_t size_limit = max_number_of_manifest_anomalies>
+inline size_t insert_with_size_limit(
+  absl::node_hash_set<T>& dest, const absl::node_hash_set<T>& to_add) {
+    if (dest.size() + to_add.size() <= size_limit) {
+        dest.insert(
+          std::make_move_iterator(to_add.begin()),
+          std::make_move_iterator(to_add.end()));
+        return 0;
+    }
+    auto total_size = dest.size() + to_add.size();
+    auto to_remove = total_size - size_limit;
+    size_t num_removed = 0;
+    if (dest.size() <= to_remove) {
+        to_remove -= dest.size();
+        num_removed += dest.size();
+        dest.clear();
+    } else {
+        auto it = dest.begin();
+        std::advance(it, to_remove);
+        dest.erase(dest.begin(), it);
+        num_removed += to_remove;
+        to_remove = 0;
+    }
+    auto begin = to_add.begin();
+    auto end = to_add.end();
+    std::advance(begin, to_remove);
+    num_removed += to_remove;
+    dest.insert(std::make_move_iterator(begin), std::make_move_iterator(end));
+    return num_removed;
+}
+
 anomalies& anomalies::operator+=(anomalies&& other) {
     missing_partition_manifest |= other.missing_partition_manifest;
-    missing_spillover_manifests.insert(
-      std::make_move_iterator(other.missing_spillover_manifests.begin()),
-      std::make_move_iterator(other.missing_spillover_manifests.end()));
-    missing_segments.insert(
-      std::make_move_iterator(other.missing_segments.begin()),
-      std::make_move_iterator(other.missing_segments.end()));
-    segment_metadata_anomalies.insert(
-      std::make_move_iterator(other.segment_metadata_anomalies.begin()),
-      std::make_move_iterator(other.segment_metadata_anomalies.end()));
+
+    // Keep only last 'max_number_of_manifest_anomalies' elements. The
+    // scrubber moves from smaller offsets to larger offsets and 'other'
+    // is supposed to contain larger offsets. Because of that we want
+    // to add all elements from 'other' and truncate the prefix.
+    // We also want to progress the scrub because we want to populate the
+    // anomaly counters even if there are too many of them.
+    num_discarded_missing_spillover_manifests += insert_with_size_limit(
+      missing_spillover_manifests, other.missing_spillover_manifests);
+    num_discarded_missing_segments += insert_with_size_limit(
+      missing_segments, other.missing_segments);
+    num_discarded_metadata_anomalies += insert_with_size_limit(
+      segment_metadata_anomalies, other.segment_metadata_anomalies);
 
     last_complete_scrub = std::max(
       last_complete_scrub, other.last_complete_scrub);
@@ -290,9 +331,10 @@ std::ostream& operator<<(std::ostream& o, const anomalies& a) {
       "{{missing_partition_manifest: {}, missing_spillover_manifests: {}, "
       "missing_segments: {}, segment_metadata_anomalies: {}}}",
       a.missing_partition_manifest,
-      a.missing_spillover_manifests.size(),
-      a.missing_segments.size(),
-      a.segment_metadata_anomalies.size());
+      a.missing_spillover_manifests.size()
+        + a.num_discarded_missing_spillover_manifests,
+      a.missing_segments.size() + a.num_discarded_missing_segments,
+      a.segment_metadata_anomalies.size() + a.num_discarded_metadata_anomalies);
 
     return o;
 }
