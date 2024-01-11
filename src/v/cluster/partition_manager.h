@@ -17,6 +17,7 @@
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -25,9 +26,12 @@
 #include "raft/group_manager.h"
 #include "raft/heartbeat_manager.h"
 #include "storage/api.h"
+#include "utils/intrusive_list_helpers.h"
 #include "utils/named_type.h"
 
 #include <absl/container/flat_hash_map.h>
+
+#include <chrono>
 
 namespace cluster {
 class partition_manager
@@ -47,7 +51,8 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
       ss::sharded<archival::upload_housekeeping_service>&,
-      config::binding<uint64_t>);
+      config::binding<uint64_t>,
+      config::binding<std::chrono::milliseconds>);
 
     ~partition_manager();
 
@@ -83,7 +88,7 @@ public:
         return nullptr;
     }
 
-    ss::future<> start() { return ss::now(); }
+    ss::future<> start();
     ss::future<> stop_partitions();
     ss::future<consensus_ptr> manage(
       storage::ntp_config,
@@ -201,6 +206,37 @@ public:
     get_cloud_cache_disk_usage_target() const;
 
 private:
+    enum class partition_shutdown_stage {
+        shutdown_requested,
+        stopping_raft,
+        removing_raft,
+        stopping_partition,
+        removing_persistent_state,
+        stopping_storage,
+        removing_storage,
+        finalizing_remote_storage
+    };
+
+    struct partition_shutdown_state {
+        explicit partition_shutdown_state(ss::lw_shared_ptr<partition>);
+
+        partition_shutdown_state(partition_shutdown_state&&) = delete;
+        partition_shutdown_state(const partition_shutdown_state&) = delete;
+        partition_shutdown_state& operator=(partition_shutdown_state&&)
+          = delete;
+        partition_shutdown_state& operator=(const partition_shutdown_state&)
+          = delete;
+        ~partition_shutdown_state() = default;
+
+        void update(partition_shutdown_stage);
+        // it is more convenient to keep the pointer to partition than an ntp
+        // copy.
+        ss::lw_shared_ptr<partition> partition;
+        partition_shutdown_stage stage;
+        ss::lowres_clock::time_point last_update_timestamp;
+        intrusive_list_hook hook;
+    };
+
     /// Download log if partition_recovery_manager is initialized.
     ///
     /// It might not be initialized if cloud storage is disable.
@@ -212,6 +248,9 @@ private:
 
     ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
 
+    void check_partitions_shutdown_state();
+
+    void maybe_arm_shutdown_watchdog();
     storage::api& _storage;
     /// used to wait for concurrent recoveries
     ss::sharded<raft::group_manager>& _raft_manager;
@@ -231,7 +270,12 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
     ss::sharded<archival::upload_housekeeping_service>& _upload_hks;
+    intrusive_list<partition_shutdown_state, &partition_shutdown_state::hook>
+      _partitions_shutting_down;
     ss::gate _gate;
+    config::binding<uint64_t> _max_concurrent_producer_ids;
+    config::binding<std::chrono::milliseconds> _partition_shutdown_timeout;
+    ss::timer<> _shutdown_watchdog;
 
     // In general, all our background work is in partition objects which
     // have their own abort source.  This abort source is only for work that
@@ -240,11 +284,11 @@ private:
 
     bool _block_new_leadership{false};
 
-    config::binding<uint64_t> _max_concurrent_producer_ids;
-
     // Our handle from registering for leadership notifications on group_manager
     std::optional<cluster::notification_id_type> _leader_notify_handle;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
+    friend std::ostream& operator<<(
+      std::ostream&, const partition_manager::partition_shutdown_stage&);
 };
 } // namespace cluster

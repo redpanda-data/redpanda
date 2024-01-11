@@ -1244,6 +1244,10 @@ void application::wire_up_redpanda_services(
       std::ref(_archival_upload_housekeeping),
       ss::sharded_parameter([] {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .partition_manager_shutdown_watchdog_timeout.bind();
       }))
       .get();
     vlog(_log.info, "Partition manager started");
