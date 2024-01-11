@@ -3871,6 +3871,21 @@ map_anomalies_to_json(
         json.last_complete_scrub_at = detected.last_complete_scrub->value();
     }
 
+    if (detected.num_discarded_missing_spillover_manifests) {
+        json.num_discarded_missing_spillover_manifests
+          = detected.num_discarded_missing_spillover_manifests;
+    }
+
+    if (detected.num_discarded_missing_segments) {
+        json.num_discarded_missing_segments
+          = detected.num_discarded_missing_segments;
+    }
+
+    if (detected.num_discarded_metadata_anomalies) {
+        json.num_discarded_metadata_anomalies
+          = detected.num_discarded_metadata_anomalies;
+    }
+
     if (detected.missing_partition_manifest) {
         json.missing_partition_manifest = true;
     }

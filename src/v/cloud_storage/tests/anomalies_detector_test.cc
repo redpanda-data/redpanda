@@ -1079,3 +1079,71 @@ BOOST_AUTO_TEST_CASE(test_offset_anomaly_detection) {
         BOOST_REQUIRE_EQUAL(*anomalies.begin(), expected);
     }
 }
+
+BOOST_AUTO_TEST_CASE(test_anomalies_size_limit) {
+    using namespace cloud_storage;
+
+    anomalies result;
+
+    {
+        anomalies tmp;
+        for (int i = 0; i < 80; i++) {
+            tmp.missing_segments.insert(segment_meta{
+              .base_offset = model::offset{i},
+            });
+        }
+        result += std::move(tmp);
+    }
+    BOOST_REQUIRE_EQUAL(result.missing_segments.size(), 80);
+    BOOST_REQUIRE_EQUAL(result.num_discarded_missing_segments, 0);
+
+    {
+        anomalies tmp;
+        for (int i = 100; i < 180; i++) {
+            tmp.missing_segments.insert(segment_meta{
+              .base_offset = model::offset{i},
+            });
+        }
+        result += std::move(tmp);
+    }
+    BOOST_REQUIRE_EQUAL(result.missing_segments.size(), 100);
+    BOOST_REQUIRE_EQUAL(result.num_discarded_missing_segments, 60);
+
+    {
+        anomalies tmp;
+        for (int i = 200; i < 400; i++) {
+            tmp.missing_segments.insert(segment_meta{
+              .base_offset = model::offset{i},
+            });
+        }
+        result += std::move(tmp);
+    }
+    BOOST_REQUIRE_EQUAL(result.missing_segments.size(), 100);
+    BOOST_REQUIRE_EQUAL(result.num_discarded_missing_segments, 260);
+}
+
+BOOST_AUTO_TEST_CASE(test_anomalies_size_limit2) {
+    // Test situation when the initial anomalies batch is large
+    using namespace cloud_storage;
+
+    anomalies result;
+    {
+        for (int i = 0; i < 200; i++) {
+            result.missing_segments.insert(segment_meta{
+              .base_offset = model::offset{i},
+            });
+        }
+    }
+
+    {
+        anomalies tmp;
+        for (int i = 200; i < 280; i++) {
+            tmp.missing_segments.insert(segment_meta{
+              .base_offset = model::offset{i},
+            });
+        }
+        result += std::move(tmp);
+    }
+    BOOST_REQUIRE_EQUAL(result.missing_segments.size(), 100);
+    BOOST_REQUIRE_EQUAL(result.num_discarded_missing_segments, 180);
+}
