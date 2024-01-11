@@ -3646,6 +3646,19 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
 
         BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
         BOOST_REQUIRE_EQUAL(last, result.last_offset);
+
+        // Validate using the segment reader
+        size_t consumed_size = 0;
+        storage::log_reader_config reader_cfg(
+          base, result.last_offset, ss::default_priority_class());
+        reader_cfg.skip_readers_cache = true;
+        reader_cfg.skip_batch_cache = true;
+        auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
+        batch_size_accumulator size_acc{
+          .size_bytes = &consumed_size,
+        };
+        std::move(log_rdr).consume(size_acc, model::no_timeout).get();
+        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -3753,6 +3766,19 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
             result_ix++;
         }
         auto expected_size = acc_size[result_ix] - prev_size[base_ix];
+        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+
+        // Validate using the segment reader
+        size_t consumed_size = 0;
+        storage::log_reader_config reader_cfg(
+          base, result.last_offset, ss::default_priority_class());
+        reader_cfg.skip_readers_cache = true;
+        reader_cfg.skip_batch_cache = true;
+        auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
+        batch_size_accumulator size_acc{
+          .size_bytes = &consumed_size,
+        };
+        std::move(log_rdr).consume(size_acc, model::no_timeout).get();
         BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
     }
 
@@ -3998,6 +4024,18 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
 
         BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
         BOOST_REQUIRE_EQUAL(last, result.last_offset);
+
+        size_t consumed_size = 0;
+        storage::log_reader_config c_reader_cfg(
+          base, result.last_offset, ss::default_priority_class());
+        c_reader_cfg.skip_readers_cache = true;
+        c_reader_cfg.skip_batch_cache = true;
+        auto c_log_rdr = log->make_reader(std::move(c_reader_cfg)).get();
+        batch_size_accumulator c_size_acc{
+          .size_bytes = &consumed_size,
+        };
+        std::move(c_log_rdr).consume(c_size_acc, model::no_timeout).get();
+        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
