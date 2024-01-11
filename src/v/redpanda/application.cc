@@ -1443,7 +1443,11 @@ void application::wire_up_redpanda_services(
       std::ref(feature_table),
       std::ref(tm_stm_cache_manager),
       std::ref(_archival_upload_housekeeping),
-      std::ref(producer_manager))
+      std::ref(producer_manager),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .partition_manager_shutdown_watchdog_timeout.bind();
+      }))
       .get();
     vlog(_log.info, "Partition manager started");
     construct_service(
