@@ -19,6 +19,7 @@
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/partition.h"
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -38,6 +39,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
@@ -57,7 +59,8 @@ partition_manager::partition_manager(
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<archival::upload_housekeeping_service>& upload_hks)
+  ss::sharded<archival::upload_housekeeping_service>& upload_hks,
+  config::binding<std::chrono::milliseconds> partition_shutdown_timeout)
   : _storage(storage.local())
   , _raft_manager(raft)
   , _partition_recovery_mgr(recovery_mgr)
@@ -65,7 +68,8 @@ partition_manager::partition_manager(
   , _cloud_storage_cache(cloud_storage_cache)
   , _archival_conf(std::move(archival_conf))
   , _feature_table(feature_table)
-  , _upload_hks(upload_hks) {
+  , _upload_hks(upload_hks)
+  , _partition_shutdown_timeout(std::move(partition_shutdown_timeout)) {
     _leader_notify_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -80,6 +84,8 @@ partition_manager::partition_manager(
                 }
             }
         });
+    _shutdown_watchdog.set_callback(
+      [this] { check_partitions_shutdown_state(); });
 }
 
 partition_manager::~partition_manager() {
@@ -99,6 +105,11 @@ partition_manager::get_topic_partition_table(
         }
     }
     return rs;
+}
+
+ss::future<> partition_manager::start() {
+    maybe_arm_shutdown_watchdog();
+    co_return;
 }
 
 ss::future<consensus_ptr> partition_manager::manage(
@@ -290,11 +301,17 @@ ss::future<> partition_manager::stop_partitions() {
 
 ss::future<>
 partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
+    partition_shutdown_state shutdown_state(partition);
+    _partitions_shutting_down.push_back(shutdown_state);
+
     try {
         auto ntp = partition->ntp();
+        shutdown_state.update(partition_shutdown_stage::stopping_raft);
         co_await _raft_manager.local().shutdown(partition->raft());
         _unmanage_watchers.notify(ntp, model::topic_partition_view(ntp.tp));
+        shutdown_state.update(partition_shutdown_stage::stopping_partition);
         co_await partition->stop();
+        shutdown_state.update(partition_shutdown_stage::stopping_storage);
         co_await _storage.log_mgr().shutdown(partition->ntp());
     } catch (...) {
         vassert(
@@ -319,22 +336,27 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
           "manager",
           ntp));
     }
+    partition_shutdown_state shutdown_state(partition);
+    _partitions_shutting_down.push_back(shutdown_state);
     auto group_id = partition->group();
 
     // remove partition from ntp & raft tables
     _ntp_table.erase(ntp);
     _raft_table.erase(group_id);
-
+    shutdown_state.update(partition_shutdown_stage::stopping_raft);
     co_await _raft_manager.local().remove(partition->raft());
-
     _unmanage_watchers.notify(
       ntp, model::topic_partition_view(partition->ntp().tp));
-
+    shutdown_state.update(partition_shutdown_stage::stopping_partition);
     co_await partition->stop();
+    shutdown_state.update(partition_shutdown_stage::removing_persistent_state);
     co_await partition->remove_persistent_state();
+    shutdown_state.update(partition_shutdown_stage::removing_storage);
     co_await _storage.log_mgr().remove(partition->ntp());
 
     if (mode == partition_removal_mode::global) {
+        shutdown_state.update(
+          partition_shutdown_stage::finalizing_remote_storage);
         co_await partition->finalize_remote_partition(_as);
     }
 }
@@ -350,12 +372,44 @@ ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
           "manager",
           ntp)));
     }
-
     // remove partition from ntp & raft tables
     _ntp_table.erase(ntp);
     _raft_table.erase(partition->group());
 
     return do_shutdown(partition);
+}
+
+partition_manager::partition_shutdown_state::partition_shutdown_state(
+  ss::lw_shared_ptr<cluster::partition> p)
+  : partition(std::move(p))
+  , stage(partition_manager::partition_shutdown_stage::shutdown_requested)
+  , last_update_timestamp(ss::lowres_clock::now()) {}
+
+void partition_manager::partition_shutdown_state::update(
+  partition_shutdown_stage s) {
+    stage = s;
+    last_update_timestamp = ss::lowres_clock::now();
+}
+
+void partition_manager::check_partitions_shutdown_state() {
+    const auto now = ss::lowres_clock::now();
+    for (auto& state : _partitions_shutting_down) {
+        if (state.last_update_timestamp < now - _partition_shutdown_timeout()) {
+            clusterlog.error(
+              "partition {} shutdown takes longer than expected, current "
+              "shutdown stage: {} time since last update: {} seconds",
+              state.partition->ntp(),
+              state.stage,
+              (now - state.last_update_timestamp) / 1s);
+        }
+    }
+    maybe_arm_shutdown_watchdog();
+}
+
+void partition_manager::maybe_arm_shutdown_watchdog() {
+    if (!_as.abort_requested()) {
+        _shutdown_watchdog.arm(_partition_shutdown_timeout() / 5);
+    }
 }
 
 uint64_t partition_manager::upload_backlog_size() const {
@@ -409,6 +463,28 @@ partition_manager::get_cloud_cache_disk_usage_target() const {
       },
       cloud_storage::cache_usage_target{},
       [](auto acc, auto update) { return acc + update; });
+}
+
+std::ostream& operator<<(
+  std::ostream& o, const partition_manager::partition_shutdown_stage& stage) {
+    switch (stage) {
+    case partition_manager::partition_shutdown_stage::shutdown_requested:
+        return o << "shutdown_requested";
+    case partition_manager::partition_shutdown_stage::stopping_raft:
+        return o << "stopping_raft";
+    case partition_manager::partition_shutdown_stage::removing_raft:
+        return o << "removing_raft";
+    case partition_manager::partition_shutdown_stage::stopping_partition:
+        return o << "stopping_partition";
+    case partition_manager::partition_shutdown_stage::removing_persistent_state:
+        return o << "removing_persistent_state";
+    case partition_manager::partition_shutdown_stage::stopping_storage:
+        return o << "stopping_storage";
+    case partition_manager::partition_shutdown_stage::removing_storage:
+        return o << "removing_storage";
+    case partition_manager::partition_shutdown_stage::finalizing_remote_storage:
+        return o << "finalizing_remote_storage";
+    }
 }
 
 } // namespace cluster
