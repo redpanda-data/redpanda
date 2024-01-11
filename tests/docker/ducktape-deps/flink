@@ -17,3 +17,16 @@ wget https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-k
 
 # Show version
 /opt/flink/bin/flink --version
+
+# Prepare python venv archive
+cd /opt/flink/
+pip install virtualenv
+virtualenv flink_venv
+. /opt/flink/flink_venv/bin/activate
+pip install apache-flink
+deactivate
+pip uninstall -y virtualenv
+cd flink_venv
+tar -zcvf ../flink_venv.tgz ./*
+cd ..
+rm -rf flink_venv   
