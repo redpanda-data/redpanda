@@ -1976,20 +1976,13 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
   model::offset first,
   offset_range_size_requirements_t target,
   ss::io_priority_class io_priority) {
-    if (
-      false
-      && target.target_size
-           < storage::segment_index::default_data_buffer_step) {
-        vlog(
-          stlog.error,
-          "The target size {}/{} is below segment index default data buffer "
-          "step ({})",
-          target.target_size,
-          target.min_size,
-          storage::segment_index::default_data_buffer_step);
-        throw std::invalid_argument("Target size is too small");
-    }
-
+    vlog(
+      stlog.debug,
+      "Offset range size, first: {}, target size: {}/{}, lstat: {}",
+      first,
+      target.target_size,
+      target.min_size,
+      offsets());
     std::vector<ss::lw_shared_ptr<storage::segment>> segments;
     // Last offset included to the result, default value means that we didn't
     // find anything
@@ -2046,18 +2039,23 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
             base_file_pos = file_pos;
             vlog(
               stlog.debug,
-              "First offset {} located at {}, offset range size: {}",
+              "First offset {} located at {}, offset range size: {}, Segment "
+              "offsets: {}, current_size: {}",
               first,
               file_pos,
-              sz);
+              sz,
+              it->get()->offsets(),
+              current_size);
         } else {
             auto sz = it->get()->file_size();
             current_size += sz;
             vlog(
               stlog.debug,
-              "Adding {} bytes to the offset range. Segment offsets: {}",
+              "Adding {} bytes to the offset range. Segment offsets: {}, "
+              "current_size: {}",
               sz,
-              it->get()->offsets());
+              it->get()->offsets(),
+              current_size);
         }
         segments.push_back(*it);
         if (current_size > target.target_size) {
