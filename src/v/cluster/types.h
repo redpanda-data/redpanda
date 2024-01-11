@@ -2431,12 +2431,17 @@ std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
 
 struct topic_table_delta {
     model::ntp ntp;
+    raft::group_id group;
     model::revision_id revision;
     topic_table_delta_type type;
 
     topic_table_delta(
-      model::ntp ntp, model::revision_id rev, topic_table_delta_type type)
+      model::ntp ntp,
+      raft::group_id gr,
+      model::revision_id rev,
+      topic_table_delta_type type)
       : ntp(std::move(ntp))
+      , group(gr)
       , revision(rev)
       , type(type) {}
 

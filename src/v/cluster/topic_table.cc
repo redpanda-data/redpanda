@@ -85,6 +85,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
             .last_update_finished_revision = rev_id});
         _pending_deltas.emplace_back(
           std::move(ntp),
+          pas.group,
           model::revision_id(offset),
           topic_table_delta_type::added);
     }
@@ -124,6 +125,7 @@ topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
             on_partition_deletion(ntp);
             _pending_deltas.emplace_back(
               std::move(ntp),
+              p_as.group,
               model::revision_id(offset),
               topic_table_delta_type::removed);
         }
@@ -231,6 +233,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
         _topics_map_revision++;
         _pending_deltas.emplace_back(
           std::move(ntp),
+          p_as.group,
           model::revision_id(offset),
           topic_table_delta_type::added);
     }
@@ -363,6 +366,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     // notify backend about finished update
     _pending_deltas.emplace_back(
       std::move(cmd.key),
+      current_assignment_it->group,
       model::revision_id(o),
       topic_table_delta_type::replicas_updated);
 
@@ -433,6 +437,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
 
     _pending_deltas.emplace_back(
       std::move(cmd.key),
+      current_assignment_it->group,
       model::revision_id(o),
       topic_table_delta_type::replicas_updated);
     notify_waiters();
@@ -501,7 +506,10 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
 
     // notify backend about finished update
     _pending_deltas.emplace_back(
-      ntp, model::revision_id(o), topic_table_delta_type::replicas_updated);
+      ntp,
+      current_assignment_it->group,
+      model::revision_id(o),
+      topic_table_delta_type::replicas_updated);
     notify_waiters();
 
     co_return errc::success;
@@ -628,7 +636,8 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
     const auto& assignments = topic_it->second.get_assignments();
 
     if (cmd.value.partition_id) {
-        if (!assignments.contains(*cmd.value.partition_id)) {
+        auto assignment_it = assignments.find(*cmd.value.partition_id);
+        if (assignment_it == assignments.end()) {
             co_return errc::partition_not_exists;
         }
 
@@ -649,6 +658,7 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
         _pending_deltas.emplace_back(
           model::ntp{
             cmd.value.ns_tp.ns, cmd.value.ns_tp.tp, *cmd.value.partition_id},
+          assignment_it->group,
           model::revision_id{o},
           topic_table_delta_type::disabled_flag_updated);
     } else {
@@ -673,6 +683,7 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
 
             _pending_deltas.emplace_back(
               model::ntp{cmd.value.ns_tp.ns, cmd.value.ns_tp.tp, p_as.id},
+              p_as.group,
               model::revision_id{o},
               topic_table_delta_type::disabled_flag_updated);
         }
@@ -914,6 +925,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     for (auto& p_as : assignments) {
         _pending_deltas.emplace_back(
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
+          p_as.group,
           model::revision_id(o),
           topic_table_delta_type::properties_updated);
     }
@@ -1020,7 +1032,10 @@ public:
         _updates_in_progress.erase(ntp);
 
         _pending_deltas.emplace_back(
-          std::move(ntp), _snap_revision, topic_table_delta_type::removed);
+          std::move(ntp),
+          p_as.group,
+          _snap_revision,
+          topic_table_delta_type::removed);
         // partition_assignment object is supposed to be removed from the
         // assignments set by the caller
     }
@@ -1101,12 +1116,18 @@ public:
         if (!prev_assignment) {
             // new partition
             _pending_deltas.emplace_back(
-              ntp, _snap_revision, topic_table_delta_type::added);
+              ntp,
+              partition.group,
+              _snap_revision,
+              topic_table_delta_type::added);
         }
 
         if (must_update_properties) {
             _pending_deltas.emplace_back(
-              ntp, _snap_revision, topic_table_delta_type::properties_updated);
+              ntp,
+              partition.group,
+              _snap_revision,
+              topic_table_delta_type::properties_updated);
         }
 
         // 2. reconcile the _updates_in_progress state and possibly generate
@@ -1165,7 +1186,10 @@ public:
           && last_replica_update_revision
                != prev_last_replica_update_revision) {
             _pending_deltas.emplace_back(
-              ntp, _snap_revision, topic_table_delta_type::replicas_updated);
+              ntp,
+              partition.group,
+              _snap_revision,
+              topic_table_delta_type::replicas_updated);
         }
 
         for (size_t i = pending_deltas_start_idx; i < _pending_deltas.size();
@@ -1263,6 +1287,7 @@ ss::future<> topic_table::apply_snapshot(
                     if (old_disabled_set.is_disabled(p_id) != new_is_disabled) {
                         _pending_deltas.emplace_back(
                           ntp,
+                          partition.group,
                           snap_revision,
                           topic_table_delta_type::disabled_flag_updated);
                     }
@@ -1659,6 +1684,7 @@ void topic_table::change_partition_replicas(
 
     _pending_deltas.emplace_back(
       std::move(ntp),
+      current_assignment.group,
       model::revision_id(o),
       topic_table_delta_type::replicas_updated);
 }
