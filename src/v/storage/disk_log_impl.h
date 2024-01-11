@@ -94,6 +94,9 @@ public:
       offset_range_size_requirements_t target,
       ss::io_priority_class io_priority) override;
 
+    /// Return true if the offset range contains compacted data
+    bool is_compacted(model::offset first, model::offset last) const override;
+
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
     // External synchronization: only one append can be performed at a time.

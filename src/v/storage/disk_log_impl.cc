@@ -2167,6 +2167,20 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
     };
 }
 
+bool disk_log_impl::is_compacted(
+  model::offset first, model::offset last) const {
+    for (auto it = _segs.lower_bound(first); it != _segs.end(); it++) {
+        const auto& lstat = it->get()->offsets();
+        if (lstat.base_offset > last) {
+            break;
+        }
+        if (it->get()->is_compacted_segment()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 ss::future<model::record_batch_reader>
 disk_log_impl::make_reader(log_reader_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);

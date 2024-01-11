@@ -149,6 +149,9 @@ public:
       ss::io_priority_class io_priority)
       = 0;
 
+    virtual bool is_compacted(model::offset first, model::offset last) const
+      = 0;
+
     virtual ss::future<>
       update_configuration(ntp_config::default_overrides) = 0;
 
