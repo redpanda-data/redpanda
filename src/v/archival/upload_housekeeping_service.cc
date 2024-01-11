@@ -158,21 +158,26 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
             rearm_idle_timer();
         }
 
-        _api_slow_downs_rate->update(avg_slow_downs / avg_utilisation, now);
-        const auto slow_downs_rate = _api_slow_downs_rate->get();
-        _probe.requests_throttled_average_rate(slow_downs_rate);
+        if (avg_utilisation == 0) {
+            _api_slow_downs_rate->update(0, now);
+        } else {
+            _api_slow_downs_rate->update(avg_slow_downs / avg_utilisation, now);
+        }
+
+        const auto avg_slow_downs_rate = _api_slow_downs_rate->get();
+        _probe.requests_throttled_average_rate(avg_slow_downs_rate);
 
         // Pause the housekeeping jobs if the number of slow downs on the
         // read and write paths exceeds the acceptable limit. Do not pause
         // if workflow is in housekeeping_state::draining state.
         if (
-          slow_downs_rate >= max_slow_downs_rate
+          avg_slow_downs_rate >= max_slow_downs_rate
           && _workflow.state() == housekeeping_state::active) {
             vlog(
               archival_log.info,
               "Too many cloud storage requests are being throttled ({}% >= "
               "{}%). Pausing housekeeping workflow to get some headroom",
-              slow_downs_rate,
+              avg_slow_downs_rate,
               max_slow_downs_rate);
             _workflow.pause();
         }
