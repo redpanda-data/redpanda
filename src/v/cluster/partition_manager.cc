@@ -325,10 +325,10 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
     auto partition = get(ntp);
 
     if (!partition) {
-        return ss::make_exception_future<>(std::invalid_argument(fmt::format(
+        throw std::invalid_argument(fmt::format(
           "Can not remove partition. NTP {} is not present in partition "
           "manager",
-          ntp)));
+          ntp));
     }
     auto group_id = partition->group();
 
@@ -336,22 +336,18 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
     _ntp_table.erase(ntp);
     _raft_table.erase(group_id);
 
-    return _raft_manager.local()
-      .remove(partition->raft())
-      .then([this, ntp] {
-          _unmanage_watchers.notify(ntp, model::topic_partition_view(ntp.tp));
-      })
-      .then([partition] { return partition->stop(); })
-      .then([partition] { return partition->remove_persistent_state(); })
-      .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
-      .then([this, partition, mode] {
-          if (mode == partition_removal_mode::global) {
-              return partition->finalize_remote_partition(_as);
-          } else {
-              return ss::now();
-          }
-      })
-      .finally([partition] {}); // in the end remove partition
+    co_await _raft_manager.local().remove(partition->raft());
+
+    _unmanage_watchers.notify(
+      ntp, model::topic_partition_view(partition->ntp().tp));
+
+    co_await partition->stop();
+    co_await partition->remove_persistent_state();
+    co_await _storage.log_mgr().remove(partition->ntp());
+
+    if (mode == partition_removal_mode::global) {
+        co_await partition->finalize_remote_partition(_as);
+    }
 }
 
 ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
