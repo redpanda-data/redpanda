@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/units.h"
+#include "bytes/random.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

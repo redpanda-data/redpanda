@@ -10,9 +10,9 @@
  */
 #pragma once
 #include "bytes/bytes.h"
+#include "bytes/random.h"
 #include "hashing/secure.h"
 #include "net/types.h"
-#include "random/generators.h"
 #include "security/scram_credential.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"

@@ -12,7 +12,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "bytes/bytes.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -35,8 +34,6 @@ static const auto seed = get_seed();
 static thread_local std::default_random_engine gen(internal::seed);
 } // namespace internal
 
-bytes get_bytes(size_t n = 128 * 1024);
-
 /**
  * Random string generator. Total number of distinct values that may be
  * generated is unlimited (within all possible values of given size).
@@ -53,9 +50,6 @@ static constexpr size_t alphanum_max_distinct_strlen = 32;
  * `alphanum_max_distinct_generator` for an example.
  */
 ss::sstring gen_alphanum_max_distinct(size_t max_cardinality);
-
-// Makes an random alphanumeric string, encoded in an iobuf.
-iobuf make_iobuf(size_t n = 128);
 
 void fill_buffer_randomchars(char* start, size_t amount);
 

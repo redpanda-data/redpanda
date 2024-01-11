@@ -14,6 +14,7 @@
 
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
+#include "bytes/random.h"
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"

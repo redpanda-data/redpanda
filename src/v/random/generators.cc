@@ -18,12 +18,6 @@ void fill_buffer_randomchars(char* start, size_t amount) {
     memset(start, rand_fill(internal::gen), amount);
 }
 
-bytes get_bytes(size_t n) {
-    auto b = ss::uninitialized_string<bytes>(n);
-    std::generate_n(b.begin(), n, [] { return get_int<bytes::value_type>(); });
-    return b;
-}
-
 static constexpr std::string_view chars
   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -49,13 +43,6 @@ ss::sstring gen_alphanum_max_distinct(size_t cardinality) {
         return c;
     });
     return s;
-}
-
-iobuf make_iobuf(size_t n) {
-    const auto b = gen_alphanum_string(n);
-    iobuf io;
-    io.append(b.data(), n);
-    return io;
 }
 
 } // namespace random_generators

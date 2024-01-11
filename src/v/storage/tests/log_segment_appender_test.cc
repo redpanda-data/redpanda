@@ -10,6 +10,7 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
+#include "bytes/random.h"
 #include "config/configuration.h"
 #include "random/generators.h"
 #include "storage/chunk_cache.h"

@@ -11,6 +11,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
+#include "bytes/random.h"
 #include "random/generators.h"
 #include "utils/stream_utils.h"
 

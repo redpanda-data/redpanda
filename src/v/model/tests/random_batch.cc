@@ -11,6 +11,7 @@
 
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
+#include "bytes/random.h"
 #include "compression/compression.h"
 #include "model/fundamental.h"
 #include "model/record.h"

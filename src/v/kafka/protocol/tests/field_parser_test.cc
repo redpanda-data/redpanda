@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "bytes/random.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/types.h"
 #include "kafka/protocol/wire.h"

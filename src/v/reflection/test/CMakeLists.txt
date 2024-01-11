@@ -11,7 +11,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME reflection_async_adl_test
   SOURCES async_adl_test.cc
-  LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::bytes v::model v::rprandom
+  LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::bytes v::model v::random
   LABELS reflection
 )
 
@@ -19,6 +19,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME adl_collections_interop
   SOURCES collections_interop.cc
-  LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::rprandom v::model
+  LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::random v::model
   LABELS reflection
 )

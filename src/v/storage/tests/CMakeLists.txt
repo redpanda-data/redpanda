@@ -105,7 +105,7 @@ rp_test(
   BENCHMARK_TEST
   BINARY_NAME storage
   SOURCES compaction_idx_bench.cc
-  LIBRARIES Seastar::seastar_perf_testing v::storage
+  LIBRARIES Seastar::seastar_perf_testing v::storage v::bytes_random
   LABELS storage
 )
 

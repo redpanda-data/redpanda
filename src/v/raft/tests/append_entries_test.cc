@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/bytes.h"
+#include "bytes/random.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

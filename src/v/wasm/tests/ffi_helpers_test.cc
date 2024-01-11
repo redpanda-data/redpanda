@@ -10,6 +10,7 @@
  */
 
 #include "bytes/iobuf.h"
+#include "bytes/random.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "random/generators.h"

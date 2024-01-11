@@ -54,7 +54,7 @@ rp_test(
     tristate_test.cc
     utf8_control_chars.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map v::rprandom
+  LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map v::random
   LABELS utils
 )
 
