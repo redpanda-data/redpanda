@@ -270,11 +270,11 @@ private:
     /// Number of times backoff  was applied during log-segment downloads
     uint64_t _cnt_download_backoff{0};
     /// Number of completed controller snapshot uploads.
-    uint64_t _cnt_controller_snapshot_successful_uploads;
+    uint64_t _cnt_controller_snapshot_successful_uploads{0};
     /// Number of failed controller snapshot uploads.
-    uint64_t _cnt_controller_snapshot_failed_uploads;
+    uint64_t _cnt_controller_snapshot_failed_uploads{0};
     /// Number of times backoff was applied during controller snapshot uploads.
-    uint64_t _cnt_controller_snapshot_upload_backoffs;
+    uint64_t _cnt_controller_snapshot_upload_backoffs{0};
     /// Number of bytes being successfully sent to S3
     uint64_t _cnt_bytes_sent{0};
     /// Number of bytes being successfully received from S3
