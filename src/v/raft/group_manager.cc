@@ -128,6 +128,13 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
     return _groups_mutex.with([this, raft = std::move(raft)] {
         return ss::with_gate(_gate, [this, raft] {
             return _heartbeats.register_group(raft).then([this, raft] {
+                if (_is_ready) {
+                    // Check _is_ready flag again to guard against the case when
+                    // set_ready() was called after we created this consensus
+                    // instance but before we insert it into the _groups
+                    // collection.
+                    raft->reset_node_priority();
+                }
                 _groups.push_back(raft);
                 return raft;
             });
