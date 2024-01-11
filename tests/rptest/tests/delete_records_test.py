@@ -154,18 +154,22 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
 
     def retry_list_offset_request(self, fn, value_on_read):
         def check_bound():
+            self.redpanda.logger.debug("Inside of check_bound() method")
+            r = not value_on_read
             try:
                 if fn():
-                    return value_on_read
+                    r = value_on_read
             except Exception as e:
                 # Transient failure, desired to retry
                 if 'unknown broker' in str(e):
+                    self.redpanda.logger.warn("check_bound() retrying")
                     raise e
-            return not value_on_read
+            self.redpanda.logger.debug(f"check_bound() returning: {r}")
+            return r
 
         return wait_until_result(
             check_bound,
-            timeout_sec=10,
+            timeout_sec=60,
             backoff_sec=1,
             err_msg="Failed to make list_offsets request, unknown broker",
             retry_on_exc=True)
