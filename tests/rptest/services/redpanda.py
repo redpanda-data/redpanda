@@ -186,6 +186,9 @@ FAILURE_INJECTION_LOG_ALLOW_LIST = [
     re.compile("finject - .* flush called concurrently with other operations")
 ]
 
+# Largest allocation allowed in during a test
+MAX_ALLOCATION_SIZE = 400 * 1024  # 400KiB
+
 
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
@@ -1282,6 +1285,7 @@ class RedpandaServiceBase(Service):
                 "UndefinedBehaviorSanitizer",
                 "Aborting on shard",
                 "libc++abi: terminating due to uncaught exception",
+                "oversized allocation",
             ]
             if self._raise_on_errors:
                 match_terms.append("^ERROR")
@@ -1316,6 +1320,14 @@ class RedpandaServiceBase(Service):
                             )
                             allowed = True
                             break
+
+                if "oversized allocation" in line:
+                    m = re.search("oversized allocation: (\d+) byte", line)
+                    if m and int(m.group(1)) <= MAX_ALLOCATION_SIZE:
+                        self.logger.warn(
+                            f"Ignoring oversized allocation, {m.group(1)} is less than the max allowable allocation size of {MAX_ALLOCATION_SIZE} bytes"
+                        )
+                        allowed = True
 
                 if not allowed:
                     bad_lines[node].append(line)
