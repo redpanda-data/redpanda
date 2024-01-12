@@ -113,7 +113,7 @@ ss::future<> group_manager::stop_heartbeats() { return _heartbeats.stop(); }
 
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   raft::group_id id,
-  std::vector<model::broker> nodes,
+  std::vector<raft::vnode> nodes,
   ss::shared_ptr<storage::log> log,
   with_learner_recovery_throttle enable_learner_recovery_throttle,
   keep_snapshotted_log keep_snapshotted_log) {
@@ -160,32 +160,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
 }
 
 raft::group_configuration group_manager::create_initial_configuration(
-  std::vector<model::broker> initial_brokers,
-  model::revision_id revision) const {
-    /**
-     * Decide which raft configuration to use for the partition, if all nodes
-     * are able to understand configuration without broker information the
-     * configuration will only use raft::vnode
-     */
-    if (likely(_feature_table.is_active(
-          features::feature::membership_change_controller_cmds))) {
-        std::vector<vnode> nodes;
-        nodes.reserve(initial_brokers.size());
-        for (auto& b : initial_brokers) {
-            nodes.emplace_back(b.id(), revision);
-        }
-
-        return {std::move(nodes), revision};
-    }
-
-    // old configuration with brokers
-    auto raft_cfg = raft::group_configuration(
-      std::move(initial_brokers), revision);
-    if (unlikely(!_feature_table.is_active(
-          features::feature::raft_improved_configuration))) {
-        raft_cfg.set_version(group_configuration::v_3);
-    }
-    return raft_cfg;
+  std::vector<raft::vnode> initial_nodes, model::revision_id revision) const {
+    return {std::move(initial_nodes), revision};
 }
 
 ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {

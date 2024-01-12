@@ -130,20 +130,6 @@ public:
 
     ss::future<timeout_now_reply> timeout_now(timeout_now_request&& r);
 
-    /// This method adds member to a group
-    ss::future<std::error_code>
-      add_group_member(model::broker, model::revision_id);
-    /// Updates given member configuration
-    ss::future<std::error_code> update_group_member(model::broker);
-    // Removes member from group
-    ss::future<std::error_code>
-      remove_member(model::node_id, model::revision_id);
-    /**
-     * Replace configuration, uses revision provided with brokers
-     */
-    ss::future<std::error_code>
-      replace_configuration(std::vector<broker_revision>, model::revision_id);
-
     /**
      * New simplified configuration change API, accepting only vnode instead of
      * full broker object

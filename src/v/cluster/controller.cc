@@ -74,6 +74,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/fwd.h"
+#include "raft/group_configuration.h"
 #include "security/acl.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
@@ -226,14 +227,23 @@ ss::future<> controller::start(
   ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>
     offsets_recovery,
   std::chrono::milliseconds application_start_time) {
-    auto initial_raft0_brokers = discovery.founding_brokers();
+    auto founding_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
-    seed_nodes.reserve(initial_raft0_brokers.size());
+    seed_nodes.reserve(founding_brokers.size());
     std::transform(
-      initial_raft0_brokers.cbegin(),
-      initial_raft0_brokers.cend(),
+      founding_brokers.cbegin(),
+      founding_brokers.cend(),
       std::back_inserter(seed_nodes),
       [](const model::broker& b) { return b.id(); });
+    std::vector<raft::vnode> initial_raft0_nodes;
+    initial_raft0_nodes.reserve(founding_brokers.size());
+    std::transform(
+      founding_brokers.cbegin(),
+      founding_brokers.cend(),
+      std::back_inserter(initial_raft0_nodes),
+      [](const model::broker& b) {
+          return raft::vnode(b.id(), model::revision_id(0));
+      });
 
     auto conf_invariants = co_await validate_configuration_invariants();
 
@@ -241,7 +251,7 @@ ss::future<> controller::start(
       _partition_manager,
       _shard_table,
       config::node().data_directory().as_sstring(),
-      initial_raft0_brokers);
+      initial_raft0_nodes);
 
     co_await _partition_leaders.start(std::ref(_tp_state));
     co_await _drain_manager.start(std::ref(_partition_manager));
@@ -493,8 +503,9 @@ ss::future<> controller::start(
 
     co_await _members_manager.invoke_on(
       members_manager::shard,
-      [initial_raft0_brokers](members_manager& manager) mutable {
-          return manager.start(std::move(initial_raft0_brokers));
+      [founding_brokers = std::move(founding_brokers)](
+        members_manager& manager) mutable {
+          return manager.start(std::move(founding_brokers));
       });
 
     /**

@@ -224,8 +224,6 @@ private:
     // Raft 0 config updates
     ss::future<>
       handle_raft0_cfg_update(raft::group_configuration, model::offset);
-    changed_nodes
-    calculate_changed_nodes(const raft::group_configuration&) const;
 
     ss::future<> maybe_update_current_node_configuration();
     ss::future<> dispatch_configuration_update(model::broker);
@@ -249,11 +247,6 @@ private:
     ss::future<std::error_code> update_node(model::broker);
 
     ss::future<join_node_reply> make_join_node_success_reply(model::node_id id);
-
-    bool command_based_membership_active() const {
-        return _feature_table.local().is_active(
-          features::feature::membership_change_controller_cmds);
-    }
 
     struct members_snapshot
       : serde::envelope<

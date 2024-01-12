@@ -98,15 +98,14 @@ ss::future<> members_manager::start(std::vector<model::broker> brokers) {
       brokers);
     // no initial brokers, cluster already exists, read members from kv-store
     if (brokers.empty()) {
-        if (unlikely(_raft0->config().is_with_brokers())) {
-            brokers = _raft0->config().brokers();
-            _last_connection_update_offset
-              = _raft0->get_latest_configuration_offset();
-        } else {
-            auto snapshot = read_members_from_kvstore();
-            brokers = std::move(snapshot.members);
-            _last_connection_update_offset = snapshot.update_offset;
-        }
+        auto snapshot = read_members_from_kvstore();
+        vlog(
+          clusterlog.info,
+          "read cluster members from kv-store, update offset: {}",
+          snapshot.members,
+          snapshot.update_offset);
+        brokers = std::move(snapshot.members);
+        _last_connection_update_offset = snapshot.update_offset;
     }
 
     /*
@@ -169,92 +168,27 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
       });
 }
 
-members_manager::changed_nodes members_manager::calculate_changed_nodes(
-  const raft::group_configuration& cfg) const {
-    changed_nodes ret;
-    for (auto& cfg_broker : cfg.brokers()) {
-        // current members table doesn't contain configuration broker, it was
-        // added
-        auto node = _members_table.local().get_node_metadata_ref(
-          cfg_broker.id());
-
-        if (!node) {
-            ret.added.push_back(cfg_broker);
-        } else if (node->get().broker != cfg_broker) {
-            ret.updated.push_back(cfg_broker);
-        }
-    }
-    for (auto [id, broker] : _members_table.local().nodes()) {
-        if (!cfg.contains_broker(id)) {
-            ret.removed.push_back(id);
-        }
-    }
-
-    return ret;
-}
-
 ss::future<> members_manager::handle_raft0_cfg_update(
   raft::group_configuration cfg, model::offset update_offset) {
     absl::flat_hash_set<model::node_id> fully_removed_nodes;
 
-    // skip if configuration does not contain brokers
-    if (unlikely(
-          cfg.is_with_brokers()
-          && update_offset < _first_node_operation_command_offset)) {
-        vlog(
-          clusterlog.info,
-          "processing raft-0 configuration at offset: {} with brokers: {}",
-          update_offset,
-          cfg.brokers());
+    for (const auto& id : _removed_nodes_still_in_raft0) {
+        if (!cfg.contains(raft::vnode(id, model::revision_id(0)))) {
+            fully_removed_nodes.insert(id);
+        }
+    }
 
-        auto diff = calculate_changed_nodes(cfg);
-        for (auto& broker : diff.added) {
-            vlog(
-              clusterlog.debug,
-              "node addition from raft-0 configuration: {}",
-              broker);
-            co_await do_apply_add_node(
-              add_node_cmd(0, std::move(broker)), update_offset);
-        }
-        for (auto& broker : diff.updated) {
-            vlog(
-              clusterlog.debug,
-              "node update from raft-0 configuration: {}",
-              broker);
-            co_await do_apply_update_node(
-              update_node_cfg_cmd(0, std::move(broker)), update_offset);
-        }
-        for (auto& id : diff.removed) {
-            vlog(
-              clusterlog.debug,
-              "node deletion from raft-0 configuration: {}",
-              id);
-            co_await do_apply_remove_node(
-              remove_node_cmd(id, 0), update_offset);
-        }
-
-        // The cluster hasn't yet switched to using node management commands so
-        // all nodes that were just removed in do_apply_remove_node are
-        // considered fully removed. We can immediately close connections to
-        // them.
-        std::swap(_removed_nodes_still_in_raft0, fully_removed_nodes);
-    } else {
-        for (const auto& id : _removed_nodes_still_in_raft0) {
-            if (!cfg.contains(raft::vnode(id, model::revision_id(0)))) {
-                fully_removed_nodes.insert(id);
-            }
-        }
-
-        for (auto id : fully_removed_nodes) {
-            _removed_nodes_still_in_raft0.erase(id);
-        }
+    for (auto id : fully_removed_nodes) {
+        _removed_nodes_still_in_raft0.erase(id);
     }
 
     for (auto id : fully_removed_nodes) {
         _in_progress_updates.erase(id);
     }
 
-    if (update_offset >= _last_connection_update_offset) {
+    if (
+      update_offset >= _last_connection_update_offset
+      && !fully_removed_nodes.empty()) {
         for (auto id : fully_removed_nodes) {
             if (id != _self.id()) {
                 co_await remove_broker_client(
@@ -1674,10 +1608,6 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
 }
 
 ss::future<std::error_code> members_manager::add_node(model::broker broker) {
-    if (!command_based_membership_active()) {
-        return _raft0->add_group_member(
-          std::move(broker), model::revision_id(0));
-    }
     return replicate_and_wait(
       _controller_stm,
       _as,
@@ -1686,10 +1616,6 @@ ss::future<std::error_code> members_manager::add_node(model::broker broker) {
 }
 
 ss::future<std::error_code> members_manager::update_node(model::broker broker) {
-    if (!command_based_membership_active()) {
-        return _raft0->update_group_member(std::move(broker));
-    }
-
     return replicate_and_wait(
       _controller_stm,
       _as,

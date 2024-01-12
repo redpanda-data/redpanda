@@ -94,7 +94,7 @@ std::error_code members_table::apply(model::offset o, add_node_cmd cmd) {
 }
 
 void members_table::set_initial_brokers(std::vector<model::broker> brokers) {
-    vassert(!_nodes.empty(), "can not initialize not empty members table");
+    vassert(_nodes.empty(), "can not initialize not empty members table");
     vlog(clusterlog.info, "setting initial nodes {}", brokers);
     for (auto& b : brokers) {
         const auto id = b.id();

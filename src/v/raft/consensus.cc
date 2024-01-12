@@ -1066,29 +1066,6 @@ void consensus::arm_vote_timeout() {
     }
 }
 
-ss::future<std::error_code>
-consensus::update_group_member(model::broker broker) {
-    return _op_lock.get_units()
-      .then([this, broker = std::move(broker)](ssx::semaphore_units u) mutable {
-          auto cfg = _configuration_manager.get_latest();
-          if (!cfg.contains_broker(broker.id())) {
-              vlog(
-                _ctxlog.warn,
-                "Node with id {} does not exists in current configuration",
-                broker.id());
-              return ss::make_ready_future<std::error_code>(
-                errc::node_does_not_exists);
-          }
-          // update broker information
-          cfg.update(std::move(broker));
-
-          return replicate_configuration(std::move(u), std::move(cfg));
-      })
-      .handle_exception_type([](const ss::broken_semaphore&) {
-          return make_error_code(errc::shutting_down);
-      });
-}
-
 template<typename Func>
 ss::future<std::error_code> consensus::change_configuration(Func&& f) {
     return _op_lock.get_units()
@@ -1119,54 +1096,6 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
       })
       .handle_exception_type([](const ss::broken_semaphore&) {
           return make_error_code(errc::shutting_down);
-      });
-}
-
-ss::future<std::error_code> consensus::add_group_member(
-  model::broker node, model::revision_id new_revision) {
-    vlog(_ctxlog.trace, "Adding member: {}", node);
-    return change_configuration([node = std::move(node), new_revision](
-                                  group_configuration current) mutable {
-        using ret_t = result<group_configuration>;
-        if (current.contains_broker(node.id())) {
-            return ret_t{errc::node_already_exists};
-        }
-        current.add_broker(std::move(node), new_revision);
-        current.set_revision(new_revision);
-
-        return ret_t{std::move(current)};
-    });
-}
-
-ss::future<std::error_code>
-consensus::remove_member(model::node_id id, model::revision_id new_revision) {
-    vlog(_ctxlog.trace, "Removing member: {}", id);
-    return change_configuration(
-      [id, new_revision](group_configuration current) {
-          using ret_t = result<group_configuration>;
-          if (!current.contains_broker(id)) {
-              return ret_t{errc::node_does_not_exists};
-          }
-          current.set_revision(new_revision);
-          current.remove_broker(id);
-
-          if (current.current_config().voters.empty()) {
-              return ret_t{errc::invalid_configuration_update};
-          }
-          return ret_t{std::move(current)};
-      });
-}
-
-ss::future<std::error_code> consensus::replace_configuration(
-  std::vector<raft::broker_revision> new_brokers,
-  model::revision_id new_revision) {
-    return change_configuration(
-      [new_brokers = std::move(new_brokers),
-       new_revision](group_configuration current) mutable {
-          using ret_t = result<group_configuration>;
-          current.replace_brokers(std::move(new_brokers), new_revision);
-          current.set_revision(new_revision);
-          return ret_t{std::move(current)};
       });
 }
 

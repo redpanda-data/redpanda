@@ -25,8 +25,8 @@ static ss::future<consensus_ptr> create_raft0(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   const ss::sstring& data_directory,
-  std::vector<model::broker> initial_brokers) {
-    if (!initial_brokers.empty()) {
+  std::vector<raft::vnode> initial_nodes) {
+    if (!initial_nodes.empty()) {
         vlog(clusterlog.info, "Current node is a cluster founder");
     }
 
@@ -34,7 +34,7 @@ static ss::future<consensus_ptr> create_raft0(
       .manage(
         storage::ntp_config(model::controller_ntp, data_directory),
         raft::group_id(0),
-        std::move(initial_brokers),
+        std::move(initial_nodes),
         raft::with_learner_recovery_throttle::no,
         raft::keep_snapshotted_log::no,
         std::nullopt)
