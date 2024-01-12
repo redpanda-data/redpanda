@@ -201,7 +201,6 @@ public:
       ss::sharded<shard_placement_table>&,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
-      ss::sharded<members_table>&,
       ss::sharded<cluster::partition_leaders_table>&,
       ss::sharded<topics_frontend>&,
       ss::sharded<storage::api>&,
@@ -383,7 +382,6 @@ private:
     shard_placement_table& _shard_placement;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
-    ss::sharded<members_table>& _members_table;
     ss::sharded<partition_leaders_table>& _partition_leaders_table;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<storage::api>& _storage;
