@@ -12,6 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/members_table.h"
+#include "config/configuration.h"
 #include "kafka/client/config_utils.h"
 #include "net/unresolved_address.h"
 #include "pandaproxy/api/api-doc/rest.json.hh"
@@ -111,6 +112,8 @@ proxy::proxy(
   cluster::controller* controller)
   : _config(config)
   , _mem_sem(max_memory, "pproxy/mem")
+  , _inflight_sem(config::shard_local_cfg().max_in_flight_pandaproxy_requests_per_shard(), "pproxy/inflight")
+  , _inflight_config_binding(config::shard_local_cfg().max_in_flight_pandaproxy_requests_per_shard.bind())
   , _client(client)
   , _client_cache(client_cache)
   , _ctx{{{{}, _mem_sem, {}, smp_sg}, *this},
@@ -125,7 +128,10 @@ proxy::proxy(
       _ctx,
       json::serialization_format::application_json)
   , _ensure_started{[this]() { return do_start(); }}
-  , _controller(controller) {}
+  , _controller(controller) {
+    _inflight_config_binding.watch(
+      [this]() { _inflight_sem.set_capacity(_inflight_config_binding()); });
+}
 
 ss::future<> proxy::start() {
     _server.routes(get_proxy_routes(_gate, _ensure_started));
