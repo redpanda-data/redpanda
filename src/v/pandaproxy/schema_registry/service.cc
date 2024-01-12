@@ -509,7 +509,7 @@ service::service(
       config::shard_local_cfg()
         .max_in_flight_schema_registry_requests_per_shard.bind())
   , _client(client)
-  , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
+  , _ctx{{{}, _mem_sem, _inflight_sem, {}, smp_sg}, *this}
   , _server(
       "schema_registry", // server_name
       "schema_registry", // public_metric_group_name
