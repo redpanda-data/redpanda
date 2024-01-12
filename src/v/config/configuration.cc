@@ -2837,6 +2837,24 @@ configuration::configuration()
       "`seastar::smp_service_group` documentation)",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       std::nullopt)
+  , max_in_flight_schema_registry_requests_per_shard(
+      *this,
+      "max_in_flight_schema_registry_requests_per_shard",
+      "Maximum number of in flight HTTP requests permitted in schema registry "
+      "per shard.  Any additional requests above this limit will be rejected "
+      "with a 429 error",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      500,
+      {.min = 1})
+  , max_in_flight_pandaproxy_requests_per_shard(
+      *this,
+      "max_in_flight_pandaproxy_requests_per_shard",
+      "Maximum number of in flight HTTP requests permitted in pandaproxy per "
+      "shard.  Any additional requests above this limit will be rejected with "
+      "a 429 error",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      500,
+      {.min = 1})
   , kafka_memory_share_for_fetch(
       *this,
       "kafka_memory_share_for_fetch",

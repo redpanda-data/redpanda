@@ -530,6 +530,8 @@ struct configuration final : public config_store {
     config::property<size_t> kafka_schema_id_validation_cache_capacity;
 
     property<std::optional<uint32_t>> pp_sr_smp_max_non_local_requests;
+    bounded_property<size_t> max_in_flight_schema_registry_requests_per_shard;
+    bounded_property<size_t> max_in_flight_pandaproxy_requests_per_shard;
 
     bounded_property<double, numeric_bounds> kafka_memory_share_for_fetch;
     property<size_t> kafka_memory_batch_size_estimate_for_fetch;
