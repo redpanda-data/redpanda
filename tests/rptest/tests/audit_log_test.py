@@ -580,6 +580,7 @@ class AuditLogTestBase(RedpandaTest):
 
         mapper = MessageMapper(self.redpanda.logger, filter_fn, stop_cond,
                                self.ocsf_server)
+        self.redpanda.logger.debug("Starting audit_log consumer...")
         consumer = self.get_rpk_consumer(topic=self.audit_log, offset='oldest')
         consumer.start()
 
@@ -591,9 +592,15 @@ class AuditLogTestBase(RedpandaTest):
             wait_until(predicate,
                        timeout_sec=timeout_sec,
                        backoff_sec=backoff_sec)
+        except Exception as e:
+            actual = self.aggregate_count(mapper.records)
+            self.logger.error(
+                f"Failed waiting on records, observed: {actual} records")
+            raise e
         finally:
             consumer.stop()
             consumer.free()
+            self.redpanda.logger.debug("audit_log consumer has stopped")
         return mapper.records
 
     def find_matching_record(self, filter_fn, valid_check_fn, desc):
@@ -619,12 +626,8 @@ class AuditLogTestBase(RedpandaTest):
         """
         stop_cond = lambda records: valid_check_fn(
             self.aggregate_count(records))
-        records = self.read_all_from_audit_log(filter_fn=filter_fn,
-                                               stop_cond=stop_cond)
-        assert valid_check_fn(
-            self.aggregate_count(records)
-        ), f'Expected {desc}, Actual: {self.aggregate_count(records)}'
-        return records
+        return self.read_all_from_audit_log(filter_fn=filter_fn,
+                                            stop_cond=stop_cond)
 
 
 class AuditLogTestsAppLifecycle(AuditLogTestBase):
