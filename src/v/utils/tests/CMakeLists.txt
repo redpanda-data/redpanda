@@ -48,6 +48,7 @@ rp_test(
     stable_iterator_test.cc
     tracking_allocator_tests.cc
     tristate_test.cc
+    xid_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map v::random
   LABELS utils
