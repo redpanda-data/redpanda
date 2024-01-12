@@ -13,6 +13,7 @@
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/security_frontend.h"
+#include "config/configuration.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "kafka/client/config_utils.h"
@@ -502,6 +503,11 @@ service::service(
   ss::sharded<security::audit::audit_log_manager>& audit_mgr)
   : _config(config)
   , _mem_sem(max_memory, "pproxy/schema-svc")
+  , _inflight_sem(config::shard_local_cfg()
+                    .max_in_flight_schema_registry_requests_per_shard())
+  , _inflight_config_binding(
+      config::shard_local_cfg()
+        .max_in_flight_schema_registry_requests_per_shard.bind())
   , _client(client)
   , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
@@ -520,7 +526,10 @@ service::service(
   , _auth{
       config::always_true(),
       config::shard_local_cfg().superusers.bind(),
-      controller.get()} {}
+      controller.get()} {
+    _inflight_config_binding.watch(
+      [this]() { _inflight_sem.set_capacity(_inflight_config_binding()); });
+}
 
 ss::future<> service::start() {
     co_await configure();

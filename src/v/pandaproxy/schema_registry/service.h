@@ -20,6 +20,7 @@
 #include "pandaproxy/util.h"
 #include "security/fwd.h"
 #include "security/request_auth.h"
+#include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -70,6 +71,8 @@ private:
     ss::future<> fetch_internal_topic();
     configuration _config;
     ssx::semaphore _mem_sem;
+    adjustable_semaphore _inflight_sem;
+    config::binding<size_t> _inflight_config_binding;
     ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
     ctx_server<service>::context_t _ctx;
