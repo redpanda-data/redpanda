@@ -11,7 +11,7 @@ name: transform-sdk-release
 on:
   push:
     tags:
-      - 'v*'
+      - 'transform-sdk/*'
 
 jobs:
   list-golang:
@@ -29,20 +29,25 @@ jobs:
           go-version: 1.20.6
 
       - name: Create golang specific tag
+        id: gotag
         uses: actions/github-script@v7
         with:
           script: |
+            const version = '${{github.ref_name}}'.slice('transform-sdk/'.length);
             github.rest.git.createRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              ref: 'refs/tags/src/transform-sdk/go/transform/${{github.ref_name}}',
+              ref: 'refs/tags/src/transform-sdk/go/transform/' + version,
               sha: context.sha
-            })
-
+            });
+            // Return the result so we can use it to publish via `go list` below.
+            return version;
+          result-encoding: string
       - name: List module
         working-directory: src/transform-sdk/go
         # https://go.dev/doc/modules/publishing
-        run: go list -m github.com/redpanda-data/redpanda/src/transform-sdk/go/transform@${{github.ref_name}}
+        run: 
+          go list -m github.com/redpanda-data/redpanda/src/transform-sdk/go/transform@${{steps.gotag.outputs.result}}
 
   publish-rust:
     name: Publish Rust Transform SDK
