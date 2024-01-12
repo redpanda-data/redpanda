@@ -104,7 +104,7 @@ partition_manager::get_topic_partition_table(
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
-  std::vector<model::broker> initial_nodes,
+  std::vector<raft::vnode> initial_nodes,
   std::optional<remote_topic_properties> rtp,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,

@@ -331,7 +331,7 @@ private:
       raft::group_id,
       model::revision_id log_revision,
       model::revision_id cmd_revision,
-      std::vector<model::broker>);
+      std::vector<raft::vnode>);
 
     ss::future<> add_to_shard_table(
       model::ntp, raft::group_id, ss::shard_id, model::revision_id);
@@ -394,8 +394,6 @@ private:
 
     void housekeeping();
     void setup_metrics();
-
-    bool command_based_membership_active() const;
 
     bool should_skip(const model::ntp&) const;
 

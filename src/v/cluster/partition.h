@@ -224,12 +224,6 @@ public:
       transfer_leadership(transfer_leadership_request);
 
     ss::future<std::error_code> update_replica_set(
-      std::vector<raft::broker_revision> brokers,
-      model::revision_id new_revision_id) {
-        return _raft->replace_configuration(
-          std::move(brokers), new_revision_id);
-    }
-    ss::future<std::error_code> update_replica_set(
       std::vector<raft::vnode> nodes,
       model::revision_id new_revision_id,
       std::optional<model::offset> learner_start_offset) {
