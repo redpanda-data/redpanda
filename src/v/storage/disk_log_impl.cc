@@ -1542,6 +1542,8 @@ ss::future<> disk_log_impl::flush() {
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
+    vlog(
+      stlog.trace, "flush on segment with offsets {}", _segs.back()->offsets());
     return _segs.back()->flush();
 }
 
@@ -2040,6 +2042,7 @@ ss::future<> disk_log_impl::do_truncate(
 
     auto stats = offsets();
 
+    vlog(stlog.trace, "do_truncate at {}, log {}", cfg.base_offset, stats);
     if (cfg.base_offset > stats.dirty_offset || _segs.empty()) {
         co_return;
     }
@@ -2084,6 +2087,12 @@ ss::future<> disk_log_impl::do_truncate(
     }
 
     auto initial_generation_id = last->get_generation_id();
+    vlog(
+      stlog.trace,
+      "do_truncate at {}, start {}, initial_size {}",
+      cfg.base_offset,
+      start,
+      initial_size);
 
     // an unchecked reader is created which does not enforce the logical
     // starting offset. this is needed because we really do want to read
@@ -2127,6 +2136,12 @@ ss::future<> disk_log_impl::do_truncate(
           *this));
     }
     auto [new_max_offset, file_position, new_max_timestamp] = phs.value();
+    vlog(
+      stlog.trace,
+      "do_truncate at {}, new_max_offset {}, file_position {}",
+      cfg.base_offset,
+      new_max_offset,
+      file_position);
 
     if (file_position == 0) {
         _segs.pop_back();
