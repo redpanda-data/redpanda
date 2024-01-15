@@ -36,6 +36,12 @@ constexpr std::string_view confluence_reference() {
            "https://vectorizedio.atlassian.net/l/cp/iuEMd2NN\n";
 }
 
+fmt::appender fmt::formatter<seastar::memory::allocation_site>::format(
+  const seastar::memory::allocation_site& site, fmt::format_context& ctx) {
+    return fmt::format_to(
+      ctx.out(), "{} {} {}", site.size, site.count, site.backtrace);
+}
+
 /// Put `top_n` allocation sites into the front of `allocation_sites`
 static void top_n_allocation_sites(
   std::vector<ss::memory::allocation_site>& allocation_sites, size_t top_n) {
