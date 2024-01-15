@@ -1245,7 +1245,7 @@ configuration::configuration()
       *this,
       "controller_backend_housekeeping_interval_ms",
       "Interval between iterations of controller backend housekeeping loop",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1s)
   , node_management_operation_timeout_ms(
       *this,

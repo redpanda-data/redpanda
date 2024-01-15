@@ -32,6 +32,7 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/group_configuration.h"
 #include "raft/types.h"
+#include "ssx/event.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
@@ -249,7 +250,102 @@ std::error_code check_configuration_update(
     return errc::success;
 }
 
+enum class partition_claim_state {
+    acquiring, // shard has an intention to own this partition
+    acquired,  // shard is the sole owner of this partition
+    released,  // the partition is free to be acquired by other shards.
+};
+
+[[maybe_unused]] std::ostream&
+operator<<(std::ostream& o, partition_claim_state s) {
+    switch (s) {
+    case partition_claim_state::acquiring:
+        return o << "acquiring";
+    case partition_claim_state::acquired:
+        return o << "acquired";
+    case partition_claim_state::released:
+        return o << "released";
+    }
+    __builtin_unreachable();
+}
+
 } // namespace
+
+struct controller_backend::ntp_reconciliation_state {
+    std::optional<model::revision_id> changed_at;
+    std::optional<model::revision_id> properties_changed_at;
+    bool removed = false;
+
+    ssx::event wakeup_event{"c/cb/rfwe"};
+    ss::lowres_clock::time_point last_retried_at = ss::lowres_clock::now();
+    std::optional<in_progress_operation> cur_operation;
+
+    bool is_reconciled() const { return !changed_at.has_value(); }
+
+    void mark_reconciled(model::revision_id rev) {
+        mark_properties_reconciled(rev);
+        if (changed_at && *changed_at <= rev) {
+            changed_at = std::nullopt;
+        }
+        cur_operation = std::nullopt;
+    }
+
+    void mark_properties_reconciled(model::revision_id rev) {
+        if (properties_changed_at && *properties_changed_at <= rev) {
+            properties_changed_at = std::nullopt;
+        }
+    }
+
+    void set_cur_operation(
+      model::revision_id rev,
+      partition_operation_type type,
+      partition_assignment p_as = partition_assignment{}) {
+        if (!cur_operation) {
+            cur_operation = in_progress_operation{};
+        }
+        cur_operation->revision = rev;
+        cur_operation->type = type;
+        cur_operation->assignment = std::move(p_as);
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
+        fmt::print(
+          o,
+          "{{changed_at: {}, properties_changed_at: {}, removed: {}, "
+          "cur_operation: {}}}",
+          rs.changed_at,
+          rs.properties_changed_at,
+          rs.removed,
+          rs.cur_operation);
+        return o;
+    }
+};
+
+/// Partition claim is a small struct that is used for two purposes:
+/// 1) tracking which shard hosts persistent shard-local kvstore data for
+/// this partition and 2) is the partition currently
+/// starting/started/stopping or otherwise in use by this shard (i.e. a
+/// lock). This is useful for coordinating cross-shard partition moves. The
+/// _ntp_claims map is usually small because a partition object held by
+/// partition_manager also counts as a claim so we insert the claim into the
+/// map before we start the partition and delete the claim after the
+/// partition is fully started.
+struct controller_backend::partition_claim {
+    model::revision_id log_revision;
+    partition_claim_state state = partition_claim_state::released;
+    bool hosting = false;
+
+    friend std::ostream& operator<<(std::ostream& o, partition_claim pc) {
+        fmt::print(
+          o,
+          "{{log_revision: {}, state: {}, hosting: {}}}",
+          pc.log_revision,
+          pc.state,
+          pc.hosting);
+        return o;
+    }
+};
 
 controller_backend::controller_backend(
   ss::sharded<topic_table>& tp_state,
@@ -260,6 +356,7 @@ controller_backend::controller_backend(
   ss::sharded<topics_frontend>& frontend,
   ss::sharded<storage::api>& storage,
   ss::sharded<features::feature_table>& features,
+  config::binding<std::chrono::milliseconds> housekeeping_interval,
   config::binding<std::optional<size_t>> initial_retention_local_target_bytes,
   config::binding<std::optional<std::chrono::milliseconds>>
     initial_retention_local_target_ms,
@@ -274,13 +371,20 @@ controller_backend::controller_backend(
   , _features(features)
   , _self(*config::node().node_id())
   , _data_directory(config::node().data_directory().as_sstring())
-  , _housekeeping_timer_interval(
-      config::shard_local_cfg().controller_backend_housekeeping_interval_ms())
+  , _housekeeping_interval(std::move(housekeeping_interval))
+  , _housekeeping_jitter(_housekeeping_interval())
   , _initial_retention_local_target_bytes(
       std::move(initial_retention_local_target_bytes))
   , _initial_retention_local_target_ms(
       std::move(initial_retention_local_target_ms))
-  , _as(as) {}
+  , _as(as) {
+    _housekeeping_interval.watch([this] {
+        _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>(
+          _housekeeping_interval());
+    });
+}
+
+controller_backend::~controller_backend() = default;
 
 bool controller_backend::command_based_membership_active() const {
     return _features.local().is_active(
@@ -289,14 +393,17 @@ bool controller_backend::command_based_membership_active() const {
 
 ss::future<> controller_backend::stop() {
     vlog(clusterlog.info, "Stopping Controller Backend...");
-    _housekeeping_timer.cancel();
+    for (auto& [_, rs] : _states) {
+        rs->wakeup_event.set();
+    }
+    _reconciliation_sem.broken();
     return _gate.close();
 }
 
 std::optional<controller_backend::in_progress_operation>
 controller_backend::get_current_op(const model::ntp& ntp) const {
     if (auto it = _states.find(ntp); it != _states.end()) {
-        return it->second.cur_operation;
+        return it->second->cur_operation;
     }
     return {};
 }
@@ -382,9 +489,13 @@ ss::future<> controller_backend::start() {
                     });
               });
         }
-        start_topics_reconciliation_loop();
-        _housekeeping_timer.set_callback([this] { housekeeping(); });
-        _housekeeping_timer.arm(_housekeeping_timer_interval);
+
+        // unblock reconciliation fibers
+        constexpr size_t max_reconciliation_concurrency = 1024;
+        _reconciliation_sem.signal(max_reconciliation_concurrency);
+
+        start_fetch_deltas_loop();
+        ssx::background = stuck_ntp_watchdog_fiber();
     });
 }
 
@@ -396,7 +507,6 @@ ss::future<> controller_backend::bootstrap_controller_backend() {
 
     co_await fetch_deltas();
     co_await bootstrap_partition_claims();
-    co_await reconcile_topics();
 }
 
 namespace {
@@ -559,43 +669,50 @@ ss::future<> controller_backend::fetch_deltas() {
     return _topics.local()
       .wait_for_changes(_as.local())
       .then([this](fragmented_vector<topic_table::delta> deltas) {
-          return ss::with_semaphore(
-            _topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
-                for (auto& d : deltas) {
-                    vlog(clusterlog.trace, "got delta: {}", d);
+          for (auto& d : deltas) {
+              vlog(clusterlog.trace, "got delta: {}", d);
 
-                    auto& rs = _states[d.ntp];
+              auto [rs_it, inserted] = _states.try_emplace(d.ntp);
+              if (inserted) {
+                  rs_it->second
+                    = ss::make_lw_shared<ntp_reconciliation_state>();
+              }
+              auto& rs = *rs_it->second;
 
-                    if (rs.changed_at) {
-                        vassert(
-                          *rs.changed_at <= d.revision,
-                          "[{}]: delta revision unexpectedly decreased, "
-                          "was: {}, update: {}",
-                          d.ntp,
-                          rs.changed_at,
-                          d.revision);
-                    }
-                    rs.changed_at = d.revision;
+              if (rs.changed_at) {
+                  vassert(
+                    *rs.changed_at <= d.revision,
+                    "[{}]: delta revision unexpectedly decreased, "
+                    "was: {}, update: {}",
+                    d.ntp,
+                    rs.changed_at,
+                    d.revision);
+              }
+              rs.changed_at = d.revision;
 
-                    if (d.type == topic_table_delta_type::added) {
-                        rs.removed = false;
-                    } else {
-                        vassert(
-                          !rs.removed,
-                          "[{}] unexpected delta: {}, state: {}",
-                          d.ntp,
-                          d,
-                          rs);
-                        if (d.type == topic_table_delta_type::removed) {
-                            rs.removed = true;
-                        }
-                    }
+              if (d.type == topic_table_delta_type::added) {
+                  rs.removed = false;
+              } else {
+                  vassert(
+                    !rs.removed,
+                    "[{}] unexpected delta: {}, state: {}",
+                    d.ntp,
+                    d,
+                    rs);
+                  if (d.type == topic_table_delta_type::removed) {
+                      rs.removed = true;
+                  }
+              }
 
-                    if (d.type == topic_table_delta_type::properties_updated) {
-                        rs.properties_changed_at = d.revision;
-                    }
-                }
-            });
+              if (d.type == topic_table_delta_type::properties_updated) {
+                  rs.properties_changed_at = d.revision;
+              }
+
+              rs.wakeup_event.set();
+              if (inserted) {
+                  ssx::background = reconcile_ntp_fiber(d.ntp, rs_it->second);
+              }
+          }
       });
 }
 
@@ -603,7 +720,7 @@ ss::future<> controller_backend::bootstrap_partition_claims() {
     for (const auto& [ntp, rs] : _states) {
         co_await ss::maybe_yield();
 
-        if (rs.removed) {
+        if (rs->removed) {
             continue;
         }
 
@@ -741,58 +858,73 @@ ss::future<> controller_backend::clear_orphan_topic_files(
       });
 }
 
-void controller_backend::start_topics_reconciliation_loop() {
+void controller_backend::start_fetch_deltas_loop() {
     ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _as.local().abort_requested(); },
           [this] {
               return fetch_deltas()
-                .then([this] { return reconcile_topics(); })
                 .handle_exception_type(
                   [](const ss::abort_requested_exception&) {
                       // Shutting down: don't log this exception as an error
                       vlog(
                         clusterlog.debug,
-                        "Abort requested while reconciling topics");
+                        "Abort requested while fetching deltas");
                   })
                 .handle_exception([](const std::exception_ptr& e) {
                     vlog(
-                      clusterlog.error,
-                      "Error while reconciling topics - {}",
-                      e);
+                      clusterlog.error, "Error while fetching deltas - {}", e);
                 });
           });
     });
 }
 
-void controller_backend::housekeeping() {
-    ssx::background
-      = ssx::spawn_with_gate_then(_gate, [this] {
-            auto f = ss::now();
-            if (!_states.empty() && _topics_sem.available_units() > 0) {
-                f = reconcile_topics();
+ss::future<> controller_backend::reconcile_ntp_fiber(
+  model::ntp ntp, ss::lw_shared_ptr<ntp_reconciliation_state> rs) {
+    if (_gate.is_closed()) {
+        co_return;
+    }
+    auto gate_holder = _gate.hold();
+
+    while (true) {
+        co_await rs->wakeup_event.wait(_housekeeping_jitter.next_duration());
+        if (_as.local().abort_requested()) {
+            break;
+        }
+
+        try {
+            auto sem_units = co_await ss::get_units(_reconciliation_sem, 1);
+            rs->last_retried_at = ss::lowres_clock::now();
+            co_await try_reconcile_ntp(ntp, *rs);
+            if (rs->is_reconciled()) {
+                _states.erase(ntp);
+                break;
             }
-            return f.finally([this] {
-                if (!_gate.is_closed()) {
-                    _housekeeping_timer.arm(_housekeeping_timer_interval);
-                }
-            });
-        }).handle_exception([](const std::exception_ptr& e) {
-            // we ignore the exception as controller backend will retry in next
-            // loop
-            vlog(clusterlog.warn, "error during reconciliation - {}", e);
-        });
+        } catch (...) {
+            auto ex = std::current_exception();
+            if (!ssx::is_shutdown_exception(ex)) {
+                vlog(
+                  clusterlog.error,
+                  "[{}] unexpected exception during reconciliation: {}",
+                  ntp,
+                  ex);
+            }
+        }
+    }
 }
 
-ss::future<> controller_backend::reconcile_ntp(
+ss::future<> controller_backend::try_reconcile_ntp(
   const model::ntp& ntp, ntp_reconciliation_state& rs) {
+    // Run the reconciliation process until an error occurs that will force us
+    // to sleep before retrying.
+
     if (should_skip(ntp)) {
         vlog(clusterlog.debug, "[{}] skipping reconcilation", ntp);
         rs.mark_reconciled(_topics.local().last_applied_revision());
         co_return;
     }
 
-    while (rs.changed_at && !_as.local().abort_requested()) {
+    while (!rs.is_reconciled() && !_as.local().abort_requested()) {
         model::revision_id changed_at = *rs.changed_at;
         cluster::errc last_error = errc::success;
         try {
@@ -839,26 +971,46 @@ ss::future<> controller_backend::reconcile_ntp(
     }
 }
 
-// caller must hold _topics_sem lock
-ss::future<> controller_backend::reconcile_topics() {
-    return ss::with_semaphore(_topics_sem, 1, [this] {
-        if (_states.empty()) {
-            return ss::now();
+ss::future<> controller_backend::stuck_ntp_watchdog_fiber() {
+    const auto sleep_interval = 10 * _housekeeping_interval();
+    const auto stuck_timeout = 60 * _housekeeping_interval();
+    const size_t max_reported = 50;
+
+    if (_gate.is_closed()) {
+        co_return;
+    }
+    auto gate_holder = _gate.hold();
+
+    while (!_as.local().abort_requested()) {
+        try {
+            co_await ss::sleep_abortable(sleep_interval, _as.local());
+        } catch (const ss::sleep_aborted&) {
+            break;
         }
-        // reconcile NTPs in parallel
-        return ss::max_concurrent_for_each(
-                 _states.begin(),
-                 _states.end(),
-                 1024,
-                 [this](auto& rs) {
-                     return reconcile_ntp(rs.first, rs.second);
-                 })
-          .then([this] {
-              // cleanup reconciled NTP keys
-              absl::erase_if(
-                _states, [](const auto& rs) { return !rs.second.changed_at; });
-          });
-    });
+
+        auto now = ss::lowres_clock::now();
+        size_t num_stuck = 0;
+        for (const auto& [ntp, rs] : _states) {
+            if (now > rs->last_retried_at + stuck_timeout) {
+                ++num_stuck;
+                if (num_stuck > max_reported) {
+                    vlog(
+                      clusterlog.error,
+                      "more than {} stuck partitions, won't report more",
+                      max_reported);
+                    break;
+                }
+
+                vlog(
+                  clusterlog.error,
+                  "[{}] reconciliation seems stuck "
+                  "(last retried {}s. ago), state: {}",
+                  ntp,
+                  (now - rs->last_retried_at) / 1s,
+                  *rs);
+            }
+        }
+    }
 }
 
 ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(

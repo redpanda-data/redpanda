@@ -203,11 +203,13 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<storage::api>&,
       ss::sharded<features::feature_table>&,
+      config::binding<std::chrono::milliseconds> housekeeping_interval,
       config::binding<std::optional<size_t>>
         initial_retention_local_target_bytes,
       config::binding<std::optional<std::chrono::milliseconds>>
         initial_retention_local_target_ms,
       ss::sharded<seastar::abort_source>&);
+    ~controller_backend();
 
     ss::future<> stop();
     ss::future<> start();
@@ -228,52 +230,8 @@ public:
     get_current_op(const model::ntp&) const;
 
 private:
-    struct ntp_reconciliation_state {
-        std::optional<model::revision_id> changed_at;
-        std::optional<model::revision_id> properties_changed_at;
-        bool removed = false;
-
-        std::optional<in_progress_operation> cur_operation;
-
-        void mark_reconciled(model::revision_id rev) {
-            mark_properties_reconciled(rev);
-            if (changed_at && *changed_at <= rev) {
-                changed_at = std::nullopt;
-            }
-            cur_operation = std::nullopt;
-        }
-
-        void mark_properties_reconciled(model::revision_id rev) {
-            if (properties_changed_at && *properties_changed_at <= rev) {
-                properties_changed_at = std::nullopt;
-            }
-        }
-
-        void set_cur_operation(
-          model::revision_id rev,
-          partition_operation_type type,
-          partition_assignment p_as = partition_assignment{}) {
-            if (!cur_operation) {
-                cur_operation = in_progress_operation{};
-            }
-            cur_operation->revision = rev;
-            cur_operation->type = type;
-            cur_operation->assignment = std::move(p_as);
-        }
-
-        friend std::ostream&
-        operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
-            fmt::print(
-              o,
-              "{{changed_at: {}, properties_changed_at: {}, removed: {}, "
-              "cur_operation: {}}}",
-              rs.changed_at,
-              rs.properties_changed_at,
-              rs.removed,
-              rs.cur_operation);
-            return o;
-        }
-    };
+    struct ntp_reconciliation_state;
+    struct partition_claim;
 
     // Topics
     ss::future<> bootstrap_controller_backend();
@@ -291,15 +249,20 @@ private:
     ss::future<> clear_orphan_topic_files(
       model::revision_id bootstrap_revision,
       absl::flat_hash_map<model::ntp, model::revision_id> topic_table_snapshot);
-    void start_topics_reconciliation_loop();
 
+    void start_fetch_deltas_loop();
     ss::future<> fetch_deltas();
 
     ss::future<> bootstrap_partition_claims();
-    ss::future<> reconcile_topics();
-    ss::future<> reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
+
+    ss::future<> reconcile_ntp_fiber(
+      model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>);
+    ss::future<>
+    try_reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
     ss::future<result<ss::stop_iteration>>
     reconcile_ntp_step(const model::ntp&, ntp_reconciliation_state&);
+
+    ss::future<> stuck_ntp_watchdog_fiber();
 
     /**
      * Given the original and new replica set for a force configuration, splits
@@ -392,7 +355,6 @@ private:
 
     ss::future<std::error_code> dispatch_revert_cancel_move(model::ntp);
 
-    void housekeeping();
     void setup_metrics();
 
     bool command_based_membership_active() const;
@@ -412,62 +374,24 @@ private:
     ss::sharded<features::feature_table>& _features;
     model::node_id _self;
     ss::sstring _data_directory;
-    std::chrono::milliseconds _housekeeping_timer_interval;
+    config::binding<std::chrono::milliseconds> _housekeeping_interval;
+    simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     config::binding<std::optional<size_t>>
       _initial_retention_local_target_bytes;
     config::binding<std::optional<std::chrono::milliseconds>>
       _initial_retention_local_target_ms;
     ss::sharded<ss::abort_source>& _as;
 
-    absl::btree_map<model::ntp, ntp_reconciliation_state> _states;
+    absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
+      _states;
 
-    enum class partition_claim_state {
-        acquiring, // shard has an intention to own this partition
-        acquired,  // shard is the sole owner of this partition
-        released,  // the partition is free to be acquired by other shards.
-    };
-
-    friend std::ostream& operator<<(std::ostream& o, partition_claim_state s) {
-        switch (s) {
-        case partition_claim_state::acquiring:
-            return o << "acquiring";
-        case partition_claim_state::acquired:
-            return o << "acquired";
-        case partition_claim_state::released:
-            return o << "released";
-        }
-        __builtin_unreachable();
-    }
-
-    /// Partition claim is a small struct that is used for two purposes:
-    /// 1) tracking which shard hosts persistent shard-local kvstore data for
-    /// this partition and 2) is the partition currently
-    /// starting/started/stopping or otherwise in use by this shard (i.e. a
-    /// lock). This is useful for coordinating cross-shard partition moves. The
-    /// _ntp_claims map is usually small because a partition object held by
-    /// partition_manager also counts as a claim so we insert the claim into the
-    /// map before we start the partition and delete the claim after the
-    /// partition is fully started.
-    struct partition_claim {
-        model::revision_id log_revision;
-        partition_claim_state state = partition_claim_state::released;
-        bool hosting = false;
-
-        friend std::ostream& operator<<(std::ostream& o, partition_claim pc) {
-            fmt::print(
-              o,
-              "{{log_revision: {}, state: {}, hosting: {}}}",
-              pc.log_revision,
-              pc.state,
-              pc.hosting);
-            return o;
-        }
-    };
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, partition_claim> _ntp_claims;
 
-    ss::timer<> _housekeeping_timer;
-    ssx::semaphore _topics_sem{1, "c/controller-be"};
+    // Limits the number of concurrently executing reconciliation fibers.
+    // Initially reconciliation is blocked and we deposit a non-zero amount of
+    // units when we are ready to start reconciling.
+    ssx::semaphore _reconciliation_sem{0, "c/controller-be"};
     ss::gate _gate;
 
     metrics::internal_metric_groups _metrics;

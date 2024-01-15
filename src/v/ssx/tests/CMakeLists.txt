@@ -19,6 +19,7 @@ rp_test(
   BINARY_NAME ssx_gunit
   SOURCES
     work_queue_test.cc
+    event_test.cc
   LIBRARIES v::gtest_main v::ssx
   LABELS ssx
 )
