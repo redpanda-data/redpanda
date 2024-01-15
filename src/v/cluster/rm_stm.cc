@@ -2498,7 +2498,7 @@ void rm_stm::setup_metrics() {
           labels),
       },
       {},
-      {sm::shard_label});
+      {sm::shard_label, partition_label});
 }
 
 ss::future<> rm_stm::maybe_log_tx_stats() {

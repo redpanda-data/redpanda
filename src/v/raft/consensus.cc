@@ -44,6 +44,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/util/defer.hh>
 
@@ -185,7 +186,7 @@ void consensus::setup_metrics() {
           labels),
       },
       {},
-      {sm::shard_label});
+      {sm::shard_label, sm::label("partition")});
 }
 
 void consensus::setup_public_metrics() {

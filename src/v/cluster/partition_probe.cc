@@ -20,6 +20,9 @@
 
 namespace cluster {
 
+static const ss::sstring cluster_metrics_name
+  = prometheus_sanitize::metrics_name("cluster:partition");
+
 replicated_partition_probe::replicated_partition_probe(
   const partition& p) noexcept
   : _partition(p) {
@@ -59,8 +62,31 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
       partition_label(ntp.tp.partition()),
     };
 
+    // The following few metrics uses a separate add_group call which doesn't
+    // aggregate any labels since aggregation does not make sense for "leader
+    // ID" values.
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("cluster:partition"),
+      cluster_metrics_name,
+      {sm::make_gauge(
+         "leader_id",
+         [this] {
+             return _partition.raft()->get_leader_id().value_or(
+               model::node_id(-1));
+         },
+         sm::description("Id of current partition leader"),
+         labels),
+       sm::make_gauge(
+         "under_replicated_replicas",
+         [this] {
+             return _partition.raft()->get_under_replicated().value_or(0);
+         },
+         sm::description("Number of under replicated replicas"),
+         labels)},
+      {},
+      {sm::shard_label});
+
+    _metrics.add_group(
+      cluster_metrics_name,
       {
         sm::make_gauge(
           "leader",
@@ -95,21 +121,6 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           [this] { return _partition.high_watermark(); },
           sm::description(
             "Partion high watermark i.e. highest consumable offset"),
-          labels),
-        sm::make_gauge(
-          "leader_id",
-          [this] {
-              return _partition.raft()->get_leader_id().value_or(
-                model::node_id(-1));
-          },
-          sm::description("Id of current partition leader"),
-          labels),
-        sm::make_gauge(
-          "under_replicated_replicas",
-          [this] {
-              return _partition.raft()->get_under_replicated().value_or(0);
-          },
-          sm::description("Number of under replicated replicas"),
           labels),
         sm::make_counter(
           "records_produced",
@@ -153,13 +164,13 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           labels),
       },
       {},
-      {sm::shard_label});
+      {sm::shard_label, partition_label});
 
     if (
       config::shard_local_cfg().enable_schema_id_validation()
       != pandaproxy::schema_registry::schema_id_validation_mode::none) {
         _metrics.add_group(
-          prometheus_sanitize::metrics_name("cluster:partition"),
+          cluster_metrics_name,
           {
             sm::make_counter(
               "schema_id_validation_records_failed",
@@ -276,7 +287,7 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
       config::shard_local_cfg().enable_schema_id_validation()
       != pandaproxy::schema_registry::schema_id_validation_mode::none) {
         _public_metrics.add_group(
-          prometheus_sanitize::metrics_name("cluster:partition"),
+          cluster_metrics_name,
           {
             sm::make_counter(
               "schema_id_validation_records_failed",
