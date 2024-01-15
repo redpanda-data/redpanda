@@ -34,12 +34,8 @@
 template<>
 struct fmt::formatter<seastar::memory::allocation_site>
   : fmt::formatter<std::string_view> {
-    template<typename FormatContext>
-    auto
-    format(const seastar::memory::allocation_site& site, FormatContext& ctx) {
-        return fmt::format_to(
-          ctx.out(), "{} {} {}", site.size, site.count, site.backtrace);
-    }
+    fmt::appender
+    format(const seastar::memory::allocation_site&, fmt::format_context&);
 };
 
 /// Very simple service enabling memory profiling on all shards.
