@@ -10,6 +10,8 @@
 package schema
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -24,11 +26,12 @@ import (
 
 func newGetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		deleted    bool
-		id         int
-		schemaFile string
-		schemaType string
-		sversion   string
+		deleted     bool
+		printSchema bool
+		id          int
+		schemaFile  string
+		schemaType  string
+		sversion    string
 	)
 	cmd := &cobra.Command{
 		Use:   "get [SUBJECT]",
@@ -41,11 +44,18 @@ potential (mutually exclusive) ways:
 * By version, returning a schema for a required subject and version
 * By ID, returning all subjects using the schema, or filtering for one subject
 * By schema, checking if the schema has been created in the subject
+
+To print the schema, use the '--print-schema' flag.
 `,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
-			if h, ok := f.Help([]subjectSchema{}); ok {
+			var helpFormat any
+			helpFormat = []subjectSchema{}
+			if printSchema {
+				helpFormat = ""
+			}
+			if h, ok := f.Help(helpFormat); ok {
 				out.Exit(h)
 			}
 			p, err := p.LoadVirtualProfile(fs)
@@ -113,6 +123,10 @@ potential (mutually exclusive) ways:
 				out.MaybeDieErr(err)
 				ss = []sr.SubjectSchema{s}
 			}
+			if printSchema {
+				printSchemaString(ss)
+				return
+			}
 			err = printSubjectSchemaTable(f, false, ss...)
 			out.MaybeDieErr(err)
 		},
@@ -123,7 +137,32 @@ potential (mutually exclusive) ways:
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema file to check existence of, must be .avro or .proto; subject required")
 	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type of the file used to lookup (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().BoolVar(&deleted, "deleted", false, "If true, also return deleted schemas")
+	cmd.Flags().BoolVar(&printSchema, "print-schema", false, "If true, print the schema JSON")
 
 	cmd.RegisterFlagCompletionFunc("type", validTypes())
 	return cmd
+}
+
+func printSchemaString(ss []sr.SubjectSchema) {
+	if len(ss) == 0 {
+		fmt.Println("No schema was found")
+	} else {
+		// This command finds either a specific schema or all subjects using
+		// the same schema. The first element in 'ss' always provides the
+		// desired schema.
+		s := ss[0].Schema
+		if s.Type == sr.TypeProtobuf {
+			fmt.Println(s.Schema)
+			return
+		}
+		var prettySchema bytes.Buffer
+		err := json.Indent(&prettySchema, []byte(s.Schema), "", "  ")
+		if err != nil {
+			// This is the best effort to print the pretty version. If it does
+			// not succeed, we print the schema as it was saved.
+			fmt.Println(s.Schema)
+			return
+		}
+		fmt.Println(prettySchema.String())
+	}
 }
