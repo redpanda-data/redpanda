@@ -12,12 +12,21 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/with_scheduling_group.hh>
+#include <seastar/coroutine/switch_to.hh>
 
 namespace ssx {
+
 work_queue::work_queue(error_reporter_fn fn)
+  : work_queue(ss::current_scheduling_group(), std::move(fn)) {}
+
+work_queue::work_queue(ss::scheduling_group sg, error_reporter_fn fn)
   : _error_reporter(std::move(fn)) {
-    ssx::background = process();
+    ssx::background = ss::with_gate(_gate, [this, sg] {
+        return ss::with_scheduling_group(sg, [this] { return process(); });
+    });
 }
 
 void work_queue::submit(ss::noncopyable_function<ss::future<>()> fn) {
@@ -45,7 +54,6 @@ void work_queue::submit_after(
 }
 
 ss::future<> work_queue::process() {
-    auto holder = _gate.hold();
     while (true) {
         co_await _cond_var.wait(
           [this] { return !_tasks.empty() || _as.abort_requested(); });
