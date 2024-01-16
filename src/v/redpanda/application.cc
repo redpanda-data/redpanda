@@ -2608,7 +2608,7 @@ void application::start_runtime_services(
           if (wasm_data_transforms_enabled()) {
               runtime_services.push_back(
                 std::make_unique<transform::rpc::network_service>(
-                  sched_groups.cluster_sg(),
+                  sched_groups.transforms_sg(),
                   smp_service_groups.cluster_smp_sg(),
                   &_transform_rpc_service));
           }
