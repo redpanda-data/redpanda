@@ -91,30 +91,41 @@ struct handler_adaptor : ss::httpd::handler_base {
         auto guard = ss::gate::holder(_pending_requests);
         server::request_t rq{std::move(req), this->_ctx};
         server::reply_t rp{std::move(rep)};
+        const auto set_and_measure_response =
+          [&measure](const server::reply_t& rp) {
+              set_mime_type(*rp.rep, rp.mime_type);
+              measure.set_status(rp.rep->_status);
+          };
+        auto inflight_units = _ctx.inflight_sem.try_get_units(1);
+        if (!inflight_units) {
+            set_reply_too_many_requests(*rp.rep);
+            rp.mime_type = _exceptional_mime_type;
+            set_and_measure_response(rp);
+            co_return std::move(rp.rep);
+        }
         auto req_size = get_request_size(*rq.req);
         auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
         if (_ctx.as.abort_requested()) {
             set_reply_unavailable(*rp.rep);
             rp.mime_type = _exceptional_mime_type;
-        } else {
-            auto method = rq.req->_method;
-            auto url = rq.req->_url;
-            try {
-                rp = co_await _handler(std::move(rq), std::move(rp));
-            } catch (...) {
-                auto ex = std::current_exception();
-                vlog(
-                  plog.warn,
-                  "Request: {} {} failed: {}",
-                  method,
-                  url,
-                  std::current_exception());
-                rp = server::reply_t{
-                  exception_reply(ex), _exceptional_mime_type};
-            }
+            set_and_measure_response(rp);
+            co_return std::move(rp.rep);
         }
-        set_mime_type(*rp.rep, rp.mime_type);
-        measure.set_status(rp.rep->_status);
+        auto method = rq.req->_method;
+        auto url = rq.req->_url;
+        try {
+            rp = co_await _handler(std::move(rq), std::move(rp));
+        } catch (...) {
+            auto ex = std::current_exception();
+            vlog(
+              plog.warn,
+              "Request: {} {} failed: {}",
+              method,
+              url,
+              std::current_exception());
+            rp = server::reply_t{exception_reply(ex), _exceptional_mime_type};
+        }
+        set_and_measure_response(rp);
         co_return std::move(rp.rep);
     }
 

@@ -21,6 +21,7 @@
 #include "pandaproxy/kafka_client_cache.h"
 #include "pandaproxy/types.h"
 #include "security/request_auth.h"
+#include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -70,6 +71,7 @@ public:
     struct context_t {
         std::vector<net::unresolved_address> advertised_listeners;
         ssx::semaphore& mem_sem;
+        adjustable_semaphore& inflight_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
     };
