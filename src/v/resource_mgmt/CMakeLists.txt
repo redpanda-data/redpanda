@@ -6,6 +6,7 @@ v_cc_library(
     memory_sampling.cc
     cpu_profiler.cc
     logger.cc
+    smp_groups.cc
   DEPS
     Seastar::seastar
     v::ssx
