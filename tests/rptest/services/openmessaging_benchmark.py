@@ -317,7 +317,18 @@ class OpenMessagingBenchmark(Service):
             self.raise_on_bad_log_lines(node)
         # Generate charts from the result
         self.logger.info(f"Generating charts with command {self.chart_cmd}")
-        metrics = json.loads(self.node.account.ssh_output(self.chart_cmd))
+        self.node.account.ssh_output(self.chart_cmd)
+        metrics = json.loads(
+            self.node.account.ssh_output(
+                f'cat {OpenMessagingBenchmark.RESULT_FILE}'))
+
+        # Previously we were using generate_charts.py to get the metrics which
+        # calculated this additional metric. Hence we do it here for backwards
+        # compatibility.
+        metrics['throughputMBps'] = (
+            sum(metrics['publishRate']) / len(metrics['publishRate']) *
+            metrics['messageSize']) / (1024.0 * 1024.0)
+
         if validate_metrics:
             OMBSampleConfigurations.validate_metrics(metrics, self.validator)
 

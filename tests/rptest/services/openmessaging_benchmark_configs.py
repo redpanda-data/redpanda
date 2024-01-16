@@ -91,20 +91,19 @@ class OMBSampleConfigurations:
 
     def validate_metrics(metrics, validator):
         """ Validates some predefined metrics rules against the metrics data and throws if any of the rules fail."""
-        assert len(metrics) == 1, "Unexpected metrics output {metrics}}"
-        metrics = next(iter(metrics.values()))
+        assert len(validator) > 0, "At least one metric should be validated"
+
         results = []
         kv_str = lambda k, v: f"Metric {k}, value {v}, "
-        count = 0
-        for key in metrics.keys():
-            if key not in validator:
-                continue
+
+        for key in validator.keys():
+            assert key in metrics, f"Missing requested validator key {key} in metrics"
+
             val = metrics[key]
-            count = count + 1
             for rule in validator[key]:
                 if not rule[0](val):
                     results.append(kv_str(key, val) + rule[1])
-        assert count > 0, f"At least one metric should be validated {metrics}"
+
         assert len(results) == 0, str(results)
 
     # ------ Driver configurations --------
