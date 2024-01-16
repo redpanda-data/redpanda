@@ -161,7 +161,7 @@ ntp_archiver_upload_result::operator()(cloud_storage::upload_result) const {
 
 static std::unique_ptr<adjacent_segment_merger>
 maybe_make_adjacent_segment_merger(
-  ntp_archiver& self, const storage::ntp_config& cfg, bool am_leader) {
+  ntp_archiver& self, const storage::ntp_config& cfg) {
     std::unique_ptr<adjacent_segment_merger> result = nullptr;
     if (
       cfg.is_archival_enabled() && !cfg.is_compacted()
@@ -171,7 +171,6 @@ maybe_make_adjacent_segment_merger(
           true,
           config::shard_local_cfg()
             .cloud_storage_enable_segment_merging.bind());
-        result->set_enabled(am_leader);
     }
     return result;
 }
@@ -180,8 +179,7 @@ static std::unique_ptr<scrubber> maybe_make_scrubber(
   ntp_archiver& self,
   cloud_storage::remote& remote,
   features::feature_table& feature_table,
-  const storage::ntp_config& cfg,
-  bool am_leader) {
+  const storage::ntp_config& cfg) {
     std::unique_ptr<scrubber> result = nullptr;
     if (!cfg.is_read_replica_mode_enabled()) {
         result = std::make_unique<scrubber>(
@@ -194,7 +192,6 @@ static std::unique_ptr<scrubber> maybe_make_scrubber(
           config::shard_local_cfg().cloud_storage_full_scrub_interval_ms.bind(),
           config::shard_local_cfg()
             .cloud_storage_scrubbing_interval_jitter_ms.bind());
-        result->set_enabled(am_leader);
     }
     return result;
 }
@@ -227,14 +224,10 @@ ntp_archiver::ntp_archiver(
   , _housekeeping_jitter(_housekeeping_interval(), housekeeping_jit)
   , _next_housekeeping(_housekeeping_jitter())
   , _feature_table(parent.feature_table())
-  , _local_segment_merger(maybe_make_adjacent_segment_merger(
-      *this, parent.log()->config(), parent.is_leader()))
+  , _local_segment_merger(
+      maybe_make_adjacent_segment_merger(*this, parent.log()->config()))
   , _scrubber(maybe_make_scrubber(
-      *this,
-      _remote,
-      _feature_table.local(),
-      parent.log()->config(),
-      parent.is_leader()))
+      *this, _remote, _feature_table.local(), parent.log()->config()))
   , _manifest_upload_interval(
       config::shard_local_cfg()
         .cloud_storage_manifest_max_upload_interval_sec.bind())
@@ -267,6 +260,20 @@ const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
 }
 
 ss::future<> ntp_archiver::start() {
+    // Pre-sync the ntp_archiver to make sure that the adjacent segment merger
+    // can only see up to date manifest.
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+    co_await _parent.archival_meta_stm()->sync(sync_timeout);
+
+    bool is_leader = _parent.is_leader();
+    if (_local_segment_merger) {
+        _local_segment_merger->set_enabled(is_leader);
+    }
+    if (_scrubber) {
+        _scrubber->set_enabled(is_leader);
+    }
+
     if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
         ssx::spawn_with_gate(_gate, [this] {
             return sync_manifest_until_abort().then([this] {
@@ -294,7 +301,7 @@ ss::future<> ntp_archiver::start() {
         });
     }
 
-    return ss::now();
+    co_return;
 }
 
 void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
