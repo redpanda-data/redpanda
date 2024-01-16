@@ -35,6 +35,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/coroutine/switch_to.hh>
 
 #include <algorithm>
 #include <iterator>
@@ -336,6 +337,7 @@ local_service::offset_fetch(offset_fetch_request request) {
 
 ss::future<produce_reply>
 network_service::produce(produce_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     auto results = co_await _service->local().produce(
       std::move(req.topic_data), req.timeout);
     co_return produce_reply(std::move(results));
@@ -343,6 +345,7 @@ network_service::produce(produce_request req, ::rpc::streaming_context&) {
 
 ss::future<delete_wasm_binary_reply> network_service::delete_wasm_binary(
   delete_wasm_binary_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     auto results = co_await _service->local().delete_wasm_binary(
       req.key, req.timeout);
     co_return delete_wasm_binary_reply(results);
@@ -350,6 +353,7 @@ ss::future<delete_wasm_binary_reply> network_service::delete_wasm_binary(
 
 ss::future<load_wasm_binary_reply> network_service::load_wasm_binary(
   load_wasm_binary_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     auto results = co_await _service->local().load_wasm_binary(
       req.offset, req.timeout);
     if (results.has_error()) {
@@ -361,6 +365,7 @@ ss::future<load_wasm_binary_reply> network_service::load_wasm_binary(
 
 ss::future<store_wasm_binary_reply> network_service::store_wasm_binary(
   store_wasm_binary_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     auto results = co_await _service->local().store_wasm_binary(
       std::move(req.data), req.timeout);
     if (results.has_error()) {
@@ -371,21 +376,25 @@ ss::future<store_wasm_binary_reply> network_service::store_wasm_binary(
 
 ss::future<find_coordinator_response> network_service::find_coordinator(
   find_coordinator_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     co_return co_await _service->local().find_coordinator(std::move(req));
 }
 
 ss::future<offset_fetch_response> network_service::offset_fetch(
   offset_fetch_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     co_return co_await _service->local().offset_fetch(req);
 }
 
 ss::future<offset_commit_response> network_service::offset_commit(
   offset_commit_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     co_return co_await _service->local().offset_commit(req);
 }
 
 ss::future<generate_report_reply> network_service::generate_report(
   generate_report_request, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
     auto report = co_await _service->local().compute_node_local_report();
     co_return generate_report_reply(std::move(report));
 }
