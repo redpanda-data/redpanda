@@ -23,6 +23,7 @@
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/manual_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -107,7 +108,8 @@ public:
     manager(
       model::node_id self,
       std::unique_ptr<registry>,
-      std::unique_ptr<processor_factory>);
+      std::unique_ptr<processor_factory>,
+      ss::scheduling_group);
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;

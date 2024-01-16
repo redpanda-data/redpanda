@@ -1246,7 +1246,8 @@ void application::wire_up_runtime_services(
           &raft_group_manager,
           &controller->get_topics_state(),
           &partition_manager,
-          &_transform_rpc_client)
+          &_transform_rpc_client,
+          sched_groups.transforms_sg())
           .get();
     }
 

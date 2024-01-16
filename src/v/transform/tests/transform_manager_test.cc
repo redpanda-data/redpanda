@@ -14,6 +14,7 @@
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -290,7 +291,10 @@ public:
         auto t = std::make_unique<processor_tracker>();
         _tracker = t.get();
         _manager = std::make_unique<manager<ss::manual_clock>>(
-          /*self=*/model::node_id(0), std::move(r), std::move(t));
+          /*self=*/model::node_id(0),
+          std::move(r),
+          std::move(t),
+          ss::current_scheduling_group());
         _manager->start().get();
     }
     void TearDown() override {

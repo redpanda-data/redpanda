@@ -40,6 +40,7 @@
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
@@ -405,7 +406,8 @@ service::service(
   ss::sharded<raft::group_manager>* group_manager,
   ss::sharded<cluster::topic_table>* topic_table,
   ss::sharded<cluster::partition_manager>* partition_manager,
-  ss::sharded<rpc::client>* rpc_client)
+  ss::sharded<rpc::client>* rpc_client,
+  ss::scheduling_group sg)
   : _runtime(runtime)
   , _self(self)
   , _plugin_frontend(plugin_frontend)
@@ -413,7 +415,8 @@ service::service(
   , _group_manager(group_manager)
   , _topic_table(topic_table)
   , _partition_manager(partition_manager)
-  , _rpc_client(rpc_client) {}
+  , _rpc_client(rpc_client)
+  , _sg(sg) {}
 
 service::~service() = default;
 
@@ -433,7 +436,8 @@ ss::future<> service::start() {
         &_topic_table->local(),
         &_partition_manager->local(),
         &_rpc_client->local(),
-        _batcher.get()));
+        _batcher.get()),
+      _sg);
     co_await _batcher->start();
     co_await _manager->start();
     register_notifications();

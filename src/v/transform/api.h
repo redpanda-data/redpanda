@@ -21,6 +21,7 @@
 #include "wasm/fwd.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -44,7 +45,8 @@ public:
       ss::sharded<raft::group_manager>* group_manager,
       ss::sharded<cluster::topic_table>* topic_table,
       ss::sharded<cluster::partition_manager>* partition_manager,
-      ss::sharded<rpc::client>* rpc_client);
+      ss::sharded<rpc::client>* rpc_client,
+      ss::scheduling_group sg);
     service(const service&) = delete;
     service(service&&) = delete;
     service& operator=(const service&) = delete;
@@ -107,6 +109,7 @@ private:
     std::unique_ptr<commit_batcher<ss::lowres_clock>> _batcher;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>
       _notification_cleanups;
+    ss::scheduling_group _sg;
 };
 
 } // namespace transform
