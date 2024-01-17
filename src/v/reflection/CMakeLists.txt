@@ -8,6 +8,7 @@ v_cc_library (
   DEPS 
     Seastar::seastar
     absl::btree
+    v::bytes
 ) 
 
 add_subdirectory(test)

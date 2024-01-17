@@ -1,7 +1,8 @@
 find_package(xxHash REQUIRED)
 find_package(Crc32c REQUIRED)
+
 v_cc_library(
-  NAME rphashing
+  NAME hashing
   SRCS murmur.cc
   COPTS
     -Wno-implicit-fallthrough
@@ -9,7 +10,7 @@ v_cc_library(
     xxHash::xxhash
     Crc32c::crc32c
     GnuTLS::GnuTLS
-    absl::hash
+    v::bytes
   DEFINES
     -DXXH_PRIVATE_API
 )

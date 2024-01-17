@@ -22,7 +22,7 @@ v_cc_library(
     absl::hash
     absl::random_seed_sequences
     v::bytes
-    v::rphashing
+    v::hashing
     v::json
     v::random)
 add_subdirectory(tests)
