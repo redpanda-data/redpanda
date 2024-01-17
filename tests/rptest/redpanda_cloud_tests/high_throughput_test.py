@@ -1500,10 +1500,10 @@ class HighThroughputTest(PreallocNodesTest):
                        backoff_sec=30)
         except Exception as e:
             _percent = (producer.produce_status.sent * 100) / expected_sent
-            self.log.warning("# Timeout waiting for all messages: "
-                             f"expected {expected_sent}, "
-                             f"current {producer.produce_status.sent} "
-                             f"({_percent}%)\n{e}")
+            self.logger.warning("# Timeout waiting for all messages: "
+                                f"expected {expected_sent}, "
+                                f"current {producer.produce_status.sent} "
+                                f"({_percent}%)\n{e}")
 
         post_prod_offsets = [(p.id, p.high_watermark)
                              for p in self.rpk.describe_topic(self.topic)
