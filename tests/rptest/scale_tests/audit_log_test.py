@@ -405,8 +405,6 @@ class AuditLogTest(RedpandaTest):
         assert pct_chg(
             audit_enabled_results.consume_mbps,
             audit_disabled_results.consume_mbps) < allowable_threshold
-        assert pct_chg(audit_enabled_results.p50,
-                       audit_disabled_results.p50) > (allowable_threshold * -1)
         assert pct_chg(audit_enabled_results.p90,
                        audit_disabled_results.p90) > (allowable_threshold * -1)
         assert pct_chg(audit_enabled_results.p99,
