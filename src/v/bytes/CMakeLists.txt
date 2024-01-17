@@ -2,7 +2,7 @@ v_cc_library(
   NAME
     bytes
   SRCS
-    "iobuf.cc"
+    iobuf.cc
   DEPS
     absl::hash
     Seastar::seastar
