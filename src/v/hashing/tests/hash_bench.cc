@@ -8,8 +8,6 @@
 // by the Apache License, Version 2.0
 
 #include "hashing/crc32c.h"
-#include "hashing/fnv.h"
-#include "hashing/twang.h"
 #include "hashing/xx.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -116,11 +114,6 @@ PERF_TEST(header_hash, boost_ccitt16_fn) {
     });
 }
 
-PERF_TEST(header_hash, fnv32_fn) {
-    return header_body(
-      [](auto& buffer) { return fnv32_buf(buffer.data(), buffer.size()); });
-}
-
 PERF_TEST(header_hash, crc32_fn) {
     return header_body([](auto& buffer) {
         crc::crc32c crc;
@@ -132,12 +125,6 @@ PERF_TEST(header_hash, crc32_fn) {
 PERF_TEST(header_hash, xx32_fn) {
     return header_body(
       [](auto& buffer) { return xxhash_32(buffer.data(), buffer.size()); });
-}
-
-PERF_TEST(header_hash, xx64_twang_fn) {
-    return header_body([](auto& buffer) {
-        return twang_32from64(xxhash_64(buffer.data(), buffer.size()));
-    });
 }
 
 using model::ktp;
