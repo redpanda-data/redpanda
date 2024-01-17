@@ -15,12 +15,12 @@ import time
 import json
 
 from threading import Thread
+from typing import Any
 
 from ducktape.errors import TimeoutError as TimeoutException
-from ducktape.mark import ignore, ok_to_fail, parametrize
+from ducktape.mark import ignore, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
-from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
@@ -30,7 +30,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
     KgoVerifierRandomConsumer)
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
+from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark, ValidatorDict
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
@@ -41,7 +41,6 @@ from rptest.services.rpk_consumer import RpkConsumer
 #from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import firewall_blocked
-from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import cloudv2_object_store_blocked
 
@@ -76,7 +75,12 @@ class HighThroughputTestTrafficGenerator:
     higher egress maximum allowed load then ingress, by a factor of at most
     3x in some tiers.
     """
-    def __init__(self, context, redpanda, topic, msg_size, asymetry=3):
+    def __init__(self,
+                 context: TestContext,
+                 redpanda: RedpandaServiceCloud,
+                 topic: str,
+                 msg_size: int,
+                 asymetry: int = 3):
         t = time.time()
         self._logger = redpanda.logger
         self._producer_start_time = t
@@ -103,7 +107,7 @@ class HighThroughputTestTrafficGenerator:
             debug_logs=True,
             trace_logs=True)
 
-    def wait_for_traffic(self, acked=1, timeout_sec=60):
+    def wait_for_traffic(self, acked: int = 1, timeout_sec: int = 60):
         wait_until(lambda: self._producer.produce_status.acked >= acked,
                    timeout_sec=timeout_sec,
                    backoff_sec=1.0)
@@ -134,7 +138,7 @@ class HighThroughputTestTrafficGenerator:
         self._logger.info("Consumer stopped")
         self._consumer_stop_time = time.time()
 
-    def throughput(self):
+    def throughput(self) -> dict[str, dict[str, Any]]:
         producer_total_time = self._producer_stop_time - self._producer_start_time
         consumer_total_time = self._consumer_stop_time - self._consumer_start_time
         if producer_total_time == 0 or consumer_total_time == 0:
@@ -162,8 +166,9 @@ class HighThroughputTestTrafficGenerator:
 
 
 @contextmanager
-def traffic_generator(context, redpanda, expected_ingress_rate,
-                      expected_egress_rate, *args, **kwargs):
+def traffic_generator(context: TestContext, redpanda: RedpandaServiceCloud,
+                      expected_ingress_rate: int, expected_egress_rate: int,
+                      *args: Any, **kwargs: Any):
     tgen = HighThroughputTestTrafficGenerator(context, redpanda, *args,
                                               **kwargs)
     tgen.start()
@@ -189,7 +194,9 @@ def traffic_generator(context, redpanda, expected_ingress_rate,
 
 
 @contextmanager
-def omb_runner(context, redpanda, driver, workload, omb_config):
+def omb_runner(context: TestContext, redpanda: RedpandaServiceCloud,
+               driver: str, workload: dict[str,
+                                           Any], omb_config: ValidatorDict):
     bench = OpenMessagingBenchmark(context, redpanda, driver,
                                    (workload, omb_config))
     # No need to set 'clean' flag as OMB service always cleans node on start
@@ -216,7 +223,9 @@ class HighThroughputTest(PreallocNodesTest):
     # Default value
     msg_timeout = 120
 
-    def __init__(self, test_ctx: TestContext, *args, **kwargs):
+    redpanda: RedpandaServiceCloud
+
+    def __init__(self, test_ctx: TestContext, *args: Any, **kwargs: Any):
         self._ctx = test_ctx
         # Get tier name
         self.config_profile_name = get_config_profile_name(
@@ -244,6 +253,8 @@ class HighThroughputTest(PreallocNodesTest):
                              disable_cloud_storage_diagnostics=True,
                              **kwargs)
 
+        assert isinstance(self.redpanda, RedpandaServiceCloud)
+
         # Load install pack and check profile
         install_pack = self.redpanda.get_install_pack()
         self.logger.info(f"Loaded install pack '{install_pack['version']}': "
@@ -267,6 +278,7 @@ class HighThroughputTest(PreallocNodesTest):
             config_profile['machine_type']]
 
         tier_product = self.redpanda.get_product()
+        assert tier_product, "Could not get product into "
         """
         The _partitions_upper_limit represents a rough value for the estimated
         maximum number of partitions that can be made on a new cluster via 1st
@@ -316,7 +328,7 @@ class HighThroughputTest(PreallocNodesTest):
         # Increase calculated timeout by 2
         self.msg_timeout *= 2
         # resources
-        self.resources = []
+        self.resources: list[dict[str, Any]] = []
 
         # list of systemd services on the agent
         self._agent_services = [
@@ -325,10 +337,12 @@ class HighThroughputTest(PreallocNodesTest):
         if self.redpanda._cloud_cluster.config.provider == PROVIDER_AWS:
             self._agent_services.append('redpanda-agent-init.service')
 
-    def _add_resource_tracking(self, type, resource):
+    def _add_resource_tracking(self, type: str, resource: Any):
         self.resources.append({"type": type, "spec": resource})
 
-    def _create_topic_spec(self, partitions=None, replicas=None):
+    def _create_topic_spec(self,
+                           partitions: int | None = None,
+                           replicas: int | None = None):
         # defaulting to max partitions
         _partitions = self._partitions_upper_limit if partitions is None else partitions
         _replicas = 3 if replicas is None else replicas
@@ -338,7 +352,9 @@ class HighThroughputTest(PreallocNodesTest):
         self.topics = [_spec]
         self._add_resource_tracking("topic", _spec)
 
-    def _create_default_topics(self, num_partitions=None, num_replicas=None):
+    def _create_default_topics(self,
+                               num_partitions: int | None = None,
+                               num_replicas: int | None = None):
         self._create_topic_spec(partitions=num_partitions,
                                 replicas=num_replicas)
         self._create_initial_topics()
@@ -897,17 +913,17 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
-        producer = None
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self._advertised_max_ingress,
-                custom_node=[self.preallocated_nodes[0]])
 
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.msg_size,
+            msg_count=5_000_000_000_000,
+            rate_limit_bps=self._advertised_max_ingress,
+            custom_node=[self.preallocated_nodes[0]])
+
+        try:
             producer.start()
             self._wait_for_traffic(producer,
                                    self.msg_count,
@@ -1195,17 +1211,17 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
-        producer = None
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self._advertised_max_ingress,
-                custom_node=[self.preallocated_nodes[0]])
 
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.msg_size,
+            msg_count=5_000_000_000_000,
+            rate_limit_bps=self._advertised_max_ingress,
+            custom_node=[self.preallocated_nodes[0]])
+
+        try:
             producer.start()
             self._wait_for_traffic(producer,
                                    self.msg_count,
@@ -1301,17 +1317,16 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
-        producer = None
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self._advertised_max_ingress,
-                custom_node=[self.preallocated_nodes[0]])
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.msg_size,
+            msg_count=5_000_000_000_000,
+            rate_limit_bps=self._advertised_max_ingress,
+            custom_node=[self.preallocated_nodes[0]])
 
+        try:
             producer.start()
             self._wait_for_traffic(producer,
                                    self.msg_count,
@@ -1415,17 +1430,17 @@ class HighThroughputTest(PreallocNodesTest):
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
-        producer = None
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic,
-                msg_size=self.msg_size,
-                msg_count=5 * 1024 * 1024 * 1024 * 1024,
-                rate_limit_bps=self._advertised_max_ingress,
-                custom_node=[self.preallocated_nodes[0]])
 
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.msg_size,
+            msg_count=5 * 1024 * 1024 * 1024 * 1024,
+            rate_limit_bps=self._advertised_max_ingress,
+            custom_node=[self.preallocated_nodes[0]])
+
+        try:
             producer.start()
             self._wait_for_traffic(producer,
                                    self.msg_count,
@@ -1784,7 +1799,7 @@ class HighThroughputTest(PreallocNodesTest):
         def _format_metrics(tier):
             return "\n".join([f"{k} = {v} " for k, v in tier.items()])
 
-        def _get_metrics(bench):
+        def _get_metrics(bench: OpenMessagingBenchmark):
             return list(
                 json.loads(bench.node.account.ssh_output(
                     bench.chart_cmd)).values())[0]
@@ -1797,9 +1812,6 @@ class HighThroughputTest(PreallocNodesTest):
         producers = 1 * (self._num_brokers // 3) + 1
         consumers = producers * 2
 
-        if partitions not in ["min", "max"]:
-            raise RuntimeError("Test parameter for partitions invalid")
-
         # Calculate target throughput latencies
         target_e2e_50pct = 75
         target_e2e_avg = 145
@@ -1811,10 +1823,12 @@ class HighThroughputTest(PreallocNodesTest):
             OMBSampleConfigurations.E2E_LATENCY_AVG:
             [OMBSampleConfigurations.lte(target_e2e_avg)],
         }
+
         # Select number of partitions
         if partitions == "min":
             _num_partitions = self._partitions_min
-        elif partitions == "max":
+        else:
+            assert partitions == "max", f'Test parameter for partitions invalid: {partitions}'
             _num_partitions = self._partitions_upper_limit
 
         workload = self._prepare_omb_workload(rampup_time, runtime,

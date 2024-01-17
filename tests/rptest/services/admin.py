@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from logging import Logger
 import random
 import json
 import requests
@@ -15,11 +16,28 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 from requests.packages.urllib3.util.retry import Retry
 from ducktape.cluster.cluster import ClusterNode
-from typing import Optional, Callable, NamedTuple
+from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
 from rptest.util import wait_until_result
 from requests.exceptions import HTTPError
 
 DEFAULT_TIMEOUT = 30
+
+MaybeNode = ClusterNode | None
+
+
+# The Admin class is used by RedpandaService and we also pass
+# a RedpandaService to Admin instances which use it for logging
+# amonng other things. So a circular dependency though not at the
+# runtime level (only RedpandaService imports Admin, Admin just uses
+# service objects passed in from outside and doesn't need to import
+# them). However, from a type checking point of view this circular
+# dependency is real. There a few workarounds, but mine is just to use
+# a small protocol to stand-in for RedpandaService with the properties
+# we actually use.
+class RedpandaServiceProto(Protocol):
+    @property
+    def logger(self) -> Logger:
+        ...
 
 
 class AuthPreservingSession(requests.Session):
@@ -75,9 +93,9 @@ class Admin:
     the successful HTTP response object is returned.
     """
     def __init__(self,
-                 redpanda,
-                 default_node=None,
-                 retry_codes=None,
+                 redpanda: RedpandaServiceProto,
+                 default_node: ClusterNode | None = None,
+                 retry_codes: list[int] | None = None,
                  auth=None,
                  retries_amount=5):
         self.redpanda = redpanda
@@ -86,7 +104,7 @@ class Admin:
         if auth is not None:
             self._session.auth = auth
 
-        self._default_node: ClusterNode = default_node
+        self._default_node: ClusterNode | None = default_node
 
         # - We retry on 503s because at any time a POST to a leader-redirected
         # request will return 503 if the partition is leaderless -- this is common
@@ -303,7 +321,11 @@ class Admin:
             f"can't get stable leader of {namespace}/{topic}/{partition} within {timeout_s} sec"
         )
 
-    def _request(self, verb, path, node=None, **kwargs):
+    def _request(self,
+                 verb: str,
+                 path: str,
+                 node: MaybeNode = None,
+                 **kwargs: Any):
         if node is None and self._default_node is not None:
             # We were constructed with an explicit default node: use that one
             # and do not retry on others.
@@ -379,10 +401,10 @@ class Admin:
         return self._request("GET", "cluster_config/schema", node=node).json()
 
     def patch_cluster_config(self,
-                             upsert: dict[str, str] = {},
+                             upsert: dict[str, str | None] = {},
                              remove: list[str] = [],
-                             force=False,
-                             dry_run=False,
+                             force: bool = False,
+                             dry_run: bool = False,
                              node=None):
 
         path = "cluster_config"
@@ -404,23 +426,23 @@ class Admin:
                              },
                              node=node).json()
 
-    def get_cluster_config_status(self, node: ClusterNode = None):
+    def get_cluster_config_status(self, node: MaybeNode = None):
         return self._request("GET", "cluster_config/status", node=node).json()
 
-    def get_node_config(self, node=None):
+    def get_node_config(self, node: MaybeNode = None):
         return self._request("GET", "node_config", node).json()
 
-    def get_features(self, node=None):
+    def get_features(self, node: MaybeNode = None):
         return self._request("GET", "features", node=node).json()
 
-    def get_cloud_storage_lifecycle_markers(self, node=None):
+    def get_cloud_storage_lifecycle_markers(self, node: MaybeNode = None):
         return self._request("GET", "cloud_storage/lifecycle",
                              node=node).json()
 
     def delete_cloud_storage_lifecycle_marker(self,
-                                              topic,
-                                              revision,
-                                              node=None):
+                                              topic: str,
+                                              revision: str,
+                                              node: MaybeNode = None):
         return self._request("DELETE",
                              f"cloud_storage/lifecycle/{topic}/{revision}",
                              node=node)
@@ -440,15 +462,17 @@ class Admin:
 
         return self._request("POST", path, node=node)
 
-    def supports_feature(self, feature_name: str, nodes=None):
+    def supports_feature(self,
+                         feature_name: str,
+                         nodes: list[ClusterNode] | None = None):
         """
         Returns true whether all nodes in 'nodes' support the given feature. If
         no nodes are supplied, uses all nodes in the cluster.
         """
         if not nodes:
-            nodes = self.redpanda.nodes
+            nodes = cast(list[ClusterNode], self.redpanda.nodes)
 
-        def node_supports_feature(node):
+        def node_supports_feature(node: ClusterNode):
             features_resp = None
             try:
                 features_resp = self.get_features(node=node)
@@ -465,19 +489,21 @@ class Admin:
                 return False
         return True
 
-    def unsafe_reset_cloud_metadata(self, topic, partition, manifest):
+    def unsafe_reset_cloud_metadata(self, topic: str, partition: str,
+                                    manifest: dict[str, Any]):
         return self._request(
             'POST',
             f"debug/unsafe_reset_metadata/{topic}/{partition}",
             json=manifest)
 
-    def unsafe_reset_metadata_from_cloud(self, namespace, topic, partition):
+    def unsafe_reset_metadata_from_cloud(self, namespace: str, topic: str,
+                                         partition: int):
         return self._request(
             'POST',
             f"cloud_storage/unsafe_reset_metadata_from_cloud/{namespace}/{topic}/{partition}"
         )
 
-    def put_feature(self, feature_name, body):
+    def put_feature(self, feature_name: str, body):
         return self._request("PUT", f"features/{feature_name}", json=body)
 
     def get_license(self, node=None, timeout=None):

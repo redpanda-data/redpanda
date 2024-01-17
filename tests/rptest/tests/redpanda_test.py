@@ -33,7 +33,7 @@ class RedpandaTest(Test):
     def __init__(self,
                  test_context: TestContext,
                  num_brokers: int | None = None,
-                 cloud_tier: CloudTierName | None = None,
+                 cloud_tier: str | None = None,
                  apply_cloud_tier_to_noncloud: bool = False,
                  extra_rp_conf: dict[str, Any] | None = None,
                  si_settings: SISettings | None = None,

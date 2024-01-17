@@ -14,7 +14,7 @@ from typing import Optional, Any
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-from rptest.services.utils import BadLogLines, NodeCrash
+from rptest.services.utils import BadLogLines
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
 LOG_ALLOW_LIST = [
@@ -132,6 +132,11 @@ class OpenMessagingBenchmarkWorkers(Service):
         return nodes
 
 
+WorkloadDict = dict[str, Any]
+ValidatorDict = dict[str, list[Any]]
+WorkloadTuple = tuple[WorkloadDict, ValidatorDict]
+
+
 # Benchmark process service
 class OpenMessagingBenchmark(Service):
     PERSISTENT_ROOT = "/var/lib/openmessaging"
@@ -157,7 +162,7 @@ class OpenMessagingBenchmark(Service):
                  ctx,
                  redpanda,
                  driver: str | dict[str, Any] = "SIMPLE_DRIVER",
-                 workload="SIMPLE_WORKLOAD",
+                 workload: str | WorkloadTuple = "SIMPLE_WORKLOAD",
                  node=None,
                  worker_nodes=None,
                  topology="swarm",
@@ -167,7 +172,8 @@ class OpenMessagingBenchmark(Service):
         documentation for definitions of driver/workload files.
 
         :param workload: either a string referencing an entry in OMBSampleConfiguration.WORKLOADS,
-                         or a dict of workload parameters.
+                         or tuple of (workload_dict, validator_dict) (see OMBSampleConfiguration.WORKLOADS for the
+                         structure of the dicts)
         :param nodes: optional, pre-allocated node to run the benchmark from (by default allocate one)
         :param worker_nodes: optional, list of pre-allocated nodes to run workers on (by default allocate NUM_WORKERS)
         """
@@ -352,6 +358,13 @@ class OpenMessagingBenchmark(Service):
         node.account.remove(OpenMessagingBenchmark.PERSISTENT_ROOT,
                             allow_fail=True)
 
-    def benchmark_time(self):
-        return self.workload["test_duration_minutes"] + self.workload[
-            "warmup_duration_minutes"]
+    def get_workload_int(self, key: str) -> int:
+        """Get the workload property specified by key: it must exist and be an int."""
+        v = self.workload[key]
+        assert isinstance(v, int), f"value {v} for {key} was not an int"
+        return v
+
+    def benchmark_time(self) -> int:
+        return self.get_workload_int(
+            "test_duration_minutes") + self.get_workload_int(
+                "warmup_duration_minutes")
