@@ -14,7 +14,7 @@ v_cc_library(
     absl::node_hash_map
     v::config
     v::metrics
-    v::rphashing
+    v::hashing
     v::compression
   )
 

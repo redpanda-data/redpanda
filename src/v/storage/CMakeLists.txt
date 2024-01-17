@@ -46,7 +46,7 @@ v_cc_library(
     v::config
     v::metrics
     v::model
-    v::rphashing
+    v::hashing
     v::finjector
     v::syschecks
     v::compression

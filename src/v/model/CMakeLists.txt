@@ -12,7 +12,7 @@ v_cc_library(
   DEPS
     v::bytes
     v::utils
-    v::rphashing
+    v::hashing
     v::reflection
     Seastar::seastar
     absl::btree

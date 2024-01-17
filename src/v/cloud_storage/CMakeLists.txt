@@ -49,7 +49,7 @@ v_cc_library(
     v::cloud_storage_clients
     v::json
     v::model
-    v::rphashing
+    v::hashing
     v::cloud_roles
     v::segment_meta_cstore
     v::raft

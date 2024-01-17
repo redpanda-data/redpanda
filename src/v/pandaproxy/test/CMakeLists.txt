@@ -15,7 +15,7 @@ rp_test(
     one_shot.cc
     kafka_client_cache.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main v::rphashing v::http v::pandaproxy_common v::kafka_protocol
+  LIBRARIES v::seastar_testing_main v::hashing v::http v::pandaproxy_common v::kafka_protocol
   ARGS "-- -c 1"
   LABELS pandaproxy
 )
