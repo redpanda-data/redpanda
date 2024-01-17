@@ -604,7 +604,7 @@ class HighThroughputTest(PreallocNodesTest):
             if (len(swarm) - calc_alive_swarm_nodes(swarm)) > 1:
                 break
             elif _elapsed > FINISH_TIMEOUT_SEC and \
-                _connections < (self._advertised_max_client_count * 0.01):
+                _total < (self._advertised_max_client_count * 0.01):
                 # Number of connections after timeout is less than 1%
                 break
             # sleep before next measurement
