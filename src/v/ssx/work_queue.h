@@ -20,6 +20,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 namespace ssx {
@@ -33,6 +34,7 @@ public:
       = ss::noncopyable_function<void(const std::exception_ptr&)>;
 
     explicit work_queue(error_reporter_fn);
+    work_queue(ss::scheduling_group, error_reporter_fn);
     // Add a task to the queue to be processed.
     void submit(ss::noncopyable_function<ss::future<>()>);
     // Add a task to the queue to be processed after some timeout.

@@ -100,6 +100,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/memory_sampling.h"
+#include "resource_mgmt/smp_groups.h"
 #include "rpc/rpc_utils.h"
 #include "security/audit/audit_log_manager.h"
 #include "ssx/abort_source.h"
@@ -1211,7 +1212,9 @@ void application::wire_up_runtime_services(
           }),
           ss::sharded_parameter([this] {
               return transform::rpc::partition_manager::make_default(
-                &shard_table, &partition_manager);
+                &shard_table,
+                &partition_manager,
+                smp_service_groups.transform_smp_sg());
           }),
           ss::sharded_parameter([this] {
               return transform::service::create_reporter(&_transform_service);
@@ -1253,7 +1256,8 @@ void application::wire_up_runtime_services(
           &raft_group_manager,
           &controller->get_topics_state(),
           &partition_manager,
-          &_transform_rpc_client)
+          &_transform_rpc_client,
+          sched_groups.transforms_sg())
           .get();
     }
 
@@ -2641,8 +2645,8 @@ void application::start_runtime_services(
           if (wasm_data_transforms_enabled()) {
               runtime_services.push_back(
                 std::make_unique<transform::rpc::network_service>(
-                  sched_groups.cluster_sg(),
-                  smp_service_groups.cluster_smp_sg(),
+                  sched_groups.transforms_sg(),
+                  smp_service_groups.transform_smp_sg(),
                   &_transform_rpc_service));
           }
 
