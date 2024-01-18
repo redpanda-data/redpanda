@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "storage/log.h"
 #include "container/intrusive_list_helpers.h"
+#include "storage/log.h"
 
 namespace storage {
 struct log_housekeeping_meta {

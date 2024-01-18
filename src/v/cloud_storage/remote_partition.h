@@ -20,13 +20,13 @@
 #include "cloud_storage/segment_state.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
-#include "container/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/lowres_clock.hh>

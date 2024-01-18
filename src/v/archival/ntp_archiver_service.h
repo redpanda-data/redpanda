@@ -22,11 +22,11 @@
 #include "cloud_storage_clients/client.h"
 #include "cluster/fwd.h"
 #include "cluster/partition.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/fwd.h"
-#include "container/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>

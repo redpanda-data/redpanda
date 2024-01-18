@@ -15,13 +15,13 @@
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/record.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender_chunk.h"
 #include "storage/storage_resources.h"
 #include "utils/fragmented_vector.h"
-#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>

@@ -18,8 +18,8 @@
 #include "json/writer.h"
 #include "model/fundamental.h"
 #include "storage/logger.h"
-#include "utils/file_io.h"
 #include "strings/string_switch.h"
+#include "utils/file_io.h"
 
 #include <seastar/core/seastar.hh>
 

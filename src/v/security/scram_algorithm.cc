@@ -2,9 +2,9 @@
 
 #include "base/vlog.h"
 #include "ssx/sformat.h"
+#include "strings/utf8.h"
 #include "utils/base64.h"
 #include "utils/to_string.h"
-#include "strings/utf8.h"
 
 #include <boost/algorithm/string.hpp>
 #include <re2/re2.h>

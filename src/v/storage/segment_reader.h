@@ -12,11 +12,11 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/types.h"
-#include "container/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/file.hh>

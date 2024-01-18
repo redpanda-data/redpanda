@@ -15,6 +15,7 @@
 #include "base/units.h"
 #include "cluster/topic_table.h"
 #include "config/property.h"
+#include "container/intrusive_list_helpers.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -28,7 +29,6 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "container/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>

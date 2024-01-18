@@ -12,8 +12,8 @@
 #pragma once
 
 #include "cluster/types.h"
-#include "model/record.h"
 #include "container/intrusive_list_helpers.h"
+#include "model/record.h"
 #include "utils/mutex.h"
 #include "utils/rwlock.h"
 

@@ -18,6 +18,7 @@
 #include "cluster/partition.h"
 #include "cluster/types.h"
 #include "config/property.h"
+#include "container/intrusive_list_helpers.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -26,7 +27,6 @@
 #include "raft/group_manager.h"
 #include "raft/heartbeat_manager.h"
 #include "storage/api.h"
-#include "container/intrusive_list_helpers.h"
 #include "utils/named_type.h"
 
 #include <absl/container/flat_hash_map.h>
