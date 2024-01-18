@@ -50,6 +50,13 @@ class OMBValidationTest(RedpandaTest):
         "warmup_duration_minutes": 5,
     }
 
+    EXPECTED_MAX_LATENCIES = {
+        OMBSampleConfigurations.E2E_LATENCY_50PCT: 20.0,
+        OMBSampleConfigurations.E2E_LATENCY_75PCT: 25.0,
+        OMBSampleConfigurations.E2E_LATENCY_99PCT: 50.0,
+        OMBSampleConfigurations.E2E_LATENCY_999PCT: 100.0,
+    }
+
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
         # Get tier name
@@ -118,24 +125,19 @@ class OMBValidationTest(RedpandaTest):
         self.redpanda.clean_cluster()
 
     @staticmethod
-    def base_validator(multiplier: float = 1):
-        """Return a default validator object with reasonable latency targets for
-        healthy systems. Optionally accepts a multiplier value which will adjust
-        all the latencies by the given value, which might be used to accept higher
+    def base_validator(multiplier: float = 1) -> dict[str, Any]:
+        """Return a validator object with reasonable latency targets for
+        healthy systems. Optionally accepts a multiplier value which will multiply
+        all the latencies by the given value, which could be used to accept higher
         latencies in cases we know this is reasonable (e.g., a system running at
         its maximum partition count."""
-        ret: dict[str, Any] = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(20 * multiplier)],
-            OMBSampleConfigurations.E2E_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(25 * multiplier)],
-            OMBSampleConfigurations.E2E_LATENCY_99PCT:
-            [OMBSampleConfigurations.lte(50 * multiplier)],
-            OMBSampleConfigurations.E2E_LATENCY_999PCT:
-            [OMBSampleConfigurations.lte(100 * multiplier)],
-        }
 
-        return ret
+        # use dict comprehension to generate dict of latencies to list of validation functions
+        # e.g. { 'aggregatedEndToEndLatency50pct': [OMBSampleConfigurations.lte(20.0 * multiplier)] }
+        return {
+            k: [OMBSampleConfigurations.lte(v * multiplier)]
+            for k, v in OMBValidationTest.EXPECTED_MAX_LATENCIES.items()
+        }
 
     def _partition_count(self) -> int:
         machine_config = self.tier_machine_info
