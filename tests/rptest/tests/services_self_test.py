@@ -224,7 +224,7 @@ class BucketScrubSelfTest(RedpandaTest):
 
         assert segment_key is not None
 
-        tmp_location = f"tmp_{segment_key}_tmp"
+        tmp_location = f"{segment_key}_tmp"
         self.logger.info(f"Simulating loss of segment {segment_key}")
         self.redpanda.cloud_storage_client.move_object(
             self.si_settings.cloud_storage_bucket,

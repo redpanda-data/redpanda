@@ -1,20 +1,19 @@
-import threading
-
-from rptest.archival.shared_client_utils import key_to_topic
-
-import boto3
-
-from botocore import UNSIGNED
-from botocore.config import Config
-from botocore.exceptions import ClientError
-
-from concurrent.futures import ThreadPoolExecutor
 import datetime
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from itertools import islice
 from time import sleep
 from typing import Iterator, NamedTuple, Union, Optional
+
+import boto3
+from botocore import UNSIGNED
+from botocore.config import Config
+from botocore.exceptions import ClientError
 from ducktape.utils.util import wait_until
+
+from rptest.archival.shared_client_utils import key_to_topic
 
 
 class SlowDown(Exception):
@@ -332,15 +331,22 @@ class S3Client:
         """Copy object to another location within the bucket"""
         try:
             src_uri = f"{bucket}/{src}"
+            self.logger.debug(f"Copying {src_uri} to {dst} on {bucket}")
+            boto3.set_stream_logger('botocore.parsers', level=logging.DEBUG)
             return self._cli.copy_object(Bucket=bucket,
                                          Key=dst,
-                                         CopySource=src_uri)
+                                         CopySource={
+                                             'Bucket': bucket,
+                                             'Key': src
+                                         })
         except ClientError as err:
             self.logger.debug(f"error response copying {bucket}/{src}: {err}")
             if err.response['Error']['Code'] == 'SlowDown':
                 raise SlowDown()
             else:
                 raise
+        finally:
+            boto3.set_stream_logger('botocore.parsers', level=logging.WARNING)
 
     def get_object_data(self, bucket, key):
         resp = self._get_object(bucket, key)
