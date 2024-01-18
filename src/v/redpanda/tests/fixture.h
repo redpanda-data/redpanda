@@ -802,7 +802,7 @@ public:
           std::chrono::milliseconds(0));
     }
 
-    kafka::request_context make_request_context() {
+    kafka::request_context make_fetch_request_context() {
         kafka::fetch_request request;
         // do not use incremental fetch requests
         request.data.max_wait_ms = std::chrono::milliseconds::zero();
