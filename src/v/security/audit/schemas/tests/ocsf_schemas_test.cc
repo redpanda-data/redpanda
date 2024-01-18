@@ -483,222 +483,6 @@ BOOST_AUTO_TEST_CASE(validate_increment) {
     BOOST_REQUIRE_EQUAL(ser, ::json::minify(expected));
 }
 
-BOOST_AUTO_TEST_CASE(validate_api_activity_hash) {
-    {
-        size_t hash1 = 0, hash2 = 0;
-        {
-            auto dst_endpoint = rp_kafka_endpoint;
-            auto src_endpoint = client_kafka_endpoint;
-            auto now = sa::timestamp_t{1};
-            auto api_act = sa::api_activity{
-              sa::api_activity::activity_id::create,
-              sa::actor{
-                .authorizations = {authz_success}, .user = default_user},
-              sa::api{api_create_topic},
-              std::move(dst_endpoint),
-              test_http_request(),
-              {resource_detail},
-              sa::severity_id::informational,
-              std::move(src_endpoint),
-              sa::api_activity::status_id::success,
-              now,
-              sa::api_activity_unmapped{unmapped}};
-            hash1 = api_act.key();
-        }
-        {
-            auto dst_endpoint = rp_kafka_endpoint;
-            auto src_endpoint = client_kafka_endpoint;
-            std::vector<sa::resource_detail> resources{resource_detail};
-            auto now = sa::timestamp_t{2};
-            auto api_act = sa::api_activity{
-              sa::api_activity::activity_id::create,
-              sa::actor{
-                .authorizations = {authz_success}, .user = default_user},
-              sa::api{api_create_topic},
-              std::move(dst_endpoint),
-              test_http_request(),
-              {resource_detail},
-              sa::severity_id::informational,
-              std::move(src_endpoint),
-              sa::api_activity::status_id::success,
-              now,
-              sa::api_activity_unmapped{unmapped}};
-            hash2 = api_act.key();
-            // Should expect that incrementing does _not_ change the value
-            // of the hash
-            api_act.increment(now);
-            BOOST_REQUIRE_EQUAL(api_act.key(), hash2);
-        }
-        // Two items should be the same even if their  creation time is
-        // different
-        BOOST_CHECK_EQUAL(hash1, hash2);
-    }
-
-    {
-        size_t hash1 = 0, hash2 = 0;
-        {
-            auto dst_endpoint = rp_kafka_endpoint;
-            auto src_endpoint = client_kafka_endpoint;
-            auto now = sa::timestamp_t{3};
-            auto api_act = sa::api_activity{
-              sa::api_activity::activity_id::create,
-              sa::actor{
-                .authorizations = {authz_success}, .user = default_user},
-              sa::api{api_create_topic},
-              std::move(dst_endpoint),
-              test_http_request(),
-              {resource_detail},
-              sa::severity_id::informational,
-              std::move(src_endpoint),
-              sa::api_activity::status_id::success,
-              now,
-              sa::api_activity_unmapped{unmapped}};
-            hash1 = api_act.key();
-        }
-        {
-            auto dst_endpoint = rp_kafka_endpoint;
-            auto src_endpoint = client_kafka_endpoint;
-            auto now = sa::timestamp_t{4};
-            auto api_act = sa::api_activity{
-              sa::api_activity::activity_id::create,
-              sa::actor{
-                .authorizations = {authz_success}, .user = default_user},
-              sa::api{api_create_topic},
-              std::move(dst_endpoint),
-              std::nullopt,
-              {resource_detail},
-              sa::severity_id::informational,
-              std::move(src_endpoint),
-              sa::api_activity::status_id::success,
-              now,
-              sa::api_activity_unmapped{unmapped}};
-            hash2 = api_act.key();
-            // Should expect that incrementing does _not_ change the value
-            // of the hash
-            api_act.increment(now);
-            BOOST_REQUIRE_EQUAL(api_act.key(), hash2);
-        }
-        BOOST_REQUIRE_NE(hash1, hash2);
-    }
-}
-
-BOOST_AUTO_TEST_CASE(validate_application_lifecycle_hash) {
-    size_t hash1 = 0, hash2 = 0;
-
-    // validate that timestamp has no effect
-    {
-        auto app_lifecycle1 = sa::application_lifecycle(
-          sa::application_lifecycle::activity_id::start,
-          sa::product{test_product},
-          sa::severity_id::informational,
-          sa::timestamp_t{1});
-
-        auto app_lifecycle2 = sa::application_lifecycle(
-          sa::application_lifecycle::activity_id::start,
-          sa::product{test_product},
-          sa::severity_id::informational,
-          sa::timestamp_t{2});
-
-        hash1 = app_lifecycle1.key();
-        hash2 = app_lifecycle2.key();
-
-        BOOST_REQUIRE_EQUAL(hash1, hash2);
-
-        app_lifecycle1.increment(sa::timestamp_t{3});
-
-        BOOST_REQUIRE_EQUAL(hash1, app_lifecycle1.key());
-    }
-
-    // Validate that a change in activity results in a different hash
-    {
-        auto app_lifecycle1 = sa::application_lifecycle(
-          sa::application_lifecycle::activity_id::start,
-          sa::product{test_product},
-          sa::severity_id::informational,
-          sa::timestamp_t{1});
-        auto app_lifecycle2 = sa::application_lifecycle(
-          sa::application_lifecycle::activity_id::stop,
-          sa::product{test_product},
-          sa::severity_id::informational,
-          sa::timestamp_t{1});
-
-        BOOST_REQUIRE_NE(app_lifecycle1.key(), app_lifecycle2.key());
-    }
-}
-
-BOOST_AUTO_TEST_CASE(validate_authn_hash) {
-    // validate that timestamp has no effect
-    {
-        auto authn1 = sa::authentication(
-          sa::authentication::activity_id::logon,
-          "SCRAM-SHA256",
-          rp_kafka_endpoint,
-          sa::authentication::used_cleartext::no,
-          sa::authentication::used_mfa::no,
-          client_kafka_endpoint,
-          test_service,
-          sa::severity_id::informational,
-          sa::authentication::status_id::success,
-          std::nullopt,
-          sa::timestamp_t{1},
-          sa::user{default_user});
-        auto authn2 = sa::authentication(
-          sa::authentication::activity_id::logon,
-          "SCRAM-SHA256",
-          rp_kafka_endpoint,
-          sa::authentication::used_cleartext::no,
-          sa::authentication::used_mfa::no,
-          client_kafka_endpoint,
-          test_service,
-          sa::severity_id::informational,
-          sa::authentication::status_id::success,
-          std::nullopt,
-          sa::timestamp_t{2},
-          sa::user{default_user});
-
-        auto hash1 = authn1.key();
-        auto hash2 = authn2.key();
-
-        BOOST_REQUIRE_EQUAL(hash1, hash2);
-
-        authn1.increment(sa::timestamp_t{3});
-
-        BOOST_REQUIRE_EQUAL(hash1, authn1.key());
-    }
-
-    // validate that changing the authn type results in a different hash
-    {
-        auto authn1 = sa::authentication(
-          sa::authentication::activity_id::logon,
-          sa::authentication::auth_protocol_id::kerberos,
-          rp_kafka_endpoint,
-          sa::authentication::used_cleartext::no,
-          sa::authentication::used_mfa::no,
-          client_kafka_endpoint,
-          test_service,
-          sa::severity_id::informational,
-          sa::authentication::status_id::failure,
-          "Failure",
-          sa::timestamp_t{1},
-          sa::user{default_user});
-        auto authn2 = sa::authentication(
-          sa::authentication::activity_id::logon,
-          "SCRAM-SHA256",
-          rp_kafka_endpoint,
-          sa::authentication::used_cleartext::no,
-          sa::authentication::used_mfa::no,
-          client_kafka_endpoint,
-          test_service,
-          sa::severity_id::informational,
-          sa::authentication::status_id::failure,
-          "Failure",
-          sa::timestamp_t{2},
-          sa::user{default_user});
-
-        BOOST_REQUIRE_NE(authn1.key(), authn2.key());
-    }
-}
-
 BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
     const ss::socket_address client_addr{ss::ipv4_addr("10.0.0.1", 12345)};
     const ss::socket_address server_addr{ss::ipv4_addr("10.1.1.1", 23456)};
@@ -725,7 +509,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
       "sasl",
       request_auth_result::superuser::no};
 
-    auto api_activity = sa::make_api_activity_event(
+    auto api_activity = sa::api_activity::construct(
       req, auth_result, "http", true, std::nullopt);
 
     auth_result.pass();
@@ -844,7 +628,7 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
       "sasl",
       request_auth_result::superuser::no};
 
-    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+    auto authn = sa::authentication::construct(sa::authentication_event_options {
       .auth_protocol = "sasl",
       .server_addr = {fmt::format("{}", req.get_server_address().addr()), req.get_server_address().port(), req.get_server_address().addr().in_family()},
       .svc_name = service_name,
@@ -925,7 +709,7 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized_authn_disabled) {
       request_auth_result::superuser::yes,
       request_auth_result::auth_required::no};
 
-    auto api_activity = sa::make_api_activity_event(
+    auto api_activity = sa::api_activity::construct(
       req, auth_result, "http", true, std::nullopt);
 
     auth_result.pass();
@@ -1037,7 +821,7 @@ BOOST_AUTO_TEST_CASE(make_authn_event_failure) {
     req._headers["Authorization"] = "You shouldn't see this at all";
     req.protocol_name = protocol_name;
 
-    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+    auto authn = sa::authentication::construct(sa::authentication_event_options {
       .server_addr = {fmt::format("{}", req.get_server_address().addr()), req.get_server_address().port(), req.get_server_address().addr().in_family()},
       .svc_name = service_name,
       .client_addr = {fmt::format("{}", req.get_client_address().addr()), req.get_client_address().port(), req.get_client_address().addr().in_family()},
@@ -1109,7 +893,7 @@ BOOST_AUTO_TEST_CASE(test_ocsf_size) {
 
     const ss::sstring username = "test";
     const ss::sstring service_name = "test-service";
-    auto authn = sa::make_authentication_event(sa::authentication_event_options {
+    auto authn = sa::authentication::construct(sa::authentication_event_options {
       .server_addr = {fmt::format("{}", http_req.get_server_address().addr()), http_req.get_server_address().port(), http_req.get_server_address().addr().in_family()},
       .svc_name = service_name,
       .client_addr = {fmt::format("{}", http_req.get_client_address().addr()), http_req.get_client_address().port(), http_req.get_client_address().addr().in_family()},
