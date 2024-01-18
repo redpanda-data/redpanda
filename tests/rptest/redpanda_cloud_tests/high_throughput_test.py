@@ -359,6 +359,10 @@ class HighThroughputTest(PreallocNodesTest):
         # and/or config.use_same_cluster and current.tests_finished set to True
         self.redpanda._cloud_cluster.current.tests_finished = True
 
+    def setup(self):
+        super().setup()
+        self.redpanda.clean_cluster()
+
     def tearDown(self):
         # These tests may run on cloud ec2 instances where between each test
         # the same cluster is used. Therefore state between runs will still exist,
