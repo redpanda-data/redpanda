@@ -34,14 +34,17 @@ class OMBSampleConfigurations:
     E2E_LATENCY_MAX = "aggregatedEndToEndLatencyMax"
     AVG_THROUGHPUT_MBPS = "throughputMBps"
 
+    @staticmethod
     def range(min_val, max_val):
         return (lambda x: x >= min_val and x <= max_val,
                 f"Expected in range [{min_val}, {max_val}], check failed.")
 
+    @staticmethod
     def lte(max_val):
         return (lambda x: x <= max_val,
                 f"Expected to be <= {max_val}, check failed.")
 
+    @staticmethod
     def gte(min_val):
         return (lambda x: x >= min_val,
                 f"Expected to be >= {min_val}, check failed.")
