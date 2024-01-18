@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "json/_include_first.h"
 #include "json/prettywriter.h"
 #include "json/reader.h"
@@ -18,7 +19,6 @@
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "net/unresolved_address.h"
-#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/net/inet_address.hh>

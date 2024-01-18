@@ -6,6 +6,7 @@ v_cc_library(
     absl::btree
     Seastar::seastar
     v::strings
+    v::container
 )
 
 add_subdirectory(test)

@@ -13,11 +13,11 @@
 #include "cluster/partition_manager.h"
 #include "cluster/tx_manager_migrator_service.h"
 #include "config/property.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

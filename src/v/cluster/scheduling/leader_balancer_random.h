@@ -14,10 +14,10 @@
 #include "cluster/scheduling/leader_balancer_constraints.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
+#include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "random/generators.h"
-#include "utils/fragmented_vector.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>

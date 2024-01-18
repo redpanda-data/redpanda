@@ -12,12 +12,12 @@
 
 #include "base/outcome.h"
 #include "cluster/errc.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "serde/envelope.h"
-#include "utils/fragmented_vector.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>

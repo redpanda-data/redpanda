@@ -18,6 +18,7 @@
 #include "cluster/tx_hash_ranges.h"
 #include "cluster/types.h"
 #include "config/property.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -28,7 +29,6 @@
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "storage/types.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

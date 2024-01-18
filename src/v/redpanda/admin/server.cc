@@ -50,6 +50,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
+#include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "finjector/stress_fiber.h"
@@ -108,7 +109,6 @@
 #include "strings/string_switch.h"
 #include "strings/utf8.h"
 #include "transform/api.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>

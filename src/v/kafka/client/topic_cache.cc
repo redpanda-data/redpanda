@@ -9,12 +9,12 @@
 
 #include "kafka/client/topic_cache.h"
 
+#include "container/fragmented_vector.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/partitioners.h"
 #include "kafka/protocol/metadata.h"
 #include "random/generators.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 

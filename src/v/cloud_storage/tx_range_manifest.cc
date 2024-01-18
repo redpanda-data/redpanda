@@ -14,9 +14,9 @@
 #include "bytes/streambuf.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "container/fragmented_vector.h"
 #include "json/istreamwrapper.h"
 #include "model/record.h"
-#include "utils/fragmented_vector.h"
 
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>

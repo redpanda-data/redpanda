@@ -13,6 +13,7 @@
 
 #include "base/units.h"
 #include "bytes/bytes.h"
+#include "container/fragmented_vector.h"
 #include "hashing/xx.h"
 #include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
@@ -21,7 +22,6 @@
 #include "storage/fwd.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
-#include "utils/fragmented_vector.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/util/noncopyable_function.hh>

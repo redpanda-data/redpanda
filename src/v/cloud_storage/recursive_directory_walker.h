@@ -11,7 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "utils/fragmented_vector.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>

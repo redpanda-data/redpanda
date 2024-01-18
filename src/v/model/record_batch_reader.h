@@ -13,9 +13,9 @@
 
 #include "base/likely.h"
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>
