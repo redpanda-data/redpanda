@@ -109,6 +109,10 @@ class OMBValidationTest(RedpandaTest):
             config_profile['machine_type'])
         self.rpk = RpkTool(self.redpanda)
 
+    def setup(self):
+        super().setup()
+        self.redpanda.clean_cluster()
+
     def tearDown(self):
         super().tearDown()
         self.redpanda.clean_cluster()
