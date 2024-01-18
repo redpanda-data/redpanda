@@ -31,6 +31,7 @@
 #include "model/timestamp.h"
 #include "utils/named_type.h"
 #include "wasm/ffi.h"
+#include "wasm/fwd.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -251,8 +252,8 @@ using environ_map_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
  */
 class log_writer {
 public:
-    static log_writer make_for_stderr(ss::sstring name, ss::logger*);
-    static log_writer make_for_stdout(ss::sstring name, ss::logger*);
+    static log_writer make_for_stderr(wasm::logger*);
+    static log_writer make_for_stdout(wasm::logger*);
     // Writes this string to the logger, adding a prefix
     //
     // Does not make a copy of the string, so leftovers must be flushed
@@ -261,12 +262,11 @@ public:
     uint32_t flush();
 
 private:
-    explicit log_writer(ss::sstring name, bool is_guest_stdout, ss::logger*);
+    explicit log_writer(bool is_guest_stdout, wasm::logger*);
 
     bool _is_guest_stdout;
-    ss::sstring _name;
 
-    ss::logger* _logger;
+    wasm::logger* _logger;
     std::vector<std::string_view> _buffer;
 };
 
@@ -279,7 +279,7 @@ public:
     // Create a wasi module using the args and environ to initialize the runtime
     // with.
     preview1_module(
-      std::vector<ss::sstring>, const environ_map_t&, ss::logger*);
+      std::vector<ss::sstring>, const environ_map_t&, wasm::logger*);
     preview1_module(const preview1_module&) = delete;
     preview1_module& operator=(const preview1_module&) = delete;
     preview1_module(preview1_module&&) = default;
