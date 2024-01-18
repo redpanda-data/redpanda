@@ -68,6 +68,10 @@ public:
     auto abort_requested() const noexcept { return local().abort_requested(); }
     auto check() const { return local().check(); }
 
+    bool local_is_initialized() const noexcept {
+        return _as.local_is_initialized();
+    }
+
 private:
     ss::sharded<ss::abort_source> _as;
     std::optional<ss::abort_source::subscription> _sub;
