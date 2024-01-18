@@ -472,14 +472,21 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
     // offset validation logic on follower
     if (reading_from_follower && !_partition->is_leader()) {
         auto ec = error_code::none;
-        if (fetch_offset < start_offset()) {
+
+        const std::pair<model::offset, model::offset> bounds = std::minmax(
+          leader_high_watermark(), log_end_offset());
+        const auto effective_log_end_offset = bounds.second;
+        const auto available_to_read = bounds.first;
+        if (
+          fetch_offset < start_offset()
+          || fetch_offset > effective_log_end_offset) {
             ec = error_code::offset_out_of_range;
-        } else if (
-          fetch_offset > high_watermark()
-          && fetch_offset <= leader_high_watermark()) {
+        } else if (fetch_offset > available_to_read) {
+            /**
+             * Offset know to be committed but not yet available on the
+             * follower.
+             */
             ec = error_code::offset_not_available;
-        } else if (fetch_offset > leader_high_watermark()) {
-            ec = error_code::offset_out_of_range;
         }
 
         if (ec != error_code::none) {
