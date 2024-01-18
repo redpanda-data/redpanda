@@ -298,6 +298,25 @@ class OMBValidationTest(RedpandaTest):
         finally:
             self.rpk.delete_topic(swarm_topic_name)
 
+    def _warn_metrics(self, metrics, validator):
+        """Validates metrics and just warn if any fail."""
+
+        assert len(validator) > 0, "At least one metric should be validated"
+
+        results = []
+        kv_str = lambda k, v: f"Metric {k}, value {v}, "
+
+        for key in validator.keys():
+            assert key in metrics, f"Missing requested validator key {key} in metrics"
+
+            val = metrics[key]
+            for rule in validator[key]:
+                if not rule[0](val):
+                    results.append(kv_str(key, val) + rule[1])
+
+        if len(results) > 0:
+            self.logger.warn(str(results))
+
     @cluster(num_nodes=CLUSTER_NODES)
     def test_max_partitions(self):
         tier_limits = self.tier_limits
