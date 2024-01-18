@@ -333,9 +333,18 @@ class OMBValidationTest(RedpandaTest):
             producer_rate / (1 * KiB),
         }
 
-        # we allow latencies to be 50% higher in the max partitions test as we
+        # we allow latencies to be 100% higher in the max partitions test as we
         # expect poorer performance when we max out one dimensions
-        validator = self.base_validator(2.0) | {
+        base_validator = self.base_validator(2.0) | {
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
+                OMBSampleConfigurations.gte(
+                    self._mb_to_mib(producer_rate // (1 * MB))),
+            ],
+        }
+
+        # we allow latencies to be in the range of 100% higher in the max partitions test as we
+        # expect poorer performance when we max out one dimensions
+        range_validator = self.expected_validator() | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(producer_rate // (1 * MB))),
