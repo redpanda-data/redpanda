@@ -74,6 +74,10 @@ struct configuration final : public config_store {
     bounded_property<size_t> data_transforms_per_function_memory_limit;
     property<std::chrono::milliseconds> data_transforms_runtime_limit_ms;
     bounded_property<size_t> data_transforms_binary_max_size;
+    bounded_property<size_t> data_transforms_logging_buffer_capacity_bytes;
+    property<std::chrono::milliseconds>
+      data_transforms_logging_flush_interval_ms;
+    property<size_t> data_transforms_logging_line_max_bytes;
 
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
