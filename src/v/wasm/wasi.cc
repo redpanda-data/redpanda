@@ -17,6 +17,7 @@
 #include "utils/utf8.h"
 #include "vassert.h"
 #include "vlog.h"
+#include "wasm/api.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/byteorder.hh>
@@ -69,16 +70,15 @@ exit_exception::exit_exception(int32_t exit_code)
 const char* exit_exception::what() const noexcept { return _msg.c_str(); }
 int32_t exit_exception::code() const noexcept { return _code; }
 
-log_writer::log_writer(ss::sstring name, bool is_guest_stdout, ss::logger* l)
+log_writer::log_writer(bool is_guest_stdout, wasm::logger* l)
   : _is_guest_stdout(is_guest_stdout)
-  , _name(std::move(name))
   , _logger(l) {}
 
-log_writer log_writer::make_for_stderr(ss::sstring name, ss::logger* l) {
-    return log_writer(std::move(name), false, l);
+log_writer log_writer::make_for_stderr(wasm::logger* l) {
+    return log_writer(false, l);
 }
-log_writer log_writer::make_for_stdout(ss::sstring name, ss::logger* l) {
-    return log_writer(std::move(name), true, l);
+log_writer log_writer::make_for_stdout(wasm::logger* l) {
+    return log_writer(true, l);
 }
 
 uint32_t log_writer::write(std::string_view buf) {
@@ -116,15 +116,15 @@ uint32_t log_writer::flush() {
     if (joined.size() > max_log_line) {
         joined.resize(max_log_line);
     }
-    _logger->log(level, "{} - {}", _name, joined);
+    _logger->log(level, joined);
     return amt;
 }
 
 preview1_module::preview1_module(
-  std::vector<ss::sstring> args, const environ_map_t& environ, ss::logger* l)
+  std::vector<ss::sstring> args, const environ_map_t& environ, wasm::logger* l)
   : _args(std::move(args))
-  , _stdout_log_writer(log_writer::make_for_stdout(_args.front(), l))
-  , _stderr_log_writer(log_writer::make_for_stderr(_args.front(), l)) {
+  , _stdout_log_writer(log_writer::make_for_stdout(l))
+  , _stderr_log_writer(log_writer::make_for_stderr(l)) {
     _environ.reserve(environ.size());
     for (const auto& [k, v] : environ) {
         if (k.find("=") != ss::sstring::npos) {

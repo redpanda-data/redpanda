@@ -108,8 +108,8 @@ public:
 
     ss::future<> stop() override;
 
-    ss::future<ss::shared_ptr<factory>> make_factory(
-      model::transform_metadata meta, iobuf buf, ss::logger* logger) override;
+    ss::future<ss::shared_ptr<factory>>
+    make_factory(model::transform_metadata meta, iobuf buf) override;
 
     wasm_engine_t* engine() const;
 
@@ -428,13 +428,15 @@ public:
       ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>>
         preinitialized,
       schema_registry* sr,
-      ss::logger* logger)
+      std::unique_ptr<wasm::logger> logger)
       : _runtime(runtime)
       , _meta(std::move(metadata))
       , _preinitialized(std::move(preinitialized))
       , _probe(runtime->engine_probe_cache()->make_probe(_meta.name()))
+      , _logger(std::move(logger))
       , _sr_module(sr)
-      , _wasi_module({_meta.name()}, make_environment_vars(_meta), logger)
+      , _wasi_module(
+          {_meta.name()}, make_environment_vars(_meta), _logger.get())
       , _transform_module(&_wasi_module) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
@@ -740,6 +742,7 @@ private:
     model::transform_metadata _meta;
     ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>> _preinitialized;
     engine_probe _probe;
+    std::unique_ptr<wasm::logger> _logger;
 
     schema_registry_module _sr_module;
     wasi::preview1_module _wasi_module;
@@ -1195,19 +1198,18 @@ public:
       model::transform_metadata meta,
       ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>>
         preinitialized,
-      schema_registry* sr,
-      ss::logger* l)
+      schema_registry* sr)
       : _runtime(runtime)
       , _preinitialized(std::move(preinitialized))
       , _meta(std::move(meta))
-      , _sr(sr)
-      , _logger(l) {}
+      , _sr(sr) {}
 
     // This can be invoked on any shard and must be thread safe.
-    ss::future<ss::shared_ptr<engine>> make_engine() final {
+    ss::future<ss::shared_ptr<engine>>
+    make_engine(std::unique_ptr<wasm::logger> logger) final {
         auto copy = co_await _preinitialized.copy();
         co_return ss::make_shared<wasmtime_engine>(
-          _runtime, _meta, std::move(copy), _sr, _logger);
+          _runtime, _meta, std::move(copy), _sr, std::move(logger));
     }
 
 private:
@@ -1215,7 +1217,6 @@ private:
     ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>> _preinitialized;
     model::transform_metadata _meta;
     schema_registry* _sr;
-    ss::logger* _logger;
 };
 
 wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema_registry> sr)
@@ -1354,8 +1355,8 @@ ss::future<> wasmtime_runtime::stop() {
     co_await _stack_allocator.stop();
 }
 
-ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
-  model::transform_metadata meta, iobuf buf, ss::logger* logger) {
+ss::future<ss::shared_ptr<factory>>
+wasmtime_runtime::make_factory(model::transform_metadata meta, iobuf buf) {
     auto preinitialized = ss::make_lw_shared<preinitialized_instance>();
 
     // Enable strict stack checking only if tracking is enabled.
@@ -1409,8 +1410,7 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
       this,
       std::move(meta),
       ss::make_foreign(std::move(preinitialized)),
-      _sr.get(),
-      logger);
+      _sr.get());
 }
 
 wasm_engine_t* wasmtime_runtime::engine() const { return _engine.get(); }

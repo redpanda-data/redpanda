@@ -62,7 +62,8 @@ public:
     factory& operator=(const factory&) = delete;
     factory(factory&&) = delete;
     factory& operator=(factory&&) = delete;
-    virtual ss::future<ss::shared_ptr<engine>> make_engine() = 0;
+    virtual ss::future<ss::shared_ptr<engine>>
+      make_engine(std::unique_ptr<wasm::logger>) = 0;
     virtual ~factory() = default;
 };
 
@@ -124,7 +125,7 @@ public:
      * can be used on any shard and is thread-safe.
      */
     virtual ss::future<ss::shared_ptr<factory>>
-    make_factory(model::transform_metadata, iobuf, ss::logger*) = 0;
+      make_factory(model::transform_metadata, iobuf) = 0;
     virtual ~runtime() = default;
 };
 
