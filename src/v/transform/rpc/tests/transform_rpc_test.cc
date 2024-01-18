@@ -967,6 +967,18 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
             ASSERT_EQ(read_result.value()->offset, request_val.offset);
         }
     }
+    auto offsets = client()->list_committed_offsets().get().value();
+    EXPECT_EQ(offsets.size(), num_transforms * num_src_partitions);
+    for (int i = 0; i < num_transforms; ++i) {
+        for (int32_t j = 0; j < num_src_partitions; ++j) {
+            model::transform_offsets_key key;
+            key.id = model::transform_id(i);
+            key.partition = model::partition_id(j);
+            auto it = offsets.find(key);
+            ASSERT_FALSE(it == offsets.end());
+            EXPECT_EQ(it->second.offset, kafka::offset(j));
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

@@ -84,6 +84,12 @@ public:
 
     ss::future<model::cluster_transform_report> generate_report();
 
+    /**
+     * List all the tracked offsets for all transforms within the cluster.
+     */
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+    list_committed_offsets();
+
     ss::future<> start();
     ss::future<> stop();
 
@@ -148,6 +154,18 @@ private:
       do_remote_offset_commit(model::node_id, offset_commit_request);
     ss::future<offset_fetch_response>
       do_remote_offset_fetch(model::node_id, offset_fetch_request);
+
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+      do_list_committed_offsets(model::partition_id);
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+      do_list_committed_offsets_once(model::partition_id);
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+      do_local_list_committed_offsets(model::partition_id);
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+    do_remote_list_committed_offsets(
+      model::node_id,
+      model::partition_id,
+      model::timeout_clock::duration timeout);
 
     template<typename Func>
     std::invoke_result_t<Func> retry(Func&&);
