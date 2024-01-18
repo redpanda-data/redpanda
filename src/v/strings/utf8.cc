@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 
 thread_local bool permit_unsafe_log_operation::_flag = false;
 

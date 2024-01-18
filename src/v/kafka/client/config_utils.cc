@@ -18,7 +18,7 @@
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "security/acl.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/coroutine/exception.hh>

@@ -20,7 +20,7 @@
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/exception.hh>

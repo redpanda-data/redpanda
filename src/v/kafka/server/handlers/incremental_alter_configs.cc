@@ -22,7 +22,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>

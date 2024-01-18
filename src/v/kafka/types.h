@@ -19,7 +19,7 @@
 #include "reflection/adl.h"
 #include "utils/base64.h"
 #include "utils/named_type.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 

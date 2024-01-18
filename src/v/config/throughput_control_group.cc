@@ -15,7 +15,7 @@
 #include "ssx/sformat.h"
 #include "utils/functional.h"
 #include "utils/to_string.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/sstring.hh>
 

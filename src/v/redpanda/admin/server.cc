@@ -107,8 +107,8 @@
 #include "ssx/sformat.h"
 #include "transform/api.h"
 #include "utils/fragmented_vector.h"
-#include "utils/string_switch.h"
-#include "utils/utf8.h"
+#include "strings/string_switch.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>

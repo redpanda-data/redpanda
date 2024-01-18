@@ -25,7 +25,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>

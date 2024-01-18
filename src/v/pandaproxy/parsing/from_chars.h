@@ -14,7 +14,7 @@
 #include "base/outcome.h"
 #include "exceptions.h"
 #include "reflection/type_traits.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/sstring.hh>
 

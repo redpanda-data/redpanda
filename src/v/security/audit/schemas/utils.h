@@ -20,7 +20,7 @@
 #include "security/mtls.h"
 #include "security/request_auth.h"
 #include "security/types.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/http/handlers.hh>
 #include <seastar/http/request.hh>

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 

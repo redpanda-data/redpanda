@@ -16,7 +16,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "ffi.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/byteorder.hh>

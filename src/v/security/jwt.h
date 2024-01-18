@@ -16,8 +16,8 @@
 #include "json/pointer.h"
 #include "json/writer.h"
 #include "security/oidc_error.h"
-#include "utils/string_switch.h"
-#include "utils/utf8.h"
+#include "strings/string_switch.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>

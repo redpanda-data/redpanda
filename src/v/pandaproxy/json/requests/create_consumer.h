@@ -21,7 +21,7 @@
 #include "kafka/types.h"
 #include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/rjson_parse.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 

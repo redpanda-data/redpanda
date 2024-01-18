@@ -18,7 +18,7 @@
 #include "model/namespace.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 

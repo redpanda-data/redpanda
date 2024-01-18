@@ -41,7 +41,6 @@ rp_test(
   BINARY_NAME utils_unit
   SOURCES
     bottomless_token_bucket_test.cc
-    constexpr_string_switch.cc
     filtered_lower_bound_test.cc
     fragmented_vector_test.cc
     human_test.cc
@@ -49,10 +48,8 @@ rp_test(
     moving_average_test.cc
     named_type_tests.cc
     stable_iterator_test.cc
-    string_switch_test.cc
     tracking_allocator_tests.cc
     tristate_test.cc
-    utf8_control_chars.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map v::random
   LABELS utils
