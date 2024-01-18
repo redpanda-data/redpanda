@@ -17,7 +17,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 
 #include <absl/container/flat_hash_set.h>
 #include <absl/strings/escaping.h>

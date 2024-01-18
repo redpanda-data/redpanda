@@ -17,7 +17,7 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <boost/lexical_cast.hpp>
 #include <yaml-cpp/yaml.h>

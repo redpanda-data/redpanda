@@ -17,7 +17,7 @@
 #include "model/timestamp.h"
 #include "model/validation.h"
 #include "serde/serde.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/print.hh>

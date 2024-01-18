@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/rm_stm.h"
+#include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/handlers/handler.h"
@@ -18,7 +19,6 @@
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "ssx/abort_source.h"
-#include "utils/intrusive_list_helpers.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/smp.hh>

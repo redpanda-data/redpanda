@@ -12,7 +12,7 @@
 #pragma once
 
 #include "pandaproxy/parsing/error.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 
 #include <fmt/format.h>
 

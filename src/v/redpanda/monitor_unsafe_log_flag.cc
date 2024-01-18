@@ -12,7 +12,7 @@
 #include "redpanda/monitor_unsafe_log_flag.h"
 
 #include "cluster/logger.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 
 using cluster::clusterlog;
 

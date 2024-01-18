@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/configuration.h"
+#include "container/intrusive_list_helpers.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
@@ -26,7 +27,6 @@
 #include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
-#include "utils/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <absl/container/btree_set.h>

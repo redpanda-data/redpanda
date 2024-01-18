@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 
 #include <boost/test/unit_test.hpp>
 

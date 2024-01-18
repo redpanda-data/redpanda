@@ -122,6 +122,8 @@ add_subdirectory(resource_mgmt)
 add_subdirectory(migrations)
 add_subdirectory(wasm)
 add_subdirectory(transform)
+add_subdirectory(container)
+add_subdirectory(strings)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 

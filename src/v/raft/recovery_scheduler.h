@@ -11,6 +11,7 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
+#include "container/intrusive_list_helpers.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -18,7 +19,6 @@
 #include "seastar/core/gate.hh"
 #include "seastar/core/lowres_clock.hh"
 #include "seastar/core/timer.hh"
-#include "utils/intrusive_list_helpers.h"
 
 #include <fmt/core.h>
 

@@ -14,8 +14,8 @@
 #include "archival/types.h"
 #include "cloud_storage/remote.h"
 #include "config/bounded_property.h"
+#include "container/intrusive_list_helpers.h"
 #include "random/simple_time_jitter.h"
-#include "utils/intrusive_list_helpers.h"
 #include "utils/moving_average.h"
 #include "utils/retry_chain_node.h"
 

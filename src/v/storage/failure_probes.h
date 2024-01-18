@@ -13,7 +13,7 @@
 #include "base/seastarx.h"
 #include "finjector/hbadger.h"
 #include "random/fast_prng.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sleep.hh>
 

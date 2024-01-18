@@ -8,6 +8,8 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#define BOOST_TEST_MODULE utils
+
 #include "utils/bottomless_token_bucket.h"
 
 #include <boost/test/unit_test.hpp>

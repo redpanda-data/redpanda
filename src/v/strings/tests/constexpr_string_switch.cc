@@ -9,7 +9,7 @@
 
 #define BOOST_TEST_MODULE utils
 
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <boost/test/unit_test.hpp>
 

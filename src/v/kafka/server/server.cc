@@ -62,8 +62,8 @@
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
 #include "ssx/thread_worker.h"
-#include "utils/string_switch.h"
-#include "utils/utf8.h"
+#include "strings/string_switch.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/loop.hh>

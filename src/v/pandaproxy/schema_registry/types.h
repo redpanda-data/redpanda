@@ -15,8 +15,8 @@
 #include "base/seastarx.h"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
+#include "strings/string_switch.h"
 #include "utils/named_type.h"
-#include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>

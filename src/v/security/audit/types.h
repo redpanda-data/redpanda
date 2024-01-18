@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #pragma once
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <string_view>
 

@@ -10,7 +10,7 @@
 
 #include "cloud_storage_clients/abs_error.h"
 
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <boost/lexical_cast.hpp>
 
