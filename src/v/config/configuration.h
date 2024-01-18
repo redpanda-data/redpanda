@@ -74,6 +74,14 @@ struct configuration final : public config_store {
     bounded_property<size_t> data_transforms_per_function_memory_limit;
     property<std::chrono::milliseconds> data_transforms_runtime_limit_ms;
     bounded_property<size_t> data_transforms_binary_max_size;
+    // Logging
+    property<bool> data_transforms_logging_enabled;
+    // TODO(oren): needs sensible limits and default
+    bounded_property<size_t> data_transforms_logging_buffer_capacity_bytes;
+    // TODO(oren): bounded?
+    property<std::chrono::milliseconds>
+      data_transforms_logging_flush_interval_ms;
+    property<size_t> data_transforms_logging_event_max_data_bytes;
 
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;

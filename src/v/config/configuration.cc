@@ -211,6 +211,37 @@ configuration::configuration()
       },
       10_MiB,
       {.min = 1_MiB, .max = 128_MiB})
+  , data_transforms_logging_enabled(
+      *this,
+      "data_transforms_logging_enabled",
+      "Whether data transforms' stderr/stdout output will be produced to the "
+      "transform_logs topic. When disabled, transform logs are streamed into "
+      "broker logs.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      true)
+  , data_transforms_logging_buffer_capacity_bytes(
+      *this,
+      "data_transforms_logging_buffer_capacity_bytes",
+      "Buffer capacity for transofm logs, per shard. Buffer occupancy is "
+      "calculated as the total size of buffered (i.e. emitted but not yet "
+      "produced) log messages.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      1000_KiB,
+      {.min = 1000_KiB, .max = 2_MiB})
+  , data_transforms_logging_flush_interval_ms(
+      *this,
+      "data_transforms_logging_flush_interval_ms",
+      "Flush interval for transform logs. When a timer expires, pending logs "
+      "are collected and published to the transform_logs topic.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1s)
+  , data_transforms_logging_event_max_data_bytes(
+      *this,
+      "data_transforms_logging_event_truncate_bytes",
+      "Transform log lines will be truncate to this length. Truncation occurs "
+      "after any character escaping.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_KiB)
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",
