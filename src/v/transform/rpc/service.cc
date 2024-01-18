@@ -335,6 +335,20 @@ local_service::offset_fetch(offset_fetch_request request) {
       *shard, ntp, request);
 }
 
+ss::future<result<model::transform_offsets_map, cluster::errc>>
+local_service::list_committed_offsets(list_commits_request req) {
+    model::ntp ntp(
+      model::kafka_internal_namespace,
+      model::transform_offsets_topic,
+      req.partition);
+    auto shard = _partition_manager->shard_owner(ntp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+    co_return co_await _partition_manager->list_committed_offsets_on_shard(
+      *shard, ntp);
+}
+
 ss::future<produce_reply>
 network_service::produce(produce_request req, ::rpc::streaming_context&) {
     co_await ss::coroutine::switch_to(get_scheduling_group());
@@ -390,6 +404,16 @@ ss::future<offset_commit_response> network_service::offset_commit(
   offset_commit_request req, ::rpc::streaming_context&) {
     co_await ss::coroutine::switch_to(get_scheduling_group());
     co_return co_await _service->local().offset_commit(req);
+}
+
+ss::future<list_commits_reply> network_service::list_committed_offsets(
+  list_commits_request req, ::rpc::streaming_context&) {
+    auto results = co_await _service->local().list_committed_offsets(req);
+    if (results.has_error()) {
+        co_return list_commits_reply(results.error(), {});
+    }
+    co_return list_commits_reply(
+      cluster::errc::success, std::move(results.value()));
 }
 
 ss::future<generate_report_reply> network_service::generate_report(

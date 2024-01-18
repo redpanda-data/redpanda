@@ -1,5 +1,4 @@
-/*
- * Copyright 2023 Redpanda Data, Inc.
+/* Copyright 2023 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -174,6 +173,16 @@ operator<<(std::ostream& os, const transformed_topic_data_result& result) {
 std::ostream& operator<<(std::ostream& os, const transformed_topic_data& data) {
     fmt::print(
       os, "{{ tp: {}, batches_size: {} }}", data.tp, data.batches.size());
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const list_commits_request& req) {
+    fmt::print(os, "{{ partition: {} }}", req.partition);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const list_commits_reply& reply) {
+    fmt::print(os, "{{ ec: {}, map_size: {} }}", reply.errc, reply.map.size());
     return os;
 }
 
