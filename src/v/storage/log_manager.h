@@ -28,7 +28,7 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>

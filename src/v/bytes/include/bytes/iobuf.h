@@ -19,7 +19,7 @@
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/details/io_placeholder.h"
 #include "bytes/details/out_of_range.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/temporary_buffer.hh>
 

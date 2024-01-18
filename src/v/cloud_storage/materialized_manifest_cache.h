@@ -16,7 +16,7 @@
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/loop.hh>

@@ -26,7 +26,7 @@
 #include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/lowres_clock.hh>

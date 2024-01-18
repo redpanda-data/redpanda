@@ -22,7 +22,7 @@
 #include "cloud_storage_clients/types.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>

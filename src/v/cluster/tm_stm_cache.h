@@ -26,7 +26,7 @@
 #include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <absl/container/btree_set.h>

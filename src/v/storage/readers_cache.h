@@ -17,7 +17,7 @@
 #include "storage/log_reader.h"
 #include "storage/readers_cache_probe.h"
 #include "storage/types.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>

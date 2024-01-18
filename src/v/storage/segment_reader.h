@@ -16,7 +16,7 @@
 #include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/types.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/file.hh>

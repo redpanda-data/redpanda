@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>

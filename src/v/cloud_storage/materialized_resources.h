@@ -19,7 +19,7 @@
 #include "random/simple_time_jitter.h"
 #include "ssx/semaphore.h"
 #include "utils/adjustable_semaphore.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/token_bucket.h"
 
 #include <seastar/core/abort_source.hh>

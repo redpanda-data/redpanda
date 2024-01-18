@@ -13,7 +13,7 @@
 
 #include "cluster/types.h"
 #include "model/record.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 #include "utils/rwlock.h"
 

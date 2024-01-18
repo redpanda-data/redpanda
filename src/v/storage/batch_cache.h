@@ -15,7 +15,7 @@
 #include "model/record.h"
 #include "resource_mgmt/available_memory.h"
 #include "ssx/semaphore.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/condition-variable.hh>

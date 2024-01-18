@@ -26,7 +26,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/fwd.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>

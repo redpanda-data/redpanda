@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "metrics/metrics.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/metrics.hh>

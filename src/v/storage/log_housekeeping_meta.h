@@ -12,7 +12,7 @@
 #pragma once
 
 #include "storage/log.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 namespace storage {
 struct log_housekeeping_meta {

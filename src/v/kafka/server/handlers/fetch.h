@@ -18,7 +18,7 @@
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "ssx/abort_source.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/smp.hh>

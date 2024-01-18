@@ -13,7 +13,7 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "config/configuration.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/aligned_buffer.hh>

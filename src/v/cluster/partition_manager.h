@@ -26,7 +26,7 @@
 #include "raft/group_manager.h"
 #include "raft/heartbeat_manager.h"
 #include "storage/api.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/named_type.h"
 
 #include <absl/container/flat_hash_map.h>
