@@ -118,6 +118,15 @@ struct transform_offsets_value
 using transform_offsets_map
   = absl::btree_map<transform_offsets_key, transform_offsets_value>;
 
+/**
+ * A flattened entry of transorm_offsets_map to return to the admin API.
+ */
+struct transform_committed_offset {
+    transform_name name;
+    partition_id partition;
+    kafka::offset offset;
+};
+
 inline const model::topic transform_offsets_topic("transform_offsets");
 inline const model::topic_namespace transform_offsets_nt(
   model::kafka_internal_namespace, transform_offsets_topic);

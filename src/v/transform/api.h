@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -71,6 +72,14 @@ public:
      * List all transforms from the entire cluster.
      */
     ss::future<model::cluster_transform_report> list_transforms();
+
+    /**
+     * List the committed offsets for each transform/partition.
+     */
+    ss::future<result<
+      ss::chunked_fifo<model::transform_committed_offset>,
+      cluster::errc>>
+    list_committed_offsets();
 
     /**
      * Create a reporter of the transform subsystem.
