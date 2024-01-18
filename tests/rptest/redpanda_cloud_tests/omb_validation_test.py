@@ -388,6 +388,15 @@ class OMBValidationTest(RedpandaTest):
         # check if omb gave errors, but don't process metrics
         benchmark.check_succeed(validate_metrics=False)
 
+        # benchmark.metrics has a lot of measurements,
+        # so just get the measurements specified in EXPECTED_MAX_LATENCIES
+        # using dict comprehension
+        latency_metrics = {
+            k: benchmark.metrics[k]
+            for k in OMBValidationTest.EXPECTED_MAX_LATENCIES.keys()
+        }
+        self.logger.info(f'latency_metrics: {latency_metrics}')
+
         # just warn on the latency if above expected
         self._warn_metrics(benchmark.metrics, warn_validator)
 
