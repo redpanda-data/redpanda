@@ -16,6 +16,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tx_utils.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
@@ -30,7 +31,6 @@
 #include "raft/errc.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
-#include "utils/fragmented_vector.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/coroutine.hh>

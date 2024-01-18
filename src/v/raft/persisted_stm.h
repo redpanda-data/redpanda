@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -24,7 +25,6 @@
 #include "storage/snapshot.h"
 #include "storage/types.h"
 #include "utils/expiring_promise.h"
-#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 

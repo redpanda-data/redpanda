@@ -11,11 +11,11 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "container/fragmented_vector.h"
 #include "json/document.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "utils/fragmented_vector.h"
 
 #include <rapidjson/document.h>
 

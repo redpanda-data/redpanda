@@ -17,6 +17,7 @@
 #include "cluster/tm_stm_cache.h"
 #include "cluster/tx_hash_ranges.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
@@ -33,7 +34,6 @@
 #include "storage/ntp_config.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
-#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>

@@ -19,6 +19,7 @@
 #include "cluster/logger.h"
 #include "cluster/prefix_truncate_record.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -34,7 +35,6 @@
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_appender_utils.h"
-#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/coroutine.hh>

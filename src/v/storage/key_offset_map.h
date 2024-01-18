@@ -8,9 +8,9 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "hashing/secure.h"
 #include "storage/compacted_index.h"
-#include "utils/fragmented_vector.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/core/future.hh>

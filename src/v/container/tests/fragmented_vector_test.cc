@@ -8,9 +8,11 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#define BOOST_TEST_MODULE container
+
+#include "container/fragmented_vector.h"
 #include "random/generators.h"
 #include "serde/serde.h"
-#include "utils/fragmented_vector.h"
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>

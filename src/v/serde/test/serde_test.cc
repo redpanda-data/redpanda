@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "container/fragmented_vector.h"
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -14,7 +15,6 @@
 #include "serde/serde.h"
 #include "test_utils/randoms.h"
 #include "tristate.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/scheduling.hh>

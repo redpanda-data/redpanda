@@ -9,9 +9,9 @@
 
 #include "model/record_batch_reader.h"
 
+#include "container/fragmented_vector.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>

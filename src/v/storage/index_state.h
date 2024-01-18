@@ -12,11 +12,11 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/sharded.hh>
 

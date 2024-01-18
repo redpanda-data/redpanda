@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "base/seastarx.h"
-#include "utils/fragmented_vector.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

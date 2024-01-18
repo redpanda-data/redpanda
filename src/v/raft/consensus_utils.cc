@@ -13,6 +13,7 @@
 #include "base/vassert.h"
 #include "bytes/iostream.h"
 #include "cluster/archival_metadata_stm.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_utils.h"
@@ -35,7 +36,6 @@
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_utils.h"
 #include "storage/version.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

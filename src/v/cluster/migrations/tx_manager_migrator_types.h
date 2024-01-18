@@ -9,12 +9,12 @@
 #pragma once
 
 #include "cluster/errc.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
 #include "serde/envelope.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 

@@ -24,6 +24,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -35,7 +36,6 @@
 #include "raft/types.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
-#include "utils/fragmented_vector.h"
 
 #include <seastar/core/shared_ptr.hh>
 
