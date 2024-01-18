@@ -31,7 +31,7 @@ class FlinkBasicTests(RedpandaTest):
         # Prepare FlinkService
         self.topic_name = "flink_workload_topic"
         self.topics = [TopicSpec(name=self.topic_name)]
-        self.flink = FlinkService(test_context, self.redpanda, self.topic)
+        self.flink = FlinkService(test_context)
         # Prepare client
         config = self.redpanda.security_config()
         user = config.get("sasl_plain_username")

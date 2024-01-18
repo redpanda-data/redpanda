@@ -181,12 +181,12 @@ class FlinkService(Service):
     STATE_FINISHED = 'FINISHED'
     STATE_CANCELED = 'CANCELED'
 
-    def __init__(self, context, redpanda, topic, *args, **kwargs):
+    def __init__(self, context, *args, **kwargs):
         # No custom node support at this time
-        nodes_for_allocate = 1
+        nodes_to_allocate = 1
         # Init service
         super(FlinkService, self).__init__(context,
-                                           num_nodes=nodes_for_allocate,
+                                           num_nodes=nodes_to_allocate,
                                            *args,
                                            **kwargs)
 
