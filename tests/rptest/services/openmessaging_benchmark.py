@@ -183,6 +183,7 @@ class OpenMessagingBenchmark(Service):
         if node:
             self.nodes = [node]
 
+        self._metrics = []
         self._ctx = ctx
         self.topology = topology
         self.redpanda = redpanda
@@ -233,6 +234,12 @@ class OpenMessagingBenchmark(Service):
         self.workers = OpenMessagingBenchmarkWorkers(
             self._ctx, num_workers=self.num_workers, nodes=self.worker_nodes)
         self.workers.start()
+
+    @property
+    def metrics(self):
+        """Metrics from the results of an OMB run.
+        """
+        return self._metrics
 
     def start_node(self, node, timeout_sec=5 * 60, **kwargs):
         idx = self.idx(node)
@@ -337,8 +344,11 @@ class OpenMessagingBenchmark(Service):
         metrics['publishLatencyMin'] = min(metrics['publishLatencyMin'])
         metrics['endToEndLatencyMin'] = min(metrics['endToEndLatencyMin'])
 
+        self._metrics = metrics
+
         if validate_metrics:
-            OMBSampleConfigurations.validate_metrics(metrics, self.validator)
+            OMBSampleConfigurations.validate_metrics(self._metrics,
+                                                     self.validator)
 
     def wait_node(self, node, timeout_sec):
         process_pid = node.account.java_pids("benchmark")
