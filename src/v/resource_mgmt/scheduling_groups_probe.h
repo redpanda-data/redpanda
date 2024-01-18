@@ -11,17 +11,14 @@
 
 #pragma once
 
-#include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
 #include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "resource_mgmt/cpu_scheduling.h"
 
-#include <seastar/core/metrics.hh>
-
 class scheduling_groups_probe {
 public:
-    void wire_up(const scheduling_groups& scheduling_groups) {
+    void start(const scheduling_groups& scheduling_groups) {
         if (config::shard_local_cfg().disable_public_metrics()) {
             return;
         }
@@ -45,7 +42,10 @@ public:
         }
     }
 
-    void clear() { _public_metrics.clear(); }
+    ss::future<> stop() {
+        _public_metrics.clear();
+        return ss::now();
+    }
 
 private:
     metrics::public_metric_groups _public_metrics;
