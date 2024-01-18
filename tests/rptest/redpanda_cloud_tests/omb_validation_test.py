@@ -321,6 +321,10 @@ class OMBValidationTest(RedpandaTest):
     def test_max_partitions(self):
         tier_limits = self.tier_limits
 
+        # multiplier for the latencies to log warnings on, but still pass the test
+        # because we expect poorer performance when we max out one dimension
+        fudge_factor = 2.0
+
         # Producer clients perform poorly with many partitions. Hence we limit
         # the max amount per producer by splitting them over multiple topics.
         MAX_PARTITIONS_PER_TOPIC = 5000
@@ -352,18 +356,16 @@ class OMBValidationTest(RedpandaTest):
             producer_rate / (1 * KiB),
         }
 
-        # we allow latencies to be 100% higher in the max partitions test as we
-        # expect poorer performance when we max out one dimensions
-        base_validator = self.base_validator(2.0) | {
+        # validator to check metrics and fail on
+        fail_validator = self.base_validator(fudge_factor) | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(producer_rate // (1 * MB))),
             ],
         }
 
-        # we allow latencies to be in the range of 100% higher in the max partitions test as we
-        # expect poorer performance when we max out one dimensions
-        range_validator = self.expected_validator() | {
+        # validator to check metrics and just log warning on
+        warn_validator = self.base_validator() | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(producer_rate // (1 * MB))),
@@ -374,12 +376,20 @@ class OMBValidationTest(RedpandaTest):
             self._ctx,
             self.redpanda,
             "ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
-            (workload, validator),
+            (workload, fail_validator),
             num_workers=self.CLUSTER_NODES - 1,
             topology="ensemble")
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
+
+        # check if omb gave errors, but don't process metrics
+        benchmark.check_succeed(validate_metrics=False)
+
+        # just warn on the latency if above expected
+        self._warn_metrics(benchmark.metrics, warn_validator)
+
+        # fail test if the latency is above expected including fudge factor
         benchmark.check_succeed()
 
     @cluster(num_nodes=CLUSTER_NODES)
