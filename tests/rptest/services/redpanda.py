@@ -937,22 +937,28 @@ class RedpandaServiceBase(Service):
                    metric_name,
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
                    ns=None,
-                   topic=None):
+                   topic=None,
+                   nodes=None):
         """
         Pings the 'metrics_endpoint' of each node and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
         """
+
+        if nodes is None:
+            nodes = self.nodes
+
         count = 0
-        for n in self.nodes:
+        for n in nodes:
             metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
             for family in metrics:
                 for sample in family.samples:
+                    if sample.name != metric_name:
+                        continue
                     if ns and sample.labels["namespace"] != ns:
                         continue
                     if topic and sample.labels["topic"] != topic:
                         continue
-                    if sample.name == metric_name:
-                        count += int(sample.value)
+                    count += int(sample.value)
         return count
 
     def healthy(self):

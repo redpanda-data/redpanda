@@ -149,6 +149,13 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           labels)
           .aggregate(aggregate_labels),
         sm::make_total_bytes(
+          "bytes_fetched_from_follower_total",
+          [this] { return _bytes_fetched_from_follower; },
+          sm::description(
+            "Total number of bytes fetched from follower (not all might be "
+            "returned to the client)"),
+          labels),
+        sm::make_total_bytes(
           "cloud_storage_segments_metadata_bytes",
           [this] {
               return _partition.archival_meta_stm()
@@ -267,6 +274,17 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
           [this] { return _records_fetched; },
           sm::description("Total number of records fetched"),
           labels)
+          .aggregate({sm::shard_label, partition_label}),
+        sm::make_counter(
+          "request_bytes_total",
+          [this] { return _bytes_fetched_from_follower; },
+          sm::description(
+            "Total number of bytes fetched from follower (not all "
+            "might be returned to the client)"),
+          {request_label("follower_consume"),
+           ns_label(ntp.ns()),
+           topic_label(ntp.tp.topic()),
+           partition_label(ntp.tp.partition())})
           .aggregate({sm::shard_label, partition_label}),
       });
     if (
