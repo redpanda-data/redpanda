@@ -1991,10 +1991,6 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
       target.target_size,
       target.min_size,
       offsets());
-    std::vector<ss::lw_shared_ptr<storage::segment>> segments;
-    // Last offset included to the result, default value means that we didn't
-    // find anything
-    model::offset last_included_offset;
     auto base_it = _segs.lower_bound(first);
 
     // Invariant: 'first' offset should be present in the log. If the segment is
@@ -2019,46 +2015,66 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
         }
     }
 
+    size_t first_segment_file_pos = 0;
+    auto first_segment = *base_it;
+    size_t first_segment_size = first_segment->file_size();
+    auto first_segment_offsets = first_segment->offsets();
+    auto r_lock = co_await first_segment->read_lock();
+    if (
+      first_segment_offsets.base_offset <= first
+      && first_segment_offsets.committed_offset >= first) {
+        // The segment is first partially We're doing subscan here but
+        // most of the time it won't require the actual scanning because
+        // in this mode the offset range will end on index entry or segment
+        // end. When we subsequently creating uploads using this method
+        // only the first upload will have to do scanning to find the
+        // offset.
+        segment_index::entry index_entry{
+          .offset = first_segment_offsets.base_offset,
+          .filepos = 0,
+        };
+        auto ix_res = first_segment->index().find_nearest(first);
+        if (ix_res.has_value()) {
+            index_entry = ix_res.value();
+        }
+        //
+        first_segment_file_pos = co_await get_file_offset(
+          first_segment,
+          index_entry,
+          first,
+          model::boundary_type::exclusive,
+          io_priority);
+    } else {
+        // We expect to find first offset inside the first segment.
+        // If this is not the case the log was likely truncated concurrently.
+        vlog(
+          stlog.debug,
+          "First segment out of range, offsets: {}, expected offset: {}",
+          first_segment_offsets,
+          first);
+        throw std::invalid_argument("First segment out of range");
+    }
+
     // Collect relevant segments
     size_t current_size = 0;
-    size_t base_file_pos = 0;
-    for (auto it = base_it; it < _segs.end(); it++) {
-        const auto& offsets = it->get()->offsets();
-        auto r_lock = co_await it->get()->read_lock();
-        if (offsets.base_offset <= first && offsets.committed_offset >= first) {
-            // The segment is first partially We're doing subscan here but
-            // most of the time it won't require the actual scanning because
-            // in this mode the offset range will end on index entry or segment
-            // end. When we subsequently creating uploads using this method
-            // only the first upload will have to do scanning to find the
-            // offset.
-            segment_index::entry index_entry{
-              .offset = offsets.base_offset,
-              .filepos = 0,
-            };
-            auto ix_res = it->get()->index().find_nearest(first);
-            if (ix_res.has_value()) {
-                index_entry = ix_res.value();
-            }
-            auto file_pos = co_await get_file_offset(
-              *it,
-              index_entry,
-              first,
-              model::boundary_type::exclusive,
-              io_priority);
-            auto sz = it->get()->file_size() - file_pos;
-            current_size += sz;
-            base_file_pos = file_pos;
+    // Last offset included to the result, default value means that we didn't
+    // find anything
+    model::offset last_included_offset;
+    size_t num_segments = 0;
+    auto it = _segs.lower_bound(first);
+    for (; it < _segs.end(); it++) {
+        if (*it == first_segment) {
             vlog(
               stlog.debug,
               "First offset {} located at {}, offset range size: {}, Segment "
-              "offsets: {}, current_size: {}",
+              "offsets: {}",
               first,
-              file_pos,
-              sz,
-              it->get()->offsets(),
-              current_size);
+              first_segment_file_pos,
+              first_segment_size - first_segment_file_pos,
+              first_segment_offsets);
+            current_size += first_segment_size - first_segment_file_pos;
         } else {
+            auto r_lock = co_await it->get()->read_lock();
             auto sz = it->get()->file_size();
             current_size += sz;
             vlog(
@@ -2069,15 +2085,15 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
               it->get()->offsets(),
               current_size);
         }
-        segments.push_back(*it);
+        num_segments++;
         if (current_size > target.target_size) {
             // Segment size overshoots and we need to use segment index
             // to find the end offset and its file pos.
             // We accumulated enough segments to satisfy the query. There're
             // few cases:
             // - The beginning and the end of the range is inside the same
-            // segment. The 'segments' collection will have only one element
-            // if this is the case.
+            // segment. The 'num_segments' will be equal to one if this is the
+            // case.
             // - The beginning and the end are located in different
             // segments. In both cases we need to find the finish line. The
             // size calculation is affected by these two possibilities.
@@ -2090,15 +2106,17 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
               current_size);
 
             size_t truncate_after = 0;
-            if (segments.size() == 1) {
+            if (num_segments == 1) {
                 // There are two cases here.
                 // 1. The segment has at least target_size bytes after
                 // base_file_pos,
                 // 2. The segment is too small. In this case we need to clamp
                 // the result.
-                truncate_after = base_file_pos + target.target_size;
+                truncate_after = first_segment_file_pos + target.target_size;
                 truncate_after = std::clamp(
-                  truncate_after, base_file_pos, it->get()->file_size());
+                  truncate_after,
+                  first_segment_file_pos,
+                  it->get()->file_size());
             } else {
                 // In this case we need to find the truncation point
                 // always starting from the beginning of the segment.
@@ -2139,7 +2157,7 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
                   first,
                   it->get()->offsets().committed_offset,
                   truncate_after,
-                  base_file_pos);
+                  first_segment_file_pos);
                 last_included_offset = it->get()->offsets().committed_offset;
             }
             break;
@@ -2167,10 +2185,8 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
         current_size = 0;
     }
 
-    if (segments.empty()) {
+    if (num_segments == 0) {
         vlog(stlog.debug, "Can't find log segments to lock");
-        last_included_offset = model::offset{};
-        current_size = 0;
     }
 
     co_return offset_range_size_result_t{
