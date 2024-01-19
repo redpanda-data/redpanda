@@ -2031,6 +2031,7 @@ ss::future<> ntp_archiver::housekeeping() {
             } else {
                 co_await apply_archive_retention();
                 co_await garbage_collect_archive();
+                co_await garbage_collect();
             }
             co_await apply_spillover();
         }
